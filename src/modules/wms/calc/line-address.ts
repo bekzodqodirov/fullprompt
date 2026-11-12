@@ -16,7 +16,7 @@
 import { exampleFigure, type AmbiguousTotal } from './intake';
 import { looksLikeMaterial, MATERIAL_ROW_ADDRESS, parseLineAnswer, parseManualFacts, type LineAnswer } from './intake-manual';
 import type { NeedUnit } from './needs';
-import { unitOf } from './units';
+import { joinUnitPhrases, labelPattern, NET_LABELS, TOTALS_LEAD_LABELS, unitOf, unitPattern, unitWords } from './units';
 import { bareTotalsNumber, totalsAnswerShape, totalsFigureCount } from '../../platform/telegram/totals-shape';
 import { TIER_WORDS, tierWords } from '../../platform/telegram/name-tiers';
 
@@ -78,15 +78,17 @@ export interface TableSegment {
  * Matched folded: apostrophes removed, Cyrillic kept for the Russian words
  * (and an Uzbek word typed in Cyrillic — «Жами», «умумий» — is read through
  * the same transliteration the names use).
+ *
+ * The words that name a FIELD — «hajmi 12» is the cube, «vazni 3500» the
+ * kilos — are the vocabulary's (units.ts `TOTALS_LEAD_LABELS`, docs/
+ * AI-SORAYDI.md §2.4): this file kept a list of its own, the third one, and
+ * the three had drifted apart. Only the words that say «all of it» live here.
  */
 export const TOTALS_WORDS: readonly string[] = [
-  'jami', 'jamisi', 'umumiy', 'obshiy', 'brutto', 'og‘irlik', 'og‘irligi', 'vazn', 'vazni', 'hajm',
-  'hajmi', 'итого', 'всего', 'общий вес', 'брутто', 'вес', 'объём', 'объем', 'total', 'gross',
+  'jami', 'jamisi', 'umumiy', 'obshiy', 'итого', 'всего', 'total',
+  ...TOTALS_LEAD_LABELS.weightKg,
+  ...TOTALS_LEAD_LABELS.volumeM3,
 ];
-
-/** The totals words that name a field — «hajmi 12» is the cube, «vazni 3500» the kilos. */
-const WEIGHT_WORDS = ['brutto', 'og‘irlik', 'og‘irligi', 'vazn', 'vazni', 'общий вес', 'брутто', 'вес', 'gross'];
-const VOLUME_WORDS = ['hajm', 'hajmi', 'объём', 'объем'];
 
 const APOSTROPHES = /[ʻʼ’'`‘ˈ]/gu;
 
@@ -116,8 +118,25 @@ export function foldName(text: string): string {
 
 const totalsKey = (word: string) => word.normalize('NFKC').toLowerCase().replace(APOSTROPHES, '');
 const TOTALS_SET = new Set(TOTALS_WORDS.map(totalsKey));
-const WEIGHT_SET = new Set(WEIGHT_WORDS.map(totalsKey));
-const VOLUME_SET = new Set(VOLUME_WORDS.map(totalsKey));
+const WEIGHT_SET = new Set(TOTALS_LEAD_LABELS.weightKg.map(totalsKey));
+const VOLUME_SET = new Set(TOTALS_LEAD_LABELS.volumeM3.map(totalsKey));
+
+/**
+ * The words a worded totals answer is written in — every kilo and cube word
+ * of the vocabulary, and the labels a totals answer may carry («3500 kg
+ * brutto») — for the platform's shape test (`totalsAnswerShape`, which imports
+ * nothing and so is handed it). Matched over a lower-cased text; a word,
+ * never a part of one («kubik»).
+ */
+const TOTALS_UNIT_WORDS = new RegExp(
+  `(?<![\\p{L}])(?:${unitPattern('kg')}|${unitPattern('m3')}|${labelPattern([
+    ...TOTALS_LEAD_LABELS.weightKg,
+    ...TOTALS_LEAD_LABELS.volumeM3,
+  ])})(?![\\p{L}\\d])`,
+  'giu',
+);
+/** `totalsAnswerShape` in the vocabulary's words — the one way this file asks it. */
+const totalsShape = (text: string) => totalsAnswerShape(text, TOTALS_UNIT_WORDS);
 const isTotalsKey = (key: string) => TOTALS_SET.has(key) || TOTALS_SET.has(foldName(key));
 const fieldOfKey = (key: string): 'weightKg' | 'volumeM3' | null =>
   WEIGHT_SET.has(key) || WEIGHT_SET.has(foldName(key))
@@ -180,7 +199,7 @@ function readTotals(
   if (totalsFigureCount(rest) > 1) return 'totals_unit';
   const unit = field ?? onlyOpenTotal(open);
   if (unit === null) return 'totals_unit';
-  const worded = parseManualFacts(`${rest.trim()} ${unit === 'weightKg' ? 'kg' : 'kub'}`);
+  const worded = parseManualFacts(`${rest.trim()} ${unitWords(unit === 'weightKg' ? 'kg' : 'm3')[0]}`);
   return { weightKg: worded.weightKg ?? null, volumeM3: worded.volumeM3 ?? null, ambiguous: worded.ambiguous };
 }
 
@@ -270,7 +289,8 @@ interface NameParts {
 const digitKey = (run: string) => run.replace(/^0+(?=\d)/u, '');
 
 function nameParts(raw: string): NameParts {
-  const text = raw
+  // «5.9 cubic meters»: a unit of two words is one unit, never a goods name.
+  const text = joinUnitPhrases(raw)
     .replace(ENGINE_FIELD, ' ')
     .replace(GROUPED, (_m, head: string, groups: string) => head + groups.replace(/\s/gu, ''))
     // A figure glued to a name by a dash («Sumka-50 dona») is the figure, as
@@ -382,8 +402,12 @@ function answerUnits(answer: LineAnswer): NeedUnit[] {
   return [];
 }
 
-/** A segment the seller labelled NETTO — the row's own weight, never the brutto total. */
-const NETTO_FIRST = /^\s*(?:sof|netto|нетто|net|n\.?\s?w\.?)(?![\p{L}])/iu;
+/**
+ * A segment the seller labelled NETTO — the row's own weight, never the brutto
+ * total. The labels are the vocabulary's (units.ts `NET_LABELS`: «N/W», «净重»
+ * were on no list here), and «sof» alone.
+ */
+const NETTO_FIRST = new RegExp(`^\\s*(?:${labelPattern(NET_LABELS)}|sof)(?![\\p{L}])`, 'iu');
 
 const isLine = (t: TableTarget): t is { line: number } => 'line' in t;
 
@@ -795,7 +819,7 @@ export function looksLikeLineAnswer(text: string): boolean {
 /** A totals word followed only by figures and units — «jami 3500 kg», «og‘irligi 3500 kg», «брутто 3500 кг». */
 function totalsWordAnswer(segment: string): boolean {
   const lead = totalsLead(segment);
-  return lead !== null && lead.rest !== '' && totalsAnswerShape(lead.rest) !== null;
+  return lead !== null && lead.rest !== '' && totalsShape(lead.rest) !== null;
 }
 
 /**
@@ -809,6 +833,6 @@ export function looksLikeTableAnswer(text: string): boolean {
   const segments = shapeSegments(text);
   return (
     segments.length > 0 &&
-    segments.every((s) => totalsAnswerShape(s) === 'worded' || totalsWordAnswer(s) || lineAnswerSegment(s))
+    segments.every((s) => totalsShape(s) === 'worded' || totalsWordAnswer(s) || lineAnswerSegment(s))
   );
 }

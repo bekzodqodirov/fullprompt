@@ -17,7 +17,18 @@ export function bareTotalsNumber(text: string): boolean {
 
 /** One figure of a totals answer: «3 500» grouped by thousands, else «1,2» / «3500». */
 export const TOTALS_NUMBER = /\d{1,3}(?:\s\d{3})+(?![\d.,])|\d+(?:[.,]\d+)?/gu;
-export const TOTALS_UNIT = /^(?:kg|kgs|кг|kilo|kilogramm?|кило|килограмм?|kub|куб|kubometr|кубометр|m3|м3|m³|м³|cbm|brutto|брутто)$/u;
+
+/**
+ * The words a totals answer may be written in — kilos, cubes, «brutto» — as
+ * ONE global regex over a lower-cased text. The CALLER's: the vocabulary is
+ * wms's (`calc/units.ts`, docs/AI-SORAYDI.md §2.4), this file imports
+ * nothing, and the list it used to keep here was the third private one — it
+ * knew «cbm» and «kgs» while the reader behind it did not, so «5.9 cbm» was
+ * recognised as an answer and then refused. `calc/line-address.ts` builds it
+ * (`TOTALS_UNIT_WORDS`). With none, no word is a unit: a worded answer is
+ * then no totals answer at all, and only a BARE figure is told apart.
+ */
+export type TotalsUnitWords = RegExp;
 
 /**
  * How many figures a totals answer holds — «3 500» and «1 200 000» are ONE
@@ -48,8 +59,8 @@ export function totalsFigureCount(text: string): number {
  * thousands-grouped number («123 45 67») — and it is not a total. A «+» is
  * no longer stripped as punctuation, so it is a word no unit matches. Pure.
  */
-export function looksLikeTotalsAnswer(text: string): boolean {
-  return totalsAnswerShape(text) !== null;
+export function looksLikeTotalsAnswer(text: string, units: TotalsUnitWords | null = null): boolean {
+  return totalsAnswerShape(text, units) !== null;
 }
 
 /**
@@ -59,12 +70,23 @@ export function looksLikeTotalsAnswer(text: string): boolean {
  * code typed without its letters, and was told «to‘plam topilmadi» about a
  * collection that never existed (`[].every()` is true). Pure.
  */
-export function totalsAnswerShape(text: string): 'worded' | 'bare' | null {
-  const t = text.trim().toLowerCase();
+export function totalsAnswerShape(text: string, units: TotalsUnitWords | null = null): 'worded' | 'bare' | null {
+  // The unit words come out FIRST: «m3» and «м3» end in a digit, and counted
+  // as a figure it made «12 m3» two numbers and a stray «m».
+  let worded = false;
+  const t = units
+    ? text
+        .trim()
+        .toLowerCase()
+        .replace(new RegExp(units.source, units.flags.includes('g') ? units.flags : `${units.flags}g`), () => {
+          worded = true;
+          return ' ';
+        })
+    : text.trim().toLowerCase();
   const digits = (t.match(/\d/gu) ?? []).length;
   if (digits === 0 || digits >= 9) return null;
   if (totalsFigureCount(t) > 2) return null;
-  const words = t.replace(TOTALS_NUMBER, ' ').replace(/[.,;:]/gu, ' ').split(/\s+/u).filter(Boolean);
-  if (!words.every((w) => TOTALS_UNIT.test(w))) return null;
-  return words.length > 0 ? 'worded' : 'bare';
+  // Anything left beside the figures and their punctuation is another word.
+  if (/[^\s.,;:]/u.test(t.replace(TOTALS_NUMBER, ' '))) return null;
+  return worded ? 'worded' : 'bare';
 }

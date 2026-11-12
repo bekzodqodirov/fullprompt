@@ -20,6 +20,7 @@
  * guessed (his B4 a — `readNumberCell`).
  */
 import { addressWord } from './address-words';
+import { parseSize } from './carton-math';
 import { readNumberCell } from './number-cell';
 import type { MeasureUnit } from './pricing';
 
@@ -45,8 +46,8 @@ const WORDS: Record<SellerUnit, readonly string[]> = {
   ],
   m3: [
     'm3', 'm³', 'м3', 'м³', 'kub', 'куб', 'куба', 'кубов', 'kubov', 'кубм', 'кбм', 'cbm', 'kubm',
-    'kubometr', 'кубометр', 'кубометра', 'кубометров', 'cum', 'cu.m', 'cubicmeter', 'cubicmeters',
-    'cubicmetre', 'cubicmetres', '立方米', '立方', '方',
+    'kubometr', 'кубометр', 'кубометра', 'кубометров', 'cum', 'cu.m', 'cubic meter', 'cubic meters',
+    'cubic metre', 'cubic metres', '立方米', '立方', '方',
   ],
   m2: [
     'm2', 'm²', 'м2', 'м²', 'квм', 'кв', 'kvm', 'kv', 'sqm', 'sq', 'кв.м', '平方米', '平米',
@@ -71,6 +72,15 @@ function normalizeWord(word: string): string {
 }
 
 /**
+ * The cube's COUNTED forms — «2 куба», «4 кубов», «12 kubov»: how Russian
+ * counts cubic metres, and also how a toy states the cubes it is made of
+ * (review JN-22: «Набор 4 кубов 20 шт» carried a volume of 4 m³). Units of
+ * `WORDS.m3` all the same; `parseGoodsLine` and the totals reader keep such a
+ * figure in the NAME on a line that also states its pieces.
+ */
+export const COUNTED_CUBES: ReadonlySet<string> = new Set(['куба', 'кубов', 'kubov']);
+
+/**
  * The words of ONE unit, as written (docs/AI-SORAYDI.md §2.4). Every reader
  * of a shipment's total, a table answer or a totals-shaped message asks HERE
  * — three private lists were the reason «5 kub» was an answer and «5 cbm»
@@ -85,14 +95,45 @@ const escapeRe = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /**
  * A regex alternation of a unit's words, longest first (so «kgs» is not read
  * «kg» + a stray «s», «кубов» not «куб» + «ов»), a dot inside a word optional
- * («cu.m» and «cum»). The SOURCE of a group — the caller adds its own
- * boundaries, as the readers differ in what may stand on either side.
+ * («cu.m» and «cum»), the space of a PHRASE any white space or none («cubic
+ * meters», «cubicmeters» — review JN-22: the phrase stood in the list as one
+ * glued word nothing a person types could reach). The SOURCE of a group — the
+ * caller adds its own boundaries, as the readers differ in what may stand on
+ * either side.
  */
 export function unitPattern(unit: SellerUnit): string {
-  return [...WORDS[unit]]
+  return wordsPattern(WORDS[unit]);
+}
+
+/** `unitPattern`'s alternation over any word list — the scaled kilo words (`SCALED_KG`) ask it too. */
+function wordsPattern(words: readonly string[]): string {
+  return [...words]
     .sort((a, b) => b.length - a.length)
-    .map((w) => escapeRe(w).replace(/\\\./g, '\\.?'))
+    .map((w) => escapeRe(w).replace(/\\\./g, '\\.?').replace(/ /g, '\\s*'))
     .join('|');
+}
+
+/**
+ * The unit PHRASES of `WORDS` — two words that are one unit («cubic meters»),
+ * as a regex source, longest first. Derived, so a phrase added to a list above
+ * is read by every reader the day it is added.
+ */
+const PHRASES = (Object.values(WORDS) as (readonly string[])[])
+  .flat()
+  .filter((w) => w.includes(' '))
+  .sort((a, b) => b.length - a.length)
+  .map((w) => escapeRe(w).replace(/ /g, '\\s+'))
+  .join('|');
+/** After a number only: «Cubic meter gauge» is a product's name, «5.9 cubic meters» a figure. */
+const UNIT_PHRASE = new RegExp(`(?<=\\d\\s*)(?:${PHRASES})(?![\\p{L}])`, 'giu');
+
+/**
+ * A text with the unit phrase after a number written as one word — «5.9 cubic
+ * meters» → «5.9 cubicmeters» — for a reader that splits on spaces (the
+ * table's name address): `unitOf` reads both spellings.
+ */
+export function joinUnitPhrases(text: string): string {
+  return text.replace(UNIT_PHRASE, (m) => m.replace(/\s+/gu, ''));
 }
 
 /**
@@ -107,17 +148,120 @@ export function unitPattern(unit: SellerUnit): string {
  * ambiguous as «件» itself, and stays out.
  */
 export const WEIGHT_LABELS: readonly string[] = [
-  'g.w.', 'g.w', 'gw', 'g/w', 'gross weight', 'gross', 'brutto', 'брутто', 'вес брутто', 'og‘irlik',
-  "og'irlik", 'ogirlik', 'vazn', 'вес', 'масса', 'total weight', 't.w.', '毛重', '总毛重', '总重',
+  'g.w.', 'g.w', 'gw', 'g/w', 'gross weight', 'gross', 'brutto', 'брутто', 'вес брутто', 'общий вес',
+  'og‘irlik', "og'irlik", 'ogirlik', 'og‘irligi', "og'irligi", 'ogirligi', 'vazn', 'vazni', 'вес', 'масса',
+  'total weight', 't.w.', '毛重', '总毛重', '总重',
 ];
 export const NET_LABELS: readonly string[] = [
-  'n.w.', 'n.w', 'nw', 'n/w', 'net weight', 'net', 'netto', 'нетто', 'вес нетто', 'sof og‘irlik',
-  "sof og'irlik", '净重', '总净重',
+  'n.w.', 'n.w', 'nw', 'n/w', 'net weight', 'net wt.', 'net wt', 'net', 'netto', 'нетто', 'вес нетто',
+  'sof og‘irlik', "sof og'irlik", 'sof ogirlik', 'sof og‘irligi', "sof og'irligi", 'sof ogirligi', '净重', '总净重',
 ];
 export const VOLUME_LABELS: readonly string[] = [
   'cbm', 'meas.', 'meas', 'measurement', 'volume', 'vol.', 'vol', 'cube', 'cubage', 'hajmi', 'hajm',
   'kub', 'объём', 'объем', 'куб', '体积', '总体积', '方数', '总方数',
 ];
+
+/**
+ * The labels after which a figure needs NO unit — «G.W.: 507», «CBM = 5.92»
+ * (docs/AI-SORAYDI.md §3.1 T1, review JN-21). Only the ones that can name
+ * nothing but that measure: «gross» and «net» head a money line («Gross:
+ * 12 500»), «vol», «cube», «kub», «куб» are product nouns («Manga Vol 3»,
+ * «Magic cube 3»), and «вес», «vazn», «масса» say a weight without saying
+ * WHICH — after those the unit must be written. Each is a word of its list
+ * above (fenced), so nothing here is a second vocabulary.
+ */
+export const UNIT_FREE_LABELS = {
+  weightKg: [
+    'g.w.', 'g.w', 'gw', 'g/w', 'gross weight', 'brutto', 'брутто', 'вес брутто', 'og‘irlik', "og'irlik",
+    'ogirlik', 'og‘irligi', "og'irligi", 'ogirligi', '毛重', '总毛重',
+  ],
+  netKg: [
+    'n.w.', 'n.w', 'nw', 'n/w', 'net weight', 'netto', 'нетто', 'вес нетто', 'sof og‘irlik', "sof og'irlik",
+    'sof ogirlik', 'sof og‘irligi', "sof og'irligi", 'sof ogirligi', '净重', '总净重',
+  ],
+  volumeM3: ['cbm', 'meas.', 'meas', 'measurement', 'hajmi', 'hajm', 'объём', 'объем', '体积', '总体积'],
+} as const satisfies Record<string, readonly string[]>;
+
+/**
+ * The labels a totals ANSWER may open with at the bot's table — «og‘irligi
+ * 3500», «вес 3500 кг», «hajmi 12» (line-address.ts `totalsLead`). There the
+ * bot has just asked for the shipment's weight and cube, so «вес» and «gross»
+ * are kilos even bare; a product noun («kub», «cube», «масса для лепки») is
+ * still not one — it may be the name of a row. Words of the lists above
+ * (fenced): the table reads its field words HERE and keeps none of its own.
+ */
+export const TOTALS_LEAD_LABELS = {
+  weightKg: ['brutto', 'брутто', 'gross', 'og‘irlik', 'og‘irligi', 'vazn', 'vazni', 'вес', 'общий вес'],
+  volumeM3: ['hajm', 'hajmi', 'объём', 'объем'],
+} as const satisfies Record<string, readonly string[]>;
+
+/**
+ * A label list as a regex alternation, longest first: a dot optional and a
+ * space allowed after it («G.W.», «G. W.», «GW»), a space any white space
+ * («gross  weight»), every apostrophe a phone types — or none — for the one
+ * in «og‘irlik». The caller adds its own boundaries.
+ */
+export function labelPattern(labels: readonly string[]): string {
+  return [...labels]
+    .sort((a, b) => b.length - a.length)
+    .map((l) =>
+      escapeRe(l)
+        .replace(/\\\.(?=.)/g, '\\.?\\s?')
+        .replace(/\\\.$/g, '\\.?')
+        .replace(/ /g, '\\s*')
+        .replace(/[‘']/g, '[’ʻʼ‘`´\']?'),
+    )
+    .join('|');
+}
+
+/**
+ * The TONNE and the GRAM — scaled spellings of the kilo (§3.1 T14, CR-7). A
+ * scaled unit is a word of `kg` with a factor, never a unit of its own: it has
+ * no column, no key in `WORDS`, and `unitOf` does not know it — so the card
+ * form, the VED's paste box and a sheet's unit cells read exactly what they
+ * read before (review JR-22: only the bot's typed readers are to ask for it).
+ *
+ * THE VOCABULARY ONLY, so far: no reader asks it yet — T14 wires it, and
+ * until then «2 tonna» is the unknown unit it always was.
+ *
+ * Only spellings that can be nothing else are words (review JN-9). The single
+ * letters «t», «т», «g», «г» and «mt» are capacities and generations far more
+ * often than weights in this trade — «Fleshka 128G», «Router 5G», «Domkrat
+ * 5T», «2024 г» — so they are `lone`: to be read only where the figure IS a
+ * weight (after a weight label, or as the whole answer to the bot's own weight
+ * question), never glued to its digits and never before a slash («180 g/m2»).
+ */
+export const SCALED_KG = [
+  { factor: 1000, words: ['tonna', 'ton', 'tons', 'тн', 'тонн', 'тонна', 'тонны', 'тонну', 'тонне', 'тонной', '吨'], lone: ['t', 'т', 'mt'] },
+  { factor: 0.001, words: ['gr', 'gramm', 'гр', 'грамм', 'грамма', 'граммов', '克'], lone: ['g', 'г'] },
+] as const;
+
+export interface ScaledKg {
+  factor: number;
+  /** A single letter (or «mt»): a weight only where nothing else can be meant. */
+  lone: boolean;
+}
+
+const SCALED_LOOKUP = new Map<string, ScaledKg>();
+for (const { factor, words, lone } of SCALED_KG) {
+  for (const w of words) SCALED_LOOKUP.set(normalizeWord(w), { factor, lone: false });
+  for (const w of lone) SCALED_LOOKUP.set(normalizeWord(w), { factor, lone: true });
+}
+
+/** The scale a word names — a tonne, a gram — or null. Never a `SellerUnit`. */
+export function scaledKg(word: string | null | undefined): ScaledKg | null {
+  if (!word) return null;
+  return SCALED_LOOKUP.get(normalizeWord(word)) ?? null;
+}
+
+/** `unitPattern` for the scaled kilo words — the full spellings, or the lone letters. */
+export function scaledPattern(kind: 'words' | 'lone'): string {
+  return wordsPattern(SCALED_KG.flatMap((s) => (kind === 'words' ? [...s.words] : [...s.lone])));
+}
+
+/** A scaled figure in kilos — «2,5 тн» is 2500, «500 gr» 0.5; six places, so 0.001 × 20 is 0.02 and not 0.020000000000000004. */
+export const scaledKgValue = (value: number, factor: number): number => Number((value * factor).toFixed(6));
+
 export const FIELD_LABELS = {
   name: [
     '品名', '货名', '名称', '产品', 'product', 'item', 'description', 'goods', 'наименование', 'товар',
@@ -428,7 +572,15 @@ export interface GoodsLine {
 }
 
 export type GoodsLineProblem =
-  | { kind: 'ambiguous'; text: string; decimal: number; thousands: number }
+  /**
+   * A number with two readings. «1,200»: `decimal` 1.2, `thousands` 1200.
+   * `grouped` (review JN-6): a space-grouped number after a name word or a
+   * bare number — «stul 20 300 kg» — whose first group may be a count, a
+   * model, a code: `decimal` then carries the reading WITHOUT that group
+   * (300) and `thousands` the whole (20300). Asked like the other, never
+   * guessed; the two share a kind because every door already words it.
+   */
+  | { kind: 'ambiguous'; text: string; decimal: number; thousands: number; grouped?: true }
   | { kind: 'unknown_unit'; word: string; value: number }
   | { kind: 'two_pairs'; units: MeasureUnit[] }
   | { kind: 'repeated'; unit: SellerUnit }
@@ -439,15 +591,203 @@ export type GoodsLineProblem =
   /** A code of nine digits as TEXT — a leading zero lost somewhere. */
   | { kind: 'code_short'; text: string };
 
+// ── a number is not welded onto its neighbour (docs/AI-SORAYDI.md §3.1 T0) ──
+//
+// «1 200 kg» is twelve hundred: a number is 1-3 digits and then groups of
+// three after ONE gap each. So is «…60x40x50 300kg» fifty thousand three
+// hundred — to a reader that takes whatever digits stand before the gap for
+// the thousands. It did: a carton's height, a client code («GS 777 300 kg» —
+// 777 300 kg), a count («stul 20 300 kg») or a model («iPhone 15 128 kg»)
+// became the thousands of the weight after it, under ✅ and over the model's
+// correct 300 (MP-1: a ≈ $239 job priced ≈ $34 936). The rule, as the review
+// ruled it (JN-5, JN-6, JS-24), for every reader of free text:
+//
+//  1. what is no amount is BLANKED before the amounts are read — a size, a
+//     code's digits (and, for the totals reader, a phone and a client code);
+//  2. a space-grouped number is thousands with no question only where nothing
+//     of another fact can stand before it: at the opening of a line or
+//     segment, after a totals or measure label, after a figure WITH its unit,
+//     after a blanked span or a code;
+//  3. after a name word or a bare number it is ASKED, with both readings —
+//     «stul 20 300 kg»: 300 or 20300? — never guessed.
+
+/** The gaps a grouped number is written with: a space, a no-break space, a narrow one. */
+const GROUP_GAP = String.raw`[   ]`;
+
 /**
- * An amount and the word after it. Digits may be grouped by single spaces in
- * threes («1 200», «12 500 000»); a decimal part follows a dot or a comma.
- * The word is letters (any script), ², ³ or a dotted abbreviation like «кв.м».
- * A number glued to letters on its left («A54», «iPhone15») is never an
- * amount.
+ * A number as free text writes it — a regex SOURCE: 1-3 digits and groups of
+ * three after one gap each («1 200», «12 500 000»), or plain digits; a decimal
+ * part after a dot or a comma. ONE grammar for the row kernel below and the
+ * shipment-totals reader (intake-manual.ts), which kept a copy.
  */
-const AMOUNT =
-  /(?<![\p{L}\d.,])(\d{1,3}(?:[   ]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(?![\d])(?:\s*([\p{L}²³][\p{L}\d²³.]*))?/gu;
+export const AMOUNT_NUMBER = String.raw`\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?`;
+
+const GROUPED_NUMBER = new RegExp(String.raw`^\d{1,3}${GROUP_GAP}(\d{3}.*)$`, 'u');
+
+/**
+ * The second reading of a space-grouped number — what is left when its first
+ * group is something else's: «20 300» → 300, «1 200 000,5» → 200000.5. Null
+ * for a number written in one piece (it has one reading).
+ */
+export function withoutFirstGroup(number: string): number | null {
+  const tail = GROUPED_NUMBER.exec(number.trim())?.[1];
+  if (tail === undefined) return null;
+  const read = readAmountText(tail);
+  return read.state === 'ok' ? read.value : null;
+}
+
+/**
+ * What a span is blanked with before the amounts are read. Private-use: no
+ * digit, no letter, no separator — the amount grammar cannot start, continue
+ * or group across it — and one character per character, so every offset still
+ * points into what the person wrote (the name is cut from THAT).
+ */
+export const BLANK = '';
+
+/** `text` with `[start, end)` blanked, its length kept. */
+export function blankSpan(text: string, start: number, end: number): string {
+  return text.slice(0, start) + BLANK.repeat(Math.max(0, end - start)) + text.slice(end);
+}
+
+/**
+ * Every size of a line blanked — «60x40x50 sm», «600*600», «L60 W40 H50» (the
+ * kernel's `parseSize`). A dimension is never an amount: read as one, «1:
+ * 60*40*50 15 kg» wrote 50 dona (DIM-3) and «…60*40*50 300 kg» 50 300 kg.
+ * The size itself stays in the text the caller cuts the name from.
+ */
+export function blankSizes(line: string): string {
+  let out = line;
+  // Each round blanks at least three characters, so the loop ends; the bound
+  // is for a line somebody made of nothing but sizes.
+  for (let round = 0; round < 40; round += 1) {
+    const size = parseSize(out);
+    if (!size) break;
+    out = blankSpan(out, size.start, size.end);
+  }
+  return out;
+}
+
+/**
+ * A code's digits standing where they would be read as the THOUSANDS of the
+ * figure after them — «№15 300 kg», «XJ-200 300 kg», «2024/15 300 kg» (review
+ * JN-6: «XJ-200 300 kg» was 200 300 kg). A code is a sign («№», «#», «_»)
+ * before the digits, or a dash or a slash after one to four letters or after
+ * a token that already holds a digit. One to three digits: a longer run
+ * («B-00066») opens no grouped number.
+ *
+ * Only THERE — before a gap and three digits. Anywhere else the digits keep
+ * what every reader has always made of them: «Sumka-50 dona» is a figure
+ * glued to its name by a dash, and «Partiya YW-123 12 kub» is the typed
+ * reader's own case (`gluedCodeLetters`). A whole WORD before the dash
+ * («Kurtka-1 200 kg») is a name, and the figure after it is asked like any
+ * figure after a name.
+ */
+const CODE_DIGITS = new RegExp(
+  String.raw`(?:[№#_]|(?<![\p{L}\d])(?:\p{L}{1,4}|[\p{L}\d]*\d[\p{L}\d]*)[-–/])(\d{1,3})(?=${GROUP_GAP}\d{3}(?!\d))`,
+  'gu',
+);
+
+/**
+ * A phone as it is typed in groups — «90 123 45 67», «+998 90 123 45 67», «8
+ * 916 123 45 67»: every phone here ends in three digits and two pairs. Its
+ * last pair was the thousands of the weight after it («Ali aka 90 123 45 67
+ * 300 kg» — 67 300 kg, review JN-6), and its groups a count («×45»).
+ */
+const PHONE_SHAPE = /(?<![\d.,\p{L}])(?:\+?\d{1,3}[ -]?)?\(?\d{2,3}\)?[ -]?\d{3}[ -]\d{2}[ -]\d{2}(?!\d)/gu;
+
+/**
+ * A line with everything that is no amount blanked — every size
+ * (`blankSizes`), every phone, and the code digits of `CODE_DIGITS`: what
+ * the amounts of a line are read from, by the row kernel and by the
+ * shipment-totals reader alike.
+ */
+export function blankNonAmounts(line: string): string {
+  let out = blankSizes(line);
+  for (const hit of out.matchAll(PHONE_SHAPE)) out = blankSpan(out, hit.index, hit.index + hit[0].length);
+  for (const hit of out.matchAll(CODE_DIGITS)) {
+    const end = hit.index + hit[0].length;
+    out = blankSpan(out, end - hit[1]!.length, end);
+  }
+  return out;
+}
+
+/**
+ * A measure's label closing the text before a figure — «G.W.», «vazni»,
+ * «Вес брутто», «hajmi», «soni» — in the spellings `labelPattern` reads. Only
+ * the labels that name a measure and nothing else, plus the table's own
+ * («вес», «gross»): «Manga Vol 3 200 dona» and «Magic cube 3 200 dona» end in
+ * a product noun, and are asked (review JN-21).
+ */
+const MEASURE_LABEL_BEFORE = new RegExp(
+  String.raw`(?:^|[^\p{L}\d])(?:${labelPattern([
+    ...UNIT_FREE_LABELS.weightKg,
+    ...UNIT_FREE_LABELS.netKg,
+    ...UNIT_FREE_LABELS.volumeM3,
+    ...TOTALS_LEAD_LABELS.weightKg,
+    ...TOTALS_LEAD_LABELS.volumeM3,
+    ...FIELD_LABELS.count,
+  ])})[.:：]?\s*$`,
+  'iu',
+);
+
+/** What sets a figure off from the words before it — a comma, a colon, an opening bracket, a list's bullet. */
+const OPENS_SEGMENT = /[,;:：=([{|—–.!?•·*+~≈<>«"“]$/u;
+/** A dash or a slash does too when it stands apart («Kurtka - 1 200 kg»); glued to a word it is that word's. */
+const LOOSE_DASH = /(?:^|\s)[-/]$/u;
+
+export type GroupedReading = 'thousands' | 'ask';
+
+/**
+ * Is the space-grouped number starting at `at` of `line` ONE number — or may
+ * its first group be another fact's (rule 2-3 above)? `line` is the text the
+ * amounts are read from, blanked (`blankNonAmounts`), one line or one column:
+ * its start is where a line or a segment opens. `isLabel` adds the caller's
+ * own label words (the totals reader's «jami», «faktik», «taxminan»).
+ */
+export function groupedReading(line: string, at: number, isLabel: (word: string) => boolean = () => false): GroupedReading {
+  const before = line.slice(0, at).replace(/\s+$/u, '');
+  if (before === '' || OPENS_SEGMENT.test(before) || LOOSE_DASH.test(before)) return 'thousands';
+  const tokens = before.split(/\s+/u);
+  const clean = (token: string) => token.replace(/^[("'«“[]+|[)"'»”\].,;:!?/-]+$/gu, '');
+  const raw = tokens.at(-1)!;
+  // A size, a code's digits, a phone — blanked: no fact of its own can weld.
+  if (raw.includes(BLANK)) return 'thousands';
+  const word = clean(raw);
+  const bareNumber = (t: string) => /^\d[\d.,]*$/u.test(t);
+  if (bareNumber(word)) return 'ask';
+  const gluedUnit = (t: string) => {
+    const glued = /^\d[\d.,]*([\p{L}²³][\p{L}\d²³.]*)$/u.exec(t);
+    return glued !== null && unitOf(glued[1]) !== null;
+  };
+  // A figure WITH its unit: «300dona», or «300 dona» / «120 ta juft» — the
+  // unit words walked back to their number. A unit word with no number
+  // before it is a word of the name («Lunch box 1 200 dona»).
+  if (gluedUnit(word)) return 'thousands';
+  if (unitOf(word) !== null) {
+    let i = tokens.length - 2;
+    while (i >= 0 && unitOf(clean(tokens[i]!)) !== null) i -= 1;
+    const head = i >= 0 ? clean(tokens[i]!) : '';
+    return bareNumber(head) || gluedUnit(head) || tokens[i]?.includes(BLANK) ? 'thousands' : 'ask';
+  }
+  // Letters and digits in one token are a code or a model — «GS777», «A54»,
+  // «XJ-200»: its digits are its own, the number after it is whole (JS-24).
+  if (/\d/u.test(word) && /\p{L}/u.test(word)) return 'thousands';
+  if (TOTAL_WORD.test(word) || MEASURE_LABEL_BEFORE.test(before) || isLabel(word)) return 'thousands';
+  return 'ask';
+}
+
+/**
+ * An amount and the word after it. Digits may be grouped by single gaps in
+ * threes («1 200», «12 500 000»); a decimal part follows a dot or a comma.
+ * The word is a unit PHRASE («cubic meters» — review JN-22: the phrase stood
+ * in the list as one glued word nothing a person types could reach), else
+ * letters (any script), ², ³ or a dotted abbreviation like «кв.м». A number
+ * glued to letters on its left («A54», «iPhone15») is never an amount.
+ */
+const AMOUNT = new RegExp(
+  String.raw`(?<![\p{L}\d.,])(${AMOUNT_NUMBER})(?![\d])(?:\s*(${PHRASES}|[\p{L}²³][\p{L}\d²³.]*))?`,
+  'giu',
+);
 
 /** A counter word directly before a unit: «120 ta juft», «40 шт пар» — the
  * second word is the unit. */
@@ -472,6 +812,13 @@ const UNIT_FIELD_BEFORE = /(?<![\p{L}\d])([\p{L}²³][\p{L}\d²³]+)\s*[:：]\s*
  * carton noun opening its clause («Karobka: 45», «Kurtka, Коробки: 45»), set
  * off by a dash («Kurtka - karobka: 45») or after a total word («Jami karobka:
  * 45»).
+ *
+ * A KILO or a CUBE word gets the carton nouns' test too (review JN-22): the
+ * vocabulary gained «куба», and «Сигары Куба: 5» became five cubic metres of
+ * cigars — after a word of the name it is the name («Куба» is Cuba there).
+ * It is a field where it opens its clause («Kg: 150», «Kurtka, kub: 5»),
+ * after a figure, a unit or a total word, and after its own measure's label
+ * («Вес кг: 150»).
  */
 function unitField(word: string, before: string): boolean {
   const unit = unitOf(word);
@@ -481,9 +828,12 @@ function unitField(word: string, before: string): boolean {
     const house = before.split(/[\s,;:]+/u).filter(Boolean).slice(-3);
     return !(/\d\s*[,;]?\s*$/u.test(before) && house.slice(0, -1).some(addressWord));
   }
-  if (unit !== 'karobka' || PLACES_ONLY.test(word)) return true;
+  if (unit !== 'karobka' && unit !== 'kg' && unit !== 'm3') return true;
+  if (unit === 'karobka' && PLACES_ONLY.test(word)) return true;
   const prior = /([\p{L}\d²³.]+)[\s'’‘ʻ`]*$/u.exec(before)?.[1];
-  return prior === undefined || /\d/u.test(prior) || unitOf(prior) !== null || TOTAL_WORD.test(prior);
+  if (prior === undefined || /\d/u.test(prior) || unitOf(prior) !== null || TOTAL_WORD.test(prior)) return true;
+  // A kilo or a cube after its own measure's label — «Вес кг: 150», «Hajmi m3: 12» — is that label's unit.
+  return unit !== 'karobka' && MEASURE_LABEL_BEFORE.test(before);
 }
 /** The carton words that only ever count places, and the plurals — never one product's noun. */
 const PLACES_ONLY = /^(?:мест[оа]?|ctns?|joy|кор|boxes|cartons|коробки|коробок)$/iu;
@@ -603,15 +953,25 @@ export function parseGoodsLine(raw: string): GoodsLine {
   const bare: { value: number; cell: number }[] = [];
   const taken = new Set<SellerUnit>();
   const nameParts: string[] = [];
+  // «Набор 4 кубов 20 шт» — a toy's own cubes, on a line that states its
+  // pieces (review JN-22): the «N кубов» stays in the name, see below.
+  const piecesStated = kept.some((cell) => [...cell.matchAll(AMOUNT)].some((h) => unitOf(h[2]) === 'dona'));
 
   kept.forEach((cellText, cellIndex) => {
     const consumed: [number, number][] = [];
-    const cellBare: { value: number; start: number; end: number }[] = [];
-    for (const hit of cellText.matchAll(AMOUNT)) {
+    const cellBare: { value: number; start: number; end: number; asked: GoodsLineProblem | null }[] = [];
+    // A size and a code's digits are no amounts (T0): read from the blanked
+    // text, cut the name from the cell as written — the offsets are the same.
+    const scan = blankNonAmounts(cellText);
+    for (const hit of scan.matchAll(AMOUNT)) {
       const number = hit[1]!;
       let word = hit[2] ?? null;
       let start = hit.index!;
       let end = start + hit[0].length;
+      // A space-grouped number after a name word or a bare number: its first
+      // group may be a count, a model, a code — both readings, asked.
+      const tail = withoutFirstGroup(number);
+      const welded = tail !== null && groupedReading(scan, hit.index!) === 'ask';
       // «Мест: 45», «Kg: 150» — a unit word written as a FIELD before its
       // number names that number: a carton count is never 45 pieces (c0347).
       const field = word ? null : UNIT_FIELD_BEFORE.exec(cellText.slice(0, start));
@@ -641,6 +1001,10 @@ export function parseGoodsLine(raw: string): GoodsLine {
         if (amount.state === 'ok') unknown = { word, value: amount.value };
         continue;
       }
+      // «4 кубов», «2 куба», «12 kubov» beside a piece count are what the
+      // goods are made of («Набор 4 кубов 20 шт»), never four cubic metres:
+      // the figure stays in the name. Alone, or on a totals line, it is m³.
+      if (unit === 'm3' && piecesStated && COUNTED_CUBES.has(normalizeWord(word!))) continue;
       const amount = readAmountText(number);
       if (amount.state === 'bad') continue;
       if (amount.state === 'ambiguous') {
@@ -648,12 +1012,20 @@ export function parseGoodsLine(raw: string): GoodsLine {
         line.problems.push({ kind: 'ambiguous', text: number, decimal: amount.decimal, thousands: amount.thousands });
         continue;
       }
+      const asked: GoodsLineProblem | null = welded
+        ? { kind: 'ambiguous', text: number, decimal: tail!, thousands: amount.value, grouped: true }
+        : null;
       if (!word) {
-        cellBare.push({ value: amount.value, start, end });
+        cellBare.push({ value: amount.value, start, end, asked });
         continue;
       }
       consumed.push([start, end]);
       line.unitWords.push(word);
+      if (asked) {
+        // The unit is stated (the line still STATES goods); the figure is not.
+        line.problems.push(asked);
+        continue;
+      }
       const key = unit!;
       if (taken.has(key)) {
         line.problems.push({ kind: 'repeated', unit: key });
@@ -678,7 +1050,9 @@ export function parseGoodsLine(raw: string): GoodsLine {
     // a candidate — decided below.
     const last = cellBare.at(-1);
     if (last) {
-      bare.push({ value: last.value, cell: cellIndex });
+      // «Stul 20 300», «iPhone 15 128»: the count itself may be welded.
+      if (last.asked) line.problems.push(last.asked);
+      else bare.push({ value: last.value, cell: cellIndex });
       consumed.push([last.start, last.end]);
     }
     let rest = cellText;
