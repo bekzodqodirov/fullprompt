@@ -301,6 +301,46 @@ describe('applyPacking — the one door every reader calls', () => {
   });
 });
 
+describe('one PIECE’s weight (a marketplace card, MP-11)', () => {
+  it('pieces × the piece weight fills an empty row weight, and says how', () => {
+    const out = applyPacking({ quantity: 200, weightKg: null, packing: packing({ kgPerPiece: 4.5 }) });
+    expect(out.line.weightKg).toBe(900);
+    expect(out.line.derived).toEqual({ weightKg: '200 × 4.5 kg', weightFromPieces: true });
+    expect(derivedNotes(out.line)).toEqual(['og‘irlik hisoblangan: 200 × 4.5 kg = 900 kg']);
+    expect(packingNote(out.line.packing)).toBe('📦 4.5 kg/dona — sotuvchi');
+  });
+
+  it('no piece count — no weight; the count answered later computes it', () => {
+    const first = applyPacking({ quantity: null, weightKg: null, packing: packing({ kgPerPiece: 4.5 }) });
+    expect(first.line.weightKg).toBeNull();
+    const second = applyPacking({ ...first.line, quantity: 200 });
+    expect(second.line.weightKg).toBe(900);
+    // …and a corrected count moves the weight with it.
+    const third = applyPacking({ ...second.line, quantity: 300 });
+    expect(third.line.weightKg).toBe(1350);
+  });
+
+  it('pieces computed from the cartons feed the piece weight in the same pass', () => {
+    const out = applyPacking({ quantity: null, weightKg: null, packing: packing({ cartons: 10, pcsPerCarton: 20, kgPerPiece: 4.5 }) });
+    expect(out.line.quantity).toBe(200);
+    expect(out.line.weightKg).toBe(900);
+  });
+
+  it('ONE piece’s weight standing as the row’s is replaced; a carton’s own weight outranks the piece’s', () => {
+    const one = applyPacking({ quantity: 100, weightKg: 4.5, packing: packing({ kgPerPiece: 4.5 }) });
+    expect(one.line.weightKg).toBe(450);
+    expect(derivedNotes(one.line)).toEqual(['og‘irlik bitta donaniki edi (4.5): 100 × 4.5 kg = 450 kg']);
+    const both = applyPacking({ quantity: 200, weightKg: null, packing: packing({ cartons: 10, kgPerCarton: 95, kgPerCartonKind: 'gross', kgPerPiece: 4.5 }) });
+    expect(both.line.weightKg).toBe(950);
+  });
+
+  it('a stated row weight the pieces do not explain is asked', () => {
+    const out = applyPacking({ quantity: 200, weightKg: 500, packing: packing({ kgPerPiece: 4.5 }) });
+    expect(out.line.weightKg).toBe(500);
+    expect(out.doubts).toEqual([{ field: 'weightKg', stated: 500, derived: { value: 900, how: '200 × 4.5 kg' } }]);
+  });
+});
+
 describe('grossFromLines — the shipment’s brutto only when EVERY line has its own', () => {
   const gross = (value: number) => ({ derived: { grossKg: { value, how: 'x' } } });
   it('sums every line', () => expect(grossFromLines([gross(300), gross(210.5)])).toEqual({ value: 510.5, how: 'karobkalardan' }));

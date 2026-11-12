@@ -40,6 +40,12 @@ export interface Packing {
   kgPerCartonKind: 'gross' | 'net' | null;
   m3PerCarton: number | null;
   size: CartonSize | null;
+  /**
+   * ONE PIECE's weight (a marketplace card's «4.5 kg/шт», MP-11) — times the
+   * line's pieces it fills an empty row weight. Optional: only the model's
+   * answer and a typed «har biri 4.5 kg» beside a piece count state it.
+   */
+  kgPerPiece?: number | null;
   from: PackingSource;
 }
 
@@ -74,7 +80,12 @@ export const emptyPacking = (from: PackingSource): Packing => ({
 export function packingStated(p: Packing | null | undefined): p is Packing {
   if (!p) return false;
   return (
-    p.cartons !== null || p.pcsPerCarton !== null || p.kgPerCarton !== null || p.m3PerCarton !== null || p.size !== null
+    p.cartons !== null ||
+    p.pcsPerCarton !== null ||
+    p.kgPerCarton !== null ||
+    p.m3PerCarton !== null ||
+    p.size !== null ||
+    (p.kgPerPiece ?? null) !== null
   );
 }
 
@@ -334,6 +345,8 @@ export interface LineDerived {
   replaced?: Partial<Record<PackedField, number>>;
   /** The row's computed weight is the packages' GROSS (the source gave no netto). */
   weightIsGross?: boolean;
+  /** The row's computed weight is pieces × ONE PIECE's weight, not cartons × a carton's. */
+  weightFromPieces?: boolean;
   /** The line's GROSS weight from its packages, for the shipment's brutto. */
   grossKg?: Derived;
   /** The size carried no unit and centimetres were taken. */
@@ -423,6 +436,27 @@ export function applyPacking<T extends PackedLine>(input: T): PackingOutcome<T> 
         derived.grossKg = product;
         if (derived.weightKg !== undefined) derived.weightIsGross = true;
       }
+    } else if (positive(p.kgPerPiece)) {
+      // Pieces × one piece's weight (MP-11) — over the line's pieces as they
+      // stand NOW, stated or just computed from the cartons. The piece count
+      // is the «how many» here, as the carton count is above.
+      const pieces = line.quantity ?? null;
+      if (positive(pieces)) {
+        const product = { value: round3(pieces * p.kgPerPiece), how: `${fmtFigure(pieces)} × ${fmtFigure(p.kgPerPiece)} kg` };
+        const stated = line.weightKg ?? null;
+        if (!positive(stated)) {
+          line.weightKg = product.value;
+          derived.weightKg = product.how;
+          derived.weightFromPieces = true;
+        } else if (pieces > 1 && sameFigure(stated, p.kgPerPiece)) {
+          derived.replaced = { ...(derived.replaced ?? {}), weightKg: stated };
+          line.weightKg = product.value;
+          derived.weightKg = product.how;
+          derived.weightFromPieces = true;
+        } else if (!sameFigure(stated, product.value)) {
+          doubts.push({ field: 'weightKg', stated, derived: product });
+        }
+      }
     }
     if (figures.assumedCm && derived.volumeM3 !== undefined) derived.assumedCm = true;
     if (figures.cubeClash) derived.cubeClash = figures.cubeClash;
@@ -454,7 +488,8 @@ export function derivedNotes(line: PackedLine): string[] {
     const figure = typeof value === 'number' ? ` = ${fmtFigure(value)} ${UNIT_OF[field]}` : '';
     const was = d.replaced?.[field];
     if (was !== undefined) {
-      out.push(`${WORD_OF[field]} bitta karobkaniki edi (${fmtFigure(was)}): ${how}${figure}`);
+      const one = field === 'weightKg' && d.weightFromPieces ? 'bitta donaniki' : 'bitta karobkaniki';
+      out.push(`${WORD_OF[field]} ${one} edi (${fmtFigure(was)}): ${how}${figure}`);
     } else {
       const cm = field === 'volumeM3' && d.assumedCm ? ', sm deb olindi' : '';
       out.push(`${WORD_OF[field]} hisoblangan: ${how}${figure}${cm}`);
@@ -503,6 +538,7 @@ export function packingNote(p: Packing | null | undefined): string | null {
     parts.push(`${fmtFigure(p.kgPerCarton)} kg/karobka${kind}`);
   }
   if (positive(p.pcsPerCarton)) parts.push(`${fmtFigure(p.pcsPerCarton)} dona/karobka`);
+  if (positive(p.kgPerPiece)) parts.push(`${fmtFigure(p.kgPerPiece)} kg/dona`);
   if (parts.length === 0) return null;
   return `📦 ${parts.join(' · ')} — ${SOURCE_UZ[p.from]}`;
 }

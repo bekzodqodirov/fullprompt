@@ -171,7 +171,7 @@ describe('the AI’s reading knows units (P1.5)', () => {
   });
 
   it('«not stated» is 0 / "unknown" in the answer and NOTHING on the row — and a stated total is not overwritten', () => {
-    const bare = g({ cartons: 0, pieces_per_carton: 0, carton_weight_kg: 0, carton_weight_kind: 'unknown', carton_volume_m3: 0, carton_l: 0, carton_w: 0, carton_h: 0, carton_size_unit: 'unknown', name_source: 'document', code_sure: true });
+    const bare = g({ cartons: 0, pieces_per_carton: 0, carton_weight_kg: 0, carton_weight_kind: 'unknown', carton_volume_m3: 0, carton_l: 0, carton_w: 0, carton_h: 0, carton_size_unit: 'unknown', piece_weight_kg: 0, name_source: 'document', code_sure: true });
     expect(bare.packing).toBeUndefined();
     expect(bare.derived).toBeUndefined();
     expect(bare.nameFrom).toBeUndefined();
@@ -179,6 +179,15 @@ describe('the AI’s reading knows units (P1.5)', () => {
     const total = g({ volume_m3: 2.48, cartons: 30, carton_volume_m3: 0.0827 });
     expect(total.volumeM3).toBe(2.48);
     expect(total.derived).toBeUndefined();
+  });
+
+  it('ONE piece’s weight (a marketplace card’s «4.5 kg/шт», MP-11) is copied and the bot multiplies by the pieces', () => {
+    const line = g({ quantity: 200, weight_kg: null, piece_weight_kg: 4.5 });
+    expect(line.packing).toMatchObject({ kgPerPiece: 4.5, from: 'ai' });
+    expect(line.weightKg).toBe(900);
+    expect(provenanceNote(line)).toBe('📦 4.5 kg/dona — AI o‘qidi · og‘irlik hisoblangan: 200 × 4.5 kg = 900 kg');
+    // No count yet — no weight: the count is asked, and the answer computes it.
+    expect(g({ quantity: null, weight_kg: null, piece_weight_kg: 4.5 }).weightKg).toBeNull();
   });
 
   it('ONE carton’s cube written into the row’s volume is replaced by the product (dg2-5)', () => {

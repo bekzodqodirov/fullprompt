@@ -65,6 +65,7 @@ const goodSchema = z.object({
   carton_w: z.number().nullish(),
   carton_h: z.number().nullish(),
   carton_size_unit: z.string().nullish(),
+  piece_weight_kg: z.number().nullish(),
   code_sure: z.boolean().nullish(),
   note: z.string().nullable(),
 });
@@ -204,6 +205,9 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
   · carton_l, carton_w, carton_h — размер ОДНОЙ коробки, как написан
     (60×40×50); carton_size_unit — "cm", "mm", "m" или "unknown", если единица
     не написана;
+  · piece_weight_kg — вес ОДНОЙ ШТУКИ товара, если написан именно он
+    («4.5 kg/шт», 单重, 净重 одной штуки на карточке товара) — не коробки и не
+    всей позиции;
   · чего нет — 0, а для слов — "unknown".
   Итог по позиции, если он НАПИСАН (TOTAL CBM, вес позиции, всего штук), пиши
   как всегда — в volume_m3, weight_kg, quantity. Если написан только объём
@@ -1563,6 +1567,7 @@ const FACTS_JSON_SCHEMA = {
           carton_w: { type: 'number', description: 'ширина; нет — 0.' },
           carton_h: { type: 'number', description: 'высота; нет — 0.' },
           carton_size_unit: { type: 'string', enum: ['cm', 'mm', 'm', 'unknown'] },
+          piece_weight_kg: { type: 'number', description: 'Вес ОДНОЙ ШТУКИ товара, кг; не написан — 0.' },
           tnved_code: { type: ['string', 'null'] },
           code_sure: { type: 'boolean', description: 'false — код это предположение.' },
           note: { type: ['string', 'null'] },
@@ -1570,7 +1575,7 @@ const FACTS_JSON_SCHEMA = {
         required: [
           'name', 'name_source', 'quantity', 'weight_kg', 'volume_m3', 'unit', 'measure_qty', 'cartons',
           'pieces_per_carton', 'carton_weight_kg', 'carton_weight_kind', 'carton_volume_m3', 'carton_l', 'carton_w',
-          'carton_h', 'carton_size_unit', 'tnved_code', 'code_sure', 'note',
+          'carton_h', 'carton_size_unit', 'piece_weight_kg', 'tnved_code', 'code_sure', 'note',
         ],
         additionalProperties: false,
       },
@@ -1788,6 +1793,7 @@ export function packingOfAnswer(g: z.infer<typeof goodSchema>): Packing | null {
     kgPerCartonKind: stated(g.carton_weight_kg) !== null ? kind : null,
     m3PerCarton: stated(g.carton_volume_m3),
     size: l !== null && w !== null && h !== null ? { l, w, h, unit: SIZE_UNITS[g.carton_size_unit ?? ''] ?? null } : null,
+    kgPerPiece: stated(g.piece_weight_kg),
   };
   return packingStated(packing) ? packing : null;
 }
