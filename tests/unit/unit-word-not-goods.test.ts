@@ -167,6 +167,21 @@ describe('at the table, a figure and a word that is no unit is asked AS A UNIT',
     });
   });
 
+  it('two such lines are two unit questions — never «a typed goods list» filed as material and re-read', () => {
+    // Rule 3 files several unaddressed segments that name no row as goods;
+    // a word asked as a unit names nothing. Before: material = true.
+    for (const text of ['5.9 kubik\n507 kilogr', '5.9 kubik\n300 banka']) {
+      const out = parseTableAnswer(text, table);
+      expect(out.material, text).toBe(false);
+      expect(
+        out.segments.map((s) => s.refused?.unit?.word),
+        text,
+      ).toEqual(text.split('\n').map((line) => line.split(' ')[1]));
+    }
+    // Two lines that DO name goods the table lacks are still the typed list they were.
+    expect(parseTableAnswer('Shapka 5 banka\nKepka 10 banka', table).material).toBe(true);
+  });
+
   it('a NAME beside the word is goods, and a model’s number is the model’s — those keep the refusal they had', () => {
     expect(one('Shapka 5 banka').refused).toEqual({ reason: 'name_none', detail: 'Shapka banka' });
     expect(one('iPhone 14 Pro 30 dona').refused?.unit).toBeUndefined();
@@ -224,6 +239,33 @@ describe('the shipment’s own line, typed at the table without «jami»', () =>
     ]);
     // The netto line alone is no total (PF-1): refused, never written as the brutto.
     expect(segments[1]!.refused).not.toBeNull();
+  });
+
+  it('a brutto’s label with a figure no row takes: the labelled kilos are written, the rest is named (T2, dg2-10)', () => {
+    // The row kernel reads «G.W. 1136.5 kg CBM 7.19» as 1136.5 kg and a COUNT
+    // of 7.19 — no total takes a count, no row was addressed: it was «Qaysi
+    // qatorga?» and the brutto the seller labelled went nowhere.
+    for (const [text, kg, bare] of [
+      ['G.W. 1136.5 kg CBM 7.19', 1136.5, '7.19'],
+      ['G.W. 480 kg CBM 3.66', 480, '3.66'],
+      ['Gross weight 507 kg MEAS 5.92', 507, '5.92'],
+    ] as const) {
+      const segments = read(text);
+      expect(segments, text).toHaveLength(2);
+      expect(segments[0]!.at, text).toEqual({ totals: 'weightKg' });
+      expect(segments[0]!.totals, text).toEqual({ weightKg: kg, volumeM3: null, ambiguous: [] });
+      // «CBM 7.19» has no colon and no unit after it: not READ (T1, JN-21) — asked, by its number.
+      expect(segments[1]!.refused?.left, text).toEqual([{ why: 'bare', text: bare, figure: bare, number: bare }]);
+    }
+  });
+
+  it('…but with no such label the same figures are no total’s: still «which row?»', () => {
+    // A count beside kilos with nothing saying «shipment» is a row's answer that found no row.
+    const [seg] = read('1136.5 kg 7 dona');
+    expect(seg!.totals).toBeNull();
+    expect(seg!.refused?.reason).toBe('no_address');
+    // …and a netto label is a ROW's weight, never the brutto (PF-1).
+    expect(read('N.W. 480 kg CBM 3.66')[0]!.totals).toBeNull();
   });
 
   it('a Han label glued to its figure — no amount to the row kernel — is read by the totals reader', () => {
