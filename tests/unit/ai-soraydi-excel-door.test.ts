@@ -274,6 +274,21 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     const got = await collect('rastamojka', [[await B.sheetsBook([['Sheet1', INVOICE_HEAD, [...INVOICE_ROWS, [], ['TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM']]]]), 'ci.xlsx']]);
     expect(got.totals).toMatchObject({ weightKg: 710, weightNetto: false });
     expect(got.table).not.toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+    // X8's third sentence (review excel-spec-3): the invoice's own text — its TOTAL line with it — is handed
+    // to the model under the totals heading, as a packing sheet's is.
+    const handed = model.analyze.mock.calls.at(-1)?.[0] as { goodsSheetText?: { text: string } } | undefined;
+    expect(handed?.goodsSheetText?.text).toContain('TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM');
+    // The reader reads the cube too (3.8); the lone file's totals do not take an invoice's cube
+    // (`loneFileTotals`, calc-intake.ts — under «open» for the lead), so with the model silent the table still
+    // asks it: the figure reaches the shipment only through the model's own reading of that text.
+    expect(got.state.goodsFiles?.[0]).toMatchObject({ shape: 'invoice', volumeM3: 3.8 });
+    expect(got.totals).toMatchObject({ volumeM3: null });
+  });
+
+  it('…an invoice whose TOTAL row states only the count and the money keeps no text of its own: nothing new under the totals heading', async () => {
+    await collect('rastamojka', [[await B.sheetsBook([['Sheet1', INVOICE_HEAD, INVOICE_ROWS]]), 'ci.xlsx']]);
+    const handed = model.analyze.mock.calls.at(-1)?.[0] as { goodsSheetText?: { text: string } } | undefined;
+    expect(handed?.goodsSheetText ?? null).toBeNull();
   });
 
   it('a sectioned list with one blank weight: the sections added — never the last one’s 166 as the shipment', async () => {

@@ -336,8 +336,9 @@ export type GoodsFileRead =
        * the model under the totals-only heading («TOTAL G.W.» is a row of it).
        * With the reader's own two words (review PF-ADV-14): `cut` = rows are
        * missing — a «TOTAL G.W.» row at the bottom may be among them — and
-       * `cellsCut` = some cells shortened; the model is told either. Null for
-       * an invoice.
+       * `cellsCut` = some cells shortened; the model is told either. An
+       * invoice-shaped sheet carries it only when its own TOTAL rows give the
+       * shipment's brutto or cube (X8); null for any other invoice.
        */
       ownText: { text: string; cut: boolean; cellsCut: boolean } | null;
       /**
@@ -757,7 +758,17 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       grossKg,
       grossColumn,
       volumeM3,
-      ownText: shape === 'packing' ? ownSheetText(best) : null,
+      // …and an invoice-shaped goods sheet whose own TOTAL rows give the
+      // shipment's brutto or cube (docs/AI-SORAYDI.md §3.2 X8, third sentence;
+      // review excel-spec-3): its text, total rows included, goes to the model
+      // under the totals heading as a packing sheet's does — «TOTAL: 60 CTNS /
+      // G.W. 710 KGS / 3.8 CBM» under an invoice is the shipment's, and the
+      // model read only the rows. A TOTAL of the count and the money alone, or
+      // one the belt refused (its figure null here, JR-3), hands nothing.
+      ownText:
+        shape === 'packing' || (dropped.some((d) => d.why === 'total' || d.why === 'subtotal') && (grossKg !== null || volumeM3 !== null))
+          ? ownSheetText(best)
+          : null,
       pictures,
     };
   }

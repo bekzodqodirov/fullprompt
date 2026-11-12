@@ -508,7 +508,7 @@ export function receiveGoodsSheet(
     capped?: number;
     /** The sheet's shape by its columns (`SheetShape`); absent = an invoice, nothing summed. */
     shape?: Partial<Pick<GoodsFileMeta, 'shape' | 'weightKind' | 'grossKg' | 'grossColumn' | 'volumeM3'>>;
-    /** A packing list's own rows as text, with the reader's cuts (`GoodsFileRead.ownText`). */
+    /** A packing list's own rows as text — or an invoice's whose TOTAL rows give a total (X8) — with the reader's cuts (`GoodsFileRead.ownText`). */
     ownText?: { text: string; cut: boolean; cellsCut: boolean } | null;
     /**
      * `text` is the workbook's sheets with NO header mapped (docs/FAYL-OQISH.md
@@ -615,8 +615,11 @@ export function receiveGoodsSheet(
     grossColumn: sheet.shape?.grossColumn ?? false,
     volumeM3: sheet.shape?.volumeM3 ?? null,
     rows: goods.length,
-    text: packing ? (sheet.ownText?.text ?? null) : null,
-    ...(packing && sheet.ownText ? { textCut: sheet.ownText.cut, textCellsCut: sheet.ownText.cellsCut } : {}),
+    // A packing sheet's own rows — and an invoice's whose TOTAL rows give the
+    // shipment's brutto or cube (X8): under the model's totals heading while
+    // it is the lone goods file (`loneGoodsFile`).
+    text: sheet.ownText?.text ?? null,
+    ...(sheet.ownText ? { textCut: sheet.ownText.cut, textCellsCut: sheet.ownText.cellsCut } : {}),
     at,
     ...(sheet.capped ? { capped: true } : {}),
     ...(sheet.pictures ? { pictures: sheet.pictures } : {}),
