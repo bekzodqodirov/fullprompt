@@ -3599,7 +3599,7 @@ self-refresh, the 20:00 line. NOT provable here: real Telegram and the real mode
 merge with PR #145), ledger 146. MERGED ON THE LOCAL RITUAL ALONE: GitHub's CI run for PR #147 sat «queued» with no
 job for 45 minutes (PR #146's too) and he had asked for speed — main's own CI run is the check still owed.
 
-**Round — Prixod kartasi (2026-11-11 → 11-12; DECISIONS #1697-#1705 — numbered past main's #1683-#1696, the
+**Round — Prixod kartasi (2026-11-11 → 11-12; DECISIONS #1697-#1706 — numbered past main's #1683-#1696, the
 THIRTY-SEVENTH collision: the other session's «O'zi yuborish» (PR #147, 0145) merged while the first full run was
 starting; NO migration, ledger 146; spec `docs/PRIXOD-KARTA.md`, §7 binding).** His «Prixodning interfaceini
 togirlab qoy … hamma narsa har hil joyda bolib ketgan», read as the CARD (`/receipts/[id]`) and said so — the
@@ -3635,6 +3635,12 @@ limit, so regression / CSS / house were done by the builder against the built ca
 unedited; 360 / 768 / 1280 as five roles on eleven cards). 8 red proofs by paired string edit. TEST RULES (#1705):
 two `boundingBox()` calls are two frames — positions that are compared are read in ONE `evaluate`; before folding a
 control grep its testid AND its `id` (`#void-reason` reached the void form in two specs a testid grep missed).
+**CI caught what this container could not (#1706)**: the first push was red on ONE spec — 362 px in 360, in
+Russian, on a lot with a client's ❌ — while the same tree was green here. The `lot-veto` chip stood in the head
+beside the name and the print (three unshrinkable members); my screenshots were in Uzbek (shorter words) and the
+runner's fonts are wider than this container's. The chip sits on its own line now. RULE: a width is checked in
+`ru`, the default locale, and «fits by a few pixels» is re-measured with the text widened (`letter-spacing`
++10 %) before it is believed.
 OWED to him: three ⭐ questions (ties above or below the lots on a phone; the void in the fold; the long QR-less
 label) — CHANGELOG 2026-11-12.
 

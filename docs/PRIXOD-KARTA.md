@@ -316,9 +316,10 @@ lot-tarkib
   conditions, including the write-off's offerable cartons. (Phone-4.)
 - **`btn-sm`** never carries `nowrap` or `shrink-0`: the longest label is
   292 px of the 302 px a phone's card has, and wraps.
-- **A client's ❌** that vetoes puts a red chip beside the lot's name
+- **A client's ❌** that vetoes puts a red chip under the lot's name
   (`lot-veto`), because the check block now comes after the row and the
-  photographs. (Phone nit.)
+  photographs. (Phone nit. «Beside the name» as first written and built —
+  see §8, «After the first push».)
 - **`lot-check`**: one row from `sm` — the note, then whichever of «✅» and
   «E'tirozni yopish» is offered; both hints under the row. Every label
   whole. (Desktop nit.)
@@ -397,6 +398,13 @@ QR-less, voided, with costs).
   that holds state. The ❌ chip covers the one state that must lead.
 - The History tab is still an open list, last. Folding it was not asked and specs read it without opening
   anything.
+
+**After the first push** (DECISIONS #1706). CI failed one spec the local run passed: 362 px in a 360 px screen,
+in Russian, on a lot whose client had pressed «❌». §7.2 put the `lot-veto` chip «beside the lot's name» — in a
+row with the letter and the print, three members that do not shrink; the runner's fonts are wider than this
+container's and my looks had been in Uzbek. The chip is on a line of its own under the name. The card was then
+measured in Russian at 360 with every glyph widened by up to 10 % and everything that opens opened: 360 px for
+admin, operator, VED and seller, the ❌ state included.
 
 **Asked of him** (⭐ = as built): the ties below the lots on a phone; the void inside the fold; the long QR-less
 label kept whole.

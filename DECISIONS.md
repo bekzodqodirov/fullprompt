@@ -8681,7 +8681,7 @@ auto send would read as one more reply he approved unchanged.
   deploy. The local run is CI's own order on a fresh database at the merged head; what it cannot see is what only
   CI's network can (#278). Main's CI run after the merge is the check still owed.
 
-## Prixod kartasi — one order for the card (2026-11-11 → 11-12; NO migration, ledger 146; spec `docs/PRIXOD-KARTA.md`, §7 binding; numbered #1697-#1705 — past main's #1683-#1696, the THIRTY-SEVENTH collision: the other session's «O'zi yuborish» (PR #147, 0145) merged while this round's first full run was starting; the run was stopped, main merged with no conflict, and the ritual re-run on the merged tree)
+## Prixod kartasi — one order for the card (2026-11-11 → 11-12; NO migration, ledger 146; spec `docs/PRIXOD-KARTA.md`, §7 binding; numbered #1697-#1706 — past main's #1683-#1696, the THIRTY-SEVENTH collision: the other session's «O'zi yuborish» (PR #147, 0145) merged while this round's first full run was starting; the run was stopped, main merged with no conflict, and the ritual re-run on the merged tree)
 
 **#1697 — «Prixodning interfeysi» was read as the CARD, and the reading is said to him.** His sentence was
 «Prixodning interfaceini togirlab qoy ui ux designini hamma narsa har hil joyda bolib ketgan». Two screens carry
@@ -8808,3 +8808,19 @@ restarted between two turns (uptime 22 min): postgres down, the test server gone
 «hung» for ten minutes on a database that did not exist (`gsr_dev` is not in this container; vitest needs
 `DATABASE_URL`). `pgboss.version.maintained_on` older than ten minutes made Playwright's server time out exactly
 as round 29 recorded.
+
+**#1706 — CI was red on a width this container could not see: 362 px in 360, in Russian, with a client's ❌.**
+The first push failed ONE spec of 510, `m9zzy-yuk-tekshiruv`'s «document as wide as the screen» on a lot whose
+client had pressed «❌ Xato bor» — and the full local run of the same tree was green. The new `lot-veto` chip
+stood in the lot's head beside the name and the print: letter, chip and print are three members that do not
+shrink, and with «Возражение клиента» they were 2 px wider than a phone's card ON THE RUNNER. Two reasons it was
+invisible here, both mine. (a) My screenshots were taken as demo staff I had switched to Uzbek, where the word is
+shorter — **the default locale is `ru`, and a width is checked in the longest language the screen ships**. (b)
+Even in Russian the row fits this container by a hair: the runner's fonts are a little wider than this
+container's, so «it fits here» about a row of unshrinkable things says nothing about there (#278's shape — the
+two places resolve the same question differently — in font metrics instead of network). The chip moved to a line
+of its own under the name, where it can wrap. And the check that would have seen it is now part of the look:
+`px_stress` loads the card in Russian at 360 with every glyph widened (`letter-spacing` +3 %, +6 %, +10 %) and
+everything that opens opened — 360 px for admin, operator, VED and seller, with the ❌ state on the card. RULE:
+**«fits by a few pixels» is a failure that has not happened yet; widen the text and measure again before
+believing a row of fixed things.**

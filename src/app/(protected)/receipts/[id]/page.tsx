@@ -764,14 +764,6 @@ export default async function ReceiptDetailPage({
                     {shownName && <span className="font-normal text-ink-700"> ({shownName})</span>}
                   </span>
                 </p>
-                {/* The client's ❌ that vetoes: the check block now follows
-                    the row and the photographs, and an objection must still
-                    lead the lot. */}
-                {lotChecks.get(lot.id)?.client?.vetoes && (
-                  <span className="chip chip-bad shrink-0" data-testid="lot-veto">
-                    ❌ {tl('vetoChip')}
-                  </span>
-                )}
                 {/* The lot's print keeps its place and its size: the
                     operator's commonest press on a lot, and a missed tap on
                     it loads a document and opens the print dialog. */}
@@ -785,6 +777,21 @@ export default async function ReceiptDetailPage({
                   </div>
                 )}
               </div>
+              {/* The client's ❌ that vetoes: the check block now follows
+                  the row and the photographs, and an objection must still
+                  lead the lot. On a line of its OWN, under the head: beside
+                  the name it was a third unshrinkable member of that row —
+                  letter, chip, print — and in Russian («Возражение клиента»)
+                  the three were 2 px wider than a phone's card (362 in 360,
+                  found by CI in the default locale; this container's demo
+                  staff read Uzbek, where the word is shorter). */}
+              {lotChecks.get(lot.id)?.client?.vetoes && (
+                <p>
+                  <span className="chip chip-bad" data-testid="lot-veto">
+                    ❌ {tl('vetoChip')}
+                  </span>
+                </p>
+              )}
               {/* Trimmed, never rounded (`trimMeasure`): the tarkib must sum
                   to these exactly, and «250.000» reads as a quarter of a
                   million in the default locale. */}
