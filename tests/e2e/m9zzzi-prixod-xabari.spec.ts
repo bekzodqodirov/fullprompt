@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { expect, test, type Page } from '@playwright/test';
 import { SELLER_PHONE, cleanupAll, database, mint, mintSibling, newRun } from './prixod-xabari-fixture';
+import { landsOnBlock, login } from './prixod-xabari-landing';
 
 /**
  * «🔗 Bitim biriktirish» — where the seller's Telegram button lands, in a
@@ -26,45 +27,11 @@ import { SELLER_PHONE, cleanupAll, database, mint, mintSibling, newRun } from '.
 test.describe.configure({ mode: 'serial' });
 
 const VED = '+998900000004';
-const DEMO_PASSWORD = 'demo1234';
 
 const run = newRun();
 let receiptId = '';
 let clientId = '';
 let number = '';
-
-async function login(page: Page, phone: string) {
-  await page.context().clearCookies();
-  await page.goto('/login');
-  await page.locator('input[name="identifier"]').fill(phone);
-  await page.locator('input[name="password"]').fill(DEMO_PASSWORD);
-  await page.locator('main form button[type="submit"]').first().click();
-  await expect(page).toHaveURL('/');
-}
-
-/**
- * The card opened AT the deal block: the page SCROLLED, and the block's top
- * sits just under the sticky bar (`scroll-mt-20` = 80 px).
- *
- * Not «the block is somewhere in the upper part of the screen»: for a seller
- * the block is the fourth thing on the card and sits at ~295 px with no
- * scrolling at all, so that assertion held with the anchor AND the scroll
- * effect deleted (the as-built review, CARD-2 — the spec said «which is what
- * is asserted» about a thing it did not assert).
- */
-async function landsOnBlock(page: Page) {
-  const block = page.getByTestId('receipt-deal-block');
-  await expect(block).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-  // ONE poll for the whole range: a position read between two scroll steps
-  // (the route's own scroll, then the block's) must not decide it either way.
-  await expect
-    .poll(async () => {
-      const box = await block.boundingBox();
-      return box !== null && box.y >= 56 && box.y <= 110;
-    })
-    .toBe(true);
-}
 
 async function fits(page: Page) {
   const w = await page.evaluate(() => ({
@@ -92,6 +59,15 @@ test('the button’s address opens the card AT the deal block, and offers a new 
   await expect(page.getByTestId('receipt-deal-pick')).toBeVisible();
   await expect(page.getByTestId('receipt-deal-new')).toBeVisible();
   await fits(page);
+
+  // The scroll margin itself, shown where the page is long enough to show
+  // it: on a screen so short that a whole screen of card is left under the
+  // block (a keyboard open, a small phone) its top sits just UNDER the sticky
+  // bar — never behind it, which is what a bare anchor does.
+  await page.setViewportSize({ width: 360, height: 420 });
+  await page.goto('/');
+  await page.goto(`/receipts/${receiptId}#bitim`);
+  await landsOnBlock(page, 'under the bar');
 });
 
 test('«+ Yangi bitim ochish»: the deal is born with the prixod on it, and the seller is back on the cargo', async ({ page }) => {
