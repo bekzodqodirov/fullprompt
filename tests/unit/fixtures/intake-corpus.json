@@ -6496,6 +6496,24 @@
    "why": "A goods line stating its weight in tonnes stated nothing to the customer question (the unit was unknown), and became the lead's NAME.",
    "source": "ai-soraydi typed-A T14",
    "weight": "defect"
+  },
+  {
+   "id": "c3157",
+   "input": "Stul 20 karobka har biri 15 kg",
+   "expected": true,
+   "said": "true — material",
+   "why": "A per-carton figure states a unit: goods, never the customer’s name.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
+  },
+  {
+   "id": "c3158",
+   "input": "15 kg/ctn 20 karobka",
+   "expected": true,
+   "said": "true — material",
+   "why": "A per-carton figure states a unit: goods, never the customer’s name.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
   }
  ],
  "readGoodsLinesCases": [
@@ -14933,6 +14951,178 @@
    "said": "one line «Zafaron» — 0.5 kg",
    "why": "CR-7 (dg2/critic-readers.json): a gram is a thousandth of a kilo; with no piece count on the line it is the line's weight.",
    "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3192",
+   "input": "Stul 100 dona 20 karobka, har bir dona 2 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 100,
+      "weightKg": 200
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stul» — 100 × 2 = 200 kg",
+   "why": "JN-7: a noun after the mark decides — «har bir dona» is a piece’s, the cartons notwithstanding.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "defect"
+  },
+  {
+   "id": "c3193",
+   "input": "Stul har biri 2 kg, 100 dona, 20 karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 100,
+      "weightKg": null,
+      "note": "sotuvchi: har biri 2 kg"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stul» — 100 dona, the weight asked; «har biri 2 kg» kept on the note",
+   "why": "JN-7 / JS-1: both counts and none before the mark — nothing multiplied.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "defect"
+  },
+  {
+   "id": "c3194",
+   "input": "Ручка 20 коробок по 24 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ручка",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Ручка» — 20 × 24 = 480 dona",
+   "why": "T4: a Russian «по» right after a count is «each».",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "defect"
+  },
+  {
+   "id": "c3195",
+   "input": "Krossovka 20 karobka x 12 juft",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka",
+      "quantity": null,
+      "measureUnit": "juft",
+      "measureQty": 240
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Krossovka» — 20 × 12 = 240 juft in the measure",
+   "why": "AB-2 / JR-1: «20 karobka x 12 juft» wrote 12 juft; the per-carton pairs land in the measure.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3196",
+   "input": "Kurtka va shim, har biri 300 dona",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row — 300 dona, as before: «har biri 300 dona» beside no carton count is each product’s count",
+   "why": "The guard: an each-COUNT holds nothing per package unless a carton count stands on the line or its mark names a container.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
+  },
+  {
+   "id": "c3197",
+   "input": "Stol 120x80x100 sm 5 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stol 120x80x100 sm",
+      "quantity": 5,
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stol 120x80x100 sm» × 5, no cube — the size stays in the name with no carton count",
+   "why": "DIM-10: a goods line that carries a size was read as no goods at all; JS-2: with no carton count it stays in the name.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "defect"
+  },
+  {
+   "id": "c3198",
+   "input": "Dims 60x40x50 cm 300 kg",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "[] — a forwarder’s label and a size is no product",
+   "why": "T3’s pin through T6: a size is no word of a name (`nameWords`), so «Dims» alone names the line.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "regression"
+  },
+  {
+   "id": "c3199",
+   "input": "Mato 180 gr/m2 500 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Mato 180 gr/m2",
+      "weightKg": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Mato 180 gr/m2» — 500 kg; the density stays in the name",
+   "why": "JN-8 (e) with T14: a rate is kept as written in the name — the coder reads it there.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
+  },
+  {
+   "id": "c3152",
+   "input": "Kurtka 300 dona 60x40x50 sm 20 karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Kurtka» — 300 dona, 20 × 0.12 = 2.4 m³",
+   "why": "DIM-10: read as no goods at all; JS-2: the size stands right beside the carton count.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "defect"
+  },
+  {
+   "id": "c3153",
+   "input": "Choy 2000 dona, har biri 500 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Choy",
+      "quantity": 2000,
+      "weightKg": 1000
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Choy» — 2000 × 0.5 = 1000 kg",
+   "why": "T14 with T4: a gram of ONE piece, marked so, is that piece’s weight.",
+   "source": "ai-soraydi typed-A T4",
    "weight": "defect"
   }
  ],
@@ -46753,6 +46943,47 @@
    "why": "The guard of T14's number rule on the row kernel: one comma group, no decimal — two readings.",
    "source": "ai-soraydi typed-A T14",
    "weight": "pinned"
+  },
+  {
+   "id": "c3154",
+   "input": "60*40*50 см 20 мест 15 кг",
+   "expected": {
+    "name": "60*40*50 см",
+    "quantity": null,
+    "weightKg": 15,
+    "cartons": 20,
+    "problemCount": 0
+   },
+   "said": "weightKg 15, 20 cartons, no count; the size stays in the name (the bare kernel takes no packing)",
+   "why": "DIM-3: «1: 60*40*50 см 20 мест 15 кг» wrote «40 dona · 15 kg» — a side of the size as the count.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3155",
+   "input": "Kurtka 20 ctns 15 kg/ctn",
+   "expected": {
+    "weightKg": 15,
+    "cartons": 20
+   },
+   "said": "weightKg 15 — the BARE kernel (card form, VED paste) reads what it always read",
+   "why": "JR-22: only the bot’s typed readers ask for the packing; the doors with no packing to put it on are untouched.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3156",
+   "input": "60×40×50 15 kg",
+   "expected": {
+    "name": "60×40×50",
+    "quantity": null,
+    "weightKg": 15,
+    "problemCount": 0
+   },
+   "said": "weightKg 15, no count",
+   "why": "DIM-3: «1: 60×40×50 15 kg» wrote 50 dona.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "blocker"
   }
  ],
  "parseManualFactsCases": [
@@ -49067,6 +49298,350 @@
    "why": "Review JN-9: never before «/» — a figure followed by a slash is a rate, not a weight.",
    "source": "ai-soraydi typed-A T14",
    "weight": "regression"
+  },
+  {
+   "id": "c3176",
+   "input": "Kurtka 300 dona, 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    },
+    "landingNoteIncludes": [
+     {
+      "index": 0,
+      "text": "og‘irlik hisoblangan: 20 × 15 kg = 300 kg"
+     },
+     {
+      "index": 0,
+      "text": "hajm hisoblangan: 20 × 60×40×50 sm = 2.4 m³"
+     }
+    ]
+   },
+   "said": "no total typed; one row «Kurtka» — 300 dona, 20 × 15 = 300 kg and 20 × 0.6×0.4×0.5 = 2.4 m³, both «hisoblangan»",
+   "why": "DIM-4 (dg2/trace-dims.json): «har biri 15 kg» beside «20 karobka» was the SHIPMENT’s 15 kg and the one row’s, over the model’s 300 — a per-kg baza priced 20× low.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3177",
+   "input": "Stul 20 karobka har biri 15 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; one row «Stul» — 20 × 15 = 300 kg",
+   "why": "JN-7: an «each» with only a carton count on the line is one carton’s — the trace ran it as 15 kg, the shipment’s.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3178",
+   "input": "Telefon 300 dona, har biri 0.2 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Telefon",
+       "quantity": 300,
+       "weightKg": 60
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; one row «Telefon» — 300 × 0.2 = 60 kg (one piece’s weight)",
+   "why": "JS-1: the commonest typed line has only pieces — «each» is a PIECE’s; T4 as first written would have asked «nechta karobka?» and landed 20 × 0.2 = 4 kg.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3179",
+   "input": "Kurtka 300 dona, 20 karobka, har biri 15 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "one row — 20 × 15 = 300 kg: the each binds to the carton count right before it, never 300 × 15 = 4500",
+   "why": "JS-1 conversation C: both counts on the line — the nearest count BEFORE the mark decides.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3180",
+   "input": "Telefon 300 dona har biri 0.2 kg 20 karobka",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Telefon",
+       "quantity": 300,
+       "weightKg": 60
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "one row — 300 × 0.2 = 60 kg: the count before the mark is the pieces",
+   "why": "JS-1’s corpus line «300 dona har biri 0.2 kg 20 karobka»: nearest preceding count is the piece count.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "defect"
+  },
+  {
+   "id": "c3181",
+   "input": "Kurtka 20 ctns 0.12 cbm/ctn 15 kg/ctn",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no totals; one row «Kurtka» — 20 × 15 = 300 kg, 20 × 0.12 = 2.4 m³; no «/ctn» in the name",
+   "why": "DIM-10: the typed fallback landed «Kurtka /ctn /ctn — 15 kg · 0.12 m³», ✅ with weight 15 and volume 0.12 (real 300 / 2.4).",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3182",
+   "input": "毛重 15kg/箱",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "weightKg null — one carton’s gross weight, no total",
+   "why": "MP-2 (dg2/critic-readers.json): a forwarded supplier line landed ONE carton’s 15 kg as the shipment’s and the row’s weight.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3183",
+   "input": "jami 500 kg dan ortiq",
+   "expected": {
+    "weightKg": 500,
+    "ambiguous": []
+   },
+   "said": "weightKg 500 — «dan» before «ortiq» is «more than», never «each»",
+   "why": "JN-8 (a): «dan» marks only beside a count and never before ortiq/kam/ko‘p/oshiq/gacha/boshlab — the guard of the mark.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
+  },
+  {
+   "id": "c3184",
+   "input": "Stul 20 x 15 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "quantity": null,
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    },
+    "landingNoteIncludes": [
+     {
+      "index": 0,
+      "text": "sotuvchi: 20 x 15 kg"
+     }
+    ]
+   },
+   "said": "no total; one row «Stul» with no weight (asked) — 15 kg is one package’s, the bare 20 counts nothing; the phrase is kept on the row’s note",
+   "why": "JN-8 (c): a bare «A x B unit» sets no carton count without a carton word — A may be pieces. Was the row’s and the shipment’s 15 kg.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "defect"
+  },
+  {
+   "id": "c3185",
+   "input": "Кукла в коробке 500 шт, 20 мест, 300 кг",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Кукла в коробке",
+       "quantity": 500,
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "weightKg 300; one row «Кукла в коробке» — 500 pieces, not 500 a carton",
+   "why": "JN-8 (b): «в коробке» describes the product — only «в каждой/одной/1 коробке» and «в коробке по N» mark a package.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
+  },
+  {
+   "id": "c3186",
+   "input": "Stul 1 karobka 15 kg",
+   "expected": {
+    "weightKg": 15,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "weightKg": 15
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "weightKg 15 — «1 karobka» alone is the carton count, one carton of 15 kg",
+   "why": "The guard of the one-package mark: «1 karobka 15 kg» is per one only beside ANOTHER carton count; alone it reads as it always did.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
+  },
+  {
+   "id": "c3187",
+   "input": "Stol 120x80x75 sm, 10 karobka",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Stol",
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    },
+    "landingNoteIncludes": [
+     {
+      "index": 0,
+      "text": "o‘lcham (kimniki — aniq emas) 120×80×75 sm"
+     }
+    ]
+   },
+   "said": "one row «Stol», no cube — the size stands right after the name and before any count: whose it is is asked",
+   "why": "JS-2: a size right after the NAME and before any count is of: null — 10 × 0.72 = 7.2 m³ would be the cube nobody shipped if it is the table’s own.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3188",
+   "input": "Stol 10 karobka 120x80x75 sm",
+   "expected": {
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Stol",
+       "volumeM3": 7.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "one row «Stol» — 10 × (1.2 × 0.8 × 0.75 = 0.72) = 7.2 m³: the size stands right beside the carton count",
+   "why": "JS-2: the size directly follows the carton count — the package’s.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "defect"
+  },
+  {
+   "id": "c3189",
+   "input": "Kurtka 20 karobka, har biri 60x40x50 sm 15 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "one row — 20 × 15 = 300 kg and 20 × 0.12 = 2.4 m³: the size is inside an each-clause bound to the cartons",
+   "why": "JS-2: a size that continues an each-clause bound to the cartons is the package’s.",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "defect"
+  },
+  {
+   "id": "c3190",
+   "input": "Stul 15 kg/kor 20 karobka",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "weightKg null — «/kor» is a slash and a word no tail knows: never a total",
+   "why": "JN-8 (e): tailAt(«15 kg/kor») = 0, so the figure was the shipment’s 15 kg; a figure followed by «/» + an unknown word is never a total.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "defect"
+  },
+  {
+   "id": "c3191",
+   "input": "Stol 10 dona 2 karobka, har bir dona 120x80x75 sm",
+   "expected": {
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Stol",
+       "quantity": 10,
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "one row «Stol» — 10 pieces, no cube: the each-clause names a piece, so the size is the product’s own",
+   "why": "JS-2 with JN-7: «har bir dona» binds the size to one piece — only a package’s size is multiplied by the packages (PR-12).",
+   "source": "ai-soraydi typed-A T6",
+   "weight": "defect"
   }
  ],
  "intakeClientLabelCases": [
@@ -83107,6 +83682,15 @@
    "why": "A line whose number is ASKED still states its unit: read as «states nothing», a goods line sent at the customer question became the lead's NAME.",
    "source": "ai-soraydi typed-A T0",
    "weight": "defect"
+  },
+  {
+   "id": "c3159",
+   "input": "Telefon 300 dona, har biri 0.2 kg",
+   "expected": true,
+   "said": "true — a unit word after a figure",
+   "why": "The each-mark takes nothing away from the goods evidence.",
+   "source": "ai-soraydi typed-A T4",
+   "weight": "regression"
   }
  ],
  "threadAiAdviceCases": [
