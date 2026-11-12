@@ -807,6 +807,7 @@
     "changeCount": "{n} 项变更",
     "entryCount": "{n} 条记录",
     "fields": {
+      "lots": "货物",
       "active": "启用",
       "amount": "金额",
       "boxCount": "箱数",
@@ -1083,6 +1084,10 @@
     "voidHasCosts": "请先作废该入库单的费用——资金记录由财务决定，而非仓库。",
     "voidBoxGone": "无法作废：至少有一箱已离开仓库。",
     "markLostTitle": "核销箱子（损坏/丢失）",
+    "markLostShort": "报损纸箱",
+    "total": "合计",
+    "lotsCount": "{n, plural, other {# 种货物}}",
+    "more": "其他操作",
     "markLostBox": "选择箱子",
     "markLostReason": "原因（必填）",
     "markLostBtn": "核销",
@@ -5954,7 +5959,8 @@
     "confirm": "正确 — 客户已确认",
     "undo": "取消客户确认",
     "undoConfirm": "取消核对标记？",
-    "otherAnswers": "客户说「其他货物」— 用下方 ✏️ 修改名称；说「混装」— 填写 🧩 批次组成。",
+    "otherAnswers": "客户说「其他货物」— 用本批次的 ✏️ 按钮修改名称；说「混装」— 填写 🧩 批次组成。",
+    "vetoChip": "客户有异议",
     "done": "✅ 已保存",
     "errors": {
       "forbidden": "您无权标记此入库单",

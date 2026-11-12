@@ -40,7 +40,9 @@ export function VoidReceiptForm({
         : null;
 
   return (
-    <form action={formAction} className="card space-y-2">
+    // No frame of its own: it lives in the card's «Boshqa amallar» fold
+    // (docs/PRIXOD-KARTA.md §7.1), which is one.
+    <form action={formAction} className="space-y-2">
       <input type="hidden" name="receiptId" value={receiptId} />
       <label className="label" htmlFor="void-reason">
         {labels.reason}

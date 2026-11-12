@@ -129,7 +129,28 @@ describe('a recorded value as the History tab prints it (review ui-4)', () => {
     expect(formatAuditValue(12)).toBe('12');
     expect(formatAuditValue(null)).toBe('∅');
     expect(formatAuditValue([])).toBe('∅');
-    expect(formatAuditValue([{ zh: '夹克', boxes: 5 }])).toBe('[{"zh":"夹克","boxes":5}]');
+    // A list of records nobody has taught it keeps its JSON — honest if not
+    // pretty. (The example here used to be a prixod's lots, which is the one
+    // list of records the busiest card prints; it has its own reading now.)
+    expect(formatAuditValue([{ from: 'YW', to: 'TAS1' }])).toBe('[{"from":"YW","to":"TAS1"}]');
+  });
+
+  it('reads the lots a prixod was created with as cargo, not as JSON', () => {
+    // The foot of every prixod card read
+    // `lots: [{"zh":"化妆品","boxes":10,"letter":"A"},…]` (docs/PRIXOD-KARTA.md).
+    expect(
+      formatAuditValue([
+        { letter: 'A', zh: '化妆品', boxes: 10 },
+        { letter: 'B', zh: '键盘', boxes: 50 },
+        { letter: 'C', zh: '鼠标', boxes: 40, qrSkipped: true },
+      ]),
+    ).toBe('A 化妆品 × 10 📦 · B 键盘 × 50 📦 · C 鼠标 × 40 📦 🏷');
+    // An older row with no letter still reads as cargo.
+    expect(formatAuditValue([{ zh: '夹克', boxes: 5 }])).toBe('夹克 × 5 📦');
+    // A record that merely HAS a `boxes` key is not a lot: without a name or
+    // a letter beside it the shape is somebody else's, and it keeps its JSON.
+    expect(formatAuditValue([{ boxes: 5, batchId: 'x' }])).toBe('[{"boxes":5,"batchId":"x"}]');
+    expect(formatAuditValue([{ zh: '夹克', boxes: '5' }])).toBe('[{"zh":"夹克","boxes":"5"}]');
   });
 });
 

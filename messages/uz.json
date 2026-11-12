@@ -807,6 +807,7 @@
     "changeCount": "{n} ta o'zgarish",
     "entryCount": "{n} ta yozuv",
     "fields": {
+      "lots": "Tovarlar",
       "active": "Faol",
       "amount": "Summa",
       "boxCount": "Quti soni",
@@ -1083,6 +1084,10 @@
     "voidHasCosts": "Avval bu prixodning xarajatlarini bekor qiling — pul yozuvi omborda emas, moliyada hal qilinadi.",
     "voidBoxGone": "Bekor qilib bo'lmaydi: kamida bitta quti skladdan chiqib ketgan.",
     "markLostTitle": "Karobkani hisobdan chiqarish (yaroqsiz/yo'qolgan)",
+    "markLostShort": "Hisobdan chiqarish",
+    "total": "Jami",
+    "lotsCount": "{n, plural, other {# tovar}}",
+    "more": "Boshqa amallar",
     "markLostBox": "Karobkani tanlang",
     "markLostReason": "Sabab (majburiy)",
     "markLostBtn": "Hisobdan chiqarish",
@@ -5954,7 +5959,8 @@
     "confirm": "To'g'ri — mijoz tasdiqladi",
     "undo": "Mijoz tasdig'ini bekor qilish",
     "undoConfirm": "Tekshiruv belgisi olib tashlansinmi?",
-    "otherAnswers": "Mijoz «boshqa tovar» desa — pastdagi ✏️ orqali nomini o'zgartiring; «aralash» desa — 🧩 lot tarkibini yozing.",
+    "otherAnswers": "Mijoz «boshqa tovar» desa — shu lotning ✏️ tugmasi orqali nomini o'zgartiring; «aralash» desa — 🧩 lot tarkibini yozing.",
+    "vetoChip": "Mijoz e'tirozi",
     "done": "✅ Saqlandi",
     "errors": {
       "forbidden": "Bu prixodga belgi qo'yishga ruxsatingiz yo'q",

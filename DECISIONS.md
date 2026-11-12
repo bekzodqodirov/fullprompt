@@ -8682,6 +8682,150 @@ auto send would read as one more reply he approved unchanged.
   deploy. The local run is CI's own order on a fresh database at the merged head; what it cannot see is what only
   CI's network can (#278). Main's CI run after the merge is the check still owed.
 
+## Prixod kartasi — one order for the card (2026-11-11 → 11-12; NO migration, ledger 146; spec `docs/PRIXOD-KARTA.md`, §7 binding; numbered #1697-#1706 — past main's #1683-#1696, the THIRTY-SEVENTH collision: the other session's «O'zi yuborish» (PR #147, 0145) merged while this round's first full run was starting; the run was stopped, main merged with no conflict, and the ritual re-run on the merged tree)
+
+**#1697 — «Prixodning interfeysi» was read as the CARD, and the reading is said to him.** His sentence was
+«Prixodning interfaceini togirlab qoy ui ux designini hamma narsa har hil joyda bolib ketgan». Two screens carry
+that name. The receive wizard (`/receive`) was opened first at 360 and 1280 and is three steps with one job each —
+tidy. The card (`/receipts/[id]`) measured **4,223 px tall for an admin at 360** (3,754 at 1280) for a prixod of
+three lots: one column of fourteen blocks in the order two years of rounds added them. So the card is what was
+rebuilt, the wizard is untouched, and the reply says which was which — a wrong reading that is stated costs him one
+sentence, one that is not costs a deploy. **A layout round and nothing else**: no door, action, service, query or
+URL changed, and every `data-testid` is kept (six new ones). What a person may see or press is what it was.
+
+**#1698 — The deal card's two columns (`CardCols`) were refused here, by measurement.** The first draft was the
+house card: lots in the lenta's place, everything else in a 24 rem rail. The content column of this app is at most
+~900 px (`max-w-6xl` less the sidebar), so a rail leaves the lots ~500 px — and the tarkib editor's table is
+`xl:grid` with seven tracks that need ~670. `xl:` is the VIEWPORT's 1280, not the container's, so in a narrow
+column the editor does not stack, it OVERFLOWS: measured by the desktop judge, the TNVED cell was drawn outside the
+card. (My own first sentence said «stacks»; the conclusion stood and the mechanism was wrong.) The deal card can
+afford a rail because its main column is a conversation. Here the main column is the cargo and the cargo's editor
+is the widest thing on the page — so the card is full-width ZONES, and two cards stand side by side only where
+both are short. RULE: **a layout borrowed from another card is borrowed with that card's content; measure the
+widest thing THIS page holds before choosing its columns.**
+
+**#1699 — Pairs switch at `lg`, never `md`, and a phone is reordered by ONE class.** (a) The sidebar appears at `md`
+and takes 224 px of it, so the content column is 735 px at a 767 px window and **512 px at 768** — an `md:` pair
+gave each half 248 px, narrower than the same control on a 360 px phone (the cost form's amount box: 86 px). An FHD
+laptop at Windows' default 125 % with the browser snapped to half the screen is exactly 768. So the summary's
+columns, the ties' two stacks, files | costs and thread | folds all turn on at `lg`. (b) The ties stand above the
+cargo in the DOM (the office opens the card for them) and BELOW it on a phone: with them above, a seller's first
+lot began at y≈725 of a 741 px first screen. The page root is a flex column and the ties plus everything after the
+lots carry `max-md:order-1`. One DOM, one class — the desktop judge's «a second layout to keep true» and the phone
+judge's measurement are both answered. (c) A half with no sibling takes the row: one wrapper whose CLASS switches,
+children in fixed slots — never `cond ? <two columns> : <one>`, which moves the folds in the tree whenever the
+thread's door flips (see #1702).
+
+**#1700 — One «ties» card: two independent stacks, one cell anatomy, one save idiom.** Four cards («Zavod reysi»,
+«Bitim», «Yuk turi», «Hisob») became one. NOT a 2×2 row grid: «Hisob»'s options ARE the linked deal's
+(`calcLinkOptions(receipt.dealId)`), so it hangs under «Bitim»; and a row grid opens a hole beside the tall «Yuk
+turi» cell (its «deal also FTL» block is 250-300 px) — `card-cols.tsx` records that exact lesson. So: left stack
+«Bitim → Hisob», right «Yuk turi → Zavod reysi», an empty stack giving its width to the other. Side by side, the
+four components' four header idioms and two save behaviours became visible — stacked as separate cards nobody
+could see them — so each cell is now `section-title` label → ONE value line → one control row, and «Saqlash» is
+drawn only once the answer differs (the pickup's own idiom, #422): four always-drawn primary buttons in one card
+were four things asking to be pressed. The pickup's value line repeated its select's empty option word for word;
+it is a dash, not gone — removed entirely, the two selects of a VED's card started 26 px apart.
+
+**#1701 — The lot: one anatomy, ONE row of actions, and nothing in that row moves.** A lot's actions had six
+shapes in six places (print top right, the QR switch, QR-less print links, pallet links, «✏️», a grey text fold for
+the write-off) with the check, the photographs and the tarkib between them. Now: what it is (name, figures, note,
+`lot-qrless`) → what can be done to it (`lot-actions`, one `flex-wrap` row of `btn-secondary btn-sm`) →
+photographs → its two papers. What the judges changed in the draft, each measured: (a) **the lot's print stays in
+the head**, 112×48 — in the row it was 46×36 with a neighbour 8 px away, and a missed tap on it loads a document
+and opens the print dialog; (b) **the row sits before the photographs**, beside the `lot-qrless` sentence that
+explains its QR buttons, so the operator's whole first lot is on the first screen; (c) **every opener is always
+drawn** and its panel is a SIBLING with `order-last basis-full`: `LotEditForm` used to return the button OR the
+form, so in a row the opener left and the next member — on a phone the LINK to the pallet builder — slid under the
+thumb that had just pressed. `LotEditForm`, `QrSkipToggle` and `MarkLostForm` return fragments; the write-off is a
+button and state, not a `<details>` (its summary lives inside it, so the opened element took the pressed button to
+a new line); (d) **fixed slots**, `{cond && <X/>}` in one order with each mapped list ONE slot under its own key
+prefix (`qr:` / `pallet:` — the sibling-keys fence): a member that leaves as a result of a press (a pallet door
+emptied by a write-off) must not shift the others, or React remounts them and «✅ hisobdan chiqarildi» is gone;
+(e) the order is corrections («✏️», «⚠️» — 285 of a phone's 302 px, one line), stickers, pallets — with the
+write-off last a manager's lot was five lines of buttons, it is four; (f) a client's ❌ that vetoes puts a red chip
+beside the name (`lot-veto`), because the check block now follows the row. `.btn-sm` is the one compact button,
+declared once after every variant so it wins on source order with no `!` — the idiom 55 places spell by hand as
+`!min-h-9 px-2 text-sm`, where the bare `px-2` and `text-sm` silently lose to `.btn`. It carries no `nowrap` and
+no `shrink-0`: the longest label is 292 px of the 302 px a phone's card has, and must wrap.
+
+**#1702 — «Boshqa amallar»: the rare and the irreversible in ONE fold that says what it holds.** «Mijozni
+o'zgartirish» (a search box, always open), «Boshqa skladga ko'chirish» (a full-width button) and the void form
+(always open, a red button, no confirm step) stood between the lots and the files on every confirmed card of
+every `receipts.void` holder. Both judges: fold it, provided the closed line names its contents — so the summary
+lists them, each word under its own condition («Mijozni o'zgartirish · Boshqa skladga ko'chirish · Bekor
+qilish»), and a manager looking for «Bekor qilish» does not have to open a fold called «other» to find out. On an
+OWNERLESS prixod the assign form is not a correction but the card's one job (his 3.2a), so it stays open and moves
+UP, under the summary. Two things the fold must not break, both structural: the fold's children are positional
+slots and the fold itself sits in a fixed slot beside the thread, so a component holding its own answer — the
+annul's done state, «✅ ko'chirildi» — keeps its place across the revalidation that follows the press; and
+`Panel`'s `open` prop does not change, so React leaves the attribute alone and a fold the person opened stays
+open across a REFUSED void, where the refusal is the thing to read.
+
+**#1703 — One spelling for a measure, and the total imports nothing.** The card printed a lot as the columns
+spell it, «250.000 kg · 1.2500 m³», and nowhere how much the prixod holds. (a) «Jami» is summed from the lots the
+page already read, in integer units, and a measure is printed TRIMMED, never rounded (`receipts/card-totals.ts`):
+the tarkib must sum to these figures exactly, and `ru` is the default locale, where «250.000» reads as a quarter
+of a million. (b) The desktop judge's catch: trimming the head of the lot while the tarkib 100 px below kept
+«250.000» in four places is a mix shipped to the one reader who must make the two equal. The rule that settles
+it: **what the card PRINTS is trimmed** (the lot's line, «Jami», the tarkib's read face, its stale sentence);
+**what an EDITOR holds keeps the column's spelling** (the tarkib's boxes and its remainder bar beside them, the AI
+reading's sums, the lot form's inputs). (c) `card-totals.ts` first borrowed `storedUnits`/`fromUnits` from
+`composition-math` and `lot-composition-fence` went red: that fence lists who may learn that a lot has a
+composition, and a card total is not one of them. The fence was right and stayed unedited — the fifteen lines of
+exact arithmetic are the file's own, and it imports nothing.
+
+**#1704 — What a layout round changed besides the layout, each because the new layout made the old words false or
+the old defect visible.** (a) `lotCheck.otherAnswers` said «pastdagi ✏️» / «✏️ ниже» / «below» / «下方»: the ✏️ is
+above the check now, so the direction is gone in all four bundles (both judges found it; `lot-check-wire` pins
+the expression, not the words, so no test would have). (b) **A pre-existing defect the rebuild inherited and
+fixed**: an ownerless prixod's marking is up to fifty characters with no space (since the factory-barcode round
+it is where a factory's text code goes) and made TODAY's card 424 px wide at 360 with thirty of them — mobile
+Chrome rescales the whole page (#400). It wraps now, in the `warn` tokens (it was raw orange). (c) History printed
+the lots a prixod was created with as JSON under the untranslated word «lots:» at the foot of every card —
+`formatAuditValue` reads `[{letter, zh, boxes}]` as «A 化妆品 × 10 📦 · …» and the key has a label. A record that
+merely HAS a `boxes` key is not a lot and keeps its JSON. (d) The list said «3 tovarlar» (the section title
+lower-cased); it says «3 tovar», the card's own «Jami» word, by one key in four bundles — `ru`/`en` plural, so
+`uz`/`zh-CN` carry `{n, plural, other {…}}` too (`locales.test` compares placeholder shapes).
+
+**#1705 — PROCESS.** (1) **Two of five judges came back, and that is said.** The phone lens and the desktop lens
+returned whole — 14 defects and 13 nits, every one measured in the running app (the phone judge mocked the draft
+in the app's own CSS; the desktop judge regrouped the live DOM). The regression, CSS and house-consistency lenses
+and all three refuters died on the account's weekly limit, so no objection was refuted by an independent reader;
+each was checked against the code before it was accepted, and those three lenses were done by the builder against
+the BUILT card: the source-shape fences (22 files green unedited), the browser at 360 / 768 / 1280 as five roles
+on eleven cards, the specs. A design judged by two lenses is a design judged by two lenses. (2) **Eight red
+proofs by paired string edit**, one rebuild for seven of them: the float total, the phone's order (measured on
+the red build: ties at y=375, first lot at 867 of an 800 px screen), the row that moves, the marking at 360 (654
+px) and at 1280 (over «Jami»), the pair at `md` (not stacked at 768), the fold open, a select as wide as the card
+(870 > 448), a lot's untrimmed weight. A serial spec stops at its first failure, so each was run by `-g "mint|…"`.
+(3) **Two `boundingBox()` calls are two frames.** The row test first read «✏️» and «⚠️» one after the other while
+the opened form was scrolling itself into view (`scrollIntoView`, smooth) and found them 52 px out of line with
+each other — a defect of the test. Positions that must be compared are read in ONE `evaluate`, relative to their
+container. (4) **A grep for a testid does not find a control addressed by its `id`.** `void-receipt-*` found one
+spec to move with the fold; two more reached the same form as `#void-reason` and failed a minute into a run.
+Before folding or moving a control, grep its testid, its `id`, its `name` and its label. (5) The container
+restarted between two turns (uptime 22 min): postgres down, the test server gone — and the first unit run then
+«hung» for ten minutes on a database that did not exist (`gsr_dev` is not in this container; vitest needs
+`DATABASE_URL`). `pgboss.version.maintained_on` older than ten minutes made Playwright's server time out exactly
+as round 29 recorded.
+
+**#1706 — CI was red on a width this container could not see: 362 px in 360, in Russian, with a client's ❌.**
+The first push failed ONE spec of 510, `m9zzy-yuk-tekshiruv`'s «document as wide as the screen» on a lot whose
+client had pressed «❌ Xato bor» — and the full local run of the same tree was green. The new `lot-veto` chip
+stood in the lot's head beside the name and the print: letter, chip and print are three members that do not
+shrink, and with «Возражение клиента» they were 2 px wider than a phone's card ON THE RUNNER. Two reasons it was
+invisible here, both mine. (a) My screenshots were taken as demo staff I had switched to Uzbek, where the word is
+shorter — **the default locale is `ru`, and a width is checked in the longest language the screen ships**. (b)
+Even in Russian the row fits this container by a hair: the runner's fonts are a little wider than this
+container's, so «it fits here» about a row of unshrinkable things says nothing about there (#278's shape — the
+two places resolve the same question differently — in font metrics instead of network). The chip moved to a line
+of its own under the name, where it can wrap. And the check that would have seen it is now part of the look:
+`px_stress` loads the card in Russian at 360 with every glyph widened (`letter-spacing` +3 %, +6 %, +10 %) and
+everything that opens opened — 360 px for admin, operator, VED and seller, with the ❌ state on the card. RULE:
+**«fits by a few pixels» is a failure that has not happened yet; widen the text and measure again before
+believing a row of fixed things.**
+
 ## Prixod xabari — one message to the seller with two buttons, the client's ✅ covers kilos and cubic metres, the AI's bill on the evening summary (2026-11-11 evening; migration 0146 `prixod_xabari`, `when` …125, ledger 147; numbered #1707-#1736 — minted as #1683-#1712 with migration 0145 and renumbered on the merge, the THIRTY-SEVENTH collision: main's AI sotuvchi «o'zi yuborish» (PR #147) took #1683-#1696 and 0145 `agent_auto`, with this round's own `when` …124, first; spec `docs/PRIXOD-XABARI.md`, §G binding)
 
 His message after confirming the 0144 deploy («deploy qildim 145 chiqdi»): «4 ha tovar nomi, karobka soni,

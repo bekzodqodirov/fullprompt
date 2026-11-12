@@ -911,7 +911,7 @@ export function ReceiptPickupControl({
       <select
         data-testid="receipt-pickup-select"
         aria-label={t('title')}
-        className="input min-w-0 flex-1"
+        className="input-sm min-w-0 flex-1"
         value={value}
         onChange={(e) => setValue(e.target.value)}
       >
@@ -926,7 +926,7 @@ export function ReceiptPickupControl({
         <button
           type="button"
           data-testid="receipt-pickup-save"
-          className="btn-secondary shrink-0"
+          className="btn-primary btn-sm shrink-0"
           onClick={async () => {
             if (currentClosed && currentStopId && !window.confirm(t('detachClosedConfirm'))) return;
             const res = await linkReceiptAction(receiptId, value || null);

@@ -65,30 +65,37 @@ export function DealLink({
   const [pending, startTransition] = useTransition();
   // Arrived from the new-deal form (`?bitim=1`): a server action's redirect
   // cannot carry `#bitim`, so the block brings itself into view and wears
-  // the same ring the anchor gives it. Done on the element, not through
+  // the same frame the anchor gives it. Done on the element, not through
   // state: it is the page's scroll being synchronised, not something to render.
   const block = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('bitim') !== '1') return;
     const el = block.current;
     if (!el) return;
-    el.classList.add('ring-2', 'ring-brand-500');
+    el.classList.add('outline', 'outline-2', 'outline-offset-4', 'outline-brand-500');
     el.scrollIntoView({ block: 'start' });
   }, []);
 
+  // One cell of the card's «ties» (docs/PRIXOD-KARTA.md §7.1) — the anatomy
+  // all four share: a small label, ONE line saying what it is tied to now,
+  // one row to change it. «Saqlash» is drawn only once the answer differs
+  // (#422): four always-drawn primary buttons in one card were four things
+  // asking to be pressed.
   return (
     // `id` = RECEIPT_DEAL_ANCHOR: the seller's «🔗 Bitim biriktirish» button
     // (Telegram, «Prixod keldi») opens the card HERE, not at the top of a
-    // long page; the scroll margin clears the sticky app bar and the ring
-    // says which block was meant.
+    // long page; the scroll margin clears the sticky app bar and the frame
+    // says which cell was meant. An OUTLINE with an offset, not a ring: the
+    // cell has no card of its own since the «ties» card, and a ring would
+    // sit on its letters. An outline takes no room, so nothing moves.
     <div
       ref={block}
       id="bitim"
       data-testid="receipt-deal-block"
-      className="card scroll-mt-20 space-y-2 !p-3 target:ring-2 target:ring-brand-500"
+      className="scroll-mt-20 space-y-1.5 rounded-sm target:outline target:outline-2 target:outline-offset-4 target:outline-brand-500"
     >
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-semibold">{t('deal')}: </span>
+      <p className="section-title">{t('deal')}</p>
+      <p className="text-sm [overflow-wrap:anywhere]">
         {current ? (
           <Link
             href={`/bitimlar/${current.id}`}
@@ -99,14 +106,14 @@ export function DealLink({
         ) : (
           <span className="text-ink-500">{t('dealNone')}</span>
         )}
-      </div>
+      </p>
       {voided && (
         <p className="text-sm font-semibold text-bad" data-testid="receipt-deal-voided">
           {t('dealVoided')}
         </p>
       )}
       {foreign && (
-        <p className="text-xs text-ink-500" data-testid="receipt-deal-foreign">
+        <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="receipt-deal-foreign">
           {t('dealForeign', { code: foreign.code })}
         </p>
       )}
@@ -116,7 +123,7 @@ export function DealLink({
           onChange={(event) => setDealId(event.target.value)}
           aria-label={t('deal')}
           data-testid="receipt-deal-pick"
-          className="input min-w-0 flex-1"
+          className="input-sm min-w-0 flex-1"
         >
           <option value="">— {td('unlink')}</option>
           {options.map((deal) => (
@@ -125,21 +132,23 @@ export function DealLink({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          disabled={pending || dealId === (current?.id ?? '')}
-          data-testid="receipt-deal-save"
-          className="btn-primary shrink-0 disabled:opacity-50"
-          onClick={() =>
-            startTransition(async () => {
-              const result = await linkReceiptAction(receiptId, dealId || null);
-              setError(result.ok ? null : (result.error ?? 'error'));
-              if (result.ok) router.refresh();
-            })
-          }
-        >
-          {pending ? tc('loading') : tc('save')}
-        </button>
+        {dealId !== (current?.id ?? '') && (
+          <button
+            type="button"
+            disabled={pending}
+            data-testid="receipt-deal-save"
+            className="btn-primary btn-sm shrink-0 disabled:opacity-50"
+            onClick={() =>
+              startTransition(async () => {
+                const result = await linkReceiptAction(receiptId, dealId || null);
+                setError(result.ok ? null : (result.error ?? 'error'));
+                if (result.ok) router.refresh();
+              })
+            }
+          >
+            {pending ? tc('loading') : tc('save')}
+          </button>
+        )}
       </div>
       {newDealHref && (
         <Link href={newDealHref} className="inline-block text-sm font-semibold text-brand-700 underline" data-testid="receipt-deal-new">

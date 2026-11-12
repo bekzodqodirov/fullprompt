@@ -57,6 +57,9 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   rateToUsd: 'rateToUsd',
 
   // Cargo
+  // The lots a prixod was created with (`confirmReceipt`): printed as
+  // «A 化妆品 × 10 📦», see `formatAuditValue`.
+  lots: 'lots',
   volumeM3: 'volumeM3',
   totalVolumeM3: 'volumeM3',
   weightKg: 'weightKg',
@@ -281,6 +284,14 @@ export function collectAuditRefs(
 const isScalar = (v: unknown): v is string | number | boolean =>
   typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
 
+/** A lot as `confirmReceipt` records it: a carton count beside a name or a letter. */
+const isLotSummary = (v: unknown): v is { letter?: unknown; zh?: unknown; boxes: number; qrSkipped?: unknown } =>
+  typeof v === 'object' &&
+  v !== null &&
+  !Array.isArray(v) &&
+  typeof (v as { boxes?: unknown }).boxes === 'number' &&
+  (isScalar((v as { zh?: unknown }).zh) || isScalar((v as { letter?: unknown }).letter));
+
 /**
  * One recorded value as the History tab prints it. A list of plain values is
  * a list; a structured record (a count's growth, a sticker run) reads as its
@@ -292,6 +303,19 @@ const isScalar = (v: unknown): v is string | number | boolean =>
 export function formatAuditValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '∅';
   if (Array.isArray(value) && value.every(isScalar)) return value.length ? value.join(', ') : '∅';
+  // The lots a prixod was born with — `[{letter, zh, boxes}]`, the one list of
+  // records on the busiest card there is. It printed as raw JSON under the
+  // untranslated word «lots:» at the foot of every prixod (the owner's
+  // «hamma narsa har xil joyda» round, docs/PRIXOD-KARTA.md).
+  if (Array.isArray(value) && value.length > 0 && value.every(isLotSummary)) {
+    return value
+      .map((lot) =>
+        [isScalar(lot.letter) ? String(lot.letter) : null, isScalar(lot.zh) ? String(lot.zh) : null, `× ${String(lot.boxes)} 📦`, lot.qrSkipped === true ? '🏷' : null]
+          .filter((part): part is string => part !== null && part !== '')
+          .join(' '),
+      )
+      .join(' · ');
+  }
   if (typeof value === 'object' && !Array.isArray(value)) {
     const parts = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v !== null && v !== undefined && v !== '' && !isUuidShaped(v))

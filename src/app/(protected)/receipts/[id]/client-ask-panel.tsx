@@ -102,7 +102,7 @@ export function ClientAskPanel({
   if (!show && !said && !error) return null;
 
   return (
-    <div className="mt-3 space-y-1.5 rounded-lg border border-line p-2 text-sm" data-testid="client-ask">
+    <div className="card space-y-1.5 !p-3 text-sm" data-testid="client-ask">
       <p className="font-semibold text-ink-700">📨 {t('askTitle')}</p>
       {/* What WILL be sent — said only beside the button that sends it. */}
       {face.canAsk && (
@@ -148,7 +148,7 @@ export function ClientAskPanel({
       {face.canAsk && (
         <button
           type="button"
-          className="btn-secondary w-full"
+          className="btn-secondary btn-sm w-full sm:w-auto"
           data-testid="client-ask-send"
           disabled={busy || waiting}
           onClick={() => {
@@ -162,7 +162,7 @@ export function ClientAskPanel({
       {face.disputes.length > 1 && (
         <button
           type="button"
-          className="btn-secondary w-full"
+          className="btn-secondary btn-sm w-full sm:w-auto"
           data-testid="client-dispute-close-all"
           disabled={busy}
           onClick={() => {
