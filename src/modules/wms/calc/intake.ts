@@ -301,6 +301,15 @@ export interface CalcGoodsFact {
    * (AI taxmini)» and the landed row's note says so. Absent = read or typed.
    */
   nameFrom?: 'photo' | null;
+  /** The picture the good was seen or written on — «Фото N» of the request (1-based). Absent = not from a picture. */
+  photoNo?: number;
+  /**
+   * Which weight the row's own `weightKg` is, when its source SAID
+   * (`weight_kind`, a sheet's «N.W.» / «G.W.» column). Customs wants netto;
+   * a gross one is said on the row's note by CODE («og‘irlik brutto»), no
+   * longer asked of the model in its free text. Absent = not said.
+   */
+  weightKind?: 'gross' | 'net';
   /**
    * What the source stated PER PACKAGE — a carton count, a carton's size,
    * cube, weight, pieces (docs/AI-SORAYDI.md §2.3). No reader multiplies:
@@ -331,6 +340,10 @@ export interface CalcGoodsFact {
 /** A name the model took from a photo of the goods — the words on the table and on the landed row. */
 export const PHOTO_NAME_MARK = '📷';
 export const PHOTO_NAME_NOTE = 'nomi rasmdan (AI taxmini)';
+/** A code the model itself called a guess — the table's and the landed row's words. */
+export const UNSURE_CODE_NOTE = 'TNVED kodi AI taxmini — aniq emas, tekshiring';
+/** A row weight its source called GROSS — said by code; the computed-from-cartons case has its own words. */
+export const GROSS_WEIGHT_NOTE = 'og‘irlik brutto (netto yozilmagan)';
 
 /**
  * How a line's facts came to be, as ONE note for the landed row — rendered
@@ -341,11 +354,17 @@ export const PHOTO_NAME_NOTE = 'nomi rasmdan (AI taxmini)';
  * are cartons × a carton's.
  */
 export function provenanceNote(
-  line: Pick<CalcGoodsFact, 'note' | 'nameFrom' | 'packing' | 'derived' | 'quantity' | 'weightKg' | 'volumeM3'>,
+  line: Pick<
+    CalcGoodsFact,
+    'note' | 'nameFrom' | 'photoNo' | 'tnvedCode' | 'tnvedSure' | 'weightKind' | 'packing' | 'derived' | 'quantity' | 'weightKg' | 'volumeM3'
+  >,
 ): string | null {
   const parts = [
     line.note?.trim() || null,
-    line.nameFrom === 'photo' ? PHOTO_NAME_NOTE : null,
+    line.nameFrom === 'photo' ? `${PHOTO_NAME_NOTE}${line.photoNo ? `, ${line.photoNo}-rasm` : ''}` : null,
+    line.tnvedCode && line.tnvedSure === false ? UNSURE_CODE_NOTE : null,
+    // A weight computed from the cartons says «brutto» in its own words (`derivedNotes`).
+    line.weightKind === 'gross' && line.weightKg != null && !line.derived?.weightKg ? GROSS_WEIGHT_NOTE : null,
     packingNote(line.packing),
     ...derivedNotes(line),
   ].filter((part): part is string => Boolean(part));

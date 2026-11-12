@@ -14,6 +14,8 @@ import {
   sizeText,
   wholeCartons,
   type Packing,
+  productCubeOffer,
+  sizeOwnerUnknown,
 } from '@/modules/wms/calc/carton-math';
 
 /**
@@ -99,13 +101,13 @@ describe('sizeCube — the unit written, or centimetres inside the band', () => 
 
 describe('cartonFigures — the products, each with its arithmetic', () => {
   it('cartons × the size', () => {
-    const f = cartonFigures(packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm' } }));
+    const f = cartonFigures(packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' } }));
     expect(f.volumeM3).toEqual({ value: 2.4, how: '20 × 60×40×50 sm' });
     expect(f.assumedCm).toBe(false);
   });
 
   it('cartons × a stated per-carton cube — the stated cube outranks the size', () => {
-    const f = cartonFigures(packing({ cartons: 30, m3PerCarton: 0.083, size: { l: 60, w: 40, h: 50, unit: 'cm' } }));
+    const f = cartonFigures(packing({ cartons: 30, m3PerCarton: 0.083, size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' } }));
     expect(f.volumeM3).toEqual({ value: 2.49, how: '30 × 0.083 m³' });
     // 0.083 against the size's 0.12: more than 5 % apart — both are said.
     expect(f.cubeClash).toEqual({ stated: 0.083, fromSize: 0.12 });
@@ -127,7 +129,7 @@ describe('cartonFigures — the products, each with its arithmetic', () => {
   });
 
   it('a size with no unit outside the band multiplies nothing', () => {
-    expect(cartonFigures(packing({ cartons: 20, size: { l: 600, w: 400, h: 500, unit: null } })).volumeM3).toBeNull();
+    expect(cartonFigures(packing({ cartons: 20, size: { l: 600, w: 400, h: 500, unit: null, of: 'package' } })).volumeM3).toBeNull();
   });
 
   it('a float product is rounded half-up to three places', () => {
@@ -162,7 +164,7 @@ describe('applyPacking — the one door every reader calls', () => {
       volumeM3: null,
       packing: packing({
         cartons: 20,
-        size: { l: 60, w: 40, h: 50, unit: 'cm' },
+        size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' },
         kgPerCarton: 15,
         kgPerCartonKind: 'gross',
         pcsPerCarton: 24,
@@ -201,7 +203,7 @@ describe('applyPacking — the one door every reader calls', () => {
   });
 
   it('ONE carton’s cube read as the line’s is replaced by the product, the original kept (dg2-5, DIM-8)', () => {
-    const out = applyPacking({ volumeM3: 0.12, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm' } }) });
+    const out = applyPacking({ volumeM3: 0.12, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' } }) });
     expect(out.line.volumeM3).toBe(2.4);
     expect(out.line.derived).toEqual({ volumeM3: '20 × 60×40×50 sm', replaced: { volumeM3: 0.12 } });
     expect(derivedNotes(out.line)).toEqual(['hajm bitta karobkaniki edi (0.12): 20 × 60×40×50 sm = 2.4 m³']);
@@ -247,7 +249,7 @@ describe('applyPacking — the one door every reader calls', () => {
   });
 
   it('centimetres assumed for the cube are marked on the line and said in its note', () => {
-    const out = applyPacking({ volumeM3: null, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: null } }) });
+    const out = applyPacking({ volumeM3: null, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: null, of: 'package' } }) });
     expect(out.line.volumeM3).toBe(2.4);
     expect(out.line.derived).toEqual({ volumeM3: '20 × 60×40×50 sm', assumedCm: true });
     expect(derivedNotes(out.line)).toEqual(['hajm hisoblangan: 20 × 60×40×50 sm = 2.4 m³, sm deb olindi']);
@@ -268,7 +270,7 @@ describe('applyPacking — the one door every reader calls', () => {
   });
 
   it('called again with the same packing it changes nothing — the note is not said twice', () => {
-    const first = applyPacking({ volumeM3: 0.12, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm' } }) });
+    const first = applyPacking({ volumeM3: 0.12, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' } }) });
     const second = applyPacking(first.line);
     expect(second.line).toEqual(first.line);
     expect(second.doubts).toEqual([]);
@@ -298,6 +300,45 @@ describe('applyPacking — the one door every reader calls', () => {
     const out = applyPacking(typed);
     expect(out.line.volumeM3).toBe(2.5);
     expect(out.doubts).toEqual([{ field: 'volumeM3', stated: 2.5, derived: { value: 2.4, how: '20 × 0.12 m³' } }]);
+  });
+});
+
+describe('whose size it is — only a PACKAGE’s size is multiplied by the packages', () => {
+  it('a product’s own size beside a carton count computes NOTHING', () => {
+    const p = packing({ cartons: 10, size: { l: 120, w: 80, h: 75, unit: 'cm', of: 'product' } });
+    expect(cartonFigures(p).volumeM3).toBeNull();
+    const out = applyPacking({ quantity: 10, volumeM3: null, packing: p });
+    expect(out.line.volumeM3).toBeNull();
+    expect(out.line.derived).toBeUndefined();
+    expect(packingNote(p)).toBe('📦 10 karobka · tovar o‘lchami 120×80×75 sm — sotuvchi');
+  });
+
+  it('an owner nobody stated is asked, never multiplied', () => {
+    const p = packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm', of: null } });
+    expect(cartonFigures(p).volumeM3).toBeNull();
+    expect(sizeOwnerUnknown(p)).toBe(true);
+    // …and not asked when the per-carton cube is stated anyway, or no cartons stand beside it.
+    expect(sizeOwnerUnknown({ ...p, m3PerCarton: 0.12 })).toBe(false);
+    expect(sizeOwnerUnknown({ ...p, cartons: null })).toBe(false);
+    expect(sizeOwnerUnknown(packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' } }))).toBe(false);
+  });
+
+  it('a stated ONE-carton cube is not «explained» by a product’s size', () => {
+    // 0.72 would equal the table's own cube; it is the row's stated volume and stays.
+    const out = applyPacking({ volumeM3: 0.72, packing: packing({ cartons: 10, size: { l: 120, w: 80, h: 75, unit: 'cm', of: 'product' } }) });
+    expect(out.line.volumeM3).toBe(0.72);
+    expect(out.doubts).toEqual([]);
+  });
+
+  it('a product’s size × the row’s pieces is an OFFER with its arithmetic — never written', () => {
+    const lathe = { quantity: 1, volumeM3: null, packing: packing({ size: { l: 200, w: 150, h: 180, unit: 'cm', of: 'product' } }) };
+    expect(productCubeOffer(lathe)).toEqual({ value: 5.4, how: '1 × 200×150×180 sm' });
+    expect(applyPacking(lathe).line.volumeM3).toBeNull();
+    // No pieces, a cube already there, a package's size, an unreadable unit: no offer.
+    expect(productCubeOffer({ ...lathe, quantity: null })).toBeNull();
+    expect(productCubeOffer({ ...lathe, volumeM3: 5 })).toBeNull();
+    expect(productCubeOffer({ quantity: 1, packing: packing({ size: { l: 200, w: 150, h: 180, unit: 'cm', of: 'package' } }) })).toBeNull();
+    expect(productCubeOffer({ quantity: 1, packing: packing({ size: { l: 2000, w: 1500, h: 1800, unit: null, of: 'product' } }) })).toBeNull();
   });
 });
 
@@ -357,7 +398,7 @@ describe('packingNote — what the VED reads beside a computed figure', () => {
         kgPerCarton: 15,
         kgPerCartonKind: 'gross',
         m3PerCarton: null,
-        size: { l: 60, w: 40, h: 50, unit: 'cm' },
+        size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' },
         from: 'ai',
       }),
     ).toBe('📦 20 karobka · 60×40×50 sm · 15 kg/karobka (brutto) · 24 dona/karobka — AI o‘qidi');

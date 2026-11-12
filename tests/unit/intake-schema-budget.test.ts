@@ -110,6 +110,27 @@ describe('the reading’s answer schema stays inside the structured-output budge
     expect(probe.unsupported).toEqual(['$.d[].e.maxLength']);
   });
 
+  it('every figure has ONE home (the prompt audit’s PR-3): the second measure is m², pairs or litres only', () => {
+    type Props = { properties: { goods: { items: { properties: Record<string, { enum?: unknown[] }> } } } };
+    const good = (INTAKE_CONTRACTS.packing.schema as Props).properties.goods.items.properties;
+    // Pieces, kilos, cubes and cartons have keys of their own — offered again
+    // through `unit`, one carton's cube landed as the line's by the second door.
+    expect(good.unit!.enum).toEqual(['m2', 'juft', 'litr', null]);
+    expect(INTAKE_CONTRACTS.packing.system).not.toContain('measure_qty + unit "m3"');
+    expect(INTAKE_CONTRACTS.packing.system).not.toContain('unit = "karobka"');
+    // The legacy contract keeps the list production is known to accept.
+    const legacy = (INTAKE_CONTRACTS.legacy.schema as Props).properties.goods.items.properties;
+    expect(legacy.unit!.enum).toContain('karobka');
+  });
+
+  it('`note` is the LAST key of a good and `questions` follows `goods` — what a cut answer keeps depends on both', () => {
+    type Shape = { required: string[]; properties: { goods: { items: { required: string[] } } } };
+    const schema = INTAKE_CONTRACTS.packing.schema as Shape;
+    expect(schema.properties.goods.items.required.at(-1)).toBe('note');
+    expect(Object.keys((schema as unknown as { properties: object }).properties)).toEqual(schema.required);
+    expect(schema.required.indexOf('questions')).toBe(schema.required.indexOf('goods') + 1);
+  });
+
   it('the two contracts pair their own prompt with their own shape', () => {
     expect(INTAKE_CONTRACTS.packing.system).toContain('pieces_per_carton');
     expect(INTAKE_CONTRACTS.packing.system).toContain('name_source = "picture"');

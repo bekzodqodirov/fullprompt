@@ -20,12 +20,29 @@ import { roundM3 } from './line-totals';
 
 export type SizeUnit = 'cm' | 'mm' | 'm';
 
-/** ONE package's outer size, as written. `unit: null` — none was written. */
-export interface CartonSize {
+/** Three sides as written. `unit: null` — none was written. */
+export interface BareSize {
   l: number;
   w: number;
   h: number;
   unit: SizeUnit | null;
+}
+
+/**
+ * WHOSE size it is. A carton count multiplies a PACKAGE's size and nothing
+ * else: «Стол 120×80×75, 10 коробок» is a table's own size beside ten flat
+ * packs, and 10 × 0.72 m³ would be a cube nobody shipped. `null` — the source
+ * did not say; then nothing is multiplied and the owner is asked.
+ */
+export type SizeOwner = 'package' | 'product';
+
+/**
+ * A size on a row's packing. `of` is REQUIRED so that every reader says how
+ * it knows: a carton word or a «CTN SIZE» header, the model's `size_of`, the
+ * bot's own cube question being answered.
+ */
+export interface CartonSize extends BareSize {
+  of: SizeOwner | null;
 }
 
 /** Who stated the packing — worded on the row's note («AI o‘qidi», «fayldan», «sotuvchi»). */
@@ -140,8 +157,8 @@ export interface SizeToken {
   /** The sides as written — three for a box, two for a sheet. */
   sides: number[];
   unit: SizeUnit | null;
-  /** The three-sided size, when the token is one. */
-  size: CartonSize | null;
+  /** The three-sided size, when the token is one — bare: the CALLER says whose it is. */
+  size: BareSize | null;
   /** Where the token stands in the text: `[start, end)`. */
   start: number;
   end: number;
@@ -216,7 +233,7 @@ export interface SizeCube {
  * «1200×800×1000» or «0.6×0.4×0.5» is not something to guess at: null, and
  * the unit is asked.
  */
-export function sizeCube(size: CartonSize | null | undefined): SizeCube | null {
+export function sizeCube(size: BareSize | null | undefined): SizeCube | null {
   if (!size) return null;
   const sides = [size.l, size.w, size.h];
   if (!sides.every(positive)) return null;
@@ -228,7 +245,7 @@ export function sizeCube(size: CartonSize | null | undefined): SizeCube | null {
 }
 
 /** «60×40×50 sm» — the size as the table and the note print it. */
-export function sizeText(size: CartonSize): string {
+export function sizeText(size: BareSize): string {
   const cube = sizeCube(size);
   const unit = size.unit ?? cube?.unit ?? null;
   const sides = `${fmtFigure(size.l)}×${fmtFigure(size.w)}×${fmtFigure(size.h)}`;
@@ -257,7 +274,8 @@ export function cartonFigures(p: Packing | null | undefined): CartonFigures {
   const cartons = wholeCartons(p.cartons);
   if (cartons === null) return none;
 
-  const fromSize = sizeCube(p.size);
+  // Only a PACKAGE's size is multiplied by the packages (`SizeOwner`).
+  const fromSize = p.size?.of === 'package' ? sizeCube(p.size) : null;
   const stated = positive(p.m3PerCarton) ? p.m3PerCarton : null;
   let volumeM3: Derived | null = null;
   let assumedCm = false;
@@ -427,7 +445,12 @@ export function applyPacking<T extends PackedLine>(input: T): PackingOutcome<T> 
       }
     };
 
-    settle('volumeM3', figures.volumeM3, positive(p.m3PerCarton) ? p.m3PerCarton : (sizeCube(p.size)?.m3 ?? null));
+    const oneCube = positive(p.m3PerCarton)
+      ? p.m3PerCarton
+      : p.size?.of === 'package'
+        ? (sizeCube(p.size)?.m3 ?? null)
+        : null;
+    settle('volumeM3', figures.volumeM3, oneCube);
     settle('quantity', figures.quantity, p.pcsPerCarton);
     if (figures.weightKg) {
       const { kind, ...product } = figures.weightKg;
@@ -531,7 +554,10 @@ export function packingNote(p: Packing | null | undefined): string | null {
   if (!packingStated(p)) return null;
   const parts: string[] = [];
   if (positive(p.cartons)) parts.push(`${fmtFigure(p.cartons)} karobka`);
-  if (p.size) parts.push(sizeText(p.size));
+  if (p.size) {
+    const whose = p.size.of === 'product' ? 'tovar o‘lchami ' : p.size.of === null ? 'o‘lcham (kimniki — aniq emas) ' : '';
+    parts.push(`${whose}${sizeText(p.size)}`);
+  }
   if (positive(p.m3PerCarton)) parts.push(`${fmtFigure(p.m3PerCarton)} m³/karobka`);
   if (positive(p.kgPerCarton)) {
     const kind = p.kgPerCartonKind === 'gross' ? ' (brutto)' : p.kgPerCartonKind === 'net' ? ' (netto)' : '';
@@ -541,6 +567,28 @@ export function packingNote(p: Packing | null | undefined): string | null {
   if (positive(p.kgPerPiece)) parts.push(`${fmtFigure(p.kgPerPiece)} kg/dona`);
   if (parts.length === 0) return null;
   return `📦 ${parts.join(' · ')} — ${SOURCE_UZ[p.from]}`;
+}
+
+/**
+ * A PRODUCT's own size and the row's pieces — a cube the bot may OFFER and
+ * never writes by itself (docs/AI-SORAYDI.md §2.3): a lathe «200×150×180 sm ×
+ * 1 dona = 5.4 m³» ships in its own size, a flat-packed table does not, and
+ * only the seller knows which. Null unless the row has pieces, a product
+ * size with a readable unit, and no cube of its own.
+ */
+export function productCubeOffer(line: PackedLine): Derived | null {
+  const size = line.packing?.size;
+  if (!size || size.of !== 'product') return null;
+  const pieces = line.quantity ?? null;
+  if (!positive(pieces) || positive(line.volumeM3 ?? null)) return null;
+  const cube = sizeCube(size);
+  if (!cube) return null;
+  return { value: round3(pieces * cube.m3), how: `${fmtFigure(pieces)} × ${sizeText(size)}` };
+}
+
+/** A size beside a carton count whose owner nobody stated: asked, never multiplied. */
+export function sizeOwnerUnknown(p: Packing | null | undefined): boolean {
+  return !!p && !!p.size && p.size.of === null && wholeCartons(p.cartons) !== null && !positive(p.m3PerCarton);
 }
 
 /** «2.4 m³ (hisoblangan: 20 × 60×40×50 sm)» — a computed figure's own words. */

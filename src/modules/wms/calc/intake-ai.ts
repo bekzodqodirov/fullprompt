@@ -33,6 +33,14 @@ import { applyPacking, emptyPacking, packingStated, wholeCartons, type Packing, 
 const AI_UNITS = ['dona', 'kg', 'm2', 'juft', 'litr', 'm3', 'karobka'] as const;
 
 /**
+ * The packing contract's second measure (docs/AI-SORAYDI.md §2.2): m², pairs
+ * and litres ONLY. Pieces, kilos, cubes and cartons each have a key of their
+ * own there; `AI_UNITS` stays the LEGACY contract's list, and `aiGoodsLine`
+ * still routes whatever word arrives.
+ */
+const AI_MEASURE_UNITS = ['m2', 'juft', 'litr'] as const;
+
+/**
  * One good of the answer — every key present, nothing defaulted: it is also
  * the test a CUT answer's goods must pass one by one (`salvageCut`), where a
  * key absent is a good the stream did not finish.
@@ -56,18 +64,30 @@ const goodSchema = z.object({
   // answer (`intakeContract`) carries none of them, and neither does a
   // stand-in written before them.
   name_source: z.string().nullish(),
+  photo: z.number().nullish(),
+  weight_kind: z.string().nullish(),
+  // An ARRAY of 0 or 1 objects, read entry by entry (`packingOfAnswer`): a
+  // good that states no packing costs «"packing":[]» to write, not eleven
+  // zeros — a 300-row document under the flat form was cut at ~40 % of the
+  // rows it completes today (the prompt audit's PR-10).
+  packing: z.array(z.unknown()).nullish(),
+  code_sure: z.boolean().nullish(),
+  note: z.string().nullable(),
+});
+
+/** One packing object of a good, read leniently (a word outside its enum is «not said»). */
+const packSchema = z.object({
   cartons: z.number().nullish(),
   pieces_per_carton: z.number().nullish(),
   carton_weight_kg: z.number().nullish(),
   carton_weight_kind: z.string().nullish(),
   carton_volume_m3: z.number().nullish(),
-  carton_l: z.number().nullish(),
-  carton_w: z.number().nullish(),
-  carton_h: z.number().nullish(),
-  carton_size_unit: z.string().nullish(),
+  l: z.number().nullish(),
+  w: z.number().nullish(),
+  h: z.number().nullish(),
+  size_unit: z.string().nullish(),
+  size_of: z.string().nullish(),
   piece_weight_kg: z.number().nullish(),
-  code_sure: z.boolean().nullish(),
-  note: z.string().nullable(),
 });
 
 const factsSchema = z.object({
@@ -163,105 +183,126 @@ tnved_code — код). Сами эти строки в goods не повтор�
  *    не умножай» kept the wrong number out and threw the factors away;
  *  - a code always, with its doubt (`code_sure`): an uncoded row cannot be
  *    asked its law's unit before «Tasdiqlash»;
- *  - `questions`: the model had no way to say what it could not read.
+ *  - `questions`, each with a KIND its consumer switches on: the model had no
+ *    way to say what it could not read;
+ *  - every figure has ONE home: `unit` + `measure_qty` carry m², pairs and
+ *    litres only — the old «(или measure_qty + unit "m3")» let one carton's
+ *    cube land as the line's through the second door;
+ *  - a size says WHOSE it is (`size_of`), and a marketplace card describes
+ *    one piece — its MOQ is not the order.
+ * The wording follows the prompt audit of 2026-11-12 (PR-1…PR-15): the
+ * suppressors it lists («фото накладных» as the only photo, «лучше пустой
+ * список», the two homes of a cube) are what this text removes.
  */
 const SYSTEM = `Ты — помощник карго-компании GSR LOGISTICS (Китай → Узбекистан).
 Сотрудник прислал материалы по заявке клиента: тексты, списки товаров, фото накладных,
 фото самого товара или коробок, скриншоты переписки и карточек товара.
-Твоя задача — ИЗВЛЕЧЬ факты, а не считать цену. Цену называет сотрудник.
+Твоя задача — ИЗВЛЕЧЬ факты, а не считать. Цену называет сотрудник; умножает и складывает бот.
 
 Извлеки:
 - город отправления и город назначения (если названы);
-- общий вес ОТПРАВКИ — БРУТТО в килограммах (с упаковкой: G.W., gross, брутто,
-  毛重) — и общий объём в кубометрах (если названы; пересчитай единицы при
-  необходимости). Если документ называет только НЕТТО всей отправки — как
-  поступить, сказано в строке «Только нетто:» под разделом заявки;
-- список товаров: название, количество ШТУК, ВЕС ЭТОЙ ПОЗИЦИИ в килограммах,
-  объём ВСЕЙ позиции в м³ (все её коробки — TOTAL CBM, никогда не объём одной
-  коробки) и код ТН ВЭД;
-  вес позиции нужен для растаможки: база считается за кг или за штуку по
-  КАЖДОЙ строке. Если в упаковочном листе вес указан по каждой позиции —
-  бери его оттуда. Если веса по позиции нет — null, не дели общий вес.
-  Вес позиции — НЕТТО (без упаковки), если документ называет нетто; если
-  есть только брутто — бери брутто и напиши об этом в note.
-- ЕДИНИЦЫ — не путай их:
-  · quantity — только ШТУКИ (шт, pcs, dona, ta, комплект). Если штук нет — null;
-  · количество КОРОБОК (коробка, ctn, carton, место, karobka, 箱) — это НЕ
-    количество товара: пиши его в cartons, а quantity оставь null, если штуки
-    не названы отдельно;
-  · квадратные метры (м², кв.м) → measure_qty + unit "m2"; ПАРЫ (пар, juft,
-    обувь, носки, перчатки) → unit "juft"; ЛИТРЫ → unit "litr";
-    кубометры позиции → volume_m3 (или measure_qty + unit "m3");
-  · одна позиция может иметь И штуки, И вес (одежда: 300 шт, 150 кг) —
-    заполни оба;
-  · unit = null и measure_qty = null, если другой единицы нет.
-- УПАКОВКА — ты ПЕРЕПИСЫВАЕШЬ, бот УМНОЖАЕТ. Всё, что написано НА ОДНУ
-  КОРОБКУ, пиши в свои поля и никогда не умножай сам:
-  · cartons — число коробок (мест) ЭТОЙ позиции;
+- общий вес ОТПРАВКИ — БРУТТО в килограммах (с упаковкой: G.W., gross, брутто, 毛重, 总毛重) — и
+  общий объём в кубометрах (TOTAL CBM, MEAS, Volume, 总体积, 方数, «Итого м³») — только если ИТОГ
+  НАПИСАН (единицы пересчитай: т → кг, л и см³ → м³). Строки сам не складывай: итога нет — null,
+  бот сложит строки сам. Если документ называет только НЕТТО всей отправки — как поступить,
+  сказано в строке «Только нетто:» под разделом заявки;
+- список товаров: название, количество ШТУК, вес позиции, объём позиции, упаковку и код ТН ВЭД.
+
+ЕДИНИЦЫ — у каждой цифры ОДНО место:
+  · quantity — только ШТУКИ всего по позиции (шт, pcs, dona, ta, комплект). Штук нет — null;
+  · weight_kg — килограммы ВСЕЙ позиции, если они написаны. weight_kind: "net" (N.W., нетто,
+    净重), "gross" (G.W., брутто, 毛重) или "unknown". Есть и нетто, и брутто — бери нетто.
+    Веса позиции нет — null, общий вес не дели;
+  · volume_m3 — кубометры ВСЕЙ позиции (все её коробки), если этот итог написан;
+  · unit + measure_qty — ТОЛЬКО квадратные метры ("m2"), ПАРЫ ("juft": обувь, носки, перчатки)
+    и ЛИТРЫ ("litr"). Штуки, килограммы, кубометры и коробки сюда не пиши — у них свои поля.
+    Другой единицы нет — оба null;
+  · одна позиция может иметь и штуки, и вес, и пары — заполни всё, что написано.
+
+УПАКОВКА — ты ПЕРЕПИСЫВАЕШЬ, бот УМНОЖАЕТ. packing — пустой массив, если о коробках, размерах
+и весе одной штуки ничего не написано. Иначе ОДИН объект (несколько — только когда позиция едет
+в коробках разных размеров: тогда бот не умножает, а спросит):
+  · cartons — число коробок (мест) ЭТОЙ позиции: CTNS, 箱数, «мест», 件数 рядом со штуками;
   · pieces_per_carton — штук в одной коробке (PCS/CTN, 装箱数, «по 24 шт»);
-  · carton_weight_kg — вес ОДНОЙ коробки; carton_weight_kind — "gross"
-    (G.W./CTN, брутто, 毛重), "net" (N.W./CTN, нетто, 净重) или "unknown";
+  · carton_weight_kg — вес ОДНОЙ коробки; carton_weight_kind — "gross" (G.W./CTN, 毛重/箱),
+    "net" (N.W./CTN, 净重/箱) или "unknown";
   · carton_volume_m3 — объём ОДНОЙ коробки (CBM/CTN, 单箱体积);
-  · carton_l, carton_w, carton_h — размер ОДНОЙ коробки, как написан
-    (60×40×50); carton_size_unit — "cm", "mm", "m" или "unknown", если единица
-    не написана;
-  · piece_weight_kg — вес ОДНОЙ ШТУКИ товара, если написан именно он
-    («4.5 kg/шт», 单重, 净重 одной штуки на карточке товара) — не коробки и не
-    всей позиции;
-  · чего нет — 0, а для слов — "unknown".
-  Итог по позиции, если он НАПИСАН (TOTAL CBM, вес позиции, всего штук), пиши
-  как всегда — в volume_m3, weight_kg, quantity. Если написан только объём
-  (вес, число штук) ОДНОЙ коробки — volume_m3 (weight_kg, quantity) оставь
-  null и НЕ умножай: бот сам умножит на cartons. Размер самого ТОВАРА («Стол
-  120×80×100», «Плитка 600×600») — не размер коробки: оставь его в названии.
-- CBM, M3, «куб», 方, 立方, MEAS, Measurement, Volume — это кубометры; KGS,
-  G.W., N.W., 毛重, 净重 — вес. Столбец «MEAS (CM)», «Size», 尺寸 с числами
-  вида 60*40*50 — это РАЗМЕР коробки, не объём.
-- код ТН ВЭД: всегда дай лучший код, который подходит названию и тому, что
-  видно: 10 цифр или товарная позиция из 4-6 цифр (точки и пробелы можно).
-  code_sure = true, если уверен, и false, если это предположение. Товар не
-  удалось даже назвать — tnved_code null и code_sure false.
-- steps: короткие строки на узбекском о том, ЧТО ты сделал: как сгруппировал товары,
-  почему поставил такой код ТН ВЭД, что показалось противоречивым. Это читает человек.
-- questions: чего тебе НЕ ХВАТИЛО, чтобы закончить, и что сотрудник может
-  ответить в двух словах — не больше пяти. n — номер товара в твоём списке
-  goods (с 1), 0 — вопрос про всю отправку; text — один короткий вопрос
-  ПО-УЗБЕКСКИ (латиницей). Спрашивай: что лежит в закрытых коробках; из чего
-  сделан товар и для кого он, если от этого зависит код; к какому товару
-  относится цифра; в каких единицах размер. НЕ спрашивай то, что уже есть в
-  материалах, и не проси прислать файл получше. Нечего спросить — пустой массив.
+  · l, w, h — размер, как написан (60×40×50); size_unit — "cm", "mm" или "m"; единица не
+    написана — "unknown" (не угадывай);
+  · size_of — ЧЕЙ это размер: "package" — коробки или места (CTN SIZE, 外箱尺寸, 箱规, «размер
+    коробки», размер, написанный рядом с числом коробок: «20 коробок 60×40×50», а также габарит
+    груза, который едет без коробки: станок, рулон, мебель в сборе); "product" — самого изделия
+    (размер в названии или в карточке товара: «Стол 120×80×75»); не ясно — "unknown";
+  · piece_weight_kg — вес ОДНОЙ ШТУКИ («4.5 кг/шт», 单重);
+  · чего нет — 0, для слов — "unknown".
+Итог по позиции, если он НАПИСАН, пиши как всегда — в quantity, weight_kg, volume_m3. Написано
+только «на одну коробку» или «на одну штуку» — итог оставь null: бот умножит сам. Ты не
+умножаешь, не складываешь и не делишь.
+Не можешь понять, на одну коробку цифра или на всю позицию (столбец назван просто «CBM»,
+«G.W.», «KG») — не решай сам: запиши её в weight_kg / volume_m3 и задай вопрос kind
+"per_or_total".
+Два числа («Плитка 600×600», «экран 55"») — не объём: оставь их в названии.
 
-ФОТО бывают двух видов.
-1) ДОКУМЕНТ — накладная, упаковочный лист, инвойс, наклейка на коробке,
-   запись от руки, скриншот переписки или карточки товара (1688, Taobao,
-   WeChat). Его ЧИТАЙ так же внимательно, как текст: вес и объём чаще всего
-   написаны ИМЕННО НА ФОТО. Возьми числа оттуда, если в тексте их нет.
-   name_source = "document".
-2) САМ ТОВАР или коробки. Его РАССМОТРИ: назови каждый РАЗНЫЙ товар, который
-   видно — конкретно («Стул офисный на колёсах», а не «мебель»), в note
-   напиши, из чего он сделан и для чего, если это видно, и поставь
-   name_source = "picture". Количество, вес и объём по фото НЕ угадывай: null
-   (в полях упаковки — 0), если они не написаны на коробке или в тексте.
-   Закрытые коробки без надписей — не товар: задай вопрос в questions.
-В steps напиши, что именно ты прочитал или увидел на фотографии.
+СЛОВА: CBM, M3, «куб», 方, 立方, MEAS, Measurement, Volume — кубометры; KGS, G.W., N.W., 毛重,
+净重 — вес. Столбец «MEAS (CM)», «CTN SIZE», 外箱尺寸 с числами вида 60*40*50 — это РАЗМЕР,
+не объём.
 
-ВСЁ ВМЕСТЕ. Сотрудник пересылает материал кусками: текст, фото, PDF, таблицу
-Excel (её содержимое дано текстом). Это ОДНА заявка — прочитай всё и собери
-один список. Один и тот же товар, упомянутый в тексте и в документе, — одна
-строка, не две. Если числа в разных местах расходятся, бери из документа и
-напиши об этом в steps (что где написано).
+КАРТОЧКА ТОВАРА (скриншот 1688, Taobao, Alibaba) описывает ОДНУ штуку: её вес —
+piece_weight_kg, её размер — l/w/h с size_of "product". MOQ, 起批量, «мин. заказ», ступени
+цены («≥100 шт — ¥85») — это НЕ заказанное количество: quantity null, пока количество заказа
+не написано в тексте или переписке.
 
-НАЗВАНИЕ товара пиши по-русски; если в документе оно на китайском или
-английском, добавь оригинал в скобках: «Куртка женская (女士夹克)».
+КОД ТН ВЭД: всегда дай лучший код, который подходит названию и тому, что видно: 10 цифр или
+товарная позиция из 4-6 цифр (точки и пробелы можно). code_sure = true, только если код не
+зависит от того, чего ты не знаешь; если его решает материал, пол или назначение, а их не
+видно — code_sure = false и вопрос kind "material". Товар не удалось назвать — tnved_code
+null и code_sure false.
 
-Ничего не выдумывай: ни одной ЦИФРЫ, которой нет в материалах, и ни одного
-товара, который нигде не написан и не виден на фото. Если факта нет — null
-(в полях упаковки — 0). Лучше вопрос в questions, чем придуманный факт.
+ФОТО подписаны «Фото 1», «Фото 2»… Они бывают двух видов.
+1) ДОКУМЕНТ — накладная, упаковочный лист, инвойс, наклейка на коробке, запись от руки,
+   скриншот переписки или карточки товара. Его ЧИТАЙ так же внимательно, как текст: вес и
+   объём чаще всего написаны именно на фото. name_source = "document".
+2) САМ ТОВАР или коробки. Его РАССМОТРИ: назови каждый РАЗНЫЙ товар, который видно, —
+   конкретно («Стул офисный на колёсах», а не «мебель»); в note коротко (до 100 знаков)
+   напиши, из чего он сделан и для чего, если это видно; name_source = "picture".
+   Количество, вес и объём по фото не угадывай. Закрытые коробки без надписей — не товар:
+   вопрос kind "what_goods".
+photo — номер фото, на котором товар виден или написан; 0 — не с фото.
 
-known_codes — только если ниже дан ПРОНУМЕРОВАННЫЙ список «уже взятых» товаров:
-коды ТН ВЭД строк этого списка, где ты уверен (n — номер строки в списке,
-tnved_code — код). Сами эти строки в goods не повторяй. Нет такого списка или
-не уверен — пустой массив.`;
+questions — чего тебе НЕ ХВАТИЛО и что сотрудник ответит в двух словах: не больше пяти, самые
+важные первыми. n — номер товара в твоём списке goods (с 1), 0 — про всю отправку. kind:
+  · "what_goods" — товар нельзя назвать;
+  · "material" — из чего сделан, для кого, для чего — когда от этого зависит код;
+  · "size_unit" — в каких единицах размер;
+  · "size_of" — чей это размер: коробки (места) или самого изделия;
+  · "per_or_total" — цифра на одну коробку (штуку) или на всю позицию;
+  · "which_row" — к какому товару относится цифра или подпись;
+  · "other" — остальное.
+text — один короткий вопрос ПО-УЗБЕКСКИ (латиницей), с самой цифрой, если он о ней:
+«0.083 kub — bitta karobkanikimi yoki hammasinikimi?».
+НЕ спрашивай: количество, вес и объём, которых просто нет, общий брутто и общий объём — их
+бот спросит САМ по своей таблице; то, что уже есть в материалах; «пришлите файл получше».
+Нечего спросить — пустой массив.
+
+steps — короткие строки на узбекском о том, ЧТО ты сделал: что прочитал или увидел на каком
+фото, как сгруппировал товары, почему такой код. Вопросы — не сюда, а в questions.
+
+ВСЁ ВМЕСТЕ. Сотрудник пересылает материал кусками: текст, фото, PDF, таблицу Excel (её
+содержимое дано текстом). Это ОДНА заявка — прочитай всё и собери один список. Один и тот же
+товар в тексте и в документе — одна строка, не две. Если число в тексте сотрудника и число в
+документе расходятся — в поле пиши число ДОКУМЕНТА и назови оба в steps: бот сам сравнит и
+спросит. Документа нет — бери из текста.
+
+НАЗВАНИЕ товара пиши по-русски; если в документе оно на китайском или английском, добавь
+оригинал в скобках: «Куртка женская (女士夹克)».
+
+Ничего не выдумывай: ни одной ЦИФРЫ, которой нет в материалах, и ни одного товара, который
+нигде не написан и не виден на фото. Если факта нет — null (в упаковке — 0). Лучше вопрос в
+questions, чем придуманный факт.
+
+known_codes — только если ниже дан ПРОНУМЕРОВАННЫЙ список «уже взятых» товаров: коды ТН ВЭД
+строк этого списка, где ты уверен (n — номер строки в списке, tnved_code — код). Сами эти
+строки в goods не повторяй. Нет такого списка или не уверен — пустой массив.`;
 
 /**
  * A code the model proposed for a row of the «already taken» list, by the
@@ -284,8 +325,14 @@ export interface KnownCode {
  */
 export interface AiQuestion {
   row: number | null;
+  /** What is being asked — each kind has ONE consumer (§3.3 M4); an unknown word reads `other`. */
+  kind: AiQuestionKind;
   text: string;
 }
+
+export const AI_QUESTION_KINDS = ['what_goods', 'material', 'size_unit', 'size_of', 'per_or_total', 'which_row', 'other'] as const;
+export type AiQuestionKind = (typeof AI_QUESTION_KINDS)[number];
+const QUESTION_KIND_SET: ReadonlySet<string> = new Set(AI_QUESTION_KINDS);
 
 export const AI_QUESTIONS_MAX = 5;
 const AI_QUESTION_CHARS = 200;
@@ -297,12 +344,16 @@ export function questionsOf(raw: unknown, goodsCount: number): AiQuestion[] {
   for (const entry of raw) {
     if (out.length >= AI_QUESTIONS_MAX) break;
     if (!entry || typeof entry !== 'object') continue;
-    const { n, text } = entry as { n?: unknown; text?: unknown };
+    const { n, kind, text } = entry as { n?: unknown; kind?: unknown; text?: unknown };
     if (typeof text !== 'string') continue;
     const said = text.replace(/\s+/g, ' ').trim();
     if (!said) continue;
     const row = typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= goodsCount ? n - 1 : null;
-    out.push({ row, text: clipUnits(said, AI_QUESTION_CHARS) });
+    // A number past the goods the model listed is asked of the shipment — and
+    // said in the log, since the question's own words usually name the row.
+    if (row === null && typeof n === 'number' && n !== 0) logger.warn({ n, goodsCount }, '[calc intake] a question names a row the answer does not have');
+    const word = typeof kind === 'string' ? kind.trim().toLowerCase() : '';
+    out.push({ row, kind: QUESTION_KIND_SET.has(word) ? (word as AiQuestionKind) : 'other', text: clipUnits(said, AI_QUESTION_CHARS) });
   }
   return out;
 }
@@ -806,8 +857,8 @@ export function knownCodesOf(raw: unknown, shown: readonly number[]): KnownCode[
  * by the per-good schema with every key present and nothing defaulted. A
  * number counts as ended only when a character follows it. The totals are
  * kept when their value closed BEFORE the goods array opened (the schema's
- * order puts them first); `steps` only when its whole array closed; the
- * codes never (they come last — a cut drops them, and the landing pass codes
+ * order puts them first); `questions` and `steps` only when their whole
+ * array closed; the codes never (they come last — a cut drops them, and the landing pass codes
  * the rows). `goodsClosed`: the goods array's own «]» was reached — every good
  * the answer meant to list is in `goods`, none of them or all of them.
  */
@@ -816,8 +867,10 @@ export function salvageCut(text: string): {
   goods: z.infer<typeof goodSchema>[];
   steps: string[];
   goodsClosed: boolean;
+  /** The model's questions, when their whole array closed before the cut (raw — `questionsOf` reads them). */
+  questions: unknown[];
 } {
-  const out: ReturnType<typeof salvageCut> = { totals: {}, goods: [], steps: [], goodsClosed: false };
+  const out: ReturnType<typeof salvageCut> = { totals: {}, goods: [], steps: [], goodsClosed: false, questions: [] };
   let i = skipWs(text, 0);
   if (text[i] !== '{') return out;
   i += 1;
@@ -865,6 +918,9 @@ export function salvageCut(text: string): {
         const steps = z.array(z.string()).safeParse(value);
         if (steps.success) out.steps = steps.data;
       }
+      // The schema puts `questions` right after `goods`, so a cut in the long
+      // tail (steps, codes) still keeps what the model asked.
+      if (key === 'questions' && Array.isArray(value)) out.questions = value;
       i = end;
     }
     i = skipWs(text, i);
@@ -1386,7 +1442,12 @@ const textOf = (message: { content: { type: string; text?: string }[] }): string
  */
 function keptOf(text: string, why: AiReadingCut['why']): ({ ok: true; cut?: AiReadingCut } & AiIntakeResult) | null {
   const cut = salvageCut(text);
-  const read = { facts: factsOf({ ...cut.totals, goods: cut.goods }), steps: cut.steps.slice(0, 20) };
+  const questions = questionsOf(cut.questions, cut.goods.length);
+  const read = {
+    facts: factsOf({ ...cut.totals, goods: cut.goods }),
+    steps: cut.steps.slice(0, 20),
+    ...(questions.length > 0 ? { questions } : {}),
+  };
   if (cut.goodsClosed) {
     logger.warn({ why, goods: cut.goods.length }, '[calc intake] answer cut after its goods — the codes are lost, the reading kept whole');
     return { ok: true, ...read };
@@ -1437,8 +1498,8 @@ export function readIntakeResponse(
   logger.info(
     {
       goods: parsed.goods.length,
-      pictureNamed: parsed.goods.filter((g) => g.name_source === 'picture').length,
-      packed: parsed.goods.filter((g) => (g.cartons ?? 0) > 0).length,
+      pictureNamed: parsed.goods.filter((g) => lower(g.name_source) === 'picture').length,
+      packed: parsed.goods.filter((g) => (g.packing ?? []).length > 0).length,
       coded: parsed.goods.filter((g) => g.tnved_code).length,
       questions: questions.length,
       contract: intakeContract().name,
@@ -1538,7 +1599,17 @@ const FACTS_JSON_SCHEMA_V1 = {
 const FACTS_JSON_SCHEMA = {
   type: 'object',
   properties: {
-    ...FACTS_JSON_SCHEMA_V1.properties,
+    from_city: { type: ['string', 'null'] },
+    to_city: { type: ['string', 'null'] },
+    weight_kg: {
+      type: ['number', 'null'],
+      description: 'Общий вес отправки БРУТТО, кг — только если итог НАПИСАН; строки не складывай.',
+    },
+    weight_netto: { type: ['boolean', 'null'], description: 'true — общий вес выше это НЕТТО; иначе false.' },
+    volume_m3: {
+      type: ['number', 'null'],
+      description: 'Общий объём отправки, м³ — только если итог НАПИСАН; строки не складывай.',
+    },
     goods: {
       type: 'array',
       items: {
@@ -1550,51 +1621,82 @@ const FACTS_JSON_SCHEMA = {
             enum: ['document', 'picture'],
             description: '"picture" — название дано по ФОТО самого товара (нигде не написано); иначе "document".',
           },
+          photo: { type: 'integer', description: 'Номер фото («Фото N»), где товар виден или написан; 0 — не с фото.' },
           quantity: { type: ['number', 'null'], description: 'ШТУК всего по позиции; не коробок.' },
-          weight_kg: { type: ['number', 'null'], description: 'Вес ЭТОЙ позиции, кг (нетто, если назван).' },
+          weight_kg: {
+            type: ['number', 'null'],
+            description: 'Вес ВСЕЙ позиции, кг, если написан. Вес одной коробки или штуки — в packing.',
+          },
+          weight_kind: { type: 'string', enum: ['net', 'gross', 'unknown'] },
           volume_m3: {
             type: ['number', 'null'],
-            description: 'Объём ВСЕЙ позиции (все коробки), м³, если он НАПИСАН. Дан только объём одной коробки — null.',
+            description: 'Объём ВСЕЙ позиции, м³, если НАПИСАН. Объём одной коробки и размеры — в packing.',
           },
-          unit: { type: ['string', 'null'], enum: [...AI_UNITS, null] },
+          // ONE home per figure (the prompt audit's PR-3): pieces, kilos, cubes
+          // and cartons have their own keys, so the second measure is m², pairs
+          // or litres and nothing else.
+          unit: { type: ['string', 'null'], enum: [...AI_MEASURE_UNITS, null] },
           measure_qty: { type: ['number', 'null'] },
-          cartons: { type: 'number', description: 'Число коробок (мест) этой позиции; не написано — 0.' },
-          pieces_per_carton: { type: 'number', description: 'Штук в ОДНОЙ коробке; не написано — 0.' },
-          carton_weight_kg: { type: 'number', description: 'Вес ОДНОЙ коробки, кг; не написан — 0.' },
-          carton_weight_kind: { type: 'string', enum: ['gross', 'net', 'unknown'] },
-          carton_volume_m3: { type: 'number', description: 'Объём ОДНОЙ коробки, м³ (CBM/CTN); не написан — 0.' },
-          carton_l: { type: 'number', description: 'Размер ОДНОЙ коробки, как написан: длина; нет — 0.' },
-          carton_w: { type: 'number', description: 'ширина; нет — 0.' },
-          carton_h: { type: 'number', description: 'высота; нет — 0.' },
-          carton_size_unit: { type: 'string', enum: ['cm', 'mm', 'm', 'unknown'] },
-          piece_weight_kg: { type: 'number', description: 'Вес ОДНОЙ ШТУКИ товара, кг; не написан — 0.' },
+          packing: {
+            type: 'array',
+            description: 'Пустой массив, если про упаковку ничего не написано; иначе один объект.',
+            items: {
+              type: 'object',
+              properties: {
+                cartons: { type: 'number', description: 'Число коробок (мест) этой позиции; не написано — 0.' },
+                pieces_per_carton: { type: 'number', description: 'Штук в ОДНОЙ коробке; не написано — 0.' },
+                carton_weight_kg: { type: 'number', description: 'Вес ОДНОЙ коробки, кг; не написан — 0.' },
+                carton_weight_kind: { type: 'string', enum: ['gross', 'net', 'unknown'] },
+                carton_volume_m3: { type: 'number', description: 'Объём ОДНОЙ коробки, м³ (CBM/CTN); не написан — 0.' },
+                l: { type: 'number', description: 'Размер, как написан: первое число; нет — 0.' },
+                w: { type: 'number', description: 'второе; нет — 0.' },
+                h: { type: 'number', description: 'третье; нет — 0.' },
+                size_unit: { type: 'string', enum: ['cm', 'mm', 'm', 'unknown'] },
+                size_of: {
+                  type: 'string',
+                  enum: ['package', 'product', 'unknown'],
+                  description: 'Чей размер: коробки/места или самого изделия.',
+                },
+                piece_weight_kg: { type: 'number', description: 'Вес ОДНОЙ ШТУКИ, кг; не написан — 0.' },
+              },
+              required: [
+                'cartons', 'pieces_per_carton', 'carton_weight_kg', 'carton_weight_kind', 'carton_volume_m3', 'l', 'w',
+                'h', 'size_unit', 'size_of', 'piece_weight_kg',
+              ],
+              additionalProperties: false,
+            },
+          },
           tnved_code: { type: ['string', 'null'] },
           code_sure: { type: 'boolean', description: 'false — код это предположение.' },
+          // LAST on purpose: a cut answer keeps a good only once its «}» closed.
           note: { type: ['string', 'null'] },
         },
         required: [
-          'name', 'name_source', 'quantity', 'weight_kg', 'volume_m3', 'unit', 'measure_qty', 'cartons',
-          'pieces_per_carton', 'carton_weight_kg', 'carton_weight_kind', 'carton_volume_m3', 'carton_l', 'carton_w',
-          'carton_h', 'carton_size_unit', 'piece_weight_kg', 'tnved_code', 'code_sure', 'note',
+          'name', 'name_source', 'photo', 'quantity', 'weight_kg', 'weight_kind', 'volume_m3', 'unit', 'measure_qty',
+          'packing', 'tnved_code', 'code_sure', 'note',
         ],
         additionalProperties: false,
       },
     },
+    // Right after the goods, before the long tail: a cut keeps them (`salvageCut`).
     questions: {
       type: 'array',
-      description: 'Не больше пяти вопросов сотруднику; нечего спросить — пустой массив.',
+      description: 'Не больше пяти, самые важные первыми; нечего спросить — пустой массив.',
       items: {
         type: 'object',
         properties: {
           n: { type: 'integer', description: 'номер товара в goods (с 1); 0 — про всю отправку' },
+          kind: { type: 'string', enum: [...AI_QUESTION_KINDS] },
           text: { type: 'string', description: 'один короткий вопрос по-узбекски (латиницей)' },
         },
-        required: ['n', 'text'],
+        required: ['n', 'kind', 'text'],
         additionalProperties: false,
       },
     },
+    steps: FACTS_JSON_SCHEMA_V1.properties.steps,
+    known_codes: FACTS_JSON_SCHEMA_V1.properties.known_codes,
   },
-  required: ['from_city', 'to_city', 'weight_kg', 'weight_netto', 'volume_m3', 'goods', 'steps', 'known_codes', 'questions'],
+  required: ['from_city', 'to_city', 'weight_kg', 'weight_netto', 'volume_m3', 'goods', 'questions', 'steps', 'known_codes'],
   additionalProperties: false,
 } as const;
 
@@ -1633,7 +1735,13 @@ export function __resetIntakeContract(): void {
 export function isSchemaRefusal(err: unknown): boolean {
   if (!(err instanceof Anthropic.APIError) || err.status !== 400) return false;
   const said = err.message ?? '';
-  return /schema|output_config|output_format/i.test(said) && /complex|compil|unsupported|invalid|too many|limit|grammar/i.test(said);
+  // The message must NAME the schema: «output_config.effort: Input should be …
+  // (invalid)» is a 400 about another field, and latching the legacy contract
+  // on it would silently lose the packing for the life of the process (PR-14).
+  return (
+    /schema|output_config\.format|output_format/i.test(said) &&
+    /complex|compil|unsupported|invalid|too many|limit|grammar/i.test(said)
+  );
 }
 
 /**
@@ -1650,6 +1758,16 @@ export function isSchemaRefusal(err: unknown): boolean {
  * single line's copied weight, the summary and the Telegram line call it
  * netto too, never the «brutto» the lone copy's note used to claim.
  */
+/** «Фото N:» — the label of the N-th picture of a request, 1-based, in the order they are sent. */
+export const photoLabel = (n: number): string => `Фото ${n}:`;
+
+/**
+ * The user turn's last line when only pictures and documents were sent. It
+ * used to end «читай фото и документы» — the last word the model heard was
+ * «read», about a photograph of chairs (PR-1).
+ */
+export const CLOSING_FILES_ONLY = 'Текста нет. Посмотри фото и документы: документ прочитай, товар на фото назови.';
+
 const NETTO_ONLY: Record<CalcSection, string> = {
   yolkira: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
   podklyuch: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
@@ -1707,7 +1825,7 @@ function intakeContent(
   const closing = material
     ? `Материалы:\n${clipUnits(material, 20000)}`
     : images.length > 0 || pdfs.length > 0
-      ? 'Текста нет — читай фото и документы.'
+      ? CLOSING_FILES_ONLY
       : sheets.some((t) => t.text.trim() !== '')
         ? 'Текста нет — читай таблицу выше.'
         : ask
@@ -1718,12 +1836,16 @@ function intakeContent(
   return [
     // Images FIRST: the model reads them as context for the text that
     // follows, which is how the packing list and its caption actually relate.
-    ...images.map(
-      (img): Anthropic.ContentBlockParam => ({
+    // Each picture is NUMBERED («Фото 1:») — the prompt speaks of «Фото N»,
+    // a good says which one it was seen on (`photo`), and a caption can be
+    // tied to its picture (§3.3 M10). The label is a text block of its own.
+    ...images.flatMap((img, index): Anthropic.ContentBlockParam[] => [
+      { type: 'text', text: photoLabel(index + 1) },
+      {
         type: 'image',
         source: { type: 'base64', media_type: img.mediaType, data: img.data.toString('base64') },
-      }),
-    ),
+      },
+    ]),
     // …and the invoices after them, before the text: they are the most exact
     // thing in the message and the caption usually refers to them.
     ...pdfs.map(
@@ -1773,6 +1895,9 @@ const stated = (n: number | null | undefined): number | null =>
 
 const SIZE_UNITS: Record<string, SizeUnit> = { cm: 'cm', mm: 'mm', m: 'm' };
 
+/** An enum word as the model wrote it, folded: «Picture», « gross » and "GROSS" are the word (PR-14). */
+const lower = (word: string | null | undefined): string => (word ?? '').trim().toLowerCase();
+
 /**
  * The packing keys of one answered good, as the kernel's `Packing`
  * (docs/AI-SORAYDI.md §2.2-§2.3) — COPIED, never multiplied: `applyPacking`
@@ -1781,25 +1906,47 @@ const SIZE_UNITS: Record<string, SizeUnit> = { cm: 'cm', mm: 'mm', m: 'm' };
  * misreading, not a fact).
  */
 export function packingOfAnswer(g: z.infer<typeof goodSchema>): Packing | null {
-  const l = stated(g.carton_l);
-  const w = stated(g.carton_w);
-  const h = stated(g.carton_h);
-  const kind = g.carton_weight_kind === 'gross' || g.carton_weight_kind === 'net' ? g.carton_weight_kind : null;
+  const stated1 = (g.packing ?? []).map((entry) => packSchema.safeParse(entry)).filter((r) => r.success);
+  // Cartons of several sizes: nothing is multiplied (`severalPackings`), the row's figures are asked.
+  if (stated1.length !== 1) return null;
+  const k = stated1[0]!.data;
+  const l = stated(k.l);
+  const w = stated(k.w);
+  const h = stated(k.h);
+  const weightKind = lower(k.carton_weight_kind);
+  const kind = weightKind === 'gross' || weightKind === 'net' ? weightKind : null;
+  const owner = lower(k.size_of);
   const packing: Packing = {
     ...emptyPacking('ai'),
-    cartons: wholeCartons(g.cartons),
-    pcsPerCarton: stated(g.pieces_per_carton),
-    kgPerCarton: stated(g.carton_weight_kg),
-    kgPerCartonKind: stated(g.carton_weight_kg) !== null ? kind : null,
-    m3PerCarton: stated(g.carton_volume_m3),
-    size: l !== null && w !== null && h !== null ? { l, w, h, unit: SIZE_UNITS[g.carton_size_unit ?? ''] ?? null } : null,
-    kgPerPiece: stated(g.piece_weight_kg),
+    cartons: wholeCartons(k.cartons),
+    pcsPerCarton: stated(k.pieces_per_carton),
+    kgPerCarton: stated(k.carton_weight_kg),
+    kgPerCartonKind: stated(k.carton_weight_kg) !== null ? kind : null,
+    m3PerCarton: stated(k.carton_volume_m3),
+    size:
+      l !== null && w !== null && h !== null
+        ? {
+            l,
+            w,
+            h,
+            unit: SIZE_UNITS[lower(k.size_unit)] ?? null,
+            // Whose size it is — the model's word, or nobody's: then nothing is multiplied.
+            of: owner === 'package' || owner === 'product' ? owner : null,
+          }
+        : null,
+    kgPerPiece: stated(k.piece_weight_kg),
   };
   return packingStated(packing) ? packing : null;
 }
 
+/** Did the answer give this good cartons of SEVERAL sizes? Then the bot multiplies nothing and says so. */
+export const severalPackings = (g: z.infer<typeof goodSchema>): boolean => (g.packing ?? []).length > 1;
+
+/** Said on the row when its cartons come in several sizes — written by code, never asked of the model. */
+export const SEVERAL_PACKINGS_NOTE = 'karobkalar har xil o‘lchamda — hajm va og‘irlik hisoblanmadi';
+
 export function aiGoodsLine(g: z.infer<typeof goodSchema>): CalcGoodsFact {
-  const notes = [g.note?.trim() || null];
+  const notes = [g.note?.trim() || null, severalPackings(g) ? SEVERAL_PACKINGS_NOTE : null];
   let quantity = g.quantity;
   let weightKg = g.weight_kg;
   let volumeM3 = g.volume_m3;
@@ -1850,7 +1997,13 @@ export function aiGoodsLine(g: z.infer<typeof goodSchema>): CalcGoodsFact {
     tnvedCode,
     // Only a code can be doubted, and only the model's own doubt is recorded.
     ...(tnvedCode && g.code_sure === false ? { tnvedSure: false } : {}),
-    ...(g.name_source === 'picture' ? { nameFrom: 'photo' as const } : {}),
+    ...(lower(g.name_source) === 'picture' ? { nameFrom: 'photo' as const } : {}),
+    // The picture it was seen or written on («Фото N») — M10's «📷 2-rasm».
+    ...(typeof g.photo === 'number' && Number.isInteger(g.photo) && g.photo >= 1 ? { photoNo: g.photo } : {}),
+    // Which weight the row's own is: only a weight that is THERE has a kind.
+    ...(weightKg !== null && (lower(g.weight_kind) === 'gross' || lower(g.weight_kind) === 'net')
+      ? { weightKind: lower(g.weight_kind) as 'gross' | 'net' }
+      : {}),
     ...(packing ? { packing } : {}),
     note: notes.filter(Boolean).join(' · ') || null,
   };

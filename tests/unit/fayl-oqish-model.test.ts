@@ -76,7 +76,8 @@ describe('salvageCut — only what the stream COMPLETED (§3.3, judge model-salv
     expect(salvageCut(full).goods).toHaveLength(2);
     expect(salvageCut(full).steps).toEqual(['o‘qildi']);
     // The codes never come out of a cut answer.
-    expect(Object.keys(salvageCut(full))).toEqual(['totals', 'goods', 'steps', 'goodsClosed']);
+    // …and the questions only when their own array closed (docs/AI-SORAYDI.md §2.2).
+    expect(Object.keys(salvageCut(full))).toEqual(['totals', 'goods', 'steps', 'goodsClosed', 'questions']);
   });
 
   it('a good missing a key — the stream cut inside it and a model closed it short — is not a good', () => {
@@ -106,7 +107,7 @@ describe('the lone Excel on the AI door is coded by the model (§3.7, known-3)',
     expect(api.bodies).toHaveLength(1);
     expect(out.ok && out.knownCodes).toEqual([{ index: 0, code: '6201930000' }]);
     expect(promptOf(0)).toContain('Других материалов нет: goods оставь пустым, дай только known_codes для строк списка.');
-    expect(promptOf(0)).not.toContain('читай фото и документы');
+    expect(promptOf(0)).not.toContain('Посмотри фото и документы');
   });
 
   it('every row coded already, or the codes not asked (the plain door): nothing to read, no call', async () => {
@@ -147,7 +148,9 @@ describe('the lone Excel on the AI door is coded by the model (§3.7, known-3)',
       images: [{ data: Buffer.from('x'), mediaType: 'image/jpeg' }],
       salvage: true,
     });
-    expect(promptOf(1)).toContain('Текста нет — читай фото и документы.');
+    // It used to end «читай фото и документы» — «read», about a photograph of
+    // chairs (the prompt audit's PR-1).
+    expect(promptOf(1)).toContain('Текста нет. Посмотри фото и документы: документ прочитай, товар на фото назови.');
     // …and what it was SHOWN of the attached (pdfimg-12).
     expect(promptOf(1)).toContain('Прикреплено файлов: 1; из них тебе показано: 1 фото, 0 PDF');
   });

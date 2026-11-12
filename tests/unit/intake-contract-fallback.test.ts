@@ -80,6 +80,16 @@ describe('a 400 that is NOT about the schema keeps today’s road', () => {
     expect(api.bodies).toHaveLength(1);
   });
 
+  it('a 400 about ANOTHER field of output_config is not the schema’s: no latch (the prompt audit’s PR-14)', async () => {
+    // «invalid» + «output_config» used to be enough — and the packing was then
+    // lost for the life of the process over a parameter nobody sent wrongly twice.
+    api.script.push({ status: 400, message: 'output_config.effort: Input should be low, medium, high, xhigh or max (invalid)' });
+    const out = await read();
+    expect(out.ok).toBe(false);
+    expect(api.bodies).toHaveLength(1);
+    expect(intakeContract().name).toBe('packing');
+  });
+
   it('a request refused WITH a PDF is still read again without it — the PDF is blamed, not the schema', async () => {
     api.script.push({ status: 400, message: 'messages.0.content.0.document.source.base64: could not process the PDF' }, { text: readingJson() });
     const out = await analyzeIntake({
@@ -118,24 +128,33 @@ describe('the new answer is read: packing, the picture’s name, the model’s q
         goods: [
           goodJson('Стул офисный', {
             name_source: 'picture',
-            cartons: 20,
-            pieces_per_carton: 2,
-            carton_weight_kg: 0,
-            carton_weight_kind: 'unknown',
-            carton_volume_m3: 0.12,
-            carton_l: 0,
-            carton_w: 0,
-            carton_h: 0,
-            carton_size_unit: 'unknown',
+            photo: 1,
+            weight_kind: 'unknown',
+            packing: [
+              {
+                cartons: 20,
+                pieces_per_carton: 2,
+                carton_weight_kg: 0,
+                carton_weight_kind: 'unknown',
+                carton_volume_m3: 0.12,
+                l: 0,
+                w: 0,
+                h: 0,
+                size_unit: 'unknown',
+                size_of: 'unknown',
+                piece_weight_kg: 0,
+              },
+            ],
             tnved_code: '9401310000',
             code_sure: false,
           }),
         ],
         questions: [
-          { n: 1, text: 'Stul nimadan — plastikmi, metallmi?' },
-          { n: 0, text: 'Umumiy og‘irlik qancha?' },
-          { n: 7, text: 'Qaysi qator?' }, // past the goods: asked of the shipment, never of a row that is not there
-          { n: 1, text: '   ' }, // nothing asked
+          { n: 1, kind: 'material', text: 'Stul nimadan — plastikmi, metallmi?' },
+          { n: 0, kind: 'Per_Or_Total', text: '0.12 kub — bitta karobkanikimi?' }, // the enum word is folded
+          { n: 7, kind: 'which_row', text: 'Qaysi qator?' }, // past the goods: asked of the shipment, never of a row that is not there
+          { n: 1, kind: 'a word nobody defined', text: 'Yana nima?' }, // an unknown kind reads «other»
+          { n: 1, kind: 'other', text: '   ' }, // nothing asked
           'garbage',
         ],
       }),
@@ -150,13 +169,34 @@ describe('the new answer is read: packing, the picture’s name, the model’s q
     if (!out.ok) throw new Error('expected a reading');
     // 20 × 0.12 = 2.4 m³ and 20 × 2 = 40 — the BOT's arithmetic, by hand here.
     expect(out.facts.goods).toMatchObject([
-      { name: 'Стул офисный', nameFrom: 'photo', tnvedCode: '9401310000', tnvedSure: false, volumeM3: 2.4, quantity: 40 },
+      { name: 'Стул офисный', nameFrom: 'photo', photoNo: 1, tnvedCode: '9401310000', tnvedSure: false, volumeM3: 2.4, quantity: 40 },
     ]);
     expect(out.questions).toEqual([
-      { row: 0, text: 'Stul nimadan — plastikmi, metallmi?' },
-      { row: null, text: 'Umumiy og‘irlik qancha?' },
-      { row: null, text: 'Qaysi qator?' },
+      { row: 0, kind: 'material', text: 'Stul nimadan — plastikmi, metallmi?' },
+      { row: null, kind: 'per_or_total', text: '0.12 kub — bitta karobkanikimi?' },
+      { row: null, kind: 'which_row', text: 'Qaysi qator?' },
+      { row: 0, kind: 'other', text: 'Yana nima?' },
     ]);
+    // Every picture is numbered for the model: «Фото 1:» stands before its image block.
+    const blocks = api.bodies.at(-1)!.messages[0]!.content;
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'image', 'text']);
+    expect(blocks[0]!.text).toBe('Фото 1:');
+  });
+
+  it('a CUT answer keeps the questions whose array closed — they stand right after the goods', async () => {
+    const whole = readingJson({
+      goods: [goodJson('Стул', { quantity: 20 })],
+      questions: [{ n: 1, kind: 'material', text: 'Stul nimadan?' }],
+      steps: ['a', 'b'],
+    });
+    // The schema's order is goods → questions → steps: cut inside `steps`.
+    const ordered = JSON.stringify((({ goods, questions, steps, ...rest }) => ({ ...rest, goods, questions, steps }))(JSON.parse(whole)));
+    const at = ordered.indexOf('"steps"') + 12;
+    api.script.push({ text: ordered.slice(0, at), stop: 'max_tokens' });
+    const out = await read();
+    if (!out.ok) throw new Error('expected the kept reading');
+    expect(out.facts.goods).toHaveLength(1);
+    expect(out.questions).toEqual([{ row: 0, kind: 'material', text: 'Stul nimadan?' }]);
   });
 
   it('a legacy answer (none of the new keys) reads exactly as before', async () => {
