@@ -466,9 +466,11 @@ describe('X7 — the cube and weight headers nobody mapped (XLS-7, XLS-8)', () =
 
   it('a SECOND cube column — the volume is already chosen — is still never the line’s money', () => {
     // «Total» is a money key; the first cube column took the volume, and the one left free must not become the sum.
+    // (Re-anchored in X5: the line's cube is the column with the LARGER Σ now, never the leftmost — so the first
+    // column holds the larger figure, 5 against 0.5, and the «Total …» column is still the one left free.)
     for (const [a, b] of [['CUBE', 'Total CUBE'], ['CBM', 'Total CUBM'], ['CU.M', 'Total cubic meters'], ['方数', 'Total 方数']] as const) {
-      const row = first(['Description', 'Qty', a, b], ['Chair', 100, 0.5, 5]);
-      expect([row.volumeM3, row.amount], `${a} | ${b}`).toEqual([0.5, null]);
+      const row = first(['Description', 'Qty', a, b], ['Chair', 100, 5, 0.5]);
+      expect([row.volumeM3, row.amount], `${a} | ${b}`).toEqual([5, null]);
     }
   });
 
