@@ -4026,6 +4026,7 @@
     "linkedReceipts": "已关联的入库单",
     "linkPick": "核算",
     "linkNoneOnCard": "该入库单未关联核算",
+    "linkCurrentElsewhere": "当前计算 — 不在列表中",
     "quoted": "核算",
     "measured": "实际",
     "accuracy": "清关：核算与实际",

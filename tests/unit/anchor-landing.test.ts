@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, normalize } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest';
  * on the address's `#fragment`. It used to call `scrollIntoView` on its lit
  * tab «to bring it into view on a phone». That call scrolls every scrollable
  * ancestor, the window included: on a desktop, where the row cannot scroll
- * sideways at all, its only effect was to pull an anchored page back up to
+ * sideways (\`md:overflow-hidden\`, and the fold's re-render puts it back at its
+ * start), its only visible effect was to pull an anchored page back up to
  * the strip one frame after it had landed (measured on a prixod card at
  * 1280: scrollY 322, then 63). «🔗 Bitim biriktirish» (`#bitim`), a lot's
  * address (`#lot-…`) and a thread's (`#ichki`) all opened at the top for
@@ -37,18 +38,35 @@ describe('layout chrome does not scroll the window', () => {
     expect(strip).toMatch(/\.scrollLeft\s*[-+]=/);
   });
 
-  it('nothing else the protected layout mounts on every page calls it either', () => {
-    const layout = read('src/app/(protected)/layout.tsx');
-    // The layout's own imports from components/ — each is on every page.
-    const mounted = [...layout.matchAll(/from '@\/components\/([\w/-]+)'/g)].map((match) => `src/components/${match[1]}.tsx`);
-    expect(mounted.length).toBeGreaterThan(5);
-    const callers = mounted.filter((file) => {
-      try {
-        return /scrollIntoView/.test(read(file));
-      } catch {
-        return false; // a .ts module, not a component
+  it('nothing the protected layout mounts on every page — followed through every import — scrolls the window', () => {
+    // The layout's chrome, CLOSED transitively: a component the layout mounts
+    // mounts its own imports on every page too (the dock's bubbles, the
+    // composer). The first version of this fence read the layout's direct
+    // imports only — 12 of the 25 modules (the merged card's review, T2).
+    const closure: string[] = [];
+    const queue = ['src/app/(protected)/layout.tsx'];
+    while (queue.length > 0) {
+      const file = queue.shift()!;
+      if (closure.includes(file)) continue;
+      closure.push(file);
+      for (const match of readFileSync(join(process.cwd(), file), 'utf8').matchAll(/from '(@\/components\/[^']+|\.{1,2}\/[^']+)'/g)) {
+        const spec = match[1]!;
+        const base = normalize(spec.startsWith('@/') ? join('src', spec.slice(2)) : join(dirname(file), spec));
+        const hit = ['.tsx', '.ts', '/index.tsx', '/index.ts'].map((ext) => base + ext).find((path) => existsSync(join(process.cwd(), path)));
+        if (hit) queue.push(hit);
       }
-    });
-    expect(callers).toEqual([]);
+    }
+    // The walk is real: the strip, the dock and a module only the dock imports.
+    expect(closure.length).toBeGreaterThanOrEqual(20);
+    expect(closure).toEqual(expect.arrayContaining(['src/components/ui/ws-tabs.tsx', 'src/components/dock.tsx', 'src/components/composer.ts']));
+
+    const scrolls = closure.filter((file) => /scrollIntoView|\.scrollTo\(|\.scrollBy\(|window\.scroll/.test(read(file)));
+    expect(scrolls).toEqual([]);
+    // A focus without `preventScroll` scrolls its element into view, so a
+    // mount-time focus would pull an anchored page just the same. The two that
+    // exist run inside a panel a person has OPENED (⌘K, «+ Yangi») — a closed
+    // list, so a new one is looked at before it ships.
+    const focuses = closure.filter((file) => /autoFocus|\.focus\(/.test(read(file))).sort();
+    expect(focuses).toEqual(['src/components/quick-create.tsx', 'src/components/search-palette.tsx']);
   });
 });

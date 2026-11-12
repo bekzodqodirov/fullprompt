@@ -4026,6 +4026,7 @@
     "linkedReceipts": "Linked receipts",
     "linkPick": "Calculation",
     "linkNoneOnCard": "This receipt is not linked to a calculation",
+    "linkCurrentElsewhere": "current calculation — not in the list",
     "quoted": "Quoted",
     "measured": "Measured",
     "accuracy": "Customs: quote versus reality",

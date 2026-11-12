@@ -162,14 +162,41 @@ describe('the deal cell inside the card’s «ties» (after the merge with docs/
 });
 
 describe('the «Fayllar» card goes with its last file', () => {
-  it('a reader who may not attach and removes the last file asks the page again', () => {
-    const panel = read('src/components/attachments-panel.tsx');
-    expect(panel).toContain('if (refreshWhenEmpty && !editable && left.length === 0) router.refresh();');
+  // Comments out (#725): a commented-out call must not keep these green (the review, T3).
+  const code = (file: string) =>
+    read(file)
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+  it('a reader who may not attach and removes the last file asks the page again — decided from the list the deletes LEFT', () => {
+    const panel = code('src/components/attachments-panel.tsx');
+    expect(panel).toContain('if (refreshWhenEmpty && !editable && removedAny && items.length === 0) router.refresh();');
+    expect(panel).toContain('setRemovedAny(true);');
+    // Not from the render a press closed over: two ✕ before the first answer each saw the other file (XF-3).
+    expect(panel).not.toMatch(/const left = items\.filter/);
     // Only the prixod card asks for it: its «Fayllar» card is drawn only while there is something
     // to list or to attach (`showFiles`), so an emptied one is a heading over nothing.
-    const page = read('src/app/(protected)/receipts/[id]/page.tsx');
+    const page = code('src/app/(protected)/receipts/[id]/page.tsx');
     expect(page).toMatch(/removableIds=\{ownFileIds\}\n\s+refreshWhenEmpty\n/);
     expect(page).toContain('const showFiles = canEdit || receiptFiles.length > 0;');
+  });
+});
+
+describe('the ties’ two cells start from what is STORED (the merged card’s review, XF-1 / XF-2)', () => {
+  const page = read('src/app/(protected)/receipts/[id]/page.tsx')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  it('both cells are keyed on the facts they draw, so a client correction that revalidates without a remount resets them', () => {
+    expect(page).toContain("key={`deal:${receipt.clientId ?? ''}:${receipt.dealId ?? ''}`}");
+    expect(page).toContain("key={`calc:${ownDeal?.id ?? ''}:${receipt.calcRequestId ?? ''}`}");
+  });
+
+  it('«Hisob» offers the calculations of the prixod’s OWN deal, and stays drawn while a link stands', () => {
+    expect(page).toContain('await calcLinkOptions(ownDeal?.id ?? null)');
+    expect(page).not.toContain('calcLinkOptions(receipt.dealId)');
+    expect(page).toContain('const showCalcRow = mayLinkCalc && (calcOptions.length > 0 || receipt.calcRequestId !== null);');
   });
 });
 

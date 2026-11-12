@@ -51,7 +51,18 @@ test('mint the client and its prixod', async () => {
 test('the button’s address on a desktop: the page stays at the deal block once it has hydrated', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 420 });
   await login(page, OWNER);
+  // The strip's visit is POSTed from an effect of WorkspaceTabs, which React
+  // runs after its child TabRow's — the lit-tab effect that used to pull the
+  // window — in the same commit: once it is sent, that effect HAS run. The
+  // context's event, not the page's: the service worker may be the sender.
+  const visit = page.context().waitForEvent('request', {
+    predicate: (request) =>
+      request.method() === 'POST' &&
+      request.url().endsWith('/api/nav/visit') &&
+      request.postData()?.includes('"/receipts"') === true,
+  });
   await page.goto(`/receipts/${receiptId}#bitim`);
+  await visit;
   await hydrated(page);
   // The strip is on this page — or the spec would be proving nothing about it.
   await expect(page.getByTestId('ws-tabs').locator('[aria-current]').first()).toBeVisible();

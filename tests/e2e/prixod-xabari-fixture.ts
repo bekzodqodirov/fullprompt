@@ -71,18 +71,23 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<{ receiptId: st
 }
 
 /**
- * ONE file left on the prixod, the seller's own — the state in which taking
- * it back leaves nothing to list for a reader who cannot attach.
+ * Only the seller's own files left on the prixod — `count` of them — the
+ * state in which taking them back leaves nothing to list for a reader who
+ * cannot attach. Returns their names, in the order they were written.
  */
-export async function leaveOnlySellerFile(sql: postgres.Sql, run: Run, receiptId: string): Promise<string> {
+export async function leaveSellerFiles(sql: postgres.Sql, run: Run, receiptId: string, count: number): Promise<string[]> {
   const [seller] = await sql<{ id: string }[]>`SELECT id FROM users WHERE phone = ${SELLER_PHONE}`;
   if (!seller) throw new Error('the demo has no seller');
-  const name = `last-${run.marker}.pdf`;
   await sql`DELETE FROM attachments WHERE entity_type = 'receipt' AND entity_id = ${receiptId}`;
-  await sql`
-    INSERT INTO attachments (id, entity_type, entity_id, kind, storage_key, file_name, content_type, size_bytes, uploaded_by)
-    VALUES (gen_random_uuid(), 'receipt', ${receiptId}, 'file', ${`pxtest/${receiptId}/${name}`}, ${name}, 'application/pdf', 1, ${seller.id})`;
-  return name;
+  const names: string[] = [];
+  for (let i = 1; i <= count; i++) {
+    const name = `last${i}-${run.marker}.pdf`;
+    await sql`
+      INSERT INTO attachments (id, entity_type, entity_id, kind, storage_key, file_name, content_type, size_bytes, uploaded_by)
+      VALUES (gen_random_uuid(), 'receipt', ${receiptId}, 'file', ${`pxtest/${receiptId}/${name}`}, ${name}, 'application/pdf', 1, ${seller.id})`;
+    names.push(name);
+  }
+  return names;
 }
 
 /**

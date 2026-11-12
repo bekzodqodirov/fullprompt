@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { expect, test, type Page } from '@playwright/test';
-import { SELLER_PHONE, cleanupAll, database, leaveOnlySellerFile, mint, mintSibling, newRun } from './prixod-xabari-fixture';
+import { SELLER_PHONE, cleanupAll, database, leaveSellerFiles, mint, mintSibling, newRun } from './prixod-xabari-fixture';
 import { landsOnBlock, login } from './prixod-xabari-landing';
 
 /**
@@ -27,11 +27,14 @@ import { landsOnBlock, login } from './prixod-xabari-landing';
 test.describe.configure({ mode: 'serial' });
 
 const VED = '+998900000004';
+const OWNER = '+998900000001';
 
 const run = newRun();
 let receiptId = '';
 let clientId = '';
 let number = '';
+/** The second client the correction tests move the prixod to (`mintSibling`). */
+let sibling = { clientId: '', code: '' };
 
 async function fits(page: Page) {
   const w = await page.evaluate(() => ({
@@ -124,7 +127,7 @@ test('a seller takes back the file THEY put on the prixod — and nobody else’
   const sql = database();
   let last = '';
   try {
-    last = await leaveOnlySellerFile(sql, run, receiptId);
+    last = (await leaveSellerFiles(sql, run, receiptId, 1))[0]!;
   } finally {
     await sql.end();
   }
@@ -225,7 +228,6 @@ test('a prixod a client correction left on ANOTHER client’s deal: the card doe
   // block its button opens must say the same thing.
   const sql = database();
   let foreign: { id: string; code: string };
-  let sibling: { clientId: string; code: string };
   try {
     const rows = await sql<{ id: string; code: string }[]>`SELECT id, code FROM deals WHERE client_id = ${clientId}`;
     expect(rows).toHaveLength(1);
@@ -313,6 +315,88 @@ test('a reader who may NOT open a deal takes the prixod OFF another client’s d
     expect(await check`SELECT id FROM deals WHERE id = ${foreignId}`).toHaveLength(1);
   } finally {
     await check.end();
+  }
+});
+
+test('a client corrected ON the card: the deal cell starts again from what is stored, and «Saqlash» takes the prixod off the old deal', async ({ page }) => {
+  // The foreign state's ONE origin is this card's own «Boshqa amallar»: the
+  // correction revalidates without remounting the cell, and the cell kept
+  // the deal it had chosen before — so «Saqlash» over «— Uzish» sent the OLD
+  // deal back, the save «succeeded», and the prixod stayed where it was with
+  // nothing said (the merged card's review, XF-1). The two tests above build
+  // the state by SQL and a fresh load, which is exactly why they could not see it.
+  const sql = database();
+  let own: { id: string; code: string };
+  try {
+    const rows = await sql<{ id: string; code: string }[]>`SELECT id, code FROM deals WHERE client_id = ${clientId}`;
+    expect(rows).toHaveLength(1);
+    own = rows[0]!;
+    await sql`UPDATE receipts SET client_id = ${clientId}, deal_id = ${own.id} WHERE id = ${receiptId}`;
+  } finally {
+    await sql.end();
+  }
+
+  // The owner: may correct the client and may file cargo on a deal.
+  await login(page, OWNER);
+  await page.goto(`/receipts/${receiptId}`);
+  const block = page.getByTestId('receipt-deal-block');
+  await expect(block.locator(`a[href="/bitimlar/${own.id}"]`)).toBeVisible();
+  await expect(page.getByTestId('receipt-deal-save')).toHaveCount(0);
+
+  await page.getByTestId('receipt-more').click();
+  const assign = page.getByTestId('receipt-assign');
+  await assign.locator('input').fill(sibling.code);
+  await assign.getByRole('button', { name: new RegExp(sibling.code) }).click();
+  await assign.locator('button[type="submit"]').click();
+
+  // The same mounted card, revalidated: the deal is the OLD client's now.
+  await expect(page.getByTestId('receipt-deal-foreign')).toContainText(own.code);
+  await expect(page.getByTestId('receipt-deal-pick')).toHaveValue('');
+  await page.getByTestId('receipt-deal-save').click();
+  await expect(page.getByTestId('receipt-deal-foreign')).toHaveCount(0);
+  await expect(page.getByTestId('receipt-deal-save')).toHaveCount(0);
+
+  const check = database();
+  try {
+    const [row] = await check<{ client_id: string; deal_id: string | null }[]>`
+      SELECT client_id, deal_id FROM receipts WHERE id = ${receiptId}`;
+    expect(row!.client_id).toBe(sibling.clientId);
+    expect(row!.deal_id).toBeNull();
+  } finally {
+    await check.end();
+  }
+});
+
+test('two of the seller’s files taken back before the first answer: the «Fayllar» card still goes with the last', async ({ page }) => {
+  // The bot's «📎 Fayl qo‘shish» puts several files at once, and on a slow
+  // line from China both ✕ are pressed before the first delete answers. Each
+  // press used to judge «was that the last?» from the list ITS render held —
+  // both saw the other file still there, so nobody asked the page again and
+  // the card stayed a heading over nothing (the merged card's review, XF-3).
+  const sql = database();
+  let names: string[] = [];
+  try {
+    names = await leaveSellerFiles(sql, run, receiptId, 2);
+  } finally {
+    await sql.end();
+  }
+  await login(page, SELLER_PHONE);
+  // The context's route, not the page's: the service worker sends what the page asks.
+  await page.context().route('**/api/attachments/*', async (route) => {
+    if (route.request().method() === 'DELETE') await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  try {
+    await page.goto(`/receipts/${receiptId}`);
+    const files = names.map((name) => page.locator(`a[title="${name}"]`));
+    for (const file of files) await expect(file).toBeVisible();
+    await expect(page.getByTestId('receipt-files')).toHaveCount(1);
+    // Both presses inside the first delete's 1.5 s.
+    for (const file of files) await file.locator('xpath=..').getByRole('button', { name: '✕' }).click();
+    for (const file of files) await expect(file).toHaveCount(0);
+    await expect(page.getByTestId('receipt-files')).toHaveCount(0);
+  } finally {
+    await page.context().unrouteAll({ behavior: 'ignoreErrors' });
   }
 });
 

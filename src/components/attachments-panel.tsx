@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
@@ -62,19 +62,27 @@ export function AttachmentsPanel({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mine, setMine] = useState<string[]>(removableIds ?? []);
+  // A delete happened in THIS panel — so an empty list is something a reader
+  // did, not the panel's first render.
+  const [removedAny, setRemovedAny] = useState(false);
+  // Nothing left and nothing to attach with: the card around this panel is a
+  // heading over nothing now, so the page decides again (the delete is a plain
+  // fetch above, not a server action — nothing has revalidated it). Read from
+  // the list the deletes LEFT, not from the render a press closed over: two ✕
+  // pressed before the first answer each saw the other file still there
+  // (the merged card's review, XF-3).
+  useEffect(() => {
+    if (refreshWhenEmpty && !editable && removedAny && items.length === 0) router.refresh();
+  }, [refreshWhenEmpty, editable, removedAny, items.length, router]);
   const removable = (id: string) => editable || mine.includes(id);
 
   async function remove(id: string) {
     setError(null);
     const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 404) {
-      const left = items.filter((item) => item.id !== id);
       setItems((prev) => prev.filter((item) => item.id !== id));
+      setRemovedAny(true);
       onRemove?.(id);
-      // Nothing left and nothing to attach with: the card around this panel
-      // is a heading over nothing now. The page decides again (a plain
-      // fetch above, not a server action — nothing has revalidated it).
-      if (refreshWhenEmpty && !editable && left.length === 0) router.refresh();
       return;
     }
     // A refusal said in words — it was silently ignored, so a file a lot's

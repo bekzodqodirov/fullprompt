@@ -197,9 +197,10 @@ function TabRow({
   // every scrollable ancestor, the WINDOW included: a page opened at an
   // anchor (`/receipts/<id>#bitim`, `#lot-…`, `#ichki`) was pulled back up to
   // this strip a frame after the browser had landed on it — measured at 1280
-  // on a prixod card, scrollY 322 → 63. On a desktop the row does not scroll
-  // at all (`md:overflow-hidden`, the fold takes the rest), so there the call
-  // could do nothing BUT that. Fenced by `tests/unit/anchor-landing.test.ts`.
+  // on a prixod card, scrollY 322 → 63. On a desktop the row is
+  // `md:overflow-hidden` and the fold's re-render puts it back at its start,
+  // so the window's jump was the only thing that call left visible there.
+  // Fenced by `tests/unit/anchor-landing.test.ts`.
   useEffect(() => {
     const el = row.current;
     const lit = el?.querySelector('[aria-current]');

@@ -402,7 +402,11 @@ export default async function ReceiptDetailPage({
   // deal picker above it and a separate audience — the deal is a sales fact,
   // the calculation is what the control screen measures.
   const mayLinkCalc = calcControlScopeFor(actor) !== 'none';
-  const calcOptions = mayLinkCalc ? await calcLinkOptions(receipt.dealId) : [];
+  // The calculations of the prixod's OWN deal — never of a deal a client
+  // correction left it on (`ownDeal` above): a link to one of those measures
+  // one customer's cargo against another customer's quote. The doors in
+  // calc/link.ts refuse it too; this is what the cell offers.
+  const calcOptions = mayLinkCalc ? await calcLinkOptions(ownDeal?.id ?? null) : [];
   const dealChoices =
     ownDeal && !dealOptions.some((d) => d.id === ownDeal.id)
       ? [
@@ -463,7 +467,9 @@ export default async function ReceiptDetailPage({
   const tl = await getTranslations('lotCheck');
   const totals = receiptTotals(lots);
   const showLoadRow = Boolean(loadView && (ftlOffice || (loadView.sellerId === actor.id && loadView.mode === 'ltl')));
-  const showCalcRow = mayLinkCalc && calcOptions.length > 0;
+  // …and drawn while a link stands even with nothing to offer, or a link left
+  // over from another deal could never be cleared from the card.
+  const showCalcRow = mayLinkCalc && (calcOptions.length > 0 || receipt.calcRequestId !== null);
   const showPickupRow = Boolean(pickupInfo || canLinkPickup);
   // Two independent stacks, never a 2×2 grid: «Hisob» hangs under the
   // «Bitim» whose calculations it lists, and a tall «Yuk turi» cannot open a
@@ -657,6 +663,12 @@ export default async function ReceiptDetailPage({
             <div className="min-w-0 divide-y divide-line [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-3">
               {canLinkDeal && (
                 <DealLink
+                  // Keyed on the STORED facts it draws: a client correction in
+                  // «Boshqa amallar» revalidates this page without remounting
+                  // the cell, and its select kept the old deal as its state —
+                  // «Saqlash» over «— uzish» then sent that deal back and
+                  // nothing happened (the merged card's review, XF-1).
+                  key={`deal:${receipt.clientId ?? ''}:${receipt.dealId ?? ''}`}
                   receiptId={id}
                   current={ownDeal ? { id: ownDeal.id, code: ownDeal.code } : null}
                   options={dealChoices}
@@ -679,6 +691,7 @@ export default async function ReceiptDetailPage({
               )}
               {showCalcRow && (
                 <CalcLink
+                  key={`calc:${ownDeal?.id ?? ''}:${receipt.calcRequestId ?? ''}`}
                   receiptId={id}
                   currentId={receipt.calcRequestId}
                   currentHref={calcWorkspaceHref(actor, receipt.calcRequestId)}

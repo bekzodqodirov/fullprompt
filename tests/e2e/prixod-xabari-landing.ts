@@ -19,22 +19,46 @@ export async function login(page: Page, phone: string) {
 }
 
 /**
- * React has attached to the page and its effects have run.
+ * The page has hydrated far enough to be judged, and its scroll has settled.
  *
  * The browser lands on a fragment BEFORE the page hydrates, so a verdict read
  * straight after `goto` is the browser's own scroll and says nothing about
  * what an effect does to it a few frames later — which is exactly how the
  * tab strip's `scrollIntoView` pulled every anchored page back to the top on
  * a desktop and no spec saw it (measured at 1280: scrollY 322, then 63).
+ *
+ * What this waits for, said exactly (the merged card's review, T1 / XF-7):
+ * the deal cell carrying React's fiber means the hydration RENDER reached it —
+ * not that the commit, or the effects after it, have run (Next hydrates in a
+ * transition: the render is sliced, the effects come after a paint). So it
+ * then waits for the scroll to hold still for ten animation frames, which is
+ * what a verdict is about. A spec that can wait for an effect ITSELF does so
+ * as well: the desktop owner waits for the strip's own visit request, sent
+ * from the effect that runs after the lit tab's in the same commit.
  */
 export async function hydrated(page: Page) {
   await page.waitForFunction(() => {
     const el = document.querySelector('[data-testid="receipt-deal-pick"]');
     return el !== null && Object.keys(el).some((key) => key.startsWith('__reactFiber$'));
   });
-  await page.evaluate(
-    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  const settled = await page.evaluate(
+    () =>
+      new Promise<boolean>((resolve) => {
+        let last = window.scrollY;
+        let still = 0;
+        let frames = 0;
+        const tick = () => {
+          frames += 1;
+          if (window.scrollY === last) still += 1;
+          else [last, still] = [window.scrollY, 0];
+          if (still >= 10) resolve(true);
+          else if (frames >= 600) resolve(false);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
   );
+  expect(settled, 'the page kept scrolling for ten seconds').toBe(true);
 }
 
 /**
