@@ -20,7 +20,7 @@
  * guessed (his B4 a — `readNumberCell`).
  */
 import { addressWord } from './address-words';
-import { parseSize } from './carton-math';
+import { emptyPacking, parseSize, wholeCartons, type BareSize, type Packing, type PerCartonUnit, type SizeOwner } from './carton-math';
 import { readNumberCell } from './number-cell';
 import type { MeasureUnit } from './pricing';
 
@@ -284,7 +284,11 @@ export const FIELD_LABELS = {
     'размер коробки', 'размер места', 'размер упаковки', 'karobka o‘lchami', "karobka o'lchami",
     'karobka olchami', 'quti o‘lchami', "quti o'lchami",
   ],
-  size: ['尺寸', 'size', 'dimensions', 'dims', 'l*w*h', 'lxwxh', 'размер', 'габариты', 'o‘lchami', "o'lchami", 'olchami'],
+  // «razmer(i)» — the Russian word as an Uzbek seller types it («karobka razmeri 60x40x50 sm», DIM-4).
+  size: [
+    '尺寸', 'size', 'dimensions', 'dims', 'l*w*h', 'lxwxh', 'размер', 'размеры', 'габариты', 'o‘lchami', "o'lchami",
+    'olchami', 'razmer', 'razmeri',
+  ],
 } as const satisfies Record<string, readonly string[]>;
 
 /**
@@ -594,6 +598,22 @@ export interface GoodsLine {
   unitWords: string[];
   cartons: number | null;
   problems: GoodsLineProblem[];
+  /**
+   * What the line states PER PACKAGE or PER PIECE, and the package's size —
+   * read only for the bot's typed readers (`opts.packing`, docs/AI-SORAYDI.md
+   * §3.1 T4/T6). Such a figure is never in the columns above: «20 karobka,
+   * har biri 15 kg» is 15 kg of ONE carton, and the carton arithmetic
+   * (`applyPacking`) makes the line's from it. Absent without the option.
+   */
+  packing?: Packing | null;
+  /**
+   * Per-one figures nobody can place — «har biri 2 kg» on a line with both a
+   * piece and a carton count and neither nearest, a cube of one piece — as the
+   * seller wrote them: off every column, kept for the row's note.
+   */
+  aside?: string[];
+  /** How many figures of the line were per one (placed or not): an ANSWER holding one is refused. */
+  perOne?: string[];
 }
 
 export type GoodsLineProblem =
@@ -888,6 +908,595 @@ export function amountsIn(line: string): AmountSpan[] {
   return out;
 }
 
+// ── a figure of ONE package or ONE piece (docs/AI-SORAYDI.md §3.1 T4, T6) ───
+//
+// «20 karobka, har biri 15 kg» is 15 kg of ONE carton; «Telefon 300 dona, har
+// biri 0.2 kg» is 0.2 kg of ONE phone; «15 kg/ctn», «0.12 cbm/ctn», «4.5
+// kg/шт» say so by their tail. Every reader took such a figure for the line's
+// and for the shipment's (DIM-4, AB-1, dg2-4, dg3-01): one carton's 15 kg
+// landed as the whole job's weight under ✅, over the model's correct 300.
+// The rule, as the review ruled it (JN-7, JN-8, JS-1, JS-2):
+//
+//  1. a figure is per ONE when it is MARKED so — a tail («/ctn», «/箱», «/шт»,
+//     «per ctn»), a mark before it («har biri», «har bir karobka», «each»,
+//     «каждая», «в каждой коробке», a label with its tail «G.W./CTN»), «20 x
+//     15 kg», a «dan» beside a count (never before «ortiq», «kam», «gacha»…),
+//     a Russian «по» right after a count. Nothing else is: an unmarked figure
+//     keeps every reading it had;
+//  2. a mark with a noun says whose one («har bir dona» — a piece's). An
+//     «each» without one binds to the count it stands with: the nearest count
+//     BEFORE it, else the only kind of count the line has; both kinds and
+//     neither before it — nobody's, and nothing is multiplied;
+//  3. such a figure never reaches a total, nor a row's own column. The bot's
+//     typed readers put it on the row's PACKING (`typedPacking`), and the
+//     carton arithmetic (carton-math.ts `applyPacking`) multiplies — this file
+//     never does.
+//
+// And a package's SIZE (T6, JS-2): a size is the PACKAGE's only when a
+// package word stands next to it («karobka o‘lchami 60x40x50»), when it
+// stands right beside the carton count («20 karobka 60x40x50», «60x40x50 sm
+// 20 karobka»), or inside an each-clause bound to the cartons. A size right
+// after the name and before any count is nobody's said — kept, asked, never
+// multiplied. «A carton word somewhere on the line» is never the rule.
+
+/** Whose one a per-one figure is. */
+export type PerOneOwner = 'package' | 'piece';
+
+/** A package's noun in its cases — «karobka», «karobkada», «karobkasi», «коробке», «мест», «ctn», «箱». */
+const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаковк|ctn|carton|box|кор|箱)\p{L}*`;
+/** A piece's noun — «dona», «donasi», «шт», «штука», «pcs», «piece». */
+const PIECE_NOUN = String.raw`(?:dona|дона)\p{L}*|шт\p{L}*|pcs?|pieces?|units?|единиц\p{L}*`;
+const COUNT_NOUN = `${PACKAGE_NOUN}|${PIECE_NOUN}`;
+const PACKAGE_NOUN_WORD = new RegExp(`^(?:${PACKAGE_NOUN})$`, 'iu');
+const PIECE_NOUN_WORD = new RegExp(`^(?:${PIECE_NOUN})$`, 'iu');
+
+/** Whose one a noun names — null: it names neither. */
+function nounOwner(word: string | undefined): PerOneOwner | null {
+  if (!word) return null;
+  if (PACKAGE_NOUN_WORD.test(word)) return 'package';
+  return PIECE_NOUN_WORD.test(word) ? 'piece' : null;
+}
+
+/** A measure's word after the noun — «har bir karobka og‘irligi 15 kg», «каждое место вес 15 кг». */
+const MEASURE_AFTER_NOUN = String.raw`(?:\s+(?:og[‘'’ʻ]?irlig?i|vazni|hajmi|soni|вес|объ[её]м))?`;
+/** What may stand between a mark and its figure. */
+const MARK_GAP = String.raw`[\s,:：–-]*$`;
+
+/**
+ * «har biri», «har birida», «har bir karobka(da)», «har karobkada», «har bir
+ * dona», «each», «each carton», «каждая», «каждое место» — closing the text
+ * before a figure. Groups 1-4: the noun, when one stands after the mark.
+ */
+const EACH_LEAD = new RegExp(
+  String.raw`(?<![\p{L}])(?:(?:har|ҳар|хар)\s+(?:(?:bir|бир)(?:ining|ida|iga|i|ининг|ида|ига|и)?|(?:bitta|битта)(?:sida|siga|si|сида|сига|си)?)(?:\s+(${COUNT_NOUN}))?|(?:har|ҳар|хар)\s+(${COUNT_NOUN})|(?:each|every)(?:\s+(${COUNT_NOUN}))?|кажд(?:ая|ый|ое|ую|ого|ой|ом)(?:\s+(${COUNT_NOUN}))?)${MEASURE_AFTER_NOUN}${MARK_GAP}`,
+  'iu',
+);
+/**
+ * ONE package before a figure — «bitta karobka 15 kg», «1 karobkada 24 dona»,
+ * «одного места 15 кг» (group 1: a mark only beside ANOTHER carton count —
+ * alone, «Stul 1 karobka 15 kg» is one carton of 15 kg, read as it always
+ * was), or «в каждой коробке», «в одной коробке», «в 1 коробке» (group 2:
+ * always one package's). Group 3: the noun.
+ */
+const ONE_LEAD = new RegExp(
+  String.raw`(?<![\p{L}\d.,])(?:(1|bitta|bir|one|одн(?:ого|ой|ом|а|о|у))|(в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))))\s+(${PACKAGE_NOUN})${MEASURE_AFTER_NOUN}${MARK_GAP}`,
+  'iu',
+);
+/** «в коробке по 24 шт» — what one box holds (review JN-8 (b): a bare «в коробке» describes the product, «Кукла в коробке»). */
+const IN_BOX_PO = new RegExp(String.raw`(?<![\p{L}])в\s+(?:${PACKAGE_NOUN})\s+по\s*$`, 'iu');
+/** «20 коробок по 15 кг», «300 шт по 0.2 кг» — a Russian «по» right after a count (group 2: that count's word). */
+const PO_LEAD = /(?<![\p{L}\d.,])(\d[\d.,]*)\s*(\p{L}+)\s+по\s*$/iu;
+/**
+ * A measure's LABEL with its per-package tail before a figure — «G.W./CTN:
+ * 15 kg», «N.W./ctn 14 kg», «毛重/箱 15kg», «Weight per carton: 15 kg», «Вес
+ * брутто на 1 место 15 кг», «Вес одного места 15 кг». Group 1: the label;
+ * 2: the slash word; 3: the «per» noun; 4, 5: the package noun.
+ */
+const LABEL_LEAD = new RegExp(
+  String.raw`(?<![\p{L}])(${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS, ...FIELD_LABELS.count])})\s*(?:\/\s*(\p{L}+)|(?:per|pr)\s+(${COUNT_NOUN})|(?:на|за)\s+(?:1\s+|одн\p{L}*\s+)?(${PACKAGE_NOUN})|одного\s+(${PACKAGE_NOUN}))\s*[.)]?\s*[:：=]?\s*$`,
+  'iu',
+);
+/** A label that says WHICH weight — a netto's, or a brutto's. */
+const NET_LABEL_WORD = new RegExp(`^(?:${labelPattern(NET_LABELS)})$`, 'iu');
+const GROSS_LABEL_WORD = /^(?:g\.?\s?w\.?|gross(?:\s*weight)?|brutto|брутто|вес\s*брутто|毛重|总毛重)$/iu;
+/**
+ * «20 karobka x 15 kg», «20 x 15 kg», «20*24 dona» — A of something times B
+ * (group 1: A; 2: A's noun). With a carton word A is the carton count; a bare
+ * A sets NO carton count (review JN-8 (c): it may be pieces).
+ */
+const TIMES_LEAD = new RegExp(
+  String.raw`(?<![\p{L}\d.,])(\d+)(?:\s*(?:(?:ta|та)\s+)?(${COUNT_NOUN}))?\s*([xх×*])\s*$`,
+  'iu',
+);
+/** «15 kg per ctn», «0.2 kg per pc» — the noun after «per» says whose. */
+const PER_TRAIL = new RegExp(String.raw`^\s+(?:per|pr)\s+(${COUNT_NOUN})(?![\p{L}])`, 'iu');
+/** «24 шт в каждой коробке», «24 шт в одной коробке». */
+const IN_EACH_TRAIL = new RegExp(String.raw`^\s+в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))\s+(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
+/** «15 kg dan» — «each» in Uzbek, beside a count (review JN-8 (a)). */
+const DAN_TRAIL = /^\s*[-–]?\s*(?:dan|дан)(?![\p{L}\d])/iu;
+/** …and never before what makes it «from» or «than»: «500 kg dan ortiq», «5 kubdan kam», «100 kg dan boshlab». */
+const DAN_NOT = /^\s*(?:ortiq\p{L}*|kam\p{L}*|ko[‘'’ʻ`]?p\p{L}*|oshiq\p{L}*|gacha|boshlab|yuqori\p{L}*|ортиқ\p{L}*|кам\p{L}*|кўп\p{L}*|ошиқ\p{L}*|гача|бошлаб)(?![\p{L}])/iu;
+/**
+ * «15 kg/kor», «150 kg/m3», «180 gr/m2» — a kilo or a cube glued to a slash
+ * and a word no tail knows: a rate or a density, never a total (review JN-8
+ * (e)) — and nobody's figure either, so it stays in the NAME as the seller
+ * wrote it: the coder reads «180 gr/m2» there.
+ */
+const SLASH_WORD = /^\/(?=\p{L})/u;
+
+/** The joiner of «20x24 dona» — blanked for the reading, so «24 dona» is a figure and «20 240» never one number. */
+const TIMES_JOINER = /(?<=\d)\s*[xх×*]\s*(?=\d)/gu;
+
+/** The size words of a typed line — «o‘lchami», «razmeri», «размер», «size» (units.ts `FIELD_LABELS`). */
+const SIZE_LABEL_BEFORE = new RegExp(String.raw`(?<![\p{L}])(?:${labelPattern(FIELD_LABELS.size)})\s*[.:：=]?\s*$`, 'iu');
+const PACKAGE_SIZE_BEFORE = new RegExp(
+  String.raw`(?<![\p{L}])(?:${labelPattern(FIELD_LABELS.packageSize)}|(?:${PACKAGE_NOUN})\s+(?:${labelPattern(FIELD_LABELS.size)}))\s*[.:：=]?\s*$`,
+  'iu',
+);
+const PACKAGE_NOUN_AFTER = new RegExp(String.raw`^\s*(?:${PACKAGE_NOUN})(?![\p{L}\d])`, 'iu');
+
+/** One figure of a line that is ONE package's or ONE piece's. */
+export interface PerOneFigure {
+  /** `[start, end)` of the figure — its number and its unit word. */
+  start: number;
+  end: number;
+  unit: 'dona' | 'kg' | 'm3' | 'juft' | 'm2' | 'litr';
+  /** In the unit's own scale — a tonne's figure in kilos. */
+  value: number;
+  /** Whose one — null: nobody's said, nothing is multiplied from it. */
+  owner: PerOneOwner | null;
+  /** A per-package weight's kind, when its label said. */
+  kind: 'gross' | 'net' | null;
+  /** «180 gr/m2»: a rate, kept in the name as written. */
+  inName: boolean;
+  /** As the seller wrote it, mark included — «har biri 15 kg». */
+  text: string;
+  /** The unit word as written — «kg», «cbm», «tonna». */
+  word: string;
+  /**
+   * «20 x 15 kg» with no carton word: kept on the packing as one package's,
+   * and kept on the row's note as written — its 20 is nobody's count (review
+   * JN-8 (c)), and would be lost from the row with nothing else to say it.
+   */
+  noted?: true;
+}
+
+/** What a typed line states per package — `packingRead`. */
+export interface PackingRead {
+  figures: PerOneFigure[];
+  /** The line's ONE carton count — null: none, or two that differ. */
+  cartons: number | null;
+  /** The ONE package size of the line, taken onto the packing (a carton count stands on the line). */
+  size: (BareSize & { of: SizeOwner | null }) | null;
+  /**
+   * `[start, end)` the line's name gives up — the per-one figures, their
+   * marks, a times multiplier, a taken size and its label — merged, in order.
+   */
+  consumed: [number, number][];
+  /** `[start, end)` of the rates kept IN the name («180 gr/m2»): read by no figure reader, cut from nothing. */
+  unread: [number, number][];
+  /** The line counts pieces of its own (a count no mark makes one piece's or one package's). */
+  piecesCounted: boolean;
+}
+
+interface FigureHit {
+  start: number;
+  end: number;
+  unit: PerOneFigure['unit'] | 'karobka';
+  value: number;
+  word: string;
+}
+
+/** Spans sorted and joined where they touch or overlap — a cut applied twice cuts the wrong text. */
+function mergeSpans(spans: readonly [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [s, e] of [...spans].filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0])) {
+    const last = out.at(-1);
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else out.push([s, e]);
+  }
+  return out;
+}
+
+interface Mark {
+  /** Fixed by the mark — or null, to be bound to a count (`each`, `dan`). */
+  owner: PerOneOwner | null;
+  bind: boolean;
+  kind: PerOneFigure['kind'];
+  inName: boolean;
+  spans: [number, number][];
+  /** «dan» marks only beside a count; «1 karobka» only beside ANOTHER carton count. */
+  cond?: 'dan' | 'another_carton';
+  /** The carton figure a «1 karobka» mark is made of — not the line's carton count when the mark stands. */
+  cartonHit?: number;
+  /** A mark that opens a clause the next figures continue («har biri 15 kg 0.12 kub»). */
+  clause: boolean;
+  /** «20 x 15 kg» — a bare multiplier (`PerOneFigure.noted`). */
+  noted?: true;
+}
+
+const TRACKED: ReadonlySet<string> = new Set(['dona', 'kg', 'm3', 'juft', 'm2', 'litr', 'karobka']);
+const PER_ONE_WINDOW = 64;
+
+/** The words a mark ends with, its separators trimmed — the span the name gives up. */
+const markSpan = (whole: string, at: number): [number, number] => [at, at + whole.replace(/[\s,:：–-]*$/u, '').length];
+
+function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
+  const out: FigureHit[] = [];
+  for (const hit of scan.matchAll(AMOUNT)) {
+    let word = hit[2] ?? null;
+    let end = hit.index + hit[0].length;
+    if (!word) continue;
+    if (unitOf(word) === 'dona') {
+      const next = COUNTER_THEN_UNIT.exec(text.slice(end, end + 24));
+      const nextUnit = next ? unitOf(next[1]!) : null;
+      if (next && nextUnit !== null && nextUnit !== 'dona') {
+        word = next[1]!;
+        end += next[0].length;
+      }
+    }
+    const scale = scaled ? scaledKg(word) : null;
+    const unit = unitOf(word) ?? (scale && !scale.lone ? 'kg' : null);
+    if (unit === null || !TRACKED.has(unit)) continue;
+    const read = readAmountText(hit[1]!);
+    if (read.state !== 'ok') continue;
+    const value = unitOf(word) === null && scale ? scaledKgValue(read.value, scale.factor) : read.value;
+    out.push({ start: hit.index, end, unit: unit as FigureHit['unit'], value, word });
+  }
+  return out;
+}
+
+/** The slash word's owner — a known package tail, a known piece tail, or neither. */
+function tailWordOwner(word: string): PerOneOwner | null {
+  const tail = `/${word.toLowerCase()}`;
+  if (PER_PACKAGE_TAIL.includes(tail)) return 'package';
+  return PER_PIECE_TAIL.includes(tail) ? 'piece' : null;
+}
+
+function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly FigureHit[]): Mark | null {
+  const after = text.slice(hit.end, hit.end + 32);
+  const fixed = (owner: PerOneOwner | null, spans: [number, number][], extra: Partial<Mark> = {}): Mark => ({
+    owner,
+    bind: false,
+    kind: null,
+    inName: false,
+    spans,
+    clause: false,
+    ...extra,
+  });
+  // A tail after the figure says whose — the strongest mark there is.
+  const pkg = tailAt(after, 0, PER_PACKAGE_TAIL);
+  if (pkg > 0) return fixed('package', [[hit.end, hit.end + pkg]]);
+  const piece = tailAt(after, 0, PER_PIECE_TAIL);
+  if (piece > 0) return fixed('piece', [[hit.end, hit.end + piece]]);
+  const per = PER_TRAIL.exec(after);
+  if (per) return fixed(nounOwner(per[1]), [[hit.end, hit.end + per[0].length]]);
+  const inEach = IN_EACH_TRAIL.exec(after);
+  if (inEach) return fixed('package', [[hit.end, hit.end + inEach[0].length]]);
+  if ((hit.unit === 'kg' || hit.unit === 'm3') && SLASH_WORD.test(after)) return fixed(null, [], { inName: true });
+
+  const from = Math.max(0, hit.start - PER_ONE_WINDOW);
+  const before = spaced.slice(from, hit.start);
+  const label = LABEL_LEAD.exec(before);
+  if (label) {
+    const owner = label[2] !== undefined ? tailWordOwner(label[2]) : label[3] !== undefined ? nounOwner(label[3]) : 'package';
+    const word = label[1]!.replace(/\s+/gu, ' ').trim();
+    const kind = NET_LABEL_WORD.test(word) ? 'net' : GROSS_LABEL_WORD.test(word) ? 'gross' : null;
+    // An unknown slash word — «Вес/мешок» — marks the figure as nobody's total and nobody's column.
+    if (owner === null && label[2] !== undefined) return fixed(null, [], { inName: true });
+    return fixed(owner, [markSpan(label[0], from + label.index)], { kind, clause: owner === 'package' });
+  }
+  // «20 x 15 kg» — read off the text as written: the joiner is blanked in the scan.
+  const raw = text.slice(from, hit.start);
+  const times = TIMES_LEAD.exec(raw);
+  if (times) {
+    const at = from + times.index;
+    const joiner = at + times[0].lastIndexOf(times[3]!);
+    const noun = nounOwner(times[2]);
+    // A carton word: A is the carton count, read where it stands; bare, A is no count of anything (JN-8 (c)).
+    const spans: [number, number][] = [[times[2] !== undefined ? joiner : at, joiner + 1]];
+    return fixed(noun ?? 'package', spans, times[2] === undefined ? { noted: true } : {});
+  }
+  const one = ONE_LEAD.exec(before);
+  if (one) {
+    const at = from + one.index;
+    const cartonHit = hits.findIndex((h) => h.unit === 'karobka' && h.start === at);
+    return fixed('package', [markSpan(one[0], at)], {
+      clause: true,
+      ...(one[1] !== undefined ? { cond: 'another_carton' as const, ...(cartonHit >= 0 ? { cartonHit } : {}) } : {}),
+    });
+  }
+  const box = IN_BOX_PO.exec(before);
+  if (box) return fixed('package', [markSpan(box[0], from + box.index)], { clause: true });
+  const po = PO_LEAD.exec(before);
+  if (po) {
+    const unit = unitOf(po[2]);
+    const owner = unit === 'karobka' ? 'package' : unit === 'dona' ? 'piece' : null;
+    if (owner !== null) {
+      const at = from + po.index + po[0].lastIndexOf('по');
+      return fixed(owner, [[at, at + 2]], { clause: owner === 'package' });
+    }
+  }
+  const each = EACH_LEAD.exec(before);
+  if (each) {
+    const noun = each[1] ?? each[2] ?? each[3] ?? each[4];
+    const owner = nounOwner(noun);
+    return { ...fixed(owner, [markSpan(each[0], from + each.index)]), bind: noun === undefined, clause: true };
+  }
+  const dan = DAN_TRAIL.exec(after);
+  if (dan && !DAN_NOT.test(after.slice(dan[0].length))) {
+    return { ...fixed(null, [[hit.end, hit.end + dan[0].length]]), bind: true, cond: 'dan' };
+  }
+  return null;
+}
+
+/**
+ * What ONE typed line states per package and per piece, and its package's
+ * size — the rule above, read off the text, multiplying nothing. Pure, and
+ * linear in the line: every mark is looked for in a bounded window beside its
+ * figure. `scaled`: a tonne's and a gram's figures are kilos (T14).
+ */
+export function packingRead(text: string, opts: { scaled?: boolean } = {}): PackingRead {
+  const scan = blankNonAmounts(text).replace(TIMES_JOINER, (m) => BLANK.repeat(m.length));
+  // What a mark may be looked for over: a blanked size between a mark and its
+  // figure is no word of either («har biri 60x40x50 sm 15 kg»).
+  const spaced = scan.replace(/\uE000/gu, ' ');
+  const hits = figureHits(text, scan, opts.scaled === true);
+  const marks = hits.map((hit) => (hit.unit === 'karobka' ? null : markOf(text, spaced, hit, hits)));
+  const cartonHits = hits.flatMap((h, i) => (h.unit === 'karobka' ? [i] : []));
+
+  // «1 karobka 15 kg» is a mark only beside ANOTHER carton count; alone it is the count.
+  marks.forEach((m, i) => {
+    if (m?.cond !== 'another_carton') return;
+    const others = cartonHits.filter((c) => c !== m.cartonHit);
+    if (others.length === 0) marks[i] = null;
+  });
+  const oneHits = new Set(marks.flatMap((m) => (m?.cartonHit !== undefined ? [m.cartonHit] : [])));
+  const cartonCounts = cartonHits.filter((c) => !oneHits.has(c));
+  const unmarkedPieces = hits.flatMap((h, i) => (h.unit === 'dona' && (marks[i] === null || marks[i]!.cond === 'dan') ? [i] : []));
+  // «dan» marks only beside a count of the line — another than the figure itself.
+  marks.forEach((m, i) => {
+    if (m?.cond !== 'dan') return;
+    if (cartonCounts.length === 0 && !unmarkedPieces.some((p) => p !== i)) marks[i] = null;
+  });
+  const pieceCounts = hits.flatMap((h, i) => (h.unit === 'dona' && marks[i] === null ? [i] : []));
+  const counts = [
+    ...cartonCounts.map((i) => ({ at: hits[i]!.start, owner: 'package' as const })),
+    ...pieceCounts.map((i) => ({ at: hits[i]!.start, owner: 'piece' as const })),
+  ].sort((a, b) => a.at - b.at);
+  const kinds = new Set(counts.map((c) => c.owner));
+  /** The count an «each» at `at` stands with (rule 2). */
+  const boundOwner = (at: number): PerOneOwner | null => {
+    const before = counts.filter((c) => c.at < at).at(-1);
+    if (before) return before.owner;
+    if (kinds.size === 1) return [...kinds][0]!;
+    return kinds.size === 0 ? 'package' : null;
+  };
+
+  const figures: (PerOneFigure & { clause: boolean; mark: Mark })[] = [];
+  hits.forEach((hit, i) => {
+    const mark = marks[i];
+    if (!mark) return;
+    let owner = mark.bind ? boundOwner(hit.start) : mark.owner;
+    // What one package holds is a count; a piece holds no pieces — nor has a cube of its own on the packing.
+    if (hit.unit !== 'kg' && owner === 'piece') owner = null;
+    if (hit.unit !== 'kg' && hit.unit !== 'm3' && mark.bind) owner = 'package';
+    const from = Math.min(hit.start, ...mark.spans.map(([s]) => s));
+    const to = Math.max(hit.end, ...mark.spans.map(([, e]) => e));
+    figures.push({
+      start: hit.start,
+      end: hit.end,
+      unit: hit.unit as PerOneFigure['unit'],
+      value: hit.value,
+      owner,
+      kind: hit.unit === 'kg' ? mark.kind : null,
+      inName: mark.inName,
+      text: text.slice(from, to).replace(/\s+/gu, ' ').trim(),
+      word: hit.word,
+      ...(mark.noted ? { noted: true as const } : {}),
+      clause: mark.clause && owner === 'package',
+      mark,
+    });
+  });
+  // A clause bound to the cartons goes on over the next figures of its
+  // segment: «har biri 15 kg 0.12 kub» — both one carton's. Never past a
+  // comma, a count, or another mark; never a piece's clause, whose figures
+  // after it are the line's own («300 dona har biri 0.2 kg 5 kub»).
+  const segmentEnd = (at: number) => {
+    // A clause is a few words long: the window bounds the look on a long pasted line.
+    const stop = text.slice(at, at + 160).search(/[,;\n]/u);
+    return stop < 0 ? at + 160 : at + stop;
+  };
+  for (const clause of figures.filter((f) => f.clause)) {
+    const stop = segmentEnd(clause.end);
+    for (let i = 0; i < hits.length; i += 1) {
+      const hit = hits[i]!;
+      if (hit.start < clause.end) continue;
+      if (hit.start >= stop || hit.unit === 'karobka' || hit.unit === 'dona' || marks[i] !== null) break;
+      figures.push({
+        start: hit.start,
+        end: hit.end,
+        unit: hit.unit,
+        value: hit.value,
+        owner: 'package',
+        kind: null,
+        inName: false,
+        text: text.slice(hit.start, hit.end).replace(/\s+/gu, ' ').trim(),
+        word: hit.word,
+        clause: false,
+        mark: { ...clause.mark, spans: [] },
+      });
+      marks[i] = clause.mark;
+    }
+  }
+  figures.sort((a, b) => a.start - b.start);
+
+  const values = new Set(cartonCounts.map((i) => hits[i]!.value));
+  const cartons = values.size === 1 ? wholeCartons([...values][0]) : null;
+  const consumed: [number, number][] = figures
+    .filter((f) => !f.inName)
+    .flatMap((f) => [[f.start, f.end] as [number, number], ...f.mark.spans]);
+  const size = cartons !== null ? packageSize(text, hits, cartonCounts, figures, boundOwner) : null;
+  if (size) consumed.push(...size.spans);
+  return {
+    figures: figures.map(({ clause: _clause, mark: _mark, ...f }) => f),
+    cartons,
+    size: size?.size ?? null,
+    consumed: mergeSpans(consumed),
+    unread: figures.filter((f) => f.inName).map((f) => [f.start, f.end] as [number, number]),
+    piecesCounted: pieceCounts.length > 0,
+  };
+}
+
+/**
+ * The line's ONE package size and whose it is (T6, JS-2) — read only where a
+ * carton count stands on the line: without one a size stays in the name, as
+ * it always did («Stol 120x80x100 sm 5 dona»). Two sizes: nothing is taken.
+ */
+function packageSize(
+  text: string,
+  hits: readonly FigureHit[],
+  cartonCounts: readonly number[],
+  figures: readonly (PerOneFigure & { clause: boolean })[],
+  boundOwner: (at: number) => PerOneOwner | null,
+): { size: BareSize & { of: SizeOwner | null }; spans: [number, number][] } | null {
+  const tokens: { start: number; end: number; size: BareSize }[] = [];
+  let scan = text;
+  for (let round = 0; round < 40; round += 1) {
+    const token = parseSize(scan);
+    if (!token) break;
+    if (token.size) tokens.push({ start: token.start, end: token.end, size: token.size });
+    scan = blankSpan(scan, token.start, token.end);
+  }
+  if (tokens.length !== 1) return null;
+  const token = tokens[0]!;
+  const from = Math.max(0, token.start - 48);
+  const before = text.slice(from, token.start);
+  const spans: [number, number][] = [[token.start, token.end]];
+  // A label's span stops where a carton count ends — «20 karobka razmeri
+  // 60x40x50»: «karobka» is the count's word, and the count keeps it.
+  const labelSpan = (whole: string, at: number): [number, number] => {
+    const span = markSpan(whole, at);
+    const count = cartonCounts.map((i) => hits[i]!).find((h) => h.start < span[1] && h.end > span[0]);
+    return count ? [Math.max(span[0], count.end), span[1]] : span;
+  };
+  const taken = (of: SizeOwner | null, extra: [number, number][] = []) => ({ size: { ...token.size, of }, spans: [...spans, ...extra] });
+
+  const packageLabel = PACKAGE_SIZE_BEFORE.exec(before);
+  if (packageLabel) return taken('package', [labelSpan(packageLabel[0], from + packageLabel.index)]);
+  // Right beside the carton count, with nothing but spaces between («20
+  // karobka 60x40x50», «60x40x50 sm 20 ta karobka»).
+  const beside = cartonCounts.some((i) => {
+    const c = hits[i]!;
+    const [a, b] = c.end <= token.start ? [c.end, token.start] : [token.end, c.start];
+    return b - a <= 8 && /^\s*$/u.test(text.slice(a, b));
+  });
+  if (beside) return taken('package');
+  const nounAfter = PACKAGE_NOUN_AFTER.exec(text.slice(token.end, token.end + 32));
+  if (nounAfter) return taken('package', [[token.end, token.end + nounAfter[0].length]]);
+  // Inside an each-clause: «har biri 60x40x50 sm 15 kg» — whose the clause is
+  // the count it stands with says (a piece's each-size is the PRODUCT's own:
+  // «Stol 10 dona, 2 karobka, har biri ...» binds to the nearest count), «har
+  // bir karobka 60x40x50» its noun.
+  const each = EACH_LEAD.exec(before);
+  if (each) {
+    const owner = nounOwner(each[1] ?? each[2] ?? each[3] ?? each[4]) ?? boundOwner(token.start);
+    return taken(owner === 'package' ? 'package' : owner === 'piece' ? 'product' : null, [markSpan(each[0], from + each.index)]);
+  }
+  const one = ONE_LEAD.exec(before);
+  if (one) return taken('package', [labelSpan(one[0], from + one.index)]);
+  // …or after a package's clause of the same segment: «20 karobka, har biri 15 kg 60x40x50».
+  const stop = text.slice(0, token.start).search(/[,;\n][^,;\n]*$/u);
+  if (figures.some((f) => f.clause && f.end <= token.start && f.end > stop)) return taken('package');
+  const sizeLabel = SIZE_LABEL_BEFORE.exec(before);
+  if (sizeLabel) return taken(null, [labelSpan(sizeLabel[0], from + sizeLabel.index)]);
+  return taken(null);
+}
+
+/**
+ * Every per-one figure of a text, line by line, its offsets the TEXT's: what
+ * the shipment-totals reader must never take for a total (T4) — a rate kept
+ * in a name («180 gr/m2») included — and what a totals answer names as one
+ * package's (line-address.ts `totalsLeft`).
+ */
+export function perOneIn(text: string, opts: { scaled?: boolean } = {}): PerOneFigure[] {
+  const out: PerOneFigure[] = [];
+  let at = 0;
+  for (const line of text.split('\n')) {
+    if (/\d/u.test(line)) {
+      for (const f of packingRead(line, opts).figures) out.push({ ...f, start: at + f.start, end: at + f.end });
+    }
+    at += line.length + 1;
+  }
+  return out;
+}
+
+/** `[start, end)` of every per-one figure of a text (`perOneIn`). */
+export const perOneSpans = (text: string, opts: { scaled?: boolean } = {}): [number, number][] =>
+  perOneIn(text, opts).map((f) => [f.start, f.end]);
+
+const PER_CARTON_UNIT: Record<'dona' | 'juft' | 'm2' | 'litr', PerCartonUnit> = { dona: 'dona', juft: 'juft', m2: 'm2', litr: 'litr' };
+
+/**
+ * The row's packing from what a typed line states (`packingRead`) — `from:
+ * 'typed'`, each factor once. A factor written twice with two values is no
+ * factor (nothing is multiplied from a figure the line contradicts), and a
+ * figure whose owner nobody said goes ASIDE, as written, for the row's note.
+ * Null when the line states nothing per package and no package size.
+ */
+export function typedPacking(read: PackingRead): { packing: Packing | null; aside: string[] } {
+  const p: Packing = emptyPacking('typed');
+  const aside: string[] = [];
+  const seen = new Map<string, PerOneFigure>();
+  const set = (factor: 'kgPerCarton' | 'm3PerCarton' | 'pcsPerCarton' | 'kgPerPiece', f: PerOneFigure, apply: () => void) => {
+    const had = seen.get(factor);
+    if (had === undefined) {
+      seen.set(factor, f);
+      apply();
+      return;
+    }
+    if (had.value === f.value) return;
+    aside.push(had.text, f.text);
+    p[factor] = null;
+    if (factor === 'pcsPerCarton') delete p.perCartonUnit;
+    if (factor === 'kgPerCarton') p.kgPerCartonKind = null;
+  };
+  for (const f of read.figures) {
+    if (f.inName) continue;
+    if (f.noted) aside.push(f.text);
+    if (f.owner === null) {
+      aside.push(f.text);
+    } else if (f.unit === 'kg') {
+      if (f.owner === 'package') {
+        set('kgPerCarton', f, () => {
+          p.kgPerCarton = f.value;
+          p.kgPerCartonKind = f.kind;
+        });
+      } else {
+        set('kgPerPiece', f, () => {
+          p.kgPerPiece = f.value;
+        });
+      }
+    } else if (f.unit === 'm3') {
+      set('m3PerCarton', f, () => {
+        p.m3PerCarton = f.value;
+      });
+    } else {
+      const unit = f.unit;
+      set('pcsPerCarton', f, () => {
+        p.pcsPerCarton = f.value;
+        if (unit !== 'dona') p.perCartonUnit = PER_CARTON_UNIT[unit];
+      });
+    }
+  }
+  if (p.kgPerPiece === null) delete p.kgPerPiece;
+  p.cartons = read.cartons;
+  p.size = read.size;
+  const stated =
+    p.kgPerCarton !== null || p.m3PerCarton !== null || p.pcsPerCarton !== null || (p.kgPerPiece ?? null) !== null || p.size !== null;
+  return { packing: stated ? p : null, aside: [...new Set(aside)] };
+}
+
 /** How long an ending a misspelt unit may carry — «kub-ik», «кубометр-ы», «kilo-gr», «kub-lar». */
 const NEAR_ENDING = 3;
 
@@ -1005,6 +1614,9 @@ function isCodeCell(cell: string): string | null {
 
 const hasLetters = (s: string) => /\p{L}/u.test(s);
 
+/** How `parseGoodsLine` joins a line's columns for `packingRead`. */
+const CELL_JOIN = ' ; ';
+
 /**
  * `opts.scaled` (§3.1 T14, review JN-9 / JR-22) — the bot's typed readers ask
  * it, nobody else: a tonne or a gram, in a spelling that can be nothing else
@@ -1014,8 +1626,15 @@ const hasLetters = (s: string) => /\p{L}/u.test(s);
  * dona», «chay 500 gr 2000 dona») — and it stays in the name, as «4 кубов»
  * does beside a count; and never a figure before a slash («180 gr/m2» is a
  * density). A lone «t» / «g» is never read here at all.
+ *
+ * `opts.packing` (§3.1 T4/T6) — the bot's typed readers ask it too: a figure
+ * marked as ONE package's or ONE piece's (`packingRead`) is read into
+ * `packing` and never into a column, its mark leaves the name, and a size
+ * beside the carton count is the package's. Without it every door reads what
+ * it always read — «15 kg/ctn» is still that line's 15 kg on the card form
+ * and the VED's paste box, which have no packing to put it on (review JR-22).
  */
-export function parseGoodsLine(raw: string, opts: { scaled?: boolean } = {}): GoodsLine {
+export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: boolean } = {}): GoodsLine {
   const line: GoodsLine = {
     name: '',
     tnvedCode: null,
@@ -1087,16 +1706,44 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean } = {}): Go
   // The line's weight came from a tonne or a gram: «2 tonna 2000 kg» then says ONE weight in two scales.
   let weightScaled = false;
   const nameParts: string[] = [];
+
+  // What the line states per package (T4/T6), read over its columns as ONE
+  // text — a mark finds the count it stands with in another column. Joined
+  // with a «;», which no mark crosses and no number groups over.
+  const cellAt: number[] = [];
+  let offset = 0;
+  for (const cell of kept) {
+    cellAt.push(offset);
+    offset += cell.length + CELL_JOIN.length;
+  }
+  const packed = opts.packing ? packingRead(kept.join(CELL_JOIN), { scaled: opts.scaled === true }) : null;
+  /** A span of the joined text inside cell `i`, as the cell's own offsets. */
+  const inCell = (spans: readonly [number, number][], i: number): [number, number][] =>
+    spans.flatMap(([s, e]) => (s >= cellAt[i]! && e <= cellAt[i]! + kept[i]!.length ? [[s - cellAt[i]!, e - cellAt[i]!] as [number, number]] : []));
+
   // «Набор 4 кубов 20 шт» — a toy's own cubes, on a line that states its
-  // pieces (review JN-22): the «N кубов» stays in the name, see below.
-  const piecesStated = kept.some((cell) => [...cell.matchAll(AMOUNT)].some((h) => unitOf(h[2]) === 'dona'));
+  // pieces (review JN-22): the «N кубов» stays in the name, see below. A count
+  // of ONE package's pieces («har birida 24 dona») is no piece count of the line.
+  const piecesStated = packed
+    ? packed.piecesCounted
+    : kept.some((cell) => [...cell.matchAll(AMOUNT)].some((h) => unitOf(h[2]) === 'dona'));
 
   kept.forEach((cellText, cellIndex) => {
     const consumed: [number, number][] = [];
     const cellBare: { value: number; start: number; end: number; asked: GoodsLineProblem | null }[] = [];
     // A size and a code's digits are no amounts (T0): read from the blanked
     // text, cut the name from the cell as written — the offsets are the same.
-    const scan = blankNonAmounts(cellText);
+    let scan = blankNonAmounts(cellText);
+    if (packed) {
+      // A per-one figure, its mark, a times multiplier, a packed size and its
+      // label: read by no column below, and out of the name; a rate («180
+      // gr/m2») is read by nothing and stays in the name.
+      for (const [s, e] of inCell(packed.consumed, cellIndex)) {
+        scan = blankSpan(scan, s, e);
+        consumed.push([s, e]);
+      }
+      for (const [s, e] of inCell(packed.unread, cellIndex)) scan = blankSpan(scan, s, e);
+    }
     for (const hit of scan.matchAll(AMOUNT)) {
       const number = hit[1]!;
       let word = hit[2] ?? null;
@@ -1232,6 +1879,14 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean } = {}): Go
   if (statesNothing && unknown !== null && !line.problems.some((p) => p.kind === 'unlabelled')) {
     const u = unknown as { word: string; value: number };
     line.problems.push({ kind: 'unknown_unit', word: u.word.slice(0, 20), value: u.value });
+  }
+  if (packed) {
+    const { packing, aside } = typedPacking(packed);
+    line.packing = packing;
+    line.aside = aside;
+    line.perOne = packed.figures.map((f) => f.text);
+    // The unit is stated, whosever the figure: the line still states goods.
+    line.unitWords.push(...packed.figures.filter((f) => !f.inName).map((f) => f.word));
   }
   if (line.cartons !== null && line.quantity === null && line.weightKg === null && line.measureQty === null) {
     line.problems.push({ kind: 'cartons_only', cartons: line.cartons });

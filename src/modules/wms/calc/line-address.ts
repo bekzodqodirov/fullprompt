@@ -32,6 +32,7 @@ import {
   labelPattern,
   nearUnit,
   NET_LABELS,
+  perOneIn,
   scaledKg,
   scaledPattern,
   TOTALS_LEAD_LABELS,
@@ -94,10 +95,12 @@ export type TableRefusal =
  *    different ones were written;
  *  - `bare`: a number with no unit;
  *  - `unit`: a number and a word that is no unit («5.9 kubik») — asked as a
- *    unit (T3), with the kilo or cube the word most likely means (`near`).
+ *    unit (T3), with the kilo or cube the word most likely means (`near`);
+ *  - `per_one`: ONE package's or ONE piece's figure («15 kg/ctn», «har biri
+ *    15 kg», T4) — no total at all, and never one to write as «jami 15 kg».
  */
 export interface TotalsLeft {
-  why: 'row' | 'netto' | 'weight' | 'volume' | 'bare' | 'unit';
+  why: 'row' | 'netto' | 'weight' | 'volume' | 'bare' | 'unit' | 'per_one';
   /** As the seller wrote it — «300 dona», «netto 480 kg», «5.9 kubik», «7.19». */
   text: string;
   /** The figure without its label — «480 kg» of «netto 480 kg» — what an example is built from. */
@@ -353,10 +356,19 @@ function totalsLeft(rest: string, taken: readonly [number, number][]): TotalsLef
   const code = codeIn(remainder);
   if (code) remainder = blankSpan(remainder, code.start, code.end);
   const out: TotalsLeft[] = [];
+  // What the totals reader left as one package's or one piece's (T4): named as
+  // that, in the seller's own words — told «jami 15 kg» it would be one
+  // carton's figure written as the shipment's.
+  const perOne = perOneIn(rest, { scaled: true });
   for (const amount of amountsIn(remainder)) {
     const unit = amount.word ? unitOf(amount.word) : null;
     if (unit === 'karobka') continue;
     const { number } = amount;
+    const one = perOne.find((f) => amount.start < f.end && amount.end > f.start);
+    if (one) {
+      out.push({ why: 'per_one', text: one.text, figure: rest.slice(one.start, one.end).trim(), number });
+      continue;
+    }
     if (amount.word === null || (unit === null && LABEL_WORD.test(amount.word))) {
       out.push({ why: 'bare', text: number, figure: number, number });
       continue;

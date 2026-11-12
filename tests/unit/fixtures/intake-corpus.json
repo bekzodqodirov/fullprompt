@@ -48698,12 +48698,12 @@
    "id": "c3280",
    "input": "Stul 20 dona\n15 CTNS 507 KGS 5.92 CBM, 34kg/ctn",
    "expected": {
-    "weightKg": null,
+    "weightKg": 507,
     "volumeM3": 5.92,
     "ambiguous": []
    },
-   "said": "weightKg null — the text states two weights (507 and one carton's 34), so the typed reader answers nothing and the model's 507 stands; volumeM3 5.92",
-   "why": "dg3-01: the per-carton «34kg» was the ONLY weight this reader saw, and typed beats read — 34 kg landed under ✅ over the model's 507.",
+   "said": "weightKg 507 — «34kg/ctn» is ONE carton's weight and no total at all (T4), so 507 is the one weight the text states; volumeM3 5.92",
+   "why": "dg3-01: the per-carton «34kg» was the ONLY weight this reader saw, and typed beats read — 34 kg landed under ✅ over the model's 507. Moved by T4 (review JN-8, the per-package tail): until T4 the case stood at null, two weights answering nothing; a figure marked per package is no total now, and the one total stands.",
    "source": "ai-soraydi typed-A T1",
    "weight": "blocker",
    "severity": "common"

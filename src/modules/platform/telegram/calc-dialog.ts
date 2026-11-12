@@ -795,6 +795,9 @@ const LINE_REFUSAL: Record<LineAnswerRefusal, (detail?: string) => string> = {
   two_pairs: () => 'Bitta qatorda ikki xil o‘lchov — bittasini yozing.',
   unlabelled: () => 'Raqamlarni birlik bilan yozing: «300 dona 150 kg».',
   repeated: () => 'Bitta birlikda ikki xil son — bittasini yozing.',
+  // One carton's or one piece's figure (docs/AI-SORAYDI.md §3.1 T4) — never
+  // the row's own; the example is a row's whole figure, nothing per one.
+  per_one: (d) => `«${d ?? ''}» — bittasiniki, qatorning jamisi emas. Qatorning jamisini yozing: masalan «300 dona» yoki «150 kg».`,
 };
 
 /** A unit the seller WROTE, as a figure's unit — a carton is no figure. */
@@ -904,6 +907,12 @@ function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
   }
   const row = of('row');
   if (row.length > 0) out.push(`${quoted(row)} — umumiyga yozilmaydi (umumiyda faqat og‘irlik va hajm).${onRow(row[0]!.figure)}`);
+  // One carton's or one piece's figure (§3.1 T4): no total — the example is a
+  // whole shipment's figure, never the seller's per-one one.
+  const perOne = of('per_one');
+  if (perOne.length > 0) {
+    out.push(`${quoted(perOne)} — bittasiniki, umumiy emas: umumiyini yozing, masalan «jami 3500 kg» yoki «jami 12 kub».`);
+  }
   return out.join(' ');
 }
 

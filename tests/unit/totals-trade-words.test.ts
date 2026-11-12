@@ -172,8 +172,10 @@ describe('the rules that stood, stand', () => {
   it('one distinct figure per field, in every spelling of the unit — two are no total', () => {
     // dg3-01: one carton's «34kg» was the only weight this reader saw, and
     // typed beats read — 34 kg landed over the model's 507. Two weights now:
-    // the typed reader answers nothing and the model's reading stands.
-    expect(totals('Stul 20 dona\n15 CTNS 507 KGS 5.92 CBM, 34kg/ctn')).toEqual({ ...none, m3: 5.92 });
+    // the typed reader answers nothing and the model's reading stands. (The
+    // case as dg3-01 wrote it, «34kg/ctn», is ONE carton's and no total at
+    // all since T4 — per-package.test.ts; here the second weight is unmarked.)
+    expect(totals('Stul 20 dona\n15 CTNS 507 KGS 5.92 CBM, 34kg')).toEqual({ ...none, m3: 5.92 });
     expect(totals('taxminan 6 kub\nMEAS: 5.92 CBM')).toEqual(none);
     // «5 kub» beside «6 m3»: the first spelling in a list used to win.
     expect(totals('jami 5 kub 6 m3')).toEqual(none);

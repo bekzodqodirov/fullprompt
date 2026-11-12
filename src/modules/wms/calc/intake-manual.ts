@@ -13,18 +13,24 @@ import {
   type ClientHintOpts,
 } from './intake';
 import { addressWord } from './address-words';
+import { applyPacking } from './carton-math';
 import type { MeasureUnit } from './pricing';
 import {
   AMOUNT_NUMBER,
+  BLANK,
   blankNonAmounts,
+  blankSizes,
   blankSpan,
   codeIn,
   COUNTED_CUBES,
   groupedReading,
   labelPattern,
+  FIELD_LABELS,
   NET_LABELS,
   normalizeTnved,
+  packingRead,
   parseGoodsLine,
+  perOneSpans,
   readAmountText,
   scaledKg,
   scaledKgValue,
@@ -35,6 +41,7 @@ import {
   VOLUME_LABELS,
   WEIGHT_LABELS,
   withoutFirstGroup,
+  type GoodsLine,
   type GoodsLineProblem,
   type SellerUnit,
 } from './units';
@@ -527,10 +534,15 @@ export function readTypedTotals(
     // there the goods reader's «goods name» is a totals line misread.
     return typed.lines.size >= 2 || !shipmentLine(lineText);
   };
-  // A figure that is not the shipment's: a goods line's own, or one written
-  // before the part of the text being read.
+  // A figure that is not the shipment's: a goods line's own, one written
+  // before the part of the text being read — or ONE package's or ONE piece's
+  // (§3.1 T4, units.ts `packingRead`): «20 karobka, har biri 15 kg», «15
+  // kg/ctn», «0.12 cbm/ctn» put one carton's figure in as the whole
+  // shipment's, under ✅ and over the model's correct total (DIM-4, dg3-01).
   const from = opts.from ?? 0;
-  const notTotal = (start: number) => start < from || onGoodsLine(start);
+  const perOne = perOneSpans(text, { scaled: true });
+  const onePackage = (start: number) => perOne.some(([s, e]) => start >= s && start < e);
+  const notTotal = (start: number) => start < from || onGoodsLine(start) || onePackage(start);
   // What is no amount — a size, a code, a phone — is blanked before a figure
   // is looked for (§3.1 T0): its digits were the thousands of the weight after.
   const scan = blankForTotals(text, clientCodePrefix(opts));
@@ -947,16 +959,77 @@ const CLIENT_CODE_LINE = /^[A-Za-z]{1,4}\s*[-–]?\s*\d{1,8}$/;
 
 /**
  * One line as the bot's TYPED readers read it: the row kernel, asked for the
- * tonnes and grams too (units.ts `parseGoodsLine`'s `scaled`, §3.1 T14). The
- * card form, the VED's paste box and a sheet's cells call the kernel bare and
- * read what they always read (review JR-22).
+ * tonnes and grams too (units.ts `parseGoodsLine`'s `scaled`, §3.1 T14), and
+ * for what the line states per package (`packing`, T4/T6). The card form, the
+ * VED's paste box and a sheet's cells call the kernel bare and read what they
+ * always read (review JR-22).
  */
-const typedLine = (text: string) => parseGoodsLine(text, { scaled: true });
+const typedLine = (text: string) => parseGoodsLine(text, { scaled: true, packing: true });
+
+/**
+ * The note a typed row carries for what it states per one and nobody can
+ * place — «har biri 2 kg» beside a piece AND a carton count with neither
+ * nearest, «20 x 15 kg» with no carton word: off every column, never lost.
+ */
+const asideNote = (aside: readonly string[] | undefined): string | null =>
+  aside && aside.length > 0 ? `sotuvchi: ${aside.join(', ')}`.slice(0, 200) : null;
+
+/**
+ * A goods row from the kernel's reading, its packing multiplied out by the
+ * ONE carton arithmetic (carton-math.ts `applyPacking`, docs/AI-SORAYDI.md
+ * §2.3): «Stul 20 karobka, har biri 15 kg» is 300 kg «hisoblangan», never 15
+ * — and never multiplied here. A packing with no carton count computes
+ * nothing, and the row asks for what it lacks (T4: the question is the
+ * table's, release 1b).
+ */
+function typedRow(name: string, parsed: GoodsLine): TypedGoods {
+  const row: TypedGoods = {
+    ...figureless(name),
+    quantity: parsed.quantity,
+    weightKg: parsed.weightKg,
+    volumeM3: parsed.volumeM3,
+    measureUnit: parsed.measureUnit,
+    measureQty: parsed.measureQty,
+    tnvedCode: parsed.tnvedCode,
+    note: asideNote(parsed.aside),
+  };
+  return parsed.packing ? applyPacking({ ...row, packing: parsed.packing }).line : row;
+}
 
 /** A tonne or a gram in a spelling that can be nothing else — a unit word to the typed readers. */
 const scaledWord = (word: string) => scaledKg(word)?.lone === false;
 /** Such a figure standing in a NAME — «Domkrat 5 tonna», «chay 500 gr» — number and word. */
 const SCALED_IN_NAME = new RegExp(String.raw`(?<![\p{L}\d.,])\d[\d.,]*${GAP}(?:${scaledPattern('words')})(?![\p{L}\d])`, 'giu');
+
+/** The size words a typed size stands beside — «o‘lchami», «razmeri», «carton size» (units.ts `FIELD_LABELS`). */
+const SIZE_WORDS_BEFORE = new RegExp(
+  String.raw`(?<![\p{L}])(?:${labelPattern([...FIELD_LABELS.packageSize, ...FIELD_LABELS.size])})\s*[.:：=]?\s*(?=${BLANK})`,
+  'giu',
+);
+
+/**
+ * A tail as the figure test reads it (§3.1 T4/T6): what a typed line states
+ * per package — a mark («har biri», «dan», «per ctn»), a times sign, the
+ * per-one figure itself — and every size with the words that name it, set
+ * aside. «Stul 20 karobka, har biri 15 kg» and «Kurtka 300 dona 60x40x50 sm
+ * 20 karobka» were no goods lines at all (DIM-10): a mark and a size were
+ * words of nothing the test knew. `perOne`: a per-one figure stood there —
+ * a measure of the goods; `sized`: a size did.
+ */
+/** A tail's tokens: split on spaces, separators and what `figureTail` set aside. */
+const TAIL_SPLIT = new RegExp(`[\\s,;/+${BLANK}]+`, 'u');
+
+function figureTail(tail: string): { text: string; perOne: boolean; sized: boolean } {
+  const read = packingRead(tail, { scaled: true });
+  let text = tail;
+  for (const [s, e] of read.consumed) text = blankSpan(text, s, e);
+  const unsized = blankSizes(text);
+  return {
+    text: unsized.replace(SIZE_WORDS_BEFORE, (m) => ' '.repeat(m.length)),
+    perOne: read.figures.some((f) => !f.inName),
+    sized: read.size !== null || unsized !== text,
+  };
+}
 
 /**
  * The tail of an unlabelled line: every token a figure, a unit word or a code
@@ -964,17 +1037,22 @@ const SCALED_IN_NAME = new RegExp(String.raw`(?<![\p{L}\d.,])\d[\d.,]*${GAP}(?:$
  * carton (review #24). A bare trailing number is not a goods line — «Tel 90
  * 123 45 67», «Kurs 12650», «Sana 21.10.2026», «Partiya YW-123» were read as
  * products with that number as their count — and a carton count alone states
- * no measure of the goods.
+ * no measure of the goods. A carton count beside a size or a figure of one
+ * carton does (T4/T6: the cube and the weight are its arithmetic) — «Kurtka
+ * 45 karobka» alone still names nothing a table can price (c0649).
  */
 function unitFigures(tail: string, opts: { measured: boolean } = { measured: true }): boolean {
-  const tokens = tail.split(/[\s,;/+]+/u).filter(Boolean);
-  let measured = false;
+  const read = figureTail(tail);
+  const tokens = read.text.split(TAIL_SPLIT).filter(Boolean);
+  let measured = read.perOne;
+  let cartons = false;
   for (const token of tokens) {
     if (/^\d[\d.,'’ʼʻ]*$/u.test(token)) continue;
     const glued = /^(\d[\d.,]*)([\p{L}²³]+\.?)$/u.exec(token);
     const unit = unitOf(token) ?? (glued ? unitOf(glued[2]!) : null);
     if (unit !== null) {
       if (unit !== 'karobka') measured = true;
+      else cartons = true;
       continue;
     }
     // «Sement 2 tonna», «Zafaron 500gr»: kilos in another scale (T14).
@@ -985,7 +1063,7 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
     if (/^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token)) continue;
     return false;
   }
-  return measured || !opts.measured;
+  return measured || (read.sized && cartons) || !opts.measured;
 }
 
 /** Where the first figure starts its OWN token: «iPhone15 300 dona»'s is «300». */
@@ -1053,7 +1131,14 @@ const wordsOf = (name: string) =>
     .filter(Boolean);
 
 /** At least two letters, and not a name made only of total, field or greeting words. */
-const nameOk = (name: string) => (name.match(/\p{L}/gu) ?? []).length >= 2 && !wordsOf(name).every(notGoodsWord);
+/**
+ * A name's words with every size set aside (T6): a size kept in a name
+ * («Stol 120x80x100 sm») describes the product and names nothing — a name of
+ * nothing but a size and a label («Dims 60x40x50 cm») is no product.
+ */
+const nameWords = (name: string) => wordsOf(blankSizes(name).split(BLANK).join(' '));
+
+const nameOk = (name: string) => (name.match(/\p{L}/gu) ?? []).length >= 2 && !nameWords(name).every(notGoodsWord);
 
 const figureless = (name: string): TypedGoods => ({
   name: name.slice(0, 200),
@@ -1137,15 +1222,7 @@ function kernelGoods(parsed: ReturnType<typeof parseGoodsLine>, fields: readonly
       .join(' '),
   );
   if (!nameOk(name)) return null;
-  return {
-    ...figureless(name),
-    quantity: parsed.quantity,
-    weightKg: parsed.weightKg,
-    volumeM3: parsed.volumeM3,
-    measureUnit: parsed.measureUnit,
-    measureQty: parsed.measureQty,
-    tnvedCode: parsed.tnvedCode,
-  };
+  return typedRow(name, parsed);
 }
 
 /**
@@ -1169,7 +1246,8 @@ function listPiece(piece: string): TypedGoods | null {
  * nothing): those words are returned, for the name to drop.
  */
 function figureRunLabels(text: string): string[] | null {
-  const tokens = text.split(/[\s,;/+]+/u).filter(Boolean);
+  // A mark, a size and its words are no word of a name between two figures (T4/T6).
+  const tokens = figureTail(text).text.split(TAIL_SPLIT).filter(Boolean);
   const figure = tokens.map((t) => /^\d/u.test(t) || unitOf(t) !== null || scaledWord(t));
   const first = figure.indexOf(true);
   const last = figure.lastIndexOf(true);
@@ -1269,8 +1347,9 @@ function typedGoods(
     const name = tidyName(parsed.name);
     // A tonne or gram figure left in the name (it stands beside a piece count)
     // is no WORD of it: «jami 2 tonna 300 dona» is named by «jami» alone — a
-    // totals line, never a product called «jami 2 tonna».
-    const words = wordsOf(name.replace(SCALED_IN_NAME, ' '));
+    // totals line, never a product called «jami 2 tonna». Nor is a size (T6):
+    // «Dims 60x40x50 cm 300 kg» is named by «Dims», a forwarder's label.
+    const words = nameWords(name.replace(SCALED_IN_NAME, ' '));
     if (words.length === 0) continue;
     const counted = parsed.quantity !== null || parsed.measureQty !== null;
     // «Tovar: vazni 150 kg» is the goods' weight under a label (round 3,
@@ -1300,15 +1379,7 @@ function typedGoods(
     // one — splitting them is the model's job.
     if (parsed.problems.some(unsettled)) continue;
     out.push({
-      goods: {
-        ...figureless(name),
-        quantity: parsed.quantity,
-        weightKg: parsed.weightKg,
-        volumeM3: parsed.volumeM3,
-        measureUnit: parsed.measureUnit,
-        measureQty: parsed.measureQty,
-        tnvedCode: parsed.tnvedCode,
-      },
+      goods: typedRow(name, parsed),
       // A label with no separator is read as an unlabelled line (R3-T1), and
       // gives way as one too.
       labelled: separated,
@@ -1368,7 +1439,8 @@ export type LineAnswerRefusal =
   | 'unknown_unit'
   | 'two_pairs'
   | 'unlabelled'
-  | 'repeated';
+  | 'repeated'
+  | 'per_one';
 
 export type LineAnswer =
   | { kind: 'figures'; figures: LineFigures; code: string | null }
@@ -1433,6 +1505,12 @@ export function parseLineAnswer(raw: string): LineAnswer {
   }
 
   const line = typedLine(text);
+  // A figure of ONE package or ONE piece — «15 kg/ctn», «har biri 2 kg»,
+  // «20 x 15 kg» — is never the row's own figure (§3.1 T4): written as the
+  // answer it put one carton's weight in the row's column. Refused, in the
+  // seller's own words; what such an answer MEANS is the table's to read
+  // (T7, release 1b), never this guess.
+  if ((line.perOne ?? []).length > 0) return { kind: 'refused', reason: 'per_one', detail: line.perOne![0] };
   // Ten digits with a unit word after them are an AMOUNT no column can
   // hold, not a code: the kernel takes ten bare digits for a TNVED code
   // wherever they stand, so «2000000000 kg» would have answered the line
