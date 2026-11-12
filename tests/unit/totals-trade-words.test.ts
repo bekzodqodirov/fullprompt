@@ -138,6 +138,29 @@ describe('what is NOT a total (review JN-21)', () => {
     expect(totals('G.W.: 507 480')).toEqual({ ...none, kg: 507480 });
   });
 
+  it('a label a NAME word possesses names that thing’s measure — never the shipment’s', () => {
+    // An engine's displacement, a tank's litres, one jacket's weight: with no
+    // unit after the figure, only the word before the label says whose it is.
+    for (const text of ['Dvigatel hajmi: 1.6', 'Bak hajmi: 50', 'Kurtka og‘irligi: 0.5', 'folding chair G.W.: 15', 'Двигатель объём (м3): 2']) {
+      expect(totals(text), text).toEqual(none);
+    }
+    expect(totals('Kurtka sof og‘irligi: 0.5', 'rastamojka')).toEqual(none);
+    // The shipment's own: the label opens its clause, or follows a totals
+    // word, the cargo itself, a code, the previous label's figure.
+    for (const [text, kg, m3] of [
+      ['Yuk hajmi: 12', null, 12],
+      ['Yukning hajmi: 12', null, 12],
+      ['Umumiy hajmi: 12', null, 12],
+      ['Jami og‘irligi: 507', 507, null],
+      ['Tovarlar og‘irligi: 507', 507, null],
+      ['Tovar og‘irligi: 507, hajmi: 12', 507, 12],
+      ['GS777 G.W.: 507', 507, null],
+      ['货物毛重: 507', 507, null],
+    ] as const) {
+      expect(totals(text), text).toEqual({ ...none, kg, m3 });
+    }
+  });
+
   it('a figure and a unit on two lines are two lines', () => {
     // «507» ends its line and «CBM» opens the next: no cube of 507.
     expect(totals('G.W.: 507\nCBM: 5.92')).toEqual({ ...none, kg: 507, m3: 5.92 });

@@ -48466,6 +48466,74 @@
    "why": "Review JN-22: «кубов» joined the vocabulary and «Набор 4 кубов 20 шт» carried a volume of 4 m³.",
    "source": "ai-soraydi typed-A T1",
    "weight": "defect"
+  },
+  {
+   "id": "c3319",
+   "input": "Dvigatel hajmi: 1.6",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — the engine's 1.6 (litres) is not 1.6 m³ of cargo",
+   "why": "T1's label-first figure has no unit to say what it measures, so the word BEFORE the label must not possess it (JN-22's rule for a unit word before a colon, applied to the labels): an engine's displacement or one piece's weight is not the shipment's.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3320",
+   "input": "Kurtka og‘irligi: 0.5",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — one jacket's weight",
+   "why": "T1's label-first figure has no unit to say what it measures, so the word BEFORE the label must not possess it (JN-22's rule for a unit word before a colon, applied to the labels): an engine's displacement or one piece's weight is not the shipment's.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3321",
+   "input": "Yuk hajmi: 12",
+   "expected": {
+    "volumeM3": 12,
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "volumeM3 12 — the cargo's own volume",
+   "why": "T1's label-first figure has no unit to say what it measures, so the word BEFORE the label must not possess it (JN-22's rule for a unit word before a colon, applied to the labels): an engine's displacement or one piece's weight is not the shipment's.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3322",
+   "input": "Jami og‘irligi: 507",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 507 — after a totals word",
+   "why": "T1's label-first figure has no unit to say what it measures, so the word BEFORE the label must not possess it (JN-22's rule for a unit word before a colon, applied to the labels): an engine's displacement or one piece's weight is not the shipment's.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3323",
+   "input": "Tovar og‘irligi: 507, hajmi: 12",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "weightKg 507, volumeM3 12 — the goods' own, and a label opening its clause",
+   "why": "T1's label-first figure has no unit to say what it measures, so the word BEFORE the label must not possess it (JN-22's rule for a unit word before a colon, applied to the labels): an engine's displacement or one piece's weight is not the shipment's.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [

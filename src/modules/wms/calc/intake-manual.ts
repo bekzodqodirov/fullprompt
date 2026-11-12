@@ -129,6 +129,27 @@ function standsAlone(text: string, end: number): boolean {
   return LABEL_NEXT.test(rest);
 }
 
+/** The cargo itself, in the forms a label follows — «yuk hajmi», «tovarlar og‘irligi», «вес груза» is the other order. */
+const CARGO_WORD = /^(?:yuk|юк|tovar|товар|mahsulot|махсулот|груз|goods|cargo)\p{L}*$/iu;
+
+/**
+ * Is the label at `labelAt` its line's own — or some product's? «Hajmi: 12»,
+ * «Yuk hajmi: 12», «jami og‘irligi: 507», «G.W.: 507 MEAS: 5.92» state the
+ * shipment; «Dvigatel hajmi: 1.6» is an engine's displacement, «Bak hajmi:
+ * 50» a tank's litres, «Kurtka og‘irligi: 0.5» one jacket — a label a NAME
+ * word possesses names that thing's measure, and with no unit after the
+ * figure nothing else would say so (review JN-22's rule for a unit word
+ * before a colon, on the labels). A Han label is a spec block's own.
+ */
+function labelStands(scan: string, labelAt: number): boolean {
+  if (/\p{Script=Han}/u.test(scan.charAt(labelAt))) return true;
+  const [from] = lineAround(scan, labelAt);
+  const before = scan.slice(from, labelAt);
+  // A figure before the label is the previous label's («G.W.: 507 MEAS: …»).
+  if (/\d[\d.,]*\s*$/u.test(before)) return true;
+  return groupedReading(before, before.length, (w) => figureLabel(w) || CARGO_WORD.test(w)) === 'thousands';
+}
+
 /** The text line holding offset `at`, as `[start, end)`. */
 function lineAround(text: string, at: number): [number, number] {
   const end = text.indexOf('\n', at);
@@ -226,7 +247,7 @@ function readNumber(
   for (const hit of scan.matchAll(labelled)) {
     const end = hit.index + hit[0].length;
     const at = end - hit[1]!.length;
-    if (skip(at, end) || !standsAlone(text, end)) continue;
+    if (skip(at, end) || !standsAlone(text, end) || !labelStands(scan, hit.index)) continue;
     const [from, to] = lineAround(text, at);
     if (CURRENCY.test(text.slice(from, to))) continue;
     take(hit[1]!, at, true);
