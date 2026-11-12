@@ -117,7 +117,7 @@ const said = (body: string, n: number, direction: 'in' | 'out' = 'in'): ChatMess
   tgMessageId: BigInt(n),
   direction,
 });
-type ToolCall = { name: string; ok: boolean; text: string };
+type ToolCall = { name: string; ok: boolean; text: string; estimate: boolean };
 /** The avia rule over a run's tools and outcomes, as `runOnce` calls it. */
 const rule = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) => withAviaRule(c, { outcomes, tools }, ctx);
 /** The flight he approved a draft for, as `loadContext` reads it back. */
@@ -131,7 +131,7 @@ function judge(
   language: AgentLocale,
   reply: string,
   outcomes: ToolOutcome[] = [],
-  tools: { name: string; ok: boolean; text: string }[] = [],
+  tools: ToolCall[] = [],
 ) {
   return verdict(customer, script, language, reply, outcomes, tools).blocks.map((b) => b.code);
 }
@@ -142,7 +142,7 @@ function verdict(
   language: AgentLocale,
   reply: string,
   outcomes: ToolOutcome[] = [],
-  tools: { name: string; ok: boolean; text: string }[] = [],
+  tools: ToolCall[] = [],
 ) {
   const ctx = typeof customer === 'string' ? ctxOf(customer, script) : customer;
   const mem = memoryFor(ctx, { compose: compose(language), tools, outcomes, usage }, FACTS, 'gsr-t');
@@ -323,7 +323,7 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
   });
 
   it('a truck quote asked in the same run — even one the tool refused — may give the truck\'s warehouse (review D5)', () => {
-    const refused = [{ name: 'yolkira_estimate', ok: false, text: 'hajm kerak' }];
+    const refused = [{ name: 'yolkira_estimate', ok: false, text: 'hajm kerak', estimate: false }];
     expect(judge('Shenzhendan avia 30 kg, fura bilan ham', 'latin', 'uz', `${quoted} ${answer('china_address_yiwu@1')}`, [air], refused)).not.toContain(
       'avia_address',
     );
@@ -439,7 +439,7 @@ describe('which chat is a flight\'s — the review of the follow-up (review R1-R
       sources: [],
       checklist: { section: 'podklyuch', facts: {} as never, complete: false, fromOurWarehouse: false },
     };
-    expect(judge(ctx, 'latin', 'uz', yiwu(), [checklist], [{ name: 'calc_checklist', ok: true, text: '' }])).not.toContain('avia_address');
+    expect(judge(ctx, 'latin', 'uz', yiwu(), [checklist], [{ name: 'calc_checklist', ok: true, text: '', estimate: false }])).not.toContain('avia_address');
   });
 
   it('R2: only «where do I send it» asks him — thanks, his own address, a pickup or an arrival never do', () => {

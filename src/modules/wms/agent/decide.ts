@@ -36,6 +36,7 @@ import { CANCELLED_BY_HOLDER } from './web-thread';
 import { AGENT_LIMITS } from './limits';
 import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
+import { readSendCaps } from './send-caps';
 import { capReached, dayRunCounts, OUTBOX_GOING, sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { isFirstAsk, JOB_AGENT_INBOUND, nextRedraftAttempt, type AgentInboundJob } from './queues';
@@ -238,9 +239,12 @@ async function identityMoved(d: typeof agentDrafts.$inferSelect): Promise<boolea
   return bindMoved(d, await chatIdentity(d.managerUserId, d.peerId));
 }
 
-/** Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). One home: today.ts. */
+/**
+ * Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). One home:
+ * today.ts, over the effective day cap (send-caps.ts) the send step uses too.
+ */
 async function budgetLeft(managerUserId: string, startedAt: Date | null, now: Date): Promise<number> {
-  const { used, ceiling } = await sendsToday(managerUserId, startedAt, now);
+  const { used, ceiling } = await sendsToday(managerUserId, startedAt, now, (await readSendCaps()).dayCap);
   return ceiling - used;
 }
 

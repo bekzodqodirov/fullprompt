@@ -149,11 +149,12 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
     expect(out.sources).toEqual(
       expect.arrayContaining([
         // In dollars, and which is the load's price and which the kilo's (K16, K21).
-        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', currency: 'USD', role: 'total' },
-        { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool', currency: 'USD', role: 'rate' },
+        // Each names the tool that made it (0146, spec §1.1): the auto layer asks which tool vouched for a money line.
+        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'total' },
+        { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'rate' },
         // The days are a FLIGHT's — never a truck's figure (fix round).
-        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
-        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
+        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
       ]),
     );
   });

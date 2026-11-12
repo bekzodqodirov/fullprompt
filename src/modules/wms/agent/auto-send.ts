@@ -22,11 +22,14 @@ import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
-import { AUTO_SEND_CATEGORIES, autoVerdict, type AutoGateInput, type AutoRefusal } from './auto-gate';
+import { AUTO_SEND_CATEGORIES } from './auto-categories';
+import { estimateUnnamed } from './auto-money';
+import { autoVerdict, type AutoGateInput, type AutoLedgerLine, type AutoRefusal, type AutoToolCall } from './auto-gate';
 import { cardDigest, digestBody } from './card';
-import { agentAutoReady, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
+import { agentAutoReady, agentFullP1Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
+import { readSendCaps } from './send-caps';
 import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { CATEGORIES } from './tools';
@@ -66,7 +69,8 @@ export interface AutoConfig {
   armedAt: Date | null;
   armedBy: string | null;
   holdSec: number;
-  perDay: number;
+  /** Auto presses a Tashkent day may hold — null = no cap (0146, his «7 chegara qoyma»). */
+  perDay: number | null;
   maxChars: number;
   minConfidence: number;
   categories: string[];
@@ -121,13 +125,31 @@ export interface AutoDraftShape {
   actions: unknown;
 }
 
-type ToolCall = { name: string; ok: boolean };
+type ToolCall = AutoToolCall;
 
-function toolCallsOf(raw: unknown): ToolCall[] {
+/**
+ * The run's stored tool calls as the gate reads them. The estimate flag is the one the run stored beside each call
+ * (spec §1.1); a call stored before 0146 carries none and reads as a PRICED estimate — failing closed: such a
+ * draft also has no stored estimates, and the money clause refuses it.
+ */
+export function toolCallsOf(raw: unknown): ToolCall[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((t): t is { name: unknown; ok: unknown } => typeof t === 'object' && t !== null)
-    .map((t) => ({ name: typeof t.name === 'string' ? t.name : '', ok: t.ok === true }));
+    .filter((t): t is { name: unknown; ok: unknown; estimate?: unknown } => typeof t === 'object' && t !== null)
+    .map((t) => ({
+      name: typeof t.name === 'string' ? t.name : '',
+      ok: t.ok === true,
+      estimate: typeof t.estimate === 'boolean' ? t.estimate : true,
+    }));
+}
+
+/** The stored ledger as the gate reads it: who vouched for each line — absent fields (a line before 0146) are null. */
+function ledgerLinesOf(raw: unknown): AutoLedgerLine[] {
+  if (!Array.isArray(raw)) return [];
+  const str = (v: unknown) => (typeof v === 'string' ? v : null);
+  return raw
+    .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
+    .map((e) => ({ kind: str(e.kind) ?? '', origin: str(e.origin), tool: str(e.tool), role: str(e.role) }));
 }
 
 function confidenceOf(raw: string | number | null): number | null {
@@ -264,7 +286,9 @@ export async function autoFactsFor(
   const queued = opts.scheduling ? await autoQueued(d.managerUserId, d.peerId) : 0;
   // The ✅'s own refusals that are already facts at the scheduling (decide `decideDraft`): a card must never count
   // down to them. At the press the ✅ asks them itself.
-  const sends = opts.scheduling ? await sendsToday(d.managerUserId, agent?.startedAt ?? null, opts.now) : null;
+  const sends = opts.scheduling
+    ? await sendsToday(d.managerUserId, agent?.startedAt ?? null, opts.now, (await readSendCaps()).dayCap)
+    : null;
   const guard = opts.scheduling && acc ? await readGuard(acc.id) : null;
   const [off] = await db
     .select({ offUntil: agentAutoChats.offUntil })
@@ -276,13 +300,16 @@ export async function autoFactsFor(
     .select({ humanUntil: agentConversations.humanUntil, mutedAt: agentConversations.mutedAt })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, d.managerUserId), eq(agentConversations.peerId, d.peerId)));
+  const memory = policy.memory;
   return {
     config: {
       armed: auto?.armed === true,
       categories: auto?.categories ?? [],
       maxChars: auto?.maxChars ?? 0,
       minConfidence: auto?.minConfidence ?? 1,
-      perDay: auto?.perDay ?? 0,
+      // NULL is «no cap» and stays NULL (0146): a fallback to a number here would refuse every reply for ever
+      // while typecheck stays green. No row at all is `not_armed` above.
+      perDay: auto ? auto.perDay : null,
     },
     agentOn: agentRunning(agent) && agent.ownerUserId === d.managerUserId,
     draft: {
@@ -298,10 +325,25 @@ export async function autoFactsFor(
       language: d.language,
       body: digestBody(d),
       confidence: confidenceOf(d.confidence),
-      moneyLedger: Array.isArray(policy.ledger) && policy.ledger.some((e) => e?.kind === 'money'),
-      hasEstimate: policy.memory?.hasEstimate === true,
+      ledger: ledgerLinesOf(policy.ledger),
+      hasEstimate: memory?.hasEstimate === true,
+      estimatesStored: Array.isArray(memory?.estimates) && memory.estimates.length > 0,
+      rail: memory?.rail === true,
+      customerLocale: memory?.customerLocale ?? null,
     },
     tools,
+    money: {
+      unnamed: memory ? unnamedOf(digestBody(d), memory) : false,
+      // The facts whose readers are other parts of the spec, each false until its part computes it — and none can
+      // admit a quote by itself: a priced reply is refused `money` until its estimates are stored (§1.3), which is
+      // the part that also re-prices them (`moved`). §1.6 reads the tariff's confirmation, §1.8 the city, §2.2
+      // the ✍️ answer.
+      moved: false,
+      tariffUnconfirmed: false,
+      foreignDestination: false,
+      ownerPersonal: false,
+      answerStale: false,
+    },
     burstMedia: await burstHadMedia(d),
     chat: {
       hasOwner: d.clientId !== null || d.leadId !== null,
@@ -319,6 +361,16 @@ export async function autoFactsFor(
     sendingEnabled: opts.scheduling ? (await getSetting('tg_sending_enabled')) === true : null,
     listenerCurrent: opts.scheduling ? listenerIsCurrent(guard, opts.now) : null,
   };
+}
+
+/** `estimateUnnamed` over a stored memory — one a reader cannot parse names nothing (fails closed). */
+function unnamedOf(body: string, memory: NonNullable<Partial<DraftPolicyJson>['memory']>): boolean {
+  try {
+    return estimateUnnamed(body, { sources: memory.sources ?? [], estimates: memory.estimates ?? null, askedMode: memory.askedMode ?? null });
+  } catch (err) {
+    logger.warn({ err }, '[agent] auto: the quote’s load not read');
+    return true;
+  }
 }
 
 // ── the plan, at the scheduling ─────────────────────────────────────────────
@@ -1246,11 +1298,15 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
   return out.config;
 }
 
-/** Which kinds of reply may go by themselves — the holder's choice among the four, at least one. Audited. */
+/**
+ * Which kinds of reply may go by themselves — the holder's choice among the five, at least one. Audited. The
+ * fifth, `price`, is admitted by 0146's CHECK alone: one migration behind it is refused in words, never a 23514.
+ */
 export async function setAutoCategories(actor: AutoActor, categories: readonly string[], ctx: AuditContext): Promise<AutoConfig> {
   const chosen = [...new Set(categories)];
   if (chosen.length === 0 || chosen.some((c) => !(AUTO_SEND_CATEGORIES as readonly string[]).includes(c))) throw new AutoConfigError('bad_value');
   if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
+  if (chosen.includes('price') && !(await agentFullP1Ready())) throw new AutoConfigError('not_ready');
   const pre = await readAgentConfig();
   if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
   // In the design's own order, so the stored list never depends on the order of the boxes.
@@ -1269,6 +1325,34 @@ export async function setAutoCategories(actor: AutoActor, categories: readonly s
       action: 'update',
       before: { categories: before.categories },
       after: { categories: ordered },
+    });
+    return toAutoConfig(row!);
+  });
+}
+
+/** The bounds a typed daily count keeps (0146's CHECK); null is «no cap». */
+export const AUTO_PER_DAY_MAX = 1000;
+
+/**
+ * The layer's daily count (spec §5.1, his «7 chegara qoyma»): null = no cap, or a whole number he types, 1 to
+ * `AUTO_PER_DAY_MAX`. The holder's alone, as the kinds are. One migration behind it is refused in words (the
+ * column is NOT NULL and bounded 1-80 there). Audited.
+ */
+export async function setAutoPerDay(actor: AutoActor, perDay: number | null, ctx: AuditContext): Promise<AutoConfig> {
+  if (perDay !== null && !(Number.isInteger(perDay) && perDay >= 1 && perDay <= AUTO_PER_DAY_MAX)) throw new AutoConfigError('bad_value');
+  if (!(await agentAutoReady()) || !(await agentFullP1Ready())) throw new AutoConfigError('not_ready');
+  const pre = await readAgentConfig();
+  if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
+  return db.transaction(async (tx) => {
+    const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
+    if (!before) throw new AutoConfigError('not_ready');
+    const [row] = await tx.update(agentAutoConfig).set({ perDay, updatedAt: new Date() }).where(eq(agentAutoConfig.id, 1)).returning();
+    await writeAudit(tx, ctx, {
+      entityType: 'agent_auto_config',
+      entityId: AUTO_AUDIT_ID,
+      action: 'update',
+      before: { perDay: before.perDay },
+      after: { perDay },
     });
     return toAutoConfig(row!);
   });

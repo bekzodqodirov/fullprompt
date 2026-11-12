@@ -4,6 +4,7 @@ import { agentDrafts, agentOutbox, clients, users } from '../../platform/db/sche
 import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import type { StoredEstimate } from './auto-money';
 import type { AviaCargo, QuotedRoad } from './context';
 import type { AgentLocale, ScriptName } from './locale';
 import { airMentionIn, customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
@@ -57,6 +58,24 @@ export interface PolicyMemory {
   quotedRoad?: QuotedRoad | null;
   /** The flight's cargo as the avia tool read it, when this run quoted one — what the follow-up's card names. */
   quotedAir?: AviaCargo | null;
+  /**
+   * A chat about rail (`railChat`): the machine's money was dropped from the sources and the price is HIS
+   * (§18.5) — the auto layer never sends a money reply here (spec §1.1). Absent (a memory stored before 0146)
+   * reads as not one: such a chat's money has no source and blocks anyway.
+   */
+  rail?: boolean;
+  /**
+   * The customer's language as the run read the message it answers (`detectLocale(anchor, stored)`, spec §4) —
+   * the auto layer sends an English, Persian or Chinese reply by itself only when this CONFIDENTLY says that
+   * language, never on the model's own label. Absent (stored before 0146) = not known.
+   */
+  customerLocale?: { locale: AgentLocale | null; confident: boolean };
+  /**
+   * Every priced estimate call of the run (spec §1.3 — written by its package): what the press and the send step
+   * re-price, and what «the reply names the load it priced» is judged against. Absent = none stored; a draft
+   * with an estimate and none is refused by the auto layer (`money`, §1.1).
+   */
+  estimates?: StoredEstimate[];
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;

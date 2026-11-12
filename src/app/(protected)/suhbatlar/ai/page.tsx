@@ -2,7 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
+import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
+import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
+import { readSendCaps, SEND_CAP_BOUNDS } from '@/modules/wms/agent/send-caps';
 import { AGENT_PAGE } from '@/modules/wms/agent/web-door';
 import { cancellable } from '@/modules/wms/agent/web-thread';
 import {
@@ -31,6 +35,7 @@ import {
   AutoArmButtons,
   AutoBadButton,
   AutoCategoriesForm,
+  AutoPerDayForm,
   AviaRateForm,
   DraftActions,
   FactEditor,
@@ -40,6 +45,7 @@ import {
   OwnerPicker,
   RememberButtons,
   RetireButton,
+  SendCapsForm,
   SessionConfirm,
   StyleApprove,
 } from './agent-ui';
@@ -387,7 +393,7 @@ async function SettingsSection({
   owner: Awaited<ReturnType<typeof ownerAccountState>>;
 }) {
   const superAdmin = actor.roles.includes('super_admin');
-  const [today, calcs, mismatch, stats, ownerName, candidates, auto] = await Promise.all([
+  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps] = await Promise.all([
     agentToday(config),
     openCalcsFor(config.ownerUserId),
     tariffMismatchSeen(),
@@ -396,6 +402,8 @@ async function SettingsSection({
     superAdmin ? ownerCandidates() : Promise.resolve([]),
     // Null one migration behind 0145: no panel, and the page is today's.
     autoPanel(actor, config.ownerUserId),
+    // Today's constants one migration behind 0146 (`ready` false: no form).
+    readSendCaps(),
   ]);
   const pct = (rate: number | null) => (rate === null ? '—' : `${Math.round(rate * 100)} %`);
   const holder = actor.id === config.ownerUserId;
@@ -514,6 +522,25 @@ async function SettingsSection({
           dailyTokenCap={config.dailyTokenCap}
         />
       </section>
+
+      {/* The account-protection limits (0146) — only where the side table exists; one migration behind, the constants. */}
+      {caps.ready && (
+        <section className="card space-y-2" data-testid="agent-caps">
+          <h2 className="section-title">{t('capsTitle')}</h2>
+          <p className="text-xs text-ink-500">
+            {t('capsHint', {
+              day: AGENT_LIMITS.perDay,
+              hour: AGENT_LIMITS.perHour,
+              dayMax: SEND_CAP_BOUNDS.day.max,
+              hourMax: SEND_CAP_BOUNDS.hour.max,
+            })}
+          </p>
+          <p className="text-sm" data-testid="agent-caps-now">
+            {t('capsNow', { day: caps.dayCap, hour: caps.hourCap })}
+          </p>
+          <SendCapsForm stored={caps.stored} editable={holder || superAdmin} />
+        </section>
+      )}
 
       <section className="card space-y-2" data-testid="agent-stats">
         <h2 className="section-title">{t('statsTitle')}</h2>
@@ -634,13 +661,16 @@ function AutoSection({
           {t('autoLastOff', { reason: t(off as 'autoOff.manual'), when: tashkentWhen(c.disarmedAt) })}
         </p>
       )}
-      <p className="text-xs text-ink-500">
-        {t('autoNumbers', {
-          hold: holdWords(t, c.holdSec),
-          perDay: c.perDay,
-          maxChars: c.maxChars,
-          confidence: Math.round(c.minConfidence * 100),
-        })}
+      <p className="text-xs text-ink-500" data-testid="agent-auto-numbers">
+        {/* No daily count is said as such (0146, his «7 chegara qoyma») — never «at most 0 a day». */}
+        {c.perDay === null
+          ? t('autoNumbersNoCap', { hold: holdWords(t, c.holdSec), maxChars: c.maxChars, confidence: Math.round(c.minConfidence * 100) })
+          : t('autoNumbers', {
+              hold: holdWords(t, c.holdSec),
+              perDay: c.perDay,
+              maxChars: c.maxChars,
+              confidence: Math.round(c.minConfidence * 100),
+            })}
       </p>
       {/* Armed on a number that is not «Ish raqami» (fix pass B, C9): the gate refuses every reply — the switch
           must not read «yoqilgan» as if something could go. */}
@@ -662,8 +692,18 @@ function AutoSection({
       )}
       <AutoArmButtons armed={c.armed} canArm={holder} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
       <div className="border-t border-line pt-2">
-        <AutoCategoriesForm current={c.categories} editable={holder} />
+        {/* «Narx» is a box only where 0146's CHECK admits it — one migration behind, the four. */}
+        <AutoCategoriesForm
+          current={c.categories}
+          editable={holder}
+          kinds={auto.fullReady ? AUTO_SEND_CATEGORIES : AUTO_SEND_CATEGORIES.filter((k) => k !== 'price')}
+        />
       </div>
+      {auto.fullReady && (
+        <div className="border-t border-line pt-2">
+          <AutoPerDayForm current={c.perDay} editable={holder} max={AUTO_PER_DAY_MAX} />
+        </div>
+      )}
       <p className="border-t border-line pt-2 text-sm [overflow-wrap:anywhere]" data-testid="agent-auto-today">
         {t('autoToday', { sent: auto.today.sent, paused: auto.today.paused, left: auto.today.left })}
         {auto.today.waiting > 0 ? ` · ${t('autoTodayWaiting', { n: auto.today.waiting })}` : ''}

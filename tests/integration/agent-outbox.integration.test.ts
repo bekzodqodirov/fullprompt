@@ -20,6 +20,7 @@ import {
   agentConversations,
   agentDrafts,
   agentOutbox,
+  agentSendCaps,
   attachments,
   calcRequests,
   clients,
@@ -49,6 +50,7 @@ import {
 } from '@/modules/wms/agent/outbox-store';
 import { agentSendVerdict, verdictOutcome, type AgentOutboxRow, type StepOutcome } from '@/modules/wms/agent/send-step';
 import { agentTelegramNotice, type AlarmAccount } from '@/modules/wms/crm/account-alarm';
+import { __restoreSendCaps, readSendCaps } from '@/modules/wms/agent/send-caps';
 import { sendsToday } from '@/modules/wms/agent/today';
 import { readGuard, recordFlood } from '@/modules/wms/crm/account-guard';
 import { clientHasWritten, recordSent } from '@/modules/wms/crm/outbox';
@@ -523,7 +525,7 @@ describe('the facts a send is decided from', () => {
       // One AI reply went a second ago; the reply about to be decided is the second of his two.
       await approved({ manager: own.userId, storeAnchor: false, status: 'sent', sentAt: new Date(now.getTime() - 1_000) });
       const { row } = await approved({ manager: own.userId });
-      const door = async () => sendsToday(own.userId, started, now);
+      const door = async () => sendsToday(own.userId, started, now, (await readSendCaps()).dayCap);
       const step = async () => sendFactsFor(row, now, ctx(own.account.id));
       const before = { door: await door(), step: await step() };
       // The door: the reply that went and this one, reserved by its ✅ — the day's two, no third ✅ today.
@@ -543,6 +545,39 @@ describe('the facts a send is decided from', () => {
     } finally {
       await agentOff();
       __forgetOwnAverage();
+    }
+  });
+
+  it('his account-protection caps (0146, spec §5.2) are the numbers the step reads at this tick — the ✅ door’s day too', async () => {
+    const own = await makeManager('caps');
+    const started = new Date(Date.now() - 30 * 86_400_000); // past the ramp: the ceiling is the day cap itself
+    await agentOn(own.userId, started);
+    const before = await readSendCaps();
+    try {
+      const { row } = await approved({ manager: own.userId });
+      const now = new Date();
+      // Today's constants while nothing is typed.
+      const plain = await sendFactsFor(row, now, ctx(own.account.id));
+      expect({ day: plain.dayCap, hour: plain.hourCap, ceiling: plain.dailyCeiling }).toEqual({ day: 80, hour: 20, ceiling: 80 });
+      // He types 150 a day and 30 an hour.
+      await db.update(agentSendCaps).set({ dayCap: 150, hourCap: 30 }).where(eq(agentSendCaps.id, 1));
+      const typed = await sendFactsFor(row, now, ctx(own.account.id));
+      expect({ day: typed.dayCap, hour: typed.hourCap, ceiling: typed.dailyCeiling }).toEqual({ day: 150, hour: 30, ceiling: 150 });
+      // The ✅ door (and the page) count the same day against the same number.
+      expect((await sendsToday(own.userId, started, now, (await readSendCaps()).dayCap)).ceiling).toBe(150);
+      // At the step: the 21st send of the hour goes under his 30, the 30th waits; the constant would have held both.
+      const live = { ...speaking(typed, own.userId), lastAccountSendAt: null, lastChatSendAt: null };
+      expect(agentSendVerdict(row, { ...live, sentLastHour: 20 })).toEqual({ ok: true });
+      expect(agentSendVerdict(row, { ...live, sentLastHour: 30 })).toMatchObject({ final: false, reason: 'hour_cap' });
+      expect(agentSendVerdict(row, { ...live, sentToday: 100 })).toEqual({ ok: true });
+      expect(agentSendVerdict(row, { ...live, sentToday: 150 })).toMatchObject({ final: false, reason: 'day_cap' });
+      // A lower day cap binds below the constant.
+      await db.update(agentSendCaps).set({ dayCap: 5, hourCap: null }).where(eq(agentSendCaps.id, 1));
+      const low = await sendFactsFor(row, now, ctx(own.account.id));
+      expect({ day: low.dayCap, hour: low.hourCap, ceiling: low.dailyCeiling }).toEqual({ day: 5, hour: 20, ceiling: 5 });
+    } finally {
+      await __restoreSendCaps(before);
+      await agentOff();
     }
   });
 

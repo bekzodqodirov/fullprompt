@@ -34,7 +34,11 @@ export type WaitKind =
   // Files or forwards sent in a row while no collection, draft or capture is
   // open (0141, docs/IKKI-ESHIK.md §4.1): ONE offer per burst, kept across a
   // deploy. Its payload and its arming are the burst door's own.
-  | 'burst';
+  | 'burst'
+  // The AI sotuvchi's two one-text waits of 0146 (spec §2.2, §3.1): his answer to the AI's question
+  // («✍️ Savolga javob»), and a lesson he gives the AI («📝 Tuzatish»).
+  | 'agent_answer'
+  | 'agent_lesson';
 
 /** Unix SECONDS, Telegram's unit. */
 export interface WaitEntry<P> {

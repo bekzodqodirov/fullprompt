@@ -142,6 +142,7 @@ describe('avia is the ACTUAL kilos × his rate — volume never changes the figu
         kind: 'money',
         label: 'avia (tarif × kg)',
         origin: 'tool',
+        tool: 'avia_estimate',
         currency: 'USD',
         role: 'total',
       });

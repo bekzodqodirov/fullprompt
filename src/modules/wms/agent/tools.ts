@@ -481,16 +481,19 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
     text,
     estimate: true,
     ...(fromOurWarehouse ? { fromOurWarehouse: true } : {}),
+    // Each source names this tool (spec §1.1): the auto layer asks which tool vouched for a money line.
     sources: [
       // Dollars, and which is the load's price and which the price of one unit (K16, K21).
-      { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)", origin: 'tool', currency: 'USD', role: 'total' },
-      { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)", origin: 'tool', currency: 'USD', role: 'rate' },
+      { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)", origin: 'tool', tool: 'yolkira_estimate', currency: 'USD', role: 'total' },
+      { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)", origin: 'tool', tool: 'yolkira_estimate', currency: 'USD', role: 'rate' },
       // The website's days are the TRUCK's — never a flight's figure.
-      { value: e.days[0], kind: 'duration', label: 'sayt muddati', origin: 'tool', mode: 'road' },
-      { value: e.days[1], kind: 'duration', label: 'sayt muddati', origin: 'tool', mode: 'road' },
-      { value: m3, kind: 'measure', label: `mijoz ${volume.messageRef}`, origin: 'tool' },
-      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool' },
-      ...(e.densityKgM3 ? [{ value: e.densityKgM3, kind: 'measure' as const, label: 'zichlik (hisob)', origin: 'tool' as const }] : []),
+      { value: e.days[0], kind: 'duration', label: 'sayt muddati', origin: 'tool', tool: 'yolkira_estimate', mode: 'road' },
+      { value: e.days[1], kind: 'duration', label: 'sayt muddati', origin: 'tool', tool: 'yolkira_estimate', mode: 'road' },
+      { value: m3, kind: 'measure', label: `mijoz ${volume.messageRef}`, origin: 'tool', tool: 'yolkira_estimate' },
+      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool', tool: 'yolkira_estimate' },
+      ...(e.densityKgM3
+        ? [{ value: e.densityKgM3, kind: 'measure' as const, label: 'zichlik (hisob)', origin: 'tool' as const, tool: 'yolkira_estimate' }]
+        : []),
     ],
   };
 }
@@ -553,12 +556,13 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
       `needs_owner=true, owner_question="Avia: <tovar>, ${kg} kg, <qayerdan> — manzilni bering" — tovar va qayerdanni mijoz xabaridan yoz.`,
     estimate: true,
     air: { kg, origin },
+    // Each source names this tool (spec §1.1), as the truck's do.
     sources: [
-      { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', currency: 'USD', role: 'total' },
-      { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool', currency: 'USD', role: 'rate' },
-      { value: daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
-      { value: daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
-      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool' },
+      { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'total' },
+      { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'rate' },
+      { value: daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+      { value: daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+      { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool', tool: 'avia_estimate' },
     ],
   };
 }

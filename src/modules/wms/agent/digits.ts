@@ -359,6 +359,9 @@ const NUMERAL_WORDS = [
   'сто|двести|двухсот|триста|тр[её]хсот|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\\p{L}*',
   'two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen',
   'twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand',
+  // The compound hundreds first (spec §4, probed at 0de07535: «هزینه حمل تقریباً نهصد دلار است» read as no
+  // numeral at all — «صد» alone is not a word inside «نهصد»), so the alternation takes the whole word.
+  'دویست|سیصد|چهارصد|پانصد|ششصد|هفتصد|هشتصد|نهصد',
   'دو|سه|چهار|پنج|شش|هفت|هشت|ده|یازده|دوازده|سیزده|چهارده|پانزده|شانزده|هفده|هجده|نوزده|بیست|سی|چهل|پنجاه|شصت|هفتاد|هشتاد|نود|صد|هزار',
 ].join('|');
 
@@ -371,7 +374,7 @@ const NUMERAL_WORDS = [
  * small count: it is «village» as well as ten.
  */
 const SCALE_WORD =
-  /^(?:yuz|ming|юз|минг|сто|двести|двухсот|триста|тр[её]хсот|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\p{L}*|hundred|thousand|صد|هزار)$/iu;
+  /^(?:yuz|ming|юз|минг|сто|двести|двухсот|триста|тр[её]хсот|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\p{L}*|hundred|thousand|دویست|سیصد|چهارصد|پانصد|ششصد|هفتصد|هشتصد|نهصد|صد|هزار)$/iu;
 const TENS_WORD = new RegExp(
   `^(?:${[
     "o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz|qirq|ellik|oltmish|yetmish|sakson|to['‘’ʻ`]?qson",
@@ -546,6 +549,17 @@ const PER_UNIT_PRICE = new RegExp(
 );
 /** A currency named anywhere in a sentence — the test of `CURRENCY_ANYWHERE`, once. */
 const CURRENCY_NAMED = new RegExp(CURRENCY_ANYWHERE.source, 'iu');
+
+/**
+ * Does the text name a currency — any of them, in any of the six languages (spec §1.1 `money_unread`)? The one
+ * fence that works whatever spelled-out numeral the readers above cannot read: a reply that says «dollar»,
+ * «сум», «元» after a figure, «تومان» and holds no money line in its ledger stated a price nobody vouched for.
+ * The currency WORDS are the bounded ones money is read by (`CURRENCY_NAMES`), so «sumka» and «summa» are no
+ * currency, and «元»/«块» count only after a figure, as they always have.
+ */
+export function namesCurrency(text: string): boolean {
+  return CURRENCY_NAMED.test(normalizeDigits(text));
+}
 
 /** What cargo is weighed or sized in — the measure half of `MONEY_OR_MEASURE`, spelled as a whole token's; the first of `UNIT_TOKEN`'s units. */
 const MEASURE_UNITS = [

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { getTableColumns, getTableName } from 'drizzle-orm';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import * as schema from '@/modules/platform/db/schema';
 import { isTelegramMuted, UNMUTABLE_TYPES } from '@/modules/platform/notifications/mutes';
@@ -72,6 +73,31 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
     for (const table of keyed) {
       const named = (PURGED_TABLES as readonly string[]).includes(table) || table in HANDLED_ELSEWHERE;
       expect(named, `${table} is keyed by chat and the purge does not name it`).toBe(true);
+    }
+  });
+
+  it('every table with an FK to agent_drafts is named by the purge or by a reason (0146, spec §3.2)', () => {
+    /** Tables that point at a draft and are deliberately NOT a chat's copy. */
+    const SURVIVES: Record<string, string> = {
+      agent_lessons:
+        'his instruction to EVERY chat, refused personal details at write — it survives the purge with draft_id NULL (0146)',
+    };
+    const pointing: string[] = [];
+    for (const value of Object.values(schema)) {
+      if (!value || typeof value !== 'object' || !(Symbol.for('drizzle:IsDrizzleTable') in (value as object))) continue;
+      const fks = getTableConfig(value as never).foreignKeys;
+      if (fks.some((fk) => getTableName(fk.reference().foreignTable) === 'agent_drafts')) pointing.push(getTableName(value as never));
+    }
+    expect(pointing).toEqual(expect.arrayContaining(['agent_outbox', 'agent_auto_verdicts', 'agent_lessons']));
+    for (const table of pointing) {
+      const named = (PURGED_TABLES as readonly string[]).includes(table) || table in SURVIVES;
+      expect(named, `${table} points at a draft and the purge does not name it`).toBe(true);
+    }
+    // A table the purge leaves standing must let its draft go: SET NULL, never a refusal of the purge's DELETE.
+    for (const table of Object.keys(SURVIVES)) {
+      const t = Object.values(schema).find((v) => v && typeof v === 'object' && Symbol.for('drizzle:IsDrizzleTable') in (v as object) && getTableName(v as never) === table);
+      const fk = getTableConfig(t as never).foreignKeys.find((f) => getTableName(f.reference().foreignTable) === 'agent_drafts');
+      expect(fk?.onDelete, table).toBe('set null');
     }
   });
 

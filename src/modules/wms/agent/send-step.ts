@@ -105,7 +105,14 @@ export interface SendFacts {
   sentToChatToday: number;
   sentLastHour: number;
   sentToday: number;
+  /** The day's ceiling (`dailySendCeiling` over the effective day cap — the ramp, then the cap). */
   dailyCeiling: number;
+  /**
+   * The account-protection caps as they stand (send-caps `readSendCaps`, 0146): his stored numbers, else
+   * `AGENT_LIMITS.perDay` / `perHour` — the one figure the ✅, the gate and the page read too (spec §5.2).
+   */
+  dayCap: number;
+  hourCap: number;
   lastChatSendAt: Date | null;
   lastAccountSendAt: Date | null;
   /** The jitter drawn for the account gap this tick. */
@@ -211,8 +218,8 @@ export function agentSendVerdict(
     return wait('account_gap', new Date(f.lastAccountSendAt.getTime() + f.accountGapMs));
   }
   if (f.sentToChatToday >= AGENT_LIMITS.perChatPerDay) return wait('chat_day_cap', nextTashkentMorning(f.now));
-  if (f.sentLastHour >= AGENT_LIMITS.perHour) return wait('hour_cap', new Date(now + 5 * 60_000));
-  if (f.sentToday >= Math.min(f.dailyCeiling, AGENT_LIMITS.perDay)) return wait('day_cap', nextTashkentMorning(f.now));
+  if (f.sentLastHour >= f.hourCap) return wait('hour_cap', new Date(now + 5 * 60_000));
+  if (f.sentToday >= Math.min(f.dailyCeiling, f.dayCap)) return wait('day_cap', nextTashkentMorning(f.now));
   return { ok: true };
 }
 

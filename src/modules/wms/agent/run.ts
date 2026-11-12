@@ -92,7 +92,7 @@ export interface ComposeReply {
 
 interface LoopResult {
   compose: ComposeReply;
-  tools: { name: string; ok: boolean; text: string }[];
+  tools: { name: string; ok: boolean; text: string; estimate: boolean }[];
   outcomes: ToolOutcome[];
   usage: ModelUsage;
 }
@@ -238,7 +238,9 @@ export async function runLoop(input: {
         logger.warn({ err, tool: u.name }, '[agent] tool failed');
         out = { ok: false, text: 'Vosita ishlamadi — buni aytma, needs_owner.', sources: [] };
       }
-      tools.push({ name: u.name, ok: out.ok, text: out.text.slice(0, 500) });
+      // The estimate flag is the TOOL's own (`ToolOutcome.estimate`: a priced yo'lkira or avia answer), never read
+      // off its text: `below_minimum` and every refusal carry false (spec §1.1).
+      tools.push({ name: u.name, ok: out.ok, text: out.text.slice(0, 500), estimate: out.estimate === true });
       outcomes.push(out);
       results.push({ type: 'tool_result', tool_use_id: u.id, content: out.text, ...(out.ok ? {} : { is_error: true }) });
     }
@@ -469,7 +471,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       outputTokens: loop.usage.outputTokens,
       cacheReadTokens: loop.usage.cacheReadTokens,
       cacheWriteTokens: loop.usage.cacheWriteTokens,
-      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
+      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
     const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
@@ -566,6 +568,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // yo'l bilan taxminan 960 $» passed on the truck's figure.
   const rail = railChat(ctx, loop.compose);
   const road = chatRoadOf(ctx, loop);
+  const guess = detectLocale(ctx.anchor?.body ?? '', ctx.storedLocale);
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
@@ -605,6 +608,11 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // What this run quoted, for the next run's `lastQuote` (review R1).
     quotedRoad: rail ? null : quotedRoadOf(loop),
     quotedAir: rail ? null : (loop.outcomes.find((o) => o.air)?.air ?? null),
+    // The auto layer's two facts of the chat itself (spec §1.1, §4): a rail chat's money is his, and the
+    // customer's language as the message the draft answers says it — read once here, so the scheduling and the
+    // press judge the same thing.
+    rail,
+    customerLocale: { locale: guess.locale, confident: guess.confident },
     // The Chinese the facts this run read hold (his fourth set): a reply that
     // quotes a warehouse address verbatim is measured in its OWN script.
     quotableHan: hanOnly([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])].join('')),
@@ -1240,7 +1248,7 @@ export async function runOwnerTriggered(
       outputTokens: loop.usage.outputTokens,
       cacheReadTokens: loop.usage.cacheReadTokens,
       cacheWriteTokens: loop.usage.cacheWriteTokens,
-      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
+      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
     const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
     if (!drafted.replyNeeded && !drafted.needsOwner) {

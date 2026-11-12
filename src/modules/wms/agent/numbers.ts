@@ -127,6 +127,12 @@ export interface NumberSource {
    * 100 kg yukingiz Toshkentga yetib keldi», a weight nobody stated. Absent = any sentence.
    */
   said?: 'minimum';
+  /**
+   * The tool that made it (`TOOL_SPECS` name) — set by the two estimate tools on every source of a priced
+   * answer (spec §1.1): the auto layer's money clause asks WHICH tool vouched for each money line, never its label.
+   * Absent = no tool named it (the customer, a fact, the company's rule, a memory stored before 0146).
+   */
+  tool?: string;
 }
 
 /** How cargo travels — the three roads a day count can be the time of. */
@@ -522,6 +528,16 @@ export interface LedgerEntry {
   source: string | null;
   /** A money figure's currency as read; null = none could be told. */
   currency?: Currency | null;
+  /**
+   * Who vouched for it — copied from the source `placedLedger` found, never read off the label (spec §1.1): the
+   * auto layer passes a money line only when a TOOL of this run said it, an estimate tool, as a total or a rate.
+   * Absent on a line nothing vouched for, and on every line stored before 0146 — read as «not the tool's».
+   */
+  origin?: SourceOrigin;
+  /** The tool that made the source (`NumberSource.tool`); absent = none named. */
+  tool?: string;
+  /** A money line's source role (K21); absent on any other line. */
+  role?: MoneyRole;
 }
 
 /** A phone in any spelling: an optional +, then ≥ 9 digits with spaces, dashes, dots or brackets between. */
@@ -1301,11 +1317,16 @@ export function placedLedger(
     }
     const money = found.kind === 'money';
     const currency = money ? (found.currency ?? null) : undefined;
+    // Who vouched, as the source says it (spec §1.1) — a list's own count is vouched for by nobody's source.
+    const by = listed ? null : source;
     return {
       raw: money ? `${f.raw} ${currency ? CURRENCY_LABEL[currency] : '(valyuta noma’lum)'}` : f.raw,
       kind: found.kind,
       source: listed ? LISTED_COUNT : (source?.label ?? null),
       ...(money ? { currency } : {}),
+      ...(by?.origin ? { origin: by.origin } : {}),
+      ...(by?.tool ? { tool: by.tool } : {}),
+      ...(money && by ? { role: by.role ?? 'total' } : {}),
       index: f.index,
       end: f.index + f.raw.length,
       perUnit: f.perUnit === true,
@@ -1332,7 +1353,15 @@ export function numberLedger(
 
 /** A placed line as the card and the draft store it — without its place. */
 export function ledgerLine(e: PlacedEntry): LedgerEntry {
-  return { raw: e.raw, kind: e.kind, source: e.source, ...(e.currency !== undefined ? { currency: e.currency } : {}) };
+  return {
+    raw: e.raw,
+    kind: e.kind,
+    source: e.source,
+    ...(e.currency !== undefined ? { currency: e.currency } : {}),
+    ...(e.origin !== undefined ? { origin: e.origin } : {}),
+    ...(e.tool !== undefined ? { tool: e.tool } : {}),
+    ...(e.role !== undefined ? { role: e.role } : {}),
+  };
 }
 
 /**

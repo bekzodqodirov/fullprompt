@@ -1,4 +1,9 @@
+import { AUTO_SEND_CATEGORIES } from './auto-categories';
+import { isEstimateTool, saysTashkent } from './auto-money';
+import { namesCurrency } from './digits';
 import { isTashkentNight } from './send-step';
+
+export { AUTO_SEND_CATEGORIES, type AutoCategory } from './auto-categories';
 
 /**
  * «O'zi yuborish» — may this reply go WITHOUT his press? (docs/AI-SOTUVCHI.md
@@ -39,6 +44,16 @@ export const AUTO_REFUSALS = [
   'notes',
   'actions',
   'money',
+  // The money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.8, §2.2): each its own refusal, its own words.
+  'money_unread',
+  'estimate_unnamed',
+  'estimate_moved',
+  'tariff_unconfirmed',
+  'foreign_destination',
+  'destination_unsaid',
+  'owner_figure',
+  'owner_personal',
+  'answer_stale',
   'category',
   'status_unbacked',
   'language',
@@ -73,9 +88,18 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   notes: 'kartada izoh bor',
   actions: 'javob bilan birga amal bor (hisoblatish yoki AI o‘chirish)',
   money: 'javobda pul (narx, balans yoki taxminiy hisob) bor',
+  money_unread: 'javobda pul so‘zi bor, lekin raqami o‘qilmadi',
+  estimate_unnamed: 'narx qaysi yuk uchunligi (kub, kg) aytilmagan',
+  estimate_moved: 'narx jadvali o‘zgargan — narx qayta tekshirilmagan',
+  tariff_unconfirmed: 'Xitoy tarifi o‘zgargan — birinchi narxni o‘zingiz tasdiqlang',
+  foreign_destination: 'mijoz Toshkentdan boshqa shaharni aytgan',
+  destination_unsaid: 'javobda «Toshkentgacha» deyilmagan',
+  owner_figure: 'javobda sizning raqamingiz bor — ko‘rib yuboring',
+  owner_personal: 'javobingizda boshqa mijoz ma’lumoti bor — ko‘rib yuboring',
+  answer_stale: 'savolingizdan keyin mijoz yana yozdi',
   category: 'bu turdagi javob o‘zi ketmaydi',
   status_unbacked: 'yuk holati tekshirilmagan',
-  language: 'mijoz tili o‘zbek yoki rus emas',
+  language: 'mijoz tili aniq emas yoki javob boshqa tilda',
   media: 'mijoz rasm, ovozli xabar yoki fayl yuborgan',
   too_long: 'javob juda uzun',
   low_confidence: 'AI o‘ziga yetarlicha ishonmaydi',
@@ -93,19 +117,43 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   listener_behind: 'Telegram ko‘prigi (tinglovchi) yangilanmagan',
 };
 
-/** The categories the layer may ever open (§18.3) — never price, complaint or other. One home: the CHECK says the same. */
-export const AUTO_SEND_CATEGORIES = ['greeting', 'qualification', 'faq', 'status'] as const;
-export type AutoCategory = (typeof AUTO_SEND_CATEGORIES)[number];
-
-/** The customer's languages a reply may go in by itself (§18.3). */
-export const AUTO_LANGUAGES = ['uz', 'uz_cyrl', 'ru'] as const;
+/**
+ * The customer's languages a reply may go in by itself — all six the agent writes since 0146 (spec §4, his
+ * «mijoz qaysi tilda yozsa usha tilda suhbat olib borilsin fors xitoy rus ingiliz ozbe»).
+ */
+export const AUTO_LANGUAGES = ['uz', 'uz_cyrl', 'ru', 'en', 'fa', 'zh'] as const;
 
 /**
- * The tools whose output is a PRICE or a balance (tools.ts TOOL_SPECS): a run
- * that called any of them — answered or not — is a money reply whatever the
- * model labelled it (§18.3: «money makes it price»).
+ * …of which these go only when the customer's own message CONFIDENTLY says that language (spec §4): G5 compares
+ * scripts alone, so an English reply to an Uzbek Latin customer, or a Russian one to an Uzbek Cyrillic customer,
+ * passes it — and the model's label is its own (`parseCompose` defaults to 'uz'). For the other three a confident
+ * guess that differs refuses, and an unconfident one keeps today's rule.
+ */
+export const AUTO_STRICT_LANGUAGES = ['en', 'fa', 'zh'] as const;
+
+/**
+ * The tools whose output is a PRICE or a balance (tools.ts TOOL_SPECS). Judged by OUTCOME since 0146 (spec
+ * §1.1): a run that called `own_balance`, or an estimate tool that refused, is a money reply whatever the model
+ * labelled it; an estimate that answered with no price (`below_minimum`) is no money at all; a priced estimate
+ * goes only through the money clause below.
  */
 export const MONEY_TOOLS = ['own_balance', 'yolkira_estimate', 'avia_estimate'] as const;
+
+/** A tool call as the gate reads it — `estimate` is the tool's own flag (a priced answer), stored with the run. */
+export interface AutoToolCall {
+  name: string;
+  ok: boolean;
+  /** A priced yo'lkira or avia answer. A call stored before 0146 carries none and reads as one (fails closed). */
+  estimate: boolean;
+}
+
+/** A line of the policy ledger as the gate reads it: what kind, and who vouched (`LedgerEntry`, spec §1.1). */
+export interface AutoLedgerLine {
+  kind: string;
+  origin: string | null;
+  tool: string | null;
+  role: string | null;
+}
 
 /** The one tool whose answer backs a «status» reply: the customer's own cargo, read. */
 export const STATUS_TOOL = 'cargo_status';
@@ -120,7 +168,8 @@ export interface AutoGateInput {
     categories: readonly string[];
     maxChars: number;
     minConfidence: number;
-    perDay: number;
+    /** Auto presses a Tashkent day may hold; null = no cap (0146, his «7 chegara qoyma»). */
+    perDay: number | null;
   };
   /** The agent runs (shadow) and speaks from the draft holder's account. */
   agentOn: boolean;
@@ -139,13 +188,37 @@ export interface AutoGateInput {
     /** The words that would go — trimmed. */
     body: string;
     confidence: number | null;
-    /** A money figure in the policy ledger. */
-    moneyLedger: boolean;
+    /** The policy ledger's lines (`policy.ledger`) — each with who vouched for it. */
+    ledger: readonly AutoLedgerLine[];
     /** A tool estimate stands behind the reply (`memory.hasEstimate`). */
     hasEstimate: boolean;
+    /** The run's priced estimates are stored on the draft (`memory.estimates`, §1.3) — what the press re-prices. */
+    estimatesStored: boolean;
+    /** A chat about rail (`memory.rail`): its price is his (§18.5). */
+    rail: boolean;
+    /** The customer's language as the run read the message the draft answers (`memory.customerLocale`); null = not stored. */
+    customerLocale: { locale: string | null; confident: boolean } | null;
   };
   /** The run's tool calls (`agent_runs.tool_calls`). */
-  tools: readonly { name: string; ok: boolean }[];
+  tools: readonly AutoToolCall[];
+  /**
+   * The money facts read off the draft and the day (spec §1.1, §1.3, §1.6, §1.8, §2.2). Each refuses on its own;
+   * the gate does not recompute them.
+   */
+  money: {
+    /** A money line sits in a sentence that does not restate the load its estimate priced (`estimateUnnamed`). */
+    unnamed: boolean;
+    /** A stored estimate re-priced today gives another figure, or is refused (§1.3). */
+    moved: boolean;
+    /** The China column was written after his last ✅ on it (§1.6). */
+    tariffUnconfirmed: boolean;
+    /** The customer named a city or region other than Tashkent (§1.8). */
+    foreignDestination: boolean;
+    /** His ✍️ answer behind this redraft names another customer, or this chat's code to a chat not proven (§2.2). */
+    ownerPersonal: boolean;
+    /** The customer wrote again after the question his answer was given to (§2.2). */
+    answerStale: boolean;
+  };
   /** The customer's burst carried a photo, a voice note or a file. */
   burstMedia: boolean;
   chat: {
@@ -211,14 +284,29 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (draft.warnings > 0) hit.add('warnings');
   if (draft.notes > 0) hit.add('notes');
   if (draft.actionTypes.some((a) => a !== 'set_followup')) hit.add('actions');
-  if (draft.moneyLedger || draft.hasEstimate || input.tools.some((t) => (MONEY_TOOLS as readonly string[]).includes(t.name))) {
-    hit.add('money');
-  }
-  const category = draft.category ?? '';
+  const money = moneyVerdict(input);
+  if (money.refused) hit.add('money');
+  // A currency named and no money line read: a price spelled in words no reader here can read (spec §1.1).
+  if (!money.lines && namesCurrency(draft.body)) hit.add('money_unread');
+  // The quote's own facts — asked of a priced reply the money clause admitted (a refused one is `money` already).
+  const quote = money.priced && !money.refused;
+  if (quote && input.money.unnamed) hit.add('estimate_unnamed');
+  if (quote && input.money.moved) hit.add('estimate_moved');
+  if (quote && input.money.tariffUnconfirmed) hit.add('tariff_unconfirmed');
+  if (quote && input.money.foreignDestination) hit.add('foreign_destination');
+  // The table is China → Tashkent (§1.8): a reply with an estimate says so, in addition to the city check.
+  if (quote && !saysTashkent(draft.body)) hit.add('destination_unsaid');
+  // A figure from HIS answer always comes back to him (§2.2, law 4): the AI never relays his number by itself.
+  if (draft.ledger.some((l) => l.origin === 'owner')) hit.add('owner_figure');
+  if (input.money.ownerPersonal) hit.add('owner_personal');
+  if (input.money.answerStale) hit.add('answer_stale');
+  // Money makes it price (§18.3): a draft whose money the clause admitted is judged as `price` — which it passes
+  // only because he ticked it. Refused, the label the model gave is judged as it always was.
+  const category = money.present && !money.refused ? 'price' : (draft.category ?? '');
   if (!(AUTO_SEND_CATEGORIES as readonly string[]).includes(category) || !config.categories.includes(category)) hit.add('category');
   // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess.
   if (category === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
-  if (!(AUTO_LANGUAGES as readonly string[]).includes(draft.language ?? '')) hit.add('language');
+  if (!languageAdmits(draft.language, draft.customerLocale)) hit.add('language');
   if (input.burstMedia) hit.add('media');
   if (draft.body.length > config.maxChars) hit.add('too_long');
   if (draft.confidence === null || !Number.isFinite(draft.confidence) || draft.confidence < config.minConfidence) hit.add('low_confidence');
@@ -234,10 +322,55 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // in the night arrives without a sound, and a countdown on it would run his ⏸ window on a message nothing announced.
   if (isTashkentNight(input.at) || isTashkentNight(input.now)) hit.add('night');
   if (input.streak >= AUTO_STREAK_MAX) hit.add('streak');
-  if (input.pressedToday >= config.perDay) hit.add('daily_cap');
+  // NULL = no daily count (his «7 chegara qoyma»); the account's own send caps still bound the day (`budget_spent`).
+  if (config.perDay !== null && input.pressedToday >= config.perDay) hit.add('daily_cap');
   if (input.budgetLeft !== null && input.budgetLeft <= 0) hit.add('budget_spent');
   if (input.sendingEnabled === false) hit.add('sending_disabled');
   if (input.listenerCurrent === false) hit.add('listener_behind');
   const reasons = AUTO_REFUSALS.filter((r) => hit.has(r));
   return { eligible: reasons.length === 0, reasons };
+}
+
+/**
+ * The money clause by OUTCOME (spec §1.1, §1.4). A draft carries money when its ledger holds a money line, a tool
+ * estimate stands behind it, or the run made a money call other than an estimate that answered with no price
+ * (`below_minimum` — «1 kub yoki 100 kg dan kam»: no money at all). Such a draft passes only when ALL hold:
+ *  - he ticked the price act (`price` among the stored categories);
+ *  - every money call is a yo'lkira or avia estimate that ANSWERED — never `own_balance` (the customer's debt is
+ *    his, ⭐ MAP Q2), never an estimate that refused (a reply after a refusal is the model's own price);
+ *  - every money line was vouched for by such a tool, as a total or a rate — never a balance, a fact, his answer,
+ *    or a line stored before 0146 with nobody named (fails closed);
+ *  - the run's priced estimates are stored on the draft (what the press re-prices, §1.3);
+ *  - the chat is not about rail (his price, §18.5).
+ * `priced`: the money is an estimate's — the facts that concern only a quoted price (the tariff confirmed, the
+ * destination) are asked of it alone.
+ */
+function moneyVerdict(input: AutoGateInput): { present: boolean; refused: boolean; priced: boolean; lines: boolean } {
+  const { draft, tools, config } = input;
+  const calls = tools.filter((t) => (MONEY_TOOLS as readonly string[]).includes(t.name));
+  const noPrice = (t: AutoToolCall) => isEstimateTool(t.name) && t.ok && !t.estimate;
+  const lines = draft.ledger.filter((l) => l.kind === 'money');
+  const priced = draft.hasEstimate || calls.some((t) => t.ok && t.estimate);
+  const present = lines.length > 0 || priced || calls.some((t) => !noPrice(t));
+  if (!present) return { present, refused: false, priced: false, lines: false };
+  const refused =
+    !config.categories.includes('price') ||
+    !calls.every((t) => isEstimateTool(t.name) && t.ok) ||
+    !lines.every((l) => l.origin === 'tool' && isEstimateTool(l.tool) && (l.role === 'total' || l.role === 'rate')) ||
+    (priced && !draft.estimatesStored) ||
+    draft.rail;
+  return { present, refused, priced, lines: lines.length > 0 };
+}
+
+/**
+ * The reply's language against the customer's (spec §4): one of the six; English, Persian and Chinese only when
+ * the customer's message confidently says that very language; Uzbek and Russian unless it confidently says
+ * another. A guess not stored (a draft written before 0146) is no confident guess.
+ */
+function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale']): boolean {
+  const lang = language ?? '';
+  if (!(AUTO_LANGUAGES as readonly string[]).includes(lang)) return false;
+  const confident = guess !== null && guess.confident && guess.locale !== null;
+  if ((AUTO_STRICT_LANGUAGES as readonly string[]).includes(lang)) return confident && guess!.locale === lang;
+  return !confident || guess!.locale === lang;
 }

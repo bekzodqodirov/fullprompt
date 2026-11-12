@@ -110,6 +110,53 @@ export function __pretendAgentAutoBehind(): void {
   autoReady = false;
 }
 
+let fullP1Ready = false;
+let fullP1Behind = false;
+
+/**
+ * Does 0146 exist — the full AI seller's part 1 (spec SPEC-P1-v2 §6)? Its two side tables, and the two widened
+ * CHECKs of `agent_auto_config` (the categories admit `price`, `per_day` admits NULL): a server whose tables are
+ * there but whose CHECKs are not would refuse the very writes this asks for. Cached TRUE only (the
+ * `agentAutoReady` idiom). Every 0146 writer and reader asks it first: one migration behind, the caps read as
+ * today's constants, a write of `price` or of no daily count is refused in words, and the prompt has no lessons.
+ */
+export async function agentFullP1Ready(): Promise<boolean> {
+  if (fullP1Behind) return false;
+  if (fullP1Ready) return true;
+  if (!(await agentAutoReady())) return false;
+  try {
+    const rows = await db.execute<{ ok: boolean }>(sql`
+      SELECT to_regclass('public.agent_lessons') IS NOT NULL
+         AND to_regclass('public.agent_send_caps') IS NOT NULL
+         AND coalesce((SELECT pg_get_constraintdef(oid) LIKE '%''price''%' FROM pg_constraint
+                        WHERE conname = 'agent_auto_config_categories_check'
+                          AND conrelid = 'public.agent_auto_config'::regclass), false)
+         AND coalesce((SELECT pg_get_constraintdef(oid) LIKE '%IS NULL%' FROM pg_constraint
+                        WHERE conname = 'agent_auto_config_day_check'
+                          AND conrelid = 'public.agent_auto_config'::regclass), false) AS ok`);
+    fullP1Ready = rows[0]?.ok === true;
+  } catch (err) {
+    logger.warn({ err }, '[agent] 0146 not checked');
+    return false;
+  }
+  return fullP1Ready;
+}
+
+/** Tests: forget the cached answer (and any pretence below). */
+export function __forgetAgentFullP1Ready(): void {
+  fullP1Ready = false;
+  fullP1Behind = false;
+}
+
+/**
+ * Tests: a server one migration behind 0146 — the probe answers «no» until forgotten (the `__pretendAgentAutoBehind`
+ * idiom: the shared database still has the tables for every other process).
+ */
+export function __pretendAgentFullP1Behind(): void {
+  fullP1Behind = true;
+  fullP1Ready = false;
+}
+
 /** Why the layer was disarmed — the person's press, the agent's «off», or a step-down (§18.3). */
 export type AutoDisarmReason =
   | 'manual'

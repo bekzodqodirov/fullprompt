@@ -23,7 +23,8 @@ import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
 import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
-import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, stopAuto, stopAutoForEdit } from './auto-send';
+import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, setAutoPerDay, stopAuto, stopAutoForEdit } from './auto-send';
+import { SendCapsError, setSendCaps } from './send-caps';
 
 /**
  * The web half of the AI sotuvchi's decisions (spec §17.7 «Web: the same
@@ -348,6 +349,41 @@ export async function agentAutoCategoriesAction(categories: string[]): Promise<A
       await setAutoCategories(actor, categories, ctx);
     } catch (err) {
       if (err instanceof AutoConfigError) return { ok: false, error: `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/** A box's whole number, null for an empty one, NaN for anything else — the service refuses NaN as `bad_value`. */
+function capOf(raw: unknown): number | null {
+  if (typeof raw !== 'string') return Number.NaN;
+  const s = raw.trim();
+  if (s === '') return null;
+  return /^\d{1,9}$/u.test(s) ? Number(s) : Number.NaN;
+}
+
+/** The layer's daily count (0146): an empty box is «no cap». The holder's — the service asks. */
+export async function agentAutoPerDayAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoPerDay(actor, capOf(raw), ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/**
+ * The account-protection limits (0146): empty boxes are today's defaults. The holder's or a super_admin's — the
+ * service asks; its refusals are the arming doors' own words (`auto_…`).
+ */
+export async function agentSendCapsAction(values: { dayCap: string; hourCap: string }): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setSendCaps(actor, { dayCap: capOf(values?.dayCap), hourCap: capOf(values?.hourCap) }, ctx);
+    } catch (err) {
+      if (err instanceof SendCapsError) return { ok: false, error: `auto_${err.code}` };
       throw err;
     }
   });

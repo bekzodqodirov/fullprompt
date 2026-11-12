@@ -44,6 +44,7 @@ import {
   readAutoConfig,
   setAutoArmed,
   setAutoCategories,
+  setAutoPerDay,
   stopAuto,
   __restoreAutoConfig,
   AutoConfigError,
@@ -54,7 +55,9 @@ import {
   readAgentConfig,
   setAgentMode,
   __forgetAgentAutoReady,
+  __forgetAgentFullP1Ready,
   __pretendAgentAutoBehind,
+  __pretendAgentFullP1Behind,
   __restoreAgentConfig,
   type AgentConfig,
 } from '@/modules/wms/agent/config';
@@ -534,6 +537,21 @@ describe('the press — the minute sweep, through the same ✅', () => {
     expect(await verdictOf(second.id)).toMatchObject({ eligible: false, reasons: ['daily_cap'] });
   });
 
+  it('per day NULL (0146, his «7 chegara qoyma»): no daily count — the second reply of the day counts down too', async () => {
+    await db.update(agentAutoConfig).set({ perDay: null }).where(eq(agentAutoConfig.id, 1));
+    expect((await readAutoConfig())!.perDay).toBeNull();
+    const first = await drafted();
+    expect(await verdictOf(first.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(first.id))!.state).toBe('pressed');
+    const second = await drafted({ now: new Date(DUE.getTime() + 60_000) });
+    expect(await verdictOf(second.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    // The bot says «no cap» as such — never «1/null», never «1/0».
+    const line = await autoStatusLine(ownerId, new Date(DUE.getTime() + 60_000));
+    expect(line).toContain('chegara yo‘q');
+    expect(line).not.toMatch(/\/null|\/0\b/u);
+  });
+
   it('the streak: two auto replies in a row, then he must speak — his own decision resets it', async () => {
     let at = T0;
     for (let i = 0; i < 2; i++) {
@@ -625,14 +643,51 @@ describe('arming and disarming', () => {
     expect(await refused(setAutoArmed(actorOf(ownerId), true, { actorId: ownerId }))).toBe('agent_off');
   });
 
-  it('the kinds: the holder chooses among the four, at least one, in the design’s order', async () => {
+  it('the kinds: the holder chooses among the five, at least one, in the design’s order — «Narx» only where 0146 admits it', async () => {
     const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
     expect(await refused(setAutoCategories(actorOf(ownerId), [], { actorId: ownerId }))).toBe('bad_value');
-    expect(await refused(setAutoCategories(actorOf(ownerId), ['price'], { actorId: ownerId }))).toBe('bad_value');
+    // DELIBERATE EDIT (0146, spec §1.5): «price» is the fifth kind now; complaint and other never are.
+    expect(await refused(setAutoCategories(actorOf(ownerId), ['complaint'], { actorId: ownerId }))).toBe('bad_value');
+    expect(await refused(setAutoCategories(actorOf(ownerId), ['other', 'faq'], { actorId: ownerId }))).toBe('bad_value');
     expect(await refused(setAutoCategories(actorOf(otherId), ['faq'], { actorId: otherId }))).toBe('not_account_holder');
+    expect((await setAutoCategories(actorOf(ownerId), ['price', 'faq'], { actorId: ownerId })).categories).toEqual(['faq', 'price']);
+    // One migration behind 0146 the CHECK refuses «price»: said in words, never a raw 23514 — the four still save.
+    __pretendAgentFullP1Behind();
+    try {
+      expect(await refused(setAutoCategories(actorOf(ownerId), ['price'], { actorId: ownerId }))).toBe('not_ready');
+      expect((await setAutoCategories(actorOf(ownerId), ['faq'], { actorId: ownerId })).categories).toEqual(['faq']);
+    } finally {
+      __forgetAgentFullP1Ready();
+    }
     expect((await setAutoCategories(actorOf(ownerId), ['status', 'greeting'], { actorId: ownerId })).categories).toEqual(['greeting', 'status']);
     // A kind he took out is refused at the scheduling.
     expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['category']);
+  });
+
+  it('the daily count (0146): the holder types a number or leaves it empty — bounded, audited, said in words one migration behind', async () => {
+    const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
+    for (const bad of [0, 1001, 1.5, Number.NaN, -3]) {
+      expect(await refused(setAutoPerDay(actorOf(ownerId), bad, { actorId: ownerId })), String(bad)).toBe('bad_value');
+    }
+    expect(await refused(setAutoPerDay(actorOf(otherId), 10, { actorId: otherId }))).toBe('not_account_holder');
+    expect((await setAutoPerDay(actorOf(ownerId), null, { actorId: ownerId })).perDay).toBeNull();
+    expect((await readAutoConfig())!.perDay).toBeNull();
+    expect((await setAutoPerDay(actorOf(ownerId), 1000, { actorId: ownerId })).perDay).toBe(1000);
+    const [audit] = await db
+      .select({ before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'agent_auto_config'), eq(auditLog.actorId, ownerId)))
+      .orderBy(sql`${auditLog.id} DESC`)
+      .limit(1);
+    expect(audit).toMatchObject({ before: { perDay: null }, after: { perDay: 1000 } });
+    __pretendAgentFullP1Behind();
+    try {
+      // One migration behind the column is NOT NULL and bounded 1-80: refused in words, never a 23502/23514.
+      expect(await refused(setAutoPerDay(actorOf(ownerId), null, { actorId: ownerId }))).toBe('not_ready');
+      expect(await refused(setAutoPerDay(actorOf(ownerId), 10, { actorId: ownerId }))).toBe('not_ready');
+    } finally {
+      __forgetAgentFullP1Ready();
+    }
   });
 
   it('«off» disarms in its own transaction and stops every waiting reply', async () => {
@@ -1248,6 +1303,56 @@ describe('fix pass A — the hold counts from the card reaching him (C4)', () =>
     expect(v!.dueAt!.getTime()).toBe(next.getTime() + HOLD_MS);
     expect(await pressDueAutos(new Date(next.getTime() + HOLD_MS + 1_000))).toBe(1);
     expect(await outboxOf(b.id)).toMatchObject({ status: 'agent' });
+  });
+});
+
+describe('the money clause by OUTCOME (0146, spec §1.1, §1.4) — on a real run, its stored tool calls and the press', () => {
+  const answers = async (question: string, steps: { name: string; input: Record<string, unknown> }[]) => {
+    const anchor = await inbound(question);
+    const out = await handleInbound(job(anchor), { callModel: scripted(steps), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, (out as { draftId: string }).draftId));
+    const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.id, d!.runId!));
+    return { d: d!, toolCalls: run!.toolCalls };
+  };
+
+  it('below the minimum is an ordinary reply: the tool’s own «no price» is stored with the run, read back at the press, and it goes', async () => {
+    const { d, toolCalls } = await answers('Yiwudan 0.5 kub 50 kg kiyim bor, narxi qancha?', [
+      { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+      compose('Kompaniya mashina bilan eng kamida 1 kub yoki 100 kg yuk qabul qiladi.', { category: 'qualification' }),
+    ]);
+    expect(toolCalls).toEqual([expect.objectContaining({ name: 'yolkira_estimate', ok: true, estimate: false })]);
+    expect(await verdictOf(d.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    await shownAt(d.id, T0);
+    // The press reads the run's STORED calls (`toolCallsOf`) — a flag the run did not store would read as a price.
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+  });
+
+  it('a priced truck estimate names its tool on the ledger, and stays his until its estimates are stored and re-priced (§1.3) — even with «Narx» ticked', async () => {
+    await db.update(agentAutoConfig).set({ categories: ['greeting', 'qualification', 'faq', 'status', 'price'] }).where(eq(agentAutoConfig.id, 1));
+    const { d, toolCalls } = await answers("Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", [
+      { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+      compose("5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.", {
+        category: 'price',
+      }),
+    ]);
+    expect(toolCalls).toEqual([expect.objectContaining({ name: 'yolkira_estimate', ok: true, estimate: true })]);
+    const ledger = (d.policy as { ledger: Record<string, unknown>[] }).ledger;
+    expect(ledger).toContainEqual(expect.objectContaining({ kind: 'money', origin: 'tool', tool: 'yolkira_estimate', role: 'total' }));
+    const v = await verdictOf(d.id);
+    expect(v).toMatchObject({ eligible: false, state: null });
+    expect(v!.reasons).toContain('money');
+  });
+
+  it('a REFUSED estimate makes the reply money, whatever it says (the model’s price after a refusal is nobody’s)', async () => {
+    // No weight reference: the tool refuses (`og'irlik havolasi yo'q`).
+    const { d, toolCalls } = await answers('Yiwudan yuk bor, narxi qancha?', [
+      { name: 'yolkira_estimate', input: { weight_ref: 'w9', volume_ref: 'v9' } },
+      compose('Yukingiz necha kub va necha kg?', { category: 'qualification' }),
+    ]);
+    expect(toolCalls).toEqual([expect.objectContaining({ name: 'yolkira_estimate', ok: false, estimate: false })]);
+    expect((await verdictOf(d.id))!.reasons).toEqual(['money']);
   });
 });
 

@@ -1081,7 +1081,7 @@ export async function autoStatusLine(ownerUserId: string | null, now: Date = new
   if (auto.armed) {
     const today = ownerUserId ? await autoPressedToday(ownerUserId, now) : 0;
     const warn = work ? '' : ` — ⚠ ${AUTO_NOT_WORK_WORDS}`;
-    return `🤖 O‘zi yuborish: yoqilgan (bugun ${today}/${auto.perDay})${warn}. O‘chirish: /agent auto off`;
+    return `🤖 O‘zi yuborish: yoqilgan (bugun ${autoTodayWords(today, auto.perDay)})${warn}. O‘chirish: /agent auto off`;
   }
   const why = auto.disarmReason ? ` — oxirgi marta: ${autoDisarmWords(auto.disarmReason)}` : '';
   const on = ownerUserId && !work ? 'Yoqish uchun avval «Telegram ulash» sahifasida raqamni «Ish raqami» deb belgilang' : 'Yoqish: /agent auto on';
@@ -1110,12 +1110,25 @@ async function autoCommand(
   }
 }
 
-/** What arming promises — the numbers the press keeps (hold, per day), the night, ⏸. */
-export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay'>): string {
+/** «N/30», or «N, chegara yo‘q» when the layer counts no day (0146, his «7 chegara qoyma»). */
+export function autoTodayWords(today: number, perDay: number | null): string {
+  return perDay === null ? `${today}, chegara yo‘q` : `${today}/${perDay}`;
+}
+
+/**
+ * What arming promises — the numbers the press keeps (hold, per day), the night, ⏸, and what stays his. The
+ * price stays his only while he has not ticked it (0146): the sentence is built from the stored kinds, never
+ * a promise the next reply breaks.
+ */
+export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categories'>): string {
   const hold = c.holdSec % 60 === 0 ? `${c.holdSec / 60} daqiqa` : `${c.holdSec} soniya`;
+  const day = c.perDay === null ? 'Kunlik chegara yo‘q' : `Kuniga ko‘pi bilan ${c.perDay} ta`;
+  const kept = c.categories.includes('price')
+    ? 'shikoyat va savolli javoblar har doim sizga qoladi; taxminiy yo‘lkira va avia narxi qoidalar ruxsat bersa o‘zi ketadi'
+    : 'narx, shikoyat va savolli javoblar har doim sizga qoladi';
   return (
     `🤖 O‘zi yuborish yoqildi: mos javob kartasi ${hold} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing. ` +
-    `Kuniga ko‘pi bilan ${c.perDay} ta, tunda yo‘q; narx, shikoyat va savolli javoblar har doim sizga qoladi.`
+    `${day}, tunda yo‘q; ${kept}.`
   );
 }
 

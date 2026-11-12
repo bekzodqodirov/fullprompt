@@ -8,6 +8,7 @@ import {
   agentAutoArmAction,
   agentAutoCategoriesAction,
   agentAutoFeedbackAction,
+  agentAutoPerDayAction,
   agentAutoStopAction,
   agentAviaRateAction,
   agentDecideAction,
@@ -19,9 +20,12 @@ import {
   agentOwnerAction,
   agentRememberAction,
   agentRetireFactAction,
+  agentSendCapsAction,
   agentSessionAction,
   type AgentActionResult,
 } from '@/modules/wms/agent/web-actions';
+// The kinds' one home (a pure module): never the gate, which would pull the send step into this bundle.
+import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import { CATEGORY_KEYS, errorKey } from './labels';
 
 /**
@@ -659,15 +663,20 @@ export function AutoArmButtons({
   );
 }
 
-/** The four kinds of reply the layer may send — the order the design names them. */
-const AUTO_CATEGORIES = ['greeting', 'qualification', 'faq', 'status'] as const;
-
 /**
- * Which kinds go by themselves — a replace-all of the four boxes. Controlled,
- * posted as one list by the action (never a form whose disabled box posts
- * nothing, #171); a reader who may not change it sees the boxes and no save.
+ * Which kinds go by themselves — a replace-all of the boxes (the five of `AUTO_SEND_CATEGORIES`; the page drops
+ * «Narx» on a server one migration behind 0146, `kinds`). Controlled, posted as one list by the action (never a
+ * form whose disabled box posts nothing, #171); a reader who may not change it sees the boxes and no save.
  */
-export function AutoCategoriesForm({ current, editable }: { current: readonly string[]; editable: boolean }) {
+export function AutoCategoriesForm({
+  current,
+  editable,
+  kinds = AUTO_SEND_CATEGORIES,
+}: {
+  current: readonly string[];
+  editable: boolean;
+  kinds?: readonly (typeof AUTO_SEND_CATEGORIES)[number][];
+}) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
   const [chosen, setChosen] = useState<string[]>([...current]);
@@ -676,7 +685,7 @@ export function AutoCategoriesForm({ current, editable }: { current: readonly st
     <div className="space-y-2" data-testid="agent-auto-categories">
       <p className="text-sm font-semibold">{t('autoCategoriesTitle')}</p>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        {AUTO_CATEGORIES.map((c) => (
+        {kinds.map((c) => (
           <label key={c} className="flex min-h-11 items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -699,6 +708,110 @@ export function AutoCategoriesForm({ current, editable }: { current: readonly st
           disabled={pending || !changed || chosen.length === 0}
           data-testid="agent-auto-categories-save"
           onClick={() => run(() => agentAutoCategoriesAction(chosen))}
+        >
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** A typed whole number, or null for an empty box — anything else is the action's own `bad_value`, said in words. */
+function typedCap(raw: string): number | null | 'bad' {
+  const s = raw.trim();
+  if (s === '') return null;
+  return /^\d+$/u.test(s) ? Number(s) : 'bad';
+}
+
+/**
+ * The layer's daily count (0146, his «7 chegara qoyma»): an empty box is «no cap», a number is a cap. The
+ * holder's alone, as the kinds are; a reader who may not change it sees the value and no save. Controlled — a
+ * refusal keeps what he typed (#463).
+ */
+export function AutoPerDayForm({ current, editable, max }: { current: number | null; editable: boolean; max: number }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [value, setValue] = useState(current === null ? '' : String(current));
+  const typed = typedCap(value);
+  const changed = typed !== current;
+  return (
+    <div className="space-y-1" data-testid="agent-auto-per-day">
+      <label className="label" htmlFor="agent-auto-per-day-input">
+        {t('autoPerDayLabel')}
+      </label>
+      <input
+        id="agent-auto-per-day-input"
+        className="input"
+        inputMode="numeric"
+        value={value}
+        disabled={!editable || pending}
+        placeholder="—"
+        onChange={(event) => setValue(event.target.value)}
+        data-testid="agent-auto-per-day-input"
+      />
+      <p className="text-xs text-ink-500">{t('autoPerDayHint', { max })}</p>
+      {editable && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || !changed}
+          data-testid="agent-auto-per-day-save"
+          onClick={() => run(() => agentAutoPerDayAction(value))}
+        >
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * The account-protection limits (0146, his «4 hozircha qolsin … o'zgartirish imkoni»): the agent's day and hour
+ * caps, empty = today's default. The holder's or a super_admin's (`setSendCaps`). Controlled.
+ */
+export function SendCapsForm({
+  stored,
+  editable,
+}: {
+  stored: { dayCap: number | null; hourCap: number | null };
+  editable: boolean;
+}) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [values, setValues] = useState({
+    dayCap: stored.dayCap === null ? '' : String(stored.dayCap),
+    hourCap: stored.hourCap === null ? '' : String(stored.hourCap),
+  });
+  const field = (key: keyof typeof values, label: string) => (
+    <div className="space-y-1">
+      <label className="label" htmlFor={`agent-caps-${key}`}>
+        {label}
+      </label>
+      <input
+        id={`agent-caps-${key}`}
+        className="input"
+        inputMode="numeric"
+        value={values[key]}
+        disabled={!editable || pending}
+        placeholder="—"
+        onChange={(event) => setValues((was) => ({ ...was, [key]: event.target.value }))}
+        data-testid={`agent-caps-${key}`}
+      />
+    </div>
+  );
+  return (
+    <div className="space-y-2" data-testid="agent-caps-form">
+      {field('dayCap', t('capsDay'))}
+      {field('hourCap', t('capsHour'))}
+      {editable && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending}
+          data-testid="agent-caps-save"
+          onClick={() => run(() => agentSendCapsAction(values))}
         >
           {t('save')}
         </button>

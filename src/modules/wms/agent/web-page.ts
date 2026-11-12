@@ -21,9 +21,10 @@ import { cardDigest, cardDrawsSend, digestBody } from './card';
 import { renderDraftCardFull } from './card-io';
 import { autoCountingDown } from './auto-card';
 import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
-import { agentAutoReady, agentTablesReady, type AgentConfig } from './config';
+import { agentAutoReady, agentFullP1Ready, agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
+import { readSendCaps } from './send-caps';
 import { dayRunCounts, sendsToday } from './today';
 import type { ComposedAction } from './types';
 
@@ -335,9 +336,10 @@ export interface AgentToday {
  */
 export async function agentToday(config: AgentConfig, now = new Date()): Promise<AgentToday> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
+  const caps = await readSendCaps();
   const [counts, budget] = await Promise.all([
     dayRunCounts(dayStart, null),
-    config.ownerUserId ? sendsToday(config.ownerUserId, config.startedAt, now) : Promise.resolve({ used: 0, ceiling: 0 }),
+    config.ownerUserId ? sendsToday(config.ownerUserId, config.startedAt, now, caps.dayCap) : Promise.resolve({ used: 0, ceiling: 0 }),
   ]);
   return {
     runs: counts.runs,
@@ -537,6 +539,8 @@ export interface AutoPanel {
    */
   today: { sent: number; going: number; unclear: number; paused: number; waiting: number; left: number };
   sent: AutoSentRow[];
+  /** 0146 has landed: the «Narx» box and the daily count's own field are offered (one migration behind they are not). */
+  fullReady: boolean;
 }
 
 /** An outbox status as the panel's delivery — null: the reply never left (or, one migration behind, nothing). */
@@ -599,12 +603,14 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
       : Promise.resolve([]),
   ]);
   const c = counts[0];
+  const fullReady = await agentFullP1Ready();
   const n = (x: number | undefined) => Number(x ?? 0);
   const today = { sent: n(c?.sent), going: n(c?.going), unclear: n(c?.unclear), paused: n(c?.paused), waiting: n(c?.waiting) };
   return {
     config,
     armedByName,
     workAccount: account[0]?.work === true,
+    fullReady,
     today: {
       ...today,
       left: Math.max(0, n(c?.total) - today.sent - today.going - today.unclear - today.paused - today.waiting),

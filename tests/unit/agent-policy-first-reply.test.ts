@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { autoVerdict } from '@/modules/wms/agent/auto-gate';
 import { hitWords } from '@/modules/wms/agent/card';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits, unverifiableNumeral } from '@/modules/wms/agent/digits';
@@ -1906,5 +1907,131 @@ describe('sixth check — the run-end code names a client only from the book; th
   ] as const)('«%s» … «%s» … «%s» … «%s» keeps its ✅', (lines, script, language, reply) => {
     expect(promiseHits(reply)).toEqual([]);
     expect(verdict(lines, script, language, reply).ok).toBe(true);
+  });
+});
+
+/**
+ * 0146 — six languages may go by themselves (spec SPEC-P1-v2 §4). Before the layer opened Persian, Chinese and
+ * English, a price or a day count SPELLED OUT in them had to stay blocked exactly like the Uzbek and Russian
+ * ones: probed at 0de07535, «هزینه حمل تقریباً نهصد دلار است» read as no numeral at all — «صد» alone is no word
+ * inside «نهصد» — and the ledger was empty, i.e. an invented $900 in Persian words was invisible. Pinned both
+ * ways: each spelled figure is G1's block; each ordinary reply in the same language keeps its ✅. And the
+ * language a reply goes in by itself is the CUSTOMER's, read off his message (`memory.customerLocale`), never
+ * the model's label: G5 compares scripts only.
+ */
+const FA = ['سلام', 'بار دارم', 'قیمت چند است', 'از چین'];
+const ZH = ['你好', '我有货', '多少钱', '从中国'];
+
+describe('0146 — spelled-out prices and day counts in Persian, Chinese and English stay blocked; the ordinary replies keep their ✅', () => {
+  it.each([
+    [FA, 'arabic', 'fa', 'هزینه حمل تقریباً نهصد دلار است'],
+    [FA, 'arabic', 'fa', 'حدود پانصد دلار می‌شود.'],
+    [FA, 'arabic', 'fa', 'برای هر متر مکعب حدود دویست دلار.'],
+    [FA, 'arabic', 'fa', 'تقریباً هشتصد دلار برای بار شما.'],
+    [FA, 'arabic', 'fa', 'سیصد دلار هزینه دارد.'],
+    [FA, 'arabic', 'fa', 'بار شما حدود بیست روز طول می‌کشد.'],
+    [ZH, 'han', 'zh', '运费大约九百美元。'],
+    [ZH, 'han', 'zh', '大约二十天到。'],
+    [EN, 'latin', 'en', 'Freight will be about nine hundred dollars.'],
+    [EN, 'latin', 'en', 'It takes about twenty days to arrive.'],
+    [EN, 'latin', 'en', 'Shipping is around five hundred dollars for your cargo.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» is a figure nothing vouches for', (lines, script, language, reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).not.toBeNull();
+    const r = verdict(lines, script, language, reply);
+    expect(blockCodes(r).some((c) => c.startsWith('number_unverifiable:')), reply).toBe(true);
+    expect(r.ok).toBe(false);
+  });
+
+  it('the eight Persian compound hundreds are each a figure beside money', () => {
+    for (const w of ['دویست', 'سیصد', 'چهارصد', 'پانصد', 'ششصد', 'هفتصد', 'هشتصد', 'نهصد']) {
+      expect(unverifiableNumeral(normalizeDigits(`هزینه حمل تقریباً ${w} دلار است`)), w).toBe('word_numeral');
+    }
+  });
+
+  it.each([
+    [FA, 'arabic', 'fa', 'سلام! برای محاسبه قیمت، حجم (متر مکعب) و وزن (کیلو) بار را بنویسید.'],
+    [ZH, 'han', 'zh', '您好！请告诉我货物的体积（立方米）和重量（公斤）。'],
+    [EN, 'latin', 'en', 'Hello! Please send the volume (m3) and weight (kg) of your cargo.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» keeps its ✅', (lines, script, language, reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply))).toBeNull();
+    // A Persian or Chinese reply carries its Uzbek translation (K29) — the card's gloss, given here.
+    const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r)).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('0146 — the language a reply goes in by itself is the customer’s, read off his message', () => {
+  /** The gate's language clause on the memory a real run stores (`memoryFor`'s `customerLocale`). */
+  const goes = (lines: readonly string[], script: ScriptName, language: AgentLocale) => {
+    const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, 'x'), tools: [], outcomes: [], usage }, FACTS, 'gsr-t');
+    return autoVerdict({
+      config: { armed: true, categories: ['faq'], maxChars: 400, minConfidence: 0.8, perDay: null },
+      agentOn: true,
+      draft: {
+        kind: 'reply',
+        status: 'pending',
+        ownText: false,
+        blocked: false,
+        needsOwner: false,
+        warnings: 0,
+        notes: 0,
+        actionTypes: [],
+        category: 'faq',
+        language,
+        body: 'x',
+        confidence: 0.9,
+        ledger: [],
+        hasEstimate: false,
+        estimatesStored: false,
+        rail: false,
+        customerLocale: mem.customerLocale ?? null,
+      },
+      tools: [],
+      money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false },
+      burstMedia: false,
+      chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
+      workAccount: true,
+      at: new Date('2026-11-11T07:00:00Z'),
+      now: new Date('2026-11-11T07:00:00Z'),
+      streak: 0,
+      pressedToday: 0,
+      budgetLeft: null,
+      sendingEnabled: null,
+      listenerCurrent: null,
+    }).reasons;
+  };
+  const RU1 = ['Здравствуйте, сколько стоит доставка из Китая?'];
+  const UZC1 = ['Ассалому алайкум, Хитойдан юк борми, нархи қанча?'];
+  const UZ1 = ['Assalomu alaykum, Xitoydan yuk bor, narxi qancha?'];
+  const EN1 = ['Hello, how much is shipping from China?'];
+  const FA1 = ['سلام، هزینه حمل از چین چقدر است؟'];
+  const ZH1 = ['你好，从中国运货多少钱？'];
+
+  it.each([
+    [UZ1, 'latin', 'uz'],
+    [UZC1, 'cyrillic', 'uz_cyrl'],
+    [RU1, 'cyrillic', 'ru'],
+    [EN1, 'latin', 'en'],
+    [FA1, 'arabic', 'fa'],
+    [ZH1, 'han', 'zh'],
+  ] as const)('«%s» answered in %s/%s goes by itself', (lines, script, language) => {
+    expect(goes(lines, script, language)).toEqual([]);
+  });
+
+  it('an Uzbek Latin customer and an English reply: two Latin scripts G5 lets through — the gate does not', () => {
+    expect(goes(UZ1, 'latin', 'en')).toEqual(['language']);
+    // …nor an Uzbek Cyrillic customer and a Russian reply, one script.
+    expect(goes(UZC1, 'cyrillic', 'ru')).toEqual(['language']);
+    // …nor a Persian or Chinese reply to anybody else.
+    expect(goes(RU1, 'cyrillic', 'fa')).toEqual(['language']);
+    expect(goes(EN1, 'latin', 'zh')).toEqual(['language']);
+  });
+
+  it('an Uzbek Latin message gets a Latin reply and a Cyrillic one a Cyrillic reply — G5 blocks the other script', () => {
+    expect(verdict(UZ1, 'latin', 'uz', 'Narxni hisoblash uchun kub va kg ni yozing.').ok).toBe(true);
+    expect(blockCodes(verdict(UZ1, 'latin', 'uz', 'Нархни ҳисоблаш учун куб ва кг ни ёзинг.')).length).toBeGreaterThan(0);
+    expect(verdict(UZC1, 'cyrillic', 'uz_cyrl', 'Нархни ҳисоблаш учун куб ва кг ни ёзинг.').ok).toBe(true);
+    expect(blockCodes(verdict(UZC1, 'cyrillic', 'uz_cyrl', 'Narxni hisoblash uchun kub va kg ni yozing.')).length).toBeGreaterThan(0);
   });
 });
