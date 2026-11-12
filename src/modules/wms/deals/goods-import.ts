@@ -583,8 +583,20 @@ const UNIT_PARTS = /[(（\[]([^()（）\[\]]*)[)）\]]|[,，/／]\s*([^,，/／(
 function unitParts(text: string): string[] {
   return [...text.matchAll(UNIT_PARTS)].map((m) => (m[1] ?? m[2] ?? '').trim()).filter(Boolean);
 }
-/** Cubic metres as a header's unit part writes them — «m3», «м³», «CBM», «куб.м», «立方米». */
-const CUBIC_METRE_UNIT = /(?<![\p{L}])(?:m|м)\s*[3³]|cbm|куб|kub|立方|方/iu;
+/**
+ * Cubic metres as a header's unit part writes them — «m3», «м³», «m^3»,
+ * «CBM», «cub.m», «куб.м», «立方米». The caret and «cub.m» are how a Russian
+ * or a Chinese forwarder's sheet spells it; read as a length («m»), they
+ * refused a cube column the base had read (review excel-break-7).
+ */
+const CUBIC_METRE_UNIT = /(?<![\p{L}])(?:m|м)\s*\^?\s*[3³]|cbm|(?<![\p{L}])cub\.?\s*m(?![\p{L}])|куб|kub|立方|方/iu;
+/**
+ * «cc» — cubic centimetres as a quotation writes them («Volume (cc)»): a word
+ * of its own, on the KEY rung only. On the abbreviation rung a bracketed unit
+ * is refused anyway (`OWN_UNIT`), as a bottle's «Vol (L)» is. Read as cubic
+ * metres, «120000» was a line of 120 000 m³ (review excel-break-10).
+ */
+const CC_WORD = /(?<![\p{L}])c\.?c\.?(?![\p{L}])/iu;
 /**
  * A unit a volume header's unit part names that nobody converts here: a
  * length («CBM (cm)» is a carton's side), cubic feet and inches, millilitres
@@ -609,7 +621,8 @@ const volumetricWeight = (text: string): boolean =>
  * What a volume column's figures are divided by to be cubic metres — or
  * `null`: its header names a unit nobody converts, and the column is no
  * volume (the cube is asked, the figure said on the line's note).
- *  - cm³ ÷ 1 000 000 and dm³ ÷ 1000 on both rungs;
+ *  - cm³ ÷ 1 000 000 and dm³ ÷ 1000 on both rungs; «cc» ÷ 1 000 000 on the
+ *    key rung;
  *  - litres ÷ 1000 on the KEY rung («Объем, л», «Hajmi (litr)», «Volume (L)»).
  *    On the abbreviation rung («Vol (L)», «Vol, ml») a litre is a bottle's
  *    own — the corpus' c1936, c1937 — and stays refused, as every unit of its
@@ -620,6 +633,7 @@ function volumeDivisor(text: string, keyed: boolean): number | null {
   if (CUBIC_CM.test(text)) return 1_000_000;
   if (CUBIC_DM.test(text)) return 1000;
   if (!keyed) return !OWN_UNIT.test(text) || CUBIC_METRE.test(text) ? 1 : null;
+  if (CC_WORD.test(text)) return 1_000_000;
   const parts = unitParts(text);
   if (LITRE_WORD.test(text) || parts.some((part) => LITRE_LETTER.test(part))) return 1000;
   if (parts.some((part) => FOREIGN_VOLUME_UNIT.test(part) && !CUBIC_METRE_UNIT.test(part) && !CUBIC_METRE.test(part))) return null;
@@ -957,10 +971,15 @@ const LEAD_TOTAL = new Set(['итого', 'всего', 'jami', 'жами', 'п�
  */
 const LAST_TOTAL = new Set(['total', 'totals', 'ttl', 'subtotal', 'итого', 'итог', 'всего', 'подытог', 'jami', 'жами']);
 const LEAD_TOTAL_HAN = /^(?:合计|总计|合計|總計|小计|小計|共计|共計)/u;
-const TOTAL_HAN = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/u;
-const TOTAL_HINT = /total|ttl|sum|итог|всего|подытог|jami|жами|umumiy|умумий|合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/i;
+// «总毛重», «总体积» — the total brutto, the total cube — say «total» by
+// themselves, as «TOTAL G.W.» does: a summary line «总毛重: 710kg 总体积:
+// 3.8立方» under an invoice is a total row, never a footer (review
+// excel-spec-4; the trade's labels of units.ts WEIGHT_LABELS / VOLUME_LABELS).
+const TOTAL_MEASURE_HAN = '总(?:毛重|净重|重量|体积|方数)|總(?:毛重|淨重|重量|體積|方數)';
+const TOTAL_HAN = new RegExp(`合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|${TOTAL_MEASURE_HAN}`, 'u');
+const TOTAL_HINT = new RegExp(`total|ttl|sum|итог|всего|подытог|jami|жами|umumiy|умумий|合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|${TOTAL_MEASURE_HAN}`, 'i');
 const TOTAL_HAN_LAST = /(?:合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總)$/u;
-const HAN_QUALIFIERS = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|数量|數量|件数|件數|箱数|箱數|重量|毛重|净重|淨重|体积|體積|金额|金額|总额|總額|总价|總價|美元|人民币|公斤|立方米|立方|[总總共箱件个個包元米]/gu;
+const HAN_QUALIFIERS = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|数量|數量|件数|件數|箱数|箱數|重量|毛重|净重|淨重|体积|體積|方数|方數|金额|金額|总额|總額|总价|總價|美元|人民币|公斤|立方米|立方|[总總共箱件个個包元米]/gu;
 
 /** What a cell says as a total label (null: no total word in it at all). */
 interface TotalLabel {
@@ -1308,6 +1327,15 @@ const isWordCell = (cell: Cell) => {
   if ((text.match(/\p{L}/gu) ?? []).length < 2) return false;
   return !ARTICLE_NUMBER.test(text);
 };
+
+/**
+ * A name cell that names no good — an article number («XJ-200», «A-101»), a
+ * figure or a mark — for the X10 flag (docs/AI-SORAYDI.md §3.2). `isWordCell`'s
+ * «two letters at least» is right for choosing the name COLUMN, and wrong of
+ * one Chinese good: «鞋», «伞», «包» are one character each and a whole word
+ * (review excel-break-9) — a Han character is a name by itself.
+ */
+const namesArticle = (cell: Cell): boolean => !isWordCell(cell) && !/\p{Script=Han}/u.test(cellText(cell));
 
 /**
  * A typed line with its figures in it — «Стол офисный 5 шт 100 кг»: a number
@@ -2823,19 +2851,27 @@ const TEXT_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
 const TEXT_NUMBER = String.raw`(?<!\d\s?)(?<![.,])(\d{1,3}(?:,\d{3})+\.\d+|\d+(?:[.,]\d+)?)(?![.,]?\d)(?!\s\d)`;
 const TEXT_UNIT_OF = (words: string) => String.raw`(?:${words})(?!${TEXT_EDGE})`;
 const TEXT_LABEL = (labels: readonly string[]) => String.raw`(?<!${TEXT_EDGE})(?:${labelAlternation(labels)})(?!${TEXT_EDGE})\s*(?:[(（][^()（）]{0,12}[)）]\s*)?`;
-const SUMMARY_READERS: Record<'gross' | 'volume', RegExp[]> = {
+// Each reader says whether its figure carries its UNIT: a unitless one
+// («G.W.: 710») is read only on a line with no currency mark (review JN-21,
+// excel-spec-4) — «TOTAL G.W.: 710 USD» is money beside a label.
+const SUMMARY_READERS: Record<'gross' | 'volume', { re: RegExp; unitless: boolean }[]> = {
   gross: [
-    new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}[:：=]\s*${TEXT_NUMBER}(?:\s*${TEXT_UNIT_OF(unitPattern('kg'))})?`, 'giu'),
-    new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'),
+    { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}[:：=]\s*${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'), unitless: false },
+    { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}[:：=]\s*${TEXT_NUMBER}(?!\s*${TEXT_UNIT_OF(unitPattern('kg'))})`, 'giu'), unitless: true },
+    { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'), unitless: false },
   ],
   volume: [
-    new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)`, 'giu'),
-    new RegExp(String.raw`${TEXT_LABEL(VOLUME_LABELS)}[:：=]\s*${TEXT_NUMBER}`, 'giu'),
+    { re: new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)`, 'giu'), unitless: false },
+    { re: new RegExp(String.raw`${TEXT_LABEL(VOLUME_LABELS)}[:：=]\s*${TEXT_NUMBER}(?!\s*${TEXT_UNIT_OF(unitPattern('m3'))})`, 'giu'), unitless: true },
   ],
 };
+/** A currency mark or word anywhere on a summary line («USD», «$», «元», «сум»). */
+const SUMMARY_CURRENCY = /[$¥€₽元]|(?<![\p{L}])(?:usd|rmb|cny|eur|uzs|rub|руб|сум|сўм|so['ʻ‘’]?m|yuan|юан\p{L}*|dollars?)(?![\p{L}])/iu;
 function summaryFigure(text: string, kind: 'gross' | 'volume'): number | null {
   const seen = new Set<number>();
-  for (const reader of SUMMARY_READERS[kind]) {
+  const money = SUMMARY_CURRENCY.test(text);
+  for (const { re: reader, unitless } of SUMMARY_READERS[kind]) {
+    if (unitless && money) continue;
     for (const m of text.matchAll(reader)) {
       const end = m.index + m[0].length;
       if (tailAt(text, end, PER_PACKAGE_TAIL) > 0 || tailAt(text, end, PER_PIECE_TAIL) > 0) continue;
@@ -2871,10 +2907,14 @@ function summaryTotalOf(rows: readonly Cell[][], kind: 'gross' | 'volume', step:
  *    cartons) meets it, by `contradicts`' own rounding and nothing looser
  *    (JR-11): the one case the column is concluded ONE carton's, and `total`
  *    is that product's Σ;
- *  - `unclear` — the rows that HAVE the figure sum to under half the TOTAL,
- *    while their figures × their cartons stay within 2 % of it, on two rows
- *    or more of several cartons (JS-33): one carton's figure as like as not,
- *    and nothing proves it — never taken as the lines';
+ *  - `unclear` — a column with an EMPTY cell (JS-33's case, and only it):
+ *    the rows that HAVE the figure sum to under half the TOTAL, while their
+ *    figures × their cartons do not pass it by more than 2 % (the blank rows
+ *    hold the rest), on two rows or more of several cartons: one carton's
+ *    figure as like as not, and nothing proves it — never taken as the
+ *    lines'. A COMPLETE column is never `unclear` (review excel-break-4): its
+ *    Σ and its product are both known, and when neither meets the TOTAL
+ *    that is an unexplained mismatch, which never nulls the lines (JN-12);
  *  - `contradicted` — the column's whole Σ contradicts the TOTAL and nothing
  *    above explains it (a pallet in the total, a total 1 % heavier): the
  *    lines STAND and the Σ is refused (JR-11), both sums said.
@@ -2916,7 +2956,6 @@ function judgeColumn(
   if (complete) {
     if (!contradicts(sum, totals, column, unit, step, divisor)) return { kind: 'lines' };
     if (product !== null && !contradicts(product, totals, column, unit, step, divisor)) return { kind: 'per_carton', total: product };
-    if (unclear) return { kind: 'unclear', sum, total: total! };
     return { kind: 'contradicted', sum, total };
   }
   return unclear ? { kind: 'unclear', sum, total: total! } : { kind: 'lines' };
@@ -3156,10 +3195,17 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     // figures merged down from the line above, and a last row carrying only
     // its code are goods — never a footer.
     const figureIn = (row: Cell[], d: number) => figureCols.some((i) => i !== null && !covered?.has(d, i) && figureCell(row[i] ?? null));
+    // A packing column states something only where its cell READS as that
+    // column's figure, as a line column does (`figureIn`): «CTN NO. 1-27»
+    // under «CTNS», «N/M» under «CTN SIZE» are the shipping marks of a footer,
+    // and a footer kept as a good blanks the sheet's Σ (review excel-break-3).
+    const packStates = (row: Cell[]) =>
+      packCols.some((i) => i !== null && figureCell(row[i] ?? null)) ||
+      (pack.size !== null && readSize(pack.size.cols.map((i) => row[i] ?? null), pack.size.unit, pack.size.of).size !== null);
     const statesIn = (row: Cell[], d: number) =>
       figureIn(row, d) ||
       figureCols.some((i) => i !== null && covered?.has(d, i)) ||
-      [...packCols, ...(pack.size?.cols ?? [])].some((i) => i !== null && cellText(row[i] ?? null) !== '') ||
+      packStates(row) ||
       (columns.tnved !== null && cellText(row[columns.tnved] ?? null) !== '' && normalizeTnved(row[columns.tnved] ?? null) !== null) ||
       (columns.unit !== null && cellText(row[columns.unit] ?? null) !== '');
     // Per landed good: where it stands, what it states, and what it adds to
@@ -3353,7 +3399,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           // Which weight the row's own is, where the carton arithmetic asks (JN-4).
           ...(rowWeightKind ? { weightKind: rowWeightKind } : {}),
           // A name that is only an article number (X10): said, never guessed at.
-          ...(isWordCell(at(columns.name)) ? {} : { nameIsArticle: true as const }),
+          ...(namesArticle(at(columns.name)) ? { nameIsArticle: true as const } : {}),
         },
         r,
         { figures: hasFigures || coveredFigure, sum },
