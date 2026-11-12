@@ -811,6 +811,70 @@ const AMOUNT = new RegExp(
  * second word is the unit. */
 const COUNTER_THEN_UNIT = /^\s+([\p{L}²³][\p{L}\d²³.]*)/u;
 
+/** One amount of a line and the word that names it, where they stand. */
+export interface AmountSpan {
+  /** `[start, end)` in the line: the number, and its word when it has one. */
+  start: number;
+  end: number;
+  /** The number as written — «1 200», «5,9». */
+  number: string;
+  /** The word after it as written: a unit, the unit after a counter («120 ta juft» → «juft»), or any other word. Null for a bare number. */
+  word: string | null;
+}
+
+/**
+ * Every amount of a line with the word after it — the kernel's own grammar
+ * (`AMOUNT`, sizes and code digits blanked), for a reader that must ACCOUNT
+ * for each figure rather than take the ones it knows (docs/AI-SORAYDI.md §3.1
+ * T2): the table's totals answer wrote the kilos of «507 kg 5.9 cbm», dropped
+ * the cube and put a 👍 on the message. What a figure MEANS is still
+ * `parseGoodsLine`'s to say; this only says where each one stands.
+ */
+export function amountsIn(line: string): AmountSpan[] {
+  const out: AmountSpan[] = [];
+  for (const hit of blankNonAmounts(line).matchAll(AMOUNT)) {
+    let word = hit[2] ?? null;
+    let end = hit.index + hit[0].length;
+    if (word && unitOf(word) === 'dona') {
+      const next = COUNTER_THEN_UNIT.exec(line.slice(end));
+      const nextUnit = next ? unitOf(next[1]!) : null;
+      if (next && nextUnit !== null && nextUnit !== 'dona') {
+        word = next[1]!;
+        end += next[0].length;
+      }
+    }
+    out.push({ start: hit.index, end, number: hit[1]!, word });
+  }
+  return out;
+}
+
+/** How long an ending a misspelt unit may carry — «kub-ik», «кубометр-ы», «kilo-gr», «kub-lar». */
+const NEAR_ENDING = 3;
+
+/**
+ * The kilo or the cube a word that is NO unit most likely means — «kubik»,
+ * «кубик», «кубометры», «kilogr» (§3.1 T3, dg3-04): a word of the vocabulary
+ * with an ending on it. Only what shapes a QUESTION («“kubik” — kubmi?»);
+ * nothing is ever read through it. Kilos and cubes only — the two a totals
+ * question asks — and never a long tail («kilometr» is no kilo, «кубатура» is
+ * a word of its own). «cum» is left out: «cumin» is a spice.
+ */
+export function nearUnit(word: string): 'kg' | 'm3' | null {
+  const typed = normalizeWord(word);
+  if (unitOf(typed) !== null) return null;
+  let best: { unit: 'kg' | 'm3'; length: number } | null = null;
+  for (const unit of ['kg', 'm3'] as const) {
+    for (const known of WORDS[unit]) {
+      const stem = normalizeWord(known);
+      if (stem === 'cum' || !/^\p{L}{3,}$/u.test(stem)) continue;
+      const ending = typed.length - stem.length;
+      if (!typed.startsWith(stem) || ending < 1 || ending > NEAR_ENDING) continue;
+      if (!best || stem.length > best.length) best = { unit, length: stem.length };
+    }
+  }
+  return best?.unit ?? null;
+}
+
 /**
  * A word and a colon just before a bare number — «Мест: 45», «Kg：150» — the
  * field form of a unit. Two letters at least: a lone «L:» is a SIZE on a

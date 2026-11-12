@@ -69,6 +69,7 @@ type TableRow = import('../../wms/calc/line-address').TableRow;
 type TableSegment = import('../../wms/calc/line-address').TableSegment;
 type TableTarget = import('../../wms/calc/line-address').TableTarget;
 type TableRefusal = import('../../wms/calc/line-address').TableRefusal;
+type TotalsLeft = import('../../wms/calc/line-address').TotalsLeft;
 type LineAnswer = import('../../wms/calc/intake-manual').LineAnswer;
 type GoodsFact = NonNullable<IntakeState['facts']['goods']>[number];
 
@@ -849,8 +850,63 @@ const TABLE_REFUSAL: Record<TableRefusal, (seg: TableSegment, ref: TableRef, int
     const rest = seg.raw.trim().replace(/^\d{1,4}\s+/u, '');
     return `«${seg.raw.trim()}» — ${n}-qatorgami yoki ${n} tami? Ikki nuqta bilan yozing: «${n}: ${rest}».`;
   },
-  totals_unit: () => 'Umumiy uchun birlik bilan yozing: «jami 3500 kg» yoki «jami 12 kub».',
+  totals_unit: (seg, ref) =>
+    seg.refused!.left?.length ? totalsLeftWords(seg.refused!.left, ref) : 'Umumiy uchun birlik bilan yozing: «jami 3500 kg» yoki «jami 12 kub».',
 };
+
+/**
+ * The figures of a totals answer that no total took, each named with the way
+ * to write it (line-address.ts `TotalsLeft`, docs/AI-SORAYDI.md §3.1 T2): the
+ * kilos of «jami 507 kg 300 dona» were written under a 👍 and the count went
+ * nowhere. One sentence per reason, the seller's own words quoted; a row's
+ * figure is shown with a row's number the table really has.
+ */
+function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
+  const of = (why: TotalsLeft['why']) => left.filter((l) => l.why === why);
+  const quoted = (items: readonly TotalsLeft[]) => items.map((l) => `«${l.text}»`).join(', ');
+  const firstOpen = ref.open.find((t): t is { line: number } => 'line' in t);
+  const no = firstOpen?.line ?? ref.rows[0]?.no;
+  const onRow = (figure: string) => (no === undefined ? '' : ` Qatorniki bo‘lsa raqami bilan yozing: «${no}: ${figure}».`);
+  const out: string[] = [];
+  for (const unit of of('unit')) out.push(unitAskWords(unit.word ?? unit.text, unit.number, unit.near ?? null, 'jami '));
+  const bare = of('bare');
+  if (bare.length > 0) {
+    const n = bare[0]!.number;
+    out.push(`${quoted(bare)} — birligi yozilmagan: «jami ${n} kg» yoki «jami ${n} kub» deb yozing.`);
+  }
+  const netto = of('netto');
+  if (netto.length > 0) {
+    out.push(`${quoted(netto)} — umumiy og‘irlik brutto (qadoq bilan) yoziladi, netto umumiyga yozilmadi.${onRow(`${netto[0]!.number} kg`)}`);
+  }
+  for (const [why, what, unit] of [
+    ['weight', 'og‘irlik', 'kg'],
+    ['volume', 'hajm', 'kub'],
+  ] as const) {
+    const items = of(why);
+    if (items.length === 0) continue;
+    out.push(
+      items.length > 1
+        ? `${quoted(items)} — ikki xil ${what}: bittasini yozing, masalan «jami ${items[0]!.number} ${unit}».`
+        : `${quoted(items)} — umumiyga yozilmadi: «jami ${items[0]!.number} ${unit}» deb qayta yozing.`,
+    );
+  }
+  const row = of('row');
+  if (row.length > 0) out.push(`${quoted(row)} — umumiyga yozilmaydi (umumiyda faqat og‘irlik va hajm).${onRow(row[0]!.text)}`);
+  return out.join(' ');
+}
+
+/**
+ * A figure whose word is no unit, asked AS a unit (§3.1 T3, dg3-04): «5.9
+ * kubik» was «jadvalda bunday qator yo‘q», as if «kubik» were goods nobody
+ * had listed. `near` is the kilo or the cube the word most likely means
+ * (units.ts `nearUnit`) — a question, never a reading. `lead` is «jami » for
+ * a total's example.
+ */
+function unitAskWords(word: string, number: string, near: 'kg' | 'm3' | null, lead = ''): string {
+  if (near === 'm3') return `«${word}» — kubmi? «${lead}${number} kub» deb yozing.`;
+  if (near === 'kg') return `«${word}» — kgmi? «${lead}${number} kg» deb yozing.`;
+  return `«${word}» — bu birlikni bilmayman: «${lead}${number} kg» yoki «${lead}${number} kub» kabi yozing.`;
+}
 
 /** «Qaysi qatorga?» — an answer the table cannot place, and a reply to a message that is not the table's. */
 const NO_ADDRESS = 'Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».';

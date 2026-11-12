@@ -214,13 +214,17 @@ function readNumber(
   labelled: RegExp,
   /** A hit this reading does not count — a line's own figure, a netto label. */
   skip: (start: number, end: number) => boolean = () => false,
-): { value: number | null; ambiguous: { text: string; decimal: number; thousands: number } | null } {
+): TotalRead {
   const seen = new Set<number>();
   let ambiguous: { text: string; decimal: number; thousands: number } | null = null;
-  const take = (number: string, at: number, labelFirstHit: boolean) => {
+  // Where every figure this reading counted stands — `[start, end)`, its unit
+  // or its label included — with the value it stated (null: a doubted one).
+  const hits: { start: number; end: number; value: number | null }[] = [];
+  const take = (number: string, at: number, labelFirstHit: boolean, span: [number, number]) => {
     const read = readAmountText(number);
     if (read.state === 'ambiguous') {
       ambiguous ??= { text: number, decimal: read.decimal, thousands: read.thousands };
+      hits.push({ start: span[0], end: span[1], value: null });
       return;
     }
     if (read.state !== 'ok') return;
@@ -231,10 +235,12 @@ function readNumber(
       const [from] = lineAround(scan, at);
       if (groupedReading(scan.slice(from, at + number.length), at - from, figureLabel) === 'ask') {
         ambiguous ??= { text: number, decimal: tail, thousands: read.value };
+        hits.push({ start: span[0], end: span[1], value: null });
         return;
       }
     }
     seen.add(read.value);
+    hits.push({ start: span[0], end: span[1], value: read.value });
   };
   for (const hit of scan.matchAll(figure)) {
     const end = hit.index + hit[0].length;
@@ -244,7 +250,7 @@ function readNumber(
       const [from, to] = lineAround(scan, hit.index);
       if (PIECES_FIGURE.test(scan.slice(from, to))) continue;
     }
-    take(hit[1]!, hit.index, false);
+    take(hit[1]!, hit.index, false, [hit.index, end]);
   }
   // A line's currency is asked once per line, however many labels it holds.
   const money = new Map<number, boolean>();
@@ -258,10 +264,20 @@ function readNumber(
     const at = end - hit[1]!.length;
     if (skip(at, end) || !standsAlone(text, end) || !labelStands(scan, hit.index)) continue;
     if (hasCurrency(at)) continue;
-    take(hit[1]!, at, true);
+    take(hit[1]!, at, true, [hit.index, end]);
   }
-  if (ambiguous) return { value: null, ambiguous };
-  return { value: seen.size === 1 ? [...seen][0]! : null, ambiguous: null };
+  // A doubt covers the whole field: every figure of it is the question's.
+  if (ambiguous) return { value: null, ambiguous, taken: hits.map((h) => [h.start, h.end]) };
+  const value = seen.size === 1 ? [...seen][0]! : null;
+  // Two different figures answer nothing, and neither was taken.
+  return { value, ambiguous: null, taken: value === null ? [] : hits.map((h) => [h.start, h.end]) };
+}
+
+/** One field's reading: its value, or the doubt, and WHERE the figures it took stand in the text. */
+interface TotalRead {
+  value: number | null;
+  ambiguous: { text: string; decimal: number; thousands: number } | null;
+  taken: [number, number][];
 }
 
 /**
@@ -415,6 +431,23 @@ export function parseManualFacts(
    */
   opts: { from?: number; goodsBeside?: boolean } & ClientHintOpts = {},
 ): CalcFacts & { ambiguous: AmbiguousTotal[] } {
+  return readTypedTotals(text, section, opts).facts;
+}
+
+/**
+ * `parseManualFacts`, with WHERE the figures it took as the two totals stand
+ * in the text (`taken`, `[start, end)` spans — a figure with its unit, a label
+ * with its figure). For the reader that must account for every figure of an
+ * answer (line-address.ts `readTotals`, docs/AI-SORAYDI.md §3.1 T2): what
+ * stands outside these spans was read by nobody, and is said — never dropped
+ * under a 👍. A doubted field's figures are all taken (the question is about
+ * them); two different figures for one field are taken by neither.
+ */
+export function readTypedTotals(
+  text: string,
+  section?: CalcSection,
+  opts: { from?: number; goodsBeside?: boolean } & ClientHintOpts = {},
+): { facts: CalcFacts & { ambiguous: AmbiguousTotal[] }; taken: [number, number][] } {
   const route = readRoute(text);
   const typed = typedGoods(text, { prefix: opts.prefix });
   const spans = lineSpans(text);
@@ -442,20 +475,23 @@ export function parseManualFacts(
   const netto =
     nettoStands && plain.value === null && !plain.ambiguous
       ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b))
-      : { value: null, ambiguous: null };
+      : { value: null, ambiguous: null, taken: [] };
   const weight = netto.value !== null || netto.ambiguous ? netto : plain;
   const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a) => notTotal(a));
   const ambiguous: AmbiguousTotal[] = [];
   if (weight.ambiguous) ambiguous.push({ field: 'weightKg', ...weight.ambiguous });
   if (volume.ambiguous) ambiguous.push({ field: 'volumeM3', ...volume.ambiguous });
   return {
-    fromCity: route.fromCity,
-    toCity: route.toCity,
-    weightKg: weight.value,
-    volumeM3: volume.value,
-    ...(netto.value !== null ? { weightNetto: true } : {}),
-    goods: typed.goods,
-    ambiguous,
+    facts: {
+      fromCity: route.fromCity,
+      toCity: route.toCity,
+      weightKg: weight.value,
+      volumeM3: volume.value,
+      ...(netto.value !== null ? { weightNetto: true } : {}),
+      goods: typed.goods,
+      ambiguous,
+    },
+    taken: [...weight.taken, ...volume.taken],
   };
 }
 
