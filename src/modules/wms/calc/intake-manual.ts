@@ -310,7 +310,11 @@ const NETTO_WORD = `(?:${labelPattern(NET_LABELS)})`;
 const NETTO_BEFORE = new RegExp(String.raw`(?:^|[^\p{L}])${NETTO_WORD}(?![\p{L}])`, 'iu');
 // After the unit, a netto word labels THIS figure only when no number follows
 // it — «1300 kg netto 1200 kg» is the next figure's label, not this one's.
-const NETTO_AFTER = new RegExp(String.raw`^\s*[(\[]?\s*${NETTO_WORD}(?![\p{L}])(?![\s:：=–—-]*\d)`, 'iu');
+// The dot of «N.W.» is the label's own: without it in the class the label was
+// matched as «N.W» and its dot stopped the look for the number — so in «G.W.
+// 507 kg⏎N.W. 480 kg», the block every packing list carries, the BRUTTO was
+// taken for the netto and the shipment's weight was nobody's.
+const NETTO_AFTER = new RegExp(String.raw`^\s*[(\[]?\s*${NETTO_WORD}(?![\p{L}])(?![\s.:：=–—-]*\d)`, 'iu');
 
 /**
  * Is the weight at [start, end) labelled NETTO?

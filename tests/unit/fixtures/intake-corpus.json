@@ -14721,6 +14721,110 @@
    "why": "Review JN-22.",
    "source": "ai-soraydi typed-A T1",
    "weight": "defect"
+  },
+  {
+   "id": "c3324",
+   "input": "MEAS: 5.92 CBM",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "[] — a measurement line is the shipment's cube, never a product",
+   "why": "dg3-05: with the model silent (timeout, budget, a cut reading) the line was a ROW «MEAS — 5.92 m³» on the table, with «✅ Tasdiqlash» drawn and the AI pass asked to code it. «meas» joined the not-goods words.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3325",
+   "input": "G.W. 1136.5 kg CBM 7.19",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "[] — a totals line in the forwarder's words",
+   "why": "dg2-10 / DIM-10: «G.W. CBM» × 7.19 pieces, 1136.5 kg was a product. «gw» was on the list, «cbm» was not — and the rule is every word of the name.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3326",
+   "input": "Description: LED lamp\nQuantity: 3000 PCS\nPackages: 15 CTNS\nG.W.: 507 KGS\nN.W.: 480 KGS\nMeasurement: 5.92 CBM",
+   "expected": {
+    "absent": [
+     "Measurement",
+     "Quantity",
+     "Packages"
+    ]
+   },
+   "said": "no row called «Measurement» (nor «Quantity», «Packages») — the block's label lines are no products",
+   "why": "dg3-05: the supplier's mark block gave goods = [«Measurement» 5.92 m³] and the real «LED lamp» was not read. (That the block is ONE good named by its «Description:» line is T12's; here only that a label is no product.)",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "defect"
+  },
+  {
+   "id": "c3327",
+   "input": "Vol: 5.92 cbm",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "[] — «Vol» labels a cube",
+   "why": "dg3-05: a row «Vol — 5.92 m³». A name made ONLY of «vol» is no product; «Manga Vol 3» is (review JN-21 — every word of the name).",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "defect"
+  },
+  {
+   "id": "c3328",
+   "input": "Rubik cube 300 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Rubik cube",
+      "quantity": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Rubik cube» × 300",
+   "why": "Review JN-21: «cube» stays OUT of the not-goods words — a product is called so.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3329",
+   "input": "Cube 300 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Cube",
+      "quantity": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Cube» × 300",
+   "why": "Review JN-21: «cube», «package», «size» stay out of NOT_GOODS_WORDS — alone it still names goods.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3330",
+   "input": "Cubic zirconia 300 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Cubic zirconia",
+      "quantity": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Cubic zirconia» × 300",
+   "why": "«cubic» joined the not-goods words (T3's list); the rule is EVERY word of the name, so a product that only contains it stays a product.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
@@ -48534,6 +48638,62 @@
    "why": "T1's label-first figure has no unit to say what it measures, so the word BEFORE the label must not possess it (JN-22's rule for a unit word before a colon, applied to the labels): an engine's displacement or one piece's weight is not the shipment's.",
    "source": "ai-soraydi typed-A T1",
    "weight": "pinned"
+  },
+  {
+   "id": "c3331",
+   "input": "G.W.: 507 KGS\nN.W.: 480 KGS",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "weightKg 507 — the brutto; «N.W.» labels the 480 under it",
+   "why": "Found reading the mark block (dg3-05's own): the netto label AFTER a figure was matched as «N.W» and its dot stopped the look for the number that follows it — so the BRUTTO was taken for a netto and the shipment's weight was nobody's. The block every packing list carries; null since the label became readable.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3332",
+   "input": "507 kg N.W. 480 kg",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "weightKg 507",
+   "why": "The same defect on one line, in the kilo word every reader always knew: «N.W.» with its dot is the NEXT figure's label.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "defect"
+  },
+  {
+   "id": "c3333",
+   "input": "1200 kg N.W.",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "weightKg null — a netto never answers the brutto (no section: the reading that asks)",
+   "why": "The guard of the fix above: a netto label AFTER its figure, with no number behind it, still labels that figure (PF-1).",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3334",
+   "input": "Description: LED lamp\nQuantity: 3000 PCS\nPackages: 15 CTNS\nG.W.: 507 KGS\nN.W.: 480 KGS\nMeasurement: 5.92 CBM",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 5.92,
+    "ambiguous": [],
+    "goods": {
+     "absent": [
+      "Measurement"
+     ]
+    }
+   },
+   "said": "weightKg 507, volumeM3 5.92 — the block's G.W. and Measurement lines",
+   "why": "dg3-05 + dg3-06: with the model silent the block's totals were «yozilmagan» and its «Measurement» line a product.",
+   "source": "ai-soraydi typed-A T3",
+   "weight": "defect",
+   "severity": "common"
   }
  ],
  "intakeClientLabelCases": [

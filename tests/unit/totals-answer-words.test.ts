@@ -191,3 +191,66 @@ describe('T2 — the plain door: the totals are written quietly, an addressed re
     expect(out.answers.at(-1)).toBe('Umumiy: jami 507 kg 5.92 cbm');
   });
 });
+
+describe('T3 — a figure and a word that is no unit is asked as a UNIT, never «jadvalda bunday qator yo‘q» (AI door)', () => {
+  const NEW_GOODS = 'Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing.';
+
+  it('a word that is a cube or a kilo with an ending: «kubmi?», «kgmi?», with the answer to type', async () => {
+    const cube = await answer(atTable([KURTKA]), '5.9 kubik');
+    expect(cube.m3).toBeNull();
+    expect(cube.replies).toHaveLength(1);
+    expect(cube.replies[0]).toContain(`⚠️ «kubik» — kubmi? «5.9 kub» deb yozing. ${NEW_GOODS}`);
+    expect(cube.replies[0]).not.toContain('jadvalda bunday qator yo‘q');
+    const kilo = await answer(atTable([KURTKA]), '507 kilogr');
+    expect(kilo.replies[0]).toContain(`⚠️ «kilogr» — kgmi? «507 kg» deb yozing. ${NEW_GOODS}`);
+  });
+
+  it('a word that resembles nothing: the units a row answer takes — and the way out for new goods', async () => {
+    const out = await answer(atTable([KURTKA]), '300 banka');
+    expect(out.replies[0]).toContain(`⚠️ «banka» — bu birlikni bilmayman. dona, kg, m², juft yoki litrda yozing. ${NEW_GOODS}`);
+    // Nothing was written anywhere on a guess.
+    expect(out.goods[0]).toMatchObject({ quantity: 300, weightKg: 150 });
+    expect([out.kg, out.m3]).toEqual([null, null]);
+  });
+
+  it('inside a totals answer the example is the totals’ own — and the total beside it is written', async () => {
+    const out = await answer(atTable([KURTKA]), 'jami 507 kg 5.9 kubik');
+    expect([out.kg, out.m3]).toEqual([507, null]);
+    expect(out.replies[0]).toContain('⚠️ «kubik» — kubmi? «jami 5.9 kub» deb yozing.');
+    const unknown = await answer(atTable([KURTKA]), 'jami 300 banka');
+    expect(unknown.replies[0]).toContain('⚠️ «banka» — bu birlikni bilmayman. Umumiy uchun kg yoki kubda yozing: «jami 3500 kg», «jami 12 kub».');
+  });
+
+  it('addressed to a row, and a word too short to be a name', async () => {
+    const row = await answer(atTable([KURTKA]), '1: 5.9 kubik');
+    expect(row.replies[0]).toContain('⚠️ 1-qator: «kubik» — kubmi? «1: 5.9 kub» deb yozing.');
+    expect(row.replies[0]).not.toContain('siz «kubik» yozdingiz');
+    const short = await answer(atTable([KURTKA]), '5 kb');
+    expect(short.replies[0]).toContain('⚠️ «kb» — bu birlikni bilmayman. dona, kg, m², juft yoki litrda yozing.');
+    expect(short.replies[0]).not.toContain('Qaysi qatorga');
+  });
+
+  it('goods the table has no row for keep the sentence they had', async () => {
+    const out = await answer(atTable([KURTKA]), 'Shapka 50 dona');
+    expect(out.replies[0]).toContain('⚠️ «Shapka» — jadvalda bunday qator yo‘q. Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing;');
+  });
+
+  it('a measure’s label is no goods: «MEAS: 5.92 CBM» writes the cube without a word', async () => {
+    const out = await answer(atTable([KURTKA]), 'MEAS: 5.92 CBM');
+    expect(out.m3).toBe(5.92);
+    expect(out.replies).toEqual([]);
+  });
+});
+
+describe('T3 — the plain door files a typed text as it always did', () => {
+  it('«5.9 kubik» there is still what it was: goods the summary has no row for — material (its reason did not move)', async () => {
+    // The plain door asks nothing; what it does with a `name_none` segment is
+    // its own rule (`plainVerdict`, frozen — review JB-17). Pinned so that the
+    // unit question, which rides on the SAME reason, cannot move it by accident.
+    const chatId = atTable([KURTKA], { ai: false });
+    const out = await say(chatId, '5.9 kubik');
+    expect(out.m3).toBeNull();
+    expect(activeIntake(chatId)!.stage).toBe('material');
+    expect(activeIntake(chatId)!.material.at(-1)).toBe('5.9 kubik');
+  });
+});

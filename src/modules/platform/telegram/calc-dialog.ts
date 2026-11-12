@@ -837,14 +837,24 @@ const TABLE_REFUSAL: Record<TableRefusal, (seg: TableSegment, ref: TableRef, int
     const nos = seg.refused!.candidates ?? [];
     return `«${seg.refused!.detail}» — ${nos.join(', ')}-qatorda bor: raqam bilan yozing, masalan «${nos.at(-1)}: ${exampleOf(seg.answer, intake)}»`;
   },
-  name_none: (seg) =>
-    `«${seg.refused!.detail}» — jadvalda bunday qator yo‘q. Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing; qator bo‘lsa raqami bilan yozing: «3: 50 dona»`,
+  // A figure and a word that is no unit — «5.9 kubik» — is asked as a UNIT
+  // (docs/AI-SORAYDI.md §3.1 T3): the word is nobody's goods.
+  name_none: (seg) => {
+    const { unit, detail } = seg.refused!;
+    if (unit) return `${unitAskWords(unit.word, unit.number, unit.near, 'row')} Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing.`;
+    return `«${detail}» — jadvalda bunday qator yo‘q. Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing; qator bo‘lsa raqami bilan yozing: «3: 50 dona»`;
+  },
   name_mismatch: (seg, ref, intake) => {
     const n = seg.refused!.candidates?.[0] ?? 0;
+    const { unit } = seg.refused!;
+    if (unit) return `${n}-qator: ${unitAskWords(unit.word, unit.number, unit.near, 'row', `${n}: `)}`;
     const row = ref.rows.find((r) => r.no === n);
     return `${n}-qator «${rowLabel(row?.name ?? '')}», siz «${seg.refused!.detail}» yozdingiz — yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing; shu qator bo‘lsa faqat sonini yozing: «${n}: ${exampleOf(seg.answer, intake)}».`;
   },
-  no_address: () => NO_ADDRESS,
+  no_address: (seg) => {
+    const { unit } = seg.refused!;
+    return unit ? unitAskWords(unit.word, unit.number, unit.near, 'row') : NO_ADDRESS;
+  },
   address_unclear: (seg) => {
     const n = seg.refused!.detail;
     const rest = seg.raw.trim().replace(/^\d{1,4}\s+/u, '');
@@ -868,7 +878,7 @@ function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
   const no = firstOpen?.line ?? ref.rows[0]?.no;
   const onRow = (figure: string) => (no === undefined ? '' : ` Qatorniki bo‘lsa raqami bilan yozing: «${no}: ${figure}».`);
   const out: string[] = [];
-  for (const unit of of('unit')) out.push(unitAskWords(unit.word ?? unit.text, unit.number, unit.near ?? null, 'jami '));
+  for (const unit of of('unit')) out.push(unitAskWords(unit.word ?? unit.text, unit.number, unit.near ?? null, 'total', 'jami '));
   const bare = of('bare');
   if (bare.length > 0) {
     const n = bare[0]!.number;
@@ -899,13 +909,16 @@ function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
  * A figure whose word is no unit, asked AS a unit (§3.1 T3, dg3-04): «5.9
  * kubik» was «jadvalda bunday qator yo‘q», as if «kubik» were goods nobody
  * had listed. `near` is the kilo or the cube the word most likely means
- * (units.ts `nearUnit`) — a question, never a reading. `lead` is «jami » for
- * a total's example.
+ * (units.ts `nearUnit`) — a question, never a reading. `lead` opens the
+ * example the way the answer is addressed: «jami » for a total, «3: » for a
+ * row. A word that resembles nothing gets the units its place can take — a
+ * total's two, or the row answer's own list (`LINE_REFUSAL.unknown_unit`).
  */
-function unitAskWords(word: string, number: string, near: 'kg' | 'm3' | null, lead = ''): string {
+function unitAskWords(word: string, number: string, near: 'kg' | 'm3' | null, where: 'total' | 'row', lead = ''): string {
   if (near === 'm3') return `«${word}» — kubmi? «${lead}${number} kub» deb yozing.`;
   if (near === 'kg') return `«${word}» — kgmi? «${lead}${number} kg» deb yozing.`;
-  return `«${word}» — bu birlikni bilmayman: «${lead}${number} kg» yoki «${lead}${number} kub» kabi yozing.`;
+  if (where === 'total') return `«${word}» — bu birlikni bilmayman. Umumiy uchun kg yoki kubda yozing: «jami 3500 kg», «jami 12 kub».`;
+  return LINE_REFUSAL.unknown_unit(word);
 }
 
 /** «Qaysi qatorga?» — an answer the table cannot place, and a reply to a message that is not the table's. */

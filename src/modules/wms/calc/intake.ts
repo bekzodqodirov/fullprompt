@@ -2393,6 +2393,13 @@ const NOT_GOODS_WORDS = new Set([
   // kub», «Obshiy ves 3500 kg», «Vsego 12 kub», «N.W. 3000 kg» (`wordsOf`
   // reads «N.W.» as one word)
   'itogo', 'vsego', 'obshiy', 'obshij', 'obshchiy', 'obshchij', 'nw', 'gw',
+  // …and in the words of a forwarder's packing list (docs/AI-SORAYDI.md §3.1
+  // T3, dg3-05): with the model silent «MEAS: 5.92 CBM» was a PRODUCT «MEAS —
+  // 5.92 m³», and «G.W. 1136.5 kg CBM 7.19» a product «G.W. CBM». A unit word
+  // or a measure's label is never what the goods are called. NOT «cube»,
+  // «package», «size» (review JN-21): «Rubik cube» and a sized product are
+  // goods — and the rule is every word of the name, so «Cubic zirconia» stays.
+  'meas', 'measurement', 'vol', 'cubic', 'cbm', 'kgs', 'pkgs', 'pkg', 'packages', 'dim', 'dims',
   // counts and carton-count labels
   'кол-во', 'количество', 'soni', 'son', 'miqdori', 'miqdor', 'qty', 'quantity', 'pcs', 'мест', 'места', 'место',
   'joy', 'joyi', 'ctns', 'ctn', 'dona', 'шт',

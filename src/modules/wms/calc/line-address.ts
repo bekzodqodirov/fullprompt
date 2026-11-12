@@ -32,6 +32,7 @@ import {
   nearUnit,
   NET_LABELS,
   TOTALS_LEAD_LABELS,
+  UNIT_FREE_LABELS,
   unitOf,
   unitPattern,
   unitWords,
@@ -102,11 +103,28 @@ export interface TotalsLeft {
   near?: 'kg' | 'm3' | null;
 }
 
+/**
+ * A figure whose word is NO unit and names no row — «5.9 kubik», «507
+ * kilogr», «300 banka» (docs/AI-SORAYDI.md §3.1 T3, dg3-04): asked as a unit,
+ * never called goods the table has no row for. `near` is the kilo or the cube
+ * the word most likely means (units.ts `nearUnit`); the refusal's REASON stays
+ * what it was, so every door files the segment as it always did.
+ */
+export interface UnitAsk {
+  word: string;
+  /** The number as written — what the example is built from. */
+  number: string;
+  near: 'kg' | 'm3' | null;
+}
+
 export interface TableSegment {
   raw: string;
   at: TableTarget | null;
-  /** `left` (a `totals_unit` refusal): the figures it is about — the words name each (T2). */
-  refused: { reason: TableRefusal; detail: string; candidates?: number[]; left?: TotalsLeft[] } | null;
+  /**
+   * `left` (a `totals_unit` refusal): the figures it is about — the words name
+   * each (T2). `unit`: the refusal is about a word that is no unit (T3).
+   */
+  refused: { reason: TableRefusal; detail: string; candidates?: number[]; left?: TotalsLeft[]; unit?: UnitAsk } | null;
   /** `parseLineAnswer(remainder)` for a line — kept on a refused name too, so the words can
    * show the seller his own figure back. */
   answer: LineAnswer | null;
@@ -285,7 +303,19 @@ const LABEL_WORD = new RegExp(
 );
 /** A netto label closing the words before a figure («netto 480 kg», «N.W.: 480 kg»), or opening the words after it. */
 const NETTO_LABEL_BEFORE = new RegExp(`(?<![\\p{L}])((?:${labelPattern(NET_LABELS)}|sof))[\\s.:：=–—-]*$`, 'iu');
-const NETTO_LABEL_AFTER = new RegExp(`^\\s*[(\\[]?\\s*((?:${labelPattern(NET_LABELS)}))(?![\\p{L}])`, 'iu');
+const NETTO_LABEL_AFTER = new RegExp(`^\\s*[(\\[]?\\s*((?:${labelPattern(NET_LABELS)}))(?![\\p{L}])(?![\\s.:：=–—-]*\\d)`, 'iu');
+
+/**
+ * The figures of a text whose word is no unit and no label — «5.9 kubik»,
+ * «300 banka», «15 Pro» — as the kernel's own grammar finds them (T3).
+ */
+function unknownUnits(text: string): UnitAsk[] {
+  return amountsIn(text).flatMap((a) =>
+    a.word !== null && unitOf(a.word) === null && !LABEL_WORD.test(a.word)
+      ? [{ word: a.word, number: a.number, near: nearUnit(a.word) }]
+      : [],
+  );
+}
 
 /**
  * Every figure of a totals answer that stands OUTSIDE what the totals reading
@@ -391,6 +421,27 @@ const GROUPED_FIRST = /^\s*\d{1,3}(?:\s\d{3})+(?![\d.,])/u;
  */
 const figureText = (text: string) => text.replace(/(\p{L}[\p{L}\p{N}]*)\s+[-–—]\s+(?=\d)/gu, '$1 ');
 
+/**
+ * A measure's LABEL as one token — «MEAS», «Measurement», «G.W.», «毛重»,
+ * «体积» — says which figure, never which goods (T3, dg3-08: «MEAS: 5.92
+ * CBM» typed at the table was «“MEAS” — jadvalda bunday qator yo‘q»). Only
+ * the labels that can name nothing but that measure (units.ts
+ * `UNIT_FREE_LABELS`, review JN-21): «net», «gross», «vol», «cube», «вес» are
+ * product nouns too, and a row may be addressed by one — «Net 30 dona».
+ */
+const MEASURE_LABELS = [...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.netKg, ...UNIT_FREE_LABELS.volumeM3].filter(
+  (label) => !label.includes(' '),
+);
+const MEASURE_LABEL_TOKEN = new RegExp(`^(?:${labelPattern(MEASURE_LABELS)})$`, 'iu');
+/** A Han label is written glued to its figure («毛重507kg»): taken out of the text, longest first («总毛重» before «毛重»). */
+const HAN_LABELS = [...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS]
+  .filter((label) => /^\p{Script=Han}+$/u.test(label))
+  .sort((a, b) => b.length - a.length)
+  .join('|');
+const HAN_MEASURE_LABEL = new RegExp(HAN_LABELS, 'gu');
+/** …and asked for, without a global regex's memory of where it last looked. */
+const HAS_HAN_MEASURE_LABEL = new RegExp(HAN_LABELS, 'u');
+
 /** What a segment says about WHICH goods, once its figures, units, codes and field words are set aside. */
 interface NameParts {
   /** Goods words, folded, three letters or more. */
@@ -413,6 +464,7 @@ function nameParts(raw: string): NameParts {
   // «5.9 cubic meters»: a unit of two words is one unit, never a goods name.
   const text = joinUnitPhrases(raw)
     .replace(ENGINE_FIELD, ' ')
+    .replace(HAN_MEASURE_LABEL, ' ')
     .replace(GROUPED, (_m, head: string, groups: string) => head + groups.replace(/\s/gu, ''))
     // A figure glued to a name by a dash («Sumka-50 dona») is the figure, as
     // `parseLineAnswer` reads it — never a model number of «Sumka».
@@ -447,6 +499,7 @@ function nameParts(raw: string): NameParts {
     }
     const glued = /^(\d[\d.,]*)(\p{L}+)$/u.exec(token);
     if (glued && isUnit(glued[2]!)) return;
+    if (MEASURE_LABEL_TOKEN.test(token)) return;
     for (const word of foldName(token).split(' ').filter(Boolean)) {
       for (const run of word.match(/\d+/gu) ?? []) digits.push(digitKey(run));
       const letters = word.replace(/[^\p{L}]/gu, '');
@@ -594,6 +647,20 @@ function totalsTarget(totals: NonNullable<TableSegment['totals']>): TableTarget 
 /** «3 50 dona» — no separator: the row's number or a count? Asked, never guessed. */
 const UNCLEAR = /^\s*(\d{1,4})\s+(\d[\d.,]*)\s*([\p{L}²³]+)/u;
 
+/**
+ * T3: is the segment a figure and a WORD THAT IS NO UNIT, and nothing that
+ * names goods beside it — «5.9 kubik», «507 kg 5.9 kubik», «300 banka»? Then
+ * the word is asked as a unit. Every goods word the segment holds must be
+ * such a word: «Shapka 5 banka» names a product, and «iPhone 15 Pro 30 dona»
+ * a model — those keep the refusal they had.
+ */
+function unitAsked(text: string, parts: NameParts): UnitAsk | null {
+  const unknown = unknownUnits(figureText(text));
+  if (unknown.length === 0) return null;
+  const keys = new Set(unknown.map((u) => foldName(u.word).replace(/[^\p{L}]/gu, '')));
+  return [...parts.words, ...parts.han].every((w) => keys.has(w)) ? unknown[0]! : null;
+}
+
 interface ReadSegment extends TableSegment {
   /** Addressed by a number, a sign or a totals word — what the material stage takes. */
   explicit: boolean;
@@ -645,9 +712,10 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
     if (hasName(parts)) {
       const name = nameOf(row);
       if (!namesRow(parts, name) || !holdsModel(parts, name)) {
+        const unit = unitAsked(address.rest, parts);
         return {
           ...refused(raw, 'name_mismatch', parts.typed || raw, { at: { line: row.no }, answer }),
-          refused: { reason: 'name_mismatch', detail: parts.typed || raw, candidates: [row.no] },
+          refused: { reason: 'name_mismatch', detail: parts.typed || raw, candidates: [row.no], ...(unit ? { unit } : {}) },
           explicit: true,
           namedNone: false,
         };
@@ -679,7 +747,21 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
   if (parts.carton) return { ...refused(raw, 'no_address', raw), ...plain };
   // No goods word left over: an ANSWER, to the target its unit fits.
   if (!hasName(parts)) {
-    if (answer.kind === 'refused') return { ...refused(raw, 'no_address', raw), ...plain };
+    // What the row kernel cannot read as ONE row's answer may still be the
+    // shipment's own line: two kilos, a brutto and a netto («G.W.: 507 KGS
+    // N.W.: 480 KGS MEAS: 5.92 CBM»), or a Han label glued to its figure
+    // («毛重507kg» — no amount to a reader that never splits letters from
+    // digits). The totals reader takes what it can and names the rest (T2).
+    if (answer.kind === 'refused' && (answer.reason === 'repeated' || HAS_HAN_MEASURE_LABEL.test(raw))) {
+      const typed = readTotals(raw, null, table.open);
+      if (typed.totals !== null || typed.left.length > 0) return totalsSegment(raw, typed, plain);
+    }
+    if (answer.kind === 'refused') {
+      // «5 kb»: a word too short to be anybody's name, and no unit either.
+      const unit = answer.reason === 'unknown_unit' ? unitAsked(raw, parts) : null;
+      const none = refused(raw, 'no_address', raw);
+      return { ...none, ...(unit ? { refused: { ...none.refused!, unit } } : {}), ...plain };
+    }
     const target = targetFor(answer, table, NETTO_FIRST.test(raw));
     if (target === null) return { ...refused(raw, 'no_address', raw, { answer }), ...plain };
     if (target === 'both' || 'totals' in target) {
@@ -693,7 +775,11 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
   // Goods words: the NAME address, read before or after the figure («50 dona
   // sumka», «40 juft krossovka» — ordinary Uzbek word order, product-fit-13).
   const met = table.rows.filter((r) => namesRow(parts, nameOf(r)));
-  if (met.length === 0) return { ...refused(raw, 'name_none', parts.typed || raw, { answer }), explicit: false, namedNone: true };
+  if (met.length === 0) {
+    const unit = unitAsked(raw, parts);
+    const none = refused(raw, 'name_none', parts.typed || raw, { answer });
+    return { ...none, ...(unit ? { refused: { ...none.refused!, unit } } : {}), explicit: false, namedNone: true };
+  }
   const kept = met.filter((r) => holdsModel(parts, nameOf(r)));
   if (kept.length === 0) {
     return {
