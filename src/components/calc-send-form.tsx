@@ -11,6 +11,7 @@ import { parseGoodsLine, unitWordKey } from '@/modules/wms/calc/units';
 import {
   AMOUNT_UNITS,
   answerAmbiguous,
+  groupedShortRow,
   blankRow,
   codeLooksRight,
   dropBareNumbers,
@@ -737,10 +738,24 @@ function IssueLine({
   }
   const p = issue.problem;
   if (p.kind === 'ambiguous') {
+    // A space-grouped number's SHORT reading is written as a row (its first
+    // group back in the name, never the count — `groupedShortRow`), so only
+    // while it is the line's one open question; the other is answered first.
+    const shortRow = p.grouped === true ? groupedShortRow(row, p.text, p.decimal) : null;
     return (
       <div className="flex flex-wrap items-center gap-1 text-2xs text-warn" data-testid="calc-row-problem">
         <span>{t('ambiguous.number', { a: String(p.decimal), b: String(p.thousands) })}</span>
-        <button type="button" className="chip chip-warn" data-testid="calc-row-fix-0" onClick={() => onAnswer((raw) => answerAmbiguous(raw, p.text, p.decimal))}>
+        <button
+          type="button"
+          className="chip chip-warn"
+          data-testid="calc-row-fix-0"
+          disabled={p.grouped === true && shortRow === null}
+          onClick={() =>
+            p.grouped === true
+              ? onRow((current) => groupedShortRow(current, p.text, p.decimal) ?? current)
+              : onAnswer((raw) => answerAmbiguous(raw, p.text, p.decimal))
+          }
+        >
           {String(p.decimal)}
         </button>
         <button type="button" className="chip chip-warn" data-testid="calc-row-fix-1" onClick={() => onAnswer((raw) => answerAmbiguous(raw, p.text, p.thousands))}>

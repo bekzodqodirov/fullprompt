@@ -277,23 +277,45 @@ export function itemOfRow(row: SendRow): DoorItemInput | null {
 // ---------------------------------------------------------------------------
 
 /**
- * «1,200» → the chosen reading, in the text it was written in.
+ * «1,200» → the chosen reading, in the text it was written in — and a
+ * space-grouped number's WHOLE reading («Stul 20 300 kg» → 20 300 kg).
  *
- * A space-grouped number asked for both readings (units.ts `groupedReading`,
- * review JN-6) — «Stul 20 300 kg» — is two facts when its reading WITHOUT the
- * first group is chosen: the 20 is the chairs' count (or a model's number),
- * and replacing the run by «300» deleted it from the row's text (review
- * typed-break-8). The first group stays, set apart by a comma — «Stul 20,
- * 300 kg» — which the kernel reads as a cell of its own.
+ * Its SHORT reading is not a text answer: it is `groupedShortRow`'s. Written
+ * back as «Stul 20, 300 kg» (typed-break-8's fix) the kernel read the first
+ * group as the row's COUNT — «iPhone 15, 128 kg» landed fifteen phones nobody
+ * wrote, with nothing left open (review figures-chip-invents-count) — and
+ * replaced by «300» the group was deleted from the row (typed-break-8). Asked
+ * for it here, the text is left as it is.
  */
 export function answerAmbiguous(raw: string, problemText: string, value: number): string {
   const tail = withoutFirstGroup(problemText);
-  if (tail !== null && value === tail) {
-    const number = problemText.trim();
-    const first = /^\d{1,3}/u.exec(number)![0];
-    return raw.replace(problemText, `${first}, ${number.slice(first.length).trim()}`);
-  }
+  if (tail !== null && value === tail) return raw;
   return raw.replace(problemText, String(value));
+}
+
+/** A word no reader knows, standing where the first group stood while the line is re-read. */
+const FIRST_GROUP_MARK = 'Qqxfirstgroupxqq';
+
+/**
+ * The SHORT reading of a space-grouped number (units.ts `groupedReading`,
+ * review JN-6) as a ROW: «iPhone 15 128 kg», the seller pressing «128», is
+ * 128 kg of something called «iPhone 15» — the chip answers which reading of
+ * ONE number is meant, and JN-6's candidates (g2…gk) and (g1…gk) state no
+ * count. The figure goes in its cell, the first group back into the NAME
+ * where he wrote it, and the count stays empty — asked by the VED, never
+ * invented (review figures-chip-invents-count). Written as a row, like
+ * `nameKeepsNumber`, so only while this is the line's ONE open question:
+ * otherwise null, and the other question is answered first.
+ */
+export function groupedShortRow(row: SendRow, problemText: string, value: number): SendRow | null {
+  if (row.raw === null) return null;
+  const number = problemText.trim();
+  const first = /^\d{1,3}/u.exec(number)?.[0];
+  if (first === undefined || withoutFirstGroup(number) !== value) return null;
+  const text = row.raw.replace(problemText, `${FIRST_GROUP_MARK} ${value}`);
+  const read = rowOfLine(parseGoodsLine(text), row.key, text);
+  if (read.raw !== null || !read.name.includes(FIRST_GROUP_MARK)) return null;
+  return { ...read, name: read.name.replace(FIRST_GROUP_MARK, first), raw: null, touched: true };
 }
 
 /** Two pairs on a line: keep one, take the other's figure out of the text. */

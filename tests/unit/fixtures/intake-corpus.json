@@ -57288,6 +57288,45 @@
    "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4351",
+   "input": "Monitor 27 500 kg",
+   "expected": {
+    "quantity": null,
+    "weightKg": null,
+    "twoReadings": [
+     {
+      "text": "27 500",
+      "short": 500,
+      "long": 27500
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "asked 500 or 27 500 — no count",
+   "why": "figures-chip-invents-count: the kernel asks the two readings of the welded number; the card form's SHORT answer is a row (send-rows.ts groupedShortRow) that keeps the first group in the name and writes no count.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4352",
+   "input": "Redmi 13 200 dona",
+   "expected": {
+    "quantity": null,
+    "twoReadings": [
+     {
+      "text": "13 200",
+      "short": 200,
+      "long": 13200
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "asked 200 or 13 200",
+   "why": "figures-chip-invents-count: the kernel asks the two readings of the welded number; the card form's SHORT answer is a row (send-rows.ts groupedShortRow) that keeps the first group in the name and writes no count.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "parseManualFactsCases": [

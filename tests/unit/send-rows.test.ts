@@ -4,6 +4,7 @@ import {
   blankRow,
   codeLooksRight,
   dropBareNumbers,
+  groupedShortRow,
   isBlankRow,
   itemOfRow,
   keepPair,
@@ -77,19 +78,39 @@ describe('only three things stop a send, each with one-tap answers (UX3)', () =>
     expect(itemOfRow(one(answerAmbiguous(r.raw!, '1,200', 1.2)))).toMatchObject({ weightKg: 1.2 });
   });
 
-  it('a grouped number asked both ways (JN-6): the short reading keeps the first group as a fact of its own (review typed-break-8)', () => {
-    // «Stul 20 300 kg»: 300 kg of twenty chairs, or 20 300 kg. Choosing 300
-    // deleted the 20 from the row's text — the chairs' count gone.
+  it('a grouped number asked both ways (JN-6): the short reading keeps the first group in the NAME and invents no count (typed-break-8, figures-chip-invents-count)', () => {
+    // «Stul 20 300 kg»: 300 kg of something called «Stul 20», or 20 300 kg.
+    // Choosing 300 once deleted the 20 (typed-break-8); written back as «Stul
+    // 20, 300 kg» the kernel then read the 20 as the row's COUNT — «iPhone 15
+    // 128 kg» landed fifteen phones with nothing left open. Read back through
+    // itemOfRow / rowIssues, never only the text.
     const r = one('Stul 20 300 kg');
     expect(rowIssues(r).blocking).toHaveLength(1);
-    const short = answerAmbiguous(r.raw!, '20 300', 300);
-    expect(short).toBe('Stul 20, 300 kg');
-    // Re-read: the 20 is the count it was, the 300 the kilos.
-    expect(itemOfRow(one(short))).toMatchObject({ name: 'Stul', quantity: 20, weightKg: 300 });
+    const short = groupedShortRow(r, '20 300', 300)!;
+    expect(itemOfRow(short)).toMatchObject({ name: 'Stul 20', quantity: null, weightKg: 300 });
+    expect(rowIssues(short).blocking).toEqual([]);
+    for (const [text, problem, value, name, cell] of [
+      ['iPhone 15 128 kg', '15 128', 128, 'iPhone 15', { weightKg: 128 }],
+      ['Monitor 27 500 kg', '27 500', 500, 'Monitor 27', { weightKg: 500 }],
+      ['Stanok 1 500 kg', '1 500', 500, 'Stanok 1', { weightKg: 500 }],
+      // A model's number stays in the landed name, and the count is the 200 he chose.
+      ['Redmi 13 200 dona', '13 200', 200, 'Redmi 13', { quantity: 200 }],
+    ] as const) {
+      const row = groupedShortRow(one(text), problem, value)!;
+      expect(itemOfRow(row), text).toMatchObject({ name, quantity: null, ...cell });
+      expect(rowIssues(row).blocking, text).toEqual([]);
+    }
     // The long reading is the whole number, as before: 20 300 kg.
     expect(itemOfRow(one(answerAmbiguous(r.raw!, '20 300', 20300)))).toMatchObject({ weightKg: 20300 });
-    // A model's number stays in the TEXT the seller sees, never deleted from it.
-    expect(answerAmbiguous('iPhone 15 128 dona', '15 128', 128)).toBe('iPhone 15, 128 dona');
+    // The short reading is no text answer: asked for one, the text is left as it is.
+    expect(answerAmbiguous('iPhone 15 128 dona', '15 128', 128)).toBe('iPhone 15 128 dona');
+  });
+
+  it('the short reading as a row waits while another question stands on the line', () => {
+    // «1,200» reads two ways too: the row is not written until it is answered.
+    const r = one('Stul 20 300 kg, 1,200 kub');
+    expect(rowIssues(r).blocking).toHaveLength(2);
+    expect(groupedShortRow(r, '20 300', 300)).toBeNull();
   });
 
   // Review doors-4: «00 120» reads 120 either way, and a question offering
