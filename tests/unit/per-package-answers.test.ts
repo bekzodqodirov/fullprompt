@@ -73,14 +73,17 @@ describe('T4 at the reading — one carton’s weight no longer outranks the mod
     expect(out.facts.goods).toMatchObject([{ name: 'Куртка', weightKg: 300 }]);
   });
 
-  it('the model silent: the typed row carries 20 × 15 = 300 kg «hisoblangan», and the total stays unstated — no 15 kg copied onto the row', async () => {
+  it('the model silent: no 15 kg anywhere — the each beside both counts is asked, the cube 20 × 0.12 = 2.4 m³ computed', async () => {
+    // RE-ANCHORED (review typed-spec-1, ruling JN-7): DIM-4's «har biri 15 kg»
+    // stands beside a piece count AND a carton count with no noun — nobody's;
+    // the row's weight was 20 × 15 = 300 kg by JS-1's unadopted proposal.
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'network' });
     const out = await analyzeCollected(typed(DIM4));
     expect(out.facts.weightKg ?? null).toBeNull();
-    expect(out.facts.goods).toMatchObject([{ name: 'Kurtka', quantity: 300, weightKg: 300, volumeM3: 2.4 }]);
-    // One row and no total: nothing to copy (the lone-weight rule saw 15 kg here before T4).
+    expect(out.facts.goods).toMatchObject([{ name: 'Kurtka', quantity: 300, weightKg: null, volumeM3: 2.4 }]);
+    // No row weight and no total: nothing to copy (the lone-weight rule saw 15 kg here before T4).
     const [item] = itemFacts(out.facts);
-    expect(item).toMatchObject({ weightKg: 300, weightFromTotal: false });
+    expect(item).toMatchObject({ weightKg: null, weightFromTotal: false });
   });
 
   it('JS-1: one PIECE’s weight — the row is 300 × 0.2 = 60 kg, never 0.2 kg as the job’s', async () => {

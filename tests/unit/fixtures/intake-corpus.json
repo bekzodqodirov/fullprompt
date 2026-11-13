@@ -15468,6 +15468,119 @@
    "why": "T12 guard: what a customer says ABOUT the goods is no name (statusBody), and its field line no product.",
    "source": "ai-soraydi typed-A T12",
    "weight": "regression"
+  },
+  {
+   "id": "c3394",
+   "input": "Avtomobil, dvigatel hajmi: 1.6, 2 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Avtomobil dvigatel hajmi",
+      "quantity": 2,
+      "volumeM3": null,
+      "note": "sotuvchi: hajmi: 1.6"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row — 2 dona; the engine's 1.6 on the note, never 1.6 m³",
+   "why": "typed-break-2: readFieldLabels gave a possessed «hajmi:» the row's m³; the truck would have been priced off an engine displacement.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
+  },
+  {
+   "id": "c3395",
+   "input": "Kurtka 1 200 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": null,
+      "note": "sotuvchi: 1 200 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Kurtka» — the count asked (JN-6), the seller's «1 200 dona» on the note",
+   "why": "typed-break-4: the grouped count vanished with no question and no note.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3396",
+   "input": "Kurtka 300 dona, 20 karobka, karobka og'irligi 22.5 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "weightKg": 450
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row — 20 × 22.5 = 450 kg",
+   "why": "typed-break-6: a carton noun possessing the weight label makes the figure one carton's; it was the row's 22.5 kg and the name «Kurtka karobka».",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
+  },
+  {
+   "id": "c3397",
+   "input": "Stul 100 dona 20 karobka, har biri 2 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 100,
+      "weightKg": null,
+      "note": "sotuvchi: har biri 2 kg"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row — 100 dona, the weight asked",
+   "why": "typed-spec-1: JN-7's own example; the each-weight beside both counts is nobody's (ruling JN-7 = JS-1). Was 20 × 2 = 40 kg «hisoblangan».",
+   "source": "ai-soraydi typed-A review",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3398",
+   "input": "Kurtka 300 dona 15 kg/kor",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "weightKg": null,
+      "note": "sotuvchi: 15 kg/kor"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row — 300 dona; «15 kg/kor» on the note",
+   "why": "typed-spec-2 (T8, JN-8 (e)): an unknown slash tail is never a total — and the named row stays, the figure noted, instead of vanishing.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
+  },
+  {
+   "id": "c3399",
+   "input": "Stul 300 dona 15 кг/коробке",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 300,
+      "weightKg": null,
+      "note": "sotuvchi: 15 кг/коробке"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row — 300 dona; «15 кг/коробке» on the note",
+   "why": "typed-spec-2: JN-8 (e)'s second spelling.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -49210,12 +49323,12 @@
    "id": "c3275",
    "input": "G.W.: 2.5 MT",
    "expected": {
-    "weightKg": null,
+    "weightKg": 2500,
     "volumeM3": null,
     "ambiguous": []
    },
-   "said": "no total — the figure has a unit of its own, and it is not kilos",
-   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "said": "weightKg 2500 — 2.5 MT × 1000: after a weight's label the lone «MT» is tonnes",
+   "why": "RE-ANCHORED (review typed-spec-5): ruling JN-9 admits the lone letters «in a totals context» — after a weight label of §2.4 (the judge's fix) or as the answer to the bot's own question; this case pinned the narrower reading, which left a forwarder's brutto asked.",
    "source": "ai-soraydi typed-A T1",
    "weight": "defect"
   },
@@ -49655,7 +49768,7 @@
       {
        "name": "Kurtka",
        "quantity": 300,
-       "weightKg": 300,
+       "weightKg": null,
        "volumeM3": 2.4
       }
      ],
@@ -49664,7 +49777,7 @@
     "landingNoteIncludes": [
      {
       "index": 0,
-      "text": "og‘irlik hisoblangan: 20 × 15 kg = 300 kg"
+      "text": "sotuvchi: har biri 15 kg"
      },
      {
       "index": 0,
@@ -49672,8 +49785,8 @@
      }
     ]
    },
-   "said": "no total typed; one row «Kurtka» — 300 dona, 20 × 15 = 300 kg and 20 × 0.6×0.4×0.5 = 2.4 m³, both «hisoblangan»",
-   "why": "DIM-4 (dg2/trace-dims.json): «har biri 15 kg» beside «20 karobka» was the SHIPMENT’s 15 kg and the one row’s, over the model’s 300 — a per-kg baza priced 20× low.",
+   "said": "no total typed; one row «Kurtka» — 300 dona, 20 × 0.6×0.4×0.5 = 2.4 m³ «hisoblangan»; «har biri 15 kg» beside both counts asked, kept on the note",
+   "why": "DIM-4 (dg2/trace-dims.json): «har biri 15 kg» beside «20 karobka» was the SHIPMENT’s 15 kg and the one row’s, over the model’s 300 — a per-kg baza priced 20× low. RE-ANCHORED (review typed-spec-1): ruling JN-7 = JS-1 — «both and no noun → nothing multiplied, asked». Pinned at JS-1's PROPOSED nearest-count-before rule, which JN-7's own «Stul 100 dona 20 karobka, har biri 2 kg» (each chair, truly 200 kg) refutes: one shape, two truths.",
    "source": "ai-soraydi typed-A T4",
    "weight": "blocker",
    "severity": "common"
@@ -49734,14 +49847,15 @@
       {
        "name": "Kurtka",
        "quantity": 300,
-       "weightKg": 300
+       "weightKg": null,
+       "note": "sotuvchi: har biri 15 kg"
       }
      ],
      "count": 1
     }
    },
-   "said": "one row — 20 × 15 = 300 kg: the each binds to the carton count right before it, never 300 × 15 = 4500",
-   "why": "JS-1 conversation C: both counts on the line — the nearest count BEFORE the mark decides.",
+   "said": "one row — 300 dona, the weight asked; «har biri 15 kg» on the note (neither 20 × 15 nor 300 × 15)",
+   "why": "RE-ANCHORED (review typed-spec-1): ruling JN-7 = JS-1 — «both and no noun → nothing multiplied, asked». Pinned at JS-1's PROPOSED nearest-count-before rule, which JN-7's own «Stul 100 dona 20 karobka, har biri 2 kg» (each chair, truly 200 kg) refutes: one shape, two truths.",
    "source": "ai-soraydi typed-A T4",
    "weight": "blocker"
   },
@@ -49756,14 +49870,15 @@
       {
        "name": "Telefon",
        "quantity": 300,
-       "weightKg": 60
+       "weightKg": null,
+       "note": "sotuvchi: har biri 0.2 kg"
       }
      ],
      "count": 1
     }
    },
-   "said": "one row — 300 × 0.2 = 60 kg: the count before the mark is the pieces",
-   "why": "JS-1’s corpus line «300 dona har biri 0.2 kg 20 karobka»: nearest preceding count is the piece count.",
+   "said": "one row — 300 dona, the weight asked; «har biri 0.2 kg» on the note",
+   "why": "RE-ANCHORED (review typed-spec-1): ruling JN-7 = JS-1 — «both and no noun → nothing multiplied, asked». Pinned at JS-1's PROPOSED nearest-count-before rule, which JN-7's own «Stul 100 dona 20 karobka, har biri 2 kg» (each chair, truly 200 kg) refutes: one shape, two truths.",
    "source": "ai-soraydi typed-A T4",
    "weight": "defect"
   },
@@ -50091,6 +50206,170 @@
    "why": "T8 guard: the pair rule must not turn the cargo's own line into a product and take its cube from the shipment.",
    "source": "ai-soraydi typed-A T8",
    "weight": "regression"
+  },
+  {
+   "id": "c3000",
+   "input": "G.W.: 15/ctn",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — 15 per carton is one carton's",
+   "why": "typed-break-1: a label-first figure with a per-package tail and no unit was the shipment's 15 kg under ✅ (MP-2 in a sibling spelling); standsAlone let «/» pass.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3385",
+   "input": "Yiwudan, stullar 20 karobka, G.W.: 15/ctn, MEAS: 0.12/ctn",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no totals; the row 20 × 15 = 300 kg, 20 × 0.12 = 2.4 m³",
+   "why": "typed-break-1: the agent priced 15 kg / 0.12 m³ («below_minimum», 255 $ avia) for a 300 kg / 2.4 m³ cargo.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3386",
+   "input": "Termos\nHajmi: 2\n500 dona",
+   "expected": {
+    "volumeM3": null,
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "no cube — the thermos's own 2 (litres) under its name",
+   "why": "typed-break-2: a general measure label opening its line under a figureless product name is that product's spec, never 2 m³ of cargo.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
+  },
+  {
+   "id": "c3387",
+   "input": "Choy 500 gr 200 karobka",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "count": 0
+    }
+   },
+   "said": "no total and no row — half-kilo packs in 200 cartons",
+   "why": "typed-break-3: a gram beside a carton count is one pack's size; it was a 0.5 kg shipment and a 0.5 kg row.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
+  },
+  {
+   "id": "c3388",
+   "input": "Yiwudan Toshkentga 12 500 kg",
+   "expected": {
+    "weightKg": 12500,
+    "ambiguous": []
+   },
+   "said": "weightKg 12500 — after a place in its route case the number is whole",
+   "why": "typed-break-4: «Toshkentga» is no product a count or a model belongs to; the bot asked «500 kg mi yoki 12 500 kg mi?» about a figure only one way readable.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
+  },
+  {
+   "id": "c3389",
+   "input": "Kurtka 300 dona 450 kg 5 kubov",
+   "expected": {
+    "weightKg": 450,
+    "volumeM3": 5,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "volumeM3": 5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "one row «Kurtka» — 300 dona, 450 kg, 5 m³",
+   "why": "typed-break-5: a counted cube AFTER the line's first figure is outside the name run (JN-22's «inside a goods line»); it was folded into «Kurtka 5 kubov» and the cube dropped with no word.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3390",
+   "input": "Chair 20 ctns, 15 kg each",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Chair",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 20 × 15 = 300 kg",
+   "why": "typed-break-6: «each» AFTER the figure is the English packing note's mark; one carton's 15 kg was the brutto under ✅.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "defect"
+  },
+  {
+   "id": "c3391",
+   "input": "Stul 20 karobka 300 kg dan oshmaydi",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — «dan oshmaydi» is «does not exceed», no per-carton mark",
+   "why": "typed-break-7: DAN_NOT knew ortiq/kam/gacha but not oshmaydi/iborat/katta; the seller's only weight was lost and asked again.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "nit"
+  },
+  {
+   "id": "c3392",
+   "input": "brutto 2 t",
+   "expected": {
+    "weightKg": 2000,
+    "ambiguous": []
+   },
+   "said": "weightKg 2000 — 2 t × 1000 after a weight's label",
+   "why": "typed-spec-5 (JN-9): a lone letter after a weight label of §2.4 is that weight's unit.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "nit"
+  },
+  {
+   "id": "c3393",
+   "input": "Mebel 1 200 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "1 200",
+      "decimal": 200,
+      "thousands": 1200
+     }
+    ]
+   },
+   "said": "asked — 200 kg or 1 200 kg",
+   "why": "Guard for typed-break-4: after a product's NAME word a grouped number is still asked with both readings (JN-6); only a place, a greeting, the cargo or an approximator opens it.",
+   "source": "ai-soraydi typed-A review",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [

@@ -1075,9 +1075,11 @@ const TIMES_LEAD = new RegExp(
  * «15 kg each», «0.12 cbm each», «15 kg apiece», «15 кг каждая» — «each»
  * AFTER the figure, the way an English or Russian packing note writes it
  * (review typed-break-6). Bound like «har biri»: to the one kind of count the
- * line has.
+ * line has. Not when a figure follows it — «300 pcs each 0.2 kg» is the
+ * leading mark of the 0.2 kg, and the 300 its line's own count — and never
+ * «har biri», which leads in Uzbek: «300 dona har biri 0.2 kg».
  */
-const EACH_TRAIL = /^\s*(?:each|apiece|ea\.|per\s+(?:one|unit|item)|каждая|каждый|каждое|каждую|har\s+biri(?:ga|da)?)(?![\p{L}])/iu;
+const EACH_TRAIL = /^\s*(?:each|apiece|ea\.|per\s+(?:one|unit|item)|каждая|каждый|каждое|каждую)(?![\p{L}])(?![ \t]*[:–-]?[ \t]*\d)/iu;
 /**
  * A measure's label a PACKAGE noun possesses, before a figure — «karobka
  * og‘irligi 22.5 kg», «вес коробки 22.5 кг», «carton weight 22.5 kg», «ctn

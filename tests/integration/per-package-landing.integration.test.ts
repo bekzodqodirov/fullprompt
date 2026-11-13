@@ -93,20 +93,31 @@ async function land(text: string, section: 'podklyuch' | 'rastamojka' = 'podklyu
 }
 
 describe('the landing stores the carton arithmetic, never one carton’s figure', () => {
-  it('DIM-4: the row stores 20 × 15 = 300 kg and 20 × 0.12 = 2.4 m³; the request no 15 kg brutto', async () => {
-    const out = await land('Kurtka 300 dona, 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg');
+  it('one carton count: the row stores 20 × 15 = 300 kg and 20 × 0.12 = 2.4 m³; the request no 15 kg brutto', async () => {
+    // RE-ANCHORED (review typed-spec-1, ruling JN-7): DIM-4's own line also
+    // states «300 dona», and an each beside both counts multiplies nothing —
+    // pinned below. One carton count is the shape this arithmetic is for.
+    const out = await land('Kurtka 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg');
     // No brutto was typed: the column stays empty for the totals question.
     expect(out.request.weightKg).toBeNull();
     // The truck's cube is the lines' Σ — here the one line's computed 2.4.
     expect(out.request.volumeM3).toBe(2.4);
     expect(out.items).toHaveLength(1);
-    expect(out.items[0]).toMatchObject({ name: 'Kurtka', quantity: 300, weightKg: 300, volumeM3: 2.4 });
+    expect(out.items[0]).toMatchObject({ name: 'Kurtka', weightKg: 300, volumeM3: 2.4 });
     const note = out.items[0]!.note ?? '';
     expect(note).toContain('📦 20 karobka · 60×40×50 sm · 15 kg/karobka — sotuvchi');
     expect(note).toContain('og‘irlik hisoblangan: 20 × 15 kg = 300 kg');
     expect(note).toContain('hajm hisoblangan: 20 × 60×40×50 sm = 2.4 m³');
     // …and never the copy of a total nobody stated.
     expect(note).not.toContain(LONE_WEIGHT_NOTE);
+  });
+
+  it('DIM-4 beside both counts: the cube lands computed, the weight stays for the question — «har biri 15 kg» on the note', async () => {
+    const out = await land('Kurtka 300 dona, 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg');
+    expect(out.request.weightKg).toBeNull();
+    expect(out.items[0]).toMatchObject({ name: 'Kurtka', quantity: 300, weightKg: null, volumeM3: 2.4 });
+    expect(out.items[0]!.note ?? '').toContain('sotuvchi: har biri 15 kg');
+    expect(out.items[0]!.note ?? '').not.toContain('og‘irlik hisoblangan');
   });
 
   it('JS-1: one PIECE’s weight lands as 300 × 0.2 = 60 kg on the row', async () => {

@@ -106,26 +106,42 @@ describe('T4 — one package’s or one piece’s figure is never the shipment�
 });
 
 describe('T4 — the typed goods row: the figure goes onto its packing, the carton arithmetic multiplies', () => {
-  it('DIM-4: 20 karobka × 15 kg = 300 kg and 20 × 60×40×50 sm = 2.4 m³, both «hisoblangan»; the name is the product', () => {
+  it('DIM-4: 20 × 60×40×50 sm = 2.4 m³ «hisoblangan»; the each-weight beside both counts is asked, kept on the note', () => {
+    // RE-ANCHORED (review typed-spec-1, ruling JN-7 = JS-1): «har biri» beside
+    // BOTH a piece count (300 dona) and a carton count (20 karobka), no noun after
+    // it — nobody's, nothing multiplied, the weight asked. It was pinned at JS-1's
+    // proposed «nearest count before the mark» (20 × 15 = 300 kg), the rule
+    // JN-7's own chairs refute.
     const r = row('Kurtka 300 dona, 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg');
-    expect(r).toMatchObject({ name: 'Kurtka', quantity: 300, weightKg: 300, volumeM3: 2.4 });
+    expect(r).toMatchObject({ name: 'Kurtka', quantity: 300, weightKg: null, volumeM3: 2.4, note: 'sotuvchi: har biri 15 kg' });
     // 0.6 × 0.4 × 0.5 = 0.12 m³ one carton; × 20 = 2.4.
     expect(r.packing).toMatchObject({
       from: 'typed',
       cartons: 20,
-      kgPerCarton: 15,
-      kgPerCartonKind: null,
+      kgPerCarton: null,
       size: { l: 60, w: 40, h: 50, unit: 'cm', of: 'package' },
     });
-    expect(r.derived).toMatchObject({ weightKg: '20 × 15 kg', volumeM3: '20 × 60×40×50 sm' });
+    expect(r.derived).toMatchObject({ volumeM3: '20 × 60×40×50 sm' });
+    expect(r.derived?.weightKg).toBeUndefined();
+  });
+
+  it('…and with ONE count beside it the each binds: «Kurtka 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg» — 20 × 15 = 300 kg', () => {
+    const r = row('Kurtka 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg');
+    expect(r).toMatchObject({ name: 'Kurtka', weightKg: 300, volumeM3: 2.4 });
+    expect(r.packing).toMatchObject({ cartons: 20, kgPerCarton: 15 });
   });
 
   it('the landed row says how each figure came to be — and carries no «og‘irlik umumiydan» copy', () => {
-    const [item] = landingItems(parseManualFacts('Kurtka 300 dona, 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg'));
-    expect(item).toMatchObject({ quantity: 300, weightKg: 300, volumeM3: 2.4 });
+    const [item] = landingItems(parseManualFacts('Kurtka 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg'));
+    expect(item).toMatchObject({ weightKg: 300, volumeM3: 2.4 });
     expect(item!.note).toBe(
       '📦 20 karobka · 60×40×50 sm · 15 kg/karobka — sotuvchi · hajm hisoblangan: 20 × 60×40×50 sm = 2.4 m³ · og‘irlik hisoblangan: 20 × 15 kg = 300 kg',
     );
+    // Beside both counts (review typed-spec-1) the weight is no arithmetic: the seller's words go to the VED.
+    const [asked] = landingItems(parseManualFacts('Kurtka 300 dona, 20 karobka, karobka razmeri 60x40x50 sm, har biri 15 kg'));
+    expect(asked).toMatchObject({ quantity: 300, weightKg: null, volumeM3: 2.4 });
+    expect(asked!.note).toContain('sotuvchi: har biri 15 kg');
+    expect(asked!.note).not.toContain('og‘irlik hisoblangan');
   });
 
   it('DIM-10: «0.12 cbm/ctn 15 kg/ctn» beside «20 ctns» — 20 × 0.12 = 2.4 m³, 20 × 15 = 300 kg; no «/ctn» left in the name', () => {
@@ -168,10 +184,16 @@ describe('T4 — the typed goods row: the figure goes onto its packing, the cart
     expect(box.packing).toMatchObject({ cartons: null, pcsPerCarton: 24 });
   });
 
-  it('JN-8 (c): a bare «20 x 15 kg» sets no carton count — 15 kg is one package’s, the phrase is kept on the note', () => {
+  it('JN-8 (c): a bare «20 x 15 kg» sets no carton count and no carton’s figure — the phrase is kept on the note', () => {
     const r = row('Stul 20 x 15 kg');
     expect(r).toMatchObject({ name: 'Stul', quantity: null, weightKg: null, note: 'sotuvchi: 20 x 15 kg' });
-    expect(r.packing).toMatchObject({ cartons: null, kgPerCarton: 15 });
+    // RE-ANCHORED (review typed-spec-4): this pinned kgPerCarton 15 — a claim
+    // the line never made (its 20 may be pieces), and a later «nechta
+    // karobka?» answer would have multiplied it. Nobody's: no packing at all.
+    expect(r.packing ?? null).toBeNull();
+    const pieces = row('Stul 20 x 24 dona');
+    expect(pieces).toMatchObject({ quantity: null, note: 'sotuvchi: 20 x 24 dona' });
+    expect(pieces.packing ?? null).toBeNull();
     // With a carton word beside A, A IS the carton count: 20 × 15 = 300 kg.
     expect(row('Stul 20 karobka x 15 kg')).toMatchObject({ weightKg: 300 });
   });
