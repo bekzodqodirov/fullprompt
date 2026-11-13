@@ -63,6 +63,15 @@ export type { FreightTail, ReplyAudience };
 export { AI_CODE_MARK };
 
 export interface AiVedLine {
+  /**
+   * The group's rows by their own `seq` — the number the add table, the VED's
+   * screen and every answer address a row by (docs/AI-SORAYDI.md §3.4 A3).
+   * The line OPENS with them («3. Куртка…», «1-2. Посуда, Чашки»): numbered
+   * by the group's index, the answer's «2.» was another row's «2:» and the
+   * seller's reply overwrote it (PA-3, 10 → 300 dona). REQUIRED (#790): a
+   * builder that forgot would number the line by nothing.
+   */
+  seqs: number[];
   /** What the group is, in the seller's words — its items, joined. */
   label: string;
   code: string | null;
@@ -161,14 +170,43 @@ export interface AiVedEstimate {
   taxminiyBlock: string | null;
 }
 
+/** A row nobody has coded, by its own number (A3) — the line it is listed on. */
+export interface UncodedRow {
+  seq: number;
+  name: string;
+}
+
+/**
+ * What a coding call that did not answer leaves — said as it is (review
+ * JS-15): the request is in the VED's queue and the VED will code it. No
+ * «🔄 qayta urinib ko‘ring»: the answer carries no button that would, and an
+ * emoji that reads as one is an instruction nothing obeys.
+ */
+export const CODING_FAILED_LINE = '⚠️ AI kod qo‘ya olmadi (javob bermadi) — so‘rov VED navbatida, kodni VED xodimi qo‘yadi';
+
+/** How an uncoded row's line ends when nothing else on the answer says who codes it. */
+export const UNCODED_WORDS = 'kod yo‘q';
+
 export interface AiVedReplyInput {
   clientLabel: string | null;
   /** The card's own code — «B-000067» — so the seller can find it. */
   cardLabel: string | null;
   lines: AiVedLine[];
-  /** Items nobody has coded: named, because a total that silently drops them
-   * is the defect the partial label exists to prevent. */
-  ungrouped: string[];
+  /**
+   * Items nobody has coded: named, because a total that silently drops them
+   * is the defect the partial label exists to prevent — and listed IN THEIR
+   * PLACE among the lines by their `seq` («2. Zapchast XJ-200 — kod yo‘q»,
+   * A3), never in a list of names under them that no answer can address.
+   */
+  ungrouped: UncodedRow[];
+  /**
+   * The pass's coding call failed — the model did not answer (a timeout, a
+   * refusal, a cut), even after its one retry (docs/AI-SORAYDI.md §3.4 A6,
+   * review JS-15). The uncoded rows are then said as what is TRUE: the AI
+   * could not code them and the VED will — never «Kod topilmadi: Куртка
+   * мужская зимняя» about a jacket the model never looked at. REQUIRED (#790).
+   */
+  proposeFailed: boolean;
   /** The per-DECLARATION fee (VMQ-55's BHM scale), once for the whole job. */
   fee: { bhm: number; usd: number } | null;
   /** The customs total, or null when the engine refused to make one. */
@@ -463,6 +501,38 @@ function shortName(raw: string): string {
   return askName(raw);
 }
 
+/** At most this many pieces of a line's number — the rest are counted. */
+const HEAD_RUNS = 5;
+
+/**
+ * The number a line OPENS with (docs/AI-SORAYDI.md §3.4 A3): its rows' own
+ * `seq`s, the number every answer is addressed by — «3.», «1-2.» for a run,
+ * «1, 3.» apart. Never the group's index: the seller answered «2: 300 dona»
+ * to what he read as line 2 and another row's count was overwritten (PA-3).
+ * Past HEAD_RUNS pieces the rest are COUNTED («(+4)») — never folded into a
+ * range over a gap, which would name a row that is not in the group. A group
+ * of no rows (`group_empty`) has nothing to address: «·».
+ *
+ * Exported: the plain door's note numbers its groups the same way (ai-note.ts).
+ */
+export function lineNumber(seqs: readonly number[]): string {
+  const sorted = [...new Set(seqs)].sort((a, b) => a - b);
+  if (sorted.length === 0) return '·';
+  const runs: [number, number][] = [];
+  for (const s of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && s === last[1] + 1) last[1] = s;
+    else runs.push([s, s]);
+  }
+  const piece = ([a, b]: [number, number]) => (a === b ? String(a) : `${a}-${b}`);
+  const shown = runs.slice(0, HEAD_RUNS).map(piece).join(', ');
+  const rest = runs.slice(HEAD_RUNS).reduce((n, [a, b]) => n + b - a + 1, 0);
+  return rest > 0 ? `${shown} (+${rest}).` : `${shown}.`;
+}
+
+/** The first row a line names — the order the answer lists its lines in (A3). */
+const firstSeq = (seqs: readonly number[]) => (seqs.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...seqs));
+
 /** «23», «23 va 8», «23, 8 va 5», then «23, 8, 5 …» — at most three numbers. */
 function countList(ns: number[]): string {
   if (ns.length <= 1) return String(ns[0] ?? 0);
@@ -500,7 +570,7 @@ export function lawParts(line: Pick<AiVedLine, 'dutyText' | 'addDutyPct' | 'exci
 }
 
 /** One group, as two (or three) lines: what it is, and what the law makes of it. */
-function lineText(line: AiVedLine, index: number, audience: ReplyAudience, noAsk: boolean): string {
+function lineText(line: AiVedLine, audience: ReplyAudience, noAsk: boolean): string {
   const est = line.estimated;
   const priced = est?.priced ? est : null;
   const measure = measureWithMark(priced ? priced.measureText : line.measureText, line.weightFromTotal);
@@ -511,7 +581,7 @@ function lineText(line: AiVedLine, index: number, audience: ReplyAudience, noAsk
   // The age sits beside the baza it qualifies — in the head, which every
   // shape of the line prints (exact, estimated, refused).
   const head =
-    `${index + 1}. ${shortName(line.label)}` +
+    `${lineNumber(line.seqs)} ${shortName(line.label)}` +
     (line.code ? ` · ${line.code}${line.aiCode ? ` ${AI_CODE_MARK}` : ''}` : '') +
     (measure ? ` · ${measure}` : '') +
     (marks ? ` ${marks}` : '') +
@@ -536,6 +606,18 @@ function lineText(line: AiVedLine, index: number, audience: ReplyAudience, noAsk
     return `${refused}\n   ${MEDIAN_MARK} taxmin yo‘q: ${shown}${est.misses.length > 3 ? ' …' : ''}`;
   }
   return `${head}\n   ${lawParts(line)} → ${money(line.customsUsd)}`;
+}
+
+/**
+ * A row nobody coded, on its own line in its place (A3): «2. Zapchast XJ-200
+ * — kod yo‘q». Who codes it is said once, where it is true: the ❓ block
+ * below when the answer asks the seller what the row is (A2), the coding
+ * call's own line when the model did not answer (A6) — else here, the VED,
+ * as the old list under the lines said it.
+ */
+function uncodedLine(row: UncodedRow, askedWhat: boolean, proposeFailed: boolean): string {
+  const tail = askedWhat || proposeFailed ? '' : ' — VED xodimi qo‘yadi';
+  return `${lineNumber([row.seq])} ${shortName(row.name)} — ${UNCODED_WORDS}${tail}`;
 }
 
 /** «(yig‘im 1.5 BHM ≈ $50.00 bilan)», or the override's own figure. */
@@ -611,16 +693,22 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     } else if (asks.length > 0) head.push(lawAsksLentaLine(asks));
   }
 
-  const lines = input.lines.map((line, index) => lineText(line, index, input.audience, input.noAsk));
+  // ONE numbering in the whole message (A3): every line opens with its rows'
+  // own numbers, an uncoded row stands IN ITS PLACE among them — not under
+  // the list by name, where no «2: …» could reach it — and the lines are in
+  // row order, as the add table and the VED's screen list them.
+  const askedWhat = new Set((seller ?? []).filter((a) => a.kind === 'what' && a.seq !== null).map((a) => a.seq!));
+  const lines = [
+    ...input.lines.map((line) => ({ at: firstSeq(line.seqs), text: lineText(line, input.audience, input.noAsk) })),
+    ...input.ungrouped.map((row) => ({ at: row.seq, text: uncodedLine(row, askedWhat.has(row.seq), input.proposeFailed) })),
+  ]
+    .sort((a, b) => a.at - b.at)
+    .map((e) => e.text);
 
   const fixed: string[] = [];
-  if (input.ungrouped.length > 0) {
-    // Named, not counted: the seller can often supply the missing code or
-    // say which of the three «sumka» rows this is.
-    const names = input.ungrouped.slice(0, 5).map(shortName).join(', ');
-    const more = input.ungrouped.length > 5 ? ` … (+${input.ungrouped.length - 5})` : '';
-    fixed.push(`⚠️ Kod topilmadi: ${names}${more} — VED xodimi qo‘yadi`);
-  }
+  // A coding call that did not answer says so, once (A6) — the rows above
+  // then say only «kod yo‘q», and who codes them is this line's.
+  if (input.ungrouped.length > 0 && input.proposeFailed) fixed.push(CODING_FAILED_LINE);
   if (input.fee) {
     fixed.push(`Deklaratsiya yig‘imi (VMQ-55): ${input.fee.bhm} BHM ≈ ${money(input.fee.usd)}`);
   }

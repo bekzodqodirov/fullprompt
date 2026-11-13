@@ -15,6 +15,7 @@ import {
 } from './pricing';
 import type { Workspace } from './workspace';
 import { CUSTOMS_TAIL_WORDS, tailWords, type ReplyAudience } from './tail-words';
+import { needUnitOf, needWhatUz, type NeedUnit } from './needs';
 
 /**
  * The 📊 shadow estimate — his 2.1 b and 2.2 b (docs/SAKKIZ-R2.md §6.5).
@@ -271,8 +272,41 @@ export interface CustomsEstimate {
   taxminiyBlock: 'ungrouped' | 'refused_measure' | 'budget' | 'refused' | FeeRefusal | null;
 }
 
-/** What `refused_measure` says is missing — its tail is the reader's (below). */
+/**
+ * What `refused_measure` says is missing when no refusing row names its
+ * figure — its tail is the reader's (below). Every `measure_missing` the
+ * engine writes carries the row and the unit, so this is the belt.
+ */
 const REFUSED_MEASURE = '⚠️ qatorda soni yoki og‘irligi yo‘q';
+
+/** One refusing row's missing figure, as the Taxminiy block names it (A9). */
+export interface MeasureMiss {
+  seq: number;
+  unit: NeedUnit;
+}
+
+/** At most this many rows are named in the block; the rest are «…». */
+const MISSES_NAMED = 3;
+
+/**
+ * The rows whose missing figure blocks «Taxminiy» (docs/AI-SORAYDI.md §3.4
+ * A9, PA-11) — each refused group's OWN refusal: the row the engine stopped
+ * on and the unit it asked for, in row order, each (row, unit) once. The
+ * engine writes both on every `measure_missing`, so the block can say «3-qator:
+ * soni (dona)» about a row that has its weight, instead of «qatorda soni yoki
+ * og‘irligi yo‘q» — which told the seller to send a figure the row already has.
+ */
+export function measureMissesOf(e: Pick<CustomsEstimate, 'groups'>): MeasureMiss[] {
+  const out = new Map<string, MeasureMiss>();
+  for (const g of e.groups.values()) {
+    if (g.kind !== 'refused' || g.customs.reason !== 'measure_missing') continue;
+    const { itemSeq, unit } = g.customs;
+    if (itemSeq === undefined || unit === undefined) continue;
+    const need = needUnitOf(unit);
+    out.set(`${itemSeq}|${need}`, { seq: itemSeq, unit: need });
+  }
+  return [...out.values()].sort((a, b) => a.seq - b.seq);
+}
 
 /**
  * `refused_measure` as its reader is told it: the seller's fact, so the tail
@@ -280,9 +314,13 @@ const REFUSED_MEASURE = '⚠️ qatorda soni yoki og‘irligi yo‘q';
  * (`noAsk`: the plain door, docs/IKKI-ESHIK.md §3.5) the VED does; otherwise
  * — the AI door since docs/AI-SORAYDI.md §3.4 A1, and a request from before
  * the doors (§0.2) — the seller is sent to the customer, exactly as before.
+ * WHAT is missing is the refusing rows' own (`misses`, A9): «⚠️ 3-qator:
+ * soni (dona)»; none named, the fixed sentence.
  */
-export function refusedMeasureWords(audience: ReplyAudience, noAsk: boolean): string {
-  return `${REFUSED_MEASURE} ${tailWords(CUSTOMS_TAIL_WORDS, 'seller', audience, noAsk)}`;
+export function refusedMeasureWords(audience: ReplyAudience, noAsk: boolean, misses: readonly MeasureMiss[]): string {
+  const named = misses.slice(0, MISSES_NAMED).map((m) => `${m.seq}-qator: ${needWhatUz(m.unit)}`);
+  const what = named.length > 0 ? `⚠️ ${named.join('; ')}${misses.length > MISSES_NAMED ? ' …' : ''}` : REFUSED_MEASURE;
+  return `${what} ${tailWords(CUSTOMS_TAIL_WORDS, 'seller', audience, noAsk)}`;
 }
 
 /** The sentence after «Taxminiy: hisoblab bo‘lmadi — » (§2.2), naming whose job it is. */
@@ -296,7 +334,8 @@ export const TAXMINIY_BLOCK_WORDS: Record<
 } = {
   ungrouped: 'kodsiz qator bor (VED kod qo‘yadi)',
   // A request from before the doors — today's words, from the one tail rule.
-  refused_measure: { chat: refusedMeasureWords('chat', false), lenta: refusedMeasureWords('lenta', false) },
+  // Named by no row: the pass names the refusing rows' own figure (A9).
+  refused_measure: { chat: refusedMeasureWords('chat', false, []), lenta: refusedMeasureWords('lenta', false, []) },
   budget: 'vaqt yetmadi, statistika o‘qilmadi',
   refused: '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
 };

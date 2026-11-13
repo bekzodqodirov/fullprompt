@@ -27,12 +27,13 @@ import {
 } from './ai-reply';
 import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
-import { blockerText, feeRefusalText, tariffReplyText } from './prefill-reply';
+import { feeRefusalText, refusalUnder, tariffReplyText } from './prefill-reply';
 import { pickImportRows, type PickOutcome, type PickRequest } from './prefill-ai';
 import { freightAnswerFor } from './freight-answer';
 import { applyMemory, pickBazas } from './prefill-steps';
 import {
   TAXMINIY_BLOCK_WORDS,
+  measureMissesOf,
   refusedMeasureWords,
   declarationCounts,
   estimateCustoms,
@@ -474,7 +475,14 @@ export async function aiPrefill(
   //    row) and 0094's import fill runs inside its save. The chain rides
   //    in: the claim is taken only at its revision and every write after it
   //    compares (review P1-R2), so nothing here is adopted.
-  if (configured && standing() && !late('step 1') && (await stillOurs('step 1'))) {
+  /**
+   * One grouping call, as the pass reads its outcome: `ok`, `stood` (a
+   * person or a close — the machine writes nothing more), `failed` (the
+   * model did not answer, or answered for only some batches — worth ONE more
+   * try), or `unconfigured` (no key behind the model, a fact about the
+   * server that a second call cannot change).
+   */
+  const groupOnce = async (step: string): Promise<'ok' | 'stood' | 'failed' | 'unconfigured' | 'other'> => {
     try {
       const out = await propose(requestId, ctx, rev === null ? {} : { expectRev: rev, handsOff: true });
       codesStamped += out.codesStamped;
@@ -489,6 +497,9 @@ export async function aiPrefill(
       // No chain went in: none comes out, and nothing is adopted — a fresh
       // read here would start a chain at whatever a person last saved.
       rev = out.rev ?? rev;
+      // Some batches went unanswered: their rows are still uncoded, and only
+      // the uncoded are asked again (`proposeGroups` codes nobody twice).
+      return out.failed > 0 ? 'failed' : 'ok';
     } catch (err) {
       // A person working here, or a close, stands the machine down. Anything
       // else — a model that refused, a key that expired — is not fatal, and
@@ -496,10 +507,37 @@ export async function aiPrefill(
       // clock here would adopt a person's save that landed while the call
       // was failing. The cost, stated: a grouping that committed its groups
       // and then failed in its tail now stops the sweep too (`conflict`).
-      if (isOvertaken(err)) overtakenAt('step 1');
-      else if (isClosed(err)) closedAt('step 1');
-      else logger.warn({ err, requestId }, '[calc-prefill] propose failed');
+      if (isOvertaken(err)) overtakenAt(step);
+      else if (isClosed(err)) closedAt(step);
+      else logger.warn({ err, requestId, step }, '[calc-prefill] propose failed');
+      if (!standing()) return 'stood';
+      // Nothing for the model to have answered — not its failure (a request
+      // with no rows; a group a person ✅'d meanwhile, which the clock below
+      // sees on the next step).
+      if (err instanceof CalcError && (err.code === 'no_items' || err.code === 'groups_confirmed')) return 'other';
+      if (err instanceof CalcError && err.code === 'ai_not_configured') return 'unconfigured';
+      return 'failed';
     }
+  };
+  /**
+   * Did the coding call fail — the model gave no answer for some rows, even
+   * after its ONE retry (docs/AI-SORAYDI.md §3.4 A6, PA-4)? The reply then
+   * says so (`CODING_FAILED_LINE`) instead of «Kod topilmadi» about a jacket
+   * the model never looked at, and asks the seller nothing about what the
+   * rows are: the request is the VED's to code.
+   */
+  let proposeFailed = false;
+  if (configured && standing() && !late('step 1') && (await stillOurs('step 1'))) {
+    let called = await groupOnce('step 1');
+    // ONE retry, inside the pass, and only while its clock allows: past the
+    // deadline, or once a person or a close has spoken, the first failure
+    // stands — a pass that outlives its pg-boss expiry is re-delivered
+    // beside itself (perf-3).
+    if (called === 'failed' && standing() && !late('step 1 retry') && (await stillOurs('step 1 retry'))) {
+      logger.info({ requestId }, '[calc-prefill] the grouping call failed — asked once more');
+      called = await groupOnce('step 1 retry');
+    }
+    proposeFailed = called === 'failed' || called === 'unconfigured';
   }
 
   // 2. …and with or without a model: the SWEEP. Intake prefills codes from
@@ -647,7 +685,14 @@ export async function aiPrefill(
    * stored request (calc-amend.ts), so the table prefers the rows this answer
    * asked. Null on every other door, which keeps `asks`.
    */
-  const sellerAsks: SellerAsk[] | null = aiDoor && asksInput ? sellerAsksOf(asksInput) : null;
+  // A coding call that did not answer leaves its rows the VED's to code (A6):
+  // the seller is not asked «bu nima?» about a jacket the model never looked
+  // at. The add door's asked rows are the FIGURE asks (`askedSeqsOf`), which
+  // a words-only ask never was, so both still read one list.
+  const sellerAsks: SellerAsk[] | null =
+    aiDoor && asksInput
+      ? sellerAsksOf(asksInput).filter((a) => !(proposeFailed && a.kind === 'what'))
+      : null;
   const pickShown =
     pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft;
   const outcome = {
@@ -683,7 +728,8 @@ export async function aiPrefill(
         amend: amend !== null,
       }),
       groups: noteGroups(ws, lines),
-      ungrouped: ws.ungrouped.map((i) => i.label),
+      ungrouped: ws.ungrouped.map((i) => ({ seq: i.seq, name: i.label })),
+      proposeFailed,
       // His 2.7: the plain door never asks a law unit — the rows the law
       // still wants a figure for are named for the VED.
       asks: asks ?? [],
@@ -712,7 +758,8 @@ export async function aiPrefill(
       clientLabel: about?.clientCode ?? null,
       cardLabel: about?.cardLabel ?? null,
       lines,
-      ungrouped: ws.ungrouped.map((i) => i.label),
+      ungrouped: ws.ungrouped.map((i) => ({ seq: i.seq, name: i.label })),
+      proposeFailed,
       fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
       totalUsd: customsUsd,
       feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
@@ -872,10 +919,12 @@ async function roadOf(ws: Workspace): Promise<AiVedFreight | null> {
  * the reader's words where they differ: a missing count is the seller's to
  * send with «➕» in the chat, and the lenta's reader writes it on the card.
  */
-function blockWords(block: CustomsEstimate['taxminiyBlock'], audience: 'chat' | 'lenta', noAsk: boolean): string | null {
+function blockWords(e: CustomsEstimate, audience: 'chat' | 'lenta', noAsk: boolean): string | null {
+  const block = e.taxminiyBlock;
   if (block === null) return null;
-  // The seller's fact, addressed by the one tail rule (a door request: the VED asks him, §3.5).
-  if (block === 'refused_measure') return refusedMeasureWords(audience, noAsk);
+  // The seller's fact, addressed by the one tail rule (a door request: the VED
+  // asks him, §3.5) — and named by the refusing rows' own figure (A9).
+  if (block === 'refused_measure') return refusedMeasureWords(audience, noAsk, measureMissesOf(e));
   if (block === 'ungrouped' || block === 'budget' || block === 'refused') {
     return TAXMINIY_BLOCK_WORDS[block];
   }
@@ -893,7 +942,7 @@ function totalsWords(e: CustomsEstimate, audience: 'chat' | 'lenta', noAsk: bool
     taxminiyFee: e.taxminiy
       ? { bhm: e.taxminiy.fee.overridden ? null : e.taxminiy.fee.bhmCoefficient, usd: e.taxminiy.fee.feeUsd }
       : null,
-    taxminiyBlock: blockWords(e.taxminiyBlock, audience, noAsk),
+    taxminiyBlock: blockWords(e, audience, noAsk),
   };
 }
 
@@ -973,7 +1022,11 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
     // The refusal the reply prints is the SHADOW's whenever an estimate was
     // attempted for the group (§2.1): what still blocks even the estimate.
     const refused = g.customs.ok ? null : ge?.kind === 'refused' ? ge.customs : g.customs;
+    // The rows' own numbers — what the line opens with and what every answer
+    // to it is addressed by (A3).
+    const seqs = [...new Set(g.items.map((i) => i.seq))].sort((a, b) => a - b);
     return {
+      seqs,
       label: g.items.map((i) => i.label).join(', ') || g.label,
       code: g.tnvedCode,
       // The reading's model proposed it (§3.1) — the table's «(AI taklifi)».
@@ -987,27 +1040,32 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
       exciseText: exciseWords(g),
       vatPct: g.vatFree ? 0 : g.vatPct,
       customsUsd: g.customs.ok ? g.customs.customsUsd : null,
-      // Already words — `blockerText` owns the engine's whole vocabulary and
-      // a second map here would drift from it (#513). The WHOLE detail rides
-      // along (P2.9): the row, the unit and the half.
+      // Already words — prefill-reply.ts owns the engine's whole vocabulary
+      // and a second map here would drift from it (#513). The WHOLE detail
+      // rides along (P2.9): the row, the unit and the half — said as the
+      // line it stands under reads it, the line's own rows and name not
+      // a second time (A3, A9).
       refusal: refused
-        ? blockerText({
-            kind: 'customs',
-            groupSeq: g.seq,
-            groupLabel: g.label,
-            reason: refused.reason,
-            itemLabel: refused.itemLabel,
-            itemSeq: refused.itemSeq,
-            unit: refused.unit,
-            half: refused.half,
-            rate: refused.rate,
-          })
+        ? refusalUnder(
+            {
+              kind: 'customs',
+              groupSeq: g.seq,
+              groupLabel: g.label,
+              reason: refused.reason,
+              itemLabel: refused.itemLabel,
+              itemSeq: refused.itemSeq,
+              unit: refused.unit,
+              half: refused.half,
+              rate: refused.rate,
+            },
+            { seqs },
+          )
         : null,
       // Who can fix the refusal (§0.1(7)): a missing count or weight is a
       // fact only the customer has — the same split the Taxminiy block makes
       // (`refused_measure`), or one reply names two fixers for one fact.
       refusalTail: refused?.reason === 'measure_missing' ? 'seller' : 'ved',
-      estimated: estimateLine(ge),
+      estimated: estimateLine(ge, seqs),
       // ⭐ of his Question 4: a weight copied from the shipment's BRUTTO
       // total is said beside the measure, on every row whose measure is
       // PRINTED — a row with its own baza (§6.7), which a REFUSED group still
@@ -1048,8 +1106,12 @@ function weightMark(g: Workspace['groups'][number], ge: GroupEstimate | null): A
   );
 }
 
-/** A group's 📊 line, or the words for why its rows got none. */
-function estimateLine(ge: GroupEstimate | null): AiVedLineEstimate | null {
+/**
+ * A group's 📊 line, or the words for why its rows got none — each row by
+ * its number, except under a line that opens with that row alone (A3: the
+ * line already says «1.»).
+ */
+function estimateLine(ge: GroupEstimate | null, seqs: readonly number[]): AiVedLineEstimate | null {
   if (ge?.kind === 'estimated') {
     return {
       priced: true,
@@ -1060,7 +1122,11 @@ function estimateLine(ge: GroupEstimate | null): AiVedLineEstimate | null {
     };
   }
   if (ge?.kind === 'refused' && ge.misses.length > 0) {
-    return { priced: false, misses: ge.misses.map((m) => `${m.seq}-qator — ${missWords(m.miss, m.n)}`) };
+    const sole = seqs.length === 1 ? seqs[0] : null;
+    return {
+      priced: false,
+      misses: ge.misses.map((m) => (m.seq === sole ? missWords(m.miss, m.n) : `${m.seq}-qator — ${missWords(m.miss, m.n)}`)),
+    };
   }
   return null;
 }

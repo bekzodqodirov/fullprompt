@@ -487,12 +487,12 @@ describe('R2 late pass — a miss says what the file has', () => {
  */
 describe('refused_measure by door (§3.5)', () => {
   it('nobody asks the seller: «— VED xodimi sizdan so‘raydi» in the chat, «— VED xodimi so‘raydi» on the lenta', () => {
-    expect(refusedMeasureWords('chat', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi sizdan so‘raydi');
-    expect(refusedMeasureWords('lenta', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi so‘raydi');
+    expect(refusedMeasureWords('chat', true, [])).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi sizdan so‘raydi');
+    expect(refusedMeasureWords('lenta', true, [])).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi so‘raydi');
   });
 
   it('the AI door’s answer and a request from before the doors: exactly today’s words (A1)', () => {
-    expect(refusedMeasureWords('chat', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.chat);
-    expect(refusedMeasureWords('lenta', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.lenta);
+    expect(refusedMeasureWords('chat', false, [])).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.chat);
+    expect(refusedMeasureWords('lenta', false, [])).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.lenta);
   });
 });

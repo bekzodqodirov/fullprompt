@@ -478,6 +478,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     cardLabel: 'B-000067',
     lines: [
       {
+        seqs: [1], // the line opens with its row's own number (docs/AI-SORAYDI.md §3.4 A3)
         label: 'Monitor 24"',
         code: '8528520000',
         aiCode: false,
@@ -496,6 +497,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
       },
     ],
     ungrouped: [],
+    proposeFailed: false, // the coding call answered (A6)
     fee: { bhm: 5, usd: 164.8 },
     totalUsd: 661.76,
     feeRefusal: null,
@@ -523,6 +525,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     ...aiInput,
     lines: [
       {
+        seqs: [1],
         label: 'Kurtka',
         code: '6201400000',
         aiCode: false,

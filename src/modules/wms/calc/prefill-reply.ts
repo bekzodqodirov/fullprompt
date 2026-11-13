@@ -135,6 +135,40 @@ export function blockerText(b: SealBlocker): string {
   }
 }
 
+/** A customs refusal, as `blockerText` is handed it. */
+export type CustomsBlocker = Extract<SealBlocker, { kind: 'customs' }>;
+
+/**
+ * A group's customs refusal as it reads UNDER its own line in the answer
+ * (docs/AI-SORAYDI.md §3.4 A3, A9) — the line already opens with the group's
+ * rows and names them, so the refusal says the missing figure and nothing a
+ * second time (PA-11: «2. Куртка мужская зимняя · … / ⚠️ Куртка мужская
+ * зимняя: 2-qator «Куртка мужская зимняя»: soni (dona) kiritilmagan» named
+ * the row three times):
+ *  - the GROUP's label never: the line IS the group, under its rows' names —
+ *    the model's own word for it, or on a swept group its code («⚠️ 6403:
+ *    baza yo‘q»), is the same line under a second name;
+ *  - the ROW by its number and name only where the line holds more rows than
+ *    that one («⚠️ 2-qator «Чашки»: soni (dona) kiritilmagan»), and in the
+ *    one numbering the whole answer uses (A3) — a «3-qator» under a line
+ *    that opens «3.» is dropped.
+ * `blockerText` keeps the full sentence for a refusal said on no line.
+ */
+export function refusalUnder(b: CustomsBlocker, line: { seqs: readonly number[] }): string {
+  const rows = new Set(line.seqs);
+  // The line opens with this row and no other: the head already names it.
+  const itsOwn = b.itemSeq !== undefined && rows.size === 1 && rows.has(b.itemSeq);
+  const row = itsOwn
+    ? ''
+    : [b.itemSeq !== undefined ? `${b.itemSeq}-qator` : '', b.itemLabel ? `«${b.itemLabel}»` : ''].filter(Boolean).join(' ');
+  if (b.reason === 'measure_missing' && b.unit && b.half) {
+    const need = needPhraseUz({ unit: needUnitOf(b.unit as BazaBasis | DutyUnit), why: b.half, rate: b.rate ?? null });
+    return row ? `${row}: ${need}` : need;
+  }
+  const reason = CUSTOMS_REASON[b.reason as CustomsRefusal] ?? b.reason;
+  return row ? `${reason} — ${row}` : reason;
+}
+
 /**
  * A yolkira job's answer (his 2.5 b, 2026-10-21): «yo'lkira so'rovi bo'lsa,
  * tarif bo'yicha darhol javob bersin» — straight from the tariff table, with

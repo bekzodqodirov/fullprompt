@@ -129,6 +129,9 @@ export function noteGroups(ws: Workspace, lines: readonly AiVedLine[]): AiNoteGr
       else if (i.bazaSource !== null) bazas[i.bazaSource] = (bazas[i.bazaSource] ?? 0) + 1;
     }
     return {
+      // The line's own row numbers (docs/AI-SORAYDI.md §3.4 A3) — the note's
+      // group line opens with them, as the AI answer's does.
+      seqs: line.seqs,
       label: line.label,
       code: line.code,
       aiCode: line.aiCode,

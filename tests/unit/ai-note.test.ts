@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CODE_SOURCE_WORDS, aiNoteText, type AiNoteGroup, type AiNoteInput } from '@/modules/wms/calc/ai-note';
+import { CODING_FAILED_LINE } from '@/modules/wms/calc/ai-reply';
 import { AI_CODE_NOTE } from '@/modules/wms/calc/code-source';
 import { AI_NOTE_HEAD, AI_REPLY_HEAD, MACHINE_REPLY_HEADS, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
 
@@ -11,6 +12,9 @@ import { AI_NOTE_HEAD, AI_REPLY_HEAD, MACHINE_REPLY_HEADS, VED_ESTIMATE_MARK } f
  * literal is typed from the spec.
  */
 const group = (over: Partial<AiNoteGroup> = {}): AiNoteGroup => ({
+  // Row 1 unless a case numbers it — the group line opens with its rows' own
+  // numbers (docs/AI-SORAYDI.md §3.4 A3).
+  seqs: [1],
   label: 'Сумка женская',
   code: '4202929800',
   aiCode: false,
@@ -41,6 +45,9 @@ const base: AiNoteInput = {
   groups: [
     group(),
     group({
+      // Row 2 of `rows`, alone in its group: its refusal, said under its own
+      // line, names no row and no group a second time (A3, A9 — `refusalUnder`).
+      seqs: [2],
       label: 'Kurtka',
       code: '6201930000',
       aiCode: true,
@@ -48,11 +55,12 @@ const base: AiNoteInput = {
       rates: 'typed',
       bazas: {},
       bazaless: 1,
-      refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona',
+      refusal: 'soni (dona) kiritilmagan — boj kamida $3/dona',
       refusalTail: 'seller',
     }),
   ],
-  ungrouped: ['Kepka'],
+  ungrouped: [{ seq: 4, name: 'Kepka' }],
+  proposeFailed: false,
   asks: [],
   freight: null,
   feeRefusal: null,
@@ -95,9 +103,10 @@ describe('the plain door’s note (§2.4)', () => {
     expect(note).toContain('1. Сумка женская · 4202929800 · boj 10% · QQS 12% · stavka 📖 lug‘atdan · baza: 1 ta 📥 bojxona faylidan (taxmin)');
     expect(note).toContain(
       '2. Kurtka · 6201930000 (AI taklifi) · boj 20% / min 3 $/dona · QQS 12% · stavka qo‘lda · baza: 1 ta bazasiz — VED to‘ldiradi\n' +
-        '   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — VED xodimi so‘raydi',
+        '   ⚠️ soni (dona) kiritilmagan — boj kamida $3/dona — VED xodimi so‘raydi',
     );
-    expect(note).toContain('⚠️ Kod topilmadi: Kepka — VED xodimi qo‘yadi');
+    // Re-anchored for A3: the uncoded row by its own number, as «Kodlar:» lists it.
+    expect(note).toContain('⚠️ Kod topilmadi: 4-qator «Kepka» — VED xodimi qo‘yadi');
   });
 
   it('carries NO money — no customs figure, no Aniq/Taxminiy, no road, no JAMI (his 3a)', () => {
@@ -159,20 +168,22 @@ describe('the plain door’s note (§2.4)', () => {
       code: k < 10 ? '4202929800' : k < 20 ? '6201930000' : '6403990000',
       source: 'row' as const,
     }));
+    // Rows 1-10, 11-20 and 21-30, one group each (A3: the line opens with the run).
+    const run = (from: number) => Array.from({ length: 10 }, (_, k) => from + k);
     const groups = [
-      group({ label: 'Sumka', bazas: {}, bazaless: 10, refusal: 'Sumka: baza yo‘q — Tovar 1', refusalTail: 'ved' }),
-      group({ label: 'Kurtka', code: '6201930000' }),
-      group({ label: 'Krossovka', code: '6403990000', rates: 'typed' }),
+      group({ seqs: run(1), label: 'Sumka', bazas: {}, bazaless: 10, refusal: 'baza yo‘q — 1-qator «Tovar 1»', refusalTail: 'ved' }),
+      group({ seqs: run(11), label: 'Kurtka', code: '6201930000' }),
+      group({ seqs: run(21), label: 'Krossovka', code: '6403990000', rates: 'typed' }),
     ];
     const note = aiNoteText({ ...base, rows, groups, ungrouped: [] });
     // The groups come first — the law, the rate source, the bazas and the
     // refusal are what the VED reads the note for.
     expect(note).toContain(
-      '1. Sumka · 4202929800 · boj 10% · QQS 12% · stavka 📖 lug‘atdan · baza: 10 ta bazasiz — VED to‘ldiradi\n' +
-        '   ⚠️ Sumka: baza yo‘q — Tovar 1 — VED xodimi qo‘yadi',
+      '1-10. Sumka · 4202929800 · boj 10% · QQS 12% · stavka 📖 lug‘atdan · baza: 10 ta bazasiz — VED to‘ldiradi\n' +
+        '   ⚠️ baza yo‘q — 1-qator «Tovar 1» — VED xodimi qo‘yadi',
     );
-    expect(note).toContain('2. Kurtka · 6201930000');
-    expect(note).toContain('3. Krossovka · 6403990000 · boj 10% · QQS 12% · stavka qo‘lda');
+    expect(note).toContain('11-20. Kurtka · 6201930000');
+    expect(note).toContain('21-30. Krossovka · 6403990000 · boj 10% · QQS 12% · stavka qo‘lda');
     expect(note.indexOf('Guruhlar:')).toBeLessThan(note.indexOf('Kodlar:'));
     // The rows' codes keep their own cap and count only themselves.
     expect(note).toContain('· 25-qator «Tovar 25» — 6403990000');
@@ -183,7 +194,7 @@ describe('the plain door’s note (§2.4)', () => {
 
   it('past the cap a hidden group’s refusal is counted, never dropped in silence', () => {
     const groups = Array.from({ length: 28 }, (_, k) =>
-      group({ label: `Guruh ${k + 1}`, ...(k >= 25 && k !== 26 ? { refusal: `Guruh ${k + 1}: baza yo‘q` } : {}) }),
+      group({ seqs: [k + 1], label: `Guruh ${k + 1}`, ...(k >= 25 && k !== 26 ? { refusal: `Guruh ${k + 1}: baza yo‘q` } : {}) }),
     );
     const note = aiNoteText({ ...base, rows: [], groups, ungrouped: [] });
     expect(note).toContain('25. Guruh 25 ·');
@@ -198,5 +209,34 @@ describe('the plain door’s note (§2.4)', () => {
 
   it('the item note the mark is read from is the one constant (§3.1)', () => {
     expect(AI_CODE_NOTE).toBe('TNVED: AI taklifi (o‘qishda) — tekshiring');
+  });
+});
+
+/**
+ * The note numbers its groups the way the AI answer does (docs/AI-SORAYDI.md
+ * §3.4 A3): by their rows' own `seq`, the number the VED's screen and the
+ * «Kodlar:» list beside it print — and a coding call that did not answer is
+ * said as that (A6, review JS-15), never «Kod topilmadi».
+ */
+describe('the note in one numbering, and a failed coding call (A3, A6)', () => {
+  it('groups open with their rows’ numbers, in row order whatever order they come in', () => {
+    const note = aiNoteText({
+      ...base,
+      rows: [],
+      ungrouped: [],
+      groups: [group({ seqs: [3, 5], label: 'Sumka, Hamyon' }), group({ seqs: [1, 2], label: 'Kurtka, Shim' })],
+    });
+    const heads = note.split('\n').filter((l) => /^[\d, -]+\. /.test(l));
+    expect(heads.map((l) => l.split(' · ')[0])).toEqual(['1-2. Kurtka, Shim', '3, 5. Sumka, Hamyon']);
+  });
+
+  it('the coding call did not answer: the ruling’s sentence instead of «Kod topilmadi»', () => {
+    const note = aiNoteText({ ...base, proposeFailed: true });
+    expect(note).toContain(CODING_FAILED_LINE);
+    expect(note).not.toContain('Kod topilmadi');
+    // The row is still listed in «Kodlar:» — what is uncoded stays named.
+    expect(note).toContain('· 4-qator «Kepka» — kod yo‘q');
+    // Nothing uncoded, nothing to say about a code.
+    expect(aiNoteText({ ...base, ungrouped: [], proposeFailed: true })).not.toContain(CODING_FAILED_LINE);
   });
 });

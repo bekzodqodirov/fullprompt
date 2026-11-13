@@ -1,6 +1,8 @@
 import {
   AI_CODE_MARK,
+  CODING_FAILED_LINE,
   fitTelegram,
+  lineNumber,
   MAX_REPLY_LINES,
   NO_GOODS_CUSTOMS,
   TELEGRAM_LIMIT,
@@ -10,6 +12,7 @@ import {
   vedGapsLine,
   type AiVedFreight,
   type PickLeft,
+  type UncodedRow,
 } from './ai-reply';
 import type { LawAsk } from './law-asks';
 import type { BazaSource } from './pricing';
@@ -73,6 +76,9 @@ export interface AiNoteRow {
 }
 
 export interface AiNoteGroup {
+  /** Its rows by their own `seq` — the number the group line opens with, as
+   * the AI answer's does (docs/AI-SORAYDI.md §3.4 A3). REQUIRED (#790). */
+  seqs: number[];
   label: string;
   code: string | null;
   /** The code carries `AI_CODE_NOTE` on one of its rows. */
@@ -98,8 +104,12 @@ export interface AiNoteInput {
   pass: 'landing' | 'amend';
   rows: AiNoteRow[];
   groups: AiNoteGroup[];
-  /** Rows nobody coded, by name. */
-  ungrouped: string[];
+  /** Rows nobody coded, by their number and name (A3). */
+  ungrouped: UncodedRow[];
+  /** The pass's coding call did not answer, even after its retry (A6) — said
+   * so, never «Kod topilmadi» about rows the model never looked at.
+   * REQUIRED (#790). */
+  proposeFailed: boolean;
   /** The figures the LAW still wants (`lawAsksOf`) — the VED's to get. */
   asks: LawAsk[];
   /**
@@ -136,9 +146,9 @@ function bazaWords(g: AiNoteGroup): string {
   return parts.length === 0 ? '' : ` · baza: ${parts.join(', ')}`;
 }
 
-function groupLine(g: AiNoteGroup, index: number): string {
+function groupLine(g: AiNoteGroup): string {
   const head =
-    `${index + 1}. ${shortName(g.label)}` +
+    `${lineNumber(g.seqs)} ${shortName(g.label)}` +
     (g.code ? ` · ${g.code}${g.aiCode ? ` ${AI_CODE_MARK}` : ''}` : '') +
     ` · ${lawParts(g)}` +
     (g.rates ? ` · ${RATE_WORDS[g.rates]}` : ' · stavka yo‘q') +
@@ -163,8 +173,15 @@ export function aiNoteText(input: AiNoteInput): string {
   // No goods on the request (docs/FAYL-OQISH.md §1.3 c, zero-03): said to the
   // VED in words — a note of no groups and no rows said nothing at all.
   if (input.groups.length === 0 && input.rows.length === 0 && input.ungrouped.length === 0) fixed.push(NO_GOODS_CUSTOMS);
-  if (input.ungrouped.length > 0) {
-    const names = input.ungrouped.slice(0, 5).map(shortName).join(', ');
+  // The uncoded rows by their own numbers (A3), as «Kodlar:» lists them —
+  // or, when the coding call did not answer, that (A6): «Kod topilmadi» about
+  // a jacket the model never looked at sends the VED hunting a rare code.
+  if (input.ungrouped.length > 0 && input.proposeFailed) fixed.push(CODING_FAILED_LINE);
+  else if (input.ungrouped.length > 0) {
+    const names = input.ungrouped
+      .slice(0, 5)
+      .map((r) => `${r.seq}-qator «${shortName(r.name)}»`)
+      .join(', ');
     const more = input.ungrouped.length > 5 ? ` … (+${input.ungrouped.length - 5})` : '';
     fixed.push(`⚠️ Kod topilmadi: ${names}${more} — VED xodimi qo‘yadi`);
   }
@@ -194,7 +211,11 @@ export function aiNoteText(input: AiNoteInput): string {
  * dropped in silence. To fit Telegram the rows shrink first, then the groups;
  * the head, the fixed lines and the tail are never cut (fitTelegram's rule).
  */
-function fitNote(head: string[], groups: AiNoteGroup[], rows: AiNoteRow[], fixed: string[], tail: string[]): string {
+function fitNote(head: string[], unsorted: AiNoteGroup[], rows: AiNoteRow[], fixed: string[], tail: string[]): string {
+  // In row order, by the first row each group holds (A3) — the order the
+  // «Kodlar:» list and the VED's screen are in. The sort is stable.
+  const first = (g: AiNoteGroup) => (g.seqs.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...g.seqs));
+  const groups = [...unsorted].sort((a, b) => first(a) - first(b));
   const groupLines = groups.map(groupLine);
   const rowLines = rows.map(rowLine);
   const body = (g: number, r: number): string[] => {

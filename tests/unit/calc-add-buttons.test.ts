@@ -70,6 +70,7 @@ describe('the ➕ on a CalcPrefilled message', () => {
 });
 
 const line = (k: number): AiVedLine => ({
+  seqs: [k], // row k: the line opens «k.» (docs/AI-SORAYDI.md §3.4 A3)
   label: `Uzun nomli tovar ${k} — ${'x'.repeat(120)}`,
   code: '8528520000',
   aiCode: false,
@@ -97,6 +98,7 @@ const base: AiVedReplyInput = {
   cardLabel: 'B-000067',
   lines: Array.from({ length: 40 }, (_, k) => line(k + 1)),
   ungrouped: [],
+  proposeFailed: false,
   fee: { bhm: 5, usd: 164.8 },
   totalUsd: 4980,
   feeRefusal: null,
