@@ -192,8 +192,23 @@ function TabRow({
 
   // Bring the lit tab into view on a phone: a narrow screen shows three or
   // four of a workspace's pages, and the one you are on may be the ninth.
+  //
+  // The ROW's own sideways scroll and nothing else. `scrollIntoView` moves
+  // every scrollable ancestor, the WINDOW included: a page opened at an
+  // anchor (`/receipts/<id>#bitim`, `#lot-…`, `#ichki`) was pulled back up to
+  // this strip a frame after the browser had landed on it — measured at 1280
+  // on a prixod card, scrollY 322 → 63. On a desktop the row is
+  // `md:overflow-hidden` and the fold's re-render puts it back at its start,
+  // so the window's jump was the only thing that call left visible there.
+  // Fenced by `tests/unit/anchor-landing.test.ts`.
   useEffect(() => {
-    row.current?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const el = row.current;
+    const lit = el?.querySelector('[aria-current]');
+    if (!el || !lit) return;
+    const box = el.getBoundingClientRect();
+    const tab = lit.getBoundingClientRect();
+    if (tab.left < box.left) el.scrollLeft -= box.left - tab.left;
+    else if (tab.right > box.right) el.scrollLeft += tab.right - box.right;
   }, [active]);
 
   let shown = tabs;

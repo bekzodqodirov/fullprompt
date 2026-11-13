@@ -92,40 +92,59 @@ export const STAFF_MODEL = 'claude-sonnet-5';
 
 /**
  * What a model call costs, in dollars per MILLION tokens — the provider's
- * LIST prices for the two models above, read from its API reference
- * (2026-11-03). Keyed by the constants, so a model change moves its price
- * with it or — when the new model has no entry — the screens print calls and
- * no dollars: `approxMicroUsd` answers null rather than guess.
+ * LIST prices for the two models above, read from its published pricing
+ * page (input and output 2026-11-03; the two cache rates 2026-11-11). Keyed
+ * by the constants, so a model change moves its price with it or — when the
+ * new model has no entry — the screens print calls and no dollars:
+ * `approxMicroUsd` answers null rather than guess.
+ *
+ * FOUR rates since the evening summary began to price every ledger
+ * (docs/PRIXOD-XABARI.md §B): the AI sotuvchi and the assistant send cache
+ * breakpoints, and a run's cached tokens are most of its context. `cacheRead`
+ * is a cache hit (0.1× the base input price on both models); `cacheWrite` is
+ * the FIVE-MINUTE write (1.25×) — the only duration this file writes
+ * (`cache_control: { type: 'ephemeral' }`, below). A one-hour write costs 2×
+ * and would need its own rate the day somebody sends one.
  *
  * An APPROXIMATION and printed as one («≈»): list prices of ANSWERED calls
  * only. Not in it: an attempt the SDK retried, a call that timed out after
  * the provider had already worked on it, and any discount on the account.
- * None of the pressed calls billed with it sends a cache breakpoint, so the
- * two token counts are a call's whole bill.
  */
-export const MODEL_USD_PER_MTOK: Readonly<Record<string, { input: number; output: number }>> = {
-  [ANALYST_MODEL]: { input: 5, output: 25 },
-  [STAFF_MODEL]: { input: 2, output: 10 },
+export const MODEL_USD_PER_MTOK: Readonly<
+  Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }>
+> = {
+  [ANALYST_MODEL]: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  [STAFF_MODEL]: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
 };
 
 export interface ModelTokens {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** Tokens read from the prompt cache; absent = none (a call with no breakpoint). */
+  cacheReadTokens?: number;
+  /** Tokens written to the five-minute prompt cache; absent = none. */
+  cacheWriteTokens?: number;
 }
 
 /**
  * Token counts → millionths of a dollar. Dollars per million tokens IS
- * micro-dollars per token, so the sum stays in integers until it is shown.
+ * micro-dollars per token, so the sum stays exact until it is shown.
  * Null as soon as a row that spent tokens names a model with no price.
  */
 export function approxMicroUsd(rows: readonly ModelTokens[]): number | null {
   let micro = 0;
   for (const row of rows) {
-    if (row.inputTokens === 0 && row.outputTokens === 0) continue;
+    const cacheRead = row.cacheReadTokens ?? 0;
+    const cacheWrite = row.cacheWriteTokens ?? 0;
+    if (row.inputTokens === 0 && row.outputTokens === 0 && cacheRead === 0 && cacheWrite === 0) continue;
     const price = MODEL_USD_PER_MTOK[row.model];
     if (!price) return null;
-    micro += row.inputTokens * price.input + row.outputTokens * price.output;
+    micro +=
+      row.inputTokens * price.input +
+      row.outputTokens * price.output +
+      cacheRead * price.cacheRead +
+      cacheWrite * price.cacheWrite;
   }
   return Math.round(micro);
 }

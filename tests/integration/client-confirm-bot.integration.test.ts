@@ -259,8 +259,10 @@ describe('what the sweep sends', () => {
     const t = clientLabels('uz');
     expect(push.text).toContain(t.arrivedTitle);
     expect(push.text).toContain(`Клавиатура ${RUN}`);
-    // Named: what is being confirmed is the goods and the count — the lines above print kilos too.
-    expect(push.text.trimEnd().split('\n').at(-1)).toBe(t.confirmAskLine);
+    // Named: what is being confirmed — since 0146 the name, the count AND the kilos and cubic metres
+    // the lines above print (the owner's «og'irlik va hajmga urg'u berilsin»).
+    expect(push.text.trimEnd().split('\n').at(-1)).toBe(t.confirmAskLineFull);
+    expect(push.text).toMatch(/3 quti · 100 kg · 1 m³/);
     expect(push.rows).toHaveLength(3);
     expect(push.rows[0]![0]).toMatchObject({ web_app: { url: expect.stringContaining(`lot=${lot.P1}`) } });
     expect(push.rows[1]).toEqual([{ text: t.contactManager, callback_data: 'mg' }]);
@@ -286,6 +288,7 @@ describe('what the sweep sends', () => {
     const plain = (push: Sent) => {
       expect(push.rows).toHaveLength(2);
       expect(push.text).not.toContain(clientLabels('uz').confirmAskLine);
+      expect(push.text).not.toContain(clientLabels('uz').confirmAskLineFull);
     };
     await setSetting('client_confirm_on_receipt', false, null);
     await armReceived();
@@ -308,7 +311,7 @@ describe('what the sweep sends', () => {
     plain(push);
   });
 
-  it('the question never costs the PHOTOGRAPH: a caption the extra line would push past Telegram’s limit goes without it — the buttons carry the question', async () => {
+  it('a FULL question is never sent without its words: where the caption cannot carry the ask line the PHOTOGRAPH yields — the push goes as text, with the question and the buttons', async () => {
     // Eight lots, the first one photographed; names sized so the push fits a caption and the push PLUS the question does not.
     const n = 8;
     for (let i = 0; i < n; i += 1) {
@@ -345,7 +348,7 @@ describe('what the sweep sends', () => {
       const got = await receivedFacts(client.A, receipt.long);
       if ('skip' in got) throw new Error(got.skip);
       const summary = { ...got.summary, clientCode: `AB${RUN}` };
-      return { plain: visibleLength(receivedText(summary, 'uz')), asking: visibleLength(receivedText(summary, 'uz', { ask: true })) };
+      return { plain: visibleLength(receivedText(summary, 'uz')), asking: visibleLength(receivedText(summary, 'uz', { ask: 'full' })) };
     };
     let fit: { plain: number; asking: number } | null = null;
     for (let pad = 70; pad >= 0 && !fit; pad -= 1) {
@@ -358,15 +361,20 @@ describe('what the sweep sends', () => {
     const mark = h.mark();
     await sendDueArrivalNotices(SWEEP_AT);
     const push = sentSince(mark).filter((call) => call.chatId === CHAT_A)[0]!;
-    // Still a PHOTO — the question did not push it into a text message…
-    expect(push.method).toBe('sendPhoto');
-    expect(push.text).not.toContain(clientLabels('uz').confirmAskLine);
-    // …and the ✅ / ❌ are there all the same.
+    // Its ✅ will be recorded as «the weight and the volume too» (the FULL tag), so the client must
+    // have been ASKED that: the push is a text message, and its last line is the question (0146 —
+    // under 0144 the photograph stayed and the buttons carried the question alone).
+    expect(push.method).toBe('sendMessage');
+    expect(push.text.trimEnd().split('\n').at(-1)).toBe(clientLabels('uz').confirmAskLineFull);
     expect(push.rows).toHaveLength(3);
-    expect(parseConfirmCallback(String(push.rows[2]![0]!.callback_data))).toMatchObject({ receiptId: receipt.long, verdict: 'yes' });
+    expect(parseConfirmCallback(String(push.rows[2]![0]!.callback_data))).toMatchObject({
+      receiptId: receipt.long,
+      verdict: 'yes',
+      tag: await tagOf(receipt.long),
+    });
   });
 
-  it('«Mijozdan so‘rash»: the question lists every lot — a tarkib’s goods one per line with their pieces — in the chat’s language, no kilos, ✅ / ❌ under it', async () => {
+  it('«Mijozdan so‘rash»: the question lists every lot — its kilos and cubic metres on the lot’s line, a tarkib’s goods one per line with their pieces — in the chat’s language, ✅ / ❌ under it', async () => {
     expect(await askClientAboutReceipt(receipt.tarkib, logist(), ctx(), askFits)).toEqual({ lots: 1 });
     await dueNow(NOTICE_LOT_ASK, receipt.tarkib);
     const mark = h.mark();
@@ -377,10 +385,10 @@ describe('what the sweep sends', () => {
     const lines = ask.text.split('\n').filter((line) => line.trim() !== '');
     expect(lines[0]).toBe(t.confirmAskTitle);
     expect(lines[1]).toContain(`AB${RUN}`);
-    expect(lines.slice(2, 5)).toEqual([`📦 A — 2 quti`, `   • Мышь ${RUN} — 500 ${t.unitDona}`, `   • Коврик ${RUN}`]);
-    // The goods are listed with their pieces — so the question asks about the pieces too.
-    expect(lines).toContain(t.confirmAskLineGoods);
-    expect(ask.text).not.toMatch(/\bkg\b|m³/);
+    expect(lines.slice(2, 5)).toEqual([`📦 A — 2 quti · 100 kg · 1 m³`, `   • Мышь ${RUN} — 500 ${t.unitDona}`, `   • Коврик ${RUN}`]);
+    // The goods are listed with their pieces — so the question asks about the pieces too, and (0146)
+    // about the lot's weight and volume, which its own line prints.
+    expect(lines).toContain(t.confirmAskLineGoodsFull);
     const tag = await tagOf(receipt.tarkib);
     expect(ask.rows.at(-1)).toEqual([
       { text: t.confirmYes, callback_data: `yt:1:${receipt.tarkib}:${tag}` },
@@ -414,7 +422,7 @@ describe('a press', () => {
     const tag = await tagOf(receipt.plain);
     const got = await press(CHAT_A, `yt:1:${receipt.plain}:${tag}`, keyboard(receipt.plain, tag));
     expect(got.answers).toHaveLength(1);
-    expect(got.toast).toBe(clientLabels('uz').confirmThanks);
+    expect(got.toast).toBe(clientLabels('uz').confirmThanksFull);
     expect(got.texts).toEqual([]);
     expect(got.edits).toHaveLength(1);
     expect(got.edits[0]!.body).toMatchObject({ chat_id: CHAT_A, message_id: 4242 });
@@ -532,7 +540,7 @@ describe('a press', () => {
     const late = { error_code: 400, description: 'Bad Request: query is too old and response timeout expired or query ID is invalid' };
     h.failNext('answerCallbackQuery', late);
     const yes = await press(CHAT_A, `yt:1:${receipt.plain}:${tag}`, keyboard(receipt.plain, tag), 4500);
-    expect(yes.texts).toEqual([clientLabels('uz').confirmThanks]);
+    expect(yes.texts).toEqual([clientLabels('uz').confirmThanksFull]);
     expect((await answersOf()).every((row) => row.verdict === 'yes')).toBe(true);
     __resetPresses();
     h.failNext('answerCallbackQuery', late);
@@ -564,7 +572,7 @@ describe('a press', () => {
     // The customer does as told: the same button on the same message, seconds later. The middleware's
     // memory is the subject here, so it is NOT reset between the two.
     const again = await press(CHAT_A, `yt:1:${receipt.plain}:${tag}`, keyboard(receipt.plain, tag), 4600);
-    expect(again.toast).toBe(t.confirmThanks);
+    expect(again.toast).toBe(t.confirmThanksFull);
     const rows = await answersOf();
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.verdict === 'yes')).toBe(true);
@@ -597,7 +605,7 @@ describe('a press', () => {
     // and ❌ / ✅ / ❌ … could be flipped on it for ever, each ❌ alarming the seller and every logist.
     const tag = await tagOf(receipt.plain);
     const got = await press(CHAT_A, `yt:1:${receipt.plain}:${tag}`, undefined, 4700);
-    expect(got.toast).toBe(clientLabels('uz').confirmThanks);
+    expect(got.toast).toBe(clientLabels('uz').confirmThanksFull);
     expect(got.edits).toHaveLength(1);
     const raw = got.edits[0]!.body.reply_markup;
     const markup = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { inline_keyboard: Record<string, unknown>[][] };

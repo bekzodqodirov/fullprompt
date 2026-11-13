@@ -19,6 +19,8 @@ import { askClientAction, dismissDisputesAction } from './client-ask-actions';
 export interface ClientAskFace {
   /** A linked chat AND a lot still worth asking about (cargo in China). */
   canAsk: boolean;
+  /** A question sent now asks the kilos and the cubic metres too (0146). */
+  full: boolean;
   /** The client has no Telegram linked — said in words instead of a button. */
   noChat: boolean;
   status: {
@@ -100,12 +102,12 @@ export function ClientAskPanel({
   if (!show && !said && !error) return null;
 
   return (
-    <div className="mt-3 space-y-1.5 rounded-lg border border-line p-2 text-sm" data-testid="client-ask">
+    <div className="card space-y-1.5 !p-3 text-sm" data-testid="client-ask">
       <p className="font-semibold text-ink-700">📨 {t('askTitle')}</p>
       {/* What WILL be sent — said only beside the button that sends it. */}
       {face.canAsk && (
         <p className="text-xs text-ink-500" data-testid="client-ask-hint">
-          {t('askHint')}
+          {t(face.full ? 'askHintFull' : 'askHint')}
         </p>
       )}
 
@@ -146,7 +148,7 @@ export function ClientAskPanel({
       {face.canAsk && (
         <button
           type="button"
-          className="btn-secondary w-full"
+          className="btn-secondary btn-sm w-full sm:w-auto"
           data-testid="client-ask-send"
           disabled={busy || waiting}
           onClick={() => {
@@ -160,7 +162,7 @@ export function ClientAskPanel({
       {face.disputes.length > 1 && (
         <button
           type="button"
-          className="btn-secondary w-full"
+          className="btn-secondary btn-sm w-full sm:w-auto"
           data-testid="client-dispute-close-all"
           disabled={busy}
           onClick={() => {

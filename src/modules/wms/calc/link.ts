@@ -19,7 +19,8 @@
 
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { db, type Tx } from '@/modules/platform/db/client';
-import { calcRequests, calcVersions, receipts } from '@/modules/platform/db/schema';
+import { calcRequests, calcVersions, deals, receipts } from '@/modules/platform/db/schema';
+import { ownDealOf } from '@/modules/wms/finance/truck-deal';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { currentVersionSql } from './version-set';
 
@@ -144,7 +145,28 @@ export async function standingLinkTarget(
 export async function stampCalcLinksTx(tx: Tx, dealId: string): Promise<string[]> {
   const target = await standingLinkTarget(tx, dealId);
   if (!target) return [];
-  return stampWhere(tx, target, sql`${receipts.dealId} = ${dealId}`);
+  // The deal's OWN cargo: a prixod a client correction left on this deal is
+  // another customer's, and a guess about it is a guess nobody should be asked
+  // to confirm (`ownDealIdOf`, below).
+  return stampWhere(
+    tx,
+    target,
+    sql`${receipts.dealId} = ${dealId} AND ${receipts.clientId} = (SELECT d.client_id FROM deals d WHERE d.id = ${dealId})`,
+  );
+}
+
+/**
+ * The prixod's OWN deal — `ownDealOf`'s rule (finance/truck-deal.ts), the one
+ * the seller's «Prixod keldi» message and the card read the deal state by. A
+ * client correction leaves `deal_id` on the OLD client's job, and a
+ * calculation of that job measures one customer's cargo against another
+ * customer's quote: every door below that makes or blesses a link asks THIS,
+ * never the raw column (the merged card's review, XF-2).
+ */
+async function ownDealIdOf(receipt: { dealId: string | null; clientId: string | null }): Promise<string | null> {
+  if (!receipt.dealId || !receipt.clientId) return null;
+  const deal = await db.query.deals.findFirst({ columns: { clientId: true }, where: eq(deals.id, receipt.dealId) });
+  return ownDealOf({ dealId: receipt.dealId, dealClientId: deal?.clientId ?? null }, receipt.clientId);
 }
 
 /** The one statement shape both stamp doors run. */
@@ -210,7 +232,7 @@ export async function confirmCalcLink(
     where: eq(calcRequests.id, receipt.calcRequestId),
   });
   if (!request) throw new CalcLinkError('request_not_found');
-  if (request.entityType !== 'deal' || request.entityId !== receipt.dealId) {
+  if (request.entityType !== 'deal' || request.entityId !== (await ownDealIdOf(receipt))) {
     throw new CalcLinkError('request_foreign');
   }
   await assertMine(receipt.calcRequestId, scope, ctx.actorId ?? '');
@@ -264,12 +286,15 @@ export async function setCalcLink(
       })
       .where(eq(receipts.id, receiptId));
   } else {
-    if (!receipt.dealId) throw new CalcLinkError('no_deal');
+    // «No deal» is «no deal of ITS OWN»: a prixod left on another client's
+    // job has nothing to be linked to.
+    const ownDeal = await ownDealIdOf(receipt);
+    if (!ownDeal) throw new CalcLinkError('no_deal');
     const request = await db.query.calcRequests.findFirst({
       where: eq(calcRequests.id, requestId),
     });
     if (!request) throw new CalcLinkError('request_not_found');
-    if (request.entityType !== 'deal' || request.entityId !== receipt.dealId) {
+    if (request.entityType !== 'deal' || request.entityId !== ownDeal) {
       throw new CalcLinkError('request_foreign');
     }
     await db
@@ -351,9 +376,13 @@ export async function answerLinkAsk(
   if (receipt.calcLinkConfirmedAt) return 'already';
   // `confirmCalcLink`'s re-proof, for the same reason: a ✅ is what makes a
   // link MEASURABLE, and a guess whose request belongs to another deal than
-  // the prixod's must never become one.
+  // the prixod's OWN must never become one. A ❌ on it is still taken — it
+  // takes off exactly the guess the question named, which is the right answer
+  // about another customer's cargo, and refusing it would leave the guess in
+  // the VED's «Tasdiqlash kerak» with nothing in Telegram to clear it.
   const request = await db.query.calcRequests.findFirst({ where: eq(calcRequests.id, requestId) });
-  if (!request || request.entityType !== 'deal' || request.entityId !== receipt.dealId) {
+  if (!request) return 'request_foreign';
+  if (verdict === 'confirm' && (request.entityType !== 'deal' || request.entityId !== (await ownDealIdOf(receipt)))) {
     return 'request_foreign';
   }
   try {

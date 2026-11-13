@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
 import { uploadAttachmentFile } from '@/components/upload-attachment';
@@ -22,6 +23,8 @@ export function AttachmentsPanel({
   entityId,
   initial,
   editable,
+  removableIds,
+  refreshWhenEmpty = false,
   onAdd,
   onRemove,
 }: {
@@ -29,6 +32,19 @@ export function AttachmentsPanel({
   entityId: string;
   initial: AttachmentItem[];
   editable: boolean;
+  /**
+   * Files that carry a ✕ even for a reader who may not edit — their OWN
+   * uploads (0146). The delete door decides again; this only draws what it
+   * will allow. Anything uploaded in this session is the reader's too.
+   */
+  removableIds?: string[];
+  /**
+   * The caller draws this panel only while there is something to list or to
+   * attach (the prixod card's «Fayllar», docs/PRIXOD-KARTA.md §7.1): when a
+   * reader who may not attach removes the last file, ask the page again, so
+   * that it takes its heading away instead of leaving it over nothing.
+   */
+  refreshWhenEmpty?: boolean;
   /** Called after each successful upload so a caller can persist the list (e.g. into a draft). */
   onAdd?: (item: AttachmentItem) => void;
   /**
@@ -41,15 +57,31 @@ export function AttachmentsPanel({
 }) {
   const t = useTranslations('receipts');
   const tr = useTranslations('receive');
+  const router = useRouter();
   const [items, setItems] = useState(initial ?? []);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mine, setMine] = useState<string[]>(removableIds ?? []);
+  // A delete happened in THIS panel — so an empty list is something a reader
+  // did, not the panel's first render.
+  const [removedAny, setRemovedAny] = useState(false);
+  // Nothing left and nothing to attach with: the card around this panel is a
+  // heading over nothing now, so the page decides again (the delete is a plain
+  // fetch above, not a server action — nothing has revalidated it). Read from
+  // the list the deletes LEFT, not from the render a press closed over: two ✕
+  // pressed before the first answer each saw the other file still there
+  // (the merged card's review, XF-3).
+  useEffect(() => {
+    if (refreshWhenEmpty && !editable && removedAny && items.length === 0) router.refresh();
+  }, [refreshWhenEmpty, editable, removedAny, items.length, router]);
+  const removable = (id: string) => editable || mine.includes(id);
 
   async function remove(id: string) {
     setError(null);
     const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 404) {
       setItems((prev) => prev.filter((item) => item.id !== id));
+      setRemovedAny(true);
       onRemove?.(id);
       return;
     }
@@ -74,6 +106,7 @@ export function AttachmentsPanel({
         const res = await uploadAttachmentFile(file, entityType, entityId);
         if (res.ok) {
           setItems((prev) => [...prev, res.item]);
+          setMine((prev) => [...prev, res.item.id]);
           onAdd?.(res.item);
         } else {
           setError(
@@ -100,7 +133,7 @@ export function AttachmentsPanel({
               attachmentId={item.id}
               alt={item.fileName}
               className="h-16 w-16 rounded object-cover"
-              onDelete={editable ? () => remove(item.id) : undefined}
+              onDelete={removable(item.id) ? () => remove(item.id) : undefined}
             />
           ) : (
             <span key={item.id} className="relative inline-block">
@@ -114,7 +147,7 @@ export function AttachmentsPanel({
                 📄
                 <span className="max-w-full truncate text-[10px] text-ink-700">{item.fileName}</span>
               </a>
-              {editable && (
+              {removable(item.id) && (
                 <button
                   type="button"
                   aria-label="✕"

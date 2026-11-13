@@ -3,8 +3,8 @@
 **Status: DESIGN v4 — JUDGED** (2026-11-12). v3 was judged by four lenses before any package was built: 104
 objections (22 blockers), none refuted. **docs/AI-SORAYDI-REVIEW.md holds every one with the lead's ruling, and a
 ruling there is BINDING: it overrides the item of this document it names.** Read the two together — an item
-below is what was designed, its rulings are what is built. Numbering starts at DECISIONS #1697. **No migration**
-(ledger stays 146): what would have needed one (a plain-text wait after the AI's answer) left the round.
+below is what was designed, its rulings are what is built. Numbering starts at DECISIONS #1744 (minted as #1697 and moved by forty-seven on the merge with main — the thirty-ninth collision). **No migration**
+(ledger 147 — main's 0146 «prixod_xabari» rides with it): what would have needed one (a plain-text wait after the AI's answer) left the round.
 
 The round is THREE RELEASES, each shippable alone (§3): **1a** the readers and the words of the AI's answer,
 **1b** the table and the pictures, **2** the writes after the pass. The kernel of §2 is the lead's and is

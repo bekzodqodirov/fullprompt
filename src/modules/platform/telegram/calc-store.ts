@@ -8,6 +8,7 @@ import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
 import { endBurst } from './burst-wait';
+import { closeReceiptFiles } from './receipt-files';
 import { foldPendingInvoice } from './file-goods';
 import { __forgetKeptLast } from './kept-last';
 import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
@@ -325,6 +326,9 @@ export function startIntake(
   // A collection opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1): what
   // comes next is this collection's, and the burst's message keeps its parts.
   endBurst(chatId);
+  // …and a prixod's file collection (docs/PRIXOD-XABARI.md §C.5): its files
+  // are on the prixod already, and the next file must not go there.
+  closeReceiptFiles(chatId);
   return state;
 }
 
@@ -567,6 +571,11 @@ export function updateIntake(
   let next: IntakeState = { ...state, ...patch };
   if (!opts.quiet) {
     const now = Date.now();
+    // A PARKED collection that starts to hold again («▶️ Davom etamiz», a
+    // press on its table, a reply to it) is a collector opening as far as the
+    // chat is concerned: a prixod's file collection opened beside it closes,
+    // or the file sent after this collection lands would go to that prixod.
+    if (!intakeHolds(state, now)) closeReceiptFiles(chatId);
     next = { ...next, touchedAt: now, remindedAt: null };
     const scope = messageScope.getStore();
     if (scope && scope.chat === key(chatId) && scope.messageId !== null) {

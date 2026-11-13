@@ -33,6 +33,8 @@ import type { DraftFile } from './task-draft';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
 import { approvalVerdictLine, notificationLabels, textLocaleOf } from '../notifications/labels';
+import { isReceiptArrival } from '../notifications/receipt-arrival';
+import { RECEIPT_FILES_BUTTON } from './receipt-files';
 import {
   appendLine,
   capStaffText,
@@ -396,7 +398,18 @@ export type BotCallback =
    * changed is refused (leak-3). `ag:` collides with nothing: `a:` is
    * anchored to `[01]:`.
    */
-  | { kind: 'agent'; op: AgentOp; id: string; digest?: string };
+  | { kind: 'agent'; op: AgentOp; id: string; digest?: string }
+  /**
+   * «📎 Fayl qo‘shish» under a prixod's message — `pf:<receipt>` — and the
+   * collection's own «✅ Bo‘ldi» and «↩️ Bekor qilish», `pf:ok:<receipt>` /
+   * `pf:no:<receipt>` (0146, docs/PRIXOD-XABARI.md §C.5). Both carry their
+   * prixod: a press under an EARLIER prixod's message must never close the
+   * one that is open now. `pf:` collides with nothing: the cabinet's `ph:`
+   * is its own two letters.
+   */
+  | { kind: 'receipt_files'; receiptId: string }
+  | { kind: 'receipt_files_done'; receiptId: string }
+  | { kind: 'receipt_files_cancel'; receiptId: string };
 
 /**
  * ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed ·
@@ -453,6 +466,12 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   // button on the QUESTION carrying the arm's token (I3) — a press on the
   // card, redelivered or tapped twice into a bot that was down, only asks.
   agent: 'cas',
+  // Opening a prixod's file collection only ASKS (a second press re-sends the
+  // prompt and keeps what it took); «✅ Bo‘ldi» and «↩️ Bekor qilish» end it
+  // once — a second press finds nothing of that prixod's open and says so.
+  receipt_files: 'prompt',
+  receipt_files_done: 'cas',
+  receipt_files_cancel: 'cas',
 };
 
 /** ⏰'s four answers. */
@@ -779,6 +798,13 @@ export function parseCallback(data: string): BotCallback | null {
       ...(agent[3] ? { digest: agent[3] } : {}),
     };
   }
+  // A prixod's file collection (0146). Lowercase hex only — the row is drawn
+  // lowercased (`buttonsFor`), so nothing drawn is refused here (#939).
+  const files = /^pf:(?:(ok|no):)?([0-9a-f-]{36})$/.exec(data);
+  if (files) {
+    const kind = files[1] === 'ok' ? 'receipt_files_done' : files[1] === 'no' ? 'receipt_files_cancel' : 'receipt_files';
+    return { kind, receiptId: files[2]! };
+  }
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -869,6 +895,14 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
   // sentence — and only a uuid reaches `ca:`, the one shape the parser takes.
   if (type === 'CalcPrefilled' && payload.add === true && typeof payload.requestId === 'string' && UUID.test(payload.requestId)) {
     return [[{ text: '➕ Shu so‘rovga qo‘shish', callback_data: `ca:${payload.requestId.toLowerCase()}` }]];
+  }
+  // «Prixod keldi» (0146, receipt-arrival.ts): the first of its two buttons —
+  // the second is the card link the drain lifts into «🔗 Bitim biriktirish».
+  // Keyed on the row being the NEW message (`dealState`), so a prixod message
+  // written before the fold keeps the keyboard it never had; lowercased,
+  // because that is the only shape the parser takes.
+  if (isReceiptArrival(type, payload) && typeof payload.receiptId === 'string' && UUID.test(payload.receiptId)) {
+    return [[{ text: RECEIPT_FILES_BUTTON, callback_data: `pf:${payload.receiptId.toLowerCase()}` }]];
   }
   return null;
 }

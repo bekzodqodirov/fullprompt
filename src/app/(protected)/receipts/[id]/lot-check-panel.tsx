@@ -58,6 +58,10 @@ export interface LotCheckFace {
     /** The prixod's CURRENT owner's answer — a previous owner's is drawn nowhere. */
     ofOwner: boolean;
     askedBy: string | null;
+    /** The answer covered the kilos and the cubic metres too (0146). */
+    measures: boolean;
+    /** …and it is THEY that moved since, while everything else still holds. */
+    measuresMoved: boolean;
   } | null;
 }
 
@@ -223,8 +227,14 @@ export function LotCheckPanel({
   if (client?.verdict === 'yes' && client.holds) {
     lines.push(
       <p key="client-yes" className="font-semibold text-good [overflow-wrap:anywhere]" data-testid="lot-check-face-client-yes">
-        ✅ {t('clientYes')} · {client.day}
-        <span className="block text-xs font-normal text-ink-500">{asked}</span>
+        {/* What the answer COVERED (0146): a «full» one vouches for the kilos
+            and the cubic metres too; an older one — or a press on a button
+            sent before the fold — for the name and the count alone. */}
+        ✅ {t(client.measures ? 'clientYesFull' : 'clientYes')} · {client.day}
+        <span className="block text-xs font-normal text-ink-500">
+          {asked}
+          {!client.measures && ` · ${t('clientYesBasicNote')}`}
+        </span>
       </p>,
     );
   }
@@ -232,11 +242,11 @@ export function LotCheckPanel({
     lines.push(
       asking ? (
         <p key="client-stale" className="font-semibold text-warn [overflow-wrap:anywhere]" data-testid="lot-check-face-client-stale">
-          ⚠️ {t('clientStale', { day: client.day })}
+          ⚠️ {t(client.measuresMoved ? 'clientStaleMeasures' : 'clientStale', { day: client.day })}
         </p>
       ) : (
         <p key="client-old" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-client-old">
-          {t('clientYesOld', { day: client.day })}
+          {t(client.measuresMoved ? 'clientYesOldMeasures' : 'clientYesOld', { day: client.day })}
         </p>
       ),
     );
@@ -316,7 +326,7 @@ export function LotCheckPanel({
 
   return (
     <div
-      className="mt-2 space-y-1.5 rounded-lg border border-line p-2 text-sm"
+      className="space-y-1.5 rounded-lg border border-line p-2 text-sm"
       data-testid="lot-check"
       data-state={face.state}
       data-askable={face.askable ? 'true' : 'false'}
@@ -351,61 +361,65 @@ export function LotCheckPanel({
               «how I know», or why the dispute is closed. It was drawn under
               the tick alone, so on cargo that had left China — where every
               unresolved ❌ ends up — a dispute could only be closed without a
-              word. */}
+              word.
+              From `sm` the note and its button(s) share ONE row and a button
+              is as wide as its words (docs/PRIXOD-KARTA.md §7.2): three lots
+              were three full-width red bars down a VED's laptop. On a phone
+              they stack, full width, as before. */}
           {(offerConfirm || offerClose) && (
-            <input
-              className="input"
-              data-testid="lot-check-note"
-              maxLength={500}
-              value={note}
-              placeholder={t('notePlaceholder')}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          )}
-          {offerConfirm && (
-            <>
-              <button
-                type="button"
-                className="btn-primary w-full"
-                data-testid="lot-check-yes"
-                disabled={busy}
-                onClick={confirm}
-              >
-                ✅ {t('confirm')}
-              </button>
-              {/* Where the two other answers go — the ✏️ form is drawn for
-                  `receipts.edit` alone, so the VED writes a one-line 🧩 for
-                  the papers and asks the logist to rename the lot itself
-                  (his 2026-10-27: a tarkib may be ONE line). While a tarkib
-                  is WRITTEN the ✏️ is no cure for anybody: the card prints
-                  the tarkib's name and the ✅ records it (2026-11-10), so a
-                  rename there changes neither — the person who followed the
-                  hint would tick «Мышь» the client had just denied. Both
-                  roles are sent to the 🧩 then (the review of the built round). */}
-              <p className="text-xs text-ink-500" data-testid="lot-check-other">
-                {canRename && !face.documentStale ? t('otherAnswers') : t('otherAnswersAskLogist')}
-              </p>
-            </>
-          )}
-          {offerClose && (
-            <>
-              {/* The hint names only the buttons this panel draws: with the
-                  cargo out of China there is no tick to press. */}
-              {vetoed && (
-                <p className="text-xs text-ink-500" data-testid="lot-check-dispute-hint">
-                  {offerConfirm ? t('disputeHint') : t('disputeHintGone')}
-                </p>
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+              <input
+                className="input min-w-0 sm:flex-1"
+                data-testid="lot-check-note"
+                maxLength={500}
+                value={note}
+                placeholder={t('notePlaceholder')}
+                onChange={(e) => setNote(e.target.value)}
+              />
+              {offerConfirm && (
+                <button
+                  type="button"
+                  className="btn-primary sm:shrink-0"
+                  data-testid="lot-check-yes"
+                  disabled={busy}
+                  onClick={confirm}
+                >
+                  ✅ {t('confirm')}
+                </button>
               )}
-              <button
-                type="button"
-                className="btn-secondary w-full"
-                data-testid="lot-check-dispute-close"
-                disabled={busy}
-                onClick={closeDispute}
-              >
-                {t('disputeClose')}
-              </button>
-            </>
+              {offerClose && (
+                <button
+                  type="button"
+                  className="btn-secondary sm:shrink-0"
+                  data-testid="lot-check-dispute-close"
+                  disabled={busy}
+                  onClick={closeDispute}
+                >
+                  {t('disputeClose')}
+                </button>
+              )}
+            </div>
+          )}
+          {/* Where the two other answers go — the ✏️ form is drawn for
+              `receipts.edit` alone, so the VED writes a one-line 🧩 for
+              the papers and asks the logist to rename the lot itself
+              (his 2026-10-27: a tarkib may be ONE line). While a tarkib
+              is WRITTEN the ✏️ is no cure for anybody: the card prints
+              the tarkib's name and the ✅ records it (2026-11-10), so a
+              rename there changes neither — the person who followed the
+              hint would tick «Мышь» the client had just denied. Both
+              roles are sent to the 🧩 then (the review of the built round). */}
+          {offerConfirm && (
+            <p className="text-xs text-ink-500" data-testid="lot-check-other">
+              {canRename && !face.documentStale ? t('otherAnswers') : t('otherAnswersAskLogist')}
+            </p>
+          )}
+          {/* The hint names only the buttons this panel draws: with the
+              cargo out of China there is no tick to press. */}
+          {offerClose && vetoed && (
+            <p className="text-xs text-ink-500" data-testid="lot-check-dispute-hint">
+              {offerConfirm ? t('disputeHint') : t('disputeHintGone')}
+            </p>
           )}
           {offerUndo && (
             <button

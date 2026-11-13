@@ -9,14 +9,16 @@ import { lockReceiptShareNoWait } from './grow-lot';
 import {
   checkTermsSql,
   clientDisputeSql,
+  clientFactsHoldSql,
   clientHoldsSql,
+  clientMeasuresHoldSql,
   lotAskableSql,
   lotCheckStateSql,
   lotTarkibJoinSql,
   tarkibStandsSql,
   type LotCheckState,
 } from './lot-check-sql';
-import { clientConfirmsReady, lotChecksReady, lotClientConfirmsReady } from './lot-check-ready';
+import { clientConfirmsReady, lotChecksReady, lotClientConfirmsReady, lotClientMeasuresReady } from './lot-check-ready';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -426,6 +428,19 @@ export interface LotCheckView {
     vetoes: boolean;
     /** The answer is the prixod's CURRENT owner's — a previous owner's is nobody's. */
     ofOwner: boolean;
+    /**
+     * The question asked about the lot's kilos and cubic metres too (0146 —
+     * the owner's «4 ha»), and the answer remembers them. False = it was
+     * about the name and the count: every answer from before 0146.
+     */
+    measures: boolean;
+    /**
+     * …and they are WHY it stopped holding: the five facts every question
+     * printed still stand and only the two figures moved. False when
+     * something else moved too — the card then says «ma'lumot o'zgardi», as
+     * it always has, and never blames a weight for a renamed lot.
+     */
+    measuresMoved: boolean;
     /** Who pressed «Mijozdan so'rash»; null = the receipt's own push asked. */
     askedBy: string | null;
   } | null;
@@ -446,15 +461,21 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
   // The client's answers only where their table exists (0144, #472): one
   // migration behind, the card draws the two bases it has always drawn.
   const withClient = lotClientConfirmsReady();
+  // …and their two measures only where THOSE columns exist (0146).
+  const measureColumns =
+    withClient && lotClientMeasuresReady()
+      ? sql`(lot_client.shown_kg IS NOT NULL) AS client_measures,
+             (${clientFactsHoldSql(refs)} AND NOT ${clientMeasuresHoldSql(sql`l`)}) AS client_measures_moved`
+      : sql`FALSE AS client_measures, FALSE AS client_measures_moved`;
   const clientColumns = withClient
     ? sql`lot_client.verdict AS client_verdict, lot_client.answered_at AS client_at,
            lot_client.answered_at::text AS client_token,
            ${clientHoldsSql(refs)} AS client_holds, ${clientDisputeSql(refs)} AS client_dispute,
            (lot_client.shown_client_id IS NOT DISTINCT FROM r.client_id) AS client_of_owner,
-           ua.full_name AS client_asked_by`
+           ua.full_name AS client_asked_by, ${measureColumns}`
     : sql`NULL::text AS client_verdict, NULL::timestamptz AS client_at, NULL::text AS client_token,
            NULL::boolean AS client_holds, NULL::boolean AS client_dispute, NULL::boolean AS client_of_owner,
-           NULL::text AS client_asked_by`;
+           NULL::text AS client_asked_by, ${measureColumns}`;
   const clientJoins = withClient
     ? sql`LEFT JOIN lot_client_confirms AS lot_client ON lot_client.lot_id = l.id
       LEFT JOIN users ua ON ua.id = lot_client.asked_by`
@@ -501,6 +522,8 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     client_dispute: boolean | null;
     client_of_owner: boolean | null;
     client_asked_by: string | null;
+    client_measures: boolean | null;
+    client_measures_moved: boolean | null;
   }[];
   return new Map(
     rows.map((row) => {
@@ -536,6 +559,8 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
                 vetoes: row.client_dispute === true && row.state === 'none',
                 ofOwner: row.client_of_owner === true,
                 askedBy: row.client_asked_by,
+                measures: row.client_measures === true,
+                measuresMoved: row.client_measures === true && row.client_measures_moved === true,
               }
             : null,
         },

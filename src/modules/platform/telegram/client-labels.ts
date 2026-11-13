@@ -445,9 +445,12 @@ const DICT = {
   pushMoreLots: { uz: '… yana {n} ta tovar', ru: '… ещё {n} поз.', en: '… {n} more items' },
   // --- P-A extra (only P-A adds keys here) ---
   // The client's own ✅ / ❌ about their cargo (0144, docs/TARKIB-TAKLIFLAR.md
-  // §4). The QUESTION names what is being confirmed: the push prints kilos
-  // and cubic metres too, and those are the warehouse's measurement — a
-  // customer who pays by them must not read ✅ as agreeing to the weight.
+  // §4). The QUESTION names what is being confirmed. Two scopes since 0146
+  // (docs/PRIXOD-XABARI.md §A, the owner's «4 ha»): a question asked from now
+  // on is about the name, the box count, the WEIGHT and the VOLUME (`…Full`
+  // below); the three keys right here are the 0144 question, which named the
+  // name and the count only — still the words of a server one migration
+  // behind, and of the thanks for a press on a message sent before 0146.
   confirmAskTitle: {
     uz: '📋 Yuk ma’lumotini tasdiqlang',
     ru: '📋 Подтвердите данные о грузе',
@@ -470,12 +473,31 @@ const DICT = {
     ru: '❓ Товары, их количество (шт) и число коробок указаны верно?',
     en: '❓ Are the goods, their piece counts and the box count correct?',
   },
+  // The `full` question: the same subjects in the same order, then the two
+  // measures, and the ask to CHECK before confirming — his words («tekshirib
+  // olsin klient va tasdiqlasin to'g'riligini»). Bold in the message.
+  confirmAskLineFull: {
+    uz: '❓ Tovar nomi, quti soni, og‘irligi (kg) va hajmi (m³) to‘g‘rimi? Tekshirib, tasdiqlang.',
+    ru: '❓ Название товара, количество коробок, вес (кг) и объём (м³) указаны верно? Проверьте и подтвердите.',
+    en: '❓ Are the goods’ names, the box count, the weight (kg) and the volume (m³) correct? Please check and confirm.',
+  },
+  confirmAskLineGoodsFull: {
+    uz: '❓ Tovarlar, ularning donasi, quti soni, og‘irligi (kg) va hajmi (m³) to‘g‘rimi? Tekshirib, tasdiqlang.',
+    ru: '❓ Товары, их количество (шт), число коробок, вес (кг) и объём (м³) указаны верно? Проверьте и подтвердите.',
+    en: '❓ Are the goods, their piece counts, the box count, the weight (kg) and the volume (m³) correct? Please check and confirm.',
+  },
   confirmYes: { uz: '✅ To‘g‘ri', ru: '✅ Верно', en: '✅ Correct' },
   confirmNo: { uz: '❌ Xato bor', ru: '❌ Есть ошибка', en: '❌ Something is wrong' },
   confirmThanks: {
     uz: 'Rahmat! Tovar nomi va quti soni tasdiqlandi ✅',
     ru: 'Спасибо! Название товара и количество коробок подтверждены ✅',
     en: 'Thank you! Goods names and box count confirmed ✅',
+  },
+  // …and the thanks of a `full` answer repeat ITS subject.
+  confirmThanksFull: {
+    uz: 'Rahmat! Tovar nomi, quti soni, og‘irligi va hajmi tasdiqlandi ✅',
+    ru: 'Спасибо! Название товара, количество коробок, вес и объём подтверждены ✅',
+    en: 'Thank you! Goods names, box count, weight and volume confirmed ✅',
   },
   // After ❌: the relay carries whatever they write or photograph next.
   confirmTellUs: {

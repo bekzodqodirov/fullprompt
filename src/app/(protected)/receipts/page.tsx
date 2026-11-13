@@ -63,7 +63,9 @@ export default async function ReceiptsPage() {
               </span>
             </div>
             <div className="mt-1 text-sm text-ink-700">
-              {warehouseCode} · {lotCount} {t('lots').toLowerCase()} · {boxCount} 📦 ·{' '}
+              {/* «3 tovar», the word the card's own «Jami» line says — it was
+                  the section title lower-cased, «3 tovarlar». */}
+              {warehouseCode} · {t('lotsCount', { n: Number(lotCount) })} · {boxCount} 📦 ·{' '}
               {t(`statuses.${receipt.status}`)}
             </div>
           </Link>

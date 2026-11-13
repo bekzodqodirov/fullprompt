@@ -212,17 +212,25 @@ describe('the push prints kilos the way the app it opens does (round C review)',
 
   it('every customer surface shares and rounds through the one helper, never inline', async () => {
     const { readFileSync } = await import('node:fs');
-    for (const file of [
-      'src/modules/wms/client-cabinet/service.ts',
-      'src/modules/wms/client-cabinet/miniapp.ts',
-      'src/modules/wms/client-cabinet/map.ts',
-      'src/modules/wms/notices/client-text.ts',
-      'src/modules/wms/notices/client-summary.ts',
-      'src/modules/wms/notices/arrival.ts',
+    const THROUGH_FORMAT = /\b(roundKg|shareOf)\b/;
+    for (const [file, through] of [
+      ['src/modules/wms/client-cabinet/service.ts', THROUGH_FORMAT],
+      ['src/modules/wms/client-cabinet/miniapp.ts', THROUGH_FORMAT],
+      ['src/modules/wms/client-cabinet/map.ts', THROUGH_FORMAT],
+      ['src/modules/wms/notices/client-text.ts', THROUGH_FORMAT],
+      ['src/modules/wms/notices/client-summary.ts', THROUGH_FORMAT],
+      ['src/modules/wms/notices/arrival.ts', THROUGH_FORMAT],
       // The client card's «Yuklar» tab: the office reads the kilos the client
       // is reading in the Mini App on the phone, to the digit.
-      'src/modules/wms/inventory/client-cargo-fold.ts',
-    ]) {
+      ['src/modules/wms/inventory/client-cargo-fold.ts', THROUGH_FORMAT],
+      // 0146: the «Mijozdan so‘rash» question prints a lot's kilos and cubic
+      // metres — the figures the client is asked to CONFIRM, so they must be
+      // the push's own (`kgText` / `m3Text`, client-text.ts, which round
+      // through the one helper). The spec promised this line (§A.7) and the
+      // round did not write it; an inline rounder here would show 4.28 where
+      // the push and the Mini App say 4.29, about the number being confirmed.
+      ['src/modules/wms/receipts/client-confirm-text.ts', /\b(kgText|m3Text)\b/],
+    ] as const) {
       const src = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
       // An inline `* 100) / 100` on a weight or `* 1000) / 1000` on a volume,
       // or a generic `10 ** d` rounder, is a second rule that drifts from
@@ -236,7 +244,7 @@ describe('the push prints kilos the way the app it opens does (round C review)',
       expect(src, file).not.toMatch(/perBox(Kg|M3)\b[^\n;]*\*|\*[^\n;]*perBox(Kg|M3)/);
       // …nor `lotKg * (n / boxes)`, the push's old shape written inline.
       expect(src, file).not.toMatch(/(Kg|M3|kg|m3)[^\n;]*\*\s*\([^()\n]*\/[^()\n]*\)/);
-      expect(src, file).toMatch(/\b(roundKg|shareOf)\b/);
+      expect(src, file).toMatch(through);
     }
   });
 

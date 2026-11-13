@@ -185,6 +185,12 @@ export async function celebrateFirstCargo(event: { payload: Record<string, unkno
   const receiptId = typeof event.payload.receiptId === 'string' ? event.payload.receiptId : null;
   const clientId = typeof event.payload.clientId === 'string' ? event.payload.clientId : null;
   if (!receiptId || !clientId) return;
+  // The CLAIM door emits the same event (a marking given its client, a client
+  // correction): cargo that came weeks ago, and not this seller's catch —
+  // «is not this event and is not celebrated» has stood above since 0134 and
+  // nothing here asked. `via` is 0146's marker; `assignedFromUnclaimed` is on
+  // every claim event written before it.
+  if (event.payload.via === 'assign' || 'assignedFromUnclaimed' in event.payload) return;
   try {
     const ftlOn = await ftlReady();
     const rows = await db.execute<{

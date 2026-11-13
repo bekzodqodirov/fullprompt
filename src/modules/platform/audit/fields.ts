@@ -57,6 +57,9 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   rateToUsd: 'rateToUsd',
 
   // Cargo
+  // The lots a prixod was created with (`confirmReceipt`): printed as
+  // «A 化妆品 × 10 📦», see `formatAuditValue`.
+  lots: 'lots',
   volumeM3: 'volumeM3',
   totalVolumeM3: 'volumeM3',
   weightKg: 'weightKg',
@@ -130,6 +133,11 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // The CLIENT's own ✅ / ❌ in Telegram (0144, per lot — `clientConfirm:A`),
   // a dispute a person closed, and the question a person sent from the card.
   clientConfirm: 'clientConfirm',
+  // A file a person sent to the prixod through the staff bot (0146, per file
+  // — `fileAdded:<message>`).
+  fileAdded: 'fileAdded',
+  // A removed file's own line on its parent's History (`removedFile`, history.ts).
+  fileName: 'fileName',
   clientAsk: 'clientAsk',
   // The VED queue's lines on the CARD (lead or deal): a request opened, taken,
   // released, handed back, answered with a price, re-opened for a correction
@@ -197,10 +205,20 @@ export function auditFieldLabel(key: string): { label: string | null; item: stri
   if (AUDIT_FIELD_LABELS[key]) return { label: AUDIT_FIELD_LABELS[key]!, item: null };
   const at = key.indexOf(':');
   if (at > 0 && AUDIT_FIELD_LABELS[key.slice(0, at)]) {
-    return { label: AUDIT_FIELD_LABELS[key.slice(0, at)]!, item: key.slice(at + 1) };
+    const base = key.slice(0, at);
+    return { label: AUDIT_FIELD_LABELS[base]!, item: ITEM_NOT_PRINTED.has(base) ? null : key.slice(at + 1) };
   }
   return { label: null, item: null };
 }
+
+/**
+ * Per-item keys whose item is there for UNIQUENESS only and means nothing to
+ * a reader: `fileAdded:<telegram message id>` — the History would print
+ * «Fayl qo'shildi · 913742», a code of the kind the owner asked to have out
+ * of it (round 100, item 4). The value («invoice.pdf · Telegram») names the
+ * file; the key only keeps one file's line from netting into the next.
+ */
+const ITEM_NOT_PRINTED: ReadonlySet<string> = new Set(['fileAdded']);
 
 /**
  * Which recorded columns hold a REFERENCE rather than a value.
@@ -266,6 +284,14 @@ export function collectAuditRefs(
 const isScalar = (v: unknown): v is string | number | boolean =>
   typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
 
+/** A lot as `confirmReceipt` records it: a carton count beside a name or a letter. */
+const isLotSummary = (v: unknown): v is { letter?: unknown; zh?: unknown; boxes: number; qrSkipped?: unknown } =>
+  typeof v === 'object' &&
+  v !== null &&
+  !Array.isArray(v) &&
+  typeof (v as { boxes?: unknown }).boxes === 'number' &&
+  (isScalar((v as { zh?: unknown }).zh) || isScalar((v as { letter?: unknown }).letter));
+
 /**
  * One recorded value as the History tab prints it. A list of plain values is
  * a list; a structured record (a count's growth, a sticker run) reads as its
@@ -277,6 +303,19 @@ const isScalar = (v: unknown): v is string | number | boolean =>
 export function formatAuditValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '∅';
   if (Array.isArray(value) && value.every(isScalar)) return value.length ? value.join(', ') : '∅';
+  // The lots a prixod was born with — `[{letter, zh, boxes}]`, the one list of
+  // records on the busiest card there is. It printed as raw JSON under the
+  // untranslated word «lots:» at the foot of every prixod (the owner's
+  // «hamma narsa har xil joyda» round, docs/PRIXOD-KARTA.md).
+  if (Array.isArray(value) && value.length > 0 && value.every(isLotSummary)) {
+    return value
+      .map((lot) =>
+        [isScalar(lot.letter) ? String(lot.letter) : null, isScalar(lot.zh) ? String(lot.zh) : null, `× ${String(lot.boxes)} 📦`, lot.qrSkipped === true ? '🏷' : null]
+          .filter((part): part is string => part !== null && part !== '')
+          .join(' '),
+      )
+      .join(' · ');
+  }
   if (typeof value === 'object' && !Array.isArray(value)) {
     const parts = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v !== null && v !== undefined && v !== '' && !isUuidShaped(v))

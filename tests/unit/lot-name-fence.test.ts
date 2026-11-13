@@ -93,6 +93,12 @@ const NAMES: Record<string, Kind> = {
   'src/app/(protected)/inventory/qrless-print-list.tsx': 'own',
   'src/app/api/pricing/similar/[lotId]/route.ts': 'own',
   'src/modules/platform/notifications/service.ts': 'own',
+  // «Prixod keldi» (0146): the seller's message — a STORED payload, which
+  // keeps the lot's own name by the house rule (the same payload the
+  // service's own cases print). At the confirm door no tarkib exists yet; the
+  // claim door's message (`via: 'assign'`) may describe a lot that already
+  // carries one and still prints the stored name, as that door's always did.
+  'src/modules/platform/notifications/receipt-arrival.ts': 'own',
   'src/modules/wms/documents/agent-xlsx.ts': 'own',
   'src/modules/wms/documents/packing-photos-xlsx.ts': 'own',
   'src/modules/wms/documents/ved-xlsx.ts': 'own',
