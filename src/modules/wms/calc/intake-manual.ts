@@ -72,6 +72,12 @@ import {
  * 507, once «cbm» was a word this reader knew.
  */
 const GAP = String.raw`[ \t\u00a0\u202f]*`;
+// An optional mark between two gaps carries its OWN gap — `(?:${GAP}[:：=])?`,
+// never `${GAP}[:：=]?${GAP}`: two or three runs of spaces with only optional
+// characters between them split one stretch of spaces every way when the
+// figure after it is missing, and a label followed by a long run of spaces was
+// cubic — one Telegram message froze the one app process for ~50 s (review
+// load-1). The two are the same language.
 
 /**
  * Never a number glued to a letter on its left (review JN-5): the 777 of
@@ -137,7 +143,7 @@ const LONE_SCALED_FIGURE = new RegExp(
 
 /** A weight's label closing the text right before a figure — «G.W.:», «brutto», «og‘irligi», «вес брутто =». */
 const WEIGHT_LABEL_BEFORE = new RegExp(
-  String.raw`(?<![\p{L}])(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS])})${GAP}[.)]?${GAP}[:：=]?${GAP}$`,
+  String.raw`(?<![\p{L}])(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS])})(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}$`,
   'iu',
 );
 
@@ -152,7 +158,7 @@ const WEIGHT_LABEL_BEFORE = new RegExp(
  * and there it is). Group 1 is the number, and the match ENDS with it.
  */
 const labelFirst = (free: readonly string[], all: readonly string[], unit: 'kg' | 'm3') => {
-  const unitWritten = String.raw`${GAP}[,(（\[]?${GAP}(?:${unitPattern(unit)})(?![\p{L}\d])${GAP}[)）\]]?${GAP}[:：=]?`;
+  const unitWritten = String.raw`(?:${GAP}[,(（\[])?${GAP}(?:${unitPattern(unit)})(?![\p{L}\d])(?:${GAP}[)）\]])?(?:${GAP}[:：=])?`;
   return new RegExp(
     String.raw`(?<![\d])(?<!(?!\p{Script=Han})\p{L})(?:(?:${labelPattern(free)})(?:${unitWritten}|${GAP}[:：=])|(?:${labelPattern(all)})${unitWritten})${GAP}(${AMOUNT_NUMBER})(?![\d.,]*\d)`,
     'giu',
@@ -1155,11 +1161,17 @@ const UNIT_FREE_EXACT = {
  * one. Group 1: the label; 2: the «:» / «=» between, if any.
  */
 const FIELD_BEFORE_FIGURE = new RegExp(
-  String.raw`(?<!\d)(?<!(?!\p{Script=Han})\p{L})(${labelPattern(FIELD_KIND_LABELS.flatMap(([, l]) => l))})${GAP}[.)]?${GAP}([:：=])?${GAP}(?=\d)`,
+  String.raw`(?<!\d)(?<!(?!\p{Script=Han})\p{L})(${labelPattern(FIELD_KIND_LABELS.flatMap(([, l]) => l))})(?:${GAP}[.)])?(?:${GAP}([:：=]))?${GAP}(?=\d)`,
   'giu',
 );
-/** The figure after a label: its number, and the word after it. */
-const FIGURE_AT = new RegExp(String.raw`^(${AMOUNT_NUMBER})(?!\d)(?:${GAP}([\p{L}²³][\p{L}\d²³.]*))?`, 'iu');
+/**
+ * The figure after a label: its number, and the word after it. The word is
+ * BOUNDED (review load-3): on Chinese written with no spaces the run of
+ * letters is the rest of the line, read again at every label of it — O(L²) a
+ * line. No unit word is longer than 40 characters, and a longer run is no
+ * unit either way.
+ */
+const FIGURE_AT = new RegExp(String.raw`^(${AMOUNT_NUMBER})(?!\d)(?:${GAP}([\p{L}²³][\p{L}\d²³.]{0,40}))?`, 'iu');
 /** `FIELD_BEFORE_FIGURE` at one place: the next field of a spec line, its label and its own figure. */
 const FIELD_HERE = new RegExp(String.raw`${GAP}(?:${FIELD_BEFORE_FIGURE.source})`, 'iuy');
 
@@ -1802,7 +1814,7 @@ const FIELD_LINE = new RegExp(
     ...FIELD_KIND_LABELS.flatMap(([, l]) => l),
     ...FIELD_LABELS.size,
     ...FIELD_LABELS.packageSize,
-  ])})${GAP}[.)]?${GAP}[:：=]?${GAP}(?=\p{L}?\d)`,
+  ])})(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}(?=\p{L}?\d)`,
   'iu',
 );
 

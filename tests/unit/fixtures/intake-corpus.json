@@ -16387,6 +16387,41 @@
    "why": "crit-2's guard.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4300",
+   "input": "Product: folding chair\nQty .  :  200 pcs\nCartons: 20\nG.W.) = 15 kg/ctn",
+   "expected": {
+    "rows": [
+     {
+      "name": "folding chair",
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good, 200 pcs, 20 × 15 kg = 300 kg — a dot, a bracket, spaces and «=» between a label and its figure",
+   "why": "load-1: the field labels were rewritten so each optional mark carries its own gap (no cubic backtracking); the language they read is the same.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4301",
+   "input": "Product: folding chair\nQty\t\t: 200 pcs\nCartons: 20\nG.W.\t\t: 15 kg/ctn",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "tabs before the colon read the figures as before (200 pcs, 20 × 15 = 300 kg)",
+   "why": "load-1's rewrite, the tab spelling. Not pinned: the name keeps «G.W» there — as at 50eb41d, a tab before a tail-marked label's colon (open, stated).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
@@ -60383,6 +60418,30 @@
    "why": "crit-2: the landed item carried no count.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "defect"
+  },
+  {
+   "id": "c4302",
+   "input": "G.W. (kg): 507",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "a label-first total with its unit in brackets: 507 kg",
+   "why": "load-1: the label-first totals' unit-written gaps were rewritten the same way.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4303",
+   "input": "CBM , m3 : 5.92",
+   "expected": {
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "a comma before the unit and spaces before the colon: 5.92 m³",
+   "why": "load-1's rewrite of the label-first cube.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [

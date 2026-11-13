@@ -136,3 +136,58 @@ describe('T12 in the kernel — a label before a tail-marked figure, and the siz
     expect(packingRead('stul 60x40x50 sm 20 karobka').size).toMatchObject({ of: 'package' });
   });
 });
+
+// Review load-1: the field labels of T8/T12 were each written `label GAP [.)]?
+// GAP [:：=]? GAP (?=digit)` — three runs of spaces with only optional single
+// characters between them, so a label followed by a long stretch of spaces and
+// no figure was tried at every split of the stretch: cubic. One Telegram message
+// («G.W.» + 4 080 spaces) froze the one app process for ~50 s on the AI sotuvchi's
+// path; a spec block's «毛重» + 2 000 spaces cost 23 s. The label-first totals'
+// «G.W. kg» + spaces had the same shape. Each optional character now carries its
+// own gap — the same language — and the cost is the base's: the known readRoute
+// quadratic (~0.1-0.3 s here at 1 500 spaces, the cubic took 2-10 s).
+describe('load-1 — a field label followed by a long run of spaces is read without backtracking', () => {
+  const spaces = ' '.repeat(1_500);
+  it.each([
+    ['the line form, a weight label', `Stul 20 dona G.W.${spaces}x`],
+    ['the line form, a count label', `Stul 20 dona Qty${spaces}x`],
+    ['the line form, a Han label', `Stul 20 dona 毛重${spaces}x`],
+    ['the spec block form', `品名 折叠椅\n毛重${spaces}x`],
+    ['a label-first total, its unit written', `G.W. kg${spaces}x`],
+    ['a label-first cube, its unit written', `Stul 20 dona CBM m3${spaces}x`],
+  ])('%s: under a second in both typed readers', (_, text) => {
+    let at = performance.now();
+    readGoodsLines(text);
+    expect(performance.now() - at, 'readGoodsLines').toBeLessThan(1_000);
+    at = performance.now();
+    parseManualFacts(text, 'podklyuch');
+    expect(performance.now() - at, 'parseManualFacts').toBeLessThan(1_000);
+  });
+
+  it('the shapes the labels read are read as before — a gap, a dot, a bracket and a colon in every order', () => {
+    // 20 cartons × 15 kg = 300 kg in each spelling of the weight's field.
+    for (const line of ['Qty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn', 'Qty .  :  200 pcs\nCartons: 20\nG.W.) = 15 kg/ctn', 'Qty\t\t: 200 pcs\nCartons: 20\nG.W.\t\t: 15 kg/ctn']) {
+      expect(row(`Product: folding chair\n${line}`), line).toMatchObject({ quantity: 200, weightKg: 300 });
+    }
+    expect(parseManualFacts('G.W. (kg): 507', 'podklyuch').weightKg).toBe(507);
+    expect(parseManualFacts('G.W. kg = 507', 'podklyuch').weightKg).toBe(507);
+    expect(parseManualFacts('CBM , m3 : 5.92', 'podklyuch').volumeM3).toBe(5.92);
+  });
+});
+
+// Review load-3: the word after a label's figure (`FIGURE_AT`) was an unbounded
+// run of letters, and on Chinese written with no spaces that run is the rest of
+// the line — walked again at every label of it, O(L²) a line (32 768 glued
+// characters: 1.3 s; bounded: ~70 ms). No unit is longer than 40 characters.
+describe('load-3 — a long glued Chinese line is read in linear time', () => {
+  it('32 768 characters of «毛重507kg体积5.92立方» under half a second; a 41-letter word after a figure is no unit, as before', () => {
+    const unit = '毛重507kg体积5.92立方';
+    const glued = unit.repeat(Math.ceil(32_768 / unit.length)).slice(0, 32_768);
+    const at = performance.now();
+    readGoodsLines(glued);
+    expect(performance.now() - at).toBeLessThan(500);
+    // «Qty: 200» + a 45-letter word: the word is no unit, so the label gives the figure none — as it never did.
+    expect(row(`Product: chair\nQty: 200 ${'a'.repeat(45)}`).quantity).toBeNull();
+    expect(row('Product: chair\nQty: 200 pcs').quantity).toBe(200);
+  });
+});
