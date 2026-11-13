@@ -119,6 +119,47 @@ describe('T12 — one package’s field lines are the block’s packing (owner-3
   });
 });
 
+// Review crit-5 (the completeness critic's; reproduced at 5e97abf): T12's
+// labels departed from §2.4 in the sellers' own two languages — «Karobka: 20»
+// (a unit word as the label) ended the block, «Количество мест» was eaten by
+// the count label «количество», «Вес одного места: 15 кг» read by nobody —
+// and the carton count and the per-carton weight vanished with no note.
+describe('T12 — the cartons and one place’s weight in Uzbek and Russian (crit-5)', () => {
+  it('each block is ONE good: 200 pieces, 20 cartons × 15 kg = 300 kg', () => {
+    for (const text of [
+      'Nomi: stul\nSoni: 200 dona\nKarobka: 20\nOg‘irligi: 15 kg/karobka',
+      'Nomi: stul\nSoni: 200 dona\nQuti: 20\nOg‘irligi: 15 kg/quti',
+      'Наименование: стул\nКоличество: 200 шт\nКоличество мест: 20\nВес брутто 15 кг/место',
+      'Наименование: стул\nКоличество: 200 шт\nКол-во мест: 20\nВес брутто 15 кг/место',
+      'Наименование: стул\nКоличество: 200 шт\nКоробок: 20\nВес одного места: 15 кг',
+      'Наименование: стул\nКоличество: 200 шт\nМест: 20\nВес одного места: 15 кг',
+    ]) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ quantity: 200, weightKg: 300 });
+      expect(r.packing, text).toMatchObject({ cartons: 20, kgPerCarton: 15 });
+      expect(parseManualFacts(text, 'podklyuch').weightKg, text).toBeNull();
+    }
+  });
+
+  it('a unit word as the label right under the name, a counter after its figure, the next field’s label after a count', () => {
+    // 20 cartons × 15 kg = 300 kg; never a product «stul Karobka» × 20.
+    for (const text of ['Nomi: stul\nKarobka: 20\nOg‘irligi: 15 kg/karobka', 'Nomi: stul\nKarobka: 20 ta\nOg‘irligi: 15 kg/karobka']) {
+      expect(row(text), text).toMatchObject({ name: 'stul', quantity: null, weightKg: 300 });
+    }
+    // «Soni: 200 Karobka: 20» — «Karobka:» is the next field, not 200's unit.
+    expect(row('Nomi: stul\nSoni: 200\nKarobka: 20')).toMatchObject({ name: 'stul', quantity: 200 });
+    // «件数» is the count of packages as a label (§2.4).
+    expect(row('品名: 折叠椅\n件数: 20\n毛重: 15kg/箱')).toMatchObject({ weightKg: 300 });
+  });
+
+  it('on one line the place’s 15 kg is still no shipment total: the carton count stands before its label', () => {
+    expect(parseManualFacts('стул Мест: 20 Вес одного места: 15 кг', 'podklyuch').weightKg).toBeNull();
+    expect(row('стул Мест: 20 Вес одного места: 15 кг')).toMatchObject({ weightKg: 300 });
+    // «Qty: 200 Kg: 150» was 200 kg: «Kg:» is the next field's label, never 200's unit.
+    expect(parseManualFacts('Qty: 200 Kg: 150', 'podklyuch').weightKg).not.toBe(200);
+  });
+});
+
 describe('T12 — where a block ends, and what is no block', () => {
   it('a blank line and the next name label end it: two blocks are two goods, each 300 kg (20 × 15, 10 × 30)', () => {
     const goods = readGoodsLines('品名 折叠椅\n20箱\n毛重 15kg/箱\n\n品名 桌子\n10箱\n毛重 30kg/箱');

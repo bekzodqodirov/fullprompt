@@ -279,7 +279,13 @@ export const FIELD_LABELS = {
     'название', 'nomi', 'tovar', 'mahsulot',
   ],
   count: ['数量', 'qty', 'quantity', 'кол-во', 'количество', 'soni', 'miqdori'],
-  cartons: ['箱数', 'ctns', 'cartons', 'packages', 'pkgs', 'мест', 'коробок', 'karobka soni', 'joy soni'],
+  // The standard Russian packing-list labels stand before «количество» (longest first — review crit-5:
+  // «Количество мест: 20» was eaten by the count label, the cartons lost); «件数», §2.4's, is the
+  // count of packages as a LABEL, never «件» as a unit.
+  cartons: [
+    '箱数', '件数', 'ctns', 'cartons', 'packages', 'pkgs', 'мест', 'коробок', 'количество мест', 'кол-во мест',
+    'количество коробок', 'кол-во коробок', 'karobka soni', 'joy soni',
+  ],
   // WHOSE size a label names decides the arithmetic (review JN-11, PR-12):
   // only a PACKAGE's size is multiplied by the packages. A label that says
   // «carton» is the package's; a bare «size» says nobody's — the size is kept
@@ -1175,12 +1181,12 @@ const WEIGHT_LABEL_WORD = /重|weight|(?<![\p{L}])wt|g\.?\s?w|n\.?\s?w|gross|bru
  * figure starts. A block line of this shape is the block's packing, never a
  * row of its own, and outside a block it is no goods line.
  */
-export function perOneLabelLine(line: string): { unit: 'kg' | 'm3' | 'dona'; figureAt: number } | null {
+export function perOneLabelLine(line: string): { unit: 'kg' | 'm3' | 'dona'; figureAt: number; label: string } | null {
   const hit = PER_ONE_LABEL_OPENING.exec(line);
   if (!hit) return null;
   const label = hit[1] ?? hit[2] ?? '';
   const unit = VOLUME_LABEL_WORD.test(label) ? 'm3' : WEIGHT_LABEL_WORD.test(label) ? 'kg' : hit[2] !== undefined ? 'dona' : null;
-  return unit === null ? null : { unit, figureAt: hit[0].length };
+  return unit === null ? null : { unit, figureAt: hit[0].length, label };
 }
 /** A package-possessed label's own words, looked for before the pattern is run (`markOf`). */
 const PACKAGE_LABEL_STEM = /karobk|karopk|korobk|qut|кут|қут|qop|қоп|joy|жой|коробк|мест|упаковк|ящик|мешк|carton|ctn|box|package|pkg|bag|箱/u;
@@ -1459,7 +1465,10 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   // that number's — «0.12 cbm/ctn 300 kg» is one carton's cube and the line's
   // own 300 kg, never a «CBM/CTN:» heading the kilos (review doors-1: the row
   // weighed 20 × 300 = 6 000 kg, a 20× weight on a per-kg customs price).
-  const label = labelHit && !/\d\s*$/u.test(before.slice(0, labelHit.index)) ? labelHit : null;
+  // Only a label that IS a unit word can be the number's unit: «20 Вес одного
+  // места: 15 кг», «20 G.W./CTN: 15 kg» — the carton count, then the label of
+  // the next figure (review crit-5: the 15 kg was the shipment's).
+  const label = labelHit && !(unitOf(labelHit[1]) !== null && /\d\s*$/u.test(before.slice(0, labelHit.index))) ? labelHit : null;
   if (label) {
     const owner = label[2] !== undefined ? tailWordOwner(label[2]) : label[3] !== undefined ? nounOwner(label[3]) : 'package';
     const word = label[1]!.replace(/\s+/gu, ' ').trim();

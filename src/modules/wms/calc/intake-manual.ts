@@ -1283,6 +1283,8 @@ const FIELD_BEFORE_FIGURE = new RegExp(
  * unit either way.
  */
 const FIGURE_AT = new RegExp(String.raw`^(${AMOUNT_NUMBER})(?!\d)(?:${GAP}([\p{L}²³][\p{L}\d²³.]{0,40}))?`, 'iu');
+/** A unit word written as a field's label at a line's start — «Karobka: 20», «Коробки = 20». Group 1: the word. */
+const UNIT_WORD_FIELD = new RegExp(String.raw`^(\p{L}[\p{L}.]{0,20})${GAP}[:：=]${GAP}(?=\d)`, 'u');
 /** `FIELD_BEFORE_FIGURE` at one place: the next field of a spec line, its label and its own figure. */
 const FIELD_HERE = new RegExp(String.raw`${GAP}(?:${FIELD_BEFORE_FIGURE.source})`, 'iuy');
 
@@ -1293,7 +1295,15 @@ const FIELD_HERE = new RegExp(String.raw`${GAP}(?:${FIELD_BEFORE_FIGURE.source})
  */
 function fieldAt(text: string, at: number): boolean {
   FIELD_HERE.lastIndex = at;
-  return FIELD_HERE.test(text);
+  if (FIELD_HERE.test(text)) return true;
+  // …or ONE package's measure under its own label — «Мест: 20 Вес одного места: 15 кг» — or a unit
+  // word written as the next field's label, «Soni: 200 Karobka: 20» (review crit-5).
+  const next = text.slice(at, at + 64).replace(/^[ \t\u00a0\u202f]+/u, '');
+  // A label that is a unit word right after a figure is that figure's unit: «0.12 cbm/ctn 300 kg» (doors-1).
+  const perOne = perOneLabelLine(next);
+  if (perOne !== null && unitOf(perOne.label) === null) return true;
+  const unitLabel = UNIT_WORD_FIELD.exec(next);
+  return unitLabel !== null && unitOf(unitLabel[1]) !== null;
 }
 /** A figure followed by a slash and a word, or by «per …»: ONE package's or ONE piece's — the kernel's mark to read. */
 const PER_ONE_AFTER = /^\s*\/\s*\p{L}|^\s+(?:per|pr)\s/iu;
@@ -1356,12 +1366,37 @@ function readFieldLabels(text: string, fields: readonly number[] = []): LineFiel
   // was («Kurtka umumiy vazni 150 kg», «Qop soni 20 ta» — a places count) —
   // unless it is written as a field, with its «:» or «=» («Qty: 200 pcs»).
   const head = firstFigure(text);
+  // A spec block's field line opening with a UNIT word as its label — «Karobka:
+  // 20», «Коробки: 20», «Quti: 20», «Dona: 200» (review crit-5) — names its
+  // figure as «Cartons: 20» does; no field-label list holds these words, and
+  // right under the name the kernel took the word for the NAME's («stul
+  // Karobka» × 20).
+  for (const at of fields) {
+    FIELD_HERE.lastIndex = at;
+    if (FIELD_HERE.test(text)) continue;
+    const hit = UNIT_WORD_FIELD.exec(text.slice(at));
+    const own = hit ? unitOf(hit[1]) : null;
+    if (!hit || own === null) continue;
+    const figureStart = at + hit[0].length;
+    const read = FIGURE_AT.exec(text.slice(figureStart));
+    if (!read) continue;
+    const numberEnd = figureStart + read[1]!.length;
+    const word = read[2] !== undefined && !fieldAt(text, numberEnd) ? read[2] : undefined;
+    // «Karobka: 20 ta» — a bare counter after the figure says no unit of its own: the label's stands.
+    const counter = word !== undefined && /^(?:ta|та)$/iu.test(word);
+    if (word !== undefined && !counter && unitOf(word) !== own) continue;
+    edits.push({ start: at, end: figureStart });
+    if (counter) edits.push({ start: figureStart + read[0].length - word!.length, end: figureStart + read[0].length, with: hit[1] });
+    else if (word === undefined) edits.push({ start: numberEnd, end: numberEnd, with: ` ${hit[1]}` });
+  }
   for (const hit of text.matchAll(FIELD_BEFORE_FIGURE)) {
     const label = hit[1]!;
     const labelStart = hit.index;
     const figureStart = labelStart + hit[0].length;
     const colon = hit[2] !== undefined;
     if (figureStart <= head && !colon && !fields.includes(labelStart)) continue;
+    // «Вес 1 места: 33.8 кг» — the label opens ONE package's measure: the kernel's mark reads it whole (owner-3, crit-5).
+    if (perOneLabelLine(text.slice(labelStart, labelStart + 64)) !== null) continue;
     const read = FIGURE_AT.exec(text.slice(figureStart));
     if (!read) continue;
     const numberEnd = figureStart + read[1]!.length;
@@ -1969,6 +2004,9 @@ function specFieldLine(line: string, prefix: string | null): boolean {
   const text = line.trim().replace(LIST_MARKER, '');
   if (!text || nameLineOf(text, prefix) !== null) return false;
   if (FIELD_LINE.test(text) || perOneLabelLine(text) !== null) return true;
+  // «Karobka: 20», «Коробки: 20» — a unit word as the field's label (review crit-5).
+  const unitLabel = UNIT_WORD_FIELD.exec(text);
+  if (unitLabel && unitOf(unitLabel[1]) !== null) return true;
   // A line of nothing but figures — «20箱», «200 pcs», «20 ctns 300 kg».
   return firstFigure(text) === 0 && unitFigures(text, { measured: false });
 }

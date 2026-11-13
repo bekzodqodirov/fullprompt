@@ -16778,6 +16778,92 @@
    "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "defect"
+  },
+  {
+   "id": "c4364",
+   "input": "Nomi: stul\nSoni: 200 dona\nKarobka: 20\nOg‘irligi: 15 kg/karobka",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4365",
+   "input": "Наименование: стул\nКоличество: 200 шт\nКоличество мест: 20\nВес брутто 15 кг/место",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4366",
+   "input": "Наименование: стул\nКоличество: 200 шт\nКол-во мест: 20\nВес брутто 15 кг/место",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4367",
+   "input": "Наименование: стул\nКоличество: 200 шт\nКоробок: 20\nВес одного места: 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4368",
+   "input": "Nomi: stul\nKarobka: 20\nOg‘irligi: 15 kg/karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "stul",
+      "quantity": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«stul», 20 × 15 = 300 kg; no «stul Karobka» × 20",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -61322,6 +61408,18 @@
    },
    "said": "one carton's cube is no shipment's, and no row",
    "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4369",
+   "input": "стул Мест: 20 Вес одного места: 15 кг",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "one place's 15 kg is no shipment total",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "defect"
   }
