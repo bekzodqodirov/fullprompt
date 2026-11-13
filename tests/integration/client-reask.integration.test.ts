@@ -896,11 +896,21 @@ describe('the owner corrected and corrected back (the as-built review, DLV-2)', 
   });
 
   it('a save of the SAME client is no correction: a held question keeps its time (the fixes’ review, CONC-6)', async () => {
+    // The receipt push went long ago, as it has on every live prixod — with no such row, the save would claim a
+    // fresh push for this client, and THAT waiting question would hold the arm back by itself (proven: the guard
+    // removed, the test stayed green).
+    await db.execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, status, sent_at, asked_tag, asked_at)
+      VALUES (${clientId}::uuid, 'received_cn', 'receipt', ${receipt.main}::uuid, now() - interval '2 hours', now(), 'sent',
+              now() - interval '2 hours', ${await tagNow()}, now() - interval '2 hours')
+    `);
     await deliverPersonQuestion();
     await reweigh('K', 110);
     await db.execute(sql`UPDATE client_notices SET send_after = now() + interval '3 minutes' WHERE kind = ${NOTICE_LOT_REASK} AND ref_id = ${receipt.main}::uuid`);
     const held = (await rowOf(NOTICE_LOT_REASK))!.send_after;
     await assignReceiptClient(receipt.main, clientId, { actorId: staffId, ip: null, userAgent: 'client-reask.integration' });
+    // Nothing else is waiting to ask (the push stays `sent`) — so only the guard keeps the window where it was.
+    expect((await rowOf('received_cn'))?.status).toBe('sent');
     expect(new Date((await rowOf(NOTICE_LOT_REASK))!.send_after).getTime()).toBe(new Date(held).getTime());
   });
 });
