@@ -2383,6 +2383,55 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(after.cube).toBe(4.8);
     expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
   },
+  c4521: async () => {
+    // review seams-2: the asked columns' Σ (36 kg / 0.18 m³) is no shipment total; after the seller
+    // answers every row the cube is the rows' 0.5 + 1.2 + 2.1 = 3.8 and the brutto is still his to give.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '2: 260 kg 1.2 m3', '3: 330 kg 2.1 m3']);
+    const before = steps[0]!;
+    const after = steps.at(-1)!;
+    expect(before.weightKg).toBeNull();
+    expect(before.state.facts.volumeM3 ?? null).toBeNull();
+    expect(before.table).not.toContain('36 kg');
+    expect(after.cube).toBe(3.8);
+    expect(after.weightKg).toBeNull();
+    expect(after.table).not.toContain('0.18');
+  },
+  c4522: async () => {
+    // review seams-4: the same packing list beside its invoice (ci then pl): its asked columns' Σ is
+    // no «✅ brutto / kub» either, and the receipt names both columns.
+    const ci: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'Unit price', 'Amount', 'N.W.(KGS)'],
+      [1, 'Ladies jacket', 200, 6.5, 1300, 100],
+      [2, 'Kids toy plastic', 480, 1.5, 720, 240],
+      [3, 'LED lamp 50W', 300, 3, 900, 300],
+    ];
+    const pl: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { said, steps } = await aiDoorWalk('podklyuch', [
+      [xlsx({ name: 'Sheet1', rows: ci }), 'ci.xlsx'],
+      [xlsx({ name: 'Sheet1', rows: pl }), 'pl.xlsx'],
+    ]);
+    const now = steps[0]!;
+    expect(now.weightKg).toBeNull();
+    expect(now.cube).toBeNull();
+    expect(now.table).toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+    expect(now.table).toContain('umumiy hajmi (kub) — yozilmagan');
+    expect(said.join('\n')).toContain(
+      '«G.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi',
+    );
+  },
 };
 
 /** Forty one-cell sheets — the fixture's own BIFF builders (c0428). */

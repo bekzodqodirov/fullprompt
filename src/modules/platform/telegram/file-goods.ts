@@ -919,6 +919,51 @@ export function packingTotals(
   return { weightKg: null, weightNetto: false, volumeM3: meta.volumeM3 };
 }
 
+/** A total a file's own column questions doubt (`withoutAskedTotals`). */
+export type AskedTotal = 'weightKg' | 'volumeM3';
+
+/**
+ * The totals a file's OWN column questions take from it (docs/AI-SORAYDI.md
+ * §3.2 X5; ruling JR-11 «the line figures STAY, the Σ stays null, and the
+ * column is asked»; review seams-2, seams-4). A column the table asks «one
+ * carton's or the line's?» adds up to the very figure the question doubts —
+ * 36 kg / 0.18 m³ where, one carton's, the shipment is 710 kg / 3.8 m³ — and
+ * the seller answers it ROW by row, so its Σ, or the TOTAL row that is its Σ,
+ * is never the shipment's: under ✅ it stayed 20× small after every row was
+ * answered as told. So the cube falls to the current lines' Σ «qatorlardan»,
+ * which follows his answers, and the brutto is asked. A brutto in a gross
+ * column of its OWN beside an asked NET column is not the asked column's and
+ * stands; a netto offered from the asked column is its Σ and goes.
+ *
+ * `doubted` — what the model's reading of the same file must not stand for
+ * either (it reads that TOTAL row as text); `dropped` — the asked columns
+ * whose total is not taken, for the receipt to name. Only on a door that ASKS
+ * (`tableAsksOf` draws the column there): the plain door is frozen and takes
+ * the file as it stands. Pure.
+ */
+export function withoutAskedTotals(
+  meta: Pick<GoodsFileMeta, 'asks' | 'weightKind' | 'grossColumn'>,
+  totals: PackingTotals,
+): { totals: PackingTotals; doubted: AskedTotal[]; dropped: ColumnAsk[] } {
+  const asks = meta.asks ?? [];
+  if (asks.length === 0) return { totals, doubted: [], dropped: [] };
+  const asked = (field: AskedTotal) => asks.some((a) => a.field === field);
+  const ownGross = meta.weightKind === 'net' && meta.grossColumn;
+  const doubted: AskedTotal[] = [];
+  let { weightKg, weightNetto, volumeM3 } = totals;
+  if (asked('weightKg') && (!ownGross || weightNetto)) {
+    weightKg = null;
+    weightNetto = false;
+    if (!ownGross) doubted.push('weightKg');
+  }
+  if (asked('volumeM3')) {
+    volumeM3 = null;
+    doubted.push('volumeM3');
+  }
+  const after = { weightKg, weightNetto, volumeM3 };
+  return { totals: after, doubted, dropped: asks.filter((a) => after[a.field] === null) };
+}
+
 /** Both rows state a count (or a measure in one unit), and the counts differ. */
 function countsDisagree(a: GoodsList[number], b: GoodsList[number]): boolean {
   const qa = figureOf(a, 'quantity');
@@ -1362,6 +1407,8 @@ export function packingNote(
   carried = 0,
   /** List rows whose packages no goods row could be named for (`packingCarries`' `unplaced`). */
   unplaced = 0,
+  /** The list's asked columns whose total was not taken (`withoutAskedTotals`' `dropped`), and its weight kind. */
+  asked: { columns: readonly Pick<ColumnAsk, 'field' | 'title'>[]; weightKind: WeightKind } = { columns: [], weightKind: null },
 ): string {
   const taken = [
     totals.weightKg !== null ? (totals.weightNetto ? 'umumiy netto' : 'umumiy brutto') : null,
@@ -1369,10 +1416,34 @@ export function packingNote(
   ].filter((t): t is string => t !== null);
   const carriedSaid = carriedWords(carried, unplaced);
   const fills = `${filled > 0 ? ` ${fillsWords(filled)}` : ''}${carriedSaid ? ` ${carriedSaid}` : ''}`;
-  if (taken.length === 0) return `📄 ${label} — o‘sha tovarlar: qatorlar ${rowsFrom}, jami o‘qilmadi — VED fayldan ko‘radi.${fills}`;
-  const noBrutto = totals.weightKg === null || totals.weightNetto;
-  const brutto = noBrutto ? (grossColumn ? '; brutto ba’zi qatorlarda yo‘q.' : '; brutto ustuni yo‘q.') : '.';
-  return `📄 ${label} — o‘sha tovarlar: qatorlar ${rowsFrom}, bundan faqat ${taken.join(' va ')} olindi${brutto}${fills}`;
+  const doubt = asked.columns.length > 0 ? askedColumnsClause(asked.columns, asked.weightKind === 'net') : null;
+  if (taken.length === 0) {
+    return doubt
+      ? `📄 ${label} — o‘sha tovarlar: qatorlar ${rowsFrom}; ${doubt}.${fills}`
+      : `📄 ${label} — o‘sha tovarlar: qatorlar ${rowsFrom}, jami o‘qilmadi — VED fayldan ko‘radi.${fills}`;
+  }
+  // A brutto the column question took is said by that clause, never as a missing column.
+  const noBrutto = (totals.weightKg === null || totals.weightNetto) && !asked.columns.some((a) => a.field === 'weightKg');
+  const brutto = noBrutto ? (grossColumn ? '; brutto ba’zi qatorlarda yo‘q' : '; brutto ustuni yo‘q') : '';
+  return `📄 ${label} — o‘sha tovarlar: qatorlar ${rowsFrom}, bundan faqat ${taken.join(' va ')} olindi${doubt ? `; ${doubt}` : ''}${brutto}.${fills}`;
+}
+
+/**
+ * The receipt's clause for a packing list's asked columns whose total was not
+ * taken (`withoutAskedTotals`, review seams-4) — the column NAMED, as the
+ * belt's own «aniq emas» note names its: beside an invoice the rows are the
+ * invoice's, so the list's column question is never drawn under them, and
+ * this sentence is where the seller learns why the brutto and the cube are
+ * asked.
+ */
+function askedColumnsClause(columns: readonly Pick<ColumnAsk, 'field' | 'title'>[], netto: boolean): string {
+  const titles = [...new Set(columns.map((a) => `«${a.title}»`))];
+  const what = [
+    columns.some((a) => a.field === 'weightKg') ? (netto ? 'umumiy netto' : 'umumiy brutto') : null,
+    columns.some((a) => a.field === 'volumeM3') ? 'kub' : null,
+  ].filter((w): w is string => w !== null);
+  const where = titles.length === 1 ? `${titles[0]} ustunidagi son` : `${titles.join(' va ')} ustunlaridagi sonlar`;
+  return `${where} bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun ${what.join(' va ')} fayldan olinmadi`;
 }
 
 /** «N ta qatorga netto og‘irlik shu fayldan yozildi» — never over a figure the row states. */
@@ -1411,12 +1482,31 @@ const agreeTotal = (a: number, b: number, unit: number) => {
  */
 export function withFileTotals(
   prev: IntakeState['fileTotals'],
-  next: PackingTotals & { label: string; at: TotalsMark },
+  next: PackingTotals & { label: string; at: TotalsMark; doubted?: readonly AskedTotal[] },
 ): { fileTotals: IntakeState['fileTotals']; clash: boolean } {
-  if (next.weightKg === null && next.volumeM3 === null) return { fileTotals: prev, clash: false };
+  // A figure the list's own column question doubted (`withoutAskedTotals`) is
+  // kept as a DOUBT even with nothing taken (review seams-4): the model reads
+  // the same list's TOTAL row as text, and must not stand where the file's Σ
+  // could not. Like a clash, it names the field and states no figure.
+  const doubted = [...new Set([...(prev?.doubted ?? []), ...(next.doubted ?? [])])];
+  const doubtOf = doubted.length > 0 ? { doubted } : {};
+  if (next.weightKg === null && next.volumeM3 === null) {
+    if ((next.doubted ?? []).length === 0) return { fileTotals: prev, clash: false };
+    return {
+      fileTotals: prev ? { ...prev, ...doubtOf } : { weightKg: null, volumeM3: null, weightNetto: false, label: next.label, at: next.at, ...doubtOf },
+      clash: false,
+    };
+  }
   if (!prev) {
     return {
-      fileTotals: { weightKg: next.weightKg, volumeM3: next.volumeM3, weightNetto: next.weightKg !== null && next.weightNetto, label: next.label, at: next.at },
+      fileTotals: {
+        weightKg: next.weightKg,
+        volumeM3: next.volumeM3,
+        weightNetto: next.weightKg !== null && next.weightNetto,
+        label: next.label,
+        at: next.at,
+        ...doubtOf,
+      },
       clash: false,
     };
   }
@@ -1454,6 +1544,7 @@ export function withFileTotals(
       label: `${prev.label}, ${next.label}`,
       at: next.at,
       ...(clashed.size > 0 ? { clash: [...clashed] } : {}),
+      ...doubtOf,
     },
     clash,
   };

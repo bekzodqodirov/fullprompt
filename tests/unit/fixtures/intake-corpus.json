@@ -97117,6 +97117,40 @@
    "why": "review seams-3 (blocker): 14ea584 made the lone invoice's line Σ a STATED cube, frozen at the reading — 3.8 m³ priced and stored where the rows said 4.8, the «qatorlardan» label lost. Only the TOTAL-row / summary case it was written for stands (a line lacking its cube). Base: null → the lines' Σ «qatorlardan».",
    "source": "ai-soraydi 1a review (seams-3)",
    "weight": "blocker"
+  },
+  {
+   "id": "c4521",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (a lone packing list on the AI door, its G.W. and CBM columns asked)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — Ladies jacket 200/10/12/0.05, Kids toy plastic 480/20/13/0.06, LED lamp 50W 300/30/11/0.07, TOTAL 980/60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "2: 260 kg 1.2 m3",
+     "3: 330 kg 2.1 m3"
+    ]
+   },
+   "said": "the columns are asked, so their Σ 36 kg / 0.18 m³ is no shipment total: the brutto is asked, and after every row is answered the cube is the rows' 3.8 m³ «qatorlardan» — never 0.18 under ✅",
+   "why": "review seams-2 (blocker); ruling JR-11 «the line figures STAY, the Σ stays null, and the column is asked». The file's Σ — and the model's reading of the same TOTAL row — no longer stand for an asked field (`withoutAskedTotals`, fileTotals.doubted). Plain door unchanged.",
+   "source": "ai-soraydi 1a review (seams-2)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4522",
+   "call": "readIntakeFile ×2 + analyzeCollected (an invoice, then its packing list with asked G.W. and CBM columns)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY | Unit price | Amount | N.W.(KGS) — 100/240/300 kg",
+     "pl.xlsx": "No. | Description | QTY | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, TOTAL 36/0.18"
+    },
+    "model": "answers nothing"
+   },
+   "said": "beside its invoice the packing list's asked columns give no brutto and no cube: both are asked, and the receipt says ««G.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi»",
+   "why": "review seams-4 (defect): the list's asks were dropped silently in all three orders and its Σ stood as «✅ brutto 36 kg / kub 0.18» with «bundan faqat umumiy brutto va kub olindi». The further sheet of one workbook now carries its asks too.",
+   "source": "ai-soraydi 1a review (seams-4)",
+   "weight": "defect"
   }
  ],
  "sameGoodsLineCases": [

@@ -291,6 +291,8 @@ export interface MappedSheet extends SheetShape {
   stoppedShort: boolean;
   /** What the reader says of THIS sheet's columns (`ParsedGoods.notes`, docs/AI-SORAYDI.md §3.2 X5). */
   notes: SheetNote[];
+  /** THIS sheet's line columns nothing settled (`ParsedGoods.asks`, review JN-12, seams-4). Absent = none. */
+  asks?: ColumnAsk[];
 }
 
 /** What the bot learns from a spreadsheet the seller forwarded. */
@@ -742,6 +744,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
           dropped: p.parsed.dropped,
           stoppedShort: p.parsed.stoppedShort,
           notes: p.parsed.notes,
+          ...(p.parsed.asks ? { asks: p.parsed.asks } : {}),
         };
       });
     return {

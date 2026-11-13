@@ -27,6 +27,7 @@ import {
   packingCoversHeld,
   packingOfHeld,
   packingTotals,
+  withoutAskedTotals,
   positionalCarries,
   positionalFills,
   provenOther,
@@ -653,22 +654,30 @@ export function receiveGoodsSheet(
   });
   // A packing list's totals: the collection's, or — in a top-up — the note's.
   const totalsOf = (m: GoodsFileMeta, rows: NonNullable<IntakeState['invoiceGoods']>, rowsFrom: string, filled: number, carried = 0, unplaced = 0) => {
-    const totals = packingTotals(m, rows);
+    const read = packingTotals(m, rows);
+    // …never the Σ of a column the list's own question asks (review seams-4):
+    // beside an invoice that question is not drawn under its rows, so the list
+    // stood as «✅ brutto / kub» on the very figure it could not settle. On a
+    // door that asks only; the plain door is frozen and takes the list whole.
+    const asking = collectionDoor(state) !== 'plain';
+    const { totals, doubted, dropped } = asking ? withoutAskedTotals(m, read) : { totals: read, doubted: [], dropped: [] };
     if (topUp) {
+      // A top-up writes no totals at all (§1.2.3): its note states what the
+      // list says, as it always did, for the VED to read in the file.
       return {
         patch: {},
         lines: [
-          notedTotalsNote(m.label, totals),
+          notedTotalsNote(m.label, read),
           ...(filled > 0 ? [`📄 ${m.label} — ${fillsWords(filled)}`] : []),
           ...(carried + unplaced > 0 ? [`📄 ${m.label} — ${carriedWords(carried, unplaced)}`] : []),
         ],
       };
     }
-    const kept = withFileTotals(state.fileTotals ?? null, { ...totals, label: m.label, at: m.at ?? at });
+    const kept = withFileTotals(state.fileTotals ?? null, { ...totals, label: m.label, at: m.at ?? at, doubted });
     return {
       patch: { fileTotals: kept.fileTotals },
       lines: [
-        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled, carried, unplaced),
+        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled, carried, unplaced, { columns: dropped, weightKind: m.weightKind }),
         ...(kept.clash && state.fileTotals ? [totalsClashNote(m.label, state.fileTotals.label)] : []),
       ],
     };
@@ -1266,6 +1275,9 @@ async function answerIntakeFile(
         rows: m.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
       },
       columns: m.notes,
+      // …and its own column questions (review seams-4): a packing sheet beside
+      // the invoice sheet is judged by them as a lone packing list is.
+      ...(m.asks ? { asks: m.asks } : {}),
       repack,
       ...capOf(m.stoppedShort),
       further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape, itemCap: MAX_CALC_ITEMS },

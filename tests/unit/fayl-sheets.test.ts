@@ -124,9 +124,14 @@ describe('a further sheet, by its shape (§4.2)', () => {
     const answer = await forward(chatId, await r1Book(), 'CI-PL.xlsx');
     expect(rows(chatId)).toEqual(B.GOODS.map((g) => g.en));
     const s = activeIntake(chatId)!;
-    // The cartons-only Chinese packing list, line for line in another script:
-    // its brutto and cube are the shipment's — no model asked.
-    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3, s.fileTotals?.weightNetto]).toEqual([1592, 13.58, false]);
+    // The cartons-only Chinese packing list, line for line in another script.
+    // Its «毛重» and «体积» beside 15, 12, 8 … cartons are columns its own question
+    // asks (JN-12: nothing on the sheet says they are the lines' or one
+    // carton's), so their Σ is not the shipment's either (review seams-4 —
+    // re-anchored from [1592, 13.58, false]): both are asked, the doubt kept off
+    // the model too, and the receipt names the columns.
+    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3, s.fileTotals?.weightNetto]).toEqual([null, null, false]);
+    expect(s.fileTotals?.doubted).toEqual(['weightKg', 'volumeM3']);
     // …and each invoice row takes its line's carton count, place for place
     // (docs/AI-SORAYDI.md §3.2 X4, the seam — re-anchored: the list's «箱数»
     // was read and thrown away before), said once beside the totals. The
@@ -134,7 +139,7 @@ describe('a further sheet, by its shape (§4.2)', () => {
     expect(s.invoiceGoods?.map((g) => [g.packing?.cartons ?? null, g.derived ?? null])).toEqual(B.GOODS.map((g) => [g.ctns, null]));
     expect(answer.say).toBe(
       '📄 «CI-PL.xlsx» — 12 ta tovar o‘qildi («INVOICE» varag‘idan).\n' +
-        '📄 «CI-PL.xlsx», «PACKING» varag‘i — o‘sha tovarlar: qatorlar «INVOICE» varag‘idan, bundan faqat umumiy brutto va kub olindi. 12 ta qatorga karobka ma’lumoti shu fayldan olindi.',
+        '📄 «CI-PL.xlsx», «PACKING» varag‘i — o‘sha tovarlar: qatorlar «INVOICE» varag‘idan; «毛重» va «体积» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi. 12 ta qatorga karobka ma’lumoti shu fayldan olindi.',
     );
     // Its text still rides to the model under the totals heading (the C2/C6 fence stands).
     // The FILE's label: a later file that squeezes it says ««CI-PL.xlsx» ning boshqa varaqlari».
@@ -180,7 +185,9 @@ describe('a further sheet, by its shape (§4.2)', () => {
     await forward(chatId, await r1Book({ net: true }), 'CI-PL.xlsx');
     const s = activeIntake(chatId)!;
     expect((s.invoiceGoods ?? []).map((g) => g.weightKg)).toEqual(B.GOODS.map((g) => B.r2(g.nw * g.ctns)));
-    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([1592, 13.58]);
+    // The brutto stands in a gross column of its OWN beside the asked net one; the asked «体积» gives no cube
+    // (review seams-4 — re-anchored from [1592, 13.58]).
+    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([1592, null]);
   });
 
   it('R1 with another factory folded in before the packing list: its Σ is not the list’s — today’s reading', async () => {
@@ -207,7 +214,9 @@ describe('a further sheet, by its shape (§4.2)', () => {
     const s = activeIntake(chatId)!;
     expect(s.invoiceGoods).toHaveLength(12);
     expect((s.invoiceGoods ?? []).every((g) => typeof g.weightKg === 'number')).toBe(true);
-    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([1592, 13.58]);
+    // The list's «CBM» beside its cartons is asked (JN-12): its Σ is no cube beside the invoice (review seams-4 —
+    // re-anchored from [1592, 13.58]); the brutto is a gross column of its own beside the net one.
+    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([1592, null]);
   });
 
   it('K10, two invoice sheets of two factories: «Zavod B» is folded in and named (known-1)', async () => {
