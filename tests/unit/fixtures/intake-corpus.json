@@ -97100,6 +97100,23 @@
    "why": "sheets-08's collector pin",
    "source": "docs/FAYL-OQISH.md §4.6 (sheets-08's corpus pins; review sheets-spec-corpus-pins-missing)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4520",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer (a lone invoice on the AI door, every line stating its cube)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) | CBM — Ladies jacket 200/6.5/1300/1.2, Kids toy plastic 480/1.5/720/1.1, LED lamp 50W 300/3/900/1.5"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "2: 2.1 m3"
+    ]
+   },
+   "said": "the cube is the lines' Σ «qatorlardan» — 3.8 m³ — and after «2: 2.1 m3» it is 4.8 m³: a row corrected at the table moves the shipment's cube",
+   "why": "review seams-3 (blocker): 14ea584 made the lone invoice's line Σ a STATED cube, frozen at the reading — 3.8 m³ priced and stored where the rows said 4.8, the «qatorlardan» label lost. Only the TOTAL-row / summary case it was written for stands (a line lacking its cube). Base: null → the lines' Σ «qatorlardan».",
+   "source": "ai-soraydi 1a review (seams-3)",
+   "weight": "blocker"
   }
  ],
  "sameGoodsLineCases": [

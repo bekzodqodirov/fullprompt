@@ -25,7 +25,7 @@ vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
   (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
 );
 
-import { intakeNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { applyTableAnswer, intakeNextStep, tableEditsSettled } from '@/modules/platform/telegram/calc-dialog';
 import { readIntakeFile } from '@/modules/platform/telegram/calc-files';
 import { columnAsks } from '@/modules/platform/telegram/file-goods';
 import { activeIntake, analyzeCollected, endIntake, loneFileTotals, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
@@ -79,6 +79,7 @@ async function collect(section: CalcSection, files: [body: Buffer, name: string]
   const table = intakeNextStep(state, new Map(), intake, { nameWord: nameWordFor, aiAvailable: true });
   const goods = state.facts.goods ?? [];
   return {
+    chatId,
     said,
     totals,
     state,
@@ -87,6 +88,35 @@ async function collect(section: CalcSection, files: [body: Buffer, name: string]
     notes: landingItems(state.facts as never).map((item) => item.note),
     table: table.text,
   };
+}
+
+/**
+ * A typed answer at the table, as the bot writes it (`applyTableAnswer`), and the collection as it then
+ * stands: what the INSERT would take — the cube (`factsVolumeM3`), the brutto — and the table drawn again.
+ */
+async function answer(chatId: bigint, text: string) {
+  const ctx = {
+    async reply() {
+      return { message_id: 1 };
+    },
+    api: {
+      async editMessageText() {
+        return true;
+      },
+      async deleteMessage() {
+        return true;
+      },
+      async setMessageReaction() {
+        return true;
+      },
+    },
+  };
+  await applyTableAnswer(ctx as never, chatId, activeIntake(chatId)!, text, { date: 0, messageId: 77, forwarded: false, replyTo: null });
+  await tableEditsSettled();
+  const state = activeIntake(chatId)!;
+  const intake = await import('@/modules/wms/calc/intake');
+  const table = intakeNextStep(state, new Map(), intake, { nameWord: nameWordFor, aiAvailable: true });
+  return { state, goods: state.facts.goods ?? [], cube: factsVolumeM3(state.facts as never), weightKg: state.facts.weightKg ?? null, table: table.text };
 }
 
 const HEAD = ['No.', 'Description', 'QTY(PCS)', 'CTNS'];
@@ -288,13 +318,21 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     expect(got.table).not.toContain('umumiy hajmi (kub) — yozilmagan');
   });
 
-  it('…an invoice whose every line states its cube: the lone totals are the lines’ own Σ — the INSERT’s sum, nothing moves', async () => {
+  it('…an invoice whose every line states its cube: no stated cube — the CURRENT lines’ Σ «qatorlardan», which a row corrected at the table moves (review seams-3)', async () => {
     const head = [...INVOICE_HEAD, 'CBM'];
     const rows: R[] = [[1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
-    const got = await collect('rastamojka', [[await B.sheetsBook([['Sheet1', head, rows]]), 'ci.xlsx']]);
-    // 1.2 + 1.1 + 1.5, by hand.
-    expect(got.totals).toMatchObject({ volumeM3: 3.8 });
+    const got = await collect('podklyuch', [[await B.sheetsBook([['Sheet1', head, rows]]), 'ci.xlsx']]);
+    // 1.2 + 1.1 + 1.5 = 3.8, by hand — the lines' Σ, never a figure the file stated: the lone totals give no cube.
+    expect(got.totals).toBeNull();
+    expect(got.state.facts.volumeM3 ?? null).toBeNull();
     expect(got.cube).toBe(3.8);
+    expect(got.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    // The seller corrects the toy's cube: 1.2 + 2.1 + 1.5 = 4.8 is what the road is priced on now.
+    const after = await answer(got.chatId, '2: 2.1 m3');
+    expect(after.goods.map((g) => g.volumeM3)).toEqual([1.2, 2.1, 1.5]);
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
+    expect(after.table).not.toContain('3.8');
   });
 
   it('…an invoice whose TOTAL row states only the count and the money keeps no text of its own: nothing new under the totals heading', async () => {

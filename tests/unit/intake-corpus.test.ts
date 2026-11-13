@@ -66,6 +66,7 @@ vi.mock('@/modules/wms/calc/prefill-queue', async (importOriginal) => ({
 
 import {
   AI_READ_FAILURE,
+  factsVolumeM3,
   invoiceFacts,
   landingItems,
   lineNeeds,
@@ -115,7 +116,7 @@ import {
   receiveSheetText,
   settleAnalysis,
 } from '@/modules/platform/telegram/staff-handlers';
-import { applyTableAnswer, deliverNextStep, ZONE_OPENING } from '@/modules/platform/telegram/calc-dialog';
+import { applyTableAnswer, deliverNextStep, intakeNextStep, tableEditsSettled, ZONE_OPENING } from '@/modules/platform/telegram/calc-dialog';
 import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 import {
@@ -918,6 +919,41 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
+/**
+ * The «🤖 AI rastamojka» door over a real workbook (docs/AI-SORAYDI.md §3.2): files forwarded, read with the
+ * model answering NOTHING (every figure is the file's or the kernel's), then each typed table answer
+ * written. What the INSERT would take — the cube, the brutto — and the table, after every step.
+ */
+async function aiDoorWalk(section: IntakeState['section'], files: [FileSpec, string][], answers: string[] = []) {
+  const { chatId } = collection({ ai: true, stage: 'material', material: [] }, section);
+  for (const [spec, name] of files) {
+    await forward(chatId, spec, name);
+    updateIntake(chatId, { fileCount: activeIntake(chatId)!.fileCount + 1 });
+  }
+  model.analyze.mockResolvedValueOnce(reads([]));
+  const read = await analyzeCollected(activeIntake(chatId)!);
+  updateIntake(chatId, { ...read, answered: undefined } as never);
+  const ctx = fakeCtx();
+  const said = activeIntake(chatId)!.fileNotes ?? [];
+  const intake = await import('@/modules/wms/calc/intake');
+  const { nameWordFor } = await import('@/modules/wms/calc/line-address');
+  const now = () => {
+    const s = activeIntake(chatId)!;
+    return {
+      state: s,
+      cube: factsVolumeM3(s.facts as never),
+      weightKg: s.facts.weightKg ?? null,
+      table: intakeNextStep(s, new Map(), intake, { nameWord: nameWordFor, aiAvailable: true }).text,
+    };
+  };
+  const steps = [now()];
+  for (const text of answers) {
+    await answer(ctx, chatId, text);
+    await tableEditsSettled();
+    steps.push(now());
+  }
+  return { chatId, said, steps };
+}
 const SCENARIOS: Record<string, () => Promise<void>> = {
   // ---- «a second invoice arrived»: the open question survives the answer (c0)
   c0000: async () => {
@@ -2332,6 +2368,20 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       expect(read.notes).toEqual([]);
       expect(read.facts.goods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Mens jacket', 'Kids pants']);
     }
+  },
+  c4520: async () => {
+    // review seams-3: a lone invoice whose every line states its cube gives NO stated cube — the
+    // current lines' Σ «qatorlardan», which a row the seller corrects at the table moves.
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)', 'CBM'];
+    const rows: Cell[][] = [head, [1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'ci.xlsx']], ['2: 2.1 m3']);
+    const [before, after] = steps as [(typeof steps)[number], (typeof steps)[number]];
+    // 1.2 + 1.1 + 1.5 = 3.8; after «2: 2.1 m3», 1.2 + 2.1 + 1.5 = 4.8 — by hand.
+    expect(before.state.facts.volumeM3 ?? null).toBeNull();
+    expect(before.cube).toBe(3.8);
+    expect(before.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
   },
 };
 

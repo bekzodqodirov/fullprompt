@@ -2012,13 +2012,17 @@ export function foldNoTotals(state: Pick<IntakeState, 'fileTotals' | 'goodsFiles
  * collection with no `fileTotals`, a lone, uncapped goods file holding every
  * row gives what the hand-over would: a packing list its `packingTotals` (a
  * net Σ flagged netto, which the freight sections refuse as a brutto); an
- * invoice its gross Σ and its cube — the cube the reader settled for the
- * whole sheet: the lines' Σ when every line states one (the INSERT's own sum,
- * so nothing moves), the file's own TOTAL row when a line lacks it (X8;
+ * invoice its gross Σ, and its cube only where its lines do NOT give one —
+ * the file's own TOTAL row or summary line when a line lacks it (X8;
  * docs/AI-SORAYDI.md §3.2, review excel-spec-3 — before, that TOTAL reached
- * the model as text and never the shipment), the belt's Σ cartons × one
- * carton's. A Σ the belt or the kernel refused is null there and stays null
- * here. Read here and never
+ * the model as text and never the shipment). When every held line states its
+ * cube (the belt's cartons × one carton's included — already on the rows),
+ * the cube is the CURRENT lines' Σ, labelled «qatorlardan», which the INSERT
+ * sums the same way: taken here as the file's stated cube it froze at the
+ * reading, and a row the seller corrected at the table no longer moved the
+ * shipment's cube — 3.8 m³ priced where the rows said 4.8 (review seams-3).
+ * A Σ the belt or the kernel refused is null there and stays null here. Read
+ * here and never
  * stored, so a later file — another factory's, or the shipment's packing list
  * — decides as it always has. Null = nothing to give. Pure.
  */
@@ -2029,10 +2033,11 @@ export function loneFileTotals(
   const rows = state.invoiceGoods ?? [];
   const only = loneGoodsFile(state);
   if (!only) return null;
+  const linesStateCube = rows.length > 0 && rows.every((g) => (figureOf(g, 'volumeM3') ?? 0) > 0);
   const totals =
     only.shape === 'packing'
       ? packingTotals(only, rows)
-      : { weightKg: only.grossKg, weightNetto: false, volumeM3: only.volumeM3 };
+      : { weightKg: only.grossKg, weightNetto: false, volumeM3: linesStateCube ? null : only.volumeM3 };
   if (totals.weightKg === null && totals.volumeM3 === null) return null;
   return {
     weightKg: totals.weightKg,
