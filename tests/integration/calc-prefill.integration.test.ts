@@ -35,6 +35,7 @@ import { sawRevOfGroup } from '../fixtures/calc-saw-rev';
 import { AI_CODE_NOTE } from '@/modules/wms/calc/code-source';
 import { CODE_SOURCE_WORDS } from '@/modules/wms/calc/ai-note';
 import { AI_NOTE_HEAD, AI_REPLY_HEAD } from '@/modules/wms/calc/reply-heads';
+import { SELLER_ASKS_HEAD } from '@/modules/wms/calc/ai-reply';
 import type { IntakeDoor } from '@/modules/wms/calc/intake';
 
 /**
@@ -972,10 +973,10 @@ describe('the pass by the door the request came in through', () => {
     await db.update(users).set({ active: false }).where(eq(users.id, doorActor));
   });
   async function openDoor(
-    door: IntakeDoor,
+    door: IntakeDoor | null,
     section: 'rastamojka' | 'podklyuch',
     items: { name: string; tnvedCode?: string | null; weightKg?: number | null; note?: string | null }[],
-    extra: { freightZone?: string | null; fromCity?: string | null } = {},
+    extra: { freightZone?: string | null; fromCity?: string | null; weightKg?: number | null } = {},
   ) {
     const r = await openCalcRequest(
       {
@@ -985,7 +986,7 @@ describe('the pass by the door the request came in through', () => {
         section,
         fromCity: extra.fromCity === undefined ? 'Yiwu' : extra.fromCity,
         toCity: 'Toshkent',
-        weightKg: 500,
+        weightKg: extra.weightKg === undefined ? 500 : extra.weightKg,
         volumeM3: 10,
         freightZone: extra.freightZone ?? null,
         items,
@@ -1124,19 +1125,87 @@ describe('the pass by the door the request came in through', () => {
     expect(rerun.text).toMatch(new RegExp(`· 1-qator «${name}» — 9503007000$`, 'm'));
   });
 
-  it('«🤖»: the figure goes out and nothing is asked — a seller’s gap reads «VED xodimi sizdan so‘raydi» (his 5a)', async () => {
+  /**
+   * The AI door ASKS AGAIN (docs/AI-SORAYDI.md §3.4 A1, his 4a of 2026-11-11,
+   * review JR-13 — re-anchored from IKKI-ESHIK's 5a, «nothing is asked»): the
+   * figure goes out, a seller's gap keeps the NULL door's tail, and never
+   * «VED xodimi sizdan so‘raydi» about a fact only the seller has.
+   */
+  it('«🤖»: the figure goes out — the seller’s gap is his to send, in the NULL door’s words (A1)', async () => {
     const row = await importRow();
     const id = await openDoor('ai', 'podklyuch', [{ name: row.name, weightKg: 100 }], { fromCity: null });
     const out = await aiPrefill(id, ctx(), { propose: proposeAs(row.tnvedCode), pick: async () => ({ answers: [], usage: null }), configured: true });
     expect(out.text).toContain('Rastamojka jami');
     expect(out.text).toContain(
-      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — VED xodimi sizdan so‘raydi',
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
     );
-    expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.');
-    for (const ask of ['❓', 'mijozdan so‘rab', 'to‘ldiring', 'reply qilib']) expect(out.text, ask).not.toContain(ask);
-    // The card's copy keeps the money (2a, the AI door) and names the gap for the VED.
-    expect(out.lentaText).toContain('⚠️ VED uchun: yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan.');
+    expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+    for (const w of ['sizdan so‘raydi', 'VED xodimi hisoblaydi.', 'VED uchun']) expect(out.text, w).not.toContain(w);
+    // The card's copy keeps the money (2a, the AI door), its tail the lenta's own.
     expect(out.lentaText).toContain('Rastamojka jami');
+    expect(out.lentaText).toContain('qaysi shahardan ekani yozilmagan — mijozdan so‘rab, kartadagi lentaga yozing');
+    expect(out.lentaText).not.toContain('VED uchun');
+    // Nothing on its rows or totals is owed: no ❓ block, no «unasked» copy.
+    expect(out.text).not.toContain('❓');
     expect(out.lentaUnasked).toBeUndefined();
+  });
+
+  it('«🤖»: an uncoded row and a row with no figure are ASKED (A2); on a request from before the doors, as today, not', async () => {
+    const goods = (tag: string) => [
+      { name: `Zapchast XJ-200 ${tag} ${SUFFIX}`, weightKg: 50 },
+      { name: `Ryukzak ${tag} ${SUFFIX}` },
+    ];
+    const noModel = { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true };
+    const id = await openDoor('ai', 'rastamojka', goods('ai'));
+    // With its ticket, as the worker runs it: only while nobody but the machine
+    // has written is the seller asked anything (`lawAsksInputOf`).
+    const out = await aiPrefill(id, ctx(), noModel, { expectRev: (await prefillTicket(id))! });
+    const [zap, ryu] = goods('ai').map((g) => g.name);
+    // The row with no figure first (review JS-25's order), then «what is it» for each uncoded row.
+    expect(out.text).toContain(
+      [
+        SELLER_ASKS_HEAD,
+        `· 2-qator «${ryu}»: soni (dona) yoki sof og‘irligi (kg)`,
+        `· 1-qator «${zap}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`,
+        `· 2-qator «${ryu}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`,
+        '✍️ Shu xabarga reply qilib yozing: «2: 300 dona» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.',
+      ].join('\n'),
+    );
+    // The card's copy says who was asked; the copy for a seller nobody reached asks nobody.
+    expect(out.lentaText.split('\n')[1]).toBe('❓ Sotuvchidan so‘raldi: 1-2-qator.');
+    expect(out.lentaUnasked).toBeDefined();
+    for (const w of ['❓', 'Sotuvchidan so‘raldi', 'reply qilib']) expect(out.lentaUnasked!, w).not.toContain(w);
+
+    // NULL (the card form, the thread, a request from before 0141): today's words exactly — the law's block alone, here empty.
+    const legacy = await openDoor(null, 'rastamojka', goods('null'));
+    const before = await aiPrefill(legacy, ctx(), noModel, { expectRev: (await prefillTicket(legacy))! });
+    for (const w of ['❓', 'AI so‘raydi', 'bu nima', 'reply qilib']) expect(before.text, w).not.toContain(w);
+    expect(before.lentaUnasked).toBeUndefined();
+  });
+
+  it('«🤖» podklyuch with no brutto: the road’s total is asked, the card copy for nobody names it for the VED (A2)', async () => {
+    const row = await importRow();
+    // Coded at the landing, so only the machine's own saves run (under the ticket).
+    const id = await openDoor('ai', 'podklyuch', [{ name: `${row.name} brutto`, tnvedCode: row.tnvedCode, weightKg: 100 }], {
+      freightZone: 'cn',
+      weightKg: null,
+    });
+    const out = await aiPrefill(
+      id,
+      ctx(),
+      { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true },
+      { expectRev: (await prefillTicket(id))! },
+    );
+    expect(out.text).toContain(
+      [
+        SELLER_ASKS_HEAD,
+        '· umumiy brutto og‘irligi (kg, qadoq bilan) — yo‘lkira shunga bog‘liq',
+        '✍️ Shu xabarga reply qilib yozing: «jami 3500 kg» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.',
+      ].join('\n'),
+    );
+    expect(out.text).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    expect(out.lentaText).toContain('❓ Sotuvchidan so‘raldi: umumiy brutto.');
+    expect(out.lentaUnasked).toContain('⚠️ VED uchun: umumiy brutto og‘irlik (kg) yo‘q.');
+    expect(out.lentaUnasked).toContain('umumiy brutto og‘irlik (kg) yo‘q — VED xodimi so‘raydi');
   });
 });
