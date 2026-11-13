@@ -295,6 +295,54 @@ function blankForTotals(text: string, prefix: string | null): string {
 }
 
 /**
+ * A field's label closing the text right before a figure — «G.W. », «G.W.: »,
+ * «brutto kg », «CBM », «TOTAL QTY », «CTNS » — its unit after it allowed
+ * («brutto kg 710»). Every optional mark carries its own gap (load-1).
+ */
+const fieldLabelBefore = (labels: readonly string[]) =>
+  new RegExp(
+    String.raw`(?<![\p{L}])(?:${labelPattern(labels)})(?:${GAP}(?:[,(（\[]${GAP})?(?:${(['kg', 'm3'] as const).map(unitPattern).join('|')})(?![\p{L}\d])(?:${GAP}[)）\]])?)?(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}$`,
+    'iu',
+  );
+const WEIGHT_FIELD_BEFORE = fieldLabelBefore([...WEIGHT_LABELS, ...NET_LABELS]);
+const VOLUME_FIELD_BEFORE = fieldLabelBefore(VOLUME_LABELS);
+const COUNT_FIELD_BEFORE = fieldLabelBefore([...FIELD_LABELS.count, ...FIELD_LABELS.cartons]);
+/** A bare figure right after a unit word — the next field's: «CBM 3.8», «KGS: 710». No unit of its own follows it. */
+const BARE_FIGURE_NEXT = new RegExp(
+  String.raw`^${GAP}(?:[:：=]${GAP})?(?:${AMOUNT_NUMBER})(?![\d.,]*\d)(?!${GAP}(?:${(['kg', 'm3', 'dona', 'karobka'] as const).map(unitPattern).join('|')})(?![\p{L}\d]))`,
+  'iu',
+);
+
+/**
+ * Is the unit-written figure at `[start, end)` ANOTHER field's (review
+ * seams-1)? A forwarder's footer writes each field as label, figure: «G.W.
+ * 710 CBM 3.8». The cube reader took «710 CBM» — the m³ word that OPENS the
+ * next field as the unit of the figure before it — and «G.W. 710 CBM 3.8»
+ * was a cube of 710 m³ (187 × the cargo's 3.8) under ✅, over the model's
+ * correct figure. So:
+ *  - a figure right after the OTHER measure's label is that label's — a
+ *    weight's figure is no cube («G.W. 710 CBM», «Brutto: 710 CBM 3.8»), a
+ *    cube's no weight («CBM 3.8 KGS 710»);
+ *  - a figure right after a count's or the cartons' label («TOTAL QTY 980 CBM
+ *    3.8») is no measure when its unit word is followed by a bare figure — the
+ *    next field's label, not this figure's unit. «Qty: 300 kg» alone is still
+ *    a weight.
+ * A label is a label only where no figure stands right before it: «5 kub 300
+ * kg» is 5 m³ and 300 kg. What neither reading can place is asked (JN-21 reads
+ * no «G.W. 710» without its «:»).
+ */
+function otherField(text: string, start: number, end: number, field: 'weight' | 'volume'): boolean {
+  const [from] = lineAround(text, start);
+  const before = text.slice(Math.max(from, start - 40), start);
+  const labelled = (re: RegExp) => {
+    const hit = re.exec(before);
+    return hit !== null && !/\d[.,]?\s*$/u.test(before.slice(0, hit.index));
+  };
+  if (labelled(field === 'volume' ? WEIGHT_FIELD_BEFORE : VOLUME_FIELD_BEFORE)) return true;
+  return labelled(COUNT_FIELD_BEFORE) && BARE_FIGURE_NEXT.test(text.slice(end, end + 40));
+}
+
+/**
  * A price on the line — a currency (`CURRENCY`, and the yuan's Han words) or a
  * word that asks or states one: «narxi», «qancha», «necha pul», «цена»,
  * «стоит», «сколько», «price», «how much», «多少钱». Word FORMS, never a stem:
@@ -740,15 +788,22 @@ export function readTypedTotals(
     },
     { figure: LONE_SCALED_FIGURE, when: (at, factor) => weightLabelled(at) || (factor > 1 && opts.totalsAnswer === true) },
   ];
-  const plain = readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || nettoLabelled(text, a, b), tonnes);
+  const plain = readNumber(
+    text,
+    scan,
+    KG_FIGURE,
+    KG_LABELLED,
+    (a, b) => notTotal(a) || nettoLabelled(text, a, b) || otherField(text, a, b, 'weight'),
+    tonnes,
+  );
   // Customs-only: the netto stands for the total when nothing else is stated.
   const nettoStands = section !== undefined && !sectionHasFreight(section);
   const netto =
     nettoStands && plain.value === null && !plain.ambiguous
-      ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b), tonnes)
+      ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b) || otherField(text, a, b, 'weight'), tonnes)
       : { value: null, ambiguous: null, taken: [] };
   const weight = netto.value !== null || netto.ambiguous ? netto : plain;
-  const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a) => notTotal(a));
+  const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a, b) => notTotal(a) || otherField(text, a, b, 'volume'));
   const ambiguous: AmbiguousTotal[] = [];
   if (weight.ambiguous) ambiguous.push({ field: 'weightKg', ...weight.ambiguous });
   if (volume.ambiguous) ambiguous.push({ field: 'volumeM3', ...volume.ambiguous });

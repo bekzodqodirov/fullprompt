@@ -157,6 +157,13 @@ describe('T16 — the review’s own finds reach the agent the same way (typed-b
     expect(of('12 kub narxi qancha?')).toEqual([v(12)]);
   });
 
+  // Review seams-1: the footer's weight was the agent's cube reference.
+  it('a weight’s figure in a footer is no cube reference: «G.W. 710 CBM 3.8»', () => {
+    expect(of('G.W. 710 CBM 3.8')).toEqual([]);
+    expect(of('G.W.: 710 CBM 3.8')).toEqual([w(710)]);
+    expect(of('TOTAL QTY 980 CBM 3.8')).toEqual([]);
+  });
+
   it('…and the yo’lkira tool, handed the chat, finds no weight to price: the checklist asks it', async () => {
     const out = await runTool(
       'calc_checklist',

@@ -228,6 +228,48 @@ describe('a rate’s base and a condition are no total (figures-cbm-rate-as-tota
   });
 });
 
+// Review seams-1: a forwarder's footer writes each field as label, figure —
+// «G.W. 710 CBM 3.8» — and the cube reader took «710 CBM», the m³ word that
+// OPENS the next field, as the unit of the figure before it: a cube of 710 m³
+// (187 × the cargo's 3.8) under ✅, over the model's correct figure, and the AI
+// sotuvchi's reference. bf19f8e read no «cbm» at all.
+describe('a figure after another field’s label is that field’s (seams-1)', () => {
+  it('a weight’s figure is no cube, a cube’s no weight — in every spelling of the footer', () => {
+    for (const text of [
+      'G.W. 710 CBM 3.8',
+      'TOTAL: 60 CTNS G.W. 710 CBM 3.8',
+      'TOTAL G.W. 507 CBM 5.92',
+      'gw 710 cbm 3.8',
+      '60 ctns gw 710 cbm 3.8',
+      'G.W. 710 kub 3.8',
+      'Брутто 710 куб 3.8',
+      'CBM 3.8 KGS 710',
+    ]) {
+      // JN-21: «G.W. 710» and «CBM 3.8» with no «:» are no label-first totals — both asked, neither guessed.
+      expect(totals(text, 'podklyuch'), text).toEqual(none);
+    }
+    // With the «:» the weight stands — and is not counted a second time as the cube.
+    expect(totals('G.W.: 710 CBM 3.8', 'podklyuch')).toEqual({ ...none, kg: 710 });
+    expect(totals('Brutto: 710 CBM 3.8', 'podklyuch')).toEqual({ ...none, kg: 710 });
+    expect(totals('brutto kg 710 kub 3.8', 'podklyuch')).toEqual({ ...none, kg: 710 });
+    expect(totals('G.W.: 710 CBM: 3.8', 'podklyuch')).toEqual({ ...none, kg: 710, m3: 3.8 });
+  });
+
+  it('a count’s figure is no measure when the unit word opens the next field: «TOTAL QTY 980 CBM 3.8»', () => {
+    expect(totals('TOTAL QTY 980 CBM 3.8', 'podklyuch')).toEqual(none);
+    // «Qty: 300 kg» alone is the goods measured in kilos.
+    expect(totals('Qty: 300 kg', 'podklyuch')).toEqual({ ...none, kg: 300 });
+  });
+
+  it('a unit after its own figure is no label: «5 kub 300 kg», «507 kg 5.9 cbm», «20 ctns 300 kg» read as before', () => {
+    expect(totals('5 kub 300 kg', 'podklyuch')).toEqual({ ...none, kg: 300, m3: 5 });
+    expect(totals('Hajmi 5 kub 300 kg', 'podklyuch')).toEqual({ ...none, kg: 300, m3: 5 });
+    expect(totals('507 kg 5.9 cbm', 'podklyuch')).toEqual({ ...none, kg: 507, m3: 5.9 });
+    expect(totals('20 ctns 300 kg', 'podklyuch')).toEqual({ ...none, kg: 300 });
+    expect(totals('TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92 CBM', 'podklyuch')).toEqual({ ...none, kg: 507, m3: 5.92 });
+  });
+});
+
 describe('the rules that stood, stand', () => {
   it('one distinct figure per field, in every spelling of the unit — two are no total', () => {
     // dg3-01: one carton's «34kg» was the only weight this reader saw, and
@@ -414,6 +456,15 @@ describe('the table’s totals answer, in the trade’s words (dg3-02, dg3-04)',
     }
     // A word that says only «all of it» names neither: with both open it is asked.
     expect(answer('jami 3500').refused?.reason).toBe('totals_unit');
+  });
+
+  it('«G.W. 710 CBM 3.8» writes no cube of 710 — the answer is refused as it was at bf19f8e (seams-1)', () => {
+    for (const text of ['G.W. 710 CBM 3.8', 'G.W. 710 kub 3.8']) {
+      const seg = answer(text);
+      expect(seg.totals, text).toBeNull();
+      expect(seg.refused?.reason, text).toBe('no_address');
+    }
+    expect(answer('G.W.: 710 CBM: 3.8').totals).toEqual({ weightKg: 710, volumeM3: 3.8, ambiguous: [] });
   });
 
   it('both figures of one answer are written (dg3-03: the cube was dropped under a 👍)', () => {

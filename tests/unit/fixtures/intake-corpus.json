@@ -60878,6 +60878,148 @@
    "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4334",
+   "input": "G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4335",
+   "input": "TOTAL: 60 CTNS G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4336",
+   "input": "TOTAL QTY 980 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4337",
+   "input": "TOTAL G.W. 507 CBM 5.92",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4338",
+   "input": "gw 710 cbm 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4339",
+   "input": "Брутто 710 куб 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4340",
+   "input": "brutto kg 710 kub 3.8",
+   "expected": {
+    "weightKg": 710,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "710 kg; no cube of 710",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4341",
+   "input": "Brutto: 710 CBM 3.8",
+   "expected": {
+    "weightKg": 710,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "710 kg, not counted again as the cube",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4342",
+   "input": "CBM 3.8 KGS 710",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no weight of the cube's figure",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4343",
+   "input": "5 kub 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "a unit after its own figure is no label",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4344",
+   "input": "Qty: 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "a count's label alone keeps a weight",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [
