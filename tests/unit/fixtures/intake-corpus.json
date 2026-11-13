@@ -16018,6 +16018,149 @@
    "why": "«1 коробке» inside the trailing mark is the mark's own.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "defect"
+  },
+  {
+   "id": "c4246",
+   "input": "Kurtka 300 dona, 20 karobka, karobka 60x40x50 sm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Kurtka», 20 × 60×40×50 sm = 2.4 m³",
+   "why": "owner-4: the noun opening its clause before the size is the package's (JS-2 «a package word next to the size»); was «Kurtka karobka», of null, the cube asked.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4247",
+   "input": "Куртка 300 шт, 20 коробок по 15 кг, коробка 60х40х50 см",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "owner-4, Russian.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4248",
+   "input": "Stul 40 pcs, 20 cartons, carton 60x40x50 cm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 40,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³",
+   "why": "owner-4, English.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4249",
+   "input": "Stul 40 dona, 20 ctns, ctn 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 40,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³",
+   "why": "owner-4, «ctn».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4250",
+   "input": "Куртка 300 дона, 20 қути, қути 60х40х50 см",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³",
+   "why": "owner-4, Uzbek Cyrillic: «қути» is a package of the reader now.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4251",
+   "input": "Куртка 300 дона, 20 та қути, 1 та қути 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg; 300 pieces",
+   "why": "owner-1's neighbour: «20 та қути» read as 20 pieces — «қути» was no carton word of WORDS (only «кути»).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4252",
+   "input": "Корзина 60x40x50 см, 20 коробок",
+   "expected": {
+    "rows": [
+     {
+      "name": "Корзина",
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "no cube — a size after the NAME is nobody's (JS-2), asked",
+   "why": "owner-4's guard: the clause anchor keeps the goods' own noun at of null.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4253",
+   "input": "Karobka 60x40x50 sm, 20 karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "Karobka",
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "no cube",
+   "why": "owner-4's guard: a product called «Karobka».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [

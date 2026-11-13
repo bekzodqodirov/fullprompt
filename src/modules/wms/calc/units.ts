@@ -59,6 +59,8 @@ const WORDS: Record<SellerUnit, readonly string[]> = {
   karobka: [
     'karobka', 'karopka', 'korobka', 'коробка', 'коробки', 'коробок', 'кор', 'qop', 'ctn', 'ctns',
     'carton', 'cartons', 'box', 'boxes', 'кути', 'quti', '箱', 'место', 'мест', 'места', 'joy',
+    // The Uzbek Cyrillic spellings of «quti», «qop», «joy» (review owner-1/owner-4's neighbours).
+    'қути', 'қоп', 'жой',
   ],
 };
 
@@ -1187,6 +1189,15 @@ const PACKAGE_SIZE_BEFORE = new RegExp(
   'iu',
 );
 const PACKAGE_NOUN_AFTER = new RegExp(String.raw`^\s*(?:${PACKAGE_NOUN})(?![\p{L}\d])`, 'iu');
+/**
+ * A package's noun OPENING its own clause right before the size — «20
+ * karobka, karobka 60x40x50 sm», «…, коробка 60х40х50 см», «…, ctn
+ * 60*40*50cm» (review owner-4: the noun was welded into the name, «Kurtka
+ * karobka», and the cube asked of a seller who had said whose the size is).
+ * Anchored on the clause's comma: a noun at the head of the LINE is the
+ * goods' name («Корзина 60x40x50 см, 20 коробок», JS-2's size after the name).
+ */
+const PACKAGE_NOUN_CLAUSE_BEFORE = new RegExp(String.raw`(?<=[,;]\s*)(?:${PACKAGE_NOUN})\s*[.:：=]?\s*$`, 'iu');
 
 /** One figure of a line that is ONE package's or ONE piece's. */
 export interface PerOneFigure {
@@ -1591,15 +1602,16 @@ export function packingRead(
   const consumed: [number, number][] = figures
     .filter((f) => !f.inName)
     .flatMap((f) => [[f.start, f.end] as [number, number], ...f.mark.spans]);
-  // A count of another trade's packages — «Цемент 20 мешков по 50 кг» — is
-  // no unit of the row's columns, so only the packing carries it: it leaves
-  // the name when a package's figure is multiplied by it, and stays there
-  // («Ткань 20 рулонов, 600 кг») when nothing is.
-  if (cartons !== null && figures.some((f) => !f.inName && f.owner === 'package')) {
-    for (const i of cartonCounts) if (unitOf(hits[i]!.word) !== 'karobka') consumed.push([hits[i]!.start, hits[i]!.end]);
-  }
+
   const size = cartons !== null ? packageSize(text, hits, cartonCounts, figures, boundOwner) : null;
   if (size) consumed.push(...size.spans);
+  // A count of another trade's packages — «Цемент 20 мешков по 50 кг» — is
+  // no unit of the row's columns, so only the packing carries it: it leaves
+  // the name when a package's figure or size is multiplied by it, and stays
+  // there («Ткань 20 рулонов, 600 кг») when nothing is.
+  if (cartons !== null && (figures.some((f) => !f.inName && f.owner === 'package') || size?.size.of === 'package')) {
+    for (const i of cartonCounts) if (unitOf(hits[i]!.word) !== 'karobka') consumed.push([hits[i]!.start, hits[i]!.end]);
+  }
   return {
     figures: figures.map(({ clause: _clause, mark: _mark, at: _at, ...f }) => f),
     cartons,
@@ -1659,6 +1671,8 @@ function packageSize(
     return b - a <= 8 && /^\s*$/u.test(text.slice(a, b));
   });
   if (beside) return taken('package');
+  const nounBefore = PACKAGE_NOUN_CLAUSE_BEFORE.exec(before);
+  if (nounBefore) return taken('package', [labelSpan(nounBefore[0], from + nounBefore.index)]);
   const nounAfter = PACKAGE_NOUN_AFTER.exec(text.slice(token.end, token.end + 32));
   if (nounAfter) return taken('package', [[token.end, token.end + nounAfter[0].length]]);
   // Inside an each-clause: «har biri 60x40x50 sm 15 kg» — whose the clause is,

@@ -57,6 +57,9 @@ describe('owner-1 — «1 ta karobka», «1 karobka = 15 kg», «1ctn=15kg» are
     expect(totals('Kurtka 300 dona, 20 karobka, 1 ta karobka 15 kg')).toEqual(none);
     expect(row('Kurtka 300 dona, 20 karobka, 1 ta karobka 15 kg')).toMatchObject({ weightKg: 300 });
     expect(row('Kurtka 300 dona, 20 ta quti, 1 ta quti 15 kg')).toMatchObject({ name: 'Kurtka', weightKg: 300 });
+    // The Uzbek Cyrillic «қути» — «кути» was a carton word of WORDS, the right spelling was not:
+    // «20 та қути» read as 20 PIECES. 20 × 15 = 300 kg.
+    expect(row('Куртка 300 дона, 20 та қути, 1 та қути 15 кг')).toMatchObject({ name: 'Куртка', quantity: 300, weightKg: 300 });
   });
 
   it('«=» between the mark and its figure, Latin and Cyrillic, and the «=» leaves the name', () => {
@@ -246,5 +249,34 @@ describe('crit-1 — a sack, a crate, a roll, a bale are packages: one of them i
     // 20 × 15 = 300 kg each time; 20 × 25 = 500 pieces.
     expect(row('Stul 20 мест, вес 1 коробки 15 кг')).toMatchObject({ weightKg: 300 });
     expect(row('Кукла 20 мест, 25 шт в 1 коробке')).toMatchObject({ quantity: 500 });
+  });
+});
+
+describe('owner-4 — a package noun opening its clause right before the size says whose the size is (JS-2)', () => {
+  it('«…, 20 karobka, karobka 60x40x50 sm» — 20 × 0.6 × 0.4 × 0.5 = 2.4 m³, the noun out of the name', () => {
+    // Was «Kurtka karobka», of: null, no cube — and the seller told to work the cube out himself.
+    for (const [text, name] of [
+      ['Kurtka 300 dona, 20 karobka, karobka 60x40x50 sm', 'Kurtka'],
+      ['Куртка 300 шт, 20 коробок по 15 кг, коробка 60х40х50 см', 'Куртка'],
+      ['Stul 40 pcs, 20 cartons, carton 60x40x50 cm', 'Stul'],
+      ['Stul 40 dona, 20 ctns, ctn 60*40*50cm', 'Stul'],
+      ['Kurtka 300 dona, 20 ta quti, quti: 60x40x50 sm', 'Kurtka'],
+      ['Куртка 300 дона, 20 қути, қути 60х40х50 см', 'Куртка'],
+      ['折叠椅 200个, 20箱, 箱 60*40*50cm', '折叠椅'],
+    ] as const) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ name, volumeM3: 2.4 });
+      expect(r.packing?.size, text).toMatchObject({ l: 60, w: 40, h: 50, of: 'package' });
+    }
+    // 20 × 15 = 300 kg beside it.
+    expect(row('Куртка 300 шт, 20 коробок по 15 кг, коробка 60х40х50 см')).toMatchObject({ weightKg: 300 });
+  });
+
+  it('a noun at the head of the LINE is the goods’ name — the size after the name stays nobody’s, asked', () => {
+    for (const text of ['Корзина 60x40x50 см, 20 коробок', 'Karobka 60x40x50 sm, 20 karobka', 'Stol 120x80x75, 10 karobka']) {
+      const r = row(text);
+      expect(r.packing?.size?.of, text).toBeNull();
+      expect(r.volumeM3, text).toBeNull();
+    }
   });
 });
