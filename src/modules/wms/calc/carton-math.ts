@@ -312,9 +312,20 @@ export function parseSize(text: string): SizeToken | null {
     // taken as a sheet «2 x 1», it left «500 kg» to be read plainly, a figure
     // neither reading of the line gives (review figures-pair-steals-thousands).
     // «Kafel 600x600 500 dona» and «Kafel 60x60 1 200 m2» are sheets still.
+    // Only a SPACED joiner of whole numbers opens that doubt (review R1): a
+    // side glued to its joiner («Gilam 2x3 100 dona», «Ковер 2х3 150 шт»,
+    // «Gilam 2*3») is joined to a letter or a sign — no group's head (JN-6's
+    // mask) — and a decimal side («Matras 1.6x2 100 dona», «Samorez 4,2x16
+    // 100 kg») is a length, never a count to multiply nor a thousands head: a
+    // carpet's, a tile's, a mattress's metres beside its count. Taken for a
+    // grouped number they cost the line its count and its size — or the whole
+    // row. «Gilam 2 x 3 100 dona», spaced, is the doubt still: the same shape
+    // as «Stanok 2 x 1 500 kg».
     if (
       token &&
       token.unit === null &&
+      /\d\s+[xX×хХ*]|[xX×хХ*]\s+\d/u.test(whole) &&
+      token.sides.every((side) => Number.isInteger(side)) &&
       token.sides.some((side) => side < ASSUMED_CM_SIDE.min) &&
       /^\s\d{3}(?!\d)/u.test(text.slice(token.end))
     ) {

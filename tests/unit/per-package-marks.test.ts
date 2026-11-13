@@ -357,6 +357,53 @@ describe('figures-pair-steals-thousands — a tiny «2 x 1» before a three-digi
   });
 });
 
+// Check R1-pair-guard-eats-metre-sizes: the guard above took every unitless
+// pair with a side under 5 for a grouped number's head — so a carpet, a tile
+// or a mattress measured in METRES beside a three-digit count lost its count
+// and its size (and with a decimal side the whole row). A side glued to its
+// joiner is joined to a letter or a sign, no group's head (JN-6's mask); a
+// decimal side is a length. Only the spaced joiner of whole numbers is the
+// doubt of «Stanok 2 x 1 500 kg».
+describe('R1 — a metre-sized sheet beside a three-digit count is a size and a count', () => {
+  const oneRow: TableRef = {
+    rows: [{ no: 1, index: 0, seq: null, name: 'Gilam', needs: ['dona'] }],
+    open: [{ line: 1 }],
+    preferred: [{ line: 1 }],
+    stage: 'review',
+  };
+
+  it('a glued pair keeps its size in the name and its count: 100 carpets, 500 m² of tile, 150 шт', () => {
+    expect(row('Gilam 2x3 100 dona')).toMatchObject({ name: 'Gilam 2x3', quantity: 100, note: null });
+    expect(row('Kafel 2x2 500 m2')).toMatchObject({ name: 'Kafel 2x2', measureUnit: 'm2', measureQty: 500 });
+    expect(row('Plitka 3x3 200 m2')).toMatchObject({ name: 'Plitka 3x3', measureQty: 200 });
+    expect(row('Oyna 4x6 200 dona')).toMatchObject({ name: 'Oyna 4x6', quantity: 200 });
+    expect(row('Shurup 4x40 500 dona')).toMatchObject({ name: 'Shurup 4x40', quantity: 500 });
+    expect(row('Kovyor 2x3 200 ta')).toMatchObject({ name: 'Kovyor 2x3', quantity: 200 });
+    expect(row('Ковер 2х3 150 шт')).toMatchObject({ name: 'Ковер 2х3', quantity: 150 });
+    expect(row('Gilam 2*3 100 dona')).toMatchObject({ name: 'Gilam 2*3', quantity: 100 });
+    expect(row('Gilam 2×3 100 dona')).toMatchObject({ name: 'Gilam 2×3', quantity: 100 });
+    expect(row('Gilam 2x3 100 dona 500 kg')).toMatchObject({ quantity: 100, weightKg: 500 });
+  });
+
+  it('a decimal side is a length: the row stays, with its count', () => {
+    expect(row('Matras 1.6x2 100 dona')).toMatchObject({ name: 'Matras 1.6x2', quantity: 100 });
+    expect(row('Matras 2x1.6 100 dona')).toMatchObject({ name: 'Matras 2x1.6', quantity: 100 });
+    expect(row('Gilam 1.5x2 300 dona')).toMatchObject({ quantity: 300 });
+    expect(row('Ковер 1,5х2 300 шт')).toMatchObject({ quantity: 300 });
+    expect(row('Samorez 4,2x16 100 kg')).toMatchObject({ weightKg: 100 });
+  });
+
+  it('as the answer to the row it writes the count: «1: 2x3 100 dona» → 100', () => {
+    const [seg] = parseTableAnswer('1: 2x3 100 dona', oneRow).segments;
+    expect(seg!.answer).toMatchObject({ kind: 'figures', figures: { quantity: 100 } });
+  });
+
+  it('a SPACED joiner of whole numbers is the doubt still: «Gilam 2 x 3 100 dona» reads like «Stanok 2 x 1 500 kg»', () => {
+    expect(row('Gilam 2 x 3 100 dona')).toMatchObject({ name: 'Gilam', quantity: null, note: 'sotuvchi: 2 x 3 100 dona' });
+    expect(row('Stanok 2 x 1 500 kg')).toMatchObject({ weightKg: null });
+  });
+});
+
 describe('crit-2 — JN-8 (c), binding: a bare «A x B unit» gives the product, and A is no carton count', () => {
   it('«Stul 20 x 15 kg» weighs 20 × 15 = 300 kg; «Kurtka 20*24 dona» counts 20 × 24 = 480 — the phrase stays on the note', () => {
     expect(row('Stul 20 x 15 kg')).toMatchObject({ name: 'Stul', weightKg: 300, note: 'sotuvchi: 20 x 15 kg' });

@@ -16288,17 +16288,17 @@
    "expected": {
     "rows": [
      {
-      "name": "Oyna",
-      "quantity": null,
-      "note": "sotuvchi: 2x3 500 dona"
+      "name": "Oyna 2x3",
+      "quantity": 500,
+      "note": null
      }
     ],
     "count": 1
    },
-   "said": "no count read — «2x3 500» is a 2×3 sheet of 500 or 2 × 3 500; the phrase on the note, the count asked",
-   "why": "the trade-off of the pair guard, stated: a unitless sheet under 5 before a three-digit group has two readings, so neither lands (it read 500 before).",
-   "source": "ai-soraydi 1a review (Ta)",
-   "weight": "pinned"
+   "said": "500 dona of a 2×3 sheet — the size in the name",
+   "why": "RE-ANCHORED (check R1-pair-guard-eats-metre-sizes): a side glued to its joiner is no thousands head (JN-6's mask), so a glued unitless pair is a sheet and the count after it is read plainly (JS-24). Was pinned as the pair guard's trade-off (no count, the phrase on the note).",
+   "source": "ai-soraydi 1a review (Ta, re-anchored by the check)",
+   "weight": "defect"
   },
   {
    "id": "c4267",
@@ -16902,6 +16902,177 @@
    "why": "crit-6 (completeness critic, reproduced at e8a7758): JN-22 — a counted cube («kubov», «кубов», «куба») inside a goods line that states pieces stays in the name AND is asked; 1a's row-level ask is the note (the grouped-number precedent): «sotuvchi: 5 kubov», the cube unread and asked where owed.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "defect"
+  },
+  {
+   "id": "c4400",
+   "input": "Gilam 2x3 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam 2x3",
+      "quantity": 100,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "a 2×3 carpet, 100 pieces",
+   "why": "check R1-pair-guard-eats-metre-sizes: the pair guard took a metre-sized carpet for the head of «3 100» — no count, no size in the name, the count asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4401",
+   "input": "Kafel 2x2 500 m2",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kafel 2x2",
+      "measureUnit": "m2",
+      "measureQty": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 m² of a 2×2 tile",
+   "why": "check R1: a glued pair is a sheet.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4402",
+   "input": "Ковер 2х3 150 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ковер 2х3",
+      "quantity": 150
+     }
+    ],
+    "count": 1
+   },
+   "said": "150 pieces, the size in the name",
+   "why": "check R1: the Cyrillic joiner glued, as the Latin one.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4403",
+   "input": "Gilam 2*3 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam 2*3",
+      "quantity": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 pieces, the size in the name",
+   "why": "check R1: the asterisk glued, as «x».",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4404",
+   "input": "Shurup 4x40 500 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Shurup 4x40",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 screws of 4×40",
+   "why": "check R1: a glued pair is a size, whatever its sides.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4405",
+   "input": "Matras 1.6x2 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Matras 1.6x2",
+      "quantity": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 mattresses of 1.6×2 — the row never vanishes",
+   "why": "check R1: a decimal side is a length — never a count to multiply nor a thousands head; the guard dropped the whole row (T8).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4406",
+   "input": "Matras 2x1.6 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Matras 2x1.6",
+      "quantity": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 mattresses",
+   "why": "check R1: a decimal side, the other way round.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4407",
+   "input": "Ковер 1,5х2 300 шт",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 carpets — the row kept",
+   "why": "check R1: a decimal comma side.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4408",
+   "input": "Samorez 4,2x16 100 kg",
+   "expected": {
+    "rows": [
+     {
+      "weightKg": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 kg of 4.2×16 screws — the row kept",
+   "why": "check R1: a decimal side; only the 100 kg total survived.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4409",
+   "input": "Gilam 2 x 3 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam",
+      "quantity": null,
+      "note": "sotuvchi: 2 x 3 100 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "spaced, the doubt stands: a 2×3 carpet of 100 or 2 × 3 100 — the phrase on the note, the count asked",
+   "why": "check R1, stated: a SPACED joiner of whole numbers is the shape of «Stanok 2 x 1 500 kg» (figures-pair-steals-thousands, c4260) — nothing tells the two apart, so neither lands (the row kernel asks both readings).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
@@ -61459,6 +61630,27 @@
    "said": "one place's 15 kg is no shipment total",
    "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
    "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4410",
+   "input": "Gilam 2x3 100 dona 500 kg",
+   "expected": {
+    "weightKg": 500,
+    "goods": {
+     "rows": [
+      {
+       "name": "Gilam 2x3",
+       "quantity": 100,
+       "weightKg": 500
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "100 carpets, 500 kg",
+   "why": "check R1: the count beside the size kept.",
+   "source": "ai-soraydi 1a check (T)",
    "weight": "defect"
   }
  ],

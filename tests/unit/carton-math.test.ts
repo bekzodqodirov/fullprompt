@@ -138,6 +138,17 @@ describe('parseSize — a size is read before any amount is', () => {
     expect(parseSize('List 2x3 1000 dona')?.sides).toEqual([2, 3]);
   });
 
+  it('only a SPACED joiner of whole numbers opens that doubt — a glued or a decimal pair is a sheet (check R1)', () => {
+    expect(parseSize('Gilam 2x3 100 dona')?.sides).toEqual([2, 3]);
+    expect(parseSize('Ковер 2х3 150 шт')?.sides).toEqual([2, 3]);
+    expect(parseSize('Gilam 2*3 100 dona')?.sides).toEqual([2, 3]);
+    expect(parseSize('Matras 1.6x2 100 dona')?.sides).toEqual([1.6, 2]);
+    expect(parseSize('Samorez 4,2x16 100 kg')?.sides).toEqual([4.2, 16]);
+    // Spaced, whole: the head of «3 100» or «1 500», as before.
+    expect(parseSize('Gilam 2 x 3 100 dona')).toBeNull();
+    expect(parseSize('Stanok 2 x 1 500 kg')).toBeNull();
+  });
+
   it('a count times a per-package figure is NOT a size', () => {
     expect(parseSize('20 x 15 kg')).toBeNull();
     expect(parseSize('20x24 dona')).toBeNull();
