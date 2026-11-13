@@ -118,6 +118,27 @@ describe('owner-1 — «1 ta karobka», «1 karobka = 15 kg», «1ctn=15kg» are
 });
 
 describe('owner-2 / crit-3 / crit-4 — what ONE carton holds, in every form JN-8 (b) names (20 × 24 = 480, 20 × 25 = 500)', () => {
+  // Check crit-3 / owner-2: three more forms of «what one box holds» — each
+  // VANISHED (no row, no note): a word the figure test did not know stood in
+  // the line's tail («в каждой по», «karobkada», «ichida»).
+  it('«в каждой по 24 шт», «, karobkada 24 dona», «karobka ichida 24 dona dan» — 20 × 24 = 480, the box named once', () => {
+    for (const [text, name] of [
+      ['Ручка 20 коробок, в каждой по 24 шт', 'Ручка'],
+      ['Ручка 20 коробок, в каждой коробке по 24 шт', 'Ручка'],
+      ['Ruchka 20 karobka, karobkada 24 dona', 'Ruchka'],
+      ['Ruchka 20 karobka, qutida 24 dona', 'Ruchka'],
+      ['Ruchka 20 karobka ichida 24 dona dan', 'Ruchka'],
+    ] as const) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ name, quantity: 480 });
+      expect(r.packing, text).toMatchObject({ cartons: 20, pcsPerCarton: 24 });
+    }
+    // «ichida» with no «dan» is the line's own 480 — inside the 20 boxes, all of them.
+    expect(row('Ruchka 20 karobka ichida 480 dona')).toMatchObject({ name: 'Ruchka', quantity: 480 });
+    // A box inside the NAME, with no carton count beside it, describes the product (JN-8 (b)).
+    expect(row("Qo'g'irchoq karobkada 500 dona")).toMatchObject({ quantity: 500 });
+  });
+
   it('owner-2: «1 karobkada 24 dona» beside «20 karobka» is 480 — never the row’s 24 (a 20× customs error under ✅)', () => {
     // The line was set aside «1 karobkada» as a pair and kept «24 dona» as the row's own count.
     for (const text of ['Ruchka 20 karobka, 1 karobkada 24 dona', 'Ruchka 20 karobka 1 karobkada 24 dona', 'Ruchka 20 karobka, 1 ta karobkada 24 dona']) {

@@ -1056,7 +1056,7 @@ const MARK_GAP = String.raw`[\s,:：=＝–-]*$`;
  * alone in the tail and the whole goods line vanished (review owner-2, crit-3).
  */
 const EACH_LEAD = new RegExp(
-  String.raw`(?<![\p{L}])(?:(?:har|ҳар|хар)\s+(?:(?:bir|бир)(?:ining|ida|iga|i|ининг|ида|ига|и)?|(?:bitta|битта)(?:sida|siga|si|сида|сига|си)?)(?:\s+(${COUNT_NOUN}))?|(?:har|ҳар|хар)\s+(${COUNT_NOUN})|(?:each|every)(?:\s+(${COUNT_NOUN}))?|(?:в\s+)?кажд(?:ая|ый|ое|ую|ого|ой|ом)(?:\s+(${COUNT_NOUN}))?)${MEASURE_AFTER_NOUN}${MARK_GAP}`,
+  String.raw`(?<![\p{L}])(?:(?:har|ҳар|хар)\s+(?:(?:bir|бир)(?:ining|ida|iga|i|ининг|ида|ига|и)?|(?:bitta|битта)(?:sida|siga|si|сида|сига|си)?)(?:\s+(${COUNT_NOUN}))?|(?:har|ҳар|хар)\s+(${COUNT_NOUN})|(?:each|every)(?:\s+(${COUNT_NOUN}))?|(?:в\s+)?кажд(?:ая|ый|ое|ую|ого|ой|ом)(?:\s+(${COUNT_NOUN}))?)${MEASURE_AFTER_NOUN}(?:\s+по)?${MARK_GAP}`,
   'iu',
 );
 /**
@@ -1075,6 +1075,16 @@ const ONE_LEAD = new RegExp(
   String.raw`(?<![\p{L}\d.,])(?:(1(?:\s*(?:ta|та)(?=\s))?\s*|(?:bitta|битта|bir|бир|one|одн(?:ого|ой|ом|а|о|у))\s+)|(в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))\s+))(${PACKAGE_NOUN})${MEASURE_AFTER_NOUN}${MARK_GAP}`,
   'iu',
 );
+/**
+ * «20 karobka, karobkada 24 dona», «…, qutida 24 dona» — the Uzbek «in the
+ * box» OPENING its clause, beside another carton count: what one box holds
+ * (check crit-3 / owner-2's neighbours: the line vanished). Only there — a
+ * locative inside the name («Qo‘g‘irchoq karobkada 500 dona») describes the
+ * product, as JN-8 (b) rules for «в коробке», which stays out.
+ */
+const LOCATIVE_CLAUSE_LEAD = new RegExp(String.raw`(?<=[,;]\s*)(?:karobk|karopk|korobk|qut|қут|кут)\p{L}*(?:da|да)${MARK_GAP}`, 'iu');
+/** «20 karobka ichida 24 dona dan» — «inside» after a carton count: no word of the name, nor a mark (the «dan» says each). */
+const INSIDE_AFTER_CARTONS = /^\s+(?:ichida|ичида|ichidagi|ичидаги|ichiga|ичига)(?![\p{L}])/iu;
 /** «в коробке по 24 шт» — what one box holds (review JN-8 (b): a bare «в коробке» describes the product, «Кукла в коробке»). */
 const IN_BOX_PO = new RegExp(String.raw`(?<![\p{L}])в\s+(?:${PACKAGE_NOUN})\s+по\s*$`, 'iu');
 /** «20 коробок по 15 кг», «300 шт по 0.2 кг» — a Russian «по» right after a count (group 2: that count's word). */
@@ -1605,6 +1615,8 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
       ...(container ? { container: true as const } : {}),
     };
   }
+  const inside = PACKAGE_STEM.test(lower) ? LOCATIVE_CLAUSE_LEAD.exec(before) : null;
+  if (inside) return fixed('package', [markSpan(inside[0], from + inside.index)], { clause: true, cond: 'another_carton' });
   const one = PACKAGE_STEM.test(lower) ? ONE_LEAD.exec(before) : null;
   if (one) {
     const at = from + one.index;
@@ -1787,6 +1799,10 @@ export function packingRead(
     .filter((f) => !f.inName)
     .flatMap((f) => [[f.start, f.end] as [number, number], ...f.mark.spans]);
 
+  for (const i of cartonCounts) {
+    const inside = INSIDE_AFTER_CARTONS.exec(text.slice(hits[i]!.end, hits[i]!.end + 16));
+    if (inside) consumed.push([hits[i]!.end, hits[i]!.end + inside[0].length]);
+  }
   const size = cartons !== null ? packageSize(text, hits, cartonCounts, figures, boundOwner) : null;
   if (size) consumed.push(...size.spans);
   // A count of another trade's packages — «Цемент 20 мешков по 50 кг» — is
