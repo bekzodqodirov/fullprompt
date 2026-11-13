@@ -391,8 +391,11 @@ export async function deferNotice(id: string, retryAfterSeconds: number | null, 
 /**
  * The row a settle may write: by id — and, for a kind that can be RE-ARMED
  * while it is out (the automatic re-ask, docs/PRIXOD-JAVOBLAR.md §1.6), only
- * while it is still the claim this sweep made. A re-arm nulls `claimed_at`,
- * so the correction that landed during the send keeps its own window instead
+ * while it is still the claim this sweep made: `sending` AND that claim. A
+ * re-arm turns the row back to `pending` — keeping `claimed_at` while the
+ * question may still be out, the evidence the arm's «on its way» reads (§8.1
+ * DLV-4, §8.2 CONC-1) — so it is the STATUS clause that refuses the settle,
+ * and the correction that landed during the send keeps its own window instead
  * of being written over as `sent`. Every other kind is settled by id, exactly
  * as before: `rearmArrivalNotice` re-arms a truck's notice mid-send and the
  * arrival's own wording relies on today's behaviour (the design judge).

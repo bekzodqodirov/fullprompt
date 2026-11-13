@@ -3811,7 +3811,9 @@ fixed — T1 and T2 were tests green under the very defects they were written fo
 #1765): eleven distinct, one refuted — DLV-4 had held for one correction only, a walk on top of a drifted chain
 fell back to the drift's arithmetic (or the weighed figure), and an outranked tick drew green beside ⚠. TRAP: two
 unit files reach postgres and fall back to `gsr_dev` without `DATABASE_URL` — set it for any local vitest run.
-@@ROUNDVERIFY@@
+**16,349 unit/integration (931 files) + 526 e2e** (1 skipped) green on a
+fresh gsr_ci in CI's order at 6175c3c, ledger 148; the test-only `79773b9` after it ran its file (50) on its own.
+Before the fixes' review: 16,335 + 526 at `e9b6ab4`. PR bekzodqodirov/fullprompt#150.
 
 **Latest migration: 0147** (`prixod_javoblar`, `when` …126; ledger must reach **148**). Before
 it: 0146 (`prixod_xabari`, `when` …125). Before

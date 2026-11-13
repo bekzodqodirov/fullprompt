@@ -9464,5 +9464,7 @@ a same-client save arms nothing (CONC-6); the door's one transaction is fenced, 
 `not_worker` is tested from an accountant's chat (FX-T5); the CHANGELOG quotes the refusals the screen prints and
 UPDATE.md the CHANGELOG's own pre-deploy rule (FX-T2, FX-T3). PROCESS: killing the red-proof harness mid-proof
 leaves the edit in place (SIGTERM runs no `finally`) — the worktree was restored by the reverse string edit, read
-from its diff; and a refuter's «the fix only reorders the two messages» is a verdict about the BUSINESS, which no
-test of the code could have given.
+from its diff; a refuter's «the fix only reorders the two messages» is a verdict about the BUSINESS, which no test
+of the code could have given; and a background shell with no `timeout` is stopped at thirty minutes — the CI order
+(~50 min) died in `build` with «ELIFECYCLE Command failed», which reads like a red gate: its last two gates were
+resumed on the same tree and the database vitest left (CI's order kept), with a two-hour limit.

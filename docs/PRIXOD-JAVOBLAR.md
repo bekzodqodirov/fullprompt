@@ -582,3 +582,8 @@ fixed one was reproduced by a test first and red-proven by string edit.
 - And the CHANGELOG's door sentence quoted words the screen never prints («hozirgina so'raldi»): it quotes the two
   refusals as the card shows them and says when a press goes at once.
 
+Stated, not changed (out of this diff, named by the refuters): two arms committing at the same instant can still end
+with one's stand-down written after the other's re-arm — the arm is pooled and unlocked by design (never a lock on
+the correction's path); the next correction or the person's 📨 re-decides it. The settle's claim check is the
+`sending` clause now that a re-arm keeps `claimed_at` — its comment says so.
+

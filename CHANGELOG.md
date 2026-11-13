@@ -91,7 +91,15 @@ Sizning gapingiz variantlarning birortasiga to'g'ri kelmadi, shuning uchun ikki 
 boradi, tizim uni hech kimga o'zi biriktirmaydi — bugun ham shunday ishlaydi.
 
 ### Qanday tekshirildi
-@@VERIFY@@
+- Butun CI tartibi yangi bazada, bosqichma-bosqich, har biri o'z jurnali bilan (`6175c3c`): typecheck, lint, migratsiyalar
+  soni 148, **16 349 ta unit/integratsiya testi (931 fayl)**, build, **526 ta brauzer testi** (1 tasi
+  o'tkazib yuborilgan) — hammasi yashil. Undan keyingi bitta faqat-test commit (`79773b9`) o'z faylida alohida
+  yuritildi (50 test, yashil).
+- Har bir yangi test tuzatishsiz qizil bo'lishi alohida isbotlandi (kodni matn bilan o'zgartirib, uchinchi nusxada):
+  raund va uning birinchi tekshiruvi uchun 54 ta, tuzatishlar tekshiruvi uchun 18 ta.
+- Raund uch marta ko'rib chiqildi: loyihasi (to'rt tomondan), qurilgani (21 topilma — hammasi tuzatildi) va
+  tuzatishlarning o'zi (15 nomzod, 11 tasi alohida; 10 tasi tuzatildi, bittasi rad etildi — xodim «📨» ni bosganda
+  yangi raqamlar bilan savol darhol boradi, tizimning yo'ldagi eski savolidan keyin 10 daqiqa kutmaydi).
 
 ### Bu yerda tekshirib bo'lmagani
 Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy avtomatik savol — haqiqiy sinov. Uni **deploydan keyin**
