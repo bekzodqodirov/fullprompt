@@ -35,7 +35,7 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
 }));
 // The reading job bills each answered reading itself (docs/SAKKIZ-R3.md
 // §7.2.10); the ledger is not what these cases are about.
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, aiCalcAvailable: async () => true, recordAiPass: async () => {} }));
 // «Bo‘ldi» only ENQUEUES since the reading is a pg-boss job (§7.1): the
 // collector cases run the captured job through the one drive helper.
 vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
