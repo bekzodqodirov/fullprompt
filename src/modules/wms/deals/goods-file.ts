@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { clipUnits } from '../../platform/text/clip';
-import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type DroppedRow, type GoodsRow, type SheetNote, type SheetShape } from './goods-import';
+import { CoverMask, parseGoods, readsAsFigure, type Cell, type ColumnAsk, type Covered, type DroppedRow, type GoodsRow, type SheetNote, type SheetShape } from './goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
@@ -347,6 +347,8 @@ export type GoodsFileRead =
        * TOTAL row disowns — said on the file's receipt (`receiveGoodsSheet`).
        */
       notes: SheetNote[];
+      /** The goods sheet's line columns nothing settled — asked once (`ParsedGoods.asks`, review JN-12). Absent = none. */
+      asks?: ColumnAsk[];
       /**
        * How many pictures the WORKBOOK carries (`loadWorkbook` — every
        * `xl/media` image, floating, WPS and in-cell alike; 0 for a CSV, an
@@ -710,7 +712,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
-    const { goods, dropped, stoppedShort, notes, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
+    const { goods, dropped, stoppedShort, notes, asks, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
     // The further mapped sheets' texts share ONE budget among themselves, in
     // workbook order; a sheet the budget did not reach says so in its own
     // `cut`. The bound is stated, not the old one (review
@@ -748,6 +750,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       dropped,
       stoppedShort,
       notes,
+      ...(asks ? { asks } : {}),
       sheet: best.sheet.name,
       sheets: filled.length,
       text: others.text,

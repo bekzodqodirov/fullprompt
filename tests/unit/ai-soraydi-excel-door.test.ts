@@ -27,9 +27,10 @@ vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
 
 import { intakeNextStep } from '@/modules/platform/telegram/calc-dialog';
 import { readIntakeFile } from '@/modules/platform/telegram/calc-files';
+import { columnAsks } from '@/modules/platform/telegram/file-goods';
 import { activeIntake, analyzeCollected, endIntake, loneFileTotals, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
 import { markIntakesHydrated } from '@/modules/platform/telegram/calc-store';
-import { factsVolumeM3, landingItems, type CalcSection } from '@/modules/wms/calc/intake';
+import { factsVolumeM3, landingItems, tableAsksOf, type CalcSection } from '@/modules/wms/calc/intake';
 import { nameWordFor } from '@/modules/wms/calc/line-address';
 import { resetReadingDrive } from '../fixtures/calc-read-drive';
 import * as B from '../fixtures/fayl-books';
@@ -298,5 +299,49 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     // 100 + 166 = 266 kg; the cube is the lines' 1.0 + 1.1 = 2.1, which the sections say too.
     expect(got.totals).toMatchObject({ weightKg: 266, volumeM3: 2.1 });
     expect(got.table).toContain('✅ Og‘irlik (brutto): 266 kg');
+  });
+});
+
+describe('X5 — a line column nothing settles is ASKED once, by the rows it is about (review JN-12, excel-spec-1)', () => {
+  // The reviewer's sheet: a TOTAL that is each column's own Σ — 12 + 13 + 11 = 36 kg, 0.05 + 0.06 + 0.07 =
+  // 0.18 m³ — beside 10, 20 and 30 cartons. As one carton's the shipment would be 10 × 12 + 20 × 13 + 30 × 11 =
+  // 710 kg and 0.5 + 1.2 + 2.1 = 3.8 m³, about 20 × more. Nothing on the sheet says which.
+  const SHEET = () =>
+    book([...HEAD, 'G.W.(KGS)', 'CBM'], [[...JACKET, 12, 0.05], [...TOY, 13, 0.06], [...LAMP, 11, 0.07], [...TOTAL, 36, 0.18]]);
+
+  it('the file’s block keeps the two column questions; the table’s asks hold «to‘liq» with them (`columnAsks`)', async () => {
+    const got = await collect('rastamojka', [[await SHEET(), 'pl.xlsx']]);
+    // The lines stand as the file wrote them (JN-12: an unexplained column never nulls them).
+    expect(got.goods.map((g) => [g.weightKg, g.volumeM3])).toEqual([
+      [12, 0.05],
+      [13, 0.06],
+      [11, 0.07],
+    ]);
+    expect(got.state.goodsFiles?.[0]?.asks?.map((a) => [a.field, a.title, a.rows.length])).toEqual([
+      ['weightKg', 'G.W.(KGS)', 3],
+      ['volumeM3', 'CBM', 3],
+    ]);
+    const asks = columnAsks(got.state.goodsFiles, got.goods);
+    expect(asks).toEqual([
+      { id: 'col:0:weightKg', row: null, holds: true, text: '«G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy og‘irligini (kg) yozing: «1: …».' },
+      { id: 'col:0:volumeM3', row: null, holds: true, text: '«CBM» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy hajmini (m³) yozing: «1: …».' },
+    ]);
+    // …and handed to the table's ONE list of asks, they are drawn with the table's own.
+    const all = tableAsksOf({ section: got.state.section, facts: got.state.facts, laws: new Map(), amend: null, plain: false, aiQuestions: [], asks });
+    expect(all.filter((a) => a.id.startsWith('col:')).every((a) => a.holds)).toBe(true);
+  });
+
+  it('a row a person answered — or whose figure is no longer the file’s — is answered; the column stands while one row is not', async () => {
+    const got = await collect('rastamojka', [[await SHEET(), 'pl.xlsx']]);
+    const answer = (field: 'weightKg' | 'volumeM3', upTo: number, how: 'person' | 'changed') =>
+      got.goods.map((g, i) =>
+        i >= upTo ? g : how === 'person' ? { ...g, derived: { ...(g.derived ?? {}), person: [...(g.derived?.person ?? []), field] } } : { ...g, [field]: (g[field] ?? 0) * 10 },
+      );
+    // Two of three weights given by a person: the weight column still stands, the lamp's 11 kg unanswered.
+    expect(columnAsks(got.state.goodsFiles, answer('weightKg', 2, 'person')).map((a) => a.id)).toEqual(['col:0:weightKg', 'col:0:volumeM3']);
+    // All three: the weight column is answered.
+    expect(columnAsks(got.state.goodsFiles, answer('weightKg', 3, 'person')).map((a) => a.id)).toEqual(['col:0:volumeM3']);
+    // Every cube now another figure than the file's (0.5, 0.6, 0.7): answered too.
+    expect(columnAsks(got.state.goodsFiles, answer('volumeM3', 3, 'changed')).map((a) => a.id)).toEqual(['col:0:weightKg']);
   });
 });

@@ -51515,8 +51515,8 @@
     "grossKg": 25,
     "volumeM3": 0.11
    },
-   "said": "a TOTAL that is the column’s own SUM (12 + 13 = 25, 0.05 + 0.06 = 0.11) proves nothing either way: nothing is multiplied by this release",
-   "why": "JN-12: TOTAL = Σ(value) proves nothing — the COLUMN is asked once (the per_or_total buttons, release 1b); release 1a leaves it as the base read it. Base: the same.",
+   "said": "a TOTAL that is the column’s own SUM (12 + 13 = 25, 0.05 + 0.06 = 0.11) proves nothing either way: the lines stand, and each column is asked once (`ParsedGoods.asks`)",
+   "why": "JN-12 (a): TOTAL = Σ(value) proves nothing, the lines are never nulled for it, and the COLUMN is asked once. Release 1a (review excel-spec-1): the reader records the question on the sheet and the file's block (`asks`, the rows' names and figures) and the pure `columnAsks` builds the table's holding ask; drawing it (tableInputOf's `asks`) is the lead's wiring, and the buttons are 1b's. The rows read as the base read them. Base: the same rows, nothing asked.",
    "source": "ai-soraydi P-excel X5 (XLS-1, XLS-2, DIM-8; JN-12, JR-11, JS-33, JN-13)",
    "weight": "pinned"
   },

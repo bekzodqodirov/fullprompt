@@ -3124,7 +3124,34 @@ function rowText(row: readonly Cell[], d: number, covered: Covered | null): stri
  * behind a capped file (as-built review REGRESSION-6): a list of exactly 500
  * read whole is no cut, and its caller had guessed one from the row count.
  */
-export type ParsedGoods = { goods: GoodsRow[]; headerRow: number | null; dropped: DroppedRow[]; stoppedShort: boolean; notes: SheetNote[] } & SheetShape;
+export type ParsedGoods = {
+  goods: GoodsRow[];
+  headerRow: number | null;
+  dropped: DroppedRow[];
+  stoppedShort: boolean;
+  notes: SheetNote[];
+  /** The line columns nothing proved the lines' or one carton's (`ColumnAsk`); absent = none. */
+  asks?: ColumnAsk[];
+} & SheetShape;
+
+/**
+ * A line column the sheet does not say is the LINES' or ONE carton's
+ * (docs/AI-SORAYDI.md §3.2 X5; review JN-12, JR-11, JS-33, excel-spec-1):
+ * «CBM» beside «CTNS» on two rows or more of several cartons, with no header
+ * word, no size column, no TOTAL arithmetic that settles it — a supplier's
+ * SUM dragged across the column, or no TOTAL row at all, proves nothing
+ * (JN-12 (a), (b)). The COLUMN is asked once. Release 1a reads it and keeps
+ * the lines as they stand (the plain door is untouched); the table's hold is
+ * a `TableAsk` the dialogue draws (`columnAsks`, telegram/file-goods.ts) —
+ * by the rows' names and the file's figures, so an answered row is known.
+ */
+export interface ColumnAsk {
+  field: 'weightKg' | 'volumeM3';
+  /** The column's header as the file writes it, clipped. */
+  title: string;
+  /** Each asked row's name and the figure the file gives it (in m³ for a cube). */
+  rows: { name: string; value: number }[];
+}
 
 /** What the FILE says about its figures beyond its cells (§5.9): the comma a CSV's delimiter implies. */
 export interface SheetHints {
@@ -3657,6 +3684,37 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       const net = kept.every((g) => g.weightKg !== null) ? kept.reduce((n, g) => n + (g.weightKg ?? 0), 0) : netFromCartons;
       if (net !== null && grossKg + 0.5 < net) grossKg = null;
     }
+    // (X5; review JN-12, JR-11, JS-33, excel-spec-1) …and a line column the
+    // belt could not settle, beside several cartons a row on two rows or more:
+    // asked once, by the rows the question is about. Not a column whose
+    // header says total («TOTAL CBM», «Общий вес» — the line's by its word),
+    // nor a row whose packing states its own per-carton figure or size (the
+    // kernel compares those, X4), nor one the belt concluded one carton's
+    // (its figure is the packing's now), nor a list stopped short.
+    const asks: ColumnAsk[] = [];
+    if (!stoppedShort) {
+      const askOf = (
+        field: ColumnAsk['field'],
+        col: number,
+        pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null,
+        perCarton: (g: GoodsRow) => boolean,
+      ) => {
+        if (TOTAL_HINT.test(titleOf(col))) return;
+        const asked = keptLanded.flatMap((l, k) => {
+          const value = pick(l);
+          const c = cartonsOf[k] ?? null;
+          const g = kept[k]!;
+          return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value }] : [];
+        });
+        if (asked.length >= 2) asks.push({ field, title: titleOf(col), rows: asked });
+      };
+      if (columns.weight !== null && columns.weight !== columns.quantity && !corrected.weight) {
+        askOf('weightKg', columns.weight, (l) => l.weight, (g) => (g.packing?.kgPerCarton ?? 0) > 0);
+      }
+      if (columns.volume !== null && !corrected.volume) {
+        askOf('volumeM3', columns.volume, (l) => l.volume, (g) => (g.packing?.m3PerCarton ?? 0) > 0 || Boolean(g.packing?.size));
+      }
+    }
     // A money column is a money HEADER, claimed or not (PF-SPEC-1, §1.2.1's
     // «NO money column»): «Value (USD)», a unit price the amount did not take.
     const money = columns.amount !== null || rows[headerRow]!.some((cell) => MONEY_HEADER.test(cellText(cell)));
@@ -3667,6 +3725,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       dropped: said(),
       stoppedShort,
       notes,
+      ...(asks.length > 0 ? { asks } : {}),
       shape: (columns.cartons || columns.gross !== null) && !money ? 'packing' : 'invoice',
       weightKind: columns.weightKind,
       grossKg: round(grossKg, 3),

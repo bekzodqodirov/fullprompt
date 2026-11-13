@@ -116,20 +116,47 @@ describe('X5 — the belt concludes ONE carton’s figure only when the arithmet
     expect(read.volumeM3).toBe(1.69);
   });
 
-  it('a TOTAL that IS the column’s Σ proves nothing: the lines stand (the column is asked in release 1b)', () => {
-    // 12 + 13 = 25 and 0.05 + 0.06 = 0.11: a supplier's SUM dragged across the column.
+  /** What a sheet asks of its columns (`ParsedGoods.asks`, review JN-12). */
+  const ASKED = [
+    { field: 'weightKg', title: 'G.W.(KGS)', rows: [{ name: 'Jacket', value: 12 }, { name: 'Toy', value: 13 }] },
+    { field: 'volumeM3', title: 'CBM', rows: [{ name: 'Jacket', value: 0.05 }, { name: 'Toy', value: 0.06 }] },
+  ];
+
+  it('a TOTAL that IS the column’s Σ proves nothing: the lines stand, and each COLUMN is asked once (review JN-12 (a))', () => {
+    // 12 + 13 = 25 and 0.05 + 0.06 = 0.11: a supplier's SUM dragged across the column — and 10 and 20
+    // cartons, so as one carton's the lines would be 120 / 260 kg and 0.5 / 1.2 m³. Nothing says which.
     const read = sheet(H, ['Jacket', 200, 10, 12, 0.05], ['Toy', 480, 20, 13, 0.06], ['TOTAL', 680, 30, 25, 0.11]);
     expect(read.goods.map((g) => [g.weightKg, g.volumeM3])).toEqual([
       [12, 0.05],
       [13, 0.06],
     ]);
+    expect(read.asks).toEqual(ASKED);
+    // The receipt says nothing yet (the plain door is untouched); the hold is the table's (`columnAsks`).
     expect(read.notes).toEqual([]);
   });
 
-  it('no TOTAL row, nothing checked: the lines stand and nothing is said', () => {
+  it('no TOTAL row, nothing checked: the lines stand — and the column is asked all the same (review JN-12 (b))', () => {
     const read = sheet(H, ['Jacket', 200, 10, 12, 0.05], ['Toy', 480, 20, 13, 0.06]);
     expect(read.goods.map((g) => g.weightKg)).toEqual([12, 13]);
+    expect(read.asks).toEqual(ASKED);
     expect(read.notes).toEqual([]);
+  });
+
+  it('…never a column the sheet settles: a total word in its header, a size or a per-carton figure on its rows, ONE row of several cartons', () => {
+    // «TOTAL G.W.», «TTL CBM»: the lines' by their word.
+    expect(sheet(['Description', 'QTY', 'CTNS', 'TOTAL G.W.', 'TTL CBM'], ['Jacket', 200, 10, 120, 0.5], ['Toy', 480, 20, 260, 1.2]).asks).toBeUndefined();
+    // A size on every row: the kernel compares the cube with 10 × 60×40×50 sm (X4); no weight column.
+    expect(sheet(['Description', 'QTY', 'CTNS', 'CTN SIZE (CM)', 'CBM'], ['Jacket', 200, 10, '60*40*50', 1.2], ['Toy', 480, 20, '60*40*50', 2.4]).asks).toBeUndefined();
+    // One carton on the jacket's row: only ONE row of several cartons — a single row says nothing of the column.
+    expect(sheet(['Description', 'QTY', 'CTNS', 'G.W.(KGS)'], ['Jacket', 200, 1, 12], ['Toy', 480, 20, 13]).asks).toBeUndefined();
+    // The belt concluded one carton's (20 × 15 + 10 × 18 = 480 = the TOTAL): the figure is the packing's now.
+    expect(sheet(['Description', 'CTNS', 'G.W.(KG)'], ['Kurtka', 20, 15], ['Shim', 10, 18], ['TOTAL', 30, 480]).asks).toBeUndefined();
+  });
+
+  it('…and a column the TOTAL contradicts (a pallet) keeps its lines and is asked as well (review JR-11)', () => {
+    const read = sheet(['Description', 'CTN', 'G.W.(kg)'], ['Kurtka', 10, 100], ['Shim', 5, 166], ['TOTAL', 15, 300]);
+    expect(read.goods.map((g) => g.weightKg)).toEqual([100, 166]);
+    expect(read.asks).toEqual([{ field: 'weightKg', title: 'G.W.(kg)', rows: [{ name: 'Kurtka', value: 100 }, { name: 'Shim', value: 166 }] }]);
   });
 
   it('nothing explains the gap — a pallet in the TOTAL: the LINES stand, the Σ is refused, both sums are said', () => {

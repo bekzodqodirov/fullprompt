@@ -1,7 +1,7 @@
 import { tierWords } from './name-tiers';
 import type { Packing } from '../../wms/calc/carton-math';
-import type { CalcGoodsFact } from '../../wms/calc/intake';
-import type { WeightKind } from '../../wms/deals/goods-import';
+import type { CalcGoodsFact, TableAsk } from '../../wms/calc/intake';
+import type { ColumnAsk, WeightKind } from '../../wms/deals/goods-import';
 import type { IntakeState, SheetText, TotalsMark } from './calc-intake';
 
 /**
@@ -355,6 +355,46 @@ export interface GoodsFileMeta {
    * Absent = none, or a block written before the count.
    */
   pictures?: number;
+  /**
+   * The file's line columns nothing settled as the lines' or one carton's
+   * (`ParsedGoods.asks`, docs/AI-SORAYDI.md §3.2 X5, review JN-12): asked
+   * once, by the rows' names and figures (`columnAsks`). Absent = none, or a
+   * block written before the round.
+   */
+  asks?: ColumnAsk[];
+}
+
+/**
+ * The column questions of the collection's goods files as the table's asks
+ * (review JN-12, JR-11, JS-33; excel-spec-1) — one per column, above the
+ * closing, holding «Ma’lumot to‘liq» while it stands. Release 1a answers it
+ * by TYPING (the kernel's minimal draw): a row's figure given by a person
+ * (`derived.person`), or changed from the file's, answers that row; the ask
+ * stands while some asked row still has the file's figure, or none, as the
+ * file left it. Pure; the dialogue hands it the state (`tableInputOf`'s
+ * `asks`, the lead's wiring — release 1a builds the ask, never the draw).
+ */
+export function columnAsks(files: readonly GoodsFileMeta[] | undefined, goods: GoodsList): TableAsk[] {
+  const out: TableAsk[] = [];
+  (files ?? []).forEach((file, i) => {
+    for (const ask of file.asks ?? []) {
+      const open = ask.rows.some(({ name, value }) => {
+        const row = goods.find((g) => g.name === name);
+        if (!row || (row.derived?.person ?? []).includes(ask.field)) return false;
+        const now = row[ask.field] ?? null;
+        return now === null || now === value;
+      });
+      if (!open) continue;
+      const what = ask.field === 'weightKg' ? 'og‘irligini (kg)' : 'hajmini (m³)';
+      out.push({
+        id: `col:${i}:${ask.field}`,
+        row: null,
+        holds: true,
+        text: `«${ask.title}» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy ${what} yozing: «1: …».`,
+      });
+    }
+  });
+  return out;
 }
 
 /** Each held row's weight kind, from the file blocks — unknown when they do not add up. */

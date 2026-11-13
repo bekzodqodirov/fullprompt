@@ -556,6 +556,8 @@ export function receiveGoodsSheet(
      * the card why a figure is the bot's product, or why none was taken.
      */
     columns?: readonly { warn: boolean; text: string }[];
+    /** The goods sheet's line columns nothing settled (`GoodsFileRead.asks`, review JN-12) — kept on its block. */
+    asks?: import('../../wms/deals/goods-import').ColumnAsk[];
     /**
      * How many pictures the file's workbook carries (`GoodsFileRead.pictures`,
      * docs/AI-SORAYDI.md §3.2 X10) — kept on the goods sheet's block, so a
@@ -623,6 +625,7 @@ export function receiveGoodsSheet(
     at,
     ...(sheet.capped ? { capped: true } : {}),
     ...(sheet.pictures ? { pictures: sheet.pictures } : {}),
+    ...(sheet.asks && sheet.asks.length > 0 ? { asks: sheet.asks } : {}),
   };
   const ownText = (m: GoodsFileMeta): SheetText[] =>
     m.text ? [{ text: m.text, cut: m.textCut ?? false, cellsCut: m.textCellsCut ?? false, label: m.label }] : [];
@@ -1226,6 +1229,8 @@ async function answerIntakeFile(
     },
     // …and what it read of the sheet's columns (X5).
     columns: sheet.notes,
+    // …and the columns nothing settled, asked once (X5, review JN-12).
+    ...(sheet.asks ? { asks: sheet.asks } : {}),
     // …and how many pictures the workbook carries (X10).
     pictures: sheet.pictures,
     repack,
