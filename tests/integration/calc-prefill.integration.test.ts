@@ -1538,6 +1538,130 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
 });
 
 /**
+ * What the AI door's answer says where nobody but the seller can act, and
+ * where the seller's copy reached nobody (review ask-break-3, -4, -8): the
+ * road's gap on a yo‘lkira job, a figureless row's refusal, a figureless
+ * uncoded row on the card's copy, and the Taxminiy block over an asked
+ * uncoded row. Every literal is the fixture's figures put through the rule by
+ * hand; the NULL door beside each reads as before.
+ */
+describe('the asking door’s words where the seller acts, and where nobody reached him (ask-break-3, -4, -8)', () => {
+  let actor = '';
+  beforeAll(async () => {
+    const [u] = await db
+      .insert(users)
+      .values({ phone: `+99891${String(Date.now()).slice(-7)}`, fullName: `Prefill asks review ${SUFFIX}`, passwordHash: 'x' })
+      .returning();
+    actor = u!.id;
+  });
+  afterAll(async () => {
+    await db.update(users).set({ active: false }).where(eq(users.id, actor));
+  });
+  const noPick = async () => ({ answers: [], usage: null });
+  async function land(
+    door: IntakeDoor | null,
+    section: 'rastamojka' | 'yolkira',
+    items: { name: string; tnvedCode?: string | null; weightKg?: number | null; quantity?: number | null }[],
+    totals: { weightKg: number | null; volumeM3: number | null } = { weightKg: 500, volumeM3: 10 },
+  ): Promise<string> {
+    const r = await openCalcRequest(
+      { intakeDoor: door, entityType: 'deal', entityId: dealId, section, fromCity: 'Yiwu', toCity: 'Toshkent', ...totals, items, source: 'card' },
+      { actorId: actor },
+    );
+    madeRequests.push(r.id);
+    return r.id;
+  }
+  /** The pass as the queue runs it — under the request's ticket, so the
+   * answer may ask (`lawAsksInputOf` asks only while the machine alone wrote). */
+  const run = async (id: string) =>
+    aiPrefill(id, ctx(), { configured: true, propose: idle, pick: noPick }, { expectRev: (await prefillTicket(id))! });
+
+  it('a yo‘lkira job with no cube: the AI door’s card copy for a seller nobody reached says the VED asks, and names the gap', async () => {
+    // A road priced on the cube with no cube stored and no line stating one:
+    // the road's own refusal, «umumiy hajm (m³) yo‘q», the SELLER's fact.
+    const items = [{ name: `Kurtka yo‘lkira ${SUFFIX}`, quantity: 10 }];
+    const totals = { weightKg: 500, volumeM3: null };
+    const ai = await run(await land('ai', 'yolkira', items, totals));
+    // The chat asks him, in the NULL door's words (A1).
+    expect(ai.text).toContain('Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    // The card's copy where his copy reached nobody: the VED's line first
+    // (`vedGapsLine` over no law row and the road's seller gap), and the tail
+    // that the VED asks — never «kartadagi lentaga yozing» to a reader who
+    // is not the one who can ask the customer.
+    expect(ai.lentaUnasked).toBeDefined();
+    expect(ai.lentaUnasked!.split('\n')[1]).toBe('⚠️ VED uchun: umumiy hajm (m³) yo‘q.');
+    expect(ai.lentaUnasked).toContain('Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi so‘raydi');
+    // A road with nothing for the seller to send carries no second copy.
+    const priced = await aiPrefill(
+      await land('ai', 'yolkira', items, { weightKg: 500, volumeM3: 3 }),
+      ctx(),
+      { configured: true, propose: idle, pick: noPick },
+    );
+    expect(priced.lentaUnasked).toBeUndefined();
+    // The NULL door and the plain door: as before — no second copy.
+    for (const door of [null, 'plain'] as const) {
+      const out = await run(await land(door, 'yolkira', items, totals));
+      expect(out.lentaUnasked, String(door)).toBeUndefined();
+    }
+  });
+
+  it('a coded row stating no figure: its line says the missing figure as the seller’s — on the card’s unasked copy, that the VED asks', async () => {
+    // 4202… pins no unit (20 %): the row is asked «soni yoki og‘irligi»
+    // (`measure`), and the engine's refusal for it is «baza yo‘q» — no baza
+    // can be chosen for a row with no figure.
+    const bag = `Ryukzak raqamsiz ${SUFFIX}`;
+    const ai = await run(await land('ai', 'rastamojka', [{ name: bag, tnvedCode: '4202921100' }]));
+    const chat = ai.text.split('\n');
+    const head = chat.findIndex((l) => l.startsWith(`1. ${bag} · 4202921100`));
+    expect(head).toBeGreaterThanOrEqual(0);
+    // The line opens with row 1 alone, so its refusal names no row (A3).
+    expect(chat[head + 1]).toBe('   ⚠️ soni (dona) yoki sof og‘irligi (kg) kiritilmagan — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    expect(ai.lentaUnasked).toContain('   ⚠️ soni (dona) yoki sof og‘irligi (kg) kiritilmagan — VED xodimi so‘raydi');
+    // The NULL door: «baza yo‘q — VED xodimi qo‘yadi», as before.
+    const nul = await run(await land(null, 'rastamojka', [{ name: `${bag} null`, tnvedCode: '4202921100' }]));
+    const lines = nul.text.split('\n');
+    expect(lines[lines.findIndex((l) => l.startsWith(`1. ${bag} null`)) + 1]).toBe('   ⚠️ baza yo‘q — VED xodimi qo‘yadi');
+  });
+
+  it('an UNCODED row stating no figure: on the card’s unasked copy its count is named for the VED — its own line says only «kod yo‘q»', async () => {
+    const part = `Zapchast raqamsiz ${SUFFIX}`;
+    const ai = await run(await land('ai', 'rastamojka', [{ name: part }]));
+    // The chat asks both: its figure and what it is.
+    expect(ai.text.split('\n')).toContain(`· 1-qator «${part}»: soni (dona) yoki sof og‘irligi (kg)`);
+    expect(ai.text.split('\n')).toContain(`· 1-qator «${part}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`);
+    const quiet = ai.lentaUnasked!.split('\n');
+    expect(quiet[1]).toBe(`⚠️ VED uchun: 1-qator «${part}»: soni (dona) yoki sof og‘irligi (kg).`);
+    expect(quiet).toContain(`1. ${part} — kod yo‘q — VED xodimi qo‘yadi`);
+  });
+
+  it('the Taxminiy block over an ASKED uncoded row points at the question and names the one fixer (ask-break-4)', async () => {
+    // Row 1: a declaration of the READY import by its own name, so the
+    // auto-fill prices it exactly; row 2: a part nobody coded. The total is
+    // blocked by row 2 (no partial sum), and only row 1 is «Aniq».
+    const row = await importRow();
+    const part = `Zapchast taxmin ${SUFFIX}`;
+    const items = [
+      { name: row.name, tnvedCode: row.tnvedCode, weightKg: 100 },
+      { name: part, weightKg: 5 },
+    ];
+    const ai = await run(await land('ai', 'rastamojka', items));
+    // Row 2 is asked what it is, and the VED codes it: one fixer, said twice
+    // in the same words — never «kodsiz qator bor» beside a question to him.
+    expect(ai.text).toContain('  Taxminiy: hisoblab bo‘lmadi — 2-qator kodsiz — yuqoridagi ❓ (kodni VED xodimi qo‘yadi)');
+    expect(ai.text).toContain(WHAT_ANSWER_LINE);
+    // Where nobody asked (the unasked copy, the NULL door): today's words.
+    expect(ai.lentaUnasked).toContain('  Taxminiy: hisoblab bo‘lmadi — kodsiz qator bor (VED kod qo‘yadi)');
+    const nul = await aiPrefill(
+      await land(null, 'rastamojka', items.map((i, k) => (k === 1 ? { ...i, name: `${part} null` } : i))),
+      ctx(),
+      { configured: true, propose: idle, pick: noPick },
+    );
+    expect(nul.text).toContain('  Taxminiy: hisoblab bo‘lmadi — kodsiz qator bor (VED kod qo‘yadi)');
+    expect(nul.text).not.toContain('yuqoridagi ❓');
+  });
+});
+
+/**
  * The pass's PICK call as the pass reads it (docs/AI-SORAYDI.md §3.4 A12,
  * PR-9): the row's note reaches the model the way it reaches the grouping,
  * and a call that came back with nothing — cut at max_tokens above all, the
