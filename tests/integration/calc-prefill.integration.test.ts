@@ -974,7 +974,7 @@ describe('the pass by the door the request came in through', () => {
   });
   async function openDoor(
     door: IntakeDoor | null,
-    section: 'rastamojka' | 'podklyuch',
+    section: 'rastamojka' | 'podklyuch' | 'yolkira',
     items: { name: string; tnvedCode?: string | null; weightKg?: number | null; note?: string | null }[],
     extra: { freightZone?: string | null; fromCity?: string | null; weightKg?: number | null } = {},
   ) {
@@ -1181,6 +1181,19 @@ describe('the pass by the door the request came in through', () => {
     const before = await aiPrefill(legacy, ctx(), noModel, { expectRev: (await prefillTicket(legacy))! });
     for (const w of ['❓', 'AI so‘raydi', 'bu nima', 'reply qilib']) expect(before.text, w).not.toContain(w);
     expect(before.lentaUnasked).toBeUndefined();
+  });
+
+  it('a yo‘lkira answer by door: the AI door sends the seller for the brutto, the plain door still says the VED asks (A1)', async () => {
+    const said = async (door: IntakeDoor) => {
+      const id = await openDoor(door, 'yolkira', [{ name: `Mebel ${door} ${SUFFIX}`, weightKg: 100 }], { freightZone: 'cn', weightKg: null });
+      return aiPrefill(id, ctx(), { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true });
+    };
+    const ai = await said('ai');
+    expect(ai.text).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    expect(ai.text).not.toContain('sizdan so‘raydi');
+    // The plain door is unchanged (IKKI-ESHIK §2.4): nobody asks the seller.
+    const plain = await said('plain');
+    expect(plain.text).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — VED xodimi sizdan so‘raydi');
   });
 
   it('«🤖» podklyuch with no brutto: the road’s total is asked, the card copy for nobody names it for the VED (A2)', async () => {

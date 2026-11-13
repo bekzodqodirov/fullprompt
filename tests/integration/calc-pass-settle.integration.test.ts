@@ -105,7 +105,7 @@ import {
   registerCalcPrefillWorker,
   type CalcPrefillJob,
 } from '@/modules/wms/calc/jobs';
-import { ROAD_STALE_LINE } from '@/modules/wms/calc/ai-reply';
+import { ROAD_STALE_LINE, SELLER_ASKS_HEAD } from '@/modules/wms/calc/ai-reply';
 import { lawAsksInputOf, lawAsksInputOfStored, lawAsksOf } from '@/modules/wms/calc/law-asks';
 import { landIntake } from '@/modules/wms/calc/intake-land';
 import { threadCalcSend } from '@/modules/wms/calc/from-thread';
@@ -954,9 +954,11 @@ describe('Uch band’s retried landings queue the pass a cut left owed (§10.2.1
  * `sayOnce`'s silent mode, a claim row written `muted` «oddiy eshik», which
  * the drain never sends and the problem counter never counts, and `spoke`
  * still gates the ONE lenta note a redelivery must not repeat. «🤖 AI
- * rastamojka» (his 4a, 5a): the figure reaches him past his mute and asks
- * nothing. The sweater's law is «kamida $1/dona» and it states only kilos, so
- * on a request from before the doors the answer would ASK its count (2.8 b,
+ * rastamojka»: the figure reaches him past his mute (his 4a of 2026-11-08,
+ * §3.6) and — since docs/AI-SORAYDI.md §3.4 A1 (his 4a of 2026-11-11, review
+ * JR-13, re-anchored from IKKI-ESHIK's 5a «asks nothing») — ASKS him again.
+ * The sweater's law is «kamida $1/dona» and it states only kilos, so the
+ * answer asks its count, as a request from before the doors does (2.8 b,
  * pinned above).
  */
 describe('the two doors through the worker (Ikki eshik)', () => {
@@ -1029,7 +1031,7 @@ describe('the two doors through the worker (Ikki eshik)', () => {
     expect((rows[0]!.payload as { direct?: boolean }).direct).toBeUndefined();
   });
 
-  it('«🤖»: the figure reaches a seller who muted the answers — one pending direct row — and asks him nothing (§3.5, §3.6)', async () => {
+  it('«🤖»: the figure reaches a seller who muted the answers — one pending direct row — and ASKS him (A1)', async () => {
     const id = await sweaterAt('ai', mutedId);
     await queueCalcPrefill({ requestId: id, staffId: mutedId, section: 'rastamojka' });
     await runJob(passJobs(id)[0]!);
@@ -1039,25 +1041,32 @@ describe('the two doors through the worker (Ikki eshik)', () => {
     expect((rows[0]!.payload as { direct?: boolean }).direct).toBe(true);
     const text = (rows[0]!.payload as { text: string }).text;
     expect(text.startsWith(AI_REPLY_HEAD)).toBe(true);
-    for (const ask of ['❓', 'reply qilib', 'mijozdan so‘rab']) expect(text, ask).not.toContain(ask);
-    // The card's copy names the same row for the VED, never «Sotuvchidan so‘raldi».
+    // The AI door's own block — the law's count, the seller's to send.
+    expect(text).toContain(SELLER_ASKS_HEAD);
+    expect(text).toMatch(/^· 1-qator «Sviter ai [^»]+»: soni \(dona\) — boj kamida \$1\/dona$/m);
+    expect(text).toContain('✍️ Shu xabarga reply qilib yozing: «1: 300 dona»');
+    expect(text).not.toContain('sizdan so‘raydi');
+    // He hears it (`direct`), so the card's copy says he WAS asked — not the VED's gaps.
     const lenta = (await lentaOf(id)).join('\n');
-    expect(lenta).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
-    expect(lenta).not.toContain('Sotuvchidan so‘raldi');
+    expect(lenta).toContain('❓ Sotuvchidan so‘raldi: 1-qator.');
+    expect(lenta).not.toContain('VED uchun');
   });
 
-  it('«🤖» to a seller nobody reaches: the card still names the gaps for the VED — no «unasked» rendering on a door request', async () => {
-    // Today's `lentaUnasked` drops the line that says the seller WAS asked;
-    // on a door request nobody was, and the VED's own line must stay.
+  it('«🤖» to a seller nobody reaches: the card carries the copy that asks nobody — the gaps named for the VED (A1)', async () => {
+    // `lentaUnasked` is the AI door's too now: its answer asks, and a seller
+    // who never got it must not be waited on — the card says the VED asks.
     const id = await sweaterAt('ai', sellerId);
     const ticket = (await prefillTicket(id))!;
     const out = await aiPrefill(id, { actorId: null }, { configured: false }, { expectRev: ticket });
-    expect(out.lentaUnasked).toBeUndefined();
-    expect(out.lentaText).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
+    expect(out.lentaText).toContain('❓ Sotuvchidan so‘raldi: 1-qator.');
+    expect(out.lentaUnasked).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
+    expect(out.lentaUnasked).not.toContain('Sotuvchidan so‘raldi');
     const viaWorker = await sweaterAt('ai', sellerId);
     await queueCalcPrefill({ requestId: viaWorker, staffId: sellerId, section: 'rastamojka' });
     await runJob(passJobs(viaWorker)[0]!);
-    expect((await lentaOf(viaWorker)).join('\n')).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
+    const lenta = (await lentaOf(viaWorker)).join('\n');
+    expect(lenta).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
+    expect(lenta).not.toContain('Sotuvchidan so‘raldi');
   });
 
   it('`silent` keeps the claim’s two refusals: an earlier claim, and — under `whileOpen` — a closed request', async () => {
