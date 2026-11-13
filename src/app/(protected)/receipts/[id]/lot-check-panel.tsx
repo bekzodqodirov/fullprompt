@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { dismissDisputesAction } from './client-ask-actions';
 import { checkLotAction, uncheckLotAction } from './lot-check-actions';
+import { heldTickFace } from '@/modules/wms/receipts/lot-check-face';
 
 /**
  * «Yuk ma'lumoti tekshirildi» on one lot of the prixod card
@@ -44,6 +45,8 @@ export interface LotCheckFace {
     note: string | null;
     holds: boolean;
     moved: { name: boolean; count: boolean; client: boolean; measures: boolean };
+    /** This owner's ❌ is not older than the tick — it vouches for nothing (`heldTickFace`). */
+    outranked: boolean;
   } | null;
   /** The client's own ✅ / ❌ in Telegram (0144); null = none, or a server without 0144. */
   client: {
@@ -225,9 +228,13 @@ export function LotCheckPanel({
       ),
     );
   }
-  if (person?.holds) {
+  const tickFace = person ? heldTickFace(person, vetoed) : null;
+  if (person && tickFace) {
     lines.push(
-      vetoed ? (
+      // A tick this owner's later ❌ outranks vouches for nothing, vetoing or
+      // not (the sentence's arm 3) — history beside a lot the lists call ⚠,
+      // never the green ✅ (the fixes' review, TICK3-CARD).
+      tickFace === 'history' ? (
         <p key="person-held" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-person-held">
           {t('personHeld', { by: person.by ?? '—', day: person.day })}
         </p>

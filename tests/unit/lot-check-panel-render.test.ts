@@ -297,11 +297,25 @@ describe('the system’s own question, and a tick that remembers the weight (the
 
   it('a tick whose kilos or cubic metres moved names the weight', () => {
     const person = (moved: { name: boolean; count: boolean; client: boolean; measures: boolean }) =>
-      lotPanel(face({ state: 'stale', person: { by: 'Sardor', day: '2026-11-12', token: 't', note: null, holds: false, moved } }));
+      lotPanel(face({ state: 'stale', person: { by: 'Sardor', day: '2026-11-12', token: 't', note: null, holds: false, moved, outranked: false } }));
     const html = person({ name: false, count: false, client: false, measures: true });
     expect(html).toContain(esc(words.stalePerson!.replace('{what}', words.movedMeasures!)));
     const both = person({ name: true, count: false, client: false, measures: true });
     expect(both).toContain(esc(words.stalePerson!.replace('{what}', `${words.movedName!}, ${words.movedMeasures!}`)));
+  });
+
+  it('a tick this owner’s later ❌ outranks is history, never the green ✅ — even where a tarkib settled that ❌ and nothing vetoes (TICK3-CARD)', () => {
+    const still = { name: false, count: false, client: false, measures: false };
+    const tick = (outranked: boolean) => ({ by: 'Sardor', day: '2026-11-12', token: 't', note: null, holds: true, moved: still, outranked });
+    // The lists call this lot ⚠ (a stale tarkib of other goods; the ❌ is settled, so it vetoes nothing).
+    const settled = lotPanel(face({ state: 'stale', documentStale: true, person: tick(true), client: answer({ verdict: 'no', holds: true, vetoes: false }) }));
+    expect(has(settled, 'lot-check-face-person')).toBe(false);
+    expect(has(settled, 'lot-check-face-person-held')).toBe(true);
+    expect(settled).toContain(esc(words.personHeld!.replace('{by}', 'Sardor').replace('{day}', '2026-11-12')));
+    // A tick that vouches stays green.
+    const vouching = lotPanel(face({ state: 'checked', person: tick(false) }));
+    expect(has(vouching, 'lot-check-face-person')).toBe(true);
+    expect(has(vouching, 'lot-check-face-person-held')).toBe(false);
   });
 
   it('the new sentences exist in all four bundles (#163)', () => {

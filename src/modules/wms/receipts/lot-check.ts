@@ -505,6 +505,14 @@ export interface LotCheckView {
      * old process wrote without them (the NULL arm: it holds through one).
      */
     measures: boolean;
+    /**
+     * This owner's ❌ is not older than it — the sentence's arm 3 lets the tick
+     * vouch for nothing, whether or not that ❌ still vetoes the lot (a tarkib
+     * of other goods settles a ❌ without making an older tick true again).
+     * The card draws such a tick as history, never as the green ✅ (the fixes'
+     * review, TICK3-CARD): a holding tick reads green only where it vouches.
+     */
+    outranked: boolean;
   } | null;
   /**
    * The client's own answer in Telegram (0144, `client-confirm.ts`), when
@@ -571,10 +579,12 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     ? sql`lot_client.verdict AS client_verdict, lot_client.answered_at AS client_at,
            lot_client.answered_at::text AS client_token,
            ${clientHoldsSql(refs)} AS client_holds, ${clientDisputeSql(refs)} AS client_dispute,
+           (${clientDisputeSql(refs)} AND lc.checked_at <= lot_client.answered_at) AS person_outranked,
            (lot_client.shown_client_id IS NOT DISTINCT FROM r.client_id) AS client_of_owner,
            ua.full_name AS client_asked_by, ${measureColumns}`
     : sql`NULL::text AS client_verdict, NULL::timestamptz AS client_at, NULL::text AS client_token,
-           NULL::boolean AS client_holds, NULL::boolean AS client_dispute, NULL::boolean AS client_of_owner,
+           NULL::boolean AS client_holds, NULL::boolean AS client_dispute, NULL::boolean AS person_outranked,
+           NULL::boolean AS client_of_owner,
            NULL::text AS client_asked_by, ${measureColumns}`;
   const clientJoins = withClient
     ? sql`LEFT JOIN lot_client_confirms AS lot_client ON lot_client.lot_id = l.id
@@ -624,6 +634,7 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     client_token: string | null;
     client_holds: boolean | null;
     client_dispute: boolean | null;
+    person_outranked: boolean | null;
     client_of_owner: boolean | null;
     client_asked_by: string | null;
     client_measures: boolean | null;
@@ -659,6 +670,7 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
                 holds: !moved.name && !moved.count && !moved.client && !moved.measures,
                 moved,
                 measures: row.person_measures === true,
+                outranked: row.person_outranked === true,
               }
             : null,
           client: row.client_verdict

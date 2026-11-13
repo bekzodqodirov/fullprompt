@@ -111,11 +111,23 @@ function figuresOf(value: unknown): LotFigures | null {
  * row, so two steps of one lot are written in order): while a row's `after`
  * is the lot as it stood next, the walk steps back to that row's `before`.
  * The first row that does not match — a ✏️ correction or anything else that
- * moved the figures in between — ends it. The base is where it ends: the lot
- * before the first growth of the unbroken walk, or the lot as it stands when
- * no walk leads to it — and the lot as it stands, too, when the base found
- * does not give it back (a chain the old arithmetic drifted: no printed
- * figure moves without a weighing). On the caller's transaction (#714).
+ * moved the figures in between — ends it.
+ *
+ * The base is the FARTHEST point of that unbroken walk that gives back every
+ * figure set the walk printed after it — the lot as it stands and each step
+ * in between. On a walk measured from one base since 0147 that is its start.
+ * On a walk the old arithmetic drifted (40.714 kg ended at 40.716) no point
+ * before the drift gives the drifted figures back: its true start would
+ * restore the weighed figure — a move nobody weighed — while every ✅ taken
+ * since remembers the drifted one, so the tick would never heal and the
+ * client would be asked about a weight nobody changed (the as-built review,
+ * TICK-2). And a walk written ON TOP of such a chain since 0147 joins it
+ * unbroken — its first row's `before` is the old chain's last `after` — so
+ * testing only the walk's far end would refuse the whole walk at every press
+ * after the first and scale the lot as it stands again, the drift's own
+ * arithmetic (the fixes' review, WALK-1); every point is tested instead, and
+ * the base lands where the new walk began. With no point that qualifies it is
+ * the lot as it stands. On the caller's transaction (#714).
  */
 async function walkBaseInTx(
   tx: Tx,
@@ -134,32 +146,33 @@ async function walkBaseInTx(
        AND (al.after -> 'lotGrown' ->> 'lotId' = ${lot.id} OR al.after -> 'lotShrunk' ->> 'lotId' = ${lot.id})
      ORDER BY al.id DESC
   `)) as unknown as { before: unknown; after: unknown }[];
+  // Every figure set the walk printed, newest first: the lot as it stands,
+  // then each step's `before` as the walk reaches it.
+  let at = base;
+  const printed: LotFigures[] = [at];
   for (const row of rows) {
     const after = figuresOf(row.after);
     const before = figuresOf(row.before);
     if (
       !after ||
       !before ||
-      after.boxCount !== base.boxCount ||
-      after.totalWeightKg !== base.totalWeightKg ||
-      after.totalVolumeM3 !== base.totalVolumeM3
+      after.boxCount !== at.boxCount ||
+      after.totalWeightKg !== at.totalWeightKg ||
+      after.totalVolumeM3 !== at.totalVolumeM3
     ) {
       break;
     }
-    base = before;
-  }
-  // A base is kept only if it gives back the lot as it stands. A chain the OLD
-  // arithmetic walked drifted (40.714 kg ended at 40.716): its true start
-  // would restore the weighed figure, a move nobody weighed, while every ✅
-  // taken since remembers the drifted one — the tick would never heal, and
-  // the client would be asked about a weight nobody changed. Such a lot starts
-  // a fresh walk from its figures as they are (the as-built review, TICK-2).
-  // Every chain written since 0147 passes: each step was measured from it.
-  const now = mixedTotalsFor(base, lot.boxCount);
-  if (now.totalWeightKg !== Number(lot.totalWeightKg) || now.totalVolumeM3 !== Number(lot.totalVolumeM3)) {
-    return { boxCount: lot.boxCount, totalWeightKg: Number(lot.totalWeightKg), totalVolumeM3: Number(lot.totalVolumeM3) };
+    if (printed.every((p) => givesBack(before, p))) base = before;
+    at = before;
+    printed.push(at);
   }
   return base;
+}
+
+/** Does `base`, measured to `p`'s count, print exactly `p`'s figures? */
+function givesBack(base: LotFigures, p: LotFigures): boolean {
+  const t = mixedTotalsFor(base, p.boxCount);
+  return t.totalWeightKg === p.totalWeightKg && t.totalVolumeM3 === p.totalVolumeM3;
 }
 
 export async function growLotInTx(

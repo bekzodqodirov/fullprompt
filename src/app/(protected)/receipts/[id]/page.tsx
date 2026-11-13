@@ -983,6 +983,7 @@ export default async function ReceiptDetailPage({
                             note: view.person.note,
                             holds: view.person.holds,
                             moved: view.person.moved,
+                            outranked: view.person.outranked,
                           }
                         : null,
                       client: view.client

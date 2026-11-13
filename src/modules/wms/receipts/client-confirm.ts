@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, lotClientConfirms, receipts, warehouses } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
@@ -11,6 +11,8 @@ import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
 import { clientsForChat } from '../client-cabinet/service';
 import { linkedChats } from '../notices/client-push';
+import { RECLAIM_MINUTES } from '../notices/arrival';
+import { SKIP_CLIENT_CHANGED } from '../notices/client-claims';
 import { PUSH_LOT_LINES } from '../notices/client-text';
 import { isBusyError, isServerBehind } from '../../platform/db/errors';
 import { lockLotAnswersTx, lotCheckViewsFor, mayCheckLot, type LotCheckActor } from './lot-check';
@@ -81,6 +83,29 @@ export const NOTICE_LOT_ASK = 'lot_ask';
  * question from the card.
  */
 export const NOTICE_LOT_REASK = 'lot_reask';
+
+/**
+ * The system's own question about a prixod is ON ITS WAY — a FACT about the
+ * row, not a clock (docs/PRIXOD-JAVOBLAR.md §1.6, §8.2): claimed and being
+ * sent (`sending`; a dead run's too — the sweep sends it again on reclaim),
+ * or RE-ARMED while it was out: `pending` with the claim the re-arm kept, no
+ * delivery remembered since that claim (`asked_at`, written the moment a
+ * delivery lands), and no retry's error (a transient failure settles
+ * `pending` with its error and the claim of the attempt that did not go —
+ * nothing of that is still on its way). Bounded by the reclaim window: a run
+ * that died mid-send remembers nothing, and `RECLAIM_MINUTES` later its claim
+ * is nobody's. ONE sentence for the arm's «due», the re-arm's kept claim and
+ * the person's door (the fixes' review, CONC-1/2/3) — written for the row as
+ * `row` names it, which is the bare table inside an UPSERT's SET. 0147's
+ * `asked_at`: the caller has asked `askedTagReady()`.
+ */
+export function reaskInFlightSql(row: SQL = sql`client_notices`): SQL {
+  return sql`(${row}.status = 'sending'
+    OR (${row}.status = 'pending' AND ${row}.claimed_at IS NOT NULL
+        AND ${row}.claimed_at > now() - make_interval(mins => ${RECLAIM_MINUTES})
+        AND ${row}.last_error IS NULL
+        AND (${row}.asked_at IS NULL OR ${row}.asked_at < ${row}.claimed_at)))`;
+}
 
 /** «Mijozdan so'rash» is not offered again for this long after a question went out. */
 export const ASK_COOLDOWN_MINUTES = 10;
@@ -791,14 +816,19 @@ export async function askClientAboutReceipt(
   const withAuto = await askedTagReady();
   const armed = await db.transaction(async (tx) => {
     if (withAuto) {
+      // On its way by the arm's own sentence — `sending`, or re-armed while it
+      // was out (the fixes' review, CONC-2). «Just went» by the later of the
+      // settle and the remembered delivery: between the two the row reads
+      // `sent` with the previous `asked_at`.
       const [auto] = (await tx.execute(sql`
-        SELECT status, asked_at > now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}) AS recent
+        SELECT ${reaskInFlightSql()} AS in_flight,
+               greatest(asked_at, sent_at) > now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}) AS recent
           FROM client_notices
          WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
            AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
            FOR UPDATE
-      `)) as unknown as { status: string; recent: boolean | null }[];
-      if (auto?.status === 'sending') throw new ClientAskError('already_queued');
+      `)) as unknown as { in_flight: boolean | null; recent: boolean | null }[];
+      if (auto?.in_flight === true) throw new ClientAskError('already_queued');
       if (auto?.recent === true) throw new ClientAskError('too_soon');
     }
     // ONE row per (client, kind, prixod) — `client_notices_once`. A question
@@ -823,7 +853,7 @@ export async function askClientAboutReceipt(
     // A person asked NOW: the system's own question about the same prixod, if
     // one is still held, stands down — the client must not get two questions
     // minutes apart (docs/PRIXOD-JAVOBLAR.md §1.9). A question already on its
-    // way (`sending`) was refused above; the held row is ours until commit.
+    // way was refused above; the held row is ours until commit.
     if (rows.length > 0) {
       await tx.execute(sql`
         UPDATE client_notices SET status = 'skipped', last_error = ${REASK_SUPERSEDED}, claimed_at = NULL
@@ -1032,7 +1062,13 @@ export async function clientReaskStatusFor(receiptId: string): Promise<ClientRea
       failure: null,
     };
   }
-  const failure = reaskFailureOf(row.status, row.last_error);
+  // «Owner changed» read HERE is about an owner who went and came back — this
+  // reader takes the current owner's row alone — and the correction that
+  // brought them back re-decided the question (`assignReceiptClient` → the
+  // arm): re-armed, it reads «waiting»; not due, nothing is owed. Drawn as a
+  // failure it stood on the card for good, inviting a press nobody needed
+  // (the fixes' review, CONC-4).
+  const failure = row.status === 'skipped' && row.last_error === SKIP_CLIENT_CHANGED ? null : reaskFailureOf(row.status, row.last_error);
   if (failure) return { state: 'failed', at: row.send_after ? new Date(row.send_after) : null, wait: null, failure };
   // Delivered — read from `asked_at`, which no later outcome clears: a
   // question that went and was then rightly NOT sent again (the correction

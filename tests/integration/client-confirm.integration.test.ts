@@ -77,6 +77,7 @@ import {
 } from '@/modules/wms/receipts/client-confirm';
 import { armClientReask } from '@/modules/wms/receipts/client-reask';
 import { checkLot, lotCheckViewsFor, uncheckLot, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { heldTickFace } from '@/modules/wms/receipts/lot-check-face';
 import { uncheckedPrixodCount } from '@/modules/wms/inventory/lot-check-count';
 import { receivedFacts } from '@/modules/wms/notices/client-summary';
 import { pushLotName } from '@/modules/wms/notices/client-text';
@@ -1232,6 +1233,11 @@ describe('the sentence, combination by combination — against literal states', 
           // The card's «the ❌ is why» is the sentence's own arm: this owner's ❌ and nothing vouching past it.
           const vetoes = (answer === 'no' || answer === 'noOtherGoods') && want === 'n';
           if ((view.client?.vetoes ?? false) !== vetoes) wrong.push(`tarkib ${tarkib} · tick ${tick} · client ${answer}: vetoes ${!vetoes}`);
+          // …and the card's green tick is the sentence's too: a holding tick reads «✅ Mijoz tasdiqladi» only on
+          // a lot every list calls ✅ — a ❌ a tarkib of other goods settled lifts no veto from an OLDER tick
+          // (the fixes' review, TICK3-CARD: stale tarkib · old tick · ❌ on other goods drew it green beside ⚠).
+          const face = view.person ? heldTickFace(view.person, view.client?.vetoes === true) : null;
+          if (face === 'vouches' && view.state !== 'checked') wrong.push(`tarkib ${tarkib} · tick ${tick} · client ${answer}: a green tick on a «${view.state}» lot`);
         }
       }
     }

@@ -8,13 +8,13 @@ import { logger } from '../../platform/logger';
 import { linkedChats } from '../notices/client-push';
 import { NOTICE_RECEIVED, SKIP_CLIENT_CHANGED } from '../notices/client-claims';
 import { PUSH_LOT_LINES } from '../notices/client-text';
-import { RECLAIM_MINUTES } from '../notices/arrival';
 import {
   ASK_MAX_LOTS,
   clientAskFacts,
   NOTICE_LOT_ASK,
   NOTICE_LOT_REASK,
   REASK_SUPERSEDED,
+  reaskInFlightSql,
   type ClientAskFacts,
 } from './client-confirm';
 import { askFits } from './client-confirm-text';
@@ -132,8 +132,7 @@ async function receivedPushAsks(facts: Pick<ClientAskFacts, 'lots'>): Promise<bo
  */
 async function askingRows(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId'>): Promise<AskingRow[]> {
   return (await db.execute(sql`
-    SELECT kind, status,
-           (claimed_at IS NOT NULL AND claimed_at > now() - make_interval(mins => ${RECLAIM_MINUTES})) AS claimed_recently
+    SELECT kind, status, ${reaskInFlightSql()} AS in_flight
       FROM client_notices
      WHERE client_id = ${facts.clientId}::uuid AND ref_type = 'receipt' AND ref_id = ${facts.receiptId}::uuid
        AND kind IN (${sql.join(
@@ -146,8 +145,8 @@ async function askingRows(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId'>)
 interface AskingRow {
   kind: string;
   status: string;
-  /** Claimed by a sweep within the reclaim window — it may be sending right now. */
-  claimed_recently: boolean | null;
+  /** On its way right now, by `reaskInFlightSql` — meaningful for our own row; any `sending` row reads true. */
+  in_flight: boolean | null;
 }
 
 /**
@@ -196,31 +195,37 @@ export async function armClientReask(lotId: string): Promise<void> {
     // unknown — it may have read the facts before this correction committed.
     // So it counts as «due», and the send-time check compares the facts with
     // the tag that delivery remembers (the design judge's first blocker). Our
-    // OWN question re-armed while it was out is still on its way: the re-arm
-    // keeps its claim time, and a second correction inside the same send must
-    // not stand it down against a tag that delivery has not yet remembered
-    // (the as-built review, DLV-4).
-    const inFlight = rows.some(
-      (row) => row.status === 'sending' || (row.kind === NOTICE_LOT_REASK && row.status === 'pending' && row.claimed_recently === true),
-    );
+    // OWN question re-armed while it was out is still on its way — for every
+    // correction inside the same send, not only the first (the fixes' review,
+    // CONC-1): no correction may stand it down against a tag that delivery has
+    // not yet remembered (the as-built review, DLV-4). One sentence,
+    // `reaskInFlightSql`, which the person's door asks too.
+    const inFlight = rows.some((row) => row.in_flight === true);
     if (!inFlight && !(await reaskDue(facts, views))) {
       // Not due — and a question held from an earlier correction that this one
       // took back is stood down now, so the card stops promising it. What it
-      // delivered before (`asked_tag` / `asked_at`) is never touched.
+      // delivered before (`asked_tag` / `asked_at`) is never touched; a row
+      // that went on its way since the read is not ours to stand down.
       await db.execute(sql`
         UPDATE client_notices SET status = 'skipped', last_error = 'not_needed', claimed_at = NULL
          WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
            AND ref_type = 'receipt' AND ref_id = ${facts.receiptId}::uuid AND status = 'pending'
+           AND NOT ${reaskInFlightSql()}
       `);
       return;
     }
+    // The re-arm keeps the claim of a question still on its way — by the same
+    // sentence, read on the row as it stood: a `sending` row's, and a re-armed
+    // one's whose delivery is not yet remembered, so the NEXT correction inside
+    // the same send still finds it on its way (CONC-1). A retried row's failed
+    // claim, and one a delivery has answered, are nobody's.
     await db.execute(sql`
       INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at)
       VALUES (${facts.clientId}::uuid, ${NOTICE_LOT_REASK}, 'receipt', ${facts.receiptId}::uuid,
               now() + make_interval(mins => ${REASK_SETTLE_MINUTES}), now())
       ON CONFLICT (client_id, kind, ref_type, ref_id) DO UPDATE
          SET status = 'pending', send_after = EXCLUDED.send_after, attempts = 0, last_error = NULL,
-             claimed_at = CASE WHEN client_notices.status = 'sending' THEN client_notices.claimed_at END
+             claimed_at = CASE WHEN ${reaskInFlightSql()} THEN client_notices.claimed_at END
     `);
   } catch (err) {
     logger.warn({ err, lotId }, '[client-reask] the automatic question was not armed');

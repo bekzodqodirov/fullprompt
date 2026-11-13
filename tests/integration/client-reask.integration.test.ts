@@ -22,7 +22,7 @@ import type { Actor } from '@/modules/platform/rbac/authorize';
 import { clientLabels } from '@/modules/platform/telegram/client-labels';
 import { htmlToPlain } from '@/modules/platform/telegram/format';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
-import { claimNoticesForSending, settleArrivalNotice } from '@/modules/wms/notices/arrival';
+import { claimNoticesForSending, rememberAskedTag, settleArrivalNotice } from '@/modules/wms/notices/arrival';
 import { sendDueArrivalNotices, SWEPT_NOTICE_KINDS } from '@/modules/wms/notices/arrival-jobs';
 import {
   NOTICE_LOT_ASK,
@@ -65,7 +65,7 @@ const wh = { cn: '', uz: '' };
 let clientId = '';
 let silentClientId = '';
 const receipt = { main: '', quiet: '' };
-const lot = { K: '', L: '', Q: '', D: '', E: '' };
+const lot = { K: '', L: '', Q: '', D: '', E: '', F: '' };
 const madeBoxes: string[] = [];
 const saved = { reask: undefined as unknown, app: process.env.APP_URL };
 
@@ -104,6 +104,9 @@ const rowOf = async (kind: string, receiptId = receipt.main) =>
       asked_at: Date | null;
     }[]
   )[0];
+/** The claim a row holds, as the sweep's settle passes it back. */
+const claimedAtOf = async (id: string) =>
+  (await db.select({ at: clientNotices.claimedAt }).from(clientNotices).where(eq(clientNotices.id, id)))[0]!.at;
 const dueNow = (kind: string, receiptId = receipt.main) =>
   db
     .update(clientNotices)
@@ -224,18 +227,29 @@ beforeAll(async () => {
   const chain = oldChain({ boxCount: 7, totalWeightKg: 40.714, totalVolumeM3: 0.314 }, [13, 12, 11, 10, 9, 8, 7]);
   const end = chain[chain.length - 1]!.after;
   await mintLot('E', receipt.quiet, 3, 'C', 7, end.totalWeightKg.toFixed(3), end.totalVolumeM3.toFixed(4));
+  await oldHistory('E', 'C', chain);
+  // …and another, for a walk written ON TOP of such a chain since 0147 (the fixes' review, WALK-1): 6 cartons
+  // weighed at 10.063 kg, grown by 3 and taken back one a press by the old arithmetic, ending at 10.064.
+  const chainF = oldChain({ boxCount: 6, totalWeightKg: 10.063, totalVolumeM3: 0.5 }, [9, 8, 7, 6]);
+  const endF = chainF[chainF.length - 1]!.after;
+  await mintLot('F', receipt.quiet, 4, 'D', 6, endF.totalWeightKg.toFixed(3), endF.totalVolumeM3.toFixed(4));
+  await oldHistory('F', 'D', chainF);
+});
+
+/** A lot's growth-and-take-back History as the old count doors wrote it. */
+async function oldHistory(key: keyof typeof lot, letter: string, chain: ReturnType<typeof oldChain>) {
   for (const [i, step] of chain.entries()) {
-    const key = i === 0 ? 'lotGrown' : 'lotShrunk';
+    const kind = i === 0 ? 'lotGrown' : 'lotShrunk';
     await db.insert(auditLog).values({
       actorId: staffId,
       entityType: 'receipt',
       entityId: receipt.quiet,
       action: 'update',
       before: step.before,
-      after: { ...step.after, [key]: { lotId: lot.E, letter: 'C', reason: 'sinov' } },
+      after: { ...step.after, [kind]: { lotId: lot[key], letter, reason: 'sinov' } },
     });
   }
-});
+}
 
 /** The arithmetic the count doors used before 0147 — scale what is stored now — as a chain of History rows. */
 function oldChain(start: { boxCount: number; totalWeightKg: number; totalVolumeM3: number }, path: number[]) {
@@ -532,6 +546,34 @@ describe('the person’s question and the system’s never both go', () => {
     expect((await rowOf(NOTICE_LOT_ASK))?.status).toBe('sent');
   });
 
+  it('a person’s press while our question is on its way RE-ARMED is refused too — both would go minutes apart (the fixes’ review, CONC-2)', async () => {
+    await deliverPersonQuestion();
+    await db.execute(sql`UPDATE client_notices SET sent_at = now() - interval '1 hour' WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    const [claimed] = (await claimNoticesForSending(50, SWEEP_AT, [NOTICE_LOT_REASK])).filter((row) => row.refId === receipt.main);
+    await db.execute(sql`UPDATE client_notices SET claimed_at = now() - interval '1 minute' WHERE id = ${claimed!.id}::uuid`);
+    // A correction while it is out re-arms it: `pending`, the claim kept — still on its way.
+    await reweigh('K', 120);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    await expect(askClientAboutReceipt(receipt.main, logist(), ctx(), askFits)).rejects.toMatchObject({ code: 'already_queued' });
+    expect((await rowOf(NOTICE_LOT_ASK))?.status).toBe('sent');
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+  });
+
+  it('…and between the settle and the remembered delivery the question «just went»: the press is too soon (CONC-2)', async () => {
+    await deliverPersonQuestion();
+    await db.execute(sql`UPDATE client_notices SET sent_at = now() - interval '1 hour' WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    const [claimed] = (await claimNoticesForSending(50, SWEEP_AT, [NOTICE_LOT_REASK])).filter((row) => row.refId === receipt.main);
+    // Delivered and settled — the tag not yet remembered.
+    expect(await settleArrivalNotice(claimed!.id, 'sent', undefined, claimed!.claimedAt)).toBe(true);
+    expect((await rowOf(NOTICE_LOT_REASK))?.asked_at).toBeNull();
+    await expect(askClientAboutReceipt(receipt.main, logist(), ctx(), askFits)).rejects.toMatchObject({ code: 'too_soon' });
+    expect((await rowOf(NOTICE_LOT_ASK))?.status).toBe('sent');
+  });
+
   it('a person’s press stands a held automatic question down', async () => {
     await deliverPersonQuestion();
     // Out of the person door's ten-minute cooldown: the delivery is an hour old.
@@ -719,6 +761,49 @@ describe('a re-arm while the question is on its way survives the settle', () => 
     // The client is about to hold 110 — the question must go again, not be stood down against the old tag.
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
   });
+
+  /** The system's question about K at 110 claimed by a sweep on the real clock — on its way, rendered at 110. */
+  async function claimAt110(): Promise<{ id: string; tag110: string }> {
+    await deliverPersonQuestion();
+    await reweigh('K', 110);
+    const tag110 = await tagNow();
+    await dueNow(NOTICE_LOT_REASK);
+    const claimed = (await claimNoticesForSending(50, SWEEP_AT, [NOTICE_LOT_REASK])).filter((row) => row.refId === receipt.main);
+    expect(claimed).toHaveLength(1);
+    // The real clock, at the millisecond a sweep's JS clock stamps — a settle hands it back to compare.
+    await db.execute(sql`UPDATE client_notices SET claimed_at = date_trunc('milliseconds', now()) - interval '1 minute' WHERE id = ${claimed[0]!.id}::uuid`);
+    return { id: claimed[0]!.id, tag110 };
+  }
+
+  it('…and a THIRD inside the same send, and every one after it: each re-arm keeps the claim while that delivery is still out (the fixes’ review, CONC-1)', async () => {
+    await claimAt110();
+    await reweigh('K', 120);
+    await reweigh('K', 130);
+    // Back to what the client last held — but the client is about to hold 110.
+    await reweigh('K', 100);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+  });
+
+  it('once that delivery is REMEMBERED it is no longer on its way: a correction taken back to what it carried stands the held question down at once (the fixes’ review, CONC-3)', async () => {
+    const { id, tag110 } = await claimAt110();
+    await reweigh('K', 120);
+    // The message rendered at 110 lands, and the sweep remembers it — its claim is answered.
+    await rememberAskedTag(id, tag110);
+    await reweigh('K', 110);
+    const row = await rowOf(NOTICE_LOT_REASK);
+    // The client holds 110 and the lot is 110: nothing is owed, and the card stops promising a question now.
+    expect([row?.status, row?.last_error]).toEqual(['skipped', 'not_needed']);
+    expect(await clientReaskStatusFor(receipt.main)).toMatchObject({ state: 'sent' });
+  });
+
+  it('a retried row’s failed claim is not «on its way»: a correction taken back stands it down (CONC-3)', async () => {
+    const { id } = await claimAt110();
+    // Telegram failed for a moment: the row is back in the queue with the error and the claim of the attempt.
+    expect(await settleArrivalNotice(id, 'pending', '502 Bad Gateway', (await claimedAtOf(id)))).toBe(true);
+    await reweigh('K', 100);
+    const row = await rowOf(NOTICE_LOT_REASK);
+    expect([row?.status, row?.last_error]).toEqual(['skipped', 'not_needed']);
+  });
 });
 
 describe('the answer to the system’s question', () => {
@@ -777,6 +862,38 @@ describe('the owner corrected and corrected back (the as-built review, DLV-2)', 
       await assignReceiptClient(receipt.main, clientId, audit);
     }
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+  });
+
+  it('A → B → A with nothing owed when A is back: the «owner changed» skip is no failure on A’s card (the fixes’ review, CONC-4)', async () => {
+    await db.execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, status, sent_at, asked_tag, asked_at)
+      VALUES (${clientId}::uuid, 'received_cn', 'receipt', ${receipt.main}::uuid, now() - interval '2 hours', now(), 'sent',
+              now() - interval '2 hours', ${await tagNow()}, now() - interval '2 hours')
+    `);
+    await reweigh('K', 110);
+    const audit = { actorId: staffId, ip: null, userAgent: 'client-reask.integration' };
+    try {
+      await assignReceiptClient(receipt.main, silentClientId, audit);
+      await dueNow(NOTICE_LOT_REASK);
+      await sendDueArrivalNotices(SWEEP_AT);
+      // While B owns it, the office takes the weight back.
+      await reweigh('K', 100);
+    } finally {
+      await assignReceiptClient(receipt.main, clientId, audit);
+    }
+    // A holds the push's question at 100 and the lot is 100: nothing is owed — and nothing is drawn as failed.
+    const row = await rowOf(NOTICE_LOT_REASK);
+    expect([row?.status, row?.last_error]).toEqual(['skipped', 'client_changed']);
+    expect(await clientReaskStatusFor(receipt.main)).toBeNull();
+  });
+
+  it('a save of the SAME client is no correction: a held question keeps its time (the fixes’ review, CONC-6)', async () => {
+    await deliverPersonQuestion();
+    await reweigh('K', 110);
+    await db.execute(sql`UPDATE client_notices SET send_after = now() + interval '3 minutes' WHERE kind = ${NOTICE_LOT_REASK} AND ref_id = ${receipt.main}::uuid`);
+    const held = (await rowOf(NOTICE_LOT_REASK))!.send_after;
+    await assignReceiptClient(receipt.main, clientId, { actorId: staffId, ip: null, userAgent: 'client-reask.integration' });
+    expect(new Date((await rowOf(NOTICE_LOT_REASK))!.send_after).getTime()).toBe(new Date(held).getTime());
   });
 });
 
@@ -948,5 +1065,22 @@ describe('the count doors reach it through their shared hook', () => {
     expect([after!.boxCount, after!.totalWeightKg, after!.totalVolumeM3]).toEqual([before!.boxCount, before!.totalWeightKg, before!.totalVolumeM3]);
     // …and the drift is the one the old arithmetic made (the fixture's own oracle): 40.716, not the weighed 40.714.
     expect(before!.totalWeightKg).toBe('40.716');
+  });
+
+  it('…and a walk written on top of such a chain since 0147 is measured from where IT began: grown by two, taken back one a press, the end is its start (WALK-1)', async () => {
+    const [before] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.F));
+    // The fixture's own oracle: the old arithmetic left 10.064, not the weighed 10.063.
+    expect([before!.boxCount, before!.totalWeightKg]).toEqual([6, '10.064']);
+    const batchId = crypto.randomUUID();
+    const grown = await db.transaction((tx) =>
+      growLotInTx(tx, { lotId: lot.F, add: 2, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+    );
+    // Every press after the first joins the new rows to the old chain unbroken; each must still be measured
+    // from the new walk's start — scaling the lot as it stands again ended on 10.065 kg.
+    for (const box of grown.boxes) {
+      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.F, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
+    }
+    const [after] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.F));
+    expect([after!.boxCount, after!.totalWeightKg, after!.totalVolumeM3]).toEqual([before!.boxCount, before!.totalWeightKg, before!.totalVolumeM3]);
   });
 });
