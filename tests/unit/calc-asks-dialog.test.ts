@@ -332,3 +332,37 @@ describe('a file’s line column nothing settled is asked under the table (§3.2
     expect((await drawn(ctx2, plain.chatId)).text).not.toContain('ustuni — bitta karobkanikimi');
   });
 });
+
+describe('an add collection promises «AI qayta hisoblaydi» only once something is in it (review ask-break-6)', () => {
+  const item = { itemId: 'i1', seq: 1, name: 'Kurtka', quantity: 300, weightKg: 150, volumeM3: null, measureUnit: null, measureQty: null, tnvedCode: '6201400000', law: null, confirmed: false };
+  const amend = {
+    requestId: 'req-1',
+    cardLabel: 'B-00123',
+    entityType: 'deal' as const,
+    entityId: 'deal-1',
+    leadOpen: null,
+    section: 'rastamojka' as const,
+    door: 'ai' as const,
+    clientLabel: null,
+    openedRev: 1,
+    items: [item],
+    weightKg: 3500,
+    volumeM3: 12,
+    fromCity: null,
+    toCity: null,
+  };
+  const goods = () => [{ name: 'Kurtka', quantity: 300, weightKg: 150, seq: 1, itemId: 'i1', tnvedCode: '6201400000', tnvedSource: 'row' as const }];
+
+  it('opened with nothing: no press promised; a row answered: «✅ Qo‘shish», AI recalculates', async () => {
+    const { chatId } = collection({ stage: 'review', amend, facts: { weightKg: 3500, volumeM3: 12, goods: goods() } });
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    expect(table.text.split('\n').at(-1)).toBe('ℹ️ Hali hech narsa qo‘shilmadi — yangi tovar, javob yoki faylni shu yerga yuboring.');
+    expect(table.text).not.toContain('AI qayta hisoblaydi');
+
+    await say(ctx, chatId, '1: 180 kg');
+    const now = tableNow(ctx, table);
+    expect(now.text).toContain('1. Kurtka — 300 dona · 180 kg');
+    expect(now.text).toContain('✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing, AI qayta hisoblaydi.');
+  });
+});

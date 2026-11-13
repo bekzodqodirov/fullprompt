@@ -931,6 +931,14 @@ export interface TableAmend {
   askedSeqs: readonly number[] | null;
   /** The VED has started on the job (`standingAtOpen`): the confirm is «📨 VED ga yuborish». */
   started?: boolean;
+  /**
+   * Does the collection hold anything the save would write or name — the
+   * press's own «Hech narsa o‘zgarmadi» question, read from the state
+   * (`amendAdds`, calc-dialog.ts; review ask-break-6). false = nothing yet:
+   * the closing promises no press and no re-run. Absent = not known — today's
+   * words.
+   */
+  adds?: boolean;
 }
 
 /** What the table is drawn from — everything a row, a total and the closing need. */
@@ -1303,7 +1311,15 @@ export const AI_TABLE_COMPLETE = '✅ Ma’lumot to‘liq — «✅ Tasdiqlash»
  * words, the job going to the VED; an addition the VED has started on goes
  * to him and nothing re-runs.
  */
+/**
+ * An add collection with nothing in it yet (review ask-break-6): «✅ Qo‘shish»
+ * would answer «Hech narsa o‘zgarmadi» and queue no pass, so the closing
+ * promises neither — it says what the door takes.
+ */
+export const AMEND_NOTHING_YET = 'ℹ️ Hali hech narsa qo‘shilmadi — yangi tovar, javob yoki faylni shu yerga yuboring.';
+
 function aiCompleteLine(amend: TableAmend | null, available: boolean): string {
+  if (amend?.adds === false) return AMEND_NOTHING_YET;
   if (amend?.started) return '✅ Ma’lumot to‘liq — «📨 VED ga yuborish» ni bosing.';
   if (amend) return available ? '✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing, AI qayta hisoblaydi.' : '✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing.';
   return available ? AI_TABLE_COMPLETE : '✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, so‘rov VED ga tushadi.';

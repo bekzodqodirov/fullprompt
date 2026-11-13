@@ -551,6 +551,33 @@ export function landingRetryWords(state: IntakeState): string {
 }
 
 /** The table's input — the state as `intakeTableText` reads it. */
+/**
+ * Does an add collection hold anything its save would write or name to the
+ * VED (review ask-break-6)? The same inputs `amendSubmissionOf` (calc-amend.ts)
+ * builds the submission from, asked the way `changeSays` (wms/calc/amend.ts)
+ * asks it: a stored row answered, a conflict (chosen or left to the VED), a
+ * new line, a totals or route answer, a doubted total answered, typed words,
+ * a file. It cannot see a typed figure that equals the stored one — the save
+ * still says «Hech narsa o‘zgarmadi» to that. Pure.
+ */
+export function amendAdds(
+  state: Pick<IntakeState, 'conflicts' | 'lineAnswers' | 'facts' | 'totalsAnswer' | 'routeAnswer' | 'ambiguousTotals' | 'material' | 'answers' | 'fileCount'>,
+): boolean {
+  const FIELDS = ['quantity', 'weightKg', 'volumeM3', 'measureUnit', 'measureQty', 'tnvedCode'] as const;
+  const answered = state.lineAnswers.some((e) => e.itemId && FIELDS.some((k) => e.patch[k] !== undefined && e.patch[k] !== null));
+  return (
+    answered ||
+    state.conflicts.length > 0 ||
+    (state.facts.goods ?? []).some((g) => !g.itemId) ||
+    state.totalsAnswer.weightKg !== null ||
+    state.totalsAnswer.volumeM3 !== null ||
+    Boolean(state.routeAnswer?.fromCity || state.routeAnswer?.toCity) ||
+    state.ambiguousTotals.some((a) => 'answered' in a) ||
+    [...state.material, ...state.answers].some((m) => m.trim() !== '') ||
+    state.fileCount > 0
+  );
+}
+
 function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/calc/intake').TableInput {
   return {
     section: state.section,
@@ -570,6 +597,7 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
           conflicts: state.conflicts,
           askedSeqs: state.askedSeqs,
           started: state.standingAtOpen === 'started',
+          adds: amendAdds(state),
         }
       : null,
     tail: tableTail(state, tc.intake),
