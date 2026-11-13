@@ -408,6 +408,15 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     expect(after.table).not.toContain('3.8');
   });
 
+  it('review seams-1: «TOTAL: 60 CTNS  G.W. 710  CBM 3.8» — the 710 is the weight label’s: no 710 m³, and the model’s 3.8 stands', async () => {
+    model.analyze.mockImplementation(async () => ({ ok: true, facts: { goods: [], weightKg: 710, volumeM3: 3.8 }, steps: [], usage: BILL, answered: [BILL], knownCodes: [] }));
+    const got = await collect('podklyuch', [[await B.sheetsBook([['Sheet1', INVOICE_HEAD, [...INVOICE_ROWS, [], ['TOTAL: 60 CTNS  G.W. 710  CBM 3.8']]]]), 'ci.xlsx']]);
+    expect(got.state.goodsFiles?.[0]).toMatchObject({ volumeM3: null });
+    expect(got.state.facts.volumeM3).toBe(3.8);
+    expect(got.table).toContain('✅ Hajm: 3.8');
+    expect(got.table).not.toContain('710 kub');
+  });
+
   it('…an invoice whose TOTAL row states only the count and the money keeps no text of its own: nothing new under the totals heading', async () => {
     await collect('rastamojka', [[await B.sheetsBook([['Sheet1', INVOICE_HEAD, INVOICE_ROWS]]), 'ci.xlsx']]);
     const handed = model.analyze.mock.calls.at(-1)?.[0] as { goodsSheetText?: { text: string } } | undefined;

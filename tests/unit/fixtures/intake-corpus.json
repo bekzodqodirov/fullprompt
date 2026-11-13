@@ -55203,6 +55203,366 @@
    "why": "review figures-ctn-running-number (the English plural spelling).",
    "source": "ai-soraydi 1a review (figures-ctn-running-number)",
    "weight": "blocker"
+  },
+  {
+   "id": "c4508",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL",
+     80,
+     null,
+     2400
+    ],
+    [
+     "TOTAL: 60 CTNS  G.W. 710  CBM 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«G.W. 710 CBM 3.8»: the 710 is the weight label's, «CBM» opens the next field — the sheet's cube is never 710 m³ (and 3.8 stands after no colon, so it is the model's or asked)",
+   "why": "review seams-1 (blocker), the summary reader's half: SUMMARY_READERS.volume took «710 CBM» — an m³ word followed by a bare figure is that figure's LABEL, not the previous figure's unit. Base: no summary reader. The typed and table halves are lane T's.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4509",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL QTY 980 CBM 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«TOTAL QTY 980 CBM 3.8»: 980 is the count, never 980 m³",
+   "why": "review seams-1, a count label before the m³ word.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4510",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL gw 710 cbm 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "lower case «TOTAL gw 710 cbm 3.8»: no 710 m³",
+   "why": "review seams-1 (the refuter's lower-case spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4511",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL: G.W.: 710 CBM 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "grossKg": 710,
+    "volumeM3": null
+   },
+   "said": "«TOTAL: G.W.: 710 CBM 3.8»: the brutto 710 (a label and a colon), and no cube — never 710 kg AND 710 m³",
+   "why": "review seams-1: one figure counted twice.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4512",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL G.W.: 710 CBM: 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8
+   },
+   "said": "«TOTAL G.W.: 710 CBM: 3.8»: each figure after its own label and colon — 710 kg brutto, 3.8 m³",
+   "why": "review seams-1: the label-and-colon reading still stands.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4513",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL: 3.8 CBM 60 CTNS G.W. 710 KGS",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8
+   },
+   "said": "«3.8 CBM 60 CTNS»: the figure after the m³ word carries its own unit — so 3.8 IS the cube; 710 KGS the brutto",
+   "why": "review seams-1: the m³ word is a label only before a BARE figure.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4514",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Цена",
+     "Сумма"
+    ],
+    [
+     "Стул",
+     40,
+     10,
+     400
+    ],
+    [
+     "Стол",
+     40,
+     50,
+     2000
+    ],
+    [
+     "Итого: брутто 710 куб 3,8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«Итого: брутто 710 куб 3,8»: no 710 m³ in Russian either",
+   "why": "review seams-1 (the Russian spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4515",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni",
+     "Narxi",
+     "Summa"
+    ],
+    [
+     "Stul",
+     40,
+     10,
+     400
+    ],
+    [
+     "Stol",
+     40,
+     50,
+     2000
+    ],
+    [
+     "Jami: 710 kub 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«Jami: 710 kub 3.8»: no 710 m³ in Uzbek either",
+   "why": "review seams-1 (the Uzbek spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4516",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "单价",
+     "金额"
+    ],
+    [
+     "办公椅",
+     40,
+     10,
+     400
+    ],
+    [
+     "桌子",
+     40,
+     50,
+     2000
+    ],
+    [
+     "合计 毛重 710 立方 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«合计 毛重 710 立方 3.8»: no 710 m³ in Chinese either",
+   "why": "review seams-1 (the Chinese spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
   }
  ],
  "parseGoodsLineCases": [

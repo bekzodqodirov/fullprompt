@@ -2879,6 +2879,13 @@ const TEXT_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
 // 136.5, and nobody can say which).
 const TEXT_NUMBER = String.raw`(?<!\d\s?)(?<![.,])(\d{1,3}(?:,\d{3})+\.\d+|\d+(?:[.,]\d+)?)(?![.,]?\d)(?!\s\d)`;
 const TEXT_UNIT_OF = (words: string) => String.raw`(?:${words})(?!${TEXT_EDGE})`;
+// …and an m³ word followed by a BARE figure — one with no unit of its own — is
+// that figure's LABEL, never the unit of the figure before it (review
+// seams-1): «G.W. 710 CBM 3.8», «TOTAL QTY 980 CBM 3.8», «брутто 710 куб 3,8»
+// read 710 — the weight, the count — as the shipment's cube, 187× too large,
+// under ✅ and above the model's own 3.8. «3.8 CBM 60 CTNS» keeps its cube: the
+// 60 after it carries its own unit. A figure that is no one's is asked.
+const TEXT_LABEL_OF_NEXT = String.raw`\s*[:：=]?\s*\d+(?:[.,]\d+)?(?![\d.,])(?!\s*[\p{L}㎥³])`;
 const TEXT_LABEL = (labels: readonly string[]) => String.raw`(?<!${TEXT_EDGE})(?:${labelAlternation(labels)})(?!${TEXT_EDGE})\s*(?:[(（][^()（）]{0,12}[)）]\s*)?`;
 // Each reader says whether its figure carries its UNIT: a unitless one
 // («G.W.: 710») is read only on a line with no currency mark (review JN-21,
@@ -2890,7 +2897,7 @@ const SUMMARY_READERS: Record<'gross' | 'volume', { re: RegExp; unitless: boolea
     { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'), unitless: false },
   ],
   volume: [
-    { re: new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)`, 'giu'), unitless: false },
+    { re: new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)(?!${TEXT_LABEL_OF_NEXT})`, 'giu'), unitless: false },
     { re: new RegExp(String.raw`${TEXT_LABEL(VOLUME_LABELS)}[:：=]\s*${TEXT_NUMBER}(?!\s*${TEXT_UNIT_OF(unitPattern('m3'))})`, 'giu'), unitless: true },
   ],
 };
