@@ -15807,6 +15807,149 @@
    "why": "crit-3: one carton's weight in the «в каждой коробке» form.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "defect"
+  },
+  {
+   "id": "c4220",
+   "input": "Kurtka 20 karobka 0.12 cbm/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg the line's; 20 × 0.12 = 2.4 m³",
+   "why": "doors-1: «cbm/ctn» — 0.12's own unit and tail — was a «CBM/CTN:» label heading the 300 kg: 20 × 300 = 6 000 kg.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4221",
+   "input": "Stul 20 ctns 0.12 cbm/ctn 300 kgs",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4222",
+   "input": "Stul 20 ctn, 0.12 cbm/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4223",
+   "input": "Kurtka 20 karobka 0.12 kub/karobka 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1, the Uzbek tail.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4224",
+   "input": "Kurtka 20 karobka 0.12 куб/кор 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1, the Russian tail.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4225",
+   "input": "Stol 10 ctn 1.2 cbm/ctn 150 kg 12 cbm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stol",
+      "weightKg": 150,
+      "volumeM3": 12,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "150 kg; 12 m³ (agrees with 10 × 1.2)",
+   "why": "doors-1: was 1 500 kg with the volume empty.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4226",
+   "input": "Stul 20 ctns, Weight per carton: 15 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "LABEL_LEAD's own example: «weight» with its per-carton tail was no label, and 15 kg the shipment's.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4227",
+   "input": "Stul 20 мест, вес брутто на 1 место 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "«на 1 место»'s «1» was a second carton count (20 ≠ 1 → no count, nothing computed).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -59436,6 +59579,39 @@
    },
    "said": "no total; the row 300 kg; the goods are no longer asked",
    "why": "crit-3: missingFields named «goods» for a line the seller typed whole.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4228",
+   "input": "Kurtka 20 karobka 0.12 cbm/ctn 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "the shipment's weight 300 kg (the one line's), no 0.12 total",
+   "why": "doors-1: parseManualFacts had dropped the 300 kg as one carton's.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4229",
+   "input": "Stul 20 ctns, Weight per carton: 15 kg",
+   "expected": {
+    "weightKg": null
+   },
+   "said": "no 15 kg total",
+   "why": "the per-carton weight is no shipment total (T4).",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "defect"
   }

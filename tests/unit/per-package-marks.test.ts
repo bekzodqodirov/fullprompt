@@ -156,3 +156,42 @@ describe('owner-2 / crit-3 / crit-4 — what ONE carton holds, in every form JN-
     expect(r.packing ?? null).toBeNull();
   });
 });
+
+describe('doors-1 — a per-carton cube’s own unit and tail are no label of the NEXT figure', () => {
+  it('«0.12 cbm/ctn 300 kg»: 20 × 0.12 = 2.4 m³, and the 300 kg is the line’s own — never 20 × 300 = 6 000', () => {
+    for (const text of [
+      'Kurtka 20 karobka 0.12 cbm/ctn 300 kg',
+      'Stul 20 ctns 0.12 cbm/ctn 300 kgs',
+      'Stul 20 ctn, 0.12 cbm/ctn 300 kg',
+      'Kurtka 20 karobka 0.12 kub/karobka 300 kg',
+      'Kurtka 20 karobka 0.12 куб/кор 300 kg',
+      'Stul 20 мест 0.12 м3/место 300 кг',
+      '椅子 20箱 0.12立方/箱 300kg',
+    ]) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ weightKg: 300, volumeM3: 2.4 });
+      expect(r.packing, text).toMatchObject({ cartons: 20, m3PerCarton: 0.12, kgPerCarton: null });
+    }
+  });
+
+  it('«Stol 10 ctn 1.2 cbm/ctn 150 kg 12 cbm»: 150 kg the line’s, 12 m³ stated and agreeing with 10 × 1.2', () => {
+    // Was 1 500 kg, the volume empty and «1.2 cbm/ctn, 12 cbm» sent to the note.
+    expect(row('Stol 10 ctn 1.2 cbm/ctn 150 kg 12 cbm')).toMatchObject({ name: 'Stol', weightKg: 150, volumeM3: 12, note: null });
+  });
+
+  it('a REAL label with its tail still heads its figure: «G.W./CTN: 15 kg» — 20 × 15 = 300 kg', () => {
+    expect(row('Kurtka 20 karobka G.W./CTN: 15 kg')).toMatchObject({ weightKg: 300 });
+    expect(row('Stul 20 ctns, CBM/CTN: 0.12 cbm')).toMatchObject({ volumeM3: 2.4 });
+  });
+
+  it('the same mark’s neighbours: «Weight per carton: 15 kg» and «вес брутто на 1 место 15 кг» — 20 × 15 = 300 kg', () => {
+    // «Weight per carton: 15 kg» was the shipment's 15 kg — the example LABEL_LEAD's own comment names.
+    expect(totals('Stul 20 ctns, Weight per carton: 15 kg')).toEqual(none);
+    expect(row('Stul 20 ctns, Weight per carton: 15 kg')).toMatchObject({ name: 'Stul', weightKg: 300 });
+    expect(row('Stul 20 ctns, wt. per ctn 15 kg')).toMatchObject({ weightKg: 300 });
+    // «на 1 место»'s own «1» was taken for a second carton count: 20 and 1 differ, so no count, no product.
+    expect(row('Stul 20 мест, вес брутто на 1 место 15 кг')).toMatchObject({ weightKg: 300 });
+    // A bare «weight» stays no label-first total (JN-21): nothing read from «Weight: 300».
+    expect(totals('Weight: 300')).toEqual(none);
+  });
+});

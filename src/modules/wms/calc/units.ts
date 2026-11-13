@@ -1025,17 +1025,25 @@ const IN_BOX_PO = new RegExp(String.raw`(?<![\p{L}])в\s+(?:${PACKAGE_NOUN})\s+�
 /** «20 коробок по 15 кг», «300 шт по 0.2 кг» — a Russian «по» right after a count (group 2: that count's word). */
 const PO_LEAD = /(?<![\p{L}\d.,])(\d[\d.,]*)\s*(\p{L}+)\s+по\s*$/iu;
 /**
+ * A weight's bare word, a label ONLY with its per-package tail — «Weight per
+ * carton: 15 kg» (the comment below names it, and it was the shipment's 15
+ * kg). Never a label-first total on its own (review JN-21: «weight» alone
+ * needs its unit), so it is in no list of `WEIGHT_LABELS`.
+ */
+const PER_LABEL_ONLY: readonly string[] = ['weight', 'wt.', 'wt'];
+/**
  * A measure's LABEL with its per-package tail before a figure — «G.W./CTN:
  * 15 kg», «N.W./ctn 14 kg», «毛重/箱 15kg», «Weight per carton: 15 kg», «Вес
  * брутто на 1 место 15 кг», «Вес одного места 15 кг». Group 1: the label;
  * 2: the slash word; 3: the «per» noun; 4, 5: the package noun.
  */
 const LABEL_LEAD = new RegExp(
-  String.raw`(?<![\p{L}])(${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS, ...FIELD_LABELS.count])})\s*(?:\/\s*(\p{L}+)|(?:per|pr)\s+(${COUNT_NOUN})|(?:на|за)\s+(?:1\s+|одн\p{L}*\s+)?(${PACKAGE_NOUN})|одного\s+(${PACKAGE_NOUN}))\s*[.)]?\s*[:：=]?\s*$`,
+  String.raw`(?<![\p{L}])(${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS, ...FIELD_LABELS.count, ...PER_LABEL_ONLY])})\s*(?:\/\s*(\p{L}+)|(?:per|pr)\s+(${COUNT_NOUN})|(?:на|за)\s+(?:1\s+|одн\p{L}*\s+)?(${PACKAGE_NOUN})|одного\s+(${PACKAGE_NOUN}))\s*[.)]?\s*[:：=]?\s*$`,
   'iu',
 );
 /** A label that says WHICH weight — a netto's, or a brutto's. */
 const NET_LABEL_WORD = new RegExp(`^(?:${labelPattern(NET_LABELS)})$`, 'iu');
+
 const GROSS_LABEL_WORD = /^(?:g\.?\s?w\.?|gross(?:\s*weight)?|brutto|брутто|вес\s*брутто|毛重|总毛重)$/iu;
 
 /** WHICH weight a weight label names — a netto's, a brutto's, or it does not say («вес», «og‘irlik»). */
@@ -1345,14 +1353,22 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   // figures have none, and a pattern anchored at the window's end is tried
   // from every position of it.
   const lower = before.toLowerCase();
-  const label = /[/]|per|pr|на|за|одного/u.test(lower) ? LABEL_LEAD.exec(before) : null;
+  const labelHit = /[/]|per|pr|на|за|одного/u.test(lower) ? LABEL_LEAD.exec(before) : null;
+  // A label word right after a number is that number's UNIT, and its tail
+  // that number's — «0.12 cbm/ctn 300 kg» is one carton's cube and the line's
+  // own 300 kg, never a «CBM/CTN:» heading the kilos (review doors-1: the row
+  // weighed 20 × 300 = 6 000 kg, a 20× weight on a per-kg customs price).
+  const label = labelHit && !/\d\s*$/u.test(before.slice(0, labelHit.index)) ? labelHit : null;
   if (label) {
     const owner = label[2] !== undefined ? tailWordOwner(label[2]) : label[3] !== undefined ? nounOwner(label[3]) : 'package';
     const word = label[1]!.replace(/\s+/gu, ' ').trim();
     const kind = NET_LABEL_WORD.test(word) ? 'net' : GROSS_LABEL_WORD.test(word) ? 'gross' : null;
     // An unknown slash word — «Вес/мешок» — marks the figure as nobody's total and nobody's column.
     if (owner === null && label[2] !== undefined) return fixed(null, [], { inName: true });
-    return fixed(owner, [markSpan(label[0], from + label.index)], { kind, clause: owner === 'package' });
+    // «на 1 место» inside the label is the mark's own «1», no carton count of the line.
+    const at = from + label.index;
+    const cartonHit = hits.findIndex((h) => h.unit === 'karobka' && h.start >= at && h.end <= at + label[0].length);
+    return fixed(owner, [markSpan(label[0], at)], { kind, clause: owner === 'package', ...(cartonHit >= 0 ? { cartonHit } : {}) });
   }
   const pkgLabel = PACKAGE_LABEL_STEM.test(lower) ? PACKAGE_LABEL_LEAD.exec(before) : null;
   if (pkgLabel) {
