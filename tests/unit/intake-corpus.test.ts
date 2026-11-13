@@ -35,7 +35,7 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
 }));
 // The reading job bills each answered reading itself (docs/SAKKIZ-R3.md
 // §7.2.10); the ledger is not what these cases are about.
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, aiCalcAvailable: async () => true, recordAiPass: async () => {} }));
 // «Bo‘ldi» only ENQUEUES since the reading is a pg-boss job (§7.1): the
 // collector cases run the captured job through the one drive helper.
 vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
@@ -66,6 +66,7 @@ vi.mock('@/modules/wms/calc/prefill-queue', async (importOriginal) => ({
 
 import {
   AI_READ_FAILURE,
+  factsVolumeM3,
   invoiceFacts,
   landingItems,
   lineNeeds,
@@ -88,7 +89,7 @@ import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { threadAiAdvice } from '@/modules/wms/calc/from-thread';
 import { PASS_FAILED, STOOD_DOWN, attemptStanding, registerCalcPrefillWorker, standDownWords } from '@/modules/wms/calc/jobs';
 import { SHEET_TEXT_BUDGET, csvRows, readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
-import { isArticleNumber, parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
+import { isArticleNumber, parseGoods, type Cell, type GoodsRow } from '@/modules/wms/deals/goods-import';
 import { MAX_ROWS, MAX_SHEETS, htmlTableSheets, readXls, spreadsheetMlSheets } from '@/modules/wms/deals/xls';
 import {
   activeIntake,
@@ -115,7 +116,7 @@ import {
   receiveSheetText,
   settleAnalysis,
 } from '@/modules/platform/telegram/staff-handlers';
-import { applyTableAnswer, deliverNextStep, ZONE_OPENING } from '@/modules/platform/telegram/calc-dialog';
+import { applyTableAnswer, deliverNextStep, intakeNextStep, tableEditsSettled, ZONE_OPENING } from '@/modules/platform/telegram/calc-dialog';
 import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 import {
@@ -316,6 +317,10 @@ describe('parseGoods', () => {
       if (c.expected[key] !== undefined) expect(parsed[key], key).toBe(c.expected[key]);
     }
     if (c.expected.dropped !== undefined) expect(parsed.dropped, 'dropped').toEqual(c.expected.dropped);
+    if (c.expected.asks !== undefined) expect((parsed.asks ?? []).map((a) => a.title), 'asks').toEqual(c.expected.asks);
+    if (c.expected.asksTotalStated !== undefined) {
+      expect((parsed.asks ?? []).map((a) => a.totalStated === true), 'asksTotalStated').toEqual(c.expected.asksTotalStated);
+    }
     const notes = parsed.notes.map((n) => `${n.warn ? '⚠️ ' : ''}${n.text}`);
     for (const said of c.expected.notesInclude ?? []) expect(notes.some((n) => n.includes(said)), `notes ${JSON.stringify(notes)}`).toBe(true);
   });
@@ -918,6 +923,49 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
+/**
+ * The «🤖 AI rastamojka» door over a real workbook (docs/AI-SORAYDI.md §3.2): files forwarded, read with the
+ * model answering NOTHING (every figure is the file's or the kernel's) — or, with `opts.model`, only the
+ * shipment's totals it read off the sheet's text, as the production model does — then each typed table
+ * answer written. What the INSERT would take — the cube, the brutto — and the table, after every step.
+ * `opts.ai: false` walks the plain «🧮» door the same way (its summary, never its frozen guards).
+ */
+async function aiDoorWalk(
+  section: IntakeState['section'],
+  files: [FileSpec, string][],
+  answers: string[] = [],
+  opts: { model?: { weightKg?: number | null; volumeM3?: number | null }; ai?: boolean } = {},
+) {
+  const { chatId } = collection({ ai: opts.ai ?? true, stage: 'material', material: [] }, section);
+  for (const [spec, name] of files) {
+    await forward(chatId, spec, name);
+    updateIntake(chatId, { fileCount: activeIntake(chatId)!.fileCount + 1 });
+  }
+  const reading = reads([]);
+  model.analyze.mockResolvedValueOnce({ ...reading, facts: { ...reading.facts, ...opts.model } });
+  const read = await analyzeCollected(activeIntake(chatId)!);
+  updateIntake(chatId, { ...read, answered: undefined } as never);
+  const ctx = fakeCtx();
+  const said = activeIntake(chatId)!.fileNotes ?? [];
+  const intake = await import('@/modules/wms/calc/intake');
+  const { nameWordFor } = await import('@/modules/wms/calc/line-address');
+  const now = () => {
+    const s = activeIntake(chatId)!;
+    return {
+      state: s,
+      cube: factsVolumeM3(s.facts as never),
+      weightKg: s.facts.weightKg ?? null,
+      table: intakeNextStep(s, new Map(), intake, { nameWord: nameWordFor, aiAvailable: true }).text,
+    };
+  };
+  const steps = [now()];
+  for (const text of answers) {
+    await answer(ctx, chatId, text);
+    await tableEditsSettled();
+    steps.push(now());
+  }
+  return { chatId, said, steps };
+}
 const SCENARIOS: Record<string, () => Promise<void>> = {
   // ---- «a second invoice arrived»: the open question survives the answer (c0)
   c0000: async () => {
@@ -2332,6 +2380,285 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       expect(read.notes).toEqual([]);
       expect(read.facts.goods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Mens jacket', 'Kids pants']);
     }
+  },
+  c4520: async () => {
+    // review seams-3: a lone invoice whose every line states its cube gives NO stated cube — the
+    // current lines' Σ «qatorlardan», which a row the seller corrects at the table moves.
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)', 'CBM'];
+    const rows: Cell[][] = [head, [1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'ci.xlsx']], ['2: 2.1 m3']);
+    const [before, after] = steps as [(typeof steps)[number], (typeof steps)[number]];
+    // 1.2 + 1.1 + 1.5 = 3.8; after «2: 2.1 m3», 1.2 + 2.1 + 1.5 = 4.8 — by hand.
+    expect(before.state.facts.volumeM3 ?? null).toBeNull();
+    expect(before.cube).toBe(3.8);
+    expect(before.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
+  },
+  c4521: async () => {
+    // review seams-2: the asked columns' Σ (36 kg / 0.18 m³) is no shipment total; after the seller
+    // answers every row the cube is the rows' 0.5 + 1.2 + 2.1 = 3.8 and the brutto is still his to give.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '2: 260 kg 1.2 m3', '3: 330 kg 2.1 m3']);
+    const before = steps[0]!;
+    const after = steps.at(-1)!;
+    expect(before.weightKg).toBeNull();
+    expect(before.state.facts.volumeM3 ?? null).toBeNull();
+    expect(before.table).not.toContain('36 kg');
+    expect(after.cube).toBe(3.8);
+    expect(after.weightKg).toBeNull();
+    expect(after.table).not.toContain('0.18');
+  },
+  c4522: async () => {
+    // review seams-4: the same packing list beside its invoice (ci then pl): its asked columns' Σ is
+    // no «✅ brutto / kub» either, and the receipt names both columns.
+    const ci: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'Unit price', 'Amount', 'N.W.(KGS)'],
+      [1, 'Ladies jacket', 200, 6.5, 1300, 100],
+      [2, 'Kids toy plastic', 480, 1.5, 720, 240],
+      [3, 'LED lamp 50W', 300, 3, 900, 300],
+    ];
+    const pl: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { said, steps } = await aiDoorWalk('podklyuch', [
+      [xlsx({ name: 'Sheet1', rows: ci }), 'ci.xlsx'],
+      [xlsx({ name: 'Sheet1', rows: pl }), 'pl.xlsx'],
+    ]);
+    const now = steps[0]!;
+    expect(now.weightKg).toBeNull();
+    expect(now.cube).toBeNull();
+    expect(now.table).toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+    expect(now.table).toContain('umumiy hajmi (kub) — yozilmagan');
+    expect(said.join('\n')).toContain(
+      '«G.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi',
+    );
+  },
+  c4524: async () => {
+    // the check of review figures-ctn-running-number: a two-sheet packing list whose numbering goes
+    // on counting (PL-1 «1, 2, 3», PL-2 «4, 5, 6») — both sheets' «CTN» is the cartons' NUMBER, so
+    // no sheet carries a carton count, and the per-carton figures are the file's own, never × 4, 5, 6.
+    const head = ['CTN', 'Description', 'QTY', 'G.W./CTN', 'CBM/CTN'];
+    const built = await buildFile(
+      xlsx(
+        { name: 'PL-1', rows: [head, [1, 'Office chair', 10, 15, 0.12], [2, 'Office chair', 10, 15, 0.12], [3, 'Table', 1, 30, 0.5]] },
+        { name: 'PL-2', rows: [head, [4, 'Lamp', 10, 8, 0.05], [5, 'Lamp', 10, 8, 0.05], [6, 'Desk', 1, 30, 0.5]] },
+      ),
+    );
+    const read = await readGoodsFile(built.body, built.contentType);
+    expect(read?.kind).toBe('goods');
+    if (read?.kind !== 'goods') return;
+    const packs = (goods: readonly GoodsRow[]) =>
+      goods.map((g) => [g.packing?.cartons ?? null, g.packing?.kgPerCarton ?? null, g.packing?.m3PerCarton ?? null]);
+    expect(packs(read.goods)).toEqual([[null, 15, 0.12], [null, 15, 0.12], [null, 30, 0.5]]);
+    expect(read.moreSheets.map((m) => packs(m.goods))).toEqual([[[null, 8, 0.05], [null, 8, 0.05], [null, 30, 0.5]]]);
+  },
+  c4525: async () => {
+    // review seams-2's check: «G.W.(KGS)» of its own beside the asked «N.W.(KGS)», both beside 10, 20, 30
+    // cartons — its Σ 12 + 13 + 11 = 36 is as unproven as the net column's, so the brutto is asked (710 kg if
+    // per carton), never «✅ 36 kg»; and the model's reading of that TOTAL row (36) does not land either.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'N.W.(KGS)', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 11, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 9, 11, 0.07],
+      ['TOTAL', null, 980, 60, 30, 36, 0.18],
+    ];
+    for (const model of [{}, { weightKg: 36 }]) {
+      const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], { model });
+      const now = steps[0]!;
+      expect(now.weightKg).toBeNull();
+      expect(now.table).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+      expect(now.table).not.toContain('36 kg');
+    }
+  },
+  c4526: async () => {
+    // review seams-2-fix/summary-line-brutto-dropped: «Bag» lacks its G.W., so the summary line's
+    // «TOTAL G.W.: 710 KGS» is the sheet's own brutto — no Σ of the asked column (12 + 13 + 11 = 36) —
+    // and it stands under ✅ beside the question; the cube's column Σ does not.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      [4, 'Bag', 50, 5, null, 0.02],
+      ['TOTAL G.W.: 710 KGS  CBM: 3.9'],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']]);
+    const now = steps[0]!;
+    expect(now.weightKg).toBe(710);
+    expect(now.table).toContain('✅ Og‘irlik (brutto): 710 kg');
+    expect(now.state.facts.volumeM3 ?? null).toBeNull();
+  },
+  c4527: async () => {
+    // review seams-2's check beside an invoice (seams-4's pair): the packing list's gross column beside its
+    // asked net one is no «✅ brutto» either, and the receipt calls what it did not take a BRUTTO.
+    const ci: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'Unit price', 'Amount'],
+      [1, 'Ladies jacket', 200, 6.5, 1300],
+      [2, 'Kids toy plastic', 480, 1.5, 720],
+      [3, 'LED lamp 50W', 300, 3, 900],
+    ];
+    const pl: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'CTNS', 'N.W.(KGS)', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 11, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 9, 11, 0.07],
+      ['TOTAL', null, 980, 60, 30, 36, 0.18],
+    ];
+    const { said, steps } = await aiDoorWalk('podklyuch', [
+      [xlsx({ name: 'Sheet1', rows: ci }), 'ci.xlsx'],
+      [xlsx({ name: 'Sheet1', rows: pl }), 'pl.xlsx'],
+    ]);
+    const now = steps[0]!;
+    expect(now.weightKg).toBeNull();
+    expect(now.table).not.toContain('36 kg');
+    expect(said.join('\n')).toContain(
+      '«N.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi',
+    );
+  },
+  c4528: async () => {
+    // the check of seams-1's fix: the summary line's cube word carries 3.8, and the next figure — a spaced
+    // group with its own kilos, the next cell's amount — is no bare figure it labels. Both doors: «✅ Hajm:
+    // 3.8 kub» (the plain door's summary as it was before the fix).
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)'];
+    const rows = (summary: Cell[]): Cell[][] => [
+      head,
+      [1, 'Ladies jacket', 200, 6.5, 1300],
+      [2, 'Kids toy plastic', 480, 1.2, 576],
+      [3, 'LED lamp 50W', 300, 9.9, 2970],
+      ['TOTAL', null, 980, null, 4846],
+      summary,
+    ];
+    for (const summary of [['Итого: 3,8 м3 1 200 кг'], ['Jami: 3,8 kub 1 200 kg'], ['TOTAL: 3.8 CBM 1 136.5 KGS'], ['TOTAL', null, null, '3.8 CBM', 4846]] as Cell[][]) {
+      for (const ai of [true, false]) {
+        const { steps } = await aiDoorWalk('rastamojka', [[xlsx({ name: 'Sheet1', rows: rows(summary) }), 'ci.xlsx']], [], { ai });
+        expect(steps[0]!.cube, `${JSON.stringify(summary)} ai=${ai}`).toBe(3.8);
+        expect(steps[0]!.table, `${JSON.stringify(summary)} ai=${ai}`).toContain('✅ Hajm: 3.8 kub');
+      }
+    }
+  },
+  c4529: async () => {
+    // review seams-3's check: the same lone invoice with the model reading the shipment's cube off it —
+    // 3.8, the Σ of its CBM column, the ordinary production answer. That reading is the lines' Σ, never a
+    // stated cube: 1.2 + 1.1 + 1.5 = 3.8 «qatorlardan», and after «2: 2.1 m3» 1.2 + 2.1 + 1.5 = 4.8.
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)', 'CBM'];
+    const rows: Cell[][] = [head, [1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'ci.xlsx']], ['2: 2.1 m3'], { model: { volumeM3: 3.8 } });
+    const [before, after] = steps as [(typeof steps)[number], (typeof steps)[number]];
+    expect(before.state.facts.volumeM3 ?? null).toBeNull();
+    expect(before.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
+  },
+  c4562: async () => {
+    // review seams-3's check, the refuter's caveat: a lone PACKING list of one carton a line, every line its
+    // G.W. and CBM, TOTAL 710 / 3.8 — the TOTAL's cube is the lines' Σ, so «2: 2.1 m3» moves it: 4.8 m³.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 1, 120, 1.2],
+      [2, 'Kids toy plastic', 480, 1, 260, 1.1],
+      [3, 'LED lamp 50W', 300, 1, 330, 1.5],
+      ['TOTAL', null, 980, 3, 710, 3.8],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['2: 2.1 m3']);
+    const [before, after] = steps as [(typeof steps)[number], (typeof steps)[number]];
+    expect(before.cube).toBe(3.8);
+    expect(before.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
+  },
+  c4563: async () => {
+    // review seams-3's check, its edge: a cube the model reads that is NOT the lines' Σ (3.9 against
+    // 1.2 + 1.1 + 1.5 = 3.8) is a statement and stands — the rule drops only the lines' own Σ.
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)', 'CBM'];
+    const rows: Cell[][] = [head, [1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'ci.xlsx']], [], { model: { volumeM3: 3.9 } });
+    expect(steps[0]!.state.facts.volumeM3).toBe(3.9);
+    expect(steps[0]!.table).toContain('✅ Hajm: 3.9 kub');
+  },
+  c4564: async () => {
+    // review seams-3's check, the plain door untouched (frozen): the same one-carton packing list keeps the
+    // file's stated 3.8 there, as before the fix.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 1, 120, 1.2],
+      [2, 'Kids toy plastic', 480, 1, 260, 1.1],
+      [3, 'LED lamp 50W', 300, 1, 330, 1.5],
+      ['TOTAL', null, 980, 3, 710, 3.8],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], { ai: false });
+    expect(steps[0]!.state.facts.volumeM3).toBe(3.8);
+  },
+  c4565: async () => {
+    // review seams-2/seams-5's check, before the answers: the cube summed from the very «CBM» rows the table
+    // asks about is never ✅ — 0.05 + 0.06 + 0.07 = 0.18 under the question's mark; once every row is answered
+    // (0.5 + 1.2 + 2.1 = 3.8, by hand) the question closes and the cube is ✅ «qatorlardan».
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '2: 260 kg 1.2 m3', '3: 330 kg 2.1 m3']);
+    expect(steps[0]!.table).toContain('❓ Hajm: 0.18 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
+    expect(steps[0]!.table).not.toContain('✅ Hajm');
+    expect(steps.at(-1)!.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+  },
+  c4566: async () => {
+    // review seams-5's check: rows 1 and 3 answered, row 2 still the file's — 0.5 + 0.06 + 2.1 = 2.66 is drawn
+    // under the question's mark, never «✅ Hajm: 2.66 m³ (qatorlardan)»; row 2 answered, 0.5 + 1.2 + 2.1 = 3.8 ✅.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Office chair', 200, 10, 12, 0.05],
+      [2, 'Office chair', 480, 20, 13, 0.06],
+      [3, 'Desk', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('rastamojka', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '3: 330 kg 2.1 m3', '2: 260 kg 1.2 m3']);
+    expect(steps[2]!.table).toContain('❓ Hajm: 2.66 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
+    expect(steps[2]!.table).not.toContain('✅ Hajm');
+    expect(steps[3]!.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+  },
+  c4567: async () => {
+    // review seams-2/seams-5's check: the plain door asks nothing and is frozen — no ❓ on its summary.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], { ai: false });
+    expect(steps[0]!.table).not.toContain('❓');
+  },
+  c4523: async () => {
+    // review seams-5: two rows of one name are two rows — answering rows 1 and 3 leaves row 2's
+    // file figure asked, and the table never says «to‘liq» over it.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Office chair', 200, 10, 12, 0.05],
+      [2, 'Office chair', 480, 20, 13, 0.06],
+      [3, 'Desk', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('rastamojka', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '3: 330 kg 2.1 m3', '2: 260 kg 1.2 m3']);
+    const [, afterThree, afterTwo] = [steps[0]!, steps[2]!, steps[3]!];
+    expect(afterThree.table).toContain('«G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi?');
+    expect(afterThree.table).toContain('«CBM» ustuni — bitta karobkanikimi yoki qatornikimi?');
+    expect(afterThree.table).not.toContain('Ma’lumot to‘liq');
+    expect(afterTwo.table).not.toContain('ustuni — bitta karobkanikimi yoki qatornikimi?');
   },
 };
 

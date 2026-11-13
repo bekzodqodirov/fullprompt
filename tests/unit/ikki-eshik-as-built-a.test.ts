@@ -44,7 +44,7 @@ import type { AmendBase } from '@/modules/wms/calc/amend-types';
 import ExcelJS from 'exceljs';
 import { MAX_GOODS_ROWS, parseGoods } from '@/modules/wms/deals/goods-import';
 import { readGoodsFile } from '@/modules/wms/deals/goods-file';
-import { invoiceFacts } from '@/modules/wms/calc/intake';
+import { factsVolumeM3, invoiceFacts } from '@/modules/wms/calc/intake';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { receiveGoodsSheet } from '@/modules/platform/telegram/calc-files';
 
@@ -417,7 +417,10 @@ describe('a lone packing list gives its brutto and cube at the reading (as-built
     expect(state.fileTotals ?? null).toBeNull();
     model.analyze.mockResolvedValueOnce(reads([]));
     const read = await analyzeCollected(state);
-    expect([read.facts.weightKg, read.facts.volumeM3]).toEqual([211, 1.6]);
+    // The cube is the lines' own 1.2 + 0.4 = 1.6 — no longer copied as a stated cube, which froze at the
+    // reading and stopped following a row corrected at the table (review seams-3's check — re-anchored from
+    // facts.volumeM3 1.6): the lines' Σ «qatorlardan», which the INSERT sums the same way.
+    expect([read.facts.weightKg, read.facts.volumeM3 ?? null, factsVolumeM3(read.facts as CalcFacts)]).toEqual([211, null, 1.6]);
   });
 
   it('a lone invoice with a G.W. column gives its gross Σ; a lone packing list then another factory’s invoice gives nothing', async () => {

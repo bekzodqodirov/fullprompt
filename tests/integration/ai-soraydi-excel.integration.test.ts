@@ -220,7 +220,7 @@ describe('X5 — a column the TOTAL row shows to be ONE carton’s, landed (XLS-
 });
 
 describe('X8 — the TOTAL row as the sheet’s total, landed (XLS-6; review JR-3)', () => {
-  it('the cube only in the TOTAL row: the request carries the TOTAL row’s 3.8 m³ and the lines’ 710 kg brutto', async () => {
+  it('the cube only in the TOTAL row: the request carries the TOTAL row’s 3.8 m³ — and no brutto from the ASKED «G.W.» column', async () => {
     const { items, request } = await landedItems(
       'podklyuch',
       ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
@@ -231,12 +231,14 @@ describe('X8 — the TOTAL row as the sheet’s total, landed (XLS-6; review JR-
         ['TOTAL', null, 980, 60, 710, 3.8],
       ],
     );
-    // No line states a cube; 120 + 260 + 330 = 710 kg is the lines' gross and the TOTAL's.
+    // No line states a cube; 120 + 260 + 330 = 710 kg is the lines' gross and the TOTAL's — but the «G.W.» column
+    // beside 10, 20, 30 cartons is asked (JN-12: its TOTAL is its own Σ), so its Σ lands as no brutto (review
+    // seams-2 — re-anchored from [710, 3.8]): the request carries the TOTAL row's cube and an asked brutto.
     expect(items.map((i) => [i.name, i.kg, i.m3])).toEqual([
       ['Ladies jacket', 120, null],
       ['Kids toy plastic', 260, null],
       ['LED lamp 50W', 330, null],
     ]);
-    expect([request.kg, request.m3]).toEqual([710, 3.8]);
+    expect([request.kg, request.m3]).toEqual([null, 3.8]);
   });
 });

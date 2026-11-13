@@ -117,9 +117,11 @@ describe('X5 — the belt concludes ONE carton’s figure only when the arithmet
   });
 
   /** What a sheet asks of its columns (`ParsedGoods.asks`, review JN-12). */
+  // Each asked row carries its place among the sheet's goods (`at`, review seams-5 — re-anchored: the rows
+  // were {name, value} alone, and two rows of one name were one).
   const ASKED = [
-    { field: 'weightKg', title: 'G.W.(KGS)', rows: [{ name: 'Jacket', value: 12 }, { name: 'Toy', value: 13 }] },
-    { field: 'volumeM3', title: 'CBM', rows: [{ name: 'Jacket', value: 0.05 }, { name: 'Toy', value: 0.06 }] },
+    { field: 'weightKg', title: 'G.W.(KGS)', rows: [{ name: 'Jacket', value: 12, at: 0 }, { name: 'Toy', value: 13, at: 1 }] },
+    { field: 'volumeM3', title: 'CBM', rows: [{ name: 'Jacket', value: 0.05, at: 0 }, { name: 'Toy', value: 0.06, at: 1 }] },
   ];
 
   it('a TOTAL that IS the column’s Σ proves nothing: the lines stand, and each COLUMN is asked once (review JN-12 (a))', () => {
@@ -156,7 +158,7 @@ describe('X5 — the belt concludes ONE carton’s figure only when the arithmet
   it('…and a column the TOTAL contradicts (a pallet) keeps its lines and is asked as well (review JR-11)', () => {
     const read = sheet(['Description', 'CTN', 'G.W.(kg)'], ['Kurtka', 10, 100], ['Shim', 5, 166], ['TOTAL', 15, 300]);
     expect(read.goods.map((g) => g.weightKg)).toEqual([100, 166]);
-    expect(read.asks).toEqual([{ field: 'weightKg', title: 'G.W.(kg)', rows: [{ name: 'Kurtka', value: 100 }, { name: 'Shim', value: 166 }] }]);
+    expect(read.asks).toEqual([{ field: 'weightKg', title: 'G.W.(kg)', rows: [{ name: 'Kurtka', value: 100, at: 0 }, { name: 'Shim', value: 166, at: 1 }] }]);
   });
 
   it('nothing explains the gap — a pallet in the TOTAL: the LINES stand, the Σ is refused, both sums are said', () => {
@@ -480,6 +482,24 @@ describe('X5 — a column the belt proved one carton’s is SAID on the row, for
       ['Kurtka', null, null, NOTES[0]],
       ['Shim', null, null, NOTES[1]],
     ]);
+  });
+
+  it('review doors-6: a per-carton HEADER’s figure, which only the packing holds, is said on the paste too — once', () => {
+    const paste = (head: string, rows: string[]) => pasteItems([head, ...rows].join('\n')).map((r) => [r.name, r.volumeM3, r.weightKg, r.note]);
+    // The corpus's c3507: «CARTON CBM» is one carton's — the paste keeps no packing, so the cell is empty
+    // and the note says what was dropped (as the belt's words: the figure as read, no product).
+    expect(paste('Description\tQTY\tCTNS\tCARTON CBM', ['Jacket\t200\t10\t0.05'])).toEqual([['Jacket', null, null, 'hajm 0.05 m³ — bitta karobkaniki (10 karobka)']]);
+    expect(paste('Description\tQTY\tCTNS\tG.W./CTN\tCBM/CTN', ['Jacket\t200\t10\t15\t0.12'])).toEqual([
+      ['Jacket', null, null, 'vazn 15 kg — bitta karobkaniki (10 karobka) · hajm 0.12 m³ — bitta karobkaniki (10 karobka)'],
+    ]);
+    // The neighbours' spellings — Chinese, Russian, Uzbek.
+    expect(paste('品名\t数量\t箱数\t外箱体积', ['夹克\t200\t10\t0.05'])[0]?.[3]).toBe('hajm 0.05 m³ — bitta karobkaniki (10 karobka)');
+    expect(paste('Наименование\tКол-во\tКоличество мест\tОбъем коробки', ['Куртка\t200\t10\t0.05'])[0]?.[3]).toBe('hajm 0.05 m³ — bitta karobkaniki (10 karobka)');
+    expect(paste('Tovar nomi\tSoni\tKarobka soni\t1 quti hajmi', ['Kurtka\t200\t10\t0.05'])[0]?.[3]).toBe('hajm 0.05 m³ — bitta karobkaniki (10 karobka)');
+    // …with no carton count beside it: said all the same, with no count to name.
+    expect(paste('Description\tQTY\tCBM/CTN', ['Jacket\t200\t0.12'])).toEqual([['Jacket', null, null, 'hajm 0.12 m³ — bitta karobkaniki']]);
+    // …and the belt's own words are not said twice.
+    expect(pasteItems(TSV).map((r) => r.note)).toEqual(NOTES);
   });
 
   it('…the reader’s row (the deal card’s import reads the same) carries it; the calc door still multiplies the packing', () => {

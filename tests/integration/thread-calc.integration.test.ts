@@ -18,6 +18,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { threadCalcAnalyze, threadCalcSend, threadMaterial } from '@/modules/wms/calc/from-thread';
+import { GROSS_WEIGHT_NOTE } from '@/modules/wms/calc/intake';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 
 /**
@@ -41,6 +42,7 @@ let msgTwoWays = '';
 const madeRequests: string[] = [];
 const madeNotes: string[] = [];
 const madeLeads: string[] = [];
+const madeMessages: string[] = [];
 
 const seller = (id: string): Actor =>
   ({
@@ -162,7 +164,7 @@ afterAll(async () => {
     }
   }
   if (madeNotes.length > 0) await db.delete(crmActivities).where(inArray(crmActivities.id, madeNotes));
-  await db.delete(tgMessages).where(inArray(tgMessages.id, [msgA1, msgA2, msgB1, msgFile, msgLead, msgTwoWays]));
+  await db.delete(tgMessages).where(inArray(tgMessages.id, [msgA1, msgA2, msgB1, msgFile, msgLead, msgTwoWays, ...madeMessages]));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
   if (madeLeads.length > 0) {
@@ -322,6 +324,53 @@ describe('landing', () => {
     expect(await land(preview.facts)).toBeNull();
     // The control: the same lines with no two-way cube ARE summed.
     expect(await land({ ...preview.facts, volumeAmbiguous: undefined })).toBe(2.8);
+  });
+
+  // Review doors-2: the preview the browser posts back is sanitised (`cleanFacts`), and it kept only the
+  // figures — so a cube the typed reader COMPUTED from an assumed-centimetre size, a weight multiplied from one
+  // carton's or one piece's, a brutto standing as the customs weight, landed with no word of how. The
+  // landed row's note says it, as on every other door (JB-2, JN-25).
+  for (const [body, said] of [
+    ['stul 20 karobka 60x40x50 300 kg', 'sm deb olindi'],
+    ['Stul 20 karobka har biri 15 kg', '20 × 15 kg = 300 kg'],
+    ['Choy 2000 dona, har biri 500 gr', '2000 × 0.5 kg = 1000 kg'],
+    ['Stul 20 ctns G.W. 300 kgs', GROSS_WEIGHT_NOTE],
+  ] as const) {
+    it(`review doors-2: «${body}» lands its arithmetic on the row’s note — «${said}»`, async () => {
+      const actor = seller(managerA);
+      const entity = { kind: 'deal' as const, id: dealId };
+      const id = await message({ manager: managerA, body, sentAt: '2026-08-25T11:00:00Z' });
+      madeMessages.push(id);
+      const preview = await threadCalcAnalyze(actor, { entity, section: 'rastamojka', messageIds: [id] });
+      // …posted back exactly as the island posts it: through JSON.
+      const facts = JSON.parse(JSON.stringify(preview.facts)) as typeof preview.facts;
+      const noteId = randomUUID();
+      madeNotes.push(noteId);
+      await threadCalcSend(actor, { entity, section: 'rastamojka', messageIds: [id], noteId, facts }, { actorId: actor.id, ip: null, userAgent: null });
+      const request = await db.query.calcRequests.findFirst({ where: eq(calcRequests.noteId, noteId) });
+      madeRequests.push(request!.id);
+      const items = await db.select({ note: calcRequestItems.note }).from(calcRequestItems).where(eq(calcRequestItems.requestId, request!.id));
+      expect(items).toHaveLength(1);
+      expect(items[0]!.note ?? '').toContain(said);
+    });
+  }
+
+  it('review doors-2: a forged provenance is shape-checked — a carton count that is no whole number, a source nobody names, a bad unit', async () => {
+    const actor = seller(managerA);
+    const entity = { kind: 'deal' as const, id: dealId };
+    const id = await message({ manager: managerA, body: 'Stul 300 kg', sentAt: '2026-08-25T11:05:00Z' });
+    madeMessages.push(id);
+    const noteId = randomUUID();
+    madeNotes.push(noteId);
+    const forged = {
+      goods: [{ name: 'Stul', weightKg: 300, packing: { cartons: 2.5, kgPerCarton: 'abc', m3PerCarton: -1, size: { l: 60, w: 40, h: 0 }, from: 'evil' }, weightKind: 'brutto' }],
+    } as unknown as NonNullable<Parameters<typeof threadCalcSend>[1]['facts']>;
+    await threadCalcSend(actor, { entity, section: 'rastamojka', messageIds: [id], noteId, facts: forged }, { actorId: actor.id, ip: null, userAgent: null });
+    const request = await db.query.calcRequests.findFirst({ where: eq(calcRequests.noteId, noteId) });
+    madeRequests.push(request!.id);
+    const items = await db.select({ kg: calcRequestItems.weightKg, note: calcRequestItems.note }).from(calcRequestItems).where(eq(calcRequestItems.requestId, request!.id));
+    // Nothing of it stated: no packing, no kind — the row lands its 300 kg and no words about either.
+    expect(items.map((i) => [Number(i.kg), i.note ?? null])).toEqual([[300, null]]);
   });
 
   it('a retried confirm refuses on the pre-minted note id', async () => {

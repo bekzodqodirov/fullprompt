@@ -145,6 +145,14 @@ interface PackColumns {
   /** The carton COUNT: a package column, whichever way it was found. */
   cartons: number | null;
   /**
+   * A package column refused as the count because its cells NUMBER the
+   * cartons (`numbersCartons`, review figures-ctn-running-number): no figure
+   * is multiplied by it, but a short real count reads the same way, so the
+   * line columns beside it are asked as beside a count (X5) — its cells read
+   * as cartons for that question only. Null = none.
+   */
+  numbered: number | null;
+  /**
    * What one carton holds, and in which unit (review JR-1): «PCS/CTN»,
    * «пар/кор», «m²/ctn». `unit: null` — the header names none («Qty per
    * carton», «装箱数»): the row's own count unit, else pieces.
@@ -2406,9 +2414,53 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     !WEIGHT_ABBREV.test(text) &&
     !cubic(text) &&
     !namesSize(text);
-  const cartonsAt =
-    (packCol && (packCol.index === quantity || !taken.has(packCol.index)) ? packCol.index : null) ??
-    findWhere(header, taken, (text, i) => text.length <= PACK_HEADER_MAX && bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null));
+  // …and never a column whose cells NUMBER the cartons (review
+  // figures-ctn-running-number, and its check): a packing list of one carton
+  // a row numbers its cartons under a bare «CTN», «Ctn», «Karobka», «Место»
+  // — the carton's NUMBER, which `NUMBER_LABEL` refuses only when the header
+  // says «No.». Read as a count, every carton's weight and cube was
+  // multiplied by its place in the list (row 10 «10 × 10 kg = 100 kg», Σ
+  // 5.5 m³ for 1.0). A numbering is told by its STEPS, wherever it starts:
+  // each cell is the one above it plus one («11, 12, 13», or «4, 5, 6» on a
+  // second sheet that goes on counting), the same number again (two goods
+  // packed in one carton — «1, 1, 2, 3»), or 1 again (a section that numbers
+  // its cartons afresh — «1, 2, 3 | SUBTOTAL | 1, 2, 3»), and it climbs at
+  // least twice. «10, 20, 30», «5, 5, 5» are counts. The spec's own unsafe
+  // case (§2.3, DIM-11 — a carton RANGE «C/NO 1-20») says the same: no count,
+  // the per-carton figures stay on the note and the row's weight and cube are
+  // asked — never «one carton a row» assumed, because a short real count can
+  // climb by one too (`numbered`: the line columns beside it are asked as
+  // beside a count). Judged over the data cells: a TOTAL row and the split
+  // under a two-row header are no cell of the run, nor a section's heading.
+  const numbersCartons = (i: number) => {
+    let last: number | null = null;
+    let climbs = 0;
+    for (let d = r + 1; d < Math.min(rows.length, r + 1 + SAMPLE_ROWS); d++) {
+      if (skip.has(d) || d === split) continue;
+      const row = rows[d]!;
+      const text = cellText(row[i] ?? null);
+      if (text === '' || isHeaderText(row[i] ?? null, cellText(header[i] ?? null).toLowerCase())) continue;
+      if (row.some((cell) => typeof cell === 'string' && totalRowOf({ name: cell, figures: true }) !== null)) continue;
+      // A section's heading standing alone in this column («PO-001») opens a
+      // section, never breaks its numbering.
+      if (!/^\d+\.?$/.test(text)) {
+        if (row.every((cell, c) => c === i || cellText(cell ?? null) === '')) continue;
+        return false;
+      }
+      const n = Number.parseInt(text, 10);
+      if (n < 1) return false;
+      if (last !== null && n !== last && n !== last + 1 && n !== 1) return false;
+      if (last !== null && n === last + 1) climbs += 1;
+      last = n;
+    }
+    return climbs >= 2;
+  };
+  const countAt = (i: number) => !numbersCartons(i);
+  const packAt = packCol && (packCol.index === quantity || !taken.has(packCol.index)) ? packCol.index : null;
+  const bareAt = (also: (i: number) => boolean) =>
+    findWhere(header, taken, (text, i) => text.length <= PACK_HEADER_MAX && bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null) && also(i));
+  const cartonsAt = (packAt !== null && countAt(packAt) ? packAt : null) ?? bareAt(countAt);
+  const numbered = cartonsAt !== null ? null : packAt !== null ? packAt : bareAt(() => true);
   return {
     name,
     tnved,
@@ -2446,7 +2498,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     // of its kind: a netto the next file's rows may be compared with and take,
     // a brutto they may not (`file-goods.ts`).
     weightKind: weight === null && cartonWeight && cartonsAt !== null ? (cartonWeight.kind ?? 'plain') : weightKind,
-    pack: { cartons: cartonsAt, pieces: cartonPieces, weight: cartonWeight, volume: cartonCube, size },
+    pack: { cartons: cartonsAt, numbered, pieces: cartonPieces, weight: cartonWeight, volume: cartonCube, size },
   };
 }
 
@@ -2850,6 +2902,25 @@ const TEXT_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
 // 136.5, and nobody can say which).
 const TEXT_NUMBER = String.raw`(?<!\d\s?)(?<![.,])(\d{1,3}(?:,\d{3})+\.\d+|\d+(?:[.,]\d+)?)(?![.,]?\d)(?!\s\d)`;
 const TEXT_UNIT_OF = (words: string) => String.raw`(?:${words})(?!${TEXT_EDGE})`;
+// …and an m³ word followed by a BARE figure — one with no unit of its own — is
+// that figure's LABEL, never the unit of the figure before it (review
+// seams-1): «G.W. 710 CBM 3.8», «TOTAL QTY 980 CBM 3.8», «брутто 710 куб 3,8»
+// read 710 — the weight, the count — as the shipment's cube, 187× too large,
+// under ✅ and above the model's own 3.8. «3.8 CBM 60 CTNS» keeps its cube: the
+// 60 after it carries its own unit. A figure that is no one's is asked.
+// Judged where the m³ word STANDS (the check of seams-1's fix): `summaryTotalOf`
+// joins a row's cells with `CELL_BREAK`. In the figure's own cell («3.8 CBM»)
+// the word labels only a bare figure of that same cell and line — the amount
+// 4846 in the next cell is nobody's cube label; in a cell of its own beside the
+// figure's («710» | «CBM» | «3.8») it may label the next cell's (whose unit,
+// then, may stand in the cell after: «3.8» | «CBM» | «60» | «CTNS»). A spaced
+// group's first digits are no bare figure («3,8 м3 1 200 кг»: «1 200» carries
+// its kilos), and an m³ word GLUED to the figure before it is that figure's
+// unit, whatever follows («TOTAL 3.8CBM 60»).
+const CELL_BREAK = '\u2029';
+const TEXT_SAME_LINE = String.raw`[^\S\n\u2029]`;
+const TEXT_LABEL_OF_NEXT = (gap: string) =>
+  String.raw`${gap}*[:：=]?${gap}*\d+(?:${TEXT_SAME_LINE}\d{3})*(?:[.,]\d+)?(?![\d.,])(?!${TEXT_SAME_LINE}\d)(?!${gap}*[\p{L}㎥³])`;
 const TEXT_LABEL = (labels: readonly string[]) => String.raw`(?<!${TEXT_EDGE})(?:${labelAlternation(labels)})(?!${TEXT_EDGE})\s*(?:[(（][^()（）]{0,12}[)）]\s*)?`;
 // Each reader says whether its figure carries its UNIT: a unitless one
 // («G.W.: 710») is read only on a line with no currency mark (review JN-21,
@@ -2861,7 +2932,13 @@ const SUMMARY_READERS: Record<'gross' | 'volume', { re: RegExp; unitless: boolea
     { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'), unitless: false },
   ],
   volume: [
-    { re: new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)`, 'giu'), unitless: false },
+    {
+      re: new RegExp(
+        String.raw`${TEXT_NUMBER}(?:${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)|${TEXT_SAME_LINE}+${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)(?!${TEXT_LABEL_OF_NEXT(TEXT_SAME_LINE)})|${TEXT_SAME_LINE}*${CELL_BREAK}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)(?!${TEXT_LABEL_OF_NEXT(String.raw`\s`)}))`,
+        'giu',
+      ),
+      unitless: false,
+    },
     { re: new RegExp(String.raw`${TEXT_LABEL(VOLUME_LABELS)}[:：=]\s*${TEXT_NUMBER}(?!\s*${TEXT_UNIT_OF(unitPattern('m3'))})`, 'giu'), unitless: true },
   ],
 };
@@ -2888,7 +2965,8 @@ function summaryTotalOf(rows: readonly Cell[][], kind: 'gross' | 'volume', step:
   const stated = rows.flatMap((row) => {
     const text = row
       .map((cell) => (cell === null ? '' : typeof cell === 'number' ? String(Number(cell.toPrecision(12))) : cell))
-      .join(' ')
+      // A cell break is whitespace to every reader but the m³ label's (`TEXT_LABEL_OF_NEXT`).
+      .join(CELL_BREAK)
       .slice(0, 400);
     const value = summaryFigure(text, kind);
     return value === null ? [] : [{ value, half: 0 }];
@@ -3149,8 +3227,22 @@ export interface ColumnAsk {
   field: 'weightKg' | 'volumeM3';
   /** The column's header as the file writes it, clipped. */
   title: string;
-  /** Each asked row's name and the figure the file gives it (in m³ for a cube). */
-  rows: { name: string; value: number }[];
+  /**
+   * Each asked row's name, the figure the file gives it (in m³ for a cube) and
+   * its place among the sheet's goods (`at`, review seams-5): two rows of one
+   * model in two colours are two rows, and found by name alone the second was
+   * answered by the first. Absent on an ask written before it.
+   */
+  rows: { name: string; value: number; at?: number }[];
+  /**
+   * The sheet's own total of the field — its brutto for a weight, its cube —
+   * stands APART from the asked column (review seams-2's check): a summary
+   * line's own figure («TOTAL G.W.: 710 KGS» over cells adding up to 36), the
+   * cartons' product the belt proved. Absent = the total is that column's Σ,
+   * its TOTAL row, or a gross column's Σ beside the same cartons, so the
+   * question doubts it too (`withoutAskedTotals`).
+   */
+  totalStated?: true;
 }
 
 /** What the FILE says about its figures beyond its cells (§5.9): the comma a CSV's delimiter implies. */
@@ -3163,6 +3255,35 @@ export interface SheetHints {
    * is still no good, pasted or not.
    */
   keepTail?: boolean;
+}
+
+/**
+ * A row figure that is ONE carton's, in the words the row's note carries (review
+ * excel-break-6, doors-6) — the belt's, when it moves a column's figure into
+ * the packing, and the paste's, when a per-carton column («CBM/CTN», «CARTON
+ * CBM», «外箱体积», «Объем коробки», «1 quti hajmi») filled only the packing:
+ * one wording on both paths. The figure as READ, no product — the doors that
+ * keep no packing multiply nothing.
+ */
+export function perCartonWords(field: 'weightKg' | 'volumeM3', value: number, cartons: number | null): string {
+  const figure = field === 'weightKg' ? `vazn ${fmtFigure(value)} kg` : `hajm ${fmtFigure(value)} m³`;
+  return `${figure} — bitta karobkaniki${cartons !== null ? ` (${fmtFigure(cartons)} karobka)` : ''}`;
+}
+
+/**
+ * What a row's PACKING states per carton that its own columns do not — the
+ * note a door that keeps no packing (the VED's paste, `pasteItems`) lands
+ * beside an empty cell, so what it dropped is said (review doors-6). A figure
+ * the row's note already says (the belt's) is not said twice. Null = nothing.
+ */
+export function packedFiguresNote(g: Pick<GoodsRow, 'note' | 'packing' | 'weightKg' | 'volumeM3'>): string | null {
+  const p = g.packing;
+  if (!p) return null;
+  const words = [
+    g.weightKg === null && p.kgPerCarton !== null ? perCartonWords('weightKg', p.kgPerCarton, p.cartons) : null,
+    g.volumeM3 === null && p.m3PerCarton !== null ? perCartonWords('volumeM3', p.m3PerCarton, p.cartons) : null,
+  ].filter((w): w is string => w !== null && !(g.note ?? '').includes(w));
+  return words.length > 0 ? words.join(' · ') : null;
 }
 
 /**
@@ -3514,6 +3635,13 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     };
     let grossKg = corrected.weight && columns.gross === columns.weight ? null : sumOf(columns.gross, (l) => l.gross);
     let volumeM3 = corrected.volume ? null : sumOf(columns.volume, (l) => l.volume);
+    // Where each total came from (review seams-2's check): the COLUMN — its Σ,
+    // its TOTAL row, a summary line restating that Σ — or a figure the sheet
+    // STATES apart from it: the cartons' product the belt proved, a summary
+    // line's own figure. A column the table asks about doubts the first kind
+    // alone (`ColumnAsk.totalStated`).
+    let grossFrom: 'column' | 'stated' = 'column';
+    let volumeFrom: 'column' | 'stated' = 'column';
     // …and the belt (as-built review CRITIC-1; docs/AI-SORAYDI.md §3.2 X5,
     // review JN-12, JR-11, JS-33): the file's own «TOTAL» rows say what each
     // figure column adds up to — the line weight's, the gross's and the
@@ -3564,9 +3692,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
      * as the file wrote it (X6).
      */
     const perCartonNote = (g: GoodsRow, field: 'weightKg' | 'volumeM3', value: number): string | null =>
-      [g.note, `${field === 'weightKg' ? `vazn ${fmtFigure(value)} kg` : `hajm ${fmtFigure(value)} m³`} — bitta karobkaniki (${fmtFigure(g.packing!.cartons!)} karobka)`]
-        .filter(Boolean)
-        .join(' · ');
+      [g.note, perCartonWords(field, value, g.packing!.cartons)].filter(Boolean).join(' · ');
     /** What a column's kept rows state, added up — the sum a refusal names. */
     const linesSum = (pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null) =>
       keptLanded.reduce((n, l) => {
@@ -3596,8 +3722,10 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
             const g = kept[k]!;
             kept[k] = { ...g, weightKg: null, note: perCartonNote(g, 'weightKg', value), packing: { ...g.packing!, kgPerCarton: value, kgPerCartonKind: kind } };
           });
-          if (isGross) grossKg = v.total;
-          else netFromCartons = v.total;
+          if (isGross) {
+            grossKg = v.total;
+            grossFrom = 'stated';
+          } else netFromCartons = v.total;
           notes.push(noteOf(columns.weight, 'kg', v, 'qatorlar shundan hisoblandi'));
         } else if (v.kind === 'unclear') {
           unclearOnNote('weightKg', columns.weight, (l) => l.weight);
@@ -3616,6 +3744,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         const v = judge(columns.gross, 'kg', 1, 1, (l) => l.gross);
         if (v.kind === 'per_carton') {
           grossKg = v.total;
+          grossFrom = 'stated';
           notes.push(noteOf(columns.gross, 'kg', v, 'brutto shundan olindi'));
         } else if (v.kind === 'unclear') {
           grossKg = null;
@@ -3641,6 +3770,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
             kept[k] = { ...g, volumeM3: null, note: perCartonNote(g, 'volumeM3', value), packing: { ...g.packing!, m3PerCarton: value } };
           });
           volumeM3 = v.total;
+          volumeFrom = 'stated';
           notes.push(noteOf(columns.volume, 'm3', v, 'qatorlar shundan hisoblandi'));
         } else if (v.kind === 'unclear') {
           unclearOnNote('volumeM3', columns.volume, (l) => l.volume);
@@ -3670,12 +3800,25 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       // «SAY TOTAL: US DOLLARS …» line under the table is no total of a
       // column, and with it counted no section list could ever sum.
       const columnTotals = totals.filter((row) => [...figureCols, ...packCols].some((i) => i !== null && figureCell(row[i] ?? null)));
+      // A summary line's figure is the sheet's statement — unless it only
+      // restates what the column's cells add up to (the same Σ in words).
+      const restates = (figure: number, pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null, half: number) => {
+        const sum = linesSum(pick);
+        return sum > 0 && Math.abs(sum - figure) < half;
+      };
       if (grossKg === null && !refused.gross) {
-        grossKg = (columns.gross === null ? null : sheetTotalOf(columnTotals, columns.gross, 'kg', 1)) ?? summaryTotalOf(totals, 'gross', 1);
+        grossKg = columns.gross === null ? null : sheetTotalOf(columnTotals, columns.gross, 'kg', 1);
+        if (grossKg === null) {
+          grossKg = summaryTotalOf(totals, 'gross', 1);
+          if (grossKg !== null && !restates(grossKg, (l) => l.gross, 0.5)) grossFrom = 'stated';
+        }
       }
       if (volumeM3 === null && !refused.volume) {
-        volumeM3 =
-          (columns.volume === null ? null : sheetTotalOf(columnTotals, columns.volume, 'm3', 0.01, columns.volumeDivisor)) ?? summaryTotalOf(totals, 'volume', 0.01);
+        volumeM3 = columns.volume === null ? null : sheetTotalOf(columnTotals, columns.volume, 'm3', 0.01, columns.volumeDivisor);
+        if (volumeM3 === null) {
+          volumeM3 = summaryTotalOf(totals, 'volume', 0.01);
+          if (volumeM3 !== null && !restates(volumeM3, (l) => l.volume, 0.005)) volumeFrom = 'stated';
+        }
       }
     }
     // …and a brutto lighter than the lines' own netto is no brutto: a column
@@ -3692,6 +3835,16 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     // kernel compares those, X4), nor one the belt concluded one carton's
     // (its figure is the packing's now), nor a list stopped short.
     const asks: ColumnAsk[] = [];
+    // …and a column that NUMBERS the cartons (`PackColumns.numbered`): read as
+    // cartons for this question alone — a short real count climbs by one too,
+    // so the line columns beside it are asked as beside a count, while no
+    // figure is ever multiplied by it (review figures-ctn-running-number's
+    // check: refusing the count had taken the question away with it).
+    const numberedOf = keptLanded.map((l) => {
+      if (pack.numbered === null) return null;
+      const text = cellText(rows[l.d]![pack.numbered] ?? null);
+      return /^\d+\.?$/.test(text) ? Number.parseInt(text, 10) : null;
+    });
     if (!stoppedShort) {
       const askOf = (
         field: ColumnAsk['field'],
@@ -3702,11 +3855,16 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         if (TOTAL_HINT.test(titleOf(col))) return;
         const asked = keptLanded.flatMap((l, k) => {
           const value = pick(l);
-          const c = cartonsOf[k] ?? null;
+          const c = cartonsOf[k] ?? numberedOf[k] ?? null;
           const g = kept[k]!;
-          return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value }] : [];
+          return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value, at: k }] : [];
         });
-        if (asked.length >= 2) asks.push({ field, title: titleOf(col), rows: asked });
+        // The sheet's own total of the field stands apart from the column only
+        // where it is STATED (`grossFrom`, `volumeFrom`): a brutto that is the
+        // Σ of a gross column beside these same cartons — the asked one, or the
+        // gross column beside an asked net one — is exactly as unproven.
+        const stated = field === 'weightKg' ? grossKg !== null && grossFrom === 'stated' : volumeM3 !== null && volumeFrom === 'stated';
+        if (asked.length >= 2) asks.push({ field, title: titleOf(col), rows: asked, ...(stated ? { totalStated: true as const } : {}) });
       };
       if (columns.weight !== null && columns.weight !== columns.quantity && !corrected.weight) {
         askOf('weightKg', columns.weight, (l) => l.weight, (g) => (g.packing?.kgPerCarton ?? 0) > 0);

@@ -16,6 +16,7 @@ import {
   otherName,
   packingTotals,
   sameFigures,
+  withoutAskedTotals,
   sameLine,
   type GoodsFileMeta,
   type NameKeys,
@@ -360,6 +361,14 @@ export interface IntakeState {
      * PF-ADV-8). Absent = none.
      */
     clash?: ('weightKg' | 'volumeM3')[];
+    /**
+     * The figures a file's own column question doubted (`withoutAskedTotals`,
+     * docs/AI-SORAYDI.md §3.2 X5, review seams-2/seams-4): the file's Σ of the
+     * asked column is not taken, and the model's reading of that file's TOTAL
+     * row does not land in its place either — the cube is the rows' Σ, the
+     * brutto is asked. Absent = none (and on the plain door, always).
+     */
+    doubted?: ('weightKg' | 'volumeM3')[];
   } | null;
   /**
    * A route answered in the table (docs/SAKKIZ-R3.md K15; P3 writes it), kept
@@ -1884,6 +1893,9 @@ export async function analyzeCollected(
   // the model read both lists and its figure — their sum, as often as not —
   // must not land where the note promised «ikkalasi ham olinmadi».
   const clashed = (field: 'weightKg' | 'volumeM3') => fileTotals?.clash?.includes(field) ?? false;
+  // …nor a figure the file's own column question doubts (review seams-2): the
+  // model reads that very TOTAL row, the column's Σ, as text.
+  const doubtedByFile = (field: 'weightKg' | 'volumeM3') => fileTotals?.doubted?.includes(field) ?? false;
   // Beside a fold no file's totals answering for the whole list (`foldNoTotals`,
   // review of the fixes RF-TOTALS-1/3/6), the model's figure is not the
   // shipment's either: every sheet it was shown for totals is ONE factory's —
@@ -1892,7 +1904,7 @@ export async function analyzeCollected(
   // outranked it. The brutto is asked and the cube is the rows' Σ (§4.3).
   const noModelTotals = foldNoTotals(state);
   const modelTotals = noModelTotals ? null : (ai?.facts ?? null);
-  const fromModel = totalWeightFrom(state.section, manual, modelTotals, asked('weightKg') || clashed('weightKg'));
+  const fromModel = totalWeightFrom(state.section, manual, modelTotals, asked('weightKg') || clashed('weightKg') || doubtedByFile('weightKg'));
   const fromFile =
     fileTotals && fileTotals.weightKg !== null
       ? totalWeightFrom(
@@ -1902,13 +1914,25 @@ export async function analyzeCollected(
           asked('weightKg'),
         )
       : null;
-  const modelVolume = asked('volumeM3') || clashed('volumeM3') ? null : (modelTotals?.volumeM3 ?? null);
+  const modelVolume = asked('volumeM3') || clashed('volumeM3') || doubtedByFile('volumeM3') ? null : (modelTotals?.volumeM3 ?? null);
   const fileVolume = asked('volumeM3') ? null : (fileTotals?.volumeM3 ?? null);
+  // …and when every held line states its cube, a file's or the model's cube
+  // that IS those lines' Σ is no stated cube (review seams-3's check): taken as
+  // stated it froze at the reading — a row the seller corrected at the table
+  // («2: 2.1 m3») left the shipment's 3.8 m³ standing where the rows said 4.8,
+  // the «qatorlardan» label lost. The cube is then the CURRENT lines' Σ, which
+  // the INSERT sums the same way; a figure that differs from them is still a
+  // statement and stands. On a door that asks only — the plain door is frozen.
+  const { factsVolumeM3 } = await import('../../wms/calc/intake');
+  const { roundM3 } = await import('../../wms/calc/line-totals');
+  const linesCube = collectionDoor(state) === 'plain' ? null : factsVolumeM3({ goods: placed.goods } as CalcFacts);
+  const fileOrModelVolume = fileVolume ?? modelVolume;
+  const statedVolume = fileOrModelVolume !== null && linesCube !== null && roundM3(fileOrModelVolume) === linesCube ? null : fileOrModelVolume;
   const reading: IntakeState['facts'] = {
     fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: route.toCity ?? manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     ...(fromFile && fromFile.weightKg != null ? fromFile : fromModel),
-    volumeM3: manual.volumeM3 ?? fileVolume ?? modelVolume,
+    volumeM3: manual.volumeM3 ?? statedVolume,
     // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not
     // which one — the totals question asks it, and the INSERT sums nothing.
     ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
@@ -1935,8 +1959,9 @@ export async function analyzeCollected(
   const doubts = totalsDoubts(state.totalsAnswer, {
     now: { material: state.material.length, files: state.fileCount },
     since,
+    // (the figure as read, a Σ of the lines included: what doubts an answer is unchanged)
     reading: fileAfterAnswer
-      ? reading
+      ? { ...reading, volumeM3: manual.volumeM3 ?? fileOrModelVolume }
       : { weightKg: fromModel.weightKg ?? null, volumeM3: manual.volumeM3 ?? modelVolume },
   });
   const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);
@@ -2012,32 +2037,42 @@ export function foldNoTotals(state: Pick<IntakeState, 'fileTotals' | 'goodsFiles
  * collection with no `fileTotals`, a lone, uncapped goods file holding every
  * row gives what the hand-over would: a packing list its `packingTotals` (a
  * net Σ flagged netto, which the freight sections refuse as a brutto); an
- * invoice its gross Σ and its cube — the cube the reader settled for the
- * whole sheet: the lines' Σ when every line states one (the INSERT's own sum,
- * so nothing moves), the file's own TOTAL row when a line lacks it (X8;
+ * invoice its gross Σ, and its cube only where its lines do NOT give one —
+ * the file's own TOTAL row or summary line when a line lacks it (X8;
  * docs/AI-SORAYDI.md §3.2, review excel-spec-3 — before, that TOTAL reached
- * the model as text and never the shipment), the belt's Σ cartons × one
- * carton's. A Σ the belt or the kernel refused is null there and stays null
- * here. Read here and never
+ * the model as text and never the shipment). When every held line states its
+ * cube (the belt's cartons × one carton's included — already on the rows),
+ * the cube is the CURRENT lines' Σ, labelled «qatorlardan», which the INSERT
+ * sums the same way: taken here as the file's stated cube it froze at the
+ * reading, and a row the seller corrected at the table no longer moved the
+ * shipment's cube — 3.8 m³ priced where the rows said 4.8 (review seams-3).
+ * A Σ the belt or the kernel refused is null there and stays null here, and
+ * on a door that ASKS, so is the Σ of a column the file's own question asks
+ * (`withoutAskedTotals`, review seams-2): the cube follows the answered rows,
+ * the brutto is asked, and `doubted` keeps the model off both. Read
+ * here and never
  * stored, so a later file — another factory's, or the shipment's packing list
  * — decides as it always has. Null = nothing to give. Pure.
  */
 export function loneFileTotals(
-  state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'invoiceGoods' | 'amend' | 'seed'>,
+  state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'invoiceGoods' | 'amend' | 'seed' | 'ai' | 'seedDoor'>,
 ): IntakeState['fileTotals'] {
   if (state.fileTotals || state.amend || state.seed !== null) return null;
   const rows = state.invoiceGoods ?? [];
   const only = loneGoodsFile(state);
   if (!only) return null;
-  const totals =
+  const linesStateCube = rows.length > 0 && rows.every((g) => (figureOf(g, 'volumeM3') ?? 0) > 0);
+  const read =
     only.shape === 'packing'
       ? packingTotals(only, rows)
-      : { weightKg: only.grossKg, weightNetto: false, volumeM3: only.volumeM3 };
-  if (totals.weightKg === null && totals.volumeM3 === null) return null;
+      : { weightKg: only.grossKg, weightNetto: false, volumeM3: linesStateCube ? null : only.volumeM3 };
+  const { totals, doubted } = collectionDoor(state) === 'plain' ? { totals: read, doubted: [] } : withoutAskedTotals(only, read);
+  if (totals.weightKg === null && totals.volumeM3 === null && doubted.length === 0) return null;
   return {
     weightKg: totals.weightKg,
     volumeM3: totals.volumeM3,
     weightNetto: totals.weightKg !== null && totals.weightNetto,
+    ...(doubted.length > 0 ? { doubted } : {}),
     label: only.label,
     // The file's own receipt mark: an answer given with it in front of the
     // seller is not doubted by it (PF-ADV-9). Unknown = before everything.

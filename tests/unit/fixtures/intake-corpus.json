@@ -56478,6 +56478,3184 @@
    "why": "X8 + units.ts WEIGHT_LABELS / VOLUME_LABELS (excel-spec-4). Base: null / null. The reviewed head read nothing (a total word was demanded beside the labels).",
    "source": "ai-soraydi P-excel review (excel-spec-4)",
    "weight": "defect"
+  },
+  {
+   "id": "c4500",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 10,
+       "weightKg": null,
+       "volumeM3": null,
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Office chair",
+       "quantity": 10,
+       "weightKg": null,
+       "volumeM3": null,
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "quantity": 1,
+       "weightKg": null,
+       "volumeM3": null,
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "grossKg": null,
+    "volumeM3": null
+   },
+   "said": "a bare «CTN» whose cells run 1, 2, 3 is the carton's NUMBER, one carton a row: no carton count — the per-carton 15 kg / 0.12 m³ stay on the packing and the row's weight and cube are asked, never 2 × 15 / 3 × 30",
+   "why": "review figures-ctn-running-number (blocker): X2 read the running number as the count and multiplied each carton's figures by its place in the list (30 kg / 0.24 m³ on row 2, 90 kg / 1.5 m³ on row 3; Σ 135 kg / 1.86 m³ for 60 / 0.74). The same as «CTN NO.» (c3460) and the spec's carton range (§2.3, DIM-11). Base: no packing, weight and cube asked.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4501",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     2,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     3,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     4,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     5,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     6,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     7,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     8,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     9,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     10,
+     "Box item",
+     4,
+     10,
+     0.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 10,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 10,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "CTN 1 … 10, 10 kg / 0.1 cbm a carton: the tenth row is carton №10, never «10 × 10 kg = 100 kg» — no row multiplies, Σ is not 550 kg / 5.5 m³",
+   "why": "review figures-ctn-running-number, its scaled check (truth 100 kg / 1.0 m³ — asked, never 5.5).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4502",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "packing": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 15,
+       "volumeM3": 0.12,
+       "note": null
+      },
+      {
+       "weightKg": 15,
+       "volumeM3": 0.12,
+       "note": null
+      },
+      {
+       "weightKg": 30,
+       "volumeM3": 0.5,
+       "note": null
+      }
+     ]
+    },
+    "grossKg": 60,
+    "volumeM3": 0.74
+   },
+   "said": "with LINE columns «G.W.(KG)» / «CBM» beside a running «CTN» the figures are the rows' own — 15 / 15 / 30 kg — and no row is told «📦 2 karobka» or «📦 3 karobka»",
+   "why": "review figures-ctn-running-number: the note said «📦 3 karobka — fayldan» for a one-carton row, and the X5 column ask fired on the carton numbers.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4503",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     "TOTAL",
+     null,
+     21,
+     60,
+     0.74
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "a TOTAL row under the running carton numbers is no cell of the run: still the carton's number, no row multiplied (135 kg / 1.86 m³ were landed under a TOTAL saying 60 / 0.74)",
+   "why": "review figures-ctn-running-number (the refuter's TOTAL-row input).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4504",
+   "input": [
+    [
+     "Место",
+     "Наименование",
+     "Кол-во",
+     "Вес 1 места",
+     "Объем 1 места"
+    ],
+    [
+     1,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Стол",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Место» numbered 1, 2, 3 beside «Вес 1 места» / «Объем 1 места»: the place's number, not a count — no 2 × 15 or 3 × 0.5",
+   "why": "review figures-ctn-running-number (the Russian spelling).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4505",
+   "input": [
+    [
+     "Karobka",
+     "Tovar nomi",
+     "Soni",
+     "1 karobka hajmi"
+    ],
+    [
+     1,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     2,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     3,
+     "Stol",
+     1,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Karobka» numbered 1, 2, 3 beside «1 karobka hajmi»: the box's number, so no row's cube is 2 × 0.12 or 3 × 0.5",
+   "why": "review figures-ctn-running-number (the Uzbek spelling).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4506",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     10,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     20,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     30,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 150,
+       "volumeM3": 1.2
+      },
+      {
+       "weightKg": 300,
+       "volumeM3": 2.4
+      },
+      {
+       "weightKg": 900,
+       "volumeM3": 15
+      }
+     ]
+    }
+   },
+   "said": "«CTNS» of 10, 20, 30 IS a count: 10 × 15 = 150 kg, 20 × 15 = 300 kg, 30 × 30 = 900 kg — a run is 1, 2, 3 only",
+   "why": "review figures-ctn-running-number: the guard refuses a run from one and nothing else.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4507",
+   "input": [
+    [
+     "Cartons",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Cartons» 1, 2, 3 is the same running number: no row multiplied",
+   "why": "review figures-ctn-running-number (the English plural spelling).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4508",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL",
+     80,
+     null,
+     2400
+    ],
+    [
+     "TOTAL: 60 CTNS  G.W. 710  CBM 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«G.W. 710 CBM 3.8»: the 710 is the weight label's, «CBM» opens the next field — the sheet's cube is never 710 m³ (and 3.8 stands after no colon, so it is the model's or asked)",
+   "why": "review seams-1 (blocker), the summary reader's half: SUMMARY_READERS.volume took «710 CBM» — an m³ word followed by a bare figure is that figure's LABEL, not the previous figure's unit. Base: no summary reader. The typed and table halves are lane T's.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4509",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL QTY 980 CBM 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«TOTAL QTY 980 CBM 3.8»: 980 is the count, never 980 m³",
+   "why": "review seams-1, a count label before the m³ word.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4510",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL gw 710 cbm 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "lower case «TOTAL gw 710 cbm 3.8»: no 710 m³",
+   "why": "review seams-1 (the refuter's lower-case spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4511",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL: G.W.: 710 CBM 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "grossKg": 710,
+    "volumeM3": null
+   },
+   "said": "«TOTAL: G.W.: 710 CBM 3.8»: the brutto 710 (a label and a colon), and no cube — never 710 kg AND 710 m³",
+   "why": "review seams-1: one figure counted twice.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4512",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL G.W.: 710 CBM: 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8
+   },
+   "said": "«TOTAL G.W.: 710 CBM: 3.8»: each figure after its own label and colon — 710 kg brutto, 3.8 m³",
+   "why": "review seams-1: the label-and-colon reading still stands.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4513",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL: 3.8 CBM 60 CTNS G.W. 710 KGS",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8
+   },
+   "said": "«3.8 CBM 60 CTNS»: the figure after the m³ word carries its own unit — so 3.8 IS the cube; 710 KGS the brutto",
+   "why": "review seams-1: the m³ word is a label only before a BARE figure.",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4514",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Цена",
+     "Сумма"
+    ],
+    [
+     "Стул",
+     40,
+     10,
+     400
+    ],
+    [
+     "Стол",
+     40,
+     50,
+     2000
+    ],
+    [
+     "Итого: брутто 710 куб 3,8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«Итого: брутто 710 куб 3,8»: no 710 m³ in Russian either",
+   "why": "review seams-1 (the Russian spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4515",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni",
+     "Narxi",
+     "Summa"
+    ],
+    [
+     "Stul",
+     40,
+     10,
+     400
+    ],
+    [
+     "Stol",
+     40,
+     50,
+     2000
+    ],
+    [
+     "Jami: 710 kub 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«Jami: 710 kub 3.8»: no 710 m³ in Uzbek either",
+   "why": "review seams-1 (the Uzbek spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4516",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "单价",
+     "金额"
+    ],
+    [
+     "办公椅",
+     40,
+     10,
+     400
+    ],
+    [
+     "桌子",
+     40,
+     50,
+     2000
+    ],
+    [
+     "合计 毛重 710 立方 3.8",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "volumeM3": null
+   },
+   "said": "«合计 毛重 710 立方 3.8»: no 710 m³ in Chinese either",
+   "why": "review seams-1 (the Chinese spelling).",
+   "source": "ai-soraydi 1a review (seams-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4530",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     11,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     12,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     13,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "asks": []
+   },
+   "said": "a «CTN» of 11, 12, 13 climbs by one from 11: the cartons' NUMBERS, never 11 × 15 = 165 kg, 12 × 0.12 = 1.44 m³, 13 × 30 = 390 kg — the per-carton 15 kg / 0.12 m³ stay on the packing and the row's weight and cube are asked",
+   "why": "the check of review figures-ctn-running-number: the guard demanded a run from exactly 1, so a numbering that started anywhere else was a count again (Σ 9.26 m³ for 1.34). A numbering is told by its steps, wherever it starts.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4531",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     4,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     5,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     6,
+     "Desk",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "the second sheet of a two-sheet packing list goes on counting — 4, 5, 6: still the cartons' numbers, never 4 × 8 = 32 kg or 6 × 0.5 = 3 m³",
+   "why": "the check of figures-ctn-running-number: PL-1 (1, 2, 3) was fixed and PL-2 of the same workbook (4, 5, 6) read cartons 4, 5, 6 (the scenario c4524 drives the workbook).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4532",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     "PO-001"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     "SUBTOTAL",
+     null,
+     21,
+     null,
+     null
+    ],
+    [
+     "PO-002"
+    ],
+    [
+     1,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     2,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     3,
+     "Desk",
+     1,
+     30,
+     0.5
+    ],
+    [
+     "TOTAL",
+     null,
+     42,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 6,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 6,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "a sectioned list numbers its cartons afresh in each section (1, 2, 3 | SUBTOTAL | 1, 2, 3) under its «PO-…» headings: no row is ×2 or ×3 — not Table 90 kg / 1.5 m³, not Σ 3.51 m³ for 1.34",
+   "why": "the check of figures-ctn-running-number: the second «1» broke the run from one, so the column was a count again.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4533",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     1,
+     "Cushion",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     3,
+     "Desk",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Cushion",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 4,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "two goods packed in carton 1 (1, 1, 2, 3): the carton's number repeats, still a numbering — never Table 2 × 30 = 60 kg, Desk 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number: the mixed carton broke the run from one (rows 3 and 4 landed ×2 and ×3, Σ 1.98 m³).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4534",
+   "input": [
+    [
+     "Ctns",
+     "Description",
+     "QTY",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     1,
+     "A",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "B",
+     20,
+     30,
+     0.24
+    ],
+    [
+     3,
+     "C",
+     30,
+     90,
+     1.5
+    ],
+    [
+     4,
+     "D",
+     40,
+     120,
+     2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "every": {
+      "packing": null
+     }
+    },
+    "facts": {
+     "count": 4,
+     "rows": [
+      {
+       "weightKg": 15,
+       "volumeM3": 0.12,
+       "note": null
+      },
+      {
+       "weightKg": 30,
+       "volumeM3": 0.24,
+       "note": null
+      },
+      {
+       "weightKg": 90,
+       "volumeM3": 1.5,
+       "note": null
+      },
+      {
+       "weightKg": 120,
+       "volumeM3": 2
+      }
+     ]
+    },
+    "grossKg": 255,
+    "volumeM3": 3.86,
+    "asks": [
+     "G.W.(KG)",
+     "CBM"
+    ]
+   },
+   "said": "«Ctns» 1, 2, 3, 4 beside LINE columns: a real count climbs by one as often as a numbering does — the line figures stay (15 + 30 + 90 + 120 = 255 kg, 0.12 + 0.24 + 1.5 + 2 = 3.86 m³) and «G.W.(KG)» and «CBM» are ASKED «one carton's or the line's?», never assumed the lines'",
+   "why": "the check of figures-ctn-running-number (genuine-count-loses-ask): refusing the count had taken the X5 column questions with it — the refuter's own caution («the guard should ask, not assume one carton per row»). Base asked [G.W.(KG), CBM].",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4535",
+   "input": [
+    [
+     "Место",
+     "Наименование",
+     "Кол-во",
+     "Вес 1 места",
+     "Объем 1 места"
+    ],
+    [
+     21,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     22,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     23,
+     "Стол",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Стул",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Стул",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Стол",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Место» 21, 22, 23 (Russian): the places' numbers — never 22 × 15 = 330 kg",
+   "why": "the check of figures-ctn-running-number, a neighbour in Russian: a numbering from any start.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4536",
+   "input": [
+    [
+     "Karobka",
+     "Tovar nomi",
+     "Soni",
+     "1 karobka hajmi"
+    ],
+    [
+     7,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     8,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     9,
+     "Stol",
+     1,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Stul",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Stul",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Stol",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "every": {
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Karobka» 7, 8, 9 (Uzbek): the boxes' numbers — never 9 × 0.5 = 4.5 m³",
+   "why": "the check of figures-ctn-running-number, a neighbour in Uzbek Latin.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4537",
+   "input": [
+    [
+     "箱数",
+     "品名",
+     "数量",
+     "单箱毛重",
+     "单箱体积"
+    ],
+    [
+     4,
+     "办公椅",
+     10,
+     15,
+     0.12
+    ],
+    [
+     5,
+     "办公椅",
+     10,
+     15,
+     0.12
+    ],
+    [
+     6,
+     "桌子",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "办公椅",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "办公椅",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "桌子",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«箱数» 4, 5, 6 (Chinese): the cartons' numbers — never 6 × 30 = 180 kg",
+   "why": "the check of figures-ctn-running-number, a neighbour in Chinese.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4538",
+   "input": [
+    [
+     "Қути",
+     "Товар номи",
+     "Сони",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Стул",
+     10,
+     0.12
+    ],
+    [
+     2,
+     "Ёстиқ",
+     10,
+     0.12
+    ],
+    [
+     2,
+     "Стол",
+     1,
+     0.5
+    ],
+    [
+     3,
+     "Шкаф",
+     1,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "rows": [
+      {
+       "name": "Стул",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Ёстиқ",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Стол",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Шкаф",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 4,
+     "every": {
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Қути» 1, 2, 2, 3 (Uzbek Cyrillic, two goods in box 2): numbers — never 2 × 0.5 = 1 m³ or 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number, a neighbour in Uzbek Cyrillic.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4539",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     5,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     5,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     5,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 75,
+       "volumeM3": 0.6
+      },
+      {
+       "weightKg": 75,
+       "volumeM3": 0.6
+      },
+      {
+       "weightKg": 150,
+       "volumeM3": 2.5
+      }
+     ]
+    }
+   },
+   "said": "«CTNS» 5, 5, 5 never climbs: a COUNT — 5 × 15 = 75 kg, 5 × 0.12 = 0.6 m³, 5 × 30 = 150 kg, 5 × 0.5 = 2.5 m³",
+   "why": "the check of figures-ctn-running-number: a numbering climbs at least twice; the same count on every row is a count.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4540",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 30,
+       "volumeM3": 0.24
+      },
+      {
+       "weightKg": 30,
+       "volumeM3": 0.24
+      },
+      {
+       "weightKg": 90,
+       "volumeM3": 1.5
+      }
+     ]
+    }
+   },
+   "said": "«CTNS» 2, 2, 3 climbs once: a COUNT — 2 × 15 = 30 kg, 2 × 0.12 = 0.24 m³, 3 × 30 = 90 kg, 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number: one climb is no numbering.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4541",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     7,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     8,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 2,
+     "rows": [
+      {
+       "weightKg": 105,
+       "volumeM3": 0.84
+      },
+      {
+       "weightKg": 240,
+       "volumeM3": 4
+      }
+     ]
+    }
+   },
+   "said": "two rows of «CTNS» 7, 8: a COUNT — 7 × 15 = 105 kg, 7 × 0.12 = 0.84 m³, 8 × 30 = 240 kg, 8 × 0.5 = 4 m³",
+   "why": "the check of figures-ctn-running-number: two rows climb once.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4542",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Cushion",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     3,
+     "Desk",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Cushion",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 4,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "two goods packed in carton 2 (1, 2, 2, 3): the number repeats mid-list — still a numbering, never Cushion 2 × 15 = 30 kg, Table 2 × 30 = 60 kg, Desk 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number (mixed carton): a repeated carton number is no count; a repeat of 1 alone would read as a section restarting, so the repeat is pinned away from 1.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4543",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "N.W.(KGS)",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     60,
+     30,
+     36,
+     0.18
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "N.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«G.W.(KGS)» of its own beside the asked «N.W.(KGS)», both beside 10, 20, 30 cartons: its Σ 12 + 13 + 11 = 36 is the column's, so the weight question doubts the brutto too (the plain door, frozen, still reads 36)",
+   "why": "review seams-2's check: withoutAskedTotals kept a gross column's Σ beside an asked net one — exactly as unproven (JN-12): 36 kg under ✅, 710 kg if per carton.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4544",
+   "input": [
+    [
+     "№",
+     "Наименование",
+     "Кол-во",
+     "Мест",
+     "Вес нетто",
+     "Вес брутто",
+     "Объем"
+    ],
+    [
+     1,
+     "Куртка",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Игрушка",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "Лампа",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "Итого",
+     null,
+     980,
+     60,
+     30,
+     36,
+     0.18
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "Вес нетто",
+     "Объем"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«Вес брутто» beside the asked «Вес нетто» (Russian): the brutto Σ 36 is the column's — doubted with the question",
+   "why": "review seams-2's check, a neighbour in Russian.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4545",
+   "input": [
+    [
+     "序号",
+     "品名",
+     "数量",
+     "箱数",
+     "净重",
+     "毛重",
+     "体积"
+    ],
+    [
+     1,
+     "女士夹克",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "玩具",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "灯",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "合计",
+     null,
+     980,
+     60,
+     30,
+     36,
+     0.18
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "净重",
+     "体积"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«毛重» beside the asked «净重» (Chinese): the brutto Σ 36 is the column's — doubted",
+   "why": "review seams-2's check, a neighbour in Chinese.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4546",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "N.W.(KGS)",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "A",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "B",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "C",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     60,
+     null,
+     710,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "asks": [
+     "N.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "the TOTAL row's 710 is 10 × 12 + 20 × 13 + 30 × 11: the belt PROVES «G.W.(KGS)» one carton's — a brutto stated apart from the asked «N.W.(KGS)», so it stands",
+   "why": "review seams-2's check: only a column's Σ is doubted, never the cartons' product the belt proved.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4547",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "TOTAL G.W.: 710 KGS  CBM: 3.9",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "volumeM3": 0.2,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "«Bag» lacks its G.W., so the summary line's «TOTAL G.W.: 710 KGS» is the brutto — the sheet's statement, never the asked column's Σ (12 + 13 + 11 = 36): it stands beside the question; the cube 0.05 + 0.06 + 0.07 + 0.02 = 0.2 is the column's and is doubted",
+   "why": "review seams-2-fix/summary-line-brutto-dropped: withoutAskedTotals dropped whatever brutto the meta carried, never asking where it came from — 710 kg asked again. Base: «✅ Og‘irlik (brutto): 710 kg».",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4548",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "TOTAL G.W.: 36 KGS",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "a summary line saying 36 only restates the asked column's cells (12 + 13 + 11): the same Σ in words, doubted with the column",
+   "why": "review seams-2's check: a summary stands apart only when it is not the column's Σ restated.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4549",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "Итого брутто: 710 кг",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "«Итого брутто: 710 кг» (Russian) is the sheet's statement, not 36 — it stands",
+   "why": "review seams-2-fix/summary-line-brutto-dropped, a neighbour in Russian.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4550",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "合计 毛重: 710KG",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "«合计 毛重: 710KG» (Chinese) is the sheet's statement — it stands",
+   "why": "review seams-2-fix/summary-line-brutto-dropped, a neighbour in Chinese.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4551",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     3,
+     null
+    ],
+    [
+     "TOTAL CBM: 3.9",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 39,
+    "volumeM3": 3.9,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     true
+    ]
+   },
+   "said": "«Bag» lacks its cube, so «TOTAL CBM: 3.9» is the sheet's statement (the cells add up to 0.18): it stands beside the CBM question; the brutto 12 + 13 + 11 + 3 = 39 is the column's and is doubted",
+   "why": "review seams-2's check, the cube's half: a stated cube is no column Σ.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4552",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     3,
+     null
+    ],
+    [
+     "TOTAL 0.18 CBM",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "volumeM3": 0.18,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«TOTAL 0.18 CBM» only restates the cells 0.05 + 0.06 + 0.07: doubted with the column",
+   "why": "review seams-2's check: the same Σ in words.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4553",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "Итого: 3,8 м3 1 200 кг"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3,8 м3 1 200 кг»: «1 200» is a spaced group carrying its kilos — no bare figure, so «м3» is 3,8's unit",
+   "why": "the check of seams-1's fix (spaced-group): TEXT_LABEL_OF_NEXT took the «1» of «1 200» for a bare figure and refused the cube. Base: 3.8.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4554",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "Jami: 3,8 kub 1 200 kg"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«Jami: 3,8 kub 1 200 kg» (Uzbek Latin): 3.8 m³",
+   "why": "the check of seams-1's fix (spaced-group), in Uzbek.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4555",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL: 3.8 CBM 1 136.5 KGS"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8 CBM 1 136.5 KGS»: the group 1 136.5 has its own KGS — 3.8 m³",
+   "why": "the check of seams-1's fix (spaced-group), with a fraction.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4556",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     null,
+     "3.8 CBM",
+     4846
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8 CBM» in its own cell, the amount 4846 in the next: the m³ word is judged within its cell — 3.8 m³",
+   "why": "the check of seams-1's fix (cell-boundary): the cells joined by spaces let the lookahead read 4846 as the figure «CBM» labels. Base: 3.8.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4557",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL 3.8CBM 60"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8CBM» glued: the m³ word is 3.8's unit, whatever follows",
+   "why": "the check of seams-1's fix (cell-boundary): a glued unit is the figure's own. Base: 3.8.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4558",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "合计 3.8立方 1 200公斤"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8立方 1 200公斤» (Chinese): 3.8 m³",
+   "why": "the check of seams-1's fix, in Chinese.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4559",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "Жами: 3,8 куб 1 200 кг"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«Жами: 3,8 куб 1 200 кг» (Uzbek Cyrillic): 3.8 m³",
+   "why": "the check of seams-1's fix, in Uzbek Cyrillic.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4560",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL:",
+     null,
+     null,
+     null,
+     null,
+     "G.W.",
+     710,
+     "CBM",
+     3.8
+    ]
+   ],
+   "expected": {
+    "volumeM3": null
+   },
+   "said": "label and value cells «G.W.» | 710 | «CBM» | 3.8: «CBM» in its own cell labels the next cell's bare 3.8 — never 710 m³ (and a bare figure is a cube only after «:» — JN-21)",
+   "why": "the check of seams-1's fix: judging within a cell must not re-open seams-1 for a row written cell by cell.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4561",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL:",
+     null,
+     null,
+     null,
+     null,
+     3.8,
+     "CBM",
+     60,
+     "CTNS"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "value and unit cells 3.8 | «CBM» | 60 | «CTNS»: the 60 has its unit in the next cell — 3.8 m³",
+   "why": "the check of seams-1's fix: the cells' own units.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
@@ -99780,6 +102958,260 @@
    "said": "notes [] and 3 rows: the model restating every row translated is no other good",
    "why": "sheets-08's collector pin",
    "source": "docs/FAYL-OQISH.md §4.6 (sheets-08's corpus pins; review sheets-spec-corpus-pins-missing)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4520",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer (a lone invoice on the AI door, every line stating its cube)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) | CBM — Ladies jacket 200/6.5/1300/1.2, Kids toy plastic 480/1.5/720/1.1, LED lamp 50W 300/3/900/1.5"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "2: 2.1 m3"
+    ]
+   },
+   "said": "the cube is the lines' Σ «qatorlardan» — 3.8 m³ — and after «2: 2.1 m3» it is 4.8 m³: a row corrected at the table moves the shipment's cube",
+   "why": "review seams-3 (blocker): 14ea584 made the lone invoice's line Σ a STATED cube, frozen at the reading — 3.8 m³ priced and stored where the rows said 4.8, the «qatorlardan» label lost. Only the TOTAL-row / summary case it was written for stands (a line lacking its cube). Base: null → the lines' Σ «qatorlardan».",
+   "source": "ai-soraydi 1a review (seams-3)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4521",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (a lone packing list on the AI door, its G.W. and CBM columns asked)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — Ladies jacket 200/10/12/0.05, Kids toy plastic 480/20/13/0.06, LED lamp 50W 300/30/11/0.07, TOTAL 980/60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "2: 260 kg 1.2 m3",
+     "3: 330 kg 2.1 m3"
+    ]
+   },
+   "said": "the columns are asked, so their Σ 36 kg / 0.18 m³ is no shipment total: the brutto is asked, and after every row is answered the cube is the rows' 3.8 m³ «qatorlardan» — never 0.18 under ✅",
+   "why": "review seams-2 (blocker); ruling JR-11 «the line figures STAY, the Σ stays null, and the column is asked». The file's Σ — and the model's reading of the same TOTAL row — no longer stand for an asked field (`withoutAskedTotals`, fileTotals.doubted). Plain door unchanged.",
+   "source": "ai-soraydi 1a review (seams-2)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4522",
+   "call": "readIntakeFile ×2 + analyzeCollected (an invoice, then its packing list with asked G.W. and CBM columns)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY | Unit price | Amount | N.W.(KGS) — 100/240/300 kg",
+     "pl.xlsx": "No. | Description | QTY | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, TOTAL 36/0.18"
+    },
+    "model": "answers nothing"
+   },
+   "said": "beside its invoice the packing list's asked columns give no brutto and no cube: both are asked, and the receipt says ««G.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi»",
+   "why": "review seams-4 (defect): the list's asks were dropped silently in all three orders and its Σ stood as «✅ brutto 36 kg / kub 0.18» with «bundan faqat umumiy brutto va kub olindi». The further sheet of one workbook now carries its asks too.",
+   "source": "ai-soraydi 1a review (seams-4)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4523",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (two «Office chair» rows and a «Desk», both columns asked)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — Office chair 200/10/12/0.05, Office chair 480/20/13/0.06, Desk 300/30/11/0.07, TOTAL 980/60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "3: 330 kg 2.1 m3",
+     "2: 260 kg 1.2 m3"
+    ]
+   },
+   "said": "after rows 1 and 3 are answered both column questions still stand — row 2 («Office chair», 13 kg / 0.06 m³) is the file's figure — and «Ma’lumot to‘liq» is not said; after row 2 they close",
+   "why": "review seams-5 (defect): columnAsks found an asked row by NAME, first match only, so the first «Office chair» answered the second. The ask now carries the row's place (`at`) and, where the place does not hold, judges every row of the name.",
+   "source": "ai-soraydi 1a review (seams-5)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4524",
+   "call": "readGoodsFile (a two-sheet packing list whose carton numbering continues)",
+   "input": {
+    "files": {
+     "pl.xlsx": "PL-1: CTN | Description | QTY | G.W./CTN | CBM/CTN — 1/2/3 Office chair, Office chair, Table; PL-2: the same header — 4/5/6 Lamp, Lamp, Desk"
+    }
+   },
+   "said": "both sheets' «CTN» is the cartons' number (1, 2, 3 then 4, 5, 6): no sheet carries a carton count, and Lamp stays 8 kg / 0.05 m³ a carton — never 4 × 8, 6 × 0.5",
+   "why": "the check of review figures-ctn-running-number: PL-1 was fixed and PL-2 of the same workbook read cartons 4, 5, 6 — the guard demanded a run from exactly 1.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4525",
+   "call": "readIntakeFile + analyzeCollected (a lone packing list on the AI door: its own G.W. column beside an asked N.W. one)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | N.W.(KGS) | G.W.(KGS) | CBM — 10/10/12/0.05, 20/11/13/0.06, 30/9/11/0.07, TOTAL 60/30/36/0.18"
+    },
+    "model": "answers nothing; then reads the TOTAL row's 36 kg"
+   },
+   "said": "the brutto is asked — never «✅ Og‘irlik (brutto): 36 kg» — whether the model is silent or reads the same TOTAL row",
+   "why": "review seams-2's check: the carve-out «a brutto in a gross column of its OWN beside an asked NET column stands» kept a Σ beside the same unproven cartons (JN-12).",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4526",
+   "call": "readIntakeFile + analyzeCollected (a lone packing list on the AI door: a summary line states the brutto a row lacks)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, Bag 5/–/0.02; «TOTAL G.W.: 710 KGS  CBM: 3.9»"
+    },
+    "model": "answers nothing"
+   },
+   "said": "«✅ Og‘irlik (brutto): 710 kg» stands beside the G.W. question: the summary line's figure is the sheet's statement, never the asked column's Σ (36)",
+   "why": "review seams-2-fix/summary-line-brutto-dropped. Base: «✅ Og‘irlik (brutto): 710 kg».",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4527",
+   "call": "readIntakeFile ×2 + analyzeCollected (an invoice, then its packing list whose G.W. sits beside an asked N.W.)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY | Unit price | Amount — 3 rows",
+     "pl.xlsx": "No. | Description | QTY | CTNS | N.W.(KGS) | G.W.(KGS) | CBM — TOTAL 36 / 0.18"
+    },
+    "model": "answers nothing"
+   },
+   "said": "no «✅ 36 kg» beside the invoice, and the receipt says «… shuning uchun umumiy brutto va kub fayldan olinmadi» — the brutto it did not take, never «umumiy netto»",
+   "why": "review seams-2's check on seams-4's pair.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4528",
+   "call": "readIntakeFile + analyzeCollected on BOTH doors (a lone invoice whose summary line writes the cube, then a spaced kilo group or the next cell's amount)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) — 3 rows, TOTAL 980/4846; then «Итого: 3,8 м3 1 200 кг» / «Jami: 3,8 kub 1 200 kg» / «TOTAL: 3.8 CBM 1 136.5 KGS» / ['TOTAL',–,–,'3.8 CBM',4846]"
+    },
+    "model": "answers nothing"
+   },
+   "said": "«✅ Hajm: 3.8 kub» on the AI door and on the plain door alike — never «umumiy hajmi … yozilmagan» / «VED xodimi so‘raydi»",
+   "why": "the check of seams-1's fix: both regressions changed the plain door's summary too. Base: 3.8 on both.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4529",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer (a lone invoice, the model reading its cube)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) | CBM — 1.2/1.1/1.5, no TOTAL row"
+    },
+    "model": "reads volumeM3 3.8",
+    "answers": [
+     "2: 2.1 m3"
+    ]
+   },
+   "said": "the model's 3.8 is the lines' Σ, no stated cube: «✅ Hajm: 3.8 m³ (qatorlardan)», then 4.8 after the correction",
+   "why": "review seams-3's check: every seams-3 test used a silent model; the model reading the same Σ froze the cube at 3.8.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4562",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer (a lone packing list of one carton a line)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 1 carton each, 120/1.2, 260/1.1, 330/1.5, TOTAL 3/710/3.8"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "2: 2.1 m3"
+    ]
+   },
+   "said": "the TOTAL row's 3.8 is the lines' Σ: «✅ Hajm: 3.8 m³ (qatorlardan)», then 4.8",
+   "why": "review seams-3's check, the refuter's pre-existing caveat: packingTotals passed the per-line CBM Σ through as a stated cube.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4563",
+   "call": "readIntakeFile + analyzeCollected (a lone invoice, the model reading a cube that differs from its lines)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) | CBM — 1.2/1.1/1.5, no TOTAL row"
+    },
+    "model": "reads volumeM3 3.9"
+   },
+   "said": "3.9 is not the lines' 3.8 — a statement: «✅ Hajm: 3.9 kub» stands",
+   "why": "review seams-3's check: the rule drops the lines' own Σ only.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4564",
+   "call": "readIntakeFile + analyzeCollected on the PLAIN door (the one-carton packing list)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 1 carton each, 120/1.2, 260/1.1, 330/1.5, TOTAL 3/710/3.8"
+    },
+    "model": "answers nothing"
+   },
+   "said": "the plain door keeps the file's stated 3.8 (frozen)",
+   "why": "review seams-3's check: the plain door's behaviour does not change.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4565",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (a lone packing list on the AI door, its CBM column asked)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, TOTAL 60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "2: 260 kg 1.2 m3",
+     "3: 330 kg 2.1 m3"
+    ]
+   },
+   "said": "before the answers «❓ Hajm: 0.18 m³ (qatorlardan) — ustun savoli javobsiz (pastda)», never «✅ Hajm: 0.18»; after them «✅ Hajm: 3.8 m³ (qatorlardan)»",
+   "why": "review seams-2/seams-5's check: the asked column's Σ stood under ✅, now labelled «qatorlardan», directly above the question that doubts it.",
+   "source": "ai-soraydi 1a review (seams-2 / seams-5, the check)",
+   "weight": "nit"
+  },
+  {
+   "id": "c4566",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (two rows of one name, answered 1, 3, then 2)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — Office chair 10/12/0.05, Office chair 20/13/0.06, Desk 30/11/0.07, TOTAL 60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "3: 330 kg 2.1 m3",
+     "2: 260 kg 1.2 m3"
+    ]
+   },
+   "said": "after rows 1 and 3 «❓ Hajm: 2.66 m³ (qatorlardan) …», after row 2 «✅ Hajm: 3.8 m³ (qatorlardan)»",
+   "why": "review seams-5's check: «✅ Hajm: 2.66 m³ (qatorlardan)» stood above the CBM question still open for row 2.",
+   "source": "ai-soraydi 1a review (seams-2 / seams-5, the check)",
+   "weight": "nit"
+  },
+  {
+   "id": "c4567",
+   "call": "readIntakeFile + analyzeCollected on the PLAIN door (the same packing list)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, TOTAL 60/36/0.18"
+    },
+    "model": "answers nothing"
+   },
+   "said": "the plain summary carries no ❓ — the plain door asks nothing (frozen)",
+   "why": "review seams-2/seams-5's check: the mark is the asking door's alone.",
+   "source": "ai-soraydi 1a review (seams-2 / seams-5, the check)",
    "weight": "pinned"
   }
  ],

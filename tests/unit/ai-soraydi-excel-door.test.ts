@@ -25,7 +25,7 @@ vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
   (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
 );
 
-import { intakeNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { applyTableAnswer, intakeNextStep, tableEditsSettled } from '@/modules/platform/telegram/calc-dialog';
 import { readIntakeFile } from '@/modules/platform/telegram/calc-files';
 import { columnAsks } from '@/modules/platform/telegram/file-goods';
 import { activeIntake, analyzeCollected, endIntake, loneFileTotals, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
@@ -57,11 +57,11 @@ type R = (string | number | null)[];
 const book = (header: (string | null)[], rows: R[]) => B.sheetsBook([['Sheet1', header, rows]]);
 
 /** Files sent to a fresh AI-door collection, read, and the table drawn — as the bot does it. */
-async function collect(section: CalcSection, files: [body: Buffer, name: string][]) {
+async function collect(section: CalcSection, files: [body: Buffer, name: string][], opts: { ai?: boolean } = {}) {
   seq += 1;
   const chatId = BigInt(-9_476_200_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, section, { staffId: 'staff-as-excel', ai: true });
+  startIntake(chatId, section, { staffId: 'staff-as-excel', ai: opts.ai ?? true });
   updateIntake(chatId, { stage: 'material' });
   const said: string[] = [];
   for (const [body, name] of files) {
@@ -79,6 +79,7 @@ async function collect(section: CalcSection, files: [body: Buffer, name: string]
   const table = intakeNextStep(state, new Map(), intake, { nameWord: nameWordFor, aiAvailable: true });
   const goods = state.facts.goods ?? [];
   return {
+    chatId,
     said,
     totals,
     state,
@@ -87,6 +88,35 @@ async function collect(section: CalcSection, files: [body: Buffer, name: string]
     notes: landingItems(state.facts as never).map((item) => item.note),
     table: table.text,
   };
+}
+
+/**
+ * A typed answer at the table, as the bot writes it (`applyTableAnswer`), and the collection as it then
+ * stands: what the INSERT would take — the cube (`factsVolumeM3`), the brutto — and the table drawn again.
+ */
+async function answer(chatId: bigint, text: string) {
+  const ctx = {
+    async reply() {
+      return { message_id: 1 };
+    },
+    api: {
+      async editMessageText() {
+        return true;
+      },
+      async deleteMessage() {
+        return true;
+      },
+      async setMessageReaction() {
+        return true;
+      },
+    },
+  };
+  await applyTableAnswer(ctx as never, chatId, activeIntake(chatId)!, text, { date: 0, messageId: 77, forwarded: false, replyTo: null });
+  await tableEditsSettled();
+  const state = activeIntake(chatId)!;
+  const intake = await import('@/modules/wms/calc/intake');
+  const table = intakeNextStep(state, new Map(), intake, { nameWord: nameWordFor, aiAvailable: true });
+  return { state, goods: state.facts.goods ?? [], cube: factsVolumeM3(state.facts as never), weightKg: state.facts.weightKg ?? null, table: table.text };
 }
 
 const HEAD = ['No.', 'Description', 'QTY(PCS)', 'CTNS'];
@@ -114,9 +144,13 @@ describe('one packing list on the AI door: the cartons multiply what one carton 
       ['LED lamp 50W', 300, 330, 2.1],
     ]);
     expect(got.cube).toBe(3.8);
-    // The brutto is the sheet's «G.W.» Σ (120 + 260 + 330 = 710), as before; the cube is the rows'.
-    expect(got.totals).toMatchObject({ weightKg: 710, volumeM3: null });
-    expect(got.table).toContain('✅ Og‘irlik (brutto): 710 kg');
+    // The cube is the rows'. The «G.W.» column beside 10, 20, 30 cartons is ASKED (JN-12: its TOTAL 710 is its own
+    // Σ and proves nothing), so its Σ is no brutto (review seams-2 — re-anchored: the brutto WAS 710 «✅», drawn
+    // beside the very question that doubts it): the brutto is the seller's, the column question his to answer.
+    expect(got.state.goodsFiles?.[0]?.asks?.map((a) => a.title)).toEqual(['G.W.(KGS)']);
+    expect(got.totals).toMatchObject({ weightKg: null, volumeM3: null, doubted: ['weightKg'] });
+    expect(got.table).not.toContain('710 kg');
+    expect(got.table).toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
     expect(got.table).toContain('✅ Hajm: 3.8 m³');
     expect(got.table).not.toContain('umumiy hajmi (kub) — yozilmagan');
     // What the VED reads on the card: the factors, and that the product is the bot's.
@@ -151,7 +185,9 @@ describe('one packing list on the AI door: the cartons multiply what one carton 
     // Each «CBM» cell equals its carton (0.12, 0.06): 10 × 0.12 = 1.2 and 20 × 0.06 = 1.2 — 2.4 m³, where the
     // column and its own TOTAL row say 0.18 (thirteen times less).
     expect(got.goods.map((g) => g.volumeM3)).toEqual([1.2, 1.2]);
-    expect(got.totals).toMatchObject({ weightKg: 380, volumeM3: null });
+    // …and the «G.W.» column beside 10 and 20 cartons is asked (JN-12): its Σ 380 is no brutto (review seams-2 —
+    // re-anchored from weightKg 380).
+    expect(got.totals).toMatchObject({ weightKg: null, volumeM3: null, doubted: ['weightKg'] });
     expect(got.state.facts.volumeM3 ?? null).toBeNull();
     expect(got.cube).toBe(2.4);
     expect(got.table).toContain('✅ Hajm: 2.4 m³');
@@ -202,8 +238,13 @@ describe('a packing list beside an invoice: the goods are the invoice’s, and n
       ['Kids toy plastic', 480, null],
       ['LED lamp 50W', 300, null],
     ]);
-    // 0.5 + 1.2 + 2.1 = 3.8 m³, the list's own column.
-    expect(got.cube).toBe(3.8);
+    // The list's «CBM» beside 10, 20, 30 cartons is a column its own question asks (JN-12), and beside the invoice
+    // that question is not drawn under the invoice's rows — so its Σ 0.5 + 1.2 + 2.1 = 3.8 m³ is not the shipment's
+    // either: the cube is asked and the receipt says which column (review seams-4 — re-anchored from cube 3.8).
+    expect(got.cube).toBeNull();
+    expect(got.state.fileTotals).toMatchObject({ volumeM3: null, doubted: ['volumeM3'] });
+    expect(got.table).toContain('umumiy hajmi (kub) — yozilmagan');
+    expect(got.said.join('\n')).toContain('«CBM» ustunidagi son bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun kub fayldan olinmadi');
     expect(got.table).not.toMatch(/\b(?:120|260|330) kg\b/);
   });
 
@@ -217,7 +258,62 @@ describe('a packing list beside an invoice: the goods are the invoice’s, and n
       ['Kids toy plastic', 480],
       ['LED lamp 50W', 300],
     ]);
-    expect(got.table).toContain('✅ Og‘irlik (brutto): 710 kg');
+    // The list's «G.W.(KGS)» beside 10, 20, 30 cartons is asked (JN-12): its Σ 710 is no brutto beside the invoice
+    // either (review seams-4 — re-anchored from «✅ Og‘irlik (brutto): 710 kg»); the receipt names the column.
+    expect(got.table).not.toContain('710 kg');
+    expect(got.table).toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+    expect(got.said[1]).toContain('«G.W.(KGS)» ustunidagi son bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto fayldan olinmadi');
+  });
+});
+
+describe('review seams-4: a packing list beside its invoice — its column questions are not dropped, its asked Σ is no brutto or cube', () => {
+  // The finding's pair: an invoice with the lines' netto, and a packing list of the same goods whose «G.W.(KGS)» and
+  // «CBM» beside 10, 20, 30 cartons are asked on their own (TOTAL 36 / 0.18 is each column's Σ — JN-12).
+  const CI_HEAD = ['No.', 'Description', 'QTY', 'Unit price', 'Amount', 'N.W.(KGS)'];
+  const CI_ROWS: R[] = [[1, 'Ladies jacket', 200, 6.5, 1300, 100], [2, 'Kids toy plastic', 480, 1.5, 720, 240], [3, 'LED lamp 50W', 300, 3, 900, 300]];
+  const PL_HEAD = ['No.', 'Description', 'QTY', 'CTNS', 'G.W.(KGS)', 'CBM'];
+  const PL_ROWS: R[] = [[1, 'Ladies jacket', 200, 10, 12, 0.05], [2, 'Kids toy plastic', 480, 20, 13, 0.06], [3, 'LED lamp 50W', 300, 30, 11, 0.07], ['TOTAL', null, 980, 60, 36, 0.18]];
+  const RECEIPT = '«G.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi';
+
+  it('pl.xlsx alone asks both columns (the control)', async () => {
+    const got = await collect('podklyuch', [[await book(PL_HEAD, PL_ROWS), 'pl.xlsx']]);
+    expect(got.state.goodsFiles?.[0]?.asks?.map((a) => a.title)).toEqual(['G.W.(KGS)', 'CBM']);
+  });
+
+  for (const order of ['ci then pl', 'pl then ci', 'one workbook'] as const) {
+    it(`${order}: no «✅ brutto 36 kg / kub 0.18» — both asked, and the receipt names the columns`, async () => {
+      const ci = () => book(CI_HEAD, CI_ROWS);
+      const pl = () => book(PL_HEAD, PL_ROWS);
+      const files: [Buffer, string][] =
+        order === 'ci then pl'
+          ? [[await ci(), 'ci.xlsx'], [await pl(), 'pl.xlsx']]
+          : order === 'pl then ci'
+            ? [[await pl(), 'pl.xlsx'], [await ci(), 'ci.xlsx']]
+            : [[await B.sheetsBook([['Invoice', CI_HEAD, CI_ROWS], ['Packing', PL_HEAD, PL_ROWS]]), 'docs.xlsx']];
+      const got = await collect('podklyuch', files);
+      // The goods are the invoice's three rows, with their netto.
+      expect(got.goods.map((g) => [g.name, g.weightKg])).toEqual([
+        ['Ladies jacket', 100],
+        ['Kids toy plastic', 240],
+        ['LED lamp 50W', 300],
+      ]);
+      expect(got.state.fileTotals).toMatchObject({ weightKg: null, volumeM3: null, doubted: ['weightKg', 'volumeM3'] });
+      expect(got.state.facts.weightKg ?? null).toBeNull();
+      expect(got.cube).toBeNull();
+      expect(got.table).not.toContain('36 kg');
+      expect(got.table).not.toContain('0.18');
+      expect(got.table).toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+      expect(got.table).toContain('umumiy hajmi (kub) — yozilmagan');
+      expect(got.said.join('\n')).toContain(RECEIPT);
+      expect(got.said.join('\n')).not.toContain('bundan faqat umumiy brutto va kub olindi');
+    });
+  }
+
+  it('…and the model reading the list’s TOTAL row does not stand for the shipment either', async () => {
+    model.analyze.mockImplementation(async () => ({ ok: true, facts: { goods: [], weightKg: 36, volumeM3: 0.18 }, steps: [], usage: BILL, answered: [BILL], knownCodes: [] }));
+    const got = await collect('podklyuch', [[await book(CI_HEAD, CI_ROWS), 'ci.xlsx'], [await book(PL_HEAD, PL_ROWS), 'pl.xlsx']]);
+    expect(got.state.facts.weightKg ?? null).toBeNull();
+    expect(got.state.facts.volumeM3 ?? null).toBeNull();
   });
 });
 
@@ -254,7 +350,15 @@ describe('X5 — a column the sheet’s own TOTAL row shows to be ONE carton’s
       ['Kurtka', 100, 1],
       ['Shim', 166, 1.1],
     ]);
-    expect(got.totals).toMatchObject({ weightKg: null, volumeM3: 2.1 });
+    // Both columns beside 10 and 5 cartons are asked (JN-12, JR-11 «the line figures STAY, the Σ stays null»): the
+    // cube is the rows' own 2.1 «qatorlardan», never the file's stated Σ (review seams-2 — re-anchored from
+    // volumeM3 2.1 in the lone totals).
+    expect(got.totals).toMatchObject({ weightKg: null, volumeM3: null, doubted: ['weightKg', 'volumeM3'] });
+    expect(got.cube).toBe(2.1);
+    // …and while «CBM» is asked, its Σ is drawn with the question's mark, never ✅ (review seams-2/seams-5's
+    // check — re-anchored from «✅ Hajm: 2.1 m³ (qatorlardan)»).
+    expect(got.table).toContain('❓ Hajm: 2.1 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
+    expect(got.table).not.toContain('✅ Hajm');
     expect(got.said[0]).toContain('⚠️ «pl.xlsx» — «G.W.(kg)» ustuni: jami qatorida 300 kg, qatorlar yig‘indisi 266 kg — umumiy brutto fayldan olinmadi.');
   });
 });
@@ -264,9 +368,11 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     const got = await collect('podklyuch', [
       [await book([...HEAD, 'G.W.(KGS)', 'CBM'], [[...JACKET, 120, null], [...TOY, 260, null], [...LAMP, 330, null], [...TOTAL, 710, 3.8]]), 'pl.xlsx'],
     ]);
-    // The brutto is the lines' 120 + 260 + 330 = 710; the cube no line states is the TOTAL row's 3.8.
-    expect(got.totals).toMatchObject({ weightKg: 710, volumeM3: 3.8 });
-    expect(got.table).toContain('✅ Og‘irlik (brutto): 710 kg');
+    // The cube no line states is the TOTAL row's 3.8. The «G.W.» column beside 10, 20, 30 cartons is asked (JN-12),
+    // so its Σ 120 + 260 + 330 = 710 is no brutto (review seams-2 — re-anchored from weightKg 710 «✅»).
+    expect(got.totals).toMatchObject({ weightKg: null, volumeM3: 3.8, doubted: ['weightKg'] });
+    expect(got.table).not.toContain('710 kg');
+    expect(got.table).toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
     expect(got.table).toContain('✅ Hajm: 3.8');
     expect(got.table).not.toContain('umumiy hajmi (kub) — yozilmagan');
   });
@@ -288,13 +394,30 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     expect(got.table).not.toContain('umumiy hajmi (kub) — yozilmagan');
   });
 
-  it('…an invoice whose every line states its cube: the lone totals are the lines’ own Σ — the INSERT’s sum, nothing moves', async () => {
+  it('…an invoice whose every line states its cube: no stated cube — the CURRENT lines’ Σ «qatorlardan», which a row corrected at the table moves (review seams-3)', async () => {
     const head = [...INVOICE_HEAD, 'CBM'];
     const rows: R[] = [[1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
-    const got = await collect('rastamojka', [[await B.sheetsBook([['Sheet1', head, rows]]), 'ci.xlsx']]);
-    // 1.2 + 1.1 + 1.5, by hand.
-    expect(got.totals).toMatchObject({ volumeM3: 3.8 });
+    const got = await collect('podklyuch', [[await B.sheetsBook([['Sheet1', head, rows]]), 'ci.xlsx']]);
+    // 1.2 + 1.1 + 1.5 = 3.8, by hand — the lines' Σ, never a figure the file stated: the lone totals give no cube.
+    expect(got.totals).toBeNull();
+    expect(got.state.facts.volumeM3 ?? null).toBeNull();
     expect(got.cube).toBe(3.8);
+    expect(got.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    // The seller corrects the toy's cube: 1.2 + 2.1 + 1.5 = 4.8 is what the road is priced on now.
+    const after = await answer(got.chatId, '2: 2.1 m3');
+    expect(after.goods.map((g) => g.volumeM3)).toEqual([1.2, 2.1, 1.5]);
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
+    expect(after.table).not.toContain('3.8');
+  });
+
+  it('review seams-1: «TOTAL: 60 CTNS  G.W. 710  CBM 3.8» — the 710 is the weight label’s: no 710 m³, and the model’s 3.8 stands', async () => {
+    model.analyze.mockImplementation(async () => ({ ok: true, facts: { goods: [], weightKg: 710, volumeM3: 3.8 }, steps: [], usage: BILL, answered: [BILL], knownCodes: [] }));
+    const got = await collect('podklyuch', [[await B.sheetsBook([['Sheet1', INVOICE_HEAD, [...INVOICE_ROWS, [], ['TOTAL: 60 CTNS  G.W. 710  CBM 3.8']]]]), 'ci.xlsx']]);
+    expect(got.state.goodsFiles?.[0]).toMatchObject({ volumeM3: null });
+    expect(got.state.facts.volumeM3).toBe(3.8);
+    expect(got.table).toContain('✅ Hajm: 3.8');
+    expect(got.table).not.toContain('710 kub');
   });
 
   it('…an invoice whose TOTAL row states only the count and the money keeps no text of its own: nothing new under the totals heading', async () => {
@@ -307,9 +430,14 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     const got = await collect('podklyuch', [
       [await book(['Description', 'CTN', 'G.W.(kg)', 'CBM'], [['Kurtka', 10, 100, 1.0], ['TOTAL', 10, 100, 1.0], ['Shim', 5, null, 1.1], ['TOTAL', 5, 166, 1.1]]), 'pl.xlsx'],
     ]);
-    // 100 + 166 = 266 kg; the cube is the lines' 1.0 + 1.1 = 2.1, which the sections say too.
-    expect(got.totals).toMatchObject({ weightKg: 266, volumeM3: 2.1 });
+    // 100 + 166 = 266 kg. The «CBM» column beside 10 and 5 cartons is asked (JN-12): the cube is the rows' own
+    // 1.0 + 1.1 = 2.1 «qatorlardan», never the file's stated Σ (review seams-2 — re-anchored from volumeM3 2.1).
+    expect(got.totals).toMatchObject({ weightKg: 266, volumeM3: null, doubted: ['volumeM3'] });
     expect(got.table).toContain('✅ Og‘irlik (brutto): 266 kg');
+    expect(got.cube).toBe(2.1);
+    // While «CBM» is asked its Σ carries the question's mark (review seams-2/seams-5's check — re-anchored from
+    // «✅ Hajm: 2.1 m³ (qatorlardan)»).
+    expect(got.table).toContain('❓ Hajm: 2.1 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
   });
 });
 
@@ -334,12 +462,120 @@ describe('X5 — a line column nothing settles is ASKED once, by the rows it is 
     ]);
     const asks = columnAsks(got.state.goodsFiles, got.goods);
     expect(asks).toEqual([
-      { id: 'col:0:weightKg', row: null, holds: true, text: '«G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy og‘irligini (kg) yozing: «1: …».' },
-      { id: 'col:0:volumeM3', row: null, holds: true, text: '«CBM» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy hajmini (m³) yozing: «1: …».' },
+      // Each names the shipment total it doubts (`doubts`, review seams-2/seams-5's check).
+      {
+        id: 'col:0:weightKg',
+        row: null,
+        holds: true,
+        doubts: 'weightKg',
+        text: '«G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy og‘irligini (kg) yozing: «1: …».',
+      },
+      {
+        id: 'col:0:volumeM3',
+        row: null,
+        holds: true,
+        doubts: 'volumeM3',
+        text: '«CBM» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy hajmini (m³) yozing: «1: …».',
+      },
     ]);
     // …and handed to the table's ONE list of asks, they are drawn with the table's own.
     const all = tableAsksOf({ section: got.state.section, facts: got.state.facts, laws: new Map(), amend: null, plain: false, aiQuestions: [], asks });
     expect(all.filter((a) => a.id.startsWith('col:')).every((a) => a.holds)).toBe(true);
+  });
+
+  it('review seams-2: the asked column’s Σ is not the shipment’s — the cube follows the rows the seller answers, the brutto is asked', async () => {
+    const got = await collect('podklyuch', [[await SHEET(), 'pl.xlsx']]);
+    // Nothing the file built from the asked columns stands: not its Σ 36 kg / 0.18 m³ as the shipment's.
+    expect(got.totals).toMatchObject({ weightKg: null, volumeM3: null, doubted: ['weightKg', 'volumeM3'] });
+    expect(got.state.facts.weightKg ?? null).toBeNull();
+    expect(got.state.facts.volumeM3 ?? null).toBeNull();
+    expect(got.table).not.toContain('36 kg');
+    expect(got.table).toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+    // The seller answers every row as the question tells him: 120 + 260 + 330 = 710 kg, 0.5 + 1.2 + 2.1 = 3.8 m³.
+    let after = await answer(got.chatId, '1: 120 kg 0.5 m3');
+    after = await answer(got.chatId, '2: 260 kg 1.2 m3');
+    after = await answer(got.chatId, '3: 330 kg 2.1 m3');
+    expect(after.goods.map((g) => [g.weightKg, g.volumeM3])).toEqual([
+      [120, 0.5],
+      [260, 1.2],
+      [330, 2.1],
+    ]);
+    expect(columnAsks(after.state.goodsFiles, after.goods)).toEqual([]);
+    expect(after.cube).toBe(3.8);
+    expect(after.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    expect(after.table).not.toContain('0.18');
+    // The brutto is still the seller's to give — never the column's 36.
+    expect(after.weightKg).toBeNull();
+    expect(after.table).not.toContain('36 kg');
+  });
+
+  it('…on the plain door, frozen, the file’s totals stand as they always did (nothing there asks the column)', async () => {
+    const got = await collect('podklyuch', [[await SHEET(), 'pl.xlsx']], { ai: false });
+    expect(got.totals).toMatchObject({ weightKg: 36, volumeM3: 0.18 });
+    expect(got.totals?.doubted).toBeUndefined();
+  });
+
+  it('…and the model reading the same sheet’s TOTAL row does not stand for it either', async () => {
+    model.analyze.mockImplementation(async () => ({ ok: true, facts: { goods: [], weightKg: 36, volumeM3: 0.18 }, steps: [], usage: BILL, answered: [BILL], knownCodes: [] }));
+    const got = await collect('podklyuch', [[await SHEET(), 'pl.xlsx']]);
+    expect(got.state.facts.weightKg ?? null).toBeNull();
+    expect(got.state.facts.volumeM3 ?? null).toBeNull();
+    const after = await answer(got.chatId, '1: 120 kg 0.5 m3\n2: 260 kg 1.2 m3\n3: 330 kg 2.1 m3');
+    expect(after.cube).toBe(3.8);
+  });
+
+  it('…on an invoice with the same columns (no TOTAL row): the cube follows the answered rows — 3.8, never 0.18', async () => {
+    const head = ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'Unit price (USD)', 'Amount (USD)', 'CBM'];
+    const rows: R[] = [[1, 'Ladies jacket', 200, 10, 6.5, 1300, 0.05], [2, 'Kids toy plastic', 480, 20, 1.5, 720, 0.06], [3, 'LED lamp 50W', 300, 30, 3, 900, 0.07]];
+    const got = await collect('podklyuch', [[await book(head, rows), 'ci.xlsx']]);
+    expect(got.state.goodsFiles?.[0]?.asks?.map((a) => a.field)).toEqual(['volumeM3']);
+    let after = await answer(got.chatId, '1: 0.5 m3');
+    after = await answer(got.chatId, '2: 1.2 m3');
+    after = await answer(got.chatId, '3: 2.1 m3');
+    expect(after.cube).toBe(3.8);
+    expect(after.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+  });
+
+  it('review seams-5: two rows of one name are two rows — answering the first does not close the second', async () => {
+    const got = await collect('rastamojka', [
+      [await book([...HEAD, 'G.W.(KGS)', 'CBM'], [[1, 'Office chair', 200, 10, 12, 0.05], [2, 'Office chair', 480, 20, 13, 0.06], [3, 'Desk', 300, 30, 11, 0.07], [...TOTAL, 36, 0.18]]), 'pl.xlsx'],
+    ]);
+    expect(columnAsks(got.state.goodsFiles, got.goods).map((a) => a.id)).toEqual(['col:0:weightKg', 'col:0:volumeM3']);
+    await answer(got.chatId, '1: 120 kg 0.5 m3');
+    let after = await answer(got.chatId, '3: 330 kg 2.1 m3');
+    // Row 2 still carries the file's 13 kg / 0.06 m³: both questions stand, and nothing reads «to‘liq».
+    expect(after.goods[1]).toMatchObject({ name: 'Office chair', weightKg: 13, volumeM3: 0.06 });
+    expect(columnAsks(after.state.goodsFiles, after.goods).map((a) => a.id)).toEqual(['col:0:weightKg', 'col:0:volumeM3']);
+    expect(after.table).not.toContain('Ma’lumot to‘liq');
+    after = await answer(got.chatId, '2: 260 kg 1.2 m3');
+    expect(columnAsks(after.state.goodsFiles, after.goods)).toEqual([]);
+  });
+
+  it('…by its PLACE: a same-named row the question never asked (one carton) does not hold the column open', async () => {
+    const got = await collect('rastamojka', [
+      [await book([...HEAD, 'G.W.(KGS)'], [[1, 'Office chair', 200, 10, 12], [2, 'Office chair', 20, 1, 12], [3, 'Desk', 300, 30, 11], [...TOTAL, 35]]), 'pl.xlsx'],
+    ]);
+    // Rows 1 and 3 are asked (10 and 30 cartons); row 2 is one carton, never asked, and states the same 12 kg.
+    expect(got.state.goodsFiles?.[0]?.asks?.[0]?.rows.map((r) => [r.name, r.value, r.at])).toEqual([
+      ['Office chair', 12, 0],
+      ['Desk', 11, 2],
+    ]);
+    await answer(got.chatId, '1: 120 kg');
+    const after = await answer(got.chatId, '3: 330 kg');
+    expect(columnAsks(after.state.goodsFiles, after.goods)).toEqual([]);
+  });
+
+  it('…and an ask stored before the place was kept is judged over EVERY row of its name — never the first alone', () => {
+    const files = [{ label: '«pl.xlsx»', shape: 'packing' as const, weightKind: 'gross' as const, grossKg: null, grossColumn: true, volumeM3: null, rows: 3, text: null,
+      asks: [{ field: 'weightKg' as const, title: 'G.W.(KGS)', rows: [{ name: 'Office chair', value: 12 }, { name: 'Office chair', value: 13 }, { name: 'Desk', value: 11 }] }] }];
+    const person = { person: ['weightKg' as const] };
+    const goods = [
+      { name: 'Office chair', weightKg: 120, derived: person },
+      { name: 'Office chair', weightKg: 13 },
+      { name: 'Desk', weightKg: 330, derived: person },
+    ];
+    expect(columnAsks(files, goods).map((a) => a.id)).toEqual(['col:0:weightKg']);
+    expect(columnAsks(files, goods.map((g) => ({ ...g, derived: person })))).toEqual([]);
   });
 
   it('a row a person answered — or whose figure is no longer the file’s — is answered; the column stands while one row is not', async () => {

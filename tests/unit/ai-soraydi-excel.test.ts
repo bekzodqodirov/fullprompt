@@ -1079,6 +1079,8 @@ describe('the doors that keep no packing: the reader’s own row stays whole for
 
   it('the VED’s paste computes nothing from a packing: the pieces stay, the per-carton cube is not multiplied there', () => {
     const [row] = pasteItems('Description\tQTY\tCTNS\tCBM/CTN\nKurtka\t100\t10\t0.05');
-    expect([row!.quantity, row!.volumeM3, row!.note]).toEqual([100, null, null]);
+    // Nothing is multiplied — and what the paste dropped is said, the figure as read (review doors-6 —
+    // re-anchored: the note was null, the per-carton cube gone in silence).
+    expect([row!.quantity, row!.volumeM3, row!.note]).toEqual([100, null, 'hajm 0.05 m³ — bitta karobkaniki (10 karobka)']);
   });
 });
