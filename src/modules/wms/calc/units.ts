@@ -1398,7 +1398,10 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
     }
     const scale = scaled ? scaledKg(word) : null;
     // A count of packages of another trade — «20 мешков», «20 ящиков», «20 rulon» — is a carton count here.
-    const unit = unitOf(word) ?? (scale && !scale.lone ? 'kg' : PACKAGE_NOUN_WORD.test(word) ? 'karobka' : null);
+    const unit =
+      unitOf(word) ??
+      (scale && !scale.lone ? 'kg' : PACKAGE_NOUN_WORD.test(word) ? 'karobka' : null) ??
+      labelledCube(word, text.slice(end, end + 48));
     if (unit === null || !TRACKED.has(unit)) continue;
     const read = readAmountText(hit[1]!);
     if (read.state === 'bad') continue;
@@ -1409,11 +1412,43 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
   return out;
 }
 
+/**
+ * «0.12 meas/ctn», «0.12 hajm/karobka», «0.12 volume per ctn» — a cube's
+ * LABEL right after a bare number, with ONE package's tail and no colon: the
+ * number's own measure, as «0.12 cbm/ctn»'s unit word is (check R3: read as
+ * nobody's, «0.12» became the row's 0.12 PIECES). Before a colon the label
+ * heads the next figure («20 CBM/CTN: 0.12»).
+ */
+function labelledCube(word: string, after: string): 'm3' | null {
+  if (!LABEL_MEASURE[0]![0].test(word.trim())) return null;
+  const tail = tailAt(after, 0, PER_PACKAGE_TAIL);
+  const per = tail > 0 ? null : PER_TRAIL.exec(after);
+  const end = tail > 0 ? tail : per && nounOwner(per[1]) === 'package' ? per[0].length : 0;
+  return end > 0 && !/^\s*[.)]?\s*[:：=]/u.test(after.slice(end)) ? 'm3' : null;
+}
+
 /** The slash word's owner — a known package tail, a known piece tail, or neither. */
 function tailWordOwner(word: string): PerOneOwner | null {
   const tail = `/${word.toLowerCase()}`;
   if (PER_PACKAGE_TAIL.includes(tail)) return 'package';
   return PER_PIECE_TAIL.includes(tail) ? 'piece' : null;
+}
+
+/** `LABEL_LEAD`'s label lists, each as a whole word: what a label measures is the list it is a word of. */
+const LABEL_MEASURE: readonly [RegExp, 'kg' | 'm3'][] = [
+  [new RegExp(String.raw`^(?:${labelPattern(VOLUME_LABELS)})$`, 'iu'), 'm3'],
+  [new RegExp(String.raw`^(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...PER_LABEL_ONLY])})$`, 'iu'), 'kg'],
+];
+
+/**
+ * Can a measure's label (`LABEL_LEAD`'s group 1) head a figure of this unit?
+ * A cube's label heads a cube, a weight's a kilo, a count's a count — never
+ * across: what a label measures is the one thing it says.
+ */
+function labelMeasures(label: string, unit: FigureHit['unit']): boolean {
+  const word = label.trim();
+  const measure = LABEL_MEASURE.find(([re]) => re.test(word))?.[1] ?? null;
+  return measure !== null ? unit === measure : unit !== 'kg' && unit !== 'm3';
 }
 
 function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly FigureHit[]): Mark | null {
@@ -1468,7 +1503,17 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   // Only a label that IS a unit word can be the number's unit: «20 Вес одного
   // места: 15 кг», «20 G.W./CTN: 15 kg» — the carton count, then the label of
   // the next figure (review crit-5: the 15 kg was the shipment's).
-  const label = labelHit && !(unitOf(labelHit[1]) !== null && /\d\s*$/u.test(before.slice(0, labelHit.index))) ? labelHit : null;
+  // And a label measures ONE thing: a cube's label never heads a kilo, a
+  // weight's never a cube — «0.12 hajm/karobka 300 kg», «0.12 meas/ctn 300
+  // kgs» are one carton's cube and the line's own 300 kg (check R3: with
+  // «hajm», «meas», «vol» no unit word, the kilos were one carton's again and
+  // the row weighed 20 × 300 = 6 000 kg — doors-1's own 20×).
+  const label =
+    labelHit &&
+    labelMeasures(labelHit[1]!, hit.unit) &&
+    !(unitOf(labelHit[1]) !== null && /\d\s*$/u.test(before.slice(0, labelHit.index)))
+      ? labelHit
+      : null;
   if (label) {
     const owner = label[2] !== undefined ? tailWordOwner(label[2]) : label[3] !== undefined ? nounOwner(label[3]) : 'package';
     const word = label[1]!.replace(/\s+/gu, ' ').trim();

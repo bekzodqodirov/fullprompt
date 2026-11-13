@@ -179,6 +179,34 @@ describe('doors-1 — a per-carton cube’s own unit and tail are no label of th
     }
   });
 
+  // Check R3 (R3a blocker, R3b): crit-5 narrowed the guard above to a label
+  // that IS a unit word — «hajm», «meas», «vol», «volume», «объем» are cube
+  // LABELS and no unit word, so after their number they headed the kilos
+  // again (20 × 300 = 6 000 kg), the 0.12 became the row's 0.12 pieces, and
+  // «20 ctns» its 20 pieces. A cube's label never heads a kilo; after its
+  // number, with one package's tail, it is that number's measure.
+  it('a cube’s LABEL after its figure — «0.12 hajm/karobka», «0.12 meas/ctn» — is that figure’s: 2.4 m³ and the line’s 300 kg', () => {
+    for (const text of [
+      'Stul 20 karobka 0.12 hajm/karobka 300 kg',
+      'Stul 20 karobka 0.12 hajmi/karobka 300 kg',
+      'Stul 20 ctns 0.12 meas/ctn 300 kgs',
+      'Stul 20 ctns 0.12 vol/ctn 300 kg',
+      'Stul 20 ctns 0.12 volume/ctn 300 kg',
+      'Stul 20 ctns 0.12 volume per ctn 300 kg',
+      'Stul 20 ctns 0.12 meas/ctn, 300 kgs',
+      'Стул 20 коробок 0.12 объем/кор 300 кг',
+      'Стул 20 мест 0.12 объем/место 300 кг',
+      '椅子 20箱 0.12体积/箱 300kg',
+    ]) {
+      const r = row(text);
+      // 20 × 0.12 = 2.4 m³; the 300 kg is the line's own, never 20 × 300 = 6 000; 20 is cartons, never pieces.
+      expect(r, text).toMatchObject({ quantity: null, weightKg: 300, volumeM3: 2.4 });
+      expect(r.packing, text).toMatchObject({ cartons: 20, m3PerCarton: 0.12, kgPerCarton: null });
+    }
+    // A weight's label after a figure heads no piece count either: the 20 cartons are never 20 pieces.
+    expect(row('Stul 20 ctns 15 brutto/ctn 300 dona').quantity).toBe(300);
+  });
+
   it('«Stol 10 ctn 1.2 cbm/ctn 150 kg 12 cbm»: 150 kg the line’s, 12 m³ stated and agreeing with 10 × 1.2', () => {
     // Was 1 500 kg, the volume empty and «1.2 cbm/ctn, 12 cbm» sent to the note.
     expect(row('Stol 10 ctn 1.2 cbm/ctn 150 kg 12 cbm')).toMatchObject({ name: 'Stol', weightKg: 150, volumeM3: 12, note: null });

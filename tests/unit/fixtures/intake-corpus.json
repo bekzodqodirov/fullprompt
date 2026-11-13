@@ -17073,6 +17073,116 @@
    "why": "check R1, stated: a SPACED joiner of whole numbers is the shape of «Stanok 2 x 1 500 kg» (figures-pair-steals-thousands, c4260) — nothing tells the two apart, so neither lands (the row kernel asks both readings).",
    "source": "ai-soraydi 1a check (T)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4411",
+   "input": "Stul 20 karobka 0.12 hajm/karobka 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg the line's own, 20 × 0.12 = 2.4 m³ — never 20 × 300 = 6 000 kg, never 0.12 pieces",
+   "why": "check R3a (blocker): crit-5 narrowed markOf's doors-1 guard to a label that IS a unit word, and «hajm» is a cube label and no unit word — it headed the 300 kg again.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4412",
+   "input": "Stul 20 ctns 0.12 meas/ctn 300 kgs",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 cartons, never 20 pieces; 300 kg; 2.4 m³",
+   "why": "check R3b: «ctns» after 20 was taken for the label of the 0.12, so 0.12 became the cartons and 20 a piece count; «meas/ctn» headed the kilos.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4413",
+   "input": "Stul 20 ctns 0.12 vol/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "check R3b: «vol».",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4414",
+   "input": "Stul 20 ctns 0.12 volume/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "check R3b: «volume».",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4415",
+   "input": "Стул 20 коробок 0.12 объем/кор 300 кг",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 кг, 2.4 м³",
+   "why": "check R3, the Russian neighbour.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4416",
+   "input": "椅子 20箱 0.12体积/箱 300kg",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "check R3, the Chinese neighbour.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -61650,6 +61760,26 @@
    },
    "said": "100 carpets, 500 kg",
    "why": "check R1: the count beside the size kept.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4417",
+   "input": "Stul 20 ctns 0.12 meas/ctn 300 kgs",
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "quantity": null,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "the AI door with the model silent: 300 kg, 2.4 m³ — the 20 cartons are never «20 dona»",
+   "why": "check R3b: «ℹ️ 1. Stul — 20 dona», the 300 kg gone and the brutto asked.",
    "source": "ai-soraydi 1a check (T)",
    "weight": "defect"
   }

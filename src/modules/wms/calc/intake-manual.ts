@@ -1301,10 +1301,21 @@ function fieldAt(text: string, at: number): boolean {
   const next = text.slice(at, at + 64).replace(/^[ \t\u00a0\u202f]+/u, '');
   // A label that is a unit word right after a figure is that figure's unit: «0.12 cbm/ctn 300 kg» (doors-1).
   const perOne = perOneLabelLine(next);
-  if (perOne !== null && unitOf(perOne.label) === null) return true;
+  if (perOne !== null && unitOf(perOne.label) === null && perOneHeads(perOne, next)) return true;
   const unitLabel = UNIT_WORD_FIELD.exec(next);
   return unitLabel !== null && unitOf(unitLabel[1]) !== null;
 }
+/**
+ * Does one package's measure label head the figure after it? Only a figure of
+ * its own measure — a cube's label never heads kilos (check R3: «0.12
+ * meas/ctn 300 kgs» — «meas/ctn» is the 0.12's, the 300 kgs the line's own).
+ */
+function perOneHeads(perOne: { unit: 'kg' | 'm3' | 'dona'; figureAt: number }, next: string): boolean {
+  const read = FIGURE_AT.exec(next.slice(perOne.figureAt));
+  const unit = read?.[2] !== undefined ? unitOrScaled(read[2]) : null;
+  return unit === null || (perOne.unit === 'dona' ? unit === 'dona' || unit === 'karobka' : unit === perOne.unit);
+}
+
 /** A figure followed by a slash and a word, or by «per …»: ONE package's or ONE piece's — the kernel's mark to read. */
 const PER_ONE_AFTER = /^\s*\/\s*\p{L}|^\s+(?:per|pr)\s/iu;
 
