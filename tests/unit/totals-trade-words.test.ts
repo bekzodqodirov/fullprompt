@@ -227,6 +227,35 @@ describe('a rate’s base and a condition are no total (figures-cbm-rate-as-tota
     expect(totals('Narxlagich 1 kg', 'podklyuch')).toEqual({ ...none, kg: 1 });
   });
 
+  // Check R2: the guard above read the figure 1 as a rate's base whenever a
+  // price word or a currency stood ANYWHERE on its line — and a one-cube cargo
+  // with a price question is the commonest first message there is. A price
+  // in the figure's OWN clause makes a rate, unless that clause states the
+  // cargo; a price question in a clause of its own asks about the cargo.
+  it('a ONE-cube cargo with a price question keeps its 1 m³ — in the sellers’ languages', () => {
+    for (const [text, kg] of [
+      ['Yukim 1 kub, narxi qancha?', null],
+      ['Yukim 1 kub narxi qancha?', null],
+      ["1 kub yuk bor, qancha bo'ladi?", null],
+      ['Mening yukim 1 kub 150 kg, narxi qancha?', 150],
+      ['Yuk 1 kub, Toshkentgacha qancha?', null],
+      ["Kurtka 300 dona, 1 kub. Narx qancha bo'ladi", null],
+      ['Kurtka 500 dona, 1 kub, 300 kg. Narxi qancha?', 300],
+      ['Юк 1 куб, нархи қанча?', null],
+      ['У меня груз 1 куб 200 кг, сколько стоит?', 200],
+      ['Groz 1 kub. 150 kg. Цена?', 150],
+      ['I have 1 cbm, 150 kg, how much to Tashkent?', 150],
+      ['Stanok 1 dona 1 kub 1200 kg 5000$', 1200],
+      ['Stanok 1 dona, 1 cbm, 1200 kg, invoys 5000 usd', 1200],
+      ['货物1立方, 多少钱?', null],
+    ] as const) {
+      expect(totals(text, 'podklyuch'), text).toEqual({ ...none, kg, m3: 1 });
+    }
+    // …on yo'lkira too.
+    expect(totals("1 kub yuk bor, qancha bo'ladi?", 'yolkira')).toEqual({ ...none, m3: 1 });
+    // A rate's base in its own clause stays no total beside a cargo stated elsewhere.
+    expect(totals('1 kub narxi qancha, yukim 300 kg', 'podklyuch')).toEqual({ ...none, kg: 300 });
+  });
 });
 
 // Review seams-1: a forwarder's footer writes each field as label, figure —

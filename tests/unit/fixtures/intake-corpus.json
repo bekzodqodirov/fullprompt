@@ -61878,6 +61878,102 @@
    "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
    "source": "ai-soraydi 1a check (T)",
    "weight": "blocker"
+  },
+  {
+   "id": "c4426",
+   "input": "Yukim 1 kub, narxi qancha?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": null
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4427",
+   "input": "1 kub yuk bor, qancha bo'ladi?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": null
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4428",
+   "input": "Mening yukim 1 kub 150 kg, narxi qancha?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 150
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4429",
+   "input": "Kurtka 300 dona, 1 kub. Narx qancha bo'ladi",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": null
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4430",
+   "input": "У меня груз 1 куб 200 кг, сколько стоит?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 200
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4431",
+   "input": "I have 1 cbm, 150 kg, how much to Tashkent?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 150
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4432",
+   "input": "Stanok 1 dona 1 kub 1200 kg 5000$",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 1200
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4433",
+   "input": "1 kub narxi qancha, yukim 300 kg",
+   "expected": {
+    "volumeM3": null,
+    "weightKg": 300
+   },
+   "said": "«1 kub narxi qancha» is a rate's base; the cargo is the 300 kg",
+   "why": "check R2's other side: the price is in the figure's own clause, the cargo stated in another.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [

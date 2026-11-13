@@ -367,6 +367,37 @@ const COMPARE_BEFORE = /(?<![\p{L}])(?:больше|более|свыше|мен
 const CONDITION_ON_LINE =
   /(?<![\p{L}])(?:bo[‘'’ʻ`]?lsa|бўлса|oshsa|ошса|agar|агар|chegirma\p{L}*|чегирма\p{L}*|если|при|скидк\p{L}*|if|discount\p{L}*|aksiya\p{L}*|акци\p{L}*)(?![\p{L}])|优惠|折扣|如果/iu;
 
+/** Where a clause ends — a comma, a stop (never a decimal point), a question or an exclamation. */
+const CLAUSE_BREAK = /[,;!?。，；！？]|\.(?!\d)/gu;
+
+/** `[start, end)` of the clause of `line` the span `[s, e)` stands in. */
+function clauseAround(line: string, s: number, e: number): [number, number] {
+  let start = 0;
+  let end = line.length;
+  for (const hit of line.matchAll(CLAUSE_BREAK)) {
+    if (hit.index + hit[0].length <= s) start = hit.index + hit[0].length;
+    else if (hit.index >= e) {
+      end = hit.index;
+      break;
+    }
+  }
+  return [start, end];
+}
+/** The seller speaking of HIS cargo — «yukim», «yuk bor», «у меня груз», «I have», «我有». */
+const CARGO_SPOKEN =
+  /(?<![\p{L}])(?:yuk(?:im|imiz|um|imni|ingiz|lar|larim)?|юк(?:им|имиз|ум|лар)?|груз\p{L}*|gruz\p{L}*|groz\p{L}*|cargo|mol(?:im|imiz)|tovar(?:im|imiz|lar|larim)?|товар\p{L}*|bor|бор|есть|у\s+меня|у\s+нас|menda|bizda|mening|i\s+have|we\s+have|my\s+(?:cargo|goods|shipment))(?![\p{L}])|我有|货物/iu;
+
+/**
+ * Does the clause state the seller's CARGO beside a one-unit figure at
+ * `[start, end)` of it — his words for it, or another figure of the goods
+ * («1 dona», «1200 kg»: a count, a weight, a cube, a carton count; never
+ * money)?
+ */
+function statesCargo(clause: string, start: number, end: number): boolean {
+  if (CARGO_SPOKEN.test(clause)) return true;
+  return amountsIn(clause).some((s) => (s.end <= start || s.start >= end) && unitOrScaled(s.word ?? undefined) !== null);
+}
+
 /**
  * Is the unit-written figure at `[start, end)` no statement of THIS cargo
  * (review figures-cbm-rate-as-total)? Two shapes, each its own:
@@ -392,7 +423,16 @@ function rateOrCondition(text: string, start: number, end: number, number: strin
   const read = readAmountText(number);
   if (read.state === 'ok' && read.value === 1) {
     if (RATE_MARK_BEFORE.test(before) || RATE_MARK_AFTER.test(after)) return true;
-    if (CURRENCY.test(line) || PRICE_ON_LINE.test(line)) return true;
+    // A price IN the figure's clause — «1 cbm narxi qancha?», «сколько стоит 1
+    // куб?», «1 куба 150$» — is a rate's base, unless that clause states the
+    // seller's cargo («Stanok 1 dona 1 kub 1200 kg 5000$»). A price question in
+    // a clause of its own asks about the cargo stated before it — «Yukim 1 kub,
+    // narxi qancha?», «Kurtka 300 dona, 1 kub. Narx qancha bo'ladi», «I have 1
+    // cbm, 150 kg, how much?» (check R2: the price word ANYWHERE on the line
+    // dropped the commonest first message's one cube, and asked it).
+    const [cs, ce] = clauseAround(line, start - from, end - from);
+    const clause = line.slice(cs, ce);
+    if ((CURRENCY.test(clause) || PRICE_ON_LINE.test(clause)) && !statesCargo(clause, start - from - cs, end - from - cs)) return true;
   }
   return (COMPARE_AFTER.test(after) || COMPARE_BEFORE.test(before)) && CONDITION_ON_LINE.test(line);
 }
