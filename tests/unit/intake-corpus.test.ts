@@ -925,23 +925,24 @@ function sourceFiles(dir: string): string[] {
 
 /**
  * The «🤖 AI rastamojka» door over a real workbook (docs/AI-SORAYDI.md §3.2): files forwarded, read with the
- * model answering NOTHING (every figure is the file's or the kernel's) — or, with `modelTotals`, only the
+ * model answering NOTHING (every figure is the file's or the kernel's) — or, with `opts.model`, only the
  * shipment's totals it read off the sheet's text, as the production model does — then each typed table
  * answer written. What the INSERT would take — the cube, the brutto — and the table, after every step.
+ * `opts.ai: false` walks the plain «🧮» door the same way (its summary, never its frozen guards).
  */
 async function aiDoorWalk(
   section: IntakeState['section'],
   files: [FileSpec, string][],
   answers: string[] = [],
-  modelTotals: { weightKg?: number | null; volumeM3?: number | null } = {},
+  opts: { model?: { weightKg?: number | null; volumeM3?: number | null }; ai?: boolean } = {},
 ) {
-  const { chatId } = collection({ ai: true, stage: 'material', material: [] }, section);
+  const { chatId } = collection({ ai: opts.ai ?? true, stage: 'material', material: [] }, section);
   for (const [spec, name] of files) {
     await forward(chatId, spec, name);
     updateIntake(chatId, { fileCount: activeIntake(chatId)!.fileCount + 1 });
   }
   const reading = reads([]);
-  model.analyze.mockResolvedValueOnce({ ...reading, facts: { ...reading.facts, ...modelTotals } });
+  model.analyze.mockResolvedValueOnce({ ...reading, facts: { ...reading.facts, ...opts.model } });
   const read = await analyzeCollected(activeIntake(chatId)!);
   updateIntake(chatId, { ...read, answered: undefined } as never);
   const ctx = fakeCtx();
@@ -2473,8 +2474,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       [3, 'LED lamp 50W', 300, 30, 9, 11, 0.07],
       ['TOTAL', null, 980, 60, 30, 36, 0.18],
     ];
-    for (const modelTotals of [{}, { weightKg: 36 }]) {
-      const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], modelTotals);
+    for (const model of [{}, { weightKg: 36 }]) {
+      const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], { model });
       const now = steps[0]!;
       expect(now.weightKg).toBeNull();
       expect(now.table).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
@@ -2525,6 +2526,27 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(said.join('\n')).toContain(
       '«N.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi',
     );
+  },
+  c4528: async () => {
+    // the check of seams-1's fix: the summary line's cube word carries 3.8, and the next figure — a spaced
+    // group with its own kilos, the next cell's amount — is no bare figure it labels. Both doors: «✅ Hajm:
+    // 3.8 kub» (the plain door's summary as it was before the fix).
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)'];
+    const rows = (summary: Cell[]): Cell[][] => [
+      head,
+      [1, 'Ladies jacket', 200, 6.5, 1300],
+      [2, 'Kids toy plastic', 480, 1.2, 576],
+      [3, 'LED lamp 50W', 300, 9.9, 2970],
+      ['TOTAL', null, 980, null, 4846],
+      summary,
+    ];
+    for (const summary of [['Итого: 3,8 м3 1 200 кг'], ['Jami: 3,8 kub 1 200 kg'], ['TOTAL: 3.8 CBM 1 136.5 KGS'], ['TOTAL', null, null, '3.8 CBM', 4846]] as Cell[][]) {
+      for (const ai of [true, false]) {
+        const { steps } = await aiDoorWalk('rastamojka', [[xlsx({ name: 'Sheet1', rows: rows(summary) }), 'ci.xlsx']], [], { ai });
+        expect(steps[0]!.cube, `${JSON.stringify(summary)} ai=${ai}`).toBe(3.8);
+        expect(steps[0]!.table, `${JSON.stringify(summary)} ai=${ai}`).toContain('✅ Hajm: 3.8 kub');
+      }
+    }
   },
   c4523: async () => {
     // review seams-5: two rows of one name are two rows — answering rows 1 and 3 leaves row 2's

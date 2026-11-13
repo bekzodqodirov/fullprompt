@@ -57382,6 +57382,469 @@
    "why": "review seams-2's check: the same Σ in words.",
    "source": "ai-soraydi 1a review (seams-2, the check)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4553",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "Итого: 3,8 м3 1 200 кг"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3,8 м3 1 200 кг»: «1 200» is a spaced group carrying its kilos — no bare figure, so «м3» is 3,8's unit",
+   "why": "the check of seams-1's fix (spaced-group): TEXT_LABEL_OF_NEXT took the «1» of «1 200» for a bare figure and refused the cube. Base: 3.8.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4554",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "Jami: 3,8 kub 1 200 kg"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«Jami: 3,8 kub 1 200 kg» (Uzbek Latin): 3.8 m³",
+   "why": "the check of seams-1's fix (spaced-group), in Uzbek.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4555",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL: 3.8 CBM 1 136.5 KGS"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8 CBM 1 136.5 KGS»: the group 1 136.5 has its own KGS — 3.8 m³",
+   "why": "the check of seams-1's fix (spaced-group), with a fraction.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4556",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     null,
+     "3.8 CBM",
+     4846
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8 CBM» in its own cell, the amount 4846 in the next: the m³ word is judged within its cell — 3.8 m³",
+   "why": "the check of seams-1's fix (cell-boundary): the cells joined by spaces let the lookahead read 4846 as the figure «CBM» labels. Base: 3.8.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4557",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL 3.8CBM 60"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8CBM» glued: the m³ word is 3.8's unit, whatever follows",
+   "why": "the check of seams-1's fix (cell-boundary): a glued unit is the figure's own. Base: 3.8.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4558",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "合计 3.8立方 1 200公斤"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«3.8立方 1 200公斤» (Chinese): 3.8 m³",
+   "why": "the check of seams-1's fix, in Chinese.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4559",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "Жами: 3,8 куб 1 200 кг"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "«Жами: 3,8 куб 1 200 кг» (Uzbek Cyrillic): 3.8 m³",
+   "why": "the check of seams-1's fix, in Uzbek Cyrillic.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4560",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL:",
+     null,
+     null,
+     null,
+     null,
+     "G.W.",
+     710,
+     "CBM",
+     3.8
+    ]
+   ],
+   "expected": {
+    "volumeM3": null
+   },
+   "said": "label and value cells «G.W.» | 710 | «CBM» | 3.8: «CBM» in its own cell labels the next cell's bare 3.8 — never 710 m³ (and a bare figure is a cube only after «:» — JN-21)",
+   "why": "the check of seams-1's fix: judging within a cell must not re-open seams-1 for a row written cell by cell.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4561",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL:",
+     null,
+     null,
+     null,
+     null,
+     3.8,
+     "CBM",
+     60,
+     "CTNS"
+    ]
+   ],
+   "expected": {
+    "volumeM3": 3.8
+   },
+   "said": "value and unit cells 3.8 | «CBM» | 60 | «CTNS»: the 60 has its unit in the next cell — 3.8 m³",
+   "why": "the check of seams-1's fix: the cells' own units.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
@@ -99404,6 +99867,20 @@
    "said": "no «✅ 36 kg» beside the invoice, and the receipt says «… shuning uchun umumiy brutto va kub fayldan olinmadi» — the brutto it did not take, never «umumiy netto»",
    "why": "review seams-2's check on seams-4's pair.",
    "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4528",
+   "call": "readIntakeFile + analyzeCollected on BOTH doors (a lone invoice whose summary line writes the cube, then a spaced kilo group or the next cell's amount)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) — 3 rows, TOTAL 980/4846; then «Итого: 3,8 м3 1 200 кг» / «Jami: 3,8 kub 1 200 kg» / «TOTAL: 3.8 CBM 1 136.5 KGS» / ['TOTAL',–,–,'3.8 CBM',4846]"
+    },
+    "model": "answers nothing"
+   },
+   "said": "«✅ Hajm: 3.8 kub» on the AI door and on the plain door alike — never «umumiy hajmi … yozilmagan» / «VED xodimi so‘raydi»",
+   "why": "the check of seams-1's fix: both regressions changed the plain door's summary too. Base: 3.8 on both.",
+   "source": "ai-soraydi 1a review (seams-1's fix, the check)",
    "weight": "defect"
   }
  ],

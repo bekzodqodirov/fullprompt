@@ -2908,7 +2908,19 @@ const TEXT_UNIT_OF = (words: string) => String.raw`(?:${words})(?!${TEXT_EDGE})`
 // read 710 — the weight, the count — as the shipment's cube, 187× too large,
 // under ✅ and above the model's own 3.8. «3.8 CBM 60 CTNS» keeps its cube: the
 // 60 after it carries its own unit. A figure that is no one's is asked.
-const TEXT_LABEL_OF_NEXT = String.raw`\s*[:：=]?\s*\d+(?:[.,]\d+)?(?![\d.,])(?!\s*[\p{L}㎥³])`;
+// Judged where the m³ word STANDS (the check of seams-1's fix): `summaryTotalOf`
+// joins a row's cells with `CELL_BREAK`. In the figure's own cell («3.8 CBM»)
+// the word labels only a bare figure of that same cell and line — the amount
+// 4846 in the next cell is nobody's cube label; in a cell of its own beside the
+// figure's («710» | «CBM» | «3.8») it may label the next cell's (whose unit,
+// then, may stand in the cell after: «3.8» | «CBM» | «60» | «CTNS»). A spaced
+// group's first digits are no bare figure («3,8 м3 1 200 кг»: «1 200» carries
+// its kilos), and an m³ word GLUED to the figure before it is that figure's
+// unit, whatever follows («TOTAL 3.8CBM 60»).
+const CELL_BREAK = '\u2029';
+const TEXT_SAME_LINE = String.raw`[^\S\n\u2029]`;
+const TEXT_LABEL_OF_NEXT = (gap: string) =>
+  String.raw`${gap}*[:：=]?${gap}*\d+(?:${TEXT_SAME_LINE}\d{3})*(?:[.,]\d+)?(?![\d.,])(?!${TEXT_SAME_LINE}\d)(?!${gap}*[\p{L}㎥³])`;
 const TEXT_LABEL = (labels: readonly string[]) => String.raw`(?<!${TEXT_EDGE})(?:${labelAlternation(labels)})(?!${TEXT_EDGE})\s*(?:[(（][^()（）]{0,12}[)）]\s*)?`;
 // Each reader says whether its figure carries its UNIT: a unitless one
 // («G.W.: 710») is read only on a line with no currency mark (review JN-21,
@@ -2920,7 +2932,13 @@ const SUMMARY_READERS: Record<'gross' | 'volume', { re: RegExp; unitless: boolea
     { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'), unitless: false },
   ],
   volume: [
-    { re: new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)(?!${TEXT_LABEL_OF_NEXT})`, 'giu'), unitless: false },
+    {
+      re: new RegExp(
+        String.raw`${TEXT_NUMBER}(?:${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)|${TEXT_SAME_LINE}+${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)(?!${TEXT_LABEL_OF_NEXT(TEXT_SAME_LINE)})|${TEXT_SAME_LINE}*${CELL_BREAK}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)(?!${TEXT_LABEL_OF_NEXT(String.raw`\s`)}))`,
+        'giu',
+      ),
+      unitless: false,
+    },
     { re: new RegExp(String.raw`${TEXT_LABEL(VOLUME_LABELS)}[:：=]\s*${TEXT_NUMBER}(?!\s*${TEXT_UNIT_OF(unitPattern('m3'))})`, 'giu'), unitless: true },
   ],
 };
@@ -2947,7 +2965,8 @@ function summaryTotalOf(rows: readonly Cell[][], kind: 'gross' | 'volume', step:
   const stated = rows.flatMap((row) => {
     const text = row
       .map((cell) => (cell === null ? '' : typeof cell === 'number' ? String(Number(cell.toPrecision(12))) : cell))
-      .join(' ')
+      // A cell break is whitespace to every reader but the m³ label's (`TEXT_LABEL_OF_NEXT`).
+      .join(CELL_BREAK)
       .slice(0, 400);
     const value = summaryFigure(text, kind);
     return value === null ? [] : [{ value, half: 0 }];
