@@ -531,7 +531,7 @@ export function lineNumber(seqs: readonly number[]): string {
 }
 
 /** The first row a line names — the order the answer lists its lines in (A3). */
-const firstSeq = (seqs: readonly number[]) => (seqs.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...seqs));
+const firstSeq = (seqs: readonly number[]) => seqs.reduce((m, s) => Math.min(m, s), Number.POSITIVE_INFINITY);
 
 /** «23», «23 va 8», «23, 8 va 5», then «23, 8, 5 …» — at most three numbers. */
 function countList(ns: number[]): string {

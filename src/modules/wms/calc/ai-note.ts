@@ -214,7 +214,7 @@ export function aiNoteText(input: AiNoteInput): string {
 function fitNote(head: string[], unsorted: AiNoteGroup[], rows: AiNoteRow[], fixed: string[], tail: string[]): string {
   // In row order, by the first row each group holds (A3) — the order the
   // «Kodlar:» list and the VED's screen are in. The sort is stable.
-  const first = (g: AiNoteGroup) => (g.seqs.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...g.seqs));
+  const first = (g: AiNoteGroup) => g.seqs.reduce((m, s) => Math.min(m, s), Number.POSITIVE_INFINITY);
   const groups = [...unsorted].sort((a, b) => first(a) - first(b));
   const groupLines = groups.map(groupLine);
   const rowLines = rows.map(rowLine);
