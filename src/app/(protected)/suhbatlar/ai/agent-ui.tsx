@@ -14,6 +14,11 @@ import {
   agentDecideAction,
   agentEditFactAction,
   agentEditOpenAction,
+  agentLessonActiveAction,
+  agentLessonDeleteAction,
+  agentLessonEditAction,
+  agentLessonOpenAction,
+  agentLessonSaveAction,
   agentModeAction,
   agentNumbersAction,
   agentOwnTextAction,
@@ -27,6 +32,8 @@ import {
 } from '@/modules/wms/agent/web-actions';
 // The kinds' one home (a pure module): never the gate, which would pull the send step into this bundle.
 import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+// The lesson's limits — a pure module too (zero imports).
+import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { CATEGORY_KEYS, errorKey } from './labels';
 
 /**
@@ -865,5 +872,148 @@ export function AutoBadButton({ draftId }: { draftId: string }) {
       </button>
       {error && <span className="text-xs font-semibold text-bad">{error}</span>}
     </span>
+  );
+}
+
+/**
+ * «📝 Tuzatish» on a row whose words are the machine's (0148, spec SPEC-P1-v2 §3): he says where the AI was wrong,
+ * and the save is itself the confirmation — the lesson is read by every chat's prompt from then on. Drawn for
+ * everybody the page admits (a super_admin may teach); only the account holder's lesson on a reply still waiting
+ * also rewrites that reply (`rewrites`, said before he types). The server FIRST, like ✏️: a reply counting down
+ * stops before the box opens. Controlled — a refusal keeps what he typed (#463).
+ */
+export function LessonButton({ draftId, rewrites }: { draftId: string; rewrites: boolean }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, note, run } = useAction();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        className="btn-ghost !min-h-8 !px-2 text-xs"
+        disabled={pending}
+        data-testid="agent-lesson-open"
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          run(() => agentLessonOpenAction(draftId), () => setOpen(true));
+        }}
+      >
+        📝 {t('lessonTeach')}
+      </button>
+      {open && (
+        <div className="space-y-2" data-testid="agent-lesson-box">
+          <label className="label" htmlFor={`lesson-${draftId}`}>
+            {t('lessonBoxLabel')}
+          </label>
+          <textarea
+            id={`lesson-${draftId}`}
+            className="input h-28"
+            value={text}
+            maxLength={LESSON_LIMITS.maxChars}
+            onChange={(event) => setText(event.target.value)}
+            data-testid="agent-lesson-text"
+          />
+          <p className="text-xs text-ink-500">
+            {t('lessonBoxHint', { max: LESSON_LIMITS.maxChars })} {rewrites ? t('lessonBoxRewrites') : t('lessonBoxTeaches')}
+          </p>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={pending || text.trim() === ''}
+            data-testid="agent-lesson-save"
+            onClick={() =>
+              run(
+                () => agentLessonSaveAction(draftId, text),
+                () => {
+                  setOpen(false);
+                  setText('');
+                },
+              )
+            }
+          >
+            {t('lessonSave')}
+          </button>
+        </div>
+      )}
+      <Feedback error={error} note={note} />
+    </div>
+  );
+}
+
+/**
+ * One lesson on the «Saboqlar» tab: its words corrected (the add box's own refusals), switched off or on, deleted.
+ * Controlled — a refused edit keeps what he typed.
+ */
+export function LessonEditor({ lessonId, text, active, confirmed }: { lessonId: string; text: string; active: boolean; confirmed: boolean }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, note, run } = useAction();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(text);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-edit"
+          onClick={() => {
+            setValue(text);
+            setOpen((was) => !was);
+          }}
+        >
+          ✏️ {t('lessonEdit')}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-toggle"
+          onClick={() => run(() => agentLessonActiveAction(lessonId, !active))}
+        >
+          {active ? t('lessonSwitchOff') : t('lessonSwitchOn')}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-delete"
+          onClick={() => {
+            if (!window.confirm(t('lessonDeleteConfirm'))) return;
+            run(() => agentLessonDeleteAction(lessonId));
+          }}
+        >
+          {t('lessonDelete')}
+        </button>
+      </div>
+      {open && (
+        <div className="space-y-2" data-testid="agent-lesson-edit-box">
+          <textarea
+            className="input h-28"
+            value={value}
+            maxLength={LESSON_LIMITS.maxChars}
+            aria-label={t('lessonBoxLabel')}
+            onChange={(event) => setValue(event.target.value)}
+            data-testid="agent-lesson-edit-text"
+          />
+          <p className="text-xs text-ink-500">{t('lessonBoxHint', { max: LESSON_LIMITS.maxChars })}</p>
+          <button
+            type="button"
+            className="btn-primary"
+            // An unconfirmed lesson (typed in the bot, «✅ Saqlash» never pressed) is confirmed by this save as it stands.
+            disabled={pending || value.trim() === '' || (confirmed && value.trim() === text.trim())}
+            data-testid="agent-lesson-edit-save"
+            onClick={() => run(() => agentLessonEditAction(lessonId, value), () => setOpen(false))}
+          >
+            {t('save')}
+          </button>
+        </div>
+      )}
+      <Feedback error={error} note={note} />
+    </div>
   );
 }

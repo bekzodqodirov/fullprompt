@@ -215,8 +215,8 @@ describe('the avia tool’s words, his price act off and on (spec §1.2)', () =>
 });
 
 describe('the head (spec §1.2, §1.8): rule 9 changes only with his price act; rule 8 asks the load and «Toshkentgacha»', () => {
-  const off = stableHead({ styleGuide: null, facts: [], priceArmed: false });
-  const on = stableHead({ styleGuide: null, facts: [], priceArmed: true });
+  const off = stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] });
+  const on = stableHead({ styleGuide: null, facts: [], priceArmed: true, lessons: [] });
   const rule = (head: string, n: number) => head.split('\n').find((l) => l.startsWith(`${n}. `))!;
 
   it('off, rule 9’s address sentence is today’s, word for word', () => {

@@ -964,9 +964,10 @@ export async function settleSupersededAuto(draftId: string): Promise<void> {
 
 /**
  * Why a waiting auto stopped because of HIM: his own decision on the card, ⏸ — or «✍️ Savolga javob» (spec
- * SPEC-P1-v2 §2.2: a question never counts down today, and the stop is the press's first act all the same).
+ * SPEC-P1-v2 §2.2: a question never counts down today, and the stop is the press's first act all the same) — or
+ * «📝 Tuzatish» (§3.1): a reply he is about to call wrong does not go by itself while he types why.
  */
-export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause' | 'owner_answer';
+export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause' | 'owner_answer' | 'owner_lesson';
 
 /**
  * His own decision on a draft stops its auto — every non-auto `decideDraft`

@@ -219,8 +219,8 @@ describe('every button an agent card DRAWS is one the parser takes (spec SPEC-P1
         }
       }
     }
-    // …and it really drew them: ✅ ✏️ ❌ 🙋, the countdown's ⏸, the sent card's 👎, the remember row, and ✍️.
-    for (const op of ['s', 'e', 'r', 'h', 'a', 'f', 'g', 'u', 'z', 'j']) expect([...drawn], op).toContain(op);
+    // …and it really drew them: ✅ ✏️ ❌ 🙋, the countdown's ⏸, the sent card's 👎, the remember row, ✍️ and 📝.
+    for (const op of ['s', 'e', 'r', 'h', 'a', 'f', 'g', 'u', 'z', 'j', 'l']) expect([...drawn], op).toContain(op);
   });
 
   it('the other agent cards, and the rows the door itself draws under a press', async () => {
@@ -234,6 +234,14 @@ describe('every button an agent card DRAWS is one the parser takes (spec SPEC-P1
     const row = answerKbRow(id).flat();
     expect(row.map((b) => b.callback_data)).toEqual([`ag:g:${id}`, `ag:u:${id}`, `ag:z:${id}`]);
     for (const b of row) expect(parseCallback(b.callback_data), b.callback_data).toMatchObject({ kind: 'agent' });
+    // A lesson's echo («✅ Saqlash / ✖ Bekor», §3.2) and 👎's «📝 Sababini yozish» (§3.5) are the lessons service's rows.
+    const { lessonEchoRow, lessonWhyRow } = await import('@/modules/wms/agent/lessons');
+    const taught = [...lessonEchoRow(id, 'a1b2c3d4').flat(), ...lessonWhyRow(id).flat()];
+    expect(taught.map((b) => b.callback_data)).toEqual([`ag:y:${id}:a1b2c3d4`, `ag:v:${id}`, `ag:l:${id}`]);
+    for (const b of taught) {
+      expect(parseCallback(b.callback_data), b.callback_data).toMatchObject({ kind: 'agent' });
+      expect(Buffer.byteLength(b.callback_data), b.callback_data).toBeLessThanOrEqual(64);
+    }
   });
 
   it('…and every `ag:` callback the door’s source writes names a letter the parser knows', () => {
@@ -241,6 +249,11 @@ describe('every button an agent card DRAWS is one the parser takes (spec SPEC-P1
     const letters = [...door.matchAll(/callback_data: `ag:([a-z]):/gu)].map((m) => m[1]!);
     expect(letters.length, 're-anchor: the door’s own buttons').toBeGreaterThan(3);
     for (const op of letters) expect(AGENT_OPS as readonly string[], op).toContain(op);
+    // …and the lessons service's, which draws its own three.
+    const lessons = strip(readFileSync('src/modules/wms/agent/lessons.ts', 'utf8'));
+    const taught = [...lessons.matchAll(/callback_data: `ag:([a-z]):/gu)].map((m) => m[1]!);
+    expect(taught.sort(), 're-anchor: the lessons’ own buttons').toEqual(['l', 'v', 'y']);
+    for (const op of taught) expect(AGENT_OPS as readonly string[], op).toContain(op);
   });
 });
 

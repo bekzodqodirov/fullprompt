@@ -34,7 +34,7 @@ import { __resetTelegramPause, sendPendingTelegram } from '@/modules/platform/no
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
-import { AUTO_BAD_DISARMED_TOAST, AUTO_BAD_TOAST, AUTO_STOPPED_TOAST, agentCommand, agentPress, autoStatusLine } from '@/modules/wms/agent/bot-door';
+import { AUTO_BAD_DISARMED_TOAST, AUTO_BAD_TOAST, AUTO_BAD_WHY, AUTO_STOPPED_TOAST, agentCommand, agentPress, autoStatusLine } from '@/modules/wms/agent/bot-door';
 import {
   AUTO_RECLAIM_MS,
   autoFeedback,
@@ -796,8 +796,10 @@ describe('the record and the purge', () => {
   it('a purged chat’s card of a reply the machine pressed offers nothing — no ❌, no 🙋, no 👎 (fix pass A)', async () => {
     const d = await drafted();
     expect(await pressDueAutos(DUE)).toBe(1);
-    expect(keys(await payloadOf(d.id))).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi']]);
+    // DELIBERATE EDIT (spec SPEC-P1-v2 §3.1): the machine's words carry «📝 Tuzatish» — and the purge takes it too.
+    expect(keys(await payloadOf(d.id))).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi'], ['📝 Tuzatish']]);
     await purgeAgentChat(ownerId, PEER);
+    expect(await payloadOf(d.id)).toMatchObject({ teach: false });
     expect(buttonsFor('AgentDraft', await payloadOf(d.id))).toBeNull();
   });
 
@@ -828,7 +830,9 @@ describe('the card he reads and presses (stage 2: the words, the payload, the ke
     expect(p.autoAt).toBe(new Date(T0.getTime() + HOLD_MS).toISOString());
     expect(p).toMatchObject({ live: true, blocked: false, autoSent: false, autoBad: false });
     expect(String(p.text)).toMatch(/⏱ \d\d:\d\d da o‘zi ketadi — to‘xtatish uchun ⏸ bosing\./u);
-    expect(keys(p)).toEqual([['⏸ To‘xtat', '✅ Hozir yubor'], ['✏️ O‘zgartirish'], ['❌ Kerak emas', '🙋 Suhbat meniki']]);
+    // DELIBERATE EDIT (§3.1): «📝 Tuzatish» on its own row, on every card whose words are the machine's.
+    expect(p).toMatchObject({ teach: true });
+    expect(keys(p)).toEqual([['⏸ To‘xtat', '✅ Hozir yubor'], ['✏️ O‘zgartirish'], ['📝 Tuzatish'], ['❌ Kerak emas', '🙋 Suhbat meniki']]);
   });
 
   it('an ineligible reply’s card is today’s card — no timer, no ⏸', async () => {
@@ -867,12 +871,21 @@ describe('the card he reads and presses (stage 2: the words, the payload, the ke
     await refreshAgentCard(d.id);
     p = await payloadOf(d.id);
     expect(String(p.text)).toContain('🤖 O‘zi yuborildi (AI). ✅ Yuborildi');
-    expect(keys(p)).toEqual([['👎 Xato edi']]);
-    expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: AUTO_BAD_TOAST });
+    // DELIBERATE EDIT (§3.1, §3.5): a sent card keeps «📝 Tuzatish»; 👎's answer is a message that offers to say
+    // WHY («📝 Sababini yozish», the same `ag:l`) — and arms nothing by itself.
+    expect(keys(p)).toEqual([['👎 Xato edi'], ['📝 Tuzatish']]);
+    const bad = await agentPress(ownerId, 'f', d.id, undefined);
+    expect(bad).toEqual({
+      toast: AUTO_BAD_TOAST,
+      reply: `${AUTO_BAD_TOAST}.\n${AUTO_BAD_WHY}`,
+      buttons: [[{ text: '📝 Sababini yozish', callback_data: `ag:l:${d.id}` }]],
+    });
+    expect(bad.arm).toBeUndefined();
     p = await payloadOf(d.id);
     expect(p).toMatchObject({ autoSent: true, autoBad: true });
     expect(String(p.text)).toContain('👎 Xato deb belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi.');
-    expect(buttonsFor('AgentDraft', p)).toBeNull();
+    // 👎 once, then no 👎 — the lesson stays.
+    expect(keys(p)).toEqual([['📝 Tuzatish']]);
     expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: 'Allaqachon belgilangan.' });
   });
 
@@ -880,8 +893,9 @@ describe('the card he reads and presses (stage 2: the words, the payload, the ke
     const a = await drafted();
     const b = await drafted({ peer: PEER2 });
     expect(await pressDueAutos(DUE)).toBe(2);
-    expect(await agentPress(ownerId, 'f', a.id, undefined)).toEqual({ toast: AUTO_BAD_TOAST });
-    expect(await agentPress(ownerId, 'f', b.id, undefined)).toEqual({ toast: AUTO_BAD_DISARMED_TOAST });
+    // DELIBERATE EDIT (§3.5): the toast is the answer this test pins; the message under it offers «📝 Sababini yozish».
+    expect(await agentPress(ownerId, 'f', a.id, undefined)).toMatchObject({ toast: AUTO_BAD_TOAST });
+    expect(await agentPress(ownerId, 'f', b.id, undefined)).toMatchObject({ toast: AUTO_BAD_DISARMED_TOAST });
   });
 
   it('refused at the press: the card says why in words and is his again', async () => {
@@ -1215,16 +1229,18 @@ describe('fix pass A — a person after the machine pressed (C3)', () => {
     const d = await drafted();
     expect(await pressDueAutos(DUE)).toBe(1);
     const p = await payloadOf(d.id);
-    expect(keys(p)).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi']]);
+    // DELIBERATE EDIT (§3.1): «📝 Tuzatish» (`ag:l`) rides every card whose words are the machine's.
+    expect(keys(p)).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi'], ['📝 Tuzatish']]);
     expect((buttonsFor('AgentDraft', p) ?? []).flat().map((b) => ('callback_data' in b ? b.callback_data : ''))).toEqual([
       `ag:r:${d.id}`,
       `ag:h:${d.id}`,
       `ag:f:${d.id}`,
+      `ag:l:${d.id}`,
     ]);
     await db.update(agentOutbox).set({ status: 'sent', sentAt: new Date() }).where(eq(agentOutbox.draftId, d.id));
     const { refreshAgentCard } = await import('@/modules/wms/agent/card-io');
     await refreshAgentCard(d.id);
-    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi']]);
+    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi'], ['📝 Tuzatish']]);
   });
 
   it('after a PERSON’s own ✅, ❌ and 🙋 still answer «faol emas» — the human path is today’s', async () => {
@@ -1479,10 +1495,11 @@ describe('fix pass B — what he sees and presses (C1 C6 C7 C9 C10)', () => {
     await db.update(agentOutbox).set({ status: 'sent', sentAt: new Date() }).where(eq(agentOutbox.draftId, d.id));
     const { refreshAgentCard } = await import('@/modules/wms/agent/card-io');
     await refreshAgentCard(d.id);
-    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi']]);
+    // DELIBERATE EDIT (§3.1): the sent card's «📝 Tuzatish» — gone with the purge, like 👎.
+    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi'], ['📝 Tuzatish']]);
     await purgeAgentChat(ownerId, PEER);
     const p = await payloadOf(d.id);
-    expect(p).toMatchObject({ live: false, autoSent: false, autoBad: false, autoAt: null });
+    expect(p).toMatchObject({ live: false, autoSent: false, autoBad: false, autoAt: null, teach: false });
     expect(buttonsFor('AgentDraft', p)).toBeNull();
     // A keyboard Telegram did not take back (the edit failed): its press says what is true.
     expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: 'Bu javob topilmadi.' });

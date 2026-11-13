@@ -1,4 +1,5 @@
 import type { CalcFacts, CalcSection } from '../calc/intake';
+import type { LessonSetMark } from './lesson-rules';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
 
@@ -77,6 +78,19 @@ export interface DraftPolicyJson {
    * the personal bits his answer named (`owner_personal`) and the line the question answered (`answer_stale`).
    */
   fromAnswer?: AnswerMark;
+  /**
+   * A confirmed lesson is rewriting this reply («📝 Tuzatish» on a card still waiting for his ✅, spec SPEC-P1-v2
+   * §3.4): the mark the rewrite must find to supersede it, and the moment it was queued (ISO) — the sweep hands a
+   * rewrite that never came back in words. A newer lesson on the same card writes its own over it.
+   */
+  lessonRedraft?: { lessonId: string; at: string };
+  /** This draft is the AI's rewrite of `draftId` after his lesson (§3.4) — its card says so while the words are the machine's. */
+  fromLesson?: { lessonId: string; draftId: string };
+  /**
+   * The lessons the run that wrote this draft read (§3.7): a digest of the set and its newest lesson, so the rate
+   * before and after a lesson can be read off the drafts. Absent = the run read none.
+   */
+  lessons?: LessonSetMark;
 }
 
 export type ForcedQuestion = 'rail' | 'avia';

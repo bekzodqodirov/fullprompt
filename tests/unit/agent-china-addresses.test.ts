@@ -747,7 +747,7 @@ describe('the road is what we quoted, whatever the words name — the third revi
 describe('written down for the model', () => {
   it('the prompt gives the warehouse address as the fact has it, and never a flight\'s', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] });
     expect(head).toMatch(/bilimdagidek, xitoycha qismini o'zgartirmay va tarjima qilmay, GS kod eslatmasi bilan/u);
     expect(head).toMatch(/avia manzilini HECH QACHON aytma/u);
     expect(head).toContain('owner_question="Avia: <tovar>, <kg> kg, <qayerdan> — manzilni bering"');
@@ -760,7 +760,7 @@ describe('written down for the model', () => {
   it('nothing claims avia cargo is not received in China — he said only that he gives its address (review D7)', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
     const { readFileSync } = await import('node:fs');
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] });
     const tool = readFileSync('src/modules/wms/agent/tools.ts', 'utf8');
     for (const text of [head, tool, answer('china_points@4')]) {
       expect(text).not.toMatch(/YUBORILMAYDI|yuborilmaydi —|manzillar EMAS/u);

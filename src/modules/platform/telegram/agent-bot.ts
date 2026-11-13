@@ -17,7 +17,7 @@ import { armWait, dropWait, flushWaitWrites, nowSec, readWait, waitVerdict, type
  * and sits in the text ladder's ONE agent slot (review regression-6).
  */
 
-const AGENT_WAITS = ['agent_edit', 'agent_price', 'agent_code', 'agent_answer'] as const satisfies readonly WaitKind[];
+const AGENT_WAITS = ['agent_edit', 'agent_price', 'agent_code', 'agent_answer', 'agent_lesson'] as const satisfies readonly WaitKind[];
 type AgentWait = (typeof AGENT_WAITS)[number];
 
 /** A one-text wait lasts half an hour — long enough to think, short enough not to swallow tomorrow's text. */
@@ -50,8 +50,12 @@ function taskWaitWords(chatId: bigint): string | null {
   return task.kind === 'reply' ? BUSY_REPLY : BUSY_TASK;
 }
 
-/** One of the agent's waits is on the screen (✏️ his text, 💵 his price, 👤 a stranger's code, ✍️ his answer to its question). */
-const BUSY_AGENT = 'Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx, mijoz kodi yoki savolga javob) — keyin qayta bosing.';
+/**
+ * One of the agent's waits is on the screen (✏️ his text, 💵 his price, 👤 a stranger's code, ✍️ his answer to its
+ * question, 📝 his lesson).
+ */
+const BUSY_AGENT =
+  'Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx, mijoz kodi, savolga javob yoki tuzatish) — keyin qayta bosing.';
 
 /** What each agent wait was waiting for — said when a new one closes it (spec SPEC-P1-v2 §2.2: one at a time, in words). */
 const WAIT_NAMES: Record<AgentWait, string> = {
@@ -59,6 +63,7 @@ const WAIT_NAMES: Record<AgentWait, string> = {
   agent_price: '💵 narx',
   agent_code: '👤 mijoz kodi',
   agent_answer: '✍️ savolga javob',
+  agent_lesson: '📝 tuzatish',
 };
 
 /**
@@ -99,6 +104,9 @@ function taskArmedSince(task: { armedAt: number; expiresAt: number }, agent: { p
   return task.expiresAt > Number(seen);
 }
 
+/** The presses that ARM a one-text wait — each refused while another question holds the chat (`busy`). */
+const ARMING_OPS: ReadonlySet<string> = new Set(['e', 'p', 'k', 'j', 'l']);
+
 /** One agent press: decided on the server, answered in words. */
 export async function handleAgentPress(
   ctx: Context,
@@ -112,7 +120,9 @@ export async function handleAgentPress(
   }
   // A press that ARMS a text wait must not compete with a live collector:
   // his next text would be filed by whichever reads first.
-  const occupied = parsed.op === 'e' || parsed.op === 'p' || parsed.op === 'k' || parsed.op === 'j' ? busy(chatId) : null;
+  // 📝 (`l`) too — on a card and under 👎's answer alike (spec SPEC-P1-v2 §3.1, §3.5): its next text is a RULE for
+  // every chat's prompt, the last thing a collector's material or a task's result may be filed as.
+  const occupied = ARMING_OPS.has(parsed.op) ? busy(chatId) : null;
   if (occupied) {
     await answerPress(ctx, occupied);
     await ctx.reply(occupied);
@@ -162,13 +172,19 @@ export async function handleAgentPress(
       }
     }
     await answerPress(ctx, out.toast);
+    // The message pressed has nothing left to press (a lesson's echo, saved or dropped): its buttons go. Best
+    // effort — a second press is refused by the lesson's own compare-and-set all the same.
+    if (out.closeButtons) {
+      await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }).catch((err: unknown) => logger.warn({ err }, '[agent] buttons not closed'));
+    }
     const prompt = out.reply
       ? await ctx.reply(out.reply, out.buttons ? { reply_markup: { inline_keyboard: out.buttons } } : undefined)
       : null;
     // The ✏️ he armed for this draft is over, and his next text goes elsewhere — said where it stays.
     if (closed && !prompt) await ctx.reply(closed);
-    // One agent wait at a time, closed in WORDS where a ✍️ is concerned (§2.2): his next text answers the new one.
-    if (out.arm && replaced.length > 0 && (out.arm.kind === 'agent_answer' || replaced.includes('agent_answer'))) {
+    // One agent wait at a time, closed in WORDS where a ✍️ or a 📝 is concerned (§2.2, §3.1): his next text answers
+    // the new one — and a text meant for the customer must never land as a lesson, nor a lesson as the reply.
+    if (out.arm && replaced.length > 0 && [out.arm.kind, ...replaced].some((k) => k === 'agent_answer' || k === 'agent_lesson')) {
       await ctx.reply(`↩️ Oldingi kutish yopildi (${replaced.map((k) => WAIT_NAMES[k]).join(', ')}) — endi yozganingiz shu yangi so‘rovga boradi.`);
     }
     // The draft's text on its own (✏️, C4), after the prompt: copied, changed and sent back —
@@ -259,9 +275,14 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
   let target: { kind: AgentWait; payload: Record<string, string> } | null = null;
   if (msg.replyToMessageId !== null) {
     // A reply's target is the message it names — the agent prompt's too, newer task wait or not. A swipe-reply to
-    // a draft's CARD is his verbatim ✏️ text, unless ✍️ is armed for that very draft (spec SPEC-P1-v2 §2.2).
-    const answerFor = waited?.kind === 'agent_answer' ? (waited.payload.draftId ?? null) : null;
-    target = await agentCardFor(staff.id, chatId, msg.replyToMessageId, answerFor);
+    // a draft's CARD is his verbatim ✏️ text, unless ✍️ — or 📝 — is armed for that very draft (spec SPEC-P1-v2
+    // §2.2, §3.1): then it is the answer, or the lesson, the press asked for. A lesson filed as the customer's
+    // reply would sit on the card one ✅ away from the customer.
+    const armedFor =
+      (waited?.kind === 'agent_answer' || waited?.kind === 'agent_lesson') && waited.payload.draftId
+        ? { kind: waited.kind, draftId: waited.payload.draftId }
+        : null;
+    target = await agentCardFor(staff.id, chatId, msg.replyToMessageId, armedFor);
     // A reply to a stranger or echo card is a CODE only while that rule's
     // code wait is armed (he pressed «👤 Mijoz — kod»): a reply alone opens no echo.
     if (target?.kind === 'agent_code' && !(waited?.kind === 'agent_code' && waited.payload.ruleId === target.payload.ruleId)) {
@@ -295,6 +316,18 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
     if (live && answerTextRefusal(msg.text) !== null) {
       await markOnce(await messageKey(ctx, 'wait'));
       await ctx.reply(ANSWER_CONTACT_WORDS);
+      return true;
+    }
+  }
+  // A lesson the writer would refuse — money, a customer's name, code or phone, too long (§3.2) — is refused in words
+  // BEFORE the wait is consumed, like an answer's phone: his next text is still the lesson. No «still live» check:
+  // a lesson teaches whatever became of the card it was given on.
+  if (target.kind === 'agent_lesson') {
+    const { lessonRefusalFor } = await import('../../wms/agent/bot-door');
+    const refused = await lessonRefusalFor(staff.id, target.payload.draftId, msg.text);
+    if (refused !== null) {
+      await markOnce(await messageKey(ctx, 'wait'));
+      await ctx.reply(refused);
       return true;
     }
   }

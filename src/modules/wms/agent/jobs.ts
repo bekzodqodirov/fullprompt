@@ -125,10 +125,15 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
   await boss.createQueue(JOB_AGENT_OWNER_ANSWER);
   await boss.work<AgentOwnerAnswerJob>(JOB_AGENT_OWNER_ANSWER, async (jobs) => {
     const { handleOwnerAnswer } = await import('./owner-answer-job');
+    const { handleLessonRedraft } = await import('./lesson-job');
     for (const job of jobs) {
       try {
-        const out = await handleOwnerAnswer(job.data);
-        logger.info({ peer: job.data.peerId, draftId: job.data.draftId, ...(out ?? { outcome: 'none' }) }, '[agent] owner answer');
+        // «Through the same queued job» (spec SPEC-P1-v2 §3.4): a job that names a lesson is the lesson's rewrite.
+        const out = job.data.lessonId ? await handleLessonRedraft(job.data) : await handleOwnerAnswer(job.data);
+        logger.info(
+          { peer: job.data.peerId, draftId: job.data.draftId, ...(job.data.lessonId ? { lessonId: job.data.lessonId } : {}), ...(out ?? { outcome: 'none' }) },
+          job.data.lessonId ? '[agent] lesson rewrite' : '[agent] owner answer',
+        );
       } catch (err) {
         // Sent with retryLimit 0, like the hand-back: a second delivery is a second model bill. A job that died
         // with the answer is the sweep's to hand back, in words (step 2c).
@@ -362,6 +367,16 @@ export async function agentSweep(
     await releaseForgottenAnswers(now);
   } catch (err) {
     logger.error({ err }, '[agent] forgotten answers not handed back');
+  }
+
+  // 2d. «📝 Tuzatish» (§3.4): a lesson's rewrite that never came — its worker died, or its job never queued. The
+  //     mark comes off the card (or it would say «AI qayta yozmoqda» until the 24-hour expiry) and he is told; the
+  //     lesson itself is kept. Its own catch too.
+  try {
+    const { releaseStaleLessonRedrafts } = await import('./lessons');
+    await releaseStaleLessonRedrafts(now);
+  } catch (err) {
+    logger.error({ err }, '[agent] stale lesson rewrites not handed back');
   }
 
   // 2b. A run the process died inside (final review K24): `reserve` writes the

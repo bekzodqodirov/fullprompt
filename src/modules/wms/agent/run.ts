@@ -13,6 +13,8 @@ import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } fro
 import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
 import { generalFacts, kbSearch, type KbHit } from './kb';
+import type { PromptLesson } from './lesson-rules';
+import { promptLessons } from './lessons';
 import { AGENT_LIMITS } from './limits';
 import { detectLocale, dominantScript, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
@@ -198,6 +200,11 @@ export async function runLoop(input: {
   instruction?: string;
   /** His price act (spec §1.2, `priceActArmed`), read ONCE for the run — the head and the avia tool say the same. */
   priceArmed: boolean;
+  /**
+   * His lessons (spec §3.3, lessons `promptLessons`), read ONCE for the run beside the general facts: every round's
+   * head is then the same bytes — an edit on the page mid-run cannot move the cache between two rounds.
+   */
+  lessons: readonly PromptLesson[];
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
@@ -230,6 +237,7 @@ export async function runLoop(input: {
         styleGuide: input.config.styleApprovedAt ? input.config.styleGuide : null,
         facts: input.facts,
         priceArmed: input.priceArmed,
+        lessons: input.lessons,
       }),
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
@@ -481,11 +489,13 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   let settle: Partial<typeof agentRuns.$inferInsert> = { outcome: 'error', error: 'unknown' };
   try {
     const facts = await generalFacts();
+    // His lessons, read once beside the facts (§3.3): the head is the same bytes in every round of this run.
+    const taught = await promptLessons();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
     const day = tashkentDay(t);
     // His price act, read once: the head, the avia tool and the avia rule below agree for the whole run (§1.2).
     const act = { priceArmed: await priceActArmed() };
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed });
+    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, lessons: taught.lessons });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -519,7 +529,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
     if (late) notes.unshift(late);
 
-    const input = { runId, ctx, compose: c, policy, memory, actions, notes };
+    const input = { runId, ctx, compose: c, policy, memory, actions, notes, lessonSet: taught.mark };
     // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
@@ -1247,6 +1257,13 @@ export async function runOwnerTriggered(
     sourceKey: string;
     instruction: string;
     answer?: OwnerAnswerInput | null;
+    /**
+     * His confirmed lesson rewriting a reply still waiting for his ✅ («📝 Tuzatish», spec §3.4): the draft the
+     * rewrite supersedes — inside its own transaction, and only while that draft still carries this lesson's mark.
+     * The lesson is the INSTRUCTION, never a source, and the rewrite carries NO «o'zi yuborish» plan: a reply he has
+     * just judged wrong comes back as an ordinary card.
+     */
+    lesson?: { draftId: string; lessonId: string } | null;
   },
   deps: RunDeps = {},
 ): Promise<RunResult> {
@@ -1318,9 +1335,22 @@ export async function runOwnerTriggered(
   let settle: Partial<typeof agentRuns.$inferInsert> = { outcome: 'error', error: 'unknown' };
   try {
     const facts = await generalFacts();
+    // Read AFTER the lesson was confirmed: the rewrite's own head already carries it (§3.3, §3.4).
+    const taught = await promptLessons();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
     const act = { priceArmed: await priceActArmed() };
-    const loop = await runLoop({ ctx, config, facts, day: tashkentDay(t), canary, callModel, now, instruction: input.instruction, priceArmed: act.priceArmed });
+    const loop = await runLoop({
+      ctx,
+      config,
+      facts,
+      day: tashkentDay(t),
+      canary,
+      callModel,
+      now,
+      instruction: input.instruction,
+      priceArmed: act.priceArmed,
+      lessons: taught.lessons,
+    });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -1357,13 +1387,28 @@ export async function runOwnerTriggered(
           }),
         }
       : null;
-    const draftInput = { runId, ctx, compose: c, policy, memory, actions, notes, kind: input.trigger === 'hand_back' ? ('hand_back' as const) : ('reply' as const), fromAnswer };
-    // His answer's redraft alone carries a plan (§2.2) — judged on the very row about to be written, as the inbound run's.
+    const lesson = input.lesson ?? null;
+    const draftInput = {
+      runId,
+      ctx,
+      compose: c,
+      policy,
+      memory,
+      actions,
+      notes,
+      kind: input.trigger === 'hand_back' ? ('hand_back' as const) : ('reply' as const),
+      fromAnswer,
+      fromLesson: lesson,
+      lessonSet: taught.mark,
+    };
+    // His answer's redraft alone carries a plan (§2.2) — judged on the very row about to be written, as the inbound
+    // run's. A lesson's rewrite carries none (§3.4), and neither does a hand-back's question.
     const autoPlan = answer ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
     const written = await writeDraft({
       ...draftInput,
       autoPlan,
       answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
+      redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
     });
     const stood = written.kind === 'editing' ? 'editing' : written.kind === 'question_gone' ? 'question_gone' : null;
     settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };

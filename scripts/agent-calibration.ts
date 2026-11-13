@@ -54,6 +54,7 @@ async function main(): Promise<number> {
     money: boolean;
     actions: string[] | null;
     auto_sent: boolean;
+    owner_triggered: boolean;
   }>(sql`
     SELECT d.status, d.kind, d.final_body IS NOT NULL AS edited, o.status AS outbox_status, d.category,
            d.confidence::float8 AS confidence, d.blocked, d.needs_owner,
@@ -63,9 +64,13 @@ async function main(): Promise<number> {
                      WHERE e->>'kind' = 'money')
             OR coalesce(d.policy->'memory'->>'hasEstimate', 'false') = 'true') AS money,
            (SELECT array_agg(a->>'type') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.actions) = 'array' THEN d.actions ELSE '[]'::jsonb END) a) AS actions,
-           ${autoSent} AS auto_sent
+           ${autoSent} AS auto_sent,
+           -- A draft an owner-started run wrote (his ✍️ answer's reply, his lesson's rewrite, a hand-back) is
+           -- approved unchanged almost by construction: counted apart, never graded (spec SPEC-P1-v2 §3.7).
+           coalesce(r.trigger, 'inbound') <> 'inbound' AS owner_triggered
       FROM agent_drafts d
       LEFT JOIN agent_outbox o ON o.draft_id = d.id
+      LEFT JOIN agent_runs r ON r.id = d.run_id
      WHERE d.created_at >= ${since}::timestamptz`);
   const data: CalibrationDraftRow[] = rows.map((r) => ({
     status: r.status,
@@ -81,9 +86,13 @@ async function main(): Promise<number> {
     money: r.money === true,
     actions: (r.actions ?? []).filter((a): a is string => typeof a === 'string'),
     autoSent: r.auto_sent === true,
+    ownerTriggered: r.owner_triggered === true,
   }));
 
-  console.log(`drafts in the last ${days} days: ${data.length} (sent by «o'zi yuborish», never graded: ${data.filter((r) => r.autoSent).length})\n`);
+  console.log(
+    `drafts in the last ${days} days: ${data.length} (sent by «o'zi yuborish», never graded: ${data.filter((r) => r.autoSent).length}; ` +
+      `written to his own answer or lesson, never graded: ${data.filter((r) => !r.autoSent && r.ownerTriggered).length})\n`,
+  );
   console.log('category       confidence  clean  decided  unchanged    rate   lower95');
   for (const c of calibrationCells(data)) {
     console.log(

@@ -6,12 +6,13 @@ import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../.
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
 import { autoPayload } from './auto-card';
 import { countdownMayRide, recordAutoVerdictInTx, settleSupersededAuto, type AutoPlan } from './auto-send';
-import { cardAsks, cardDrawsSend, cardExtra } from './card';
+import { cardAsks, cardDrawsSend, cardExtra, cardTeaches } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
 import { bindMoved, chatIdentity, type AgentContext } from './context';
 import { estimatesStand } from './estimate-check';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
+import type { LessonSetMark } from './lesson-rules';
 import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson } from './types';
 
 export type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
@@ -64,7 +65,10 @@ async function cardRowFor(tx: Tx, draftId: string) {
 export type WriteDraftResult =
   | { kind: 'written'; draftId: string; retargeted: boolean }
   | { kind: 'editing'; draftId: string }
-  /** The question his ✍️ answer was for is no longer waiting for it (`answersDraftId`) — nothing was written. */
+  /**
+   * The draft this one was to replace is no longer waiting for it — the question his ✍️ answer was for (`answers`),
+   * or the reply his lesson was rewriting (`redrafts`): nothing was written.
+   */
   | { kind: 'question_gone'; draftId: string };
 
 /** Everything a new draft row carries — the machine's reply, a price, a hand-back question. */
@@ -106,6 +110,14 @@ export interface NewDraft {
    * gets a card of its own, a push: never a silent edit of the question far up the chat.
    */
   answers?: { draftId: string; messageId: number; decidedBy: string } | null;
+  /**
+   * His lesson's rewrite («📝 Tuzatish» on a card still waiting, spec §3.4): the reply it replaces. Inside this
+   * transaction THAT draft — and only while it is still the machine's words waiting for his ✅ and still carries
+   * this very lesson's mark (`policy.lessonRedraft`) — is superseded as decided by him (`decided_by`, `decided_at`,
+   * `stale: 'owner_lesson'`); anything else (his ✅, ✏️, ❌ or 🙋, a newer customer line, a newer lesson) and nothing
+   * is written (`question_gone`). The rewrite gets a card of its own, a push, and the old card is closed in words.
+   */
+  redrafts?: { draftId: string; lessonId: string; decidedBy: string } | null;
 }
 
 const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
@@ -164,6 +176,36 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
         .where(eq(agentDrafts.id, q.id));
       superseded = q.id;
       closeOld = true;
+    } else if (n.redrafts) {
+      const [q] = await tx
+        .select({ id: agentDrafts.id })
+        .from(agentDrafts)
+        .where(
+          and(
+            eq(agentDrafts.id, n.redrafts.draftId),
+            eq(agentDrafts.managerUserId, n.managerUserId),
+            eq(agentDrafts.peerId, n.peerId),
+            eq(agentDrafts.status, 'pending'),
+            // Still the machine's words: his ✏️ text since is his own, and is never rewritten under him.
+            isNull(agentDrafts.finalBody),
+            sql`${agentDrafts.policy}->'lessonRedraft'->>'lessonId' = ${n.redrafts.lessonId}`,
+          ),
+        )
+        .for('update');
+      if (!q || live?.id !== q.id) return { kind: 'question_gone', draftId: n.redrafts.draftId };
+      const at = new Date();
+      await tx
+        .update(agentDrafts)
+        .set({
+          status: 'superseded',
+          decidedBy: n.redrafts.decidedBy,
+          decidedAt: at,
+          updatedAt: at,
+          policy: sql`(coalesce(${agentDrafts.policy}, '{}'::jsonb) - 'lessonRedraft') || ${JSON.stringify({ stale: 'owner_lesson' })}::jsonb`,
+        })
+        .where(eq(agentDrafts.id, q.id));
+      superseded = q.id;
+      closeOld = true;
     } else if (live?.status === 'editing') {
       return { kind: 'editing', draftId: live.id };
     } else if (live) {
@@ -214,9 +256,12 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       auto: autoPayload(auto, row, sendable),
       // A question the model raised (spec §2.2) offers «✍️ Savolga javob».
       ask: cardAsks(row),
+      // The machine's words offer «📝 Tuzatish» (§3.1) — never a 💵 price, which is his own figure.
+      teach: cardTeaches(row),
     });
-    // His answer's redraft never rides the question's card (§2.2): a push of its own, the question closed after.
-    const old = live && !n.answers ? await cardRowFor(tx, live.id) : null;
+    // His answer's redraft never rides the question's card (§2.2), nor his lesson's rewrite the card it replaces
+    // (§3.4): a push of its own, the old card closed after.
+    const old = live && !n.answers && !n.redrafts ? await cardRowFor(tx, live.id) : null;
     // A reply that counts down rides only a copy that rang within one hold (the final check, auto-send
     // `countdownMayRide`; a copy sent silently in the night never rang — the second check): an edit rings
     // nothing, so on an older copy it gets a card of its own — a push — and the old copy is closed after the
@@ -243,7 +288,8 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     }
     await kickTelegramDrain();
     // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`) — or, for
-    // the question his ✍️ answer was for, «✍️ Javobingiz olindi — AI qayta yozdi» (STALE_WORDS `owner_answered`).
+    // the question his ✍️ answer was for, «✍️ Javobingiz olindi — AI qayta yozdi» (STALE_WORDS `owner_answered`), and
+    // for the reply his lesson rewrote, «📝 Saboq bo‘yicha AI qayta yozdi» (`owner_lesson`).
     if (closeOld && superseded) {
       const { refreshAgentCard } = await import('./card-io');
       await refreshAgentCard(superseded).catch((err: unknown) => logger.warn({ err }, '[agent] old card not closed'));
@@ -268,6 +314,10 @@ export interface RunDraftInput {
   kind?: 'reply' | 'hand_back';
   /** His ✍️ answer behind this redraft (spec §2.2) — kept on its policy for the auto layer (`owner_personal`, `answer_stale`). */
   fromAnswer?: AnswerMark | null;
+  /** His lesson behind this rewrite (§3.4) — its card says so. */
+  fromLesson?: { lessonId: string; draftId: string } | null;
+  /** The lessons this run read (§3.7, lessons `promptLessons`) — null when it read none. */
+  lessonSet?: LessonSetMark | null;
 }
 
 /**
@@ -303,6 +353,8 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
       ...(compose.forcedQuestion ? { forcedQuestion: compose.forcedQuestion } : {}),
       ...(input.fromAnswer ? { fromAnswer: input.fromAnswer } : {}),
+      ...(input.fromLesson ? { fromLesson: input.fromLesson } : {}),
+      ...(input.lessonSet ? { lessons: input.lessonSet } : {}),
     },
     blocked: !policy.ok,
     needsOwner: compose.needsOwner,
@@ -325,9 +377,11 @@ export async function writeDraft(
     autoPlan?: AutoPlan | null;
     /** His ✍️ answer's redraft: the question it answers (`NewDraft.answers`). */
     answers?: NewDraft['answers'];
+    /** His lesson's rewrite: the reply it replaces (`NewDraft.redrafts`). */
+    redrafts?: NewDraft['redrafts'];
   },
 ): Promise<WriteDraftResult> {
-  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null, answers: input.answers ?? null });
+  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null, answers: input.answers ?? null, redrafts: input.redrafts ?? null });
 }
 
 export { cardMemory };

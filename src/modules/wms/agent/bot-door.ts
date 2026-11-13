@@ -27,6 +27,20 @@ import { autoDisarmWords } from './auto-card';
 import { chatProof } from './context';
 import { answerQuestion, decideDraft, releaseAnswering, storeOwnerAnswer, submitOwnText, type AnswerRefusal, type DecideRefusal, type SupersededDetail } from './decide';
 import { ANSWER_CONTACT_WORDS } from './owner-answer';
+import {
+  LESSON_WORDS,
+  cancelLesson,
+  confirmLesson,
+  lessonEchoRow,
+  lessonEchoText,
+  lessonFromBot,
+  lessonPrompt,
+  lessonRefusalWords,
+  lessonSavedWords,
+  lessonTextRefusal,
+  lessonWhyRow,
+  openLesson,
+} from './lessons';
 import { KbError, carriesMoney, moneyIn, personalBitsWithBook, writeKbFact, type KbRefusal } from './kb';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { extractNumbers } from './numbers';
@@ -52,7 +66,7 @@ import type { ComposedAction, DraftPolicyJson } from './types';
  * compiled, and its press answered nothing.
  */
 export type AgentOp = BotAgentOp;
-export type AgentWaitKind = 'agent_edit' | 'agent_price' | 'agent_code' | 'agent_answer';
+export type AgentWaitKind = 'agent_edit' | 'agent_price' | 'agent_code' | 'agent_answer' | 'agent_lesson';
 
 export interface PressAnswer {
   toast: string;
@@ -88,6 +102,11 @@ export interface PressAnswer {
    * where the chat's purge blanks it like the card (review leak-9).
    */
   quotes?: { draftId: string; parts: ('reply' | 'followUp')[] };
+  /**
+   * The message this press was on has nothing left to press — a lesson's echo once it is saved or dropped (spec
+   * SPEC-P1-v2 §3.2): the shell takes its buttons away. It is a plain `ctx.reply`, so no card row redraws it.
+   */
+  closeButtons?: boolean;
 }
 
 /** What his typed text is answered with — words, and a button under them when the words lead to one. */
@@ -305,7 +324,11 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
       // disarm it (its alarm comes to him and every super_admin as a message of its own).
       const r = await autoFeedback(staffId, id);
       if (!r.ok) return { toast: AUTO_FEEDBACK_WORDS[r.code].slice(0, 190) };
-      return r.disarmed ? { toast: AUTO_BAD_DISARMED_TOAST } : { toast: AUTO_BAD_TOAST };
+      // 👎 arms NOTHING (spec SPEC-P1-v2 §3.5): a text wait armed here would take his next unrelated text — a
+      // «GS777» lookup, a question for the AI yordamchi — and make it a rule in every prompt. Why it was wrong is
+      // a button of its own, and only its press arms the lesson.
+      const toast = r.disarmed ? AUTO_BAD_DISARMED_TOAST : AUTO_BAD_TOAST;
+      return { toast, reply: `${toast}.\n${AUTO_BAD_WHY}`, buttons: lessonWhyRow(id) };
     }
     case 't':
       return tariffPress(actor, id, digest);
@@ -315,7 +338,47 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
       if (!r.ok) return { toast: ANSWER_WORDS[r.code].slice(0, 190), ...(r.code === 'not_question' ? { reply: ANSWER_WORDS.not_question } : {}) };
       return { toast: '✍️', reply: ANSWER_PROMPT, arm: { kind: 'agent_answer', payload: { draftId: id } } };
     }
+    case 'l': {
+      // «📝 Tuzatish» (§3.1): he says where the AI was wrong — a lesson for every chat, never this customer's words.
+      const r = await openLesson(actor, id, 'bot');
+      if (!r.ok) return { toast: LESSON_WORDS[r.code].slice(0, 190), ...(r.code === 'not_teachable' ? { reply: LESSON_WORDS.not_teachable } : {}) };
+      return { toast: '📝', reply: lessonPrompt(r), arm: { kind: 'agent_lesson', payload: { draftId: id } } };
+    }
+    case 'y': {
+      // «✅ Saqlash» under the echo — the id is the LESSON's, the digest its one-time token.
+      const r = await confirmLesson(actor, id, digest, ctx);
+      if (!r.ok) return { toast: LESSON_WORDS[r.code].slice(0, 190), ...(r.code === 'already' ? { closeButtons: true } : {}) };
+      return { toast: '✅ Saboq saqlandi', reply: lessonSavedWords(r), closeButtons: true };
+    }
+    case 'v': {
+      // «✖ Bekor» under the echo: the unconfirmed lesson is dropped.
+      const r = await cancelLesson(actor, id, ctx);
+      if (!r.ok) return { toast: LESSON_WORDS[r.code].slice(0, 190), ...(r.code === 'confirmed' ? { reply: LESSON_WORDS.confirmed, closeButtons: true } : {}) };
+      return { toast: LESSON_DROPPED_TOAST, closeButtons: true };
+    }
   }
+}
+
+/** «✖ Bekor» under a lesson's echo. */
+export const LESSON_DROPPED_TOAST = '✖ Saboq saqlanmadi';
+
+/** Under 👎's answer (§3.5): the way to say WHY — a button, never a wait armed by the 👎 itself. */
+export const AUTO_BAD_WHY = 'Nima xato bo‘lganini yozsangiz, AI keyingi javoblarda hisobga oladi — «📝 Sababini yozish»ni bosing.';
+
+/**
+ * Would the writer refuse this text as a lesson — in words, or null (spec §3.2)? Asked by the text slot BEFORE it
+ * consumes the wait, so a refused lesson leaves the wait armed and his next text is still the lesson. The draft is
+ * read for its names; the holder's own only.
+ */
+export async function lessonRefusalFor(staffId: string, draftId: string | undefined, text: string): Promise<string | null> {
+  const [d] = draftId
+    ? await db
+        .select({ managerUserId: agentDrafts.managerUserId, peerId: agentDrafts.peerId, clientId: agentDrafts.clientId, leadId: agentDrafts.leadId })
+        .from(agentDrafts)
+        .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.managerUserId, staffId)))
+    : [];
+  const refused = await lessonTextRefusal(text, d ?? null);
+  return refused ? lessonRefusalWords(refused) : null;
 }
 
 /**
@@ -459,6 +522,12 @@ export async function agentText(
     if (!r.ok) return { text: r.code === 'not_live' ? ANSWER_NOT_LIVE : ANSWER_WORDS[r.code] };
     return { text: ANSWER_TAKEN, buttons: answerKbRow(draftId) };
   }
+  if (target.kind === 'agent_lesson') {
+    // His lesson, typed after «📝» (§3.2): stored UNCONFIRMED and echoed — nothing reaches a prompt before «✅ Saqlash».
+    const r = await lessonFromBot(actor, target.payload.draftId!, text, ctx);
+    if (!r.ok) return { text: lessonRefusalWords(r) };
+    return { text: lessonEchoText(r.text), buttons: lessonEchoRow(r.id, r.token) };
+  }
   if (target.kind === 'agent_edit') {
     const draftId = target.payload.draftId!;
     const r = await submitOwnText(actor, draftId, text, ctx);
@@ -526,10 +595,11 @@ export async function agentCardFor(
   chatId: bigint,
   messageId: number,
   /**
-   * The draft a ✍️ wait is armed for (spec §2.2): a swipe-reply to THAT draft's card is his answer. To any other
-   * card — or with no ✍️ armed — it stays his verbatim ✏️ text, as the ✏️ prompt tells him.
+   * The draft a ✍️ wait — or a 📝 wait (§3.1) — is armed for (spec §2.2): a swipe-reply to THAT draft's card is the
+   * answer, or the lesson, the press asked for. To any other card — or with neither armed — it stays his verbatim
+   * ✏️ text, as the ✏️ prompt tells him.
    */
-  answerArmedFor: string | null = null,
+  armedFor: { kind: 'agent_answer' | 'agent_lesson'; draftId: string } | null = null,
 ): Promise<{ kind: AgentWaitKind; payload: Record<string, string> } | null> {
   const [row] = await db
     .select({ type: notifications.type, payload: notifications.payload })
@@ -547,9 +617,11 @@ export async function agentCardFor(
   if (!row) return null;
   const p = row.payload as Record<string, unknown>;
   // A swipe-reply IS an edit: `submitOwnText` takes a pending draft as well as an editing one — unless he pressed
-  // «✍️ Savolga javob» on this very draft: then it is the answer the press asked for.
+  // «✍️ Savolga javob» or «📝 Tuzatish» on this very draft: then it is the answer, or the lesson, the press asked for.
   if (row.type === 'AgentDraft' && typeof p.draftId === 'string') {
-    return p.draftId === answerArmedFor ? { kind: 'agent_answer', payload: { draftId: p.draftId } } : { kind: 'agent_edit', payload: { draftId: p.draftId } };
+    return armedFor && p.draftId === armedFor.draftId
+      ? { kind: armedFor.kind, payload: { draftId: p.draftId } }
+      : { kind: 'agent_edit', payload: { draftId: p.draftId } };
   }
   // A purged answer card (`live: false`) is no door: its link is gone with the chat.
   if (row.type === 'AgentCalcAnswered' && typeof p.requestId === 'string' && p.priceable === true && p.live !== false) {

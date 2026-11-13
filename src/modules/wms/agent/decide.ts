@@ -894,8 +894,9 @@ export async function decideDraft(
           updatedAt: new Date(),
           // ✏️ ends a ✍️ on the same draft (spec SPEC-P1-v2 §2.2): his own words now, never the AI's from his answer —
           // a redraft still on its way finds no `answering` and writes nothing (drafts `createDraft`).
+          // …and a lesson's rewrite still on its way (§3.4) finds no mark either: ✏️ means his own words.
           ...(decision === 'edit'
-            ? { policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) - 'answering'` }
+            ? { policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) - 'answering' - 'lessonRedraft'` }
             : { decidedBy: actor.id, decidedAt: new Date() }),
         })
         .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['pending', 'editing'])))
@@ -1248,6 +1249,8 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
   // mark and writes nothing over them (drafts `createDraft`). The page's ✏️ box writes here without a ✏️ press.
   const kept: Partial<DraftPolicyJson> = { ...p };
   delete kept.answering;
+  // …and a lesson's rewrite of this reply (§3.4): his own words are never rewritten under him.
+  delete kept.lessonRedraft;
   // His words pass the owner subset; the same-text count is only a warning on his card (K3).
   const policy = await ownerPolicyFor(body, p.memory?.ownCodes ?? [], {
     managerUserId: d.managerUserId,

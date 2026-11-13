@@ -11,6 +11,10 @@ import postgres from 'postgres';
  *     the settings and the knowledge fit a 360 px phone;
  *  2. the knowledge: a price is refused in words, a clean fact is added and
  *     retired through the page's own buttons;
+ *  2b. «📝 Tuzatish» (0148, spec SPEC-P1-v2 §3): the owner — a super_admin, not the draft's holder — opens the
+ *     box on the colleague's card, a price is refused in words with his text kept, a rule is saved (it teaches and
+ *     rewrites nothing: the draft is not his to decide), and «Saboqlar» lists it «promptda», takes an edit,
+ *     switches it off and deletes it; a lesson is in EVERY chat's prompt, so the cleanup deletes this run's;
  *  3. the account holder (the demo seller, configured as the agent's owner —
  *     a door that is a fact in agent_config, not a role) is offered the tab,
  *     sees the ✅, is told in words that the agent is off, opens ✏️ (it asks
@@ -34,6 +38,8 @@ const PASSWORD = 'demo1234';
 const runId = String(Date.now()).slice(-6);
 const body = `Sinov javobi ${runId}: yukingiz Toshkentga yetib keldi.`;
 const factAnswer = `Sinov bilimi ${runId}: ofis dushanbadan shanbagacha ishlaydi.`;
+// A rule with no name, code, phone or price in it — a lesson is refused each of those.
+const lessonText = `Salomga avval salom bilan javob ber, keyin bitta savol ber ${runId}.`;
 
 test.describe.configure({ mode: 'serial' });
 
@@ -155,6 +161,65 @@ test('the knowledge: a price is refused in words, a clean fact is added and reti
   await expect(page.getByTestId('agent-fact').filter({ hasText: factAnswer })).toHaveCount(0);
 });
 
+test('«📝 Tuzatish»: the owner teaches on a colleague’s card — a price refused in words, a rule saved; «Saboqlar» lists, edits, switches off and deletes it', async ({ page }) => {
+  await login(page, OWNER);
+  await page.goto('/suhbatlar/ai');
+  const card = page.locator(`[data-testid="agent-draft"][data-draft-id="${draftId}"]`);
+  await card.getByTestId('agent-lesson-open').click();
+  await expect(card.getByTestId('agent-lesson-box')).toBeVisible();
+  await fitsThePhone(page);
+  // A price is no lesson: refused in words, and the refused box keeps what he typed.
+  await card.getByTestId('agent-lesson-text').fill('Avia narxini 17 $ deb ayt');
+  await card.getByTestId('agent-lesson-save').click();
+  await expect(card.getByTestId('agent-error')).toBeVisible();
+  await expect(card.getByTestId('agent-lesson-text')).toHaveValue('Avia narxini 17 $ deb ayt');
+  await fitsThePhone(page);
+  await card.getByTestId('agent-lesson-text').fill(lessonText);
+  await card.getByTestId('agent-lesson-save').click();
+  await expect(card.getByTestId('agent-lesson-box')).toHaveCount(0);
+  // Saved — and said so; the colleague's draft is untouched (a draft is decided by its holder alone).
+  await expect(card.getByTestId('agent-note')).toContainText('Saboq saqlandi');
+  const sql = database();
+  try {
+    const [lesson] = await sql<{ confirmed: boolean; active: boolean; draft_id: string | null }[]>`
+      SELECT confirmed_at IS NOT NULL AS confirmed, active, draft_id FROM agent_lessons WHERE text = ${lessonText}`;
+    expect(lesson).toEqual({ confirmed: true, active: true, draft_id: draftId });
+    const [draft] = await sql<{ status: string; marked: boolean }[]>`
+      SELECT status, coalesce(policy, '{}'::jsonb) ? 'lessonRedraft' AS marked FROM agent_drafts WHERE id = ${draftId}`;
+    expect(draft).toEqual({ status: 'pending', marked: false });
+  } finally {
+    await sql.end();
+  }
+
+  await page.getByTestId('agent-tab-saboqlar').click();
+  await expect(page).toHaveURL('/suhbatlar/ai?bolim=saboqlar');
+  await expect(page.getByTestId('agent-lessons-cap')).toBeVisible();
+  const row = page.getByTestId('agent-lesson').filter({ hasText: lessonText });
+  await expect(row).toHaveCount(1);
+  await expect(row.getByTestId('agent-lesson-state')).toHaveAttribute('data-state', 'in');
+  await fitsThePhone(page);
+
+  // His words corrected: the same refusals as a new one, the refused box keeping what he typed.
+  await row.getByTestId('agent-lesson-edit').click();
+  await row.getByTestId('agent-lesson-edit-text').fill('Narxni 20 dollar deb ayt');
+  await row.getByTestId('agent-lesson-edit-save').click();
+  await expect(row.getByTestId('agent-error')).toBeVisible();
+  await expect(row.getByTestId('agent-lesson-edit-text')).toHaveValue('Narxni 20 dollar deb ayt');
+  await row.getByTestId('agent-lesson-edit-text').fill(`${lessonText} Qisqa yoz.`);
+  await row.getByTestId('agent-lesson-edit-save').click();
+  const edited = page.getByTestId('agent-lesson').filter({ hasText: `${lessonText} Qisqa yoz.` });
+  await expect(edited).toHaveCount(1);
+  await expect(edited.getByTestId('agent-lesson-edit-box')).toHaveCount(0);
+  await fitsThePhone(page);
+
+  // Switched off it stays on the page and leaves the prompt; then it is deleted.
+  await edited.getByTestId('agent-lesson-toggle').click();
+  await expect(edited.getByTestId('agent-lesson-state')).toHaveAttribute('data-state', 'off');
+  page.once('dialog', (dialog) => void dialog.accept());
+  await edited.getByTestId('agent-lesson-delete').click();
+  await expect(page.getByTestId('agent-lesson').filter({ hasText: lessonText })).toHaveCount(0);
+});
+
 test('the account holder is offered the page by its door, gets the ✅, and is told the agent is off', async ({ page }) => {
   await login(page, SELLER);
   await page.goto('/suhbatlar');
@@ -241,6 +306,8 @@ async function restore(): Promise<void> {
       WHERE id = 1`;
     if (draftId) await sql`DELETE FROM agent_drafts WHERE id = ${draftId}`;
     await sql`DELETE FROM kb_facts WHERE answer LIKE ${`%${runId}%`}`;
+    // A lesson is in every chat's prompt — the loudest configuration this spec can leave behind (#183).
+    await sql`DELETE FROM agent_lessons WHERE text LIKE ${`%${runId}%`}`;
     restored = true;
   } finally {
     await sql.end();
@@ -263,7 +330,8 @@ test('cleanup: agent_config is back as it was, and the fixture rows are gone', a
     }
     const [left] = await sql<{ n: number }[]>`
       SELECT (SELECT count(*) FROM agent_drafts WHERE id = ${draftId || '00000000-0000-0000-0000-000000000000'})::int
-           + (SELECT count(*) FROM kb_facts WHERE answer LIKE ${`%${runId}%`})::int AS n`;
+           + (SELECT count(*) FROM kb_facts WHERE answer LIKE ${`%${runId}%`})::int
+           + (SELECT count(*) FROM agent_lessons WHERE text LIKE ${`%${runId}%`})::int AS n`;
     expect(left!.n).toBe(0);
   } finally {
     await sql.end();

@@ -24,9 +24,12 @@ import { enqueue } from '@/modules/platform/jobs/boss';
 import { JOB_AGENT_OWNER_ANSWER } from '@/modules/wms/agent/queues';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  agentAutoChats,
+  agentAutoVerdicts,
   agentConfig,
   agentConversations,
   agentDrafts,
+  agentLessons,
   clients,
   notifications,
   roles,
@@ -163,13 +166,17 @@ beforeEach(async () => {
   markBoot(new Date(0));
   // One live draft per account at a time: each case's owner is a new person.
   await db.delete(agentDrafts).where(eq(agentDrafts.clientId, clientId));
+  // A lesson is in EVERY chat's prompt — configuration (#183): none of this file's outlives its case.
+  if (madeUsers.length) await db.delete(agentLessons).where(inArray(agentLessons.createdBy, madeUsers));
 });
 
 afterAll(async () => {
   await flushWaitWrites();
   h.restore();
   await __restoreAgentConfig(snapshot);
+  await db.delete(agentLessons).where(inArray(agentLessons.createdBy, madeUsers));
   await db.delete(agentDrafts).where(eq(agentDrafts.clientId, clientId));
+  await db.delete(agentAutoChats).where(inArray(agentAutoChats.managerUserId, madeUsers));
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
   await db.delete(agentConversations).where(inArray(agentConversations.managerUserId, madeUsers));
   await db.delete(tgChatRules).where(inArray(tgChatRules.managerUserId, madeUsers));
@@ -603,6 +610,208 @@ describe('«✍️ Savolga javob» beside the other waits and presses (spec SPEC
     expect(h.since(m).api.some((c) => c.method === 'answerCallbackQuery' && String(c.payload.text) === 'Topilmadi')).toBe(true);
     expect(readWait(BigInt(stranger.chat), 'agent_answer')).toBeNull();
     expect((await draftOf(draftId)).status).toBe('pending');
+  });
+});
+
+/** 📝 on the draft's card; the prompt's own message id. */
+async function pressLesson(me: Person, draftId: string): Promise<number> {
+  const m = h.mark();
+  await h.handle(tg.callback(me.chat, nextMsg(), `ag:l:${draftId}`));
+  const prompt = h.since(m).api.find((c) => c.method === 'sendMessage' && String(c.payload.text).startsWith('📝'));
+  expect(prompt?.messageId, 'the 📝 prompt was sent').toBeDefined();
+  return prompt!.messageId!;
+}
+
+const lessonsOf = (me: Person) => db.select().from(agentLessons).where(eq(agentLessons.createdBy, me.id));
+/** A rule with none of the chat's own words in it — the client here is «Zinapoya mijoz <stamp>», and a lesson naming any word of that is personal. */
+const RULE = 'Salomga avval salom bilan javob ber, keyin bitta savol ber.';
+
+type EchoButton = { text: string; callback_data: string };
+/** The echo under a typed lesson, as the bot sent it since `m`: its message id and its two buttons. */
+function echoSince(m: ReturnType<BotHarness['mark']>): { messageId: number; yes: EchoButton; no: EchoButton } {
+  const echo = h.since(m).api.find((c) => c.method === 'sendMessage' && String(c.payload.text).startsWith('📝 Saboq:'));
+  expect(echo?.messageId, 'the lesson was echoed').toBeDefined();
+  const [row] = (echo!.payload.reply_markup as { inline_keyboard: EchoButton[][] }).inline_keyboard;
+  return { messageId: echo!.messageId!, yes: row![0]!, no: row![1]! };
+}
+
+describe('«📝 Tuzatish» — his lesson for the AI, never the customer’s words (spec SPEC-P1-v2 §3.1, §3.2)', () => {
+  beforeEach(() => vi.mocked(enqueue).mockClear());
+
+  it('📝 armed: a plain text is the LESSON — stored unconfirmed and echoed, never the card’s body; «✅ Saqlash» makes it count', async () => {
+    const { me, draftId } = await owner();
+    await pressLesson(me, draftId);
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).toMatchObject({ payload: { draftId } });
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, RULE));
+    expect((await draftOf(draftId)).finalBody).toBeNull();
+    const [stored] = await lessonsOf(me);
+    expect(stored).toMatchObject({ text: RULE, draftId, confirmedAt: null });
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).toBeNull();
+    const echo = echoSince(m);
+    expect(echo.yes).toEqual({ text: '✅ Saqlash', callback_data: `ag:y:${stored!.id}:${stored!.confirmToken}` });
+    expect(echo.no).toEqual({ text: '✖ Bekor', callback_data: `ag:v:${stored!.id}` });
+    // The yes: saved, said, and the echo's buttons close — nothing left to press there.
+    const pressed = h.mark();
+    await h.handle(tg.callback(me.chat, echo.messageId, echo.yes.callback_data));
+    expect((await lessonsOf(me))[0]!.confirmedAt).not.toBeNull();
+    expect(h.since(pressed).api.some((c) => c.method === 'editMessageReplyMarkup')).toBe(true);
+    expect(h.textsTo(me.chat, pressed).some((t) => t.startsWith('✅ Saboq saqlandi'))).toBe(true);
+    // The draft was still waiting for his ✅: its rewrite is queued, named by the lesson.
+    expect(answerJobs()).toHaveLength(1);
+    expect(answerJobs()[0]![1]).toMatchObject({ draftId, lessonId: stored!.id });
+    // A second tap on a button Telegram had not yet removed: said, never a second lesson or a second rewrite.
+    const again = h.mark();
+    await h.handle(tg.callback(me.chat, echo.messageId, echo.yes.callback_data));
+    expect(h.since(again).api.some((c) => c.method === 'answerCallbackQuery' && String(c.payload.text) === 'Allaqachon saqlangan.')).toBe(true);
+    expect(answerJobs()).toHaveLength(1);
+    expect(await lessonsOf(me)).toHaveLength(1);
+  });
+
+  it('📝 armed + a swipe-reply to the CARD is the lesson — never his verbatim reply, one ✅ from the customer', async () => {
+    const { me, draftId } = await owner();
+    await pressLesson(me, draftId);
+    const card = await sentCopy(me, 'AgentDraft', { draftId });
+    await h.handle(tg.text(me.chat, RULE, { replyTo: card }));
+    expect((await draftOf(draftId)).finalBody).toBeNull();
+    expect(await lessonsOf(me)).toHaveLength(1);
+  });
+
+  it('📝 armed + a swipe-reply to its PROMPT is the lesson', async () => {
+    const { me, draftId } = await owner();
+    const prompt = await pressLesson(me, draftId);
+    await h.handle(tg.text(me.chat, RULE, { replyTo: prompt }));
+    expect((await draftOf(draftId)).finalBody).toBeNull();
+    expect((await lessonsOf(me)).map((l) => l.text)).toEqual([RULE]);
+  });
+
+  it('…but a swipe-reply to ANOTHER draft’s card is that draft’s verbatim text — the lesson keeps waiting', async () => {
+    const { me, draftId } = await owner();
+    const [other] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: me.id, peerId: BigInt(`${PREFIX}9${(peerSeq += 1)}`), clientId, anchorTgMessageId: 1n, proposedBody: 'Boshqa javob.', status: 'pending' })
+      .returning({ id: agentDrafts.id });
+    await pressLesson(me, draftId);
+    const card = await sentCopy(me, 'AgentDraft', { draftId: other!.id });
+    await h.handle(tg.text(me.chat, `Ertaga aytaman ${STAMP}`, { replyTo: card }));
+    expect((await draftOf(other!.id)).finalBody).toBe(`Ertaga aytaman ${STAMP}`);
+    expect(await lessonsOf(me)).toHaveLength(0);
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).not.toBeNull();
+  });
+
+  it('a refused lesson (a price) is said in words and the wait is KEPT — the next text is still the lesson', async () => {
+    const { me, draftId } = await owner();
+    await pressLesson(me, draftId);
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, 'Avia narxini 17 $ deb ayt'));
+    expect(h.textsTo(me.chat, m)).toContain('«17» — Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi.');
+    expect(await lessonsOf(me)).toHaveLength(0);
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).not.toBeNull();
+    // …and so is the chat's own customer by ONE word of the name.
+    const named = h.mark();
+    await h.handle(tg.text(me.chat, 'Zinapoya bilan doim rus tilida gaplash'));
+    expect(h.textsTo(me.chat, named).some((t) => t.includes('Matnda mijoz ma’lumoti bor'))).toBe(true);
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).not.toBeNull();
+    await h.handle(tg.text(me.chat, RULE));
+    expect((await lessonsOf(me)).map((l) => l.text)).toEqual([RULE]);
+    expect((await draftOf(draftId)).finalBody).toBeNull();
+  });
+
+  it('«✖ Bekor» under the echo drops the lesson and closes the buttons', async () => {
+    const { me, draftId } = await owner();
+    await pressLesson(me, draftId);
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, RULE));
+    const echo = echoSince(m);
+    const pressed = h.mark();
+    await h.handle(tg.callback(me.chat, echo.messageId, echo.no.callback_data));
+    expect(await lessonsOf(me)).toHaveLength(0);
+    expect(h.since(pressed).api.some((c) => c.method === 'editMessageReplyMarkup')).toBe(true);
+    expect(h.since(pressed).api.some((c) => c.method === 'answerCallbackQuery' && String(c.payload.text) === '✖ Saboq saqlanmadi')).toBe(true);
+    expect(answerJobs()).toHaveLength(0);
+  });
+
+  it('📝 while a task’s answer is awaited is refused in words like ✏️ — nothing armed; and by a collection that holds the chat', async () => {
+    const { me, draftId } = await owner();
+    const giver = await person('sales_manager');
+    const T = await handTask(me, giver);
+    await h.handle(tg.callback(me.chat, nextMsg(), `t:${T}`));
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:l:${draftId}`));
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith("Avval topshiriq bo'yicha so'ralgan javobni yozing"))).toBe(true);
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).toBeNull();
+    // The task's own answer still closes the task.
+    await h.handle(tg.text(me.chat, `Bajarildi ${STAMP}`));
+    expect(await statusOf(T)).toBe('done');
+    const c = BigInt(me.chat);
+    startIntake(c, 'rastamojka', { staffId: me.id });
+    updateIntake(c, { stage: 'material', material: ['Kurtka 300 dona'] }, { quiet: true });
+    const held = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:l:${draftId}`));
+    expect(h.textsTo(me.chat, held)).toContain('Avval boshlangan ishni tugating (hisoblatish, zametka yoki topshiriq).');
+    expect(readWait(c, 'agent_lesson')).toBeNull();
+    endIntake(c);
+    expect(await lessonsOf(me)).toHaveLength(0);
+  });
+
+  it('one agent wait at a time: 📝 while ✏️ is armed on ANOTHER draft closes it in words — his next text is the lesson', async () => {
+    const { me, draftId } = await owner();
+    const [other] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: me.id, peerId: BigInt(`${PREFIX}9${(peerSeq += 1)}`), clientId, anchorTgMessageId: 1n, proposedBody: 'Boshqa javob.', status: 'pending' })
+      .returning({ id: agentDrafts.id });
+    await pressEdit(me, other!.id);
+    const m = h.mark();
+    await pressLesson(me, draftId);
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith('↩️ Oldingi kutish yopildi'))).toBe(true);
+    expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).not.toBeNull();
+    await h.handle(tg.text(me.chat, RULE));
+    expect((await draftOf(other!.id)).finalBody).toBeNull();
+    expect((await lessonsOf(me)).map((l) => l.text)).toEqual([RULE]);
+  });
+
+  it('a press from a chat that is not the draft’s account answers «Topilmadi» — a callback can be forged', async () => {
+    const { draftId } = await owner();
+    const stranger = await person('super_admin');
+    const m = h.mark();
+    await h.handle(tg.callback(stranger.chat, nextMsg(), `ag:l:${draftId}`));
+    expect(h.since(m).api.some((c) => c.method === 'answerCallbackQuery' && String(c.payload.text) === 'Topilmadi')).toBe(true);
+    expect(readWait(BigInt(stranger.chat), 'agent_lesson')).toBeNull();
+  });
+
+  it('👎 arms NOTHING: a plain «code» after it is the lookup’s — no lesson, no wait; «📝 Sababini yozish» is what arms', async () => {
+    const { me, draftId } = await owner();
+    const d = await draftOf(draftId);
+    // A reply the machine pressed and sent — the only card 👎 is drawn on.
+    await db.update(agentDrafts).set({ status: 'approved', decidedBy: me.id, decidedAt: new Date() }).where(eq(agentDrafts.id, draftId));
+    await db.insert(agentAutoVerdicts).values({
+      draftId,
+      managerUserId: me.id,
+      peerId: d.peerId,
+      eligible: true,
+      state: 'pressed',
+      dueAt: new Date(Date.now() - 60_000),
+      pressedAt: new Date(Date.now() - 30_000),
+    });
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:f:${draftId}`));
+    const said = h.since(m).api.find((c) => c.method === 'sendMessage' && String(c.payload.text).includes('«📝 Sababini yozish»'));
+    expect(said, '👎 answers with a sentence and a button').toBeDefined();
+    const why = (said!.payload.reply_markup as { inline_keyboard: EchoButton[][] }).inline_keyboard[0]![0]!;
+    expect(why).toEqual({ text: '📝 Sababini yozish', callback_data: `ag:l:${draftId}` });
+    for (const kind of ['agent_lesson', 'agent_edit', 'agent_answer'] as const) expect(readWait(BigInt(me.chat), kind), kind).toBeNull();
+    // His next, unrelated text: the client's code — answered by the staff lookup, and a rule in no prompt.
+    const asked = h.mark();
+    await h.handle(tg.text(me.chat, `ZP${STAMP.slice(-5)}`));
+    expect(h.textsTo(me.chat, asked).some((t) => t.includes(`Zinapoya mijoz ${STAMP}`))).toBe(true);
+    expect(h.textsTo(me.chat, asked).some((t) => t.startsWith('📝 Saboq:'))).toBe(false);
+    expect(await lessonsOf(me)).toHaveLength(0);
+    // The button is the same press as the card's 📝: only now is his next text a lesson.
+    await h.handle(tg.callback(me.chat, said!.messageId!, why.callback_data));
+    expect(readWait(BigInt(me.chat), 'agent_lesson')).toMatchObject({ payload: { draftId } });
+    await h.handle(tg.text(me.chat, RULE));
+    expect((await lessonsOf(me)).map((l) => l.text)).toEqual([RULE]);
   });
 });
 

@@ -392,12 +392,13 @@ export type BotCallback =
   | { kind: 'calc_undo'; tag: string }
   /**
    * The AI sotuvchi's buttons (0138, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
-   * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z a f), a
-   * calculation request (p), a tray rule (n k x c b) or the agent's holder (t);
-   * the digest rides on ✅ and names what the card SHOWED, so a press on a card
-   * that has since changed is refused (leak-3) — on «✅ Tarif to'g'ri» (t) it is
-   * the stamp of the China column the notice was sent with. `ag:` collides with nothing: `a:` is
-   * anchored to `[01]:`.
+   * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z a f j l), a
+   * calculation request (p), a tray rule (n k x c b), the agent's holder (t) or
+   * one of his lessons (y v); the digest rides on ✅ and names what the card
+   * SHOWED, so a press on a card that has since changed is refused (leak-3) —
+   * on «✅ Tarif to'g'ri» (t) it is the stamp of the China column the notice was
+   * sent with, on a lesson's «✅ Saqlash» (y) the lesson's one-time token.
+   * `ag:` collides with nothing: `a:` is anchored to `[01]:`.
    */
   | { kind: 'agent'; op: AgentOp; id: string; digest?: string }
   /**
@@ -416,9 +417,10 @@ export type BotCallback =
  * ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed ·
  * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0145) · 👎 it sent wrong (0145) ·
  * ✅ the China tariff is right (0148, spec SPEC-P1-v2 §1.6) · ✍️ answer the AI's question (0148, §2.2 — `j`: `q`
- * stays unparsed).
+ * stays unparsed) · 📝 a lesson for the AI (0148, §3.1 — `l`) · ✅ save that lesson (`y`, with its token) ·
+ * ✖ drop it (`v`).
  */
-export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f', 't', 'j'] as const;
+export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f', 't', 'j', 'l', 'y', 'v'] as const;
 export type AgentOp = (typeof AGENT_OPS)[number];
 
 /**
@@ -470,9 +472,13 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   // card, redelivered or tapped twice into a bot that was down, only asks.
   // «✅ Tarif to'g'ri» (t) compares the column's stamp each time and only ever
   // moves the mark forward (agent tariff-watch `confirmTariff`): a second press
-  // confirms what the first did. «✍️ Savolga javob» (j) only ASKS: its CAS moves
-  // a live question to «editing» (again on a repeat) and the wait it arms keeps
-  // the earlier prompts — the answer is the text after it.
+  // confirms what the first did. «✍️ Savolga javob» (j) and «📝 Tuzatish» (l) only
+  // ASK: ✍️'s CAS moves a live question to «editing» (again on a repeat), 📝 stops a
+  // countdown that is already stopped, and the wait each arms keeps the earlier
+  // prompts — the answer, or the lesson, is the text after it. A lesson's «✅
+  // Saqlash» (y) is a CAS on its one-time token — a second press confirms nothing
+  // and queues no second rewrite — and «✖ Bekor» (v) deletes an unconfirmed
+  // lesson once.
   agent: 'cas',
   // Opening a prixod's file collection only ASKS (a second press re-sends the
   // prompt and keeps what it took); «✅ Bo‘ldi» and «↩️ Bekor qilish» end it
@@ -921,12 +927,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * The AI sotuvchi's cards (0138). A draft card draws its four controls only
  * while the draft is live, and ✅ only when the policy found nothing (leak-3)
  * — with the digest of what the card shows. After he answered a question the
- * agent asked him, the card offers to remember the answer. Every row drawn is
- * one `parseCallback` accepts (#939: an unparsed press spins for 15 s).
+ * agent asked him, the card offers to remember the answer. Wherever the words
+ * on the card are the machine's (payload `teach`, spec SPEC-P1-v2 §3.1) it
+ * offers «📝 Tuzatish» — live or not: a reply that went, the «remember» card.
+ * Every row drawn is one `parseCallback` accepts (#939: an unparsed press
+ * spins for 15 s).
  */
 function agentButtons(type: string, payload: Record<string, unknown>): BotButton[][] | null {
   const id = typeof payload.draftId === 'string' && UUID.test(payload.draftId) ? payload.draftId : null;
   if (type === 'AgentDraft' && id) {
+    // «📝 Tuzatish»: he tells the AI where it was wrong (0148). Its own row on every card that carries it.
+    const teach: BotButton[][] = payload.teach === true ? [[{ text: '📝 Tuzatish', callback_data: `ag:l:${id}` }]] : [];
     if (payload.kbAsk === true) {
       return [
         [
@@ -934,10 +945,12 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
           { text: '👤 Faqat shu mijoz', callback_data: `ag:u:${id}` },
         ],
         [{ text: '✖ Saqlamaslik', callback_data: `ag:z:${id}` }],
+        ...teach,
       ];
     }
     if (payload.live !== true) {
-      if (payload.autoSent !== true) return null;
+      // A reply he approved himself, as the machine wrote it: nothing left to press but the lesson.
+      if (payload.autoSent !== true) return teach.length > 0 ? teach : null;
       // A reply «o'zi yuborish» pressed (0145): while it has not left, ❌ takes it back and 🙋 takes the chat
       // (payload `autoCancel`); «👎 Xato edi» once — then none.
       const rows: BotButton[][] = [];
@@ -948,6 +961,7 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
         ]);
       }
       if (payload.autoBad !== true) rows.push([{ text: '👎 Xato edi', callback_data: `ag:f:${id}` }]);
+      rows.push(...teach);
       return rows.length > 0 ? rows : null;
     }
     const digest = typeof payload.digest === 'string' && /^[0-9a-f]{8}$/.test(payload.digest) ? payload.digest : null;
@@ -958,7 +972,7 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     if (typeof payload.autoAt === 'string' && payload.autoAt !== '') {
       const first: BotButton[] = [{ text: '⏸ To‘xtat', callback_data: `ag:a:${id}` }];
       if (send) first.push({ text: '✅ Hozir yubor', callback_data: `ag:s:${id}:${send}` });
-      return [first, [{ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` }], lastRow];
+      return [first, [{ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` }], ...teach, lastRow];
     }
     const first: BotButton[] = [];
     if (send) first.push({ text: '✅ Yuborish', callback_data: `ag:s:${id}:${send}` });
@@ -966,8 +980,8 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     first.push({ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` });
     // A question the AI raised itself (payload `ask`, spec SPEC-P1-v2 §2.2): he answers the FACT and the AI writes
     // the customer's words — never under a question a forcing rule put to him (rail's price, the flight's address).
-    if (payload.ask === true) return [[{ text: '✍️ Savolga javob', callback_data: `ag:j:${id}` }], first, lastRow];
-    return [first, lastRow];
+    if (payload.ask === true) return [[{ text: '✍️ Savolga javob', callback_data: `ag:j:${id}` }], first, ...teach, lastRow];
+    return [first, ...teach, lastRow];
   }
   // The website table's 14-day notice (0148, spec §1.6): «✅ Tarif to'g'ri» vouches for the column it was sent with.
   if (type === 'AgentTariffNotice') {

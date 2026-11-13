@@ -109,6 +109,12 @@ export interface AgentOwnerAnswerJob {
   messageId: number;
   /** 0 (absent) from the bot; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
   attempt?: number;
+  /**
+   * Set: the job is no answer's but a LESSON's rewrite of `draftId` («📝 Tuzatish» on a card still waiting, spec
+   * §3.4 — «through the same queued job»): the worker hands it to the lesson's own handler, whose run is keyed
+   * `lesson:<lessonId>` — never the key an answer on the same draft takes. `messageId` is then 0 and unread.
+   */
+  lessonId?: string;
 }
 
 /** Seconds of quiet before the worker looks (AGENT_LIMITS.debounceMs). */

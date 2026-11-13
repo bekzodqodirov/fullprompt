@@ -23,7 +23,8 @@ import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
 import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
-import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, setAutoPerDay, stopAuto, stopAutoForEdit } from './auto-send';
+import { AutoConfigError, STOP_AUTO_WORDS, autoFeedback, setAutoArmed, setAutoCategories, setAutoPerDay, stopAuto, stopAutoForEdit } from './auto-send';
+import { deleteLesson, editLesson, lessonFromPage, lessonSavedWords, openLesson, setLessonActive, type LessonResult } from './lessons';
 import { SendCapsError, setSendCaps } from './send-caps';
 import { confirmTariff, TariffConfirmError } from './tariff-watch';
 
@@ -421,5 +422,66 @@ export async function agentAutoFeedbackAction(draftId: string): Promise<AgentAct
     const r = await autoFeedback(actor.id, draftId);
     // Said by the page itself: the row reads «👎», and a step-down shows as the panel's «o‘chiq» with its reason.
     if (!r.ok) return { ok: false, error: r.code === 'not_ready' ? 'auto_not_ready' : `auto_fb_${r.code}` };
+  });
+}
+
+/**
+ * «📝 Tuzatish» on the page (spec SPEC-P1-v2 §3) — the bot's own writer (`lessons.ts`), behind the page's door:
+ * whoever it admits may teach, and only the account holder's lesson rewrites a card (the service asks). Each
+ * refusal comes back as its OWN page code (`lesson_…`); a saved lesson answers with the bot's own sentence.
+ */
+
+/** A lesson's refusal as the page's code — with the figure a money refusal read as a price. */
+function lessonRefused(r: Exclude<LessonResult, { ok: true }>): AgentActionResult {
+  return { ok: false, error: `lesson_${r.code}`, ...(r.code === 'money' && r.detail ? { detail: r.detail } : {}) };
+}
+
+/**
+ * 📝 pressed — BEFORE the box opens (§3.1, the `agentEditOpenAction` precedent): the holder's press on a reply
+ * counting down stops it on the server, so the AI's own text cannot go while he types why it is wrong. «Kech» once
+ * the machine pressed — said, and the box opens all the same: the lesson still teaches.
+ */
+export async function agentLessonOpenAction(draftId: string): Promise<AgentActionResult> {
+  return run(async ({ actor }) => {
+    const r = await openLesson(actor, draftId, 'web');
+    if (!r.ok) return { ok: false, error: `lesson_${r.code}` };
+    if (r.holder) revalidatePath('/suhbatlar', 'layout');
+    if (r.after === 'pressed' || r.after === 'sending') return { ok: true, message: STOP_AUTO_WORDS[r.after] };
+  });
+}
+
+/** The box's save — itself the confirmation (§3.2). The holder's lesson on a card still waiting rewrites it (§3.4). */
+export async function agentLessonSaveAction(draftId: string, text: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await lessonFromPage(actor, { draftId, text: typeof text === 'string' ? text : '' }, ctx);
+    if (!r.ok) return lessonRefused(r);
+    if (r.redraft === 'queued') revalidatePath('/suhbatlar', 'layout');
+    return { ok: true, message: lessonSavedWords(r) };
+  });
+}
+
+/** «Saboqlar»: a lesson's words corrected — the same refusals as a new one; saving an unconfirmed one confirms it. */
+export async function agentLessonEditAction(lessonId: string, text: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await editLesson(actor, lessonId, typeof text === 'string' ? text : '', ctx);
+    if (!r.ok) return lessonRefused(r);
+    return { ok: true, message: lessonSavedWords(r) };
+  });
+}
+
+/** «Saboqlar»: a lesson switched off (it leaves the prompt and stays on the page) or back on. */
+export async function agentLessonActiveAction(lessonId: string, active: boolean): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await setLessonActive(actor, lessonId, active === true, ctx);
+    if (!r.ok) return lessonRefused(r);
+    // Switched on, it is said whether the prompt has room for it — and what it pushed out.
+    if (active === true && (!r.fits || r.dropped.length > 0)) return { ok: true, message: lessonSavedWords(r) };
+  });
+}
+
+export async function agentLessonDeleteAction(lessonId: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await deleteLesson(actor, lessonId, ctx);
+    if (!r.ok) return { ok: false, error: `lesson_${r.code}` };
   });
 }

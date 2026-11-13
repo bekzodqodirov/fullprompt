@@ -5,6 +5,7 @@ import type { PriceRefusal } from '@/modules/wms/agent/calc-loop';
 import type { AgentConfigRefusal } from '@/modules/wms/agent/config';
 import type { DecideRefusal } from '@/modules/wms/agent/decide';
 import type { KbRefusal } from '@/modules/wms/agent/kb';
+import type { LessonRefusal } from '@/modules/wms/agent/lessons';
 import type { CancelRefusal } from '@/modules/wms/agent/web-thread';
 import type { RetireRefusal } from '@/modules/wms/agent/web-kb';
 import type { TariffConfirmRefusal } from '@/modules/wms/agent/tariff-watch';
@@ -20,13 +21,15 @@ import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
  * bundles under `agentAi`.
  */
 
-export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'bilimlar', 'sozlamalar'] as const;
+export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'bilimlar', 'saboqlar', 'sozlamalar'] as const;
 export type AgentSection = (typeof AGENT_SECTIONS)[number];
 
 export const SECTION_KEYS: Record<AgentSection, string> = {
   kutilmoqda: 'section.kutilmoqda',
   savollar: 'section.savollar',
   bilimlar: 'section.bilimlar',
+  // «📝 Tuzatish» — what he taught the AI (0148, spec SPEC-P1-v2 §3.6).
+  saboqlar: 'section.saboqlar',
   sozlamalar: 'section.sozlamalar',
 };
 
@@ -57,6 +60,9 @@ export type AgentErrorCode =
   | `auto_${AutoConfigRefusal}`
   | `auto_stop_${Exclude<StopAutoRefusal, 'not_ready'>}`
   | `auto_fb_${Exclude<AutoFeedbackRefusal, 'not_ready'>}`
+  // «📝 Tuzatish» (web-actions `agentLesson…`, lessons.ts): their own codes too — «empty» and «too long» there
+  // speak of a lesson, not of a reply or a fact.
+  | `lesson_${LessonRefusal}`
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
@@ -137,6 +143,17 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_fb_not_account_holder: 'errors.auto_fb_not_account_holder',
   auto_fb_not_sent: 'errors.auto_fb_not_sent',
   auto_fb_already: 'errors.auto_fb_already',
+  // «📝 Tuzatish» (web-actions `agentLesson…`)
+  lesson_not_ready: 'errors.not_ready',
+  lesson_forbidden: 'errors.forbidden',
+  lesson_not_found: 'errors.lesson_not_found',
+  lesson_not_teachable: 'errors.lesson_not_teachable',
+  lesson_empty: 'errors.lesson_empty',
+  lesson_too_long: 'errors.lesson_too_long',
+  lesson_money: 'errors.lesson_money',
+  lesson_personal: 'errors.lesson_personal',
+  lesson_already: 'errors.lesson_already',
+  lesson_confirmed: 'errors.lesson_confirmed',
   unknown: 'errors.unknown',
 };
 

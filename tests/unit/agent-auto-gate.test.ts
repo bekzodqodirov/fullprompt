@@ -537,6 +537,7 @@ describe('a reply the machine pressed is nobody’s decision — the gate never 
     outboxStatus: 'sent',
     category: 'greeting',
     autoSent: false,
+    ownerTriggered: false,
     ...over,
   });
 

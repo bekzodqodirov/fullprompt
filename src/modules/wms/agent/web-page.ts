@@ -4,6 +4,7 @@ import {
   agentAutoVerdicts,
   agentDrafts,
   agentOutbox,
+  agentRuns,
   calcRequests,
   clients,
   kbFacts,
@@ -17,8 +18,8 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
-import { cardDigest, cardDrawsSend, digestBody } from './card';
-import { renderDraftCardFull } from './card-io';
+import { cardDigest, cardDrawsSend, cardTeaches, digestBody } from './card';
+import { answeredNow, renderDraftCardFull } from './card-io';
 import { autoCountingDown } from './auto-card';
 import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
 import { agentAutoReady, agentFullP1Ready, agentTablesReady, type AgentConfig } from './config';
@@ -79,6 +80,13 @@ export interface WebDraft {
    * the page draws ⏸ beside ✅, as the bot's keyboard does (payload `autoAt`).
    */
   autoWaiting: boolean;
+  /**
+   * The row offers «📝 Tuzatish» (card `cardTeaches`, the bot card's own `teach`): its words are the machine's.
+   * `lessonRewrites`: a lesson saved here by the account holder also rewrites this reply (it is still waiting for
+   * his ✅) — the box says so before he types (spec SPEC-P1-v2 §3.4).
+   */
+  teach: boolean;
+  lessonRewrites: boolean;
 }
 
 type DraftRow = typeof agentDrafts.$inferSelect;
@@ -133,6 +141,8 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     kbArmToken: kb === 'general_armed' && typeof kbToken === 'string' ? kbToken : null,
     waitingInChat,
     autoWaiting: autoCountingDown(auto, d, sendable),
+    teach: cardTeaches(d) && !answeredNow(d),
+    lessonRewrites: d.status === 'pending' && d.kind === 'reply' && d.finalBody === null,
   };
 }
 
@@ -421,11 +431,15 @@ export async function webStats(now = new Date()): Promise<AgentStats> {
       outboxStatus: agentOutbox.status,
       category: agentDrafts.category,
       autoSent,
+      // A draft an owner-started run wrote — his ✍️ answer's reply, his lesson's rewrite, a hand-back's question —
+      // is counted apart (stats `ownerTriggered`, spec §3.7). A draft with no run (his 💵 price) is not one.
+      ownerTriggered: sql<boolean>`coalesce(${agentRuns.trigger}, 'inbound') <> 'inbound'`,
     })
     .from(agentDrafts)
     .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentDrafts.id))
+    .leftJoin(agentRuns, eq(agentRuns.id, agentDrafts.runId))
     .where(gte(agentDrafts.createdAt, since));
-  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true, autoSent: r.autoSent === true })));
+  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true, autoSent: r.autoSent === true, ownerTriggered: r.ownerTriggered === true })));
 }
 
 export interface OwnerAccountState {

@@ -1,5 +1,6 @@
 import type { AgentContext } from './context';
 import type { KbHit } from './kb';
+import { lessonsBlock, type PromptLesson } from './lesson-rules';
 import { EXCLUSION_SENTENCE, exclusionSentencesText, warehouseSentencesText } from './policy';
 import { AGENT_LIMITS } from './limits';
 import { RAIL_OWNER_QUESTION } from './worthy';
@@ -29,8 +30,14 @@ function aviaAddressRule(priceArmed: boolean): string {
 /**
  * The cached head. `priceArmed` (spec §1.2, auto-send `priceActArmed`) changes rule 9 alone and is read once per
  * run — it changes as rarely as he ticks a box, so the cache it splits is one more write a day at most.
+ *
+ * `lessons` (spec §3.3, «📝 Tuzatish»): his corrections, newest first, as ONE block right under the rules — here and
+ * nowhere else. Never in `runTail` (it is not cached) and never in `chatBlock`: that is the per-chat user turn rule 7
+ * calls data, so a lesson there would be cached once per chat and read as something the customer said. The same
+ * lessons give the same bytes (the order is the reader's, the caps are the block's own), and none gives the head it
+ * was before lessons existed. REQUIRED, so no caller builds a head that silently forgets them.
  */
-export function stableHead(input: { styleGuide: string | null; facts: readonly KbHit[]; priceArmed: boolean }): string {
+export function stableHead(input: { styleGuide: string | null; facts: readonly KbHit[]; priceArmed: boolean; lessons: readonly PromptLesson[] }): string {
   const facts = input.facts.length
     ? input.facts.map((f) => `${f.ref}: ${f.answer}`).join('\n')
     : "(hozircha yo'q)";
@@ -52,7 +59,7 @@ QOIDALAR (har biri koddagi tekshiruvdan o'tadi — buzilgan qoralama tasdiqlanma
 13. Shikoyat, jahl, pul talabi, huquqiy gap, "menejer kerak" — tinch, qisqa javob va needs_owner=true.
 14. Bilmasang — o'ylab topma: needs_owner=true va owner_question'da Bekzoddan nima so'rashni yoz.
 15. Javob kerak bo'lmasa (xayrlashish, "rahmat" va hokazo) — reply_needed=false.
-16. Har run compose_reply bilan tugaydi.
+16. Har run compose_reply bilan tugaydi.${lessonsBlock(input.lessons)}
 
 BEKZODNING USLUBI (u tasdiqlagan):
 ${input.styleGuide?.trim() || "(hali tasdiqlanmagan — iliq, qisqa, hurmat bilan, \"aka/opa\" mijoz o'zi shunday yozsa)"}

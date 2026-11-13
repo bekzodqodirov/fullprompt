@@ -8,7 +8,7 @@ import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
 import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
 import type { AutoCardState } from './auto-send';
-import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, CardTooLong, digestBody, type CardInput } from './card';
+import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, cardTeaches, CardTooLong, digestBody, type CardInput } from './card';
 import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -110,6 +110,11 @@ export const ANSWER_TAKEN_LINE = '✍️ Javobingiz olindi — AI javob yozmoqda
  */
 export const FROM_ANSWER_LINE = '✍️ Sizning javobingiz asosida yozildi.';
 
+/** «📝 Tuzatish» saved on a card still waiting (spec §3.4): the AI is rewriting THIS reply — its ✅ still sends the old words. */
+export const LESSON_REDRAFT_LINE = '📝 Saboq saqlandi — AI shu javobni qayta yozmoqda.';
+/** On the reply the AI rewrote after his lesson (`policy.fromLesson`), while it is still the machine's words. */
+export const FROM_LESSON_LINE = '📝 Sizning tuzatishingiz asosida qayta yozildi.';
+
 /** The draft waits for his ✍️ answer (`policy.answering`, §2.2). */
 export function answeringOf(d: Pick<DraftRow, 'status' | 'policy'>): { since: string; until: string } | null {
   if (d.status !== 'editing') return null;
@@ -136,7 +141,7 @@ export function answeredNow(d: Pick<DraftRow, 'status' | 'policy'>): boolean {
  * approved a reply to as answered. Each said as itself — «Mijoz yana yozdi»
  * would send him looking for a message that is not there.
  */
-const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answered', string> = {
+const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answered' | 'owner_lesson', string> = {
   recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
   avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
   // ✅ found the customer's newer message and no run will draft it:
@@ -154,6 +159,9 @@ const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answ
   // `createDraft` with `answersDraftId`) — never «↪️ Mijoz yana yozdi», which is false here. Its own key:
   // `answered` above already says something else.
   owner_answered: '✍️ Javobingiz olindi — AI qayta yozdi (yangi kartada).',
+  // His lesson was saved on this card and the AI rewrote the reply on a card of its own (§3.4, drafts `createDraft`
+  // with `redrafts`) — never «↪️ Mijoz yana yozdi», which is false here.
+  owner_lesson: '📝 Saboq bo‘yicha AI qayta yozdi (yangi kartada).',
 };
 
 /**
@@ -236,7 +244,11 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       // A press landing it right now (decide `claimLanding`) says so, never «did not reach the queue».
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
       if (d.actionStatus === 'failed') return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.`;
-      // The AI's reply to his ✍️ answer says where it came from — until his own words replace it (✏️).
+      // His lesson is rewriting this reply (§3.4) — until the rewrite lands, or his own words replace it (✏️).
+      if (((d.policy ?? {}) as Partial<DraftPolicyJson>).lessonRedraft && d.finalBody === null) return LESSON_REDRAFT_LINE;
+      // The AI's rewrite after his lesson, and its reply to his ✍️ answer, each say where they came from — until
+      // his own words replace them (✏️).
+      if (((d.policy ?? {}) as Partial<DraftPolicyJson>).fromLesson && d.finalBody === null) return FROM_LESSON_LINE;
       return ((d.policy ?? {}) as Partial<DraftPolicyJson>).fromAnswer && d.finalBody === null ? FROM_ANSWER_LINE : null;
     case 'editing':
       // «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2): he types the FACT, the AI writes the customer's words — the ✏️
@@ -500,6 +512,8 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
       // «✍️ Savolga javob» while the question is live (spec §2.2) — and gone once his answer is in: the AI is
       // writing, and a second ✍️ would ask a question it is already answering.
       ask: cardAsks(d) && !answeredNow(d),
+      // «📝 Tuzatish» wherever the words are the machine's (§3.1) — gone, like ✍️, once the AI is rewriting.
+      teach: cardTeaches(d) && !answeredNow(d),
     }),
     // After he answered the agent's question himself and it went out, the
     // card offers to REMEMBER the answer (spec §7.1.4) — once.

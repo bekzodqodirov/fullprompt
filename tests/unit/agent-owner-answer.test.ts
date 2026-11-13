@@ -201,7 +201,7 @@ describe('the redraft’s instruction (§2.2, judge learn)', () => {
   });
 
   it('prompt rule 1 says the task’s answer is a source too — in the cached head, once', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] });
     expect(head.match(/VAZIFAdagi Bekzodning javobi ham manba/gu)?.length).toBe(1);
   });
 });
