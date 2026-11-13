@@ -15,8 +15,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  *    one order (review JS-25: a row with no figure, the law's unit, an
  *    uncoded row), under the new head — and the add door prefers the rows it
  *    asked a figure of;
- *  - a request from before the doors (NULL) reads as it did: the law's block,
- *    its one row, and nothing else of the answer moves;
+ *  - a request from before the doors (NULL) asks as it did: the law's block,
+ *    its one row and today's tails (its lines are numbered by the row, A3);
  *  - «🧮 Hisoblatish» sends the seller nothing.
  *
  * The model is stood in at its two boundaries the way calc-prefill's pass
@@ -199,26 +199,35 @@ afterAll(async () => {
  * sender, and run its job through the registered worker — then read what the
  * worker left for the seller: the rows the drain would send.
  */
-async function landAndRun(door: IntakeDoor | null) {
+async function landAndRun(
+  door: IntakeDoor | null,
+  over: {
+    section?: 'rastamojka' | 'yolkira';
+    items?: { name: string; tnvedCode?: string; weightKg?: number; quantity?: number }[];
+    volumeM3?: number | null;
+  } = {},
+) {
+  const section = over.section ?? 'rastamojka';
   const r = await openCalcRequest(
     {
       intakeDoor: door,
       entityType: 'deal',
       entityId: dealId,
-      section: 'rastamojka',
+      section,
       fromCity: 'Yiwu',
       toCity: 'Toshkent',
       weightKg: 500,
-      volumeM3: 10,
-      items: ROWS,
+      volumeM3: over.volumeM3 === undefined ? 10 : over.volumeM3,
+      items: over.items ?? ROWS,
       source: 'card',
     },
     { actorId: sellerId },
   );
   madeRequests.push(r.id);
-  expect(await queueCalcPrefill({ requestId: r.id, staffId: sellerId, section: 'rastamojka' })).toBe(true);
-  const [jobId, job] = [...boss.jobs.entries()].find(([, j]) => j.queue === JOB_CALC_PREFILL && j.data.requestId === r.id)!;
-  await handlers.get(JOB_CALC_PREFILL)!([{ id: jobId, name: JOB_CALC_PREFILL, data: job.data as unknown as CalcPrefillJob, retryCount: 0 }]);
+  expect(await queueCalcPrefill({ requestId: r.id, staffId: sellerId, section })).toBe(true);
+  // A yo‘lkira job rides its own queue (his 2.5 b); the worker serves both.
+  const [jobId, job] = [...boss.jobs.entries()].find(([, j]) => j.data.requestId === r.id)!;
+  await handlers.get(job.queue)!([{ id: jobId, name: job.queue, data: job.data as unknown as CalcPrefillJob, retryCount: 0 }]);
   const said = await db
     .select({ payload: notifications.payload, status: notifications.status, error: notifications.error })
     .from(notifications)
@@ -256,7 +265,18 @@ describe('«AI so‘raydi» through the landing, the queue and the worker (A1-A3
         `· 1-qator «${SWEATER}»: soni (dona) — boj kamida $1/dona`,
         `· 3-qator «${PART}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`,
         '✍️ Shu xabarga reply qilib yozing: «2: 300 dona; 1: 300 dona» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.',
+        // Row 3 is asked in WORDS, which no reply carries in this release
+        // (review ask-break-1): said where they go, and who codes it.
+        '📝 Nima tovar ekanini (nimadan, nima uchun) kartadagi lentaga yozing — kodni VED xodimi qo‘yadi.',
       ].join('\n'),
+    );
+    // Row 2 states no figure: its group's refusal is the figure the block
+    // asks, the seller's — never «baza yo‘q — VED xodimi qo‘yadi» under the
+    // question to him (review ask-break-8). The line opens «2.» alone, so the
+    // refusal names no row.
+    const lines = aiText.split('\n');
+    expect(lines[lines.indexOf(`2. ${BACKPACK} · 4202921100`) + 1]).toBe(
+      '   ⚠️ soni (dona) yoki sof og‘irligi (kg) kiritilmagan — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
     );
     expect(SELLER_ASKS_HEAD).toBe('❓ AI so‘raydi — javob yozsangiz qayta hisoblaydi:');
     // The uncoded row stands in its place by its own number (A3), and
@@ -275,37 +295,47 @@ describe('«AI so‘raydi» through the landing, the queue and the worker (A1-A3
     expect(askedSeqsOf(sellerAsksOf(lawAsksInputOfStored(stored)))).toEqual([1, 2]);
   });
 
-  it('NULL (a request from before the doors): the law’s block and its one row — and every other line of the answer as the AI door’s', async () => {
+  it('NULL (a request from before the doors): the law’s block and its one row, today’s tails — line for line, by hand', async () => {
     const { id, said } = await landAndRun(null);
     expect(said).toHaveLength(1);
     expect(said[0]!.status).toBe('pending');
     nullText = textOf(said[0]!);
-    expect(nullText).toContain(
+    // Re-anchored (review ask-spec-3) on literal lines, not on the AI door's
+    // rendering — a change to a line both doors share would have kept that
+    // comparison green. Each line is the fixture put through the rule:
+    expect(nullText).toBe(
       [
+        // The title: customs only, the client's code, the deal's code.
+        `${AI_REPLY_HEAD} · taxminiy rastamojka · AS${SUFFIX} · AS-${SUFFIX}`,
+        // Row 1 alone in its group, opened by its own number (A3, on every
+        // door: PA-3's overwrite was the law block's own example). No import
+        // is uploaded in this file, so no baza — the VED's — and its 📊 says
+        // there was no file to take a median from.
+        `1. ${SWEATER} · 6110200000`,
+        '   ⚠️ baza yo‘q — VED xodimi qo‘yadi',
+        '   📊 taxmin yo‘q: bojxona fayli yuklanmagan',
+        // Row 2: nobody asks it on this door, so the engine's own refusal and
+        // tail stand as today; its 📊 says why no median could price it.
+        `2. ${BACKPACK} · 4202921100`,
+        '   ⚠️ baza yo‘q — VED xodimi qo‘yadi',
+        '   📊 taxmin yo‘q: qatorda soni ham, og‘irligi ham yo‘q',
+        // Row 3, uncoded, in its place by its number (A3) — the VED's to code.
+        `3. ${PART} — kod yo‘q — VED xodimi qo‘yadi`,
+        // The law's block, as today: row 1's count, under the law's head.
         '❓ Hisob to‘liq bo‘lishi uchun o‘lchov kerak — qonun shuni so‘raydi:',
         `· 1-qator «${SWEATER}»: soni (dona) — boj kamida $1/dona`,
         '✍️ Shu xabarga reply qilib yozing: «1: 300 dona» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.',
+        '━━━━━━━━━━━━',
+        // Blocked by two refusals and an uncoded row, with nothing «Aniq» and
+        // no Taxminiy: the one sentence, no figure.
+        'Rastamojka jami: hozircha hisoblab bo‘lmadi.',
+        '⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.',
+        // The request's certificate is TRUE by default.
+        '📄 Sertifikat: bor (deb hisoblandi)',
+        // Two lines carry a 📊 (their reason for none), so the legend is drawn.
+        '📊 deklaratsiyalar medianasi (taxminiy)',
       ].join('\n'),
     );
-    // Rows 2 and 3 are asked nothing; the uncoded row is the VED's, as today.
-    for (const w of [SELLER_ASKS_HEAD, 'bu nima', `2-qator «${BACKPACK}»`, `3-qator «${PART}»`]) {
-      expect(nullText, w).not.toContain(w);
-    }
-    expect(nullText.split('\n')).toContain(`3. ${PART} — kod yo‘q — VED xodimi qo‘yadi`);
-    // NOTHING ELSE MOVED: with the two blocks and the uncoded row's line set
-    // aside (and the link, which names each request), the NULL answer is the
-    // AI door's, line for line — the doors differ in what they ask alone.
-    const rest = (text: string, block: string) =>
-      text
-        .split('\n')
-        .filter((l) => !l.startsWith('Karta:') && !l.startsWith(`3. ${PART}`))
-        .join('\n')
-        .replace(block, '');
-    const aiBlock = aiText.slice(aiText.indexOf(SELLER_ASKS_HEAD), aiText.indexOf('ni bosing.', aiText.indexOf(SELLER_ASKS_HEAD)) + 'ni bosing.'.length);
-    const lawHead = '❓ Hisob to‘liq bo‘lishi uchun';
-    const nullBlock = nullText.slice(nullText.indexOf(lawHead), nullText.indexOf('ni bosing.', nullText.indexOf(lawHead)) + 'ni bosing.'.length);
-    expect(aiText, 'the premise: the AI door ran first in this file').not.toBe('');
-    expect(rest(nullText, nullBlock)).toBe(rest(aiText, aiBlock));
     // …and the add door prefers the law's row alone, as before.
     const stored = (await storedRequestFacts(id))!;
     expect(stored.door).toBeNull();
@@ -322,6 +352,35 @@ describe('«AI so‘raydi» through the landing, the queue and the worker (A1-A3
     for (const w of ['❓', 'reply qilib', 'bu nima', 'Rastamojka jami']) expect(note, w).not.toContain(w);
     // Its note keeps the law's rows (review JR-13): the VED's to get.
     expect(note.split('\n')).toContain(`⚠️ VED uchun: 1-qator «${SWEATER}»: soni (dona).`);
-    expect(note).toContain(`⚠️ Kod topilmadi: 3-qator «${PART}» — VED xodimi qo‘yadi`);
+    // The plain door is FROZEN (review ask-break-5): its note names the
+    // uncoded row by name, as before this round.
+    expect(note).toContain(`⚠️ Kod topilmadi: ${PART} — VED xodimi qo‘yadi`);
+  });
+
+  /**
+   * Review ask-break-3, the finding's own path: a yo‘lkira job on the AI
+   * door whose seller can hear nobody (no linked chat). The card's lenta is
+   * then the only copy anyone reads, and it told its reader «mijozdan
+   * so‘rab, kartadagi lentaga yozing» with no line for the VED — the customs
+   * answer had its «⚠️ VED uchun:» copy, the road's did not.
+   */
+  it('«🤖» yo‘lkira, a seller nobody reaches: the card carries the VED’s copy — the gap named, «VED xodimi so‘raydi»', async () => {
+    await db.delete(telegramLinks).where(eq(telegramLinks.userId, sellerId));
+    try {
+      const before = new Date();
+      await landAndRun('ai', { section: 'yolkira', items: [{ name: `Kurtka yo‘l ${SUFFIX}`, quantity: 10 }], volumeM3: null });
+      const notes = await db
+        .select({ note: crmActivities.note, at: crmActivities.createdAt })
+        .from(crmActivities)
+        .where(eq(crmActivities.entityId, dealId));
+      const card = notes.filter((n) => n.at >= before).map((n) => n.note ?? '');
+      expect(card, 'one card note for this answer').toHaveLength(1);
+      // The road's gap, the seller's fact: no cube stored and none on a line.
+      expect(card[0]!.split('\n')[1]).toBe('⚠️ VED uchun: umumiy hajm (m³) yo‘q.');
+      expect(card[0]).toContain('Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi so‘raydi');
+      expect(card[0]).not.toContain('kartadagi lentaga yozing');
+    } finally {
+      await db.insert(telegramLinks).values({ userId: sellerId, telegramChatId: BigInt(CHAT), status: 'linked', linkedAt: new Date() });
+    }
   });
 });
