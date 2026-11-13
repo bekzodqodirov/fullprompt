@@ -6,6 +6,7 @@ import {
   parseClientHint,
   placeWord,
   prefixCode,
+  requestWord,
   statesGoods,
   type AmbiguousTotal,
   type CalcFacts,
@@ -31,6 +32,7 @@ import {
   NET_LABELS,
   normalizeTnved,
   packingRead,
+  packWord,
   parseGoodsLine,
   perOneSpans,
   readAmountText,
@@ -99,6 +101,11 @@ const KG_FIGURE = figureOf('kg');
 const M3_FIGURE = figureOf('m3');
 /** A piece count on the line — what keeps a counted cube («4 кубов») in the name (review JN-22). */
 const PIECES_FIGURE = new RegExp(figureOf('dona').source, 'iu');
+/** A figure with any unit of the vocabulary — the end of a line's name run. */
+const ANY_FIGURE = new RegExp(
+  String.raw`${NOT_GLUED}(?:${AMOUNT_NUMBER})${GAP}(?:${(['dona', 'kg', 'm3', 'm2', 'juft', 'litr', 'sm3', 'karobka'] as const).map(unitPattern).join('|')})(?![\p{L}\d])`,
+  'iu',
+);
 
 /**
  * A weight in TONNES or GRAMS (docs/AI-SORAYDI.md §3.1 T14, CR-7): «2 tonna»,
@@ -125,6 +132,12 @@ const SCALED_FIGURE = new RegExp(
 const LONE_SCALED_FIGURE = new RegExp(
   String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})[ \t\u00a0\u202f]+(${scaledPattern('lone')})(?![\p{L}\d])(?!${GAP}/)`,
   'giu',
+);
+
+/** A weight's label closing the text right before a figure — «G.W.:», «brutto», «og‘irligi», «вес брутто =». */
+const WEIGHT_LABEL_BEFORE = new RegExp(
+  String.raw`(?<![\p{L}])(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS])})${GAP}[.)]?${GAP}[:：=]?${GAP}$`,
+  'iu',
 );
 
 /**
@@ -167,12 +180,42 @@ function standsAlone(text: string, end: number): boolean {
   const near = text.slice(end, end + 48);
   const stop = near.indexOf('\n');
   const rest = (stop < 0 ? near : near.slice(0, stop)).trimStart();
-  if (rest === '' || /^[,;.)\]|/]/u.test(rest)) return true;
+  // A slash and a WORD after the figure — «G.W.: 15/ctn», «毛重: 15/箱»,
+  // «Hajmi: 0.12/karobka», «Brutto: 15/kor» — is one package's figure (a
+  // known tail) or a figure nobody can place (review JN-8 (e)): never the
+  // shipment's. A slash may still separate this field from the next one
+  // («G.W.: 507 / N.W.: 480») or from a figure («507 / 5.92 cbm»).
+  const slashed = /^\/\s*/u.exec(rest);
+  if (slashed) {
+    const after = rest.slice(slashed[0].length);
+    return !/^\p{L}/u.test(after) || LABEL_NEXT.test(after);
+  }
+  if (rest === '' || /^[,;.)\]|]/u.test(rest)) return true;
   return LABEL_NEXT.test(rest);
 }
 
-/** The cargo itself, in the forms a label follows — «yuk hajmi», «tovarlar og‘irligi», «вес груза» is the other order. */
-const CARGO_WORD = /^(?:yuk|юк|tovar|товар|mahsulot|махсулот|груз|goods|cargo)\p{L}*$/iu;
+/**
+ * The cargo itself, in the forms a label follows — «yuk hajmi», «tovarlar
+ * og‘irligi», «вес груза» is the other order — and the forwarder's own word
+ * for it, «kargo» («Kargo 1 200 kg» is the shipment's, review typed-break-4).
+ */
+const CARGO_WORD = /^(?:yuk|юк|tovar|товар|mahsulot|махсулот|груз|goods|cargo|kargo|карго)\p{L}*$/iu;
+
+/**
+ * The labels a PRODUCT's own measure goes by as well as a shipment's —
+ * «hajmi», «объём», «og‘irligi», «sof og‘irligi» — against a freight list's
+ * («G.W.», «CBM», «MEAS», «brutto», «毛重»), which name no product's capacity.
+ * After one of these, with no unit written, a fridge's «Объем: 250» (litres),
+ * an engine's «hajmi: 1.6» and a pot's «объём: 5» were the cargo's cubic
+ * metres (review typed-break-2). Words of `UNIT_FREE_LABELS` (fenced).
+ */
+const GENERAL_MEASURE_LABEL = new RegExp(
+  String.raw`^(?:${labelPattern([...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.netKg, ...UNIT_FREE_LABELS.volumeM3].filter((l) => /^(?:sof\s+)?og|^hajm|^объ/iu.test(l)))})(?![\p{L}])`,
+  'iu',
+);
+
+/** The words a label may follow and still be the line's own: a measure, a total, the cargo, a place, a greeting. */
+const labelOpener = (w: string) => figureLabel(w) || CARGO_WORD.test(w);
 
 /**
  * Is the label at `labelAt` its line's own — or some product's? «Hajmi: 12»,
@@ -182,6 +225,13 @@ const CARGO_WORD = /^(?:yuk|юк|tovar|товар|mahsulot|махсулот|гр
  * word possesses names that thing's measure, and with no unit after the
  * figure nothing else would say so (review JN-22's rule for a unit word
  * before a colon, on the labels). A Han label is a spec block's own.
+ *
+ * A product's GENERAL measure word (`GENERAL_MEASURE_LABEL`) stays the
+ * product's across a comma — «Кастрюля, объём: 5» — and across a line break:
+ * opening its line right under a figureless product name («Termos⏎Hajmi:
+ * 2⏎500 dona», «Холодильник LG⏎Объем: 250») it is that product's spec, the
+ * way a spec block's lines are its good's (T12). Never the shipment's: the
+ * cube is asked instead of priced.
  */
 function labelStands(scan: string, labelAt: number): boolean {
   if (/\p{Script=Han}/u.test(scan.charAt(labelAt))) return true;
@@ -189,7 +239,26 @@ function labelStands(scan: string, labelAt: number): boolean {
   const before = scan.slice(from, labelAt);
   // A figure before the label is the previous label's («G.W.: 507 MEAS: …»).
   if (/\d[.,]?\s*$/u.test(before.slice(-8))) return true;
-  return groupedReading(before, before.length, (w) => figureLabel(w) || CARGO_WORD.test(w)) === 'thousands';
+  const general = GENERAL_MEASURE_LABEL.test(scan.slice(labelAt, labelAt + 24));
+  const head = general ? before.replace(/[\s,;]+$/u, '') : before;
+  if (groupedReading(head, head.length, labelOpener) !== 'thousands') return false;
+  return !(general && head.trim() === '' && productLineAbove(scan, from));
+}
+
+/**
+ * Is the line ending right before `lineStart` a product's NAME and nothing
+ * else — no figure, no field, not a greeting, a route or the cargo itself
+ * («Mening yukim», «Yuk ma’lumoti:»)? Only the line DIRECTLY above: a blank
+ * line ends a block.
+ */
+function productLineAbove(text: string, lineStart: number): boolean {
+  if (lineStart === 0) return false;
+  const prevStart = text.lastIndexOf('\n', lineStart - 2) + 1;
+  const prev = text.slice(prevStart, lineStart - 1).trim();
+  if (prev === '' || /[\d\uE000:：=]/u.test(prev)) return false;
+  const words = prev.match(/\p{L}[\p{L}'’‘ʻ`-]*/gu) ?? [];
+  if (words.some((w) => CARGO_WORD.test(w) || labelOpener(w))) return false;
+  return nameOk(tidyName(prev));
 }
 
 /** The text line holding offset `at`, as `[start, end)`. */
@@ -217,8 +286,13 @@ function blankForTotals(text: string, prefix: string | null): string {
     .join('\n');
 }
 
-/** A word that modifies the figure itself — «taxminan 1 200 kg», «около 1 200 кг» — never a count before it. */
-const APPROX_WORD = /^(?:taxminan|taxminiy|тахминан|примерно|около|приблизительно|approx|about)$/iu;
+/**
+ * A word that modifies the figure itself — «taxminan 1 200 kg», «около 1 200
+ * кг», «hammasi bo‘lib 1 200 kg» — never a count before it, in the spellings a
+ * phone writes («tahminan», «тахминий»; review typed-break-4).
+ */
+const APPROX_WORD =
+  /^(?:taxminan|taxminiy|tahminan|tahminiy|тахминан|тахминий|примерно|около|приблизительно|approx|approximately|about|ca|bo[‘'’ʻ`´]?lib|бўлиб|булиб)$/iu;
 
 /**
  * One total, read from every place the text states it.
@@ -289,10 +363,12 @@ function readNumber(
   for (const hit of scan.matchAll(figure)) {
     const end = hit.index + hit[0].length;
     if (skip(hit.index, end)) continue;
-    // «Набор 4 кубов 20 шт»: the toy's own cubes, beside its piece count.
+    // «Набор 4 кубов 20 шт»: the toy's own cubes, beside its piece count — in
+    // the NAME run only, before the line's first figure; after one, «Kurtka
+    // 300 dona 450 kg 5 kubov», it is the cargo's cube (review typed-break-5).
     if (COUNTED_CUBES.has(hit[2]!.toLowerCase())) {
       const [from, to] = lineAround(scan, hit.index);
-      if (PIECES_FIGURE.test(scan.slice(from, to))) continue;
+      if (PIECES_FIGURE.test(scan.slice(from, to)) && !ANY_FIGURE.test(scan.slice(from, hit.index))) continue;
     }
     take(hit[1]!, hit.index, false, [hit.index, end]);
   }
@@ -300,7 +376,7 @@ function readNumber(
     for (const hit of scan.matchAll(reader.figure)) {
       const end = hit.index + hit[0].length;
       const factor = scaledKg(hit[2])?.factor;
-      if (factor === undefined || skip(hit.index, end) || !reader.when(hit.index)) continue;
+      if (factor === undefined || skip(hit.index, end) || !reader.when(hit.index, factor)) continue;
       take(hit[1]!, hit.index, false, [hit.index, end], factor);
     }
   }
@@ -328,7 +404,8 @@ function readNumber(
 /** A figure of the field in another scale, and where it may be read at all (`at` — the figure's offset). */
 interface ScaledReader {
   figure: RegExp;
-  when: (at: number) => boolean;
+  /** `factor`: the scale of the figure's word — 1000 a tonne's, 0.001 a gram's. */
+  when: (at: number, factor: number) => boolean;
 }
 
 /** One field's reading: its value, or the doubt, and WHERE the figures it took stand in the text. */
@@ -507,6 +584,13 @@ export type TypedTotalsOpts = {
    * totals names goods (T14, review JN-9).
    */
   totalsAnswer?: boolean;
+  /**
+   * The text is the figures AFTER a weight's label its caller has read off
+   * («og‘irligi 500 g», «vazni 2 t» at the table — line-address.ts
+   * `totalsLead`): a gram and a lone letter stand there as they do after the
+   * label itself.
+   */
+  weightLabel?: boolean;
 } & ClientHintOpts;
 
 /**
@@ -561,8 +645,8 @@ export function readTypedTotals(
   // is looked for (§3.1 T0): its digits were the thousands of the weight after.
   const scan = blankForTotals(text, clientCodePrefix(opts));
   // Kilos written in tonnes or grams (T14). On a line that states its pieces
-  // such a figure is what ONE piece is — a jack's 5 tonnes, a pack's 500
-  // grams — exactly as the row kernel reads it (units.ts `parseGoodsLine`).
+  // a TONNE is what ONE piece is — a jack's 5 tonnes — exactly as the row
+  // kernel reads it (units.ts `parseGoodsLine`)…
   const besidePieces = (at: number) => {
     const [a, b] = lineAround(scan, at);
     return PIECES_FIGURE.test(scan.slice(a, b));
@@ -572,9 +656,29 @@ export function readTypedTotals(
     const [a, b] = lineAround(text, at);
     return shipmentLine(text.slice(a, b));
   };
+  // A GRAM is never the shipment's anywhere a weight's label does not say so:
+  // no truck is weighed in grams, and «Choy 500 gr 200 karobka», «Kofe 250
+  // gr» are a pack's size — read as the brutto they were a 0.5 kg shipment
+  // over the model's figure, and the AI sotuvchi's weight (review
+  // typed-break-3, typed-break-9). The lone letters are read only where the
+  // figure IS a weight (review JN-9): in the answer to the bot's own totals
+  // question (a tonne), or after a weight's label — «G.W.: 2.5 MT», «brutto 2
+  // t», «og‘irligi 500 g» (review typed-spec-5).
+  const weightLabelled = (at: number) => {
+    if (opts.weightLabel === true) return true;
+    const [a] = lineAround(scan, at);
+    const from = Math.max(a, at - 40);
+    const label = WEIGHT_LABEL_BEFORE.exec(scan.slice(from, at));
+    // …the line's own label, never a product's («Domkrat og‘irligi 5 t» is a jack's).
+    return label !== null && labelStands(scan, from + label.index);
+  };
   const tonnes: ScaledReader[] = [
-    { figure: SCALED_FIGURE, when: (at) => opts.totalsAnswer === true || !besidePieces(at) || ofShipment(at) },
-    { figure: LONE_SCALED_FIGURE, when: () => opts.totalsAnswer === true },
+    {
+      figure: SCALED_FIGURE,
+      when: (at, factor) =>
+        factor < 1 ? weightLabelled(at) : opts.totalsAnswer === true || !besidePieces(at) || ofShipment(at),
+    },
+    { figure: LONE_SCALED_FIGURE, when: (at, factor) => weightLabelled(at) || (factor > 1 && opts.totalsAnswer === true) },
   ];
   const plain = readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || nettoLabelled(text, a, b), tonnes);
   // Customs-only: the netto stands for the total when nothing else is stated.
@@ -845,8 +949,25 @@ function figureLabel(word: string): boolean {
     MEASURE_FIELDS.has(fieldKey(word)) ||
     SHIPMENT_WORD.test(word) ||
     SHIPMENT_HEAD.has(word.toLowerCase()) ||
-    APPROX_WORD.test(word)
+    APPROX_WORD.test(word) ||
+    openerWord(word)
   );
+}
+
+/**
+ * A word no count, model or code can belong to, so a grouped number after it
+ * is whole (review typed-break-4): a PLACE in its route case («Yiwudan
+ * Toshkentga 12 500 kg», «Andijonga 1 200 kg» — intake.ts `placeWord`, the
+ * route reader's own), a greeting or a request («Assalomu alaykum 1 200 kg»),
+ * the cargo itself in any of its forms («Yukimiz 1 200 kg», «Mening yukim»,
+ * «Kargo 1 200 kg»), and «весит» («Груз весит 1 200 кг»). After these the
+ * question «200 kg mi yoki 1 200 kg mi?» was asked about a figure only one way
+ * readable. A product's name word is none of them: «Mebel 1 200 kg», «Omega
+ * 3 200 dona» are still asked.
+ */
+function openerWord(word: string): boolean {
+  const lower = word.toLowerCase().replace(/[’ʻʼ‘`´']/gu, '');
+  return placeWord(lower) || requestWord(word) || CARGO_WORD.test(word) || /^(?:весит|весят|weighs)$/u.test(lower);
 }
 
 /**
@@ -978,7 +1099,7 @@ const CLIENT_CODE_LINE = /^[A-Za-z]{1,4}\s*[-–]?\s*\d{1,8}$/;
  * VED's paste box and a sheet's cells call the kernel bare and read what they
  * always read (review JR-22).
  */
-const typedLine = (text: string) => parseGoodsLine(text, { scaled: true, packing: true });
+const typedLine = (text: string) => parseGoodsLine(text, { scaled: true, packing: true, openers: figureLabel });
 
 // ── a supplier's line as the typed reader reads it (§3.1 T8, T12) ──────────
 //
@@ -1151,9 +1272,17 @@ function readFieldLabels(text: string, fields: readonly number[] = []): LineFiel
     if (unit === null && word !== undefined) continue;
     if (unit === null) {
       const unitFree = (kind === 'weight' || kind === 'volume') && UNIT_FREE_EXACT[kind].test(label.replace(/\s+/gu, ' ').trim());
-      const takesUnit = kind === 'cartons' || kind === 'count' || (unitFree && colon && !money);
+      // «Dvigatel hajmi: 1.6», «Кастрюля, объём: 5», «Stul og‘irligi: 5»: a
+      // product's own measure word, possessed by the name before it — the
+      // engine's displacement, the pot's litres, one chair's kilos. With no
+      // unit written nothing says it is the cargo's: kept on the note, never
+      // the row's m³ or kilos (review typed-break-2; the totals reader's
+      // `labelStands` refuses the same figure as the shipment's).
+      const possessed = unitFree && GENERAL_MEASURE_LABEL.test(label) && !labelStands(text, labelStart);
+      const takesUnit = kind === 'cartons' || kind === 'count' || (unitFree && colon && !money && !possessed);
       if (!takesUnit) {
-        edits.push({ start: labelStart, end: figureEnd });
+        // A possessed label stays a word of the name it belongs to («Avtomobil dvigatel hajmi»), its figure the note's.
+        edits.push({ start: possessed ? labelStart + label.length : labelStart, end: figureEnd });
         aside.push(written);
         continue;
       }
@@ -1198,10 +1327,14 @@ function setAsidePairs(text: string): { text: string; aside: string[] } {
   const spans = amountsIn(text);
   const first = spans.findIndex((s) => unitOrScaled(s.word ?? undefined) !== null);
   if (first < 0) return { text, aside: [] };
+  // «Kofe 250 gr, 1000 pachka»: the pack count says whose the gram is — it
+  // stays for the readers, who then keep the gram in the name (`unitFigures`).
+  const gramFirst = (scaledKg(spans[first]!.word)?.factor ?? 1) < 1;
   const edits: Edit[] = [];
   const aside: string[] = [];
   for (const s of spans.slice(first + 1)) {
     if (s.word === null || unitOrScaled(s.word) !== null || !pairWord(s.word)) continue;
+    if (gramFirst && packWord(s.word)) continue;
     // «Мест: 20 Вес брутто: 15 кг/место» — the word is the next field's label.
     if (fieldAt(text, s.start + s.number.length)) continue;
     // «1/2 dyuym» — the number is a fraction's, and the pair no pair at all.
@@ -1305,6 +1438,11 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
   let measured = read.perOne;
   let cartons = false;
   let afterNumber = false;
+  // A gram measures the line only where no count stands beside it: «Choy 500
+  // gr 200 karobka» names half-kilo packs and states nothing a table can
+  // price — the carton count alone is no row (c0649, review typed-break-3).
+  let gram = false;
+  let counted = false;
   for (const token of tokens) {
     // What a set-aside label leaves behind — its «:», its «=» (`lineFields`).
     if (/^[:：=]+$/u.test(token)) continue;
@@ -1321,11 +1459,14 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
     if (unit !== null) {
       if (unit !== 'karobka') measured = true;
       else cartons = true;
+      if (unit === 'dona' || unit === 'karobka') counted = true;
       continue;
     }
     // «Sement 2 tonna», «Zafaron 500gr»: kilos in another scale (T14).
-    if (scaledWord(token) || (glued && scaledWord(glued[2]!))) {
-      measured = true;
+    const scaledToken = scaledWord(token) ? token : glued && scaledWord(glued[2]!) ? glued[2]! : null;
+    if (scaledToken !== null) {
+      if ((scaledKg(scaledToken)?.factor ?? 1) < 1) gram = true;
+      else measured = true;
       continue;
     }
     if (/^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token)) continue;
@@ -1333,9 +1474,13 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
     // xil» — a model's or a variety's, the name's as the kernel reads it; one
     // after the figures was set aside for the note (`lineFields`). Never a
     // currency (a price is no word of a name) and never a second word.
-    if ((wasAfterNumber || glued) && pairWord(glued ? glued[2]! : token)) continue;
+    if ((wasAfterNumber || glued) && pairWord(glued ? glued[2]! : token)) {
+      if (packWord(glued ? glued[2]! : token)) counted = true;
+      continue;
+    }
     return false;
   }
+  if (gram && !counted) measured = true;
   return measured || (read.sized && cartons) || !opts.measured;
 }
 
@@ -1800,7 +1945,9 @@ function readEntry(
     // The company's prefix standing apart from its digits — «GS 777 300
     // kg» — is the client code's letters, never a product called «GS».
     const prefixLetters = (w: string) => prefix !== null && w === prefix.toLowerCase();
-    if (judged.every((w) => notGoodsWord(w) || codeWord(w, prefix, counted) || glued.has(w) || prefixLetters(w))) return out;
+    // …nor a name of words that only open a figure («Kargo», «Tahminan», «Груз весит» — `openerWord`).
+    const opener = (w: string) => APPROX_WORD.test(w) || openerWord(w);
+    if (judged.every((w) => notGoodsWord(w) || codeWord(w, prefix, counted) || glued.has(w) || prefixLetters(w) || opener(w))) return out;
     const cartonish = judged.every((w) => CARTON_NOUNS.has(w) || notGoodsWord(w));
     if (cartonish && (FIELD_SHAPED.test(line) || judged.some(notGoodsWord))) return out;
     // A chat line about the shipment states no count, pair or code (R3-T8):

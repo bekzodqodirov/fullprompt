@@ -274,10 +274,15 @@ function readTotals(
   rest: string,
   field: 'weightKg' | 'volumeM3' | null,
   open: readonly TableTarget[],
+  /** `rest` follows a weight's label the caller read off (`totalsLead`) — never a field only inferred. */
+  labelled = false,
 ): TotalsReading {
   // The answer to the bot's own question about the totals: a lone «t» / «g»
   // after a number is its unit there («jami 2 t» — T14, review JN-9).
-  const { facts: read, taken } = readTypedTotals(rest, undefined, { totalsAnswer: true });
+  // A gram is read only after a weight's label (review typed-break-9): the
+  // lead word the caller took off («og‘irligi 500 g») is one; an un-addressed
+  // «500 g» is no truck's brutto.
+  const { facts: read, taken } = readTypedTotals(rest, undefined, { totalsAnswer: true, weightLabel: labelled && field === 'weightKg' });
   const left = totalsLeft(rest, taken);
   if (read.weightKg != null || read.volumeM3 != null || read.ambiguous.length > 0) {
     const totals = { weightKg: read.weightKg ?? null, volumeM3: read.volumeM3 ?? null, ambiguous: read.ambiguous };
@@ -799,7 +804,7 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
   }
 
   const lead = totalsLead(raw);
-  if (lead) return totalsSegment(raw, readTotals(lead.rest, lead.field, table.open), { explicit: true, namedNone: false });
+  if (lead) return totalsSegment(raw, readTotals(lead.rest, lead.field, table.open, true), { explicit: true, namedNone: false });
 
   // The material stage takes only an explicit address; everything else is goods.
   if (table.stage === 'material') return { ...refused(raw, 'no_address', raw), ...plain };

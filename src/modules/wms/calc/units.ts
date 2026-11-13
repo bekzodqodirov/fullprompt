@@ -609,8 +609,9 @@ export interface GoodsLine {
    */
   packing?: Packing | null;
   /**
-   * Per-one figures nobody can place — «har biri 2 kg» on a line with both a
-   * piece and a carton count and neither nearest, a cube of one piece — as the
+   * Figures nobody can place — a per-one figure whose owner the line does not
+   * say («har biri 2 kg» beside a piece AND a carton count), a cube of one
+   * piece, a grouped number asked for both readings («1 200 dona») — as the
    * seller wrote them: off every column, kept for the row's note.
    */
   aside?: string[];
@@ -962,6 +963,11 @@ export function amountsIn(line: string): AmountSpan[] {
 
 /** Whose one a per-one figure is. */
 export type PerOneOwner = 'package' | 'piece';
+
+/** A count of packs no unit list names — «1000 pachka», «200 пачек», «50 paket», «300 банок» — beside which a gram is one pack's. */
+const PACK_WORD = /^(?:pachk|пачк|пачек|paket|пакет|упаковк|banka|банк|флакон|flakon|qop|қоп|мешок|meshok|bag|box|ctn|carton|karobk|коробк|кор)\p{L}*$/iu;
+/** Is `word` a pack's count word (`PACK_WORD`) — for the typed readers that judge a gram beside it. */
+export const packWord = (word: string | null | undefined): boolean => PACK_WORD.test(word ?? '');
 
 /** A package's noun in its cases — «karobka», «karobkada», «karobkasi», «коробке», «мест», «ctn», «箱». */
 const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаковк|ctn|carton|box|кор|箱)\p{L}*`;
@@ -1742,7 +1748,19 @@ const CELL_JOIN = ' ; ';
  * it always read — «15 kg/ctn» is still that line's 15 kg on the card form
  * and the VED's paste box, which have no packing to put it on (review JR-22).
  */
-export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: boolean } = {}): GoodsLine {
+export function parseGoodsLine(
+  raw: string,
+  opts: {
+    scaled?: boolean;
+    packing?: boolean;
+    /**
+     * The caller's own words after which a grouped number is whole (`groupedReading`'s
+     * `isLabel`): the bot's typed readers know a route's places, a greeting, the
+     * cargo's own nouns — this file does not (intake.ts imports it).
+     */
+    openers?: (word: string) => boolean;
+  } = {},
+): GoodsLine {
   const line: GoodsLine = {
     name: '',
     tnvedCode: null,
@@ -1813,6 +1831,13 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
   const taken = new Set<SellerUnit>();
   // The line's weight came from a tonne or a gram: «2 tonna 2000 kg» then says ONE weight in two scales.
   let weightScaled = false;
+  // A grouped figure asked for both readings — «1 200 dona» — as the seller
+  // wrote it, for the row's note: the row stands without it, and the figure he
+  // typed must not vanish with no word (review typed-break-4).
+  const groupedAside: string[] = [];
+  // Has a figure with its unit been read yet (in the order the line is read)?
+  // A counted cube only BEFORE the first one is inside the name run.
+  let figureSeen = false;
   const nameParts: string[] = [];
 
   // What the line states per package (T4/T6), read over its columns as ONE
@@ -1844,6 +1869,13 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
   const piecesStated = packed
     ? packed.piecesCounted
     : kept.some((cell) => [...cell.matchAll(AMOUNT)].some((h) => unitOf(h[2]) === 'dona'));
+  // A GRAM beside any count — pieces, cartons, packs — is what one pack or one
+  // piece weighs: «Choy 500 gr 200 karobka», «Kofe 250 gr, 1000 pachka» are
+  // tea in half-kilo packs, never a 0.5 kg row (review typed-break-3). The
+  // figure stays in the name, where the coder reads it.
+  const countStated =
+    piecesStated ||
+    kept.some((cell) => [...blankNonAmounts(cell).matchAll(AMOUNT)].some((h) => unitOf(h[2]) === 'karobka' || PACK_WORD.test(h[2] ?? '')));
 
   kept.forEach((cellText, cellIndex) => {
     const consumed: [number, number][] = [];
@@ -1866,7 +1898,7 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
       // A space-grouped number after a name word or a bare number: its first
       // group may be a count, a model, a code — both readings, asked.
       const tail = withoutFirstGroup(number);
-      const welded = tail !== null && groupedReading(scan, hit.index!) === 'ask';
+      const welded = tail !== null && groupedReading(scan, hit.index!, opts.openers) === 'ask';
       // «Мест: 45», «Kg: 150» — a unit word written as a FIELD before its
       // number names that number: a carton count is never 45 pieces (c0347).
       const field = word ? null : UNIT_FIELD_BEFORE.exec(cellText.slice(0, start));
@@ -1891,7 +1923,8 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
       // that ask. Beside a piece count, or before a slash, the figure is the
       // goods' own measure and stays where it is.
       const scale = opts.scaled && word && unit === null ? scaledKg(word) : null;
-      const scaled = scale !== null && !scale.lone && !piecesStated && !/^\s*\//u.test(cellText.slice(end));
+      const scaled =
+        scale !== null && !scale.lone && !(scale.factor < 1 ? countStated : piecesStated) && !/^\s*\//u.test(cellText.slice(end));
       // «iPhone 15 Pro», «Stul 2 xil» — a number followed by a word that is
       // not a unit belongs to the NAME. Remember it: on a line that states
       // nothing else, «Ткань 300 м» is an amount in a unit this file does not
@@ -1903,8 +1936,12 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
       }
       // «4 кубов», «2 куба», «12 kubov» beside a piece count are what the
       // goods are made of («Набор 4 кубов 20 шт»), never four cubic metres:
-      // the figure stays in the name. Alone, or on a totals line, it is m³.
-      if (unit === 'm3' && piecesStated && COUNTED_CUBES.has(normalizeWord(word!))) continue;
+      // the figure stays in the name. Alone, or on a totals line, it is m³ —
+      // and so it is AFTER the line's first figure, outside the name run:
+      // «Kurtka 300 dona 450 kg 5 kubov» is the trade's own way of writing the
+      // cube beside the count, and folded into the name it was dropped with no
+      // word (review typed-break-5, JN-22's «inside a goods line»).
+      if (unit === 'm3' && piecesStated && !figureSeen && COUNTED_CUBES.has(normalizeWord(word!))) continue;
       const amount = readAmountText(number);
       if (amount.state === 'bad') continue;
       // Both readings of a doubted figure are in KILOS when its word scales it («1,200 тн»).
@@ -1926,8 +1963,10 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
       if (asked) {
         // The unit is stated (the line still STATES goods); the figure is not.
         line.problems.push(asked);
+        groupedAside.push(cellText.slice(start, end).replace(/\s+/gu, ' ').trim());
         continue;
       }
+      figureSeen = true;
       const routed = routeAmount(amount.value, word, { scaled });
       const key = scaled ? 'kg' : unit!;
       if (taken.has(key)) {
@@ -1958,8 +1997,10 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
     const last = cellBare.at(-1);
     if (last) {
       // «Stul 20 300», «iPhone 15 128»: the count itself may be welded.
-      if (last.asked) line.problems.push(last.asked);
-      else bare.push({ value: last.value, cell: cellIndex });
+      if (last.asked) {
+        line.problems.push(last.asked);
+        groupedAside.push(cellText.slice(last.start, last.end).replace(/\s+/gu, ' ').trim());
+      } else bare.push({ value: last.value, cell: cellIndex });
       consumed.push([last.start, last.end]);
     }
     let rest = cellText;
@@ -2002,6 +2043,7 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
     // The unit is stated, whosever the figure: the line still states goods.
     line.unitWords.push(...packed.figures.filter((f) => !f.inName).map((f) => f.word));
   }
+  if (groupedAside.length > 0) line.aside = [...(line.aside ?? []), ...groupedAside];
   if (line.cartons !== null && line.quantity === null && line.weightKg === null && line.measureQty === null) {
     line.problems.push({ kind: 'cartons_only', cartons: line.cartons });
   }
