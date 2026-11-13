@@ -136,7 +136,7 @@ export interface NumberSource {
   /**
    * The tool that made it (`TOOL_SPECS` name) — set by the two estimate tools on every source of a priced
    * answer (spec §1.1): the auto layer's money clause asks WHICH tool vouched for each money line, never its label.
-   * Absent = no tool named it (the customer, a fact, the company's rule, a memory stored before 0146).
+   * Absent = no tool named it (the customer, a fact, the company's rule, a memory stored before 0148).
    */
   tool?: string;
 }
@@ -537,7 +537,7 @@ export interface LedgerEntry {
   /**
    * Who vouched for it — copied from the source `placedLedger` found, never read off the label (spec §1.1): the
    * auto layer passes a money line only when a TOOL of this run said it, an estimate tool, as a total or a rate.
-   * Absent on a line nothing vouched for, and on every line stored before 0146 — read as «not the tool's».
+   * Absent on a line nothing vouched for, and on every line stored before 0148 — read as «not the tool's».
    */
   origin?: SourceOrigin;
   /** The tool that made the source (`NumberSource.tool`); absent = none named. */

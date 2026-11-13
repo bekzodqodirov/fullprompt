@@ -14,7 +14,7 @@ import { AGENT_LIMITS, HUMAN_LIMITS } from './limits';
  * `autoFactsFor`), the send step (outbox-store `sendFactsFor`) and the page
  * (web-page `agentToday`) — so the four can never count a different day.
  *
- * Stored on a SIDE table (0146 `agent_send_caps`), never a column of
+ * Stored on a SIDE table (0148 `agent_send_caps`), never a column of
  * agent_config: `readAgentConfig` selects every declared column behind a probe
  * that answers TRUE one migration behind, and a new one would be a 42703 in
  * every reader — the listener's send step among them. A missing table or row,
@@ -26,7 +26,7 @@ import { AGENT_LIMITS, HUMAN_LIMITS } from './limits';
  * The bounds a typed cap keeps — the human queue's own (crm/telegram-send `DEFAULT_LIMITS`): 200 a day, and an
  * hour no faster than its minute (12 × 60) and never above 100. The agent may never be the reason the account
  * hits a ceiling the human bridge respects; `tests/unit/agent-send-step.test.ts` holds these against
- * `HUMAN_LIMITS` and against 0146's CHECKs.
+ * `HUMAN_LIMITS` and against 0148's CHECKs.
  */
 export const SEND_CAP_BOUNDS = {
   day: { min: 1, max: HUMAN_LIMITS.perDay },
@@ -42,7 +42,7 @@ export interface SendCaps {
   stored: { dayCap: number | null; hourCap: number | null };
   /** His ✅ on the China tariff as it stands (§1.6); null = never. */
   tariffConfirmedAt: Date | null;
-  /** 0146 has landed — the page offers the form only then. */
+  /** 0148 has landed — the page offers the form only then. */
   ready: boolean;
 }
 

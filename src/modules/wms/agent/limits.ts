@@ -13,7 +13,7 @@ import { DEFAULT_LIMITS } from '../crm/telegram-send';
  * Every send cap is at or below the human queue's own (`DEFAULT_LIMITS`), and
  * `tests/unit/agent-limits.test.ts` says so: the agent may never be the reason
  * the account hits a ceiling the human bridge already respects. That holds for
- * the two he may edit too (0146, his «4 … o'zgartirish imkoni»): `perDay` and
+ * the two he may edit too (0148, his «4 … o'zgartirish imkoni»): `perDay` and
  * `perHour` below are the DEFAULTS of `send-caps.ts`, whose stored numbers are
  * bounded by the same human queue (`SEND_CAP_BOUNDS`), and every reader takes
  * the effective one from there.

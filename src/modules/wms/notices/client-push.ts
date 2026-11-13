@@ -56,6 +56,12 @@ export interface PreparedPush {
     confirm?: { receiptId: string; tag: string } | null;
   } | null;
   photo: PhotoRef | null;
+  /**
+   * What follows a delivery the sweep settled as sent — the automatic
+   * re-ask's History line (`client-reask.ts`). Absent for every other kind.
+   * Never allowed to fail the notice: the message went.
+   */
+  afterSent?: () => Promise<void>;
 }
 
 export type Skip = { skip: string };

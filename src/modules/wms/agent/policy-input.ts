@@ -60,14 +60,14 @@ export interface PolicyMemory {
   quotedAir?: AviaCargo | null;
   /**
    * A chat about rail (`railChat`): the machine's money was dropped from the sources and the price is HIS
-   * (§18.5) — the auto layer never sends a money reply here (spec §1.1). Absent (a memory stored before 0146)
+   * (§18.5) — the auto layer never sends a money reply here (spec §1.1). Absent (a memory stored before 0148)
    * reads as not one: such a chat's money has no source and blocks anyway.
    */
   rail?: boolean;
   /**
    * The customer's language as the run read the message it answers (`detectLocale(anchor, stored)`, spec §4) —
    * the auto layer sends an English, Persian or Chinese reply by itself only when this CONFIDENTLY says that
-   * language, never on the model's own label. Absent (stored before 0146) = not known.
+   * language, never on the model's own label. Absent (stored before 0148) = not known.
    */
   customerLocale?: { locale: AgentLocale | null; confident: boolean };
   /**

@@ -6,7 +6,7 @@
 -- NOTHING EXISTING GAINS A COLUMN (0138's rule, 0145's): `readAgentConfig` and `readAutoConfig` are a select()
 -- of every declared column, behind probes that answer TRUE one migration behind — a new declared column there
 -- would be a 42703 in every reader on deploy morning, the listener's send step among them. So the caps live on a
--- side table of their own, read behind `agentFullP1Ready()`; every 0146 writer asks it first and is refused in
+-- side table of their own, read behind `agentFullP1Ready()`; every 0148 writer asks it first and is refused in
 -- words, never a raw 23502/23514, while the code runs ahead of this file.
 --
 -- gsr_ai_reader (0080, allowlist default-deny) is granted NOTHING on the two new tables (stated): they hold the
@@ -36,7 +36,7 @@ ALTER TABLE "agent_auto_config" ADD CONSTRAINT "agent_auto_config_day_check"
 -- The audit row first, reading the value it replaces (auto-send `AUTO_AUDIT_ID`, the layer's one entity id).
 INSERT INTO "audit_log" ("actor_id", "entity_type", "entity_id", "action", "before", "after")
 SELECT NULL, 'agent_auto_config', '00000000-0000-0000-0000-000000000143'::uuid, 'update',
-       jsonb_build_object('perDay', "per_day"), jsonb_build_object('perDay', NULL, 'via', '0146')
+       jsonb_build_object('perDay', "per_day"), jsonb_build_object('perDay', NULL, 'via', '0148')
   FROM "agent_auto_config" WHERE "id" = 1 AND "per_day" IS NOT NULL;
 --> statement-breakpoint
 UPDATE "agent_auto_config" SET "per_day" = NULL, "updated_at" = now() WHERE "id" = 1 AND "per_day" IS NOT NULL;
@@ -91,11 +91,11 @@ INSERT INTO "agent_send_caps" ("id") VALUES (1) ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 -- (5) The bot's two new one-text waits (§2.2 «✍️ Savolga javob», §3.1 «📝 Tuzatish»). Waits are DURABLE in
 -- production (`setDurableWaits(true)`) and a refused INSERT is swallowed with one warning, so a kind missing
--- here would pass every test and lose the wait at the next deploy. Re-made the way 0141 re-made it — every
--- existing kind kept.
+-- here would pass every test and lose the wait at the next deploy. Re-made the way 0141 and 0146 re-made it —
+-- every existing kind kept, 0146's 'receipt_files' (a prixod's file collection) among them.
 ALTER TABLE "telegram_chat_waits" DROP CONSTRAINT "telegram_chat_waits_kind_check";
 --> statement-breakpoint
 ALTER TABLE "telegram_chat_waits" ADD CONSTRAINT "telegram_chat_waits_kind_check" CHECK ("kind" IN (
   'task', 'staff_entry', 'ad_visit', 'cabinet_link', 'agent_edit', 'agent_price', 'agent_code', 'burst',
-  'agent_answer', 'agent_lesson'
+  'receipt_files', 'agent_answer', 'agent_lesson'
 ));

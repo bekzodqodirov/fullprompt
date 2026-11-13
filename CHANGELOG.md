@@ -1,5 +1,297 @@
 # CHANGELOG
 
+## 2026-11-12 → 11-13 — Prixod javoblari: yuk qayta tortilsa mijozga savol o'zi boradi; xodimning ✅ i ham kg va kubni eslaydi; sotuvchi kartada fayl qo'shadi
+
+Sizning javobingiz «Prixod xabari» bilan yuborilgan yetti savolga: «1 b / 2 b / 4 b / 7 egasz yuk hech kimga habari
+bormasin va hech kimga birik tirilmasin adminga va logistga habar kelsa yetarla».
+
+Bitta migratsiya (**0147**). Deploydan keyin baza hisobi **148** bo'lishi kerak; `/api/version` bugungi vaqtni
+ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod javoblari (2026-11-13, 0147)».
+
+Migratsiya faqat qo'shadi: xodim qo'ygan ✅ ga ikkita ustun (o'sha paytdagi kg va kub — deploy kuni hozirgi
+qiymatlar bilan to'ldiriladi, shuning uchun deploy kuni hech bir ✅ o'zgarmaydi) va mijozga borgan savolga ikkita
+ustun (savolda nima yozilgani va qachon borgani). Mavjud ma'lumot o'zgarmaydi.
+
+### 1. Yuk qayta tortilsa yoki qayta sanalsa — mijozga savol o'zi boradi («1 b»)
+- Lotning **og'irligi, hajmi yoki quti soni** o'zgartirilsa (✏️ bilan yoki yuklash/qabulda «son» bilan) va mijozning
+  qo'lidagi savol yoki tasdiq endi yukka to'g'ri kelmasa — **oxirgi tuzatishdan 10 daqiqa keyin** mijozga yangi savol
+  o'zi boradi. Tepasida: «🔄 Yukingiz ma'lumoti yangilandi — iltimos, qayta tekshirib tasdiqlang.», ostida odatdagi
+  ro'yxat (nomi, quti soni, kg, m³) va «✅ To'g'ri / ❌ Xato bor». Xodim hech narsa bosmaydi.
+- **Qachon boradi:** mijozga shu prixod haqida tugmali savol borgan bo'lsa (yukni qabul qilgandagi xabar yoki
+  «Mijozdan so'rash») va u endi eskirgan bo'lsa; yoki savol bormagan, lekin lot ✅ edi — mijozning o'zi og'irlik va
+  hajm bilan tasdiqlagan yoki xodim «✅ To'g'ri — mijoz tasdiqladi» qo'ygan — va tuzatish shu ✅ ni buzgan bo'lsa.
+- **Bir necha marta ketma-ket tuzatsangiz — bitta savol boradi**, oxirgi tuzatishdan 10 daqiqa keyin, oxirgi holat
+  haqida.
+- **Savol bormaydigan holatlar:**
+  - tuzatish eski qiymatga qaytarilsa va mijozning ✅ i yana to'g'ri kelsa (savol ketib bo'lgan bo'lsa ham — mijoz
+    allaqachon tasdiqlagan narsani uchinchi marta so'ramaydi);
+  - farq ro'yxatda ko'rinmasa (kg — yuzdan bir, m³ — mingdan bir aniqlikda) va oxirgi savoldan beri boshqa hech
+    narsa (nomi, tarkibi) o'zgarmagan bo'lsa — aks holda savol o'sha o'zgargan narsalar haqida ham boradi;
+  - prixodning hamma lotlari ✅ bo'lsa;
+  - mijozning Telegrami ulanmagan bo'lsa; yuk Xitoydan chiqib, tushirib bo'lingan bo'lsa (3a ⭐);
+  - prixodda 30 tadan ko'p lot bo'lsa yoki savol Telegramga sig'masa (xodimning «Mijozdan so'rash»i bilan bir xil
+    chegara);
+  - faqat yozilgan tarkib «o'zgardi» bo'lgan bo'lsa (tarkibni ofis qayta yozadi — mijozdan so'ralmaydi).
+- **Bir xil savol ikki marta ketmaydi.** Tizim savolini kutib turgan paytda kimdir «📨 Mijozdan so'rash»ni bossa —
+  xodimning savoli darhol boradi, tizimniki to'xtaydi. Tizim savolni aynan yuborayotgan paytda bosilsa — «So'rov
+  allaqachon navbatda», yuborganidan keyin 10 daqiqa ichida — «So'rov hozirgina yuborilgan — 10 daqiqadan keyin qayta
+  so'rash mumkin» deb javob beradi. Bitta istisno: tizim savoli yo'lda ekan lot yana tuzatilgan bo'lsa, «Mijozdan
+  so'rash» yangi raqamlar bilan savolni darhol yuboradi — yo'ldagi savolda eski raqamlar bor, uni to'xtatib bo'lmaydi.
+- **Javobni kim eshitadi:** mijozning tizim savoliga bergan oddiy «✅» i hech kimga xabar bo'lib bormaydi (lot ❓
+  ro'yxatidan chiqadi — shu xabar); «❌» — avvalgidek sotuvchi va logistlarga. Lekin kimdir ilgari «Mijozdan so'rash»ni
+  bosgan va javob olmagan bo'lsa — mijozning javobi (✅ ham, ❌ ham) **o'sha odamga boradi** va kartada «so'ragan: …» deb
+  yoziladi: u so'ragan va javob kutyapti.
+- **Prixod kartasida:** «Yuk ma'lumoti o'zgardi — mijozdan 14:35 da o'zi qayta so'raladi» → yuborilgach «Ma'lumot
+  o'zgargani uchun mijozdan o'zi qayta so'raldi: 14:35». Bot yubora olmasa — «⚠️ Avtomatik qayta so'rov · …» sababi
+  bilan.
+- **Prixod tarixida:** «Telegram · ma'lumot o'zgargani uchun o'zi qayta so'raldi · N lot» — «Tizim» nomidan.
+- **O'chirish mumkin:** Boshqaruv → Sozlamalar → «client_reask_on_reweigh» (sukut bo'yicha yoqilgan — sizning «b»).
+  O'chirilsa — avvalgidek: lot «o'zgardi» bo'ladi, «Mijozdan so'rash»ni xodim bosadi.
+- **Deploydan oldin yuborilgan savollar:** ular nima yozganini tizim eslab qolmagan. Ular uchun yuqoridagi
+  «tasdiq buzilgan bo'lsa» qoidasi ishlaydi; javob berilmagan eski savol uchun savol o'zi bormaydi (lot ❓ bo'ladi,
+  «Mijozdan so'rash» turadi). Deploydan keyin borgan har bir savol eslab qolinadi.
+
+### 2. Xodim qo'ygan «✅ To'g'ri» ham kg va kubni eslaydi («2 b»)
+- Xodim lotga «✅ To'g'ri» bosganda endi **og'irlik va hajm ham** eslab qolinadi. Keyin kg yoki kub o'zgarsa
+  (ro'yxatda ko'rinadigan aniqlikda) — yuk Xitoyda bo'lsa, lot «o'zgardi» bo'lib ❓ ro'yxatiga qaytadi, kartada nima
+  o'zgargani yoziladi: «… og'irlik yoki hajm». Eski qiymatga qaytarilsa — o'zi yana ✅.
+- **Yuk Xitoydan chiqib, tushirib bo'lingandan keyin** qayta tortilsa — xodimning ✅ i ham ro'yxatlardan olib
+  tashlanadi (mijozning ✅ i bilan bir xil — 3a ⭐), lekin ❓ ro'yxatiga tushmaydi va uni u yerda qayta qo'yib
+  bo'lmaydi («✅ To'g'ri» tugmasi faqat Xitoydagi yuk uchun). Eski qiymat qaytarilsa — o'zi tiklanadi.
+- **Deploy kuni hech narsa o'zgarmaydi:** avval qo'yilgan ✅ lar uchun «eslab qolingan» kg/kub — deploy paytidagi
+  qiymatlar. Faqat bitta istisno: ✅ qo'yilgandan keyin quti soni o'zgargan lot (masalan, yuklashda «son» bilan
+  ko'paytirilgan va hali qaytarilmagan) uchun kg/kub eslab qolinmaydi — son qaytarilganda ✅ o'zi tiklanishi uchun.
+- **Yozilgan tarkib uchun bu allaqachon shunday edi** (tarkibning jami kg va kubi lotnikiga aniq teng bo'lishi
+  kerak) — tekshirdim, test bilan mahkamladim.
+- **Mijozning eski ❌ i qaytib chiqmaydi.** Mijoz ❌ bosgan, keyin xodim mijoz bilan gaplashib ✅ qo'ygan (yoki ofis
+  to'g'ri tovarlar bilan tarkib yozgan) lotda yuk qayta tortilsa — lot «o'zgardi» bo'ladi (sklad tuzatishi), mijozning
+  hal qilingan ❌ i qizil bo'lib qaytib chiqmaydi. Va 1-band mijozdan o'zi so'raydi.
+- Lot ✏️ formasida, lotda kg/kubni solishtiradigan ✅ turgan bo'lsa (xodimniki yoki mijozning og'irlik va hajm bilan
+  bergan tasdig'i), ogohlantirish chiqadi: «Og'irlik yoki hajm o'zgarsa — lotdagi ✅ o'z kuchini yo'qotadi».
+
+### 3. Prixod kartasida fayl qo'shish («4 b»)
+- Prixod kartasidagi «Fayllar»da **📎 qo'shish** endi botdagi «📎 Fayl qo'shish» bilan bir xil qoida bo'yicha chiqadi:
+  tasdiqlangan va bekor qilinmagan prixodda, **prixod bilan ishlaydigan xodimlarga** — sotuvchi, logist, VED, skladchi
+  (o'z skladidagi yukka) va admin. Buxgalter va faqat hisobot ko'radigan xodim kartani ochadi, lekin fayl qo'sha
+  olmaydi. Har bir sotuvchi har qanday prixodga qo'sha oladi (faqat o'z mijozinikigagina emas) — botdagidek.
+- **Sotuvchi yuklagan rasm hujjat sifatida saqlanadi** (karobka rasmi o'rnida chiqmaydi) — botdagidek, va o'qiladigan
+  sifatda siqiladi (invoysni o'qish mumkin). Skladchining, logistning va adminning rasmi avvalgidek karobka rasmi.
+- **Har bir fayl tarixda yoziladi:** kim, qachon, fayl nomi.
+- Bekor qilingan prixodga fayl qo'shib bo'lmaydi (bot ham rad etadi). Hech kimga xabar bormaydi (5a ⭐).
+
+### 4. Javob berilmagan savollar — ⭐ qoldi (3a, 5a, 6a)
+Har birini ishlab turgan kodga solishtirdim va test bilan mahkamladim (o'zgarsa — savol raqami bilan qizaradi):
+- **3a** — mijozning ✅ i yuk qayerda turganidan qat'i nazar, o'zi berilgan kg/kubga tegishli.
+- **5a** — fayl qo'shilganda (bot ham, sayt ham) hech kimga xabar bormaydi; kartada va tarixda ko'rinadi.
+- **6a** — «hisob-kitobga to'g'ri kelmadi» va «va'dadan farq qildi» alohida xabar bo'lib qoladi.
+
+### 5. Savol 7 — qayta so'raldi, hech narsa qurilmadi
+Sizning gapingiz variantlarning birortasiga to'g'ri kelmadi, shuning uchun ikki aniqlashtiruvchi savol yubordim (7.1,
+7.2 — pastda). Bu orada **hech narsa o'zgarmadi**: siz tasvirlagan narsa — «❓ Egasiz yuk» faqat logist va adminga
+boradi, tizim uni hech kimga o'zi biriktirmaydi — bugun ham shunday ishlaydi.
+
+### Qanday tekshirildi
+- Butun CI tartibi yangi bazada, bosqichma-bosqich, har biri o'z jurnali bilan (`6175c3c`): typecheck, lint, migratsiyalar
+  soni 148, **16 349 ta unit/integratsiya testi (931 fayl)**, build, **526 ta brauzer testi** (1 tasi
+  o'tkazib yuborilgan) — hammasi yashil. Undan keyingi bitta faqat-test commit (`79773b9`) o'z faylida alohida
+  yuritildi (50 test, yashil).
+- Har bir yangi test tuzatishsiz qizil bo'lishi alohida isbotlandi (kodni matn bilan o'zgartirib, uchinchi nusxada):
+  raund va uning birinchi tekshiruvi uchun 54 ta, tuzatishlar tekshiruvi uchun 18 ta.
+- Raund uch marta ko'rib chiqildi: loyihasi (to'rt tomondan), qurilgani (21 topilma — hammasi tuzatildi) va
+  tuzatishlarning o'zi (15 nomzod, 11 tasi alohida; 10 tasi tuzatildi, bittasi rad etildi — xodim «📨» ni bosganda
+  yangi raqamlar bilan savol darhol boradi, tizimning yo'ldagi eski savolidan keyin 10 daqiqa kutmaydi).
+
+### Bu yerda tekshirib bo'lmagani
+Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy avtomatik savol — haqiqiy sinov. Uni **deploydan keyin**
+qabul qilingan va mijozga «Yukingiz qabul qilindi» savoli borib bo'lgan prixodda sinab ko'ring (deploydan oldin
+borgan savollarni tizim eslamaydi): lotni ✏️ bilan qayta torting — kartada «… o'zi qayta so'raladi» qatori chiqadi,
+10 daqiqadan keyin «… so'raldi» bo'ladi.
+
+### Savollar (javob bermasangiz ⭐ ishlaydi)
+7.1. Egasiz yuk mijozga biriktirilganda xabar kimga borsin? ⭐ a) hozirgidek (mijozning sotuvchisiga; sotuvchisi yo'q
+bo'lsa — hech kimga) · b) mijozning sotuvchisi yo'q bo'lsa — logist va adminga · c) har doim faqat logist va adminga.
+7.2. Sotuvchisi yo'q mijozning yuki, keyinroq sotuvchi tayinlansa, o'sha sotuvchining KPI siga tushsinmi? ⭐ a)
+hozirgidek (tushadi) · b) hech kimning KPI siga tushmasin.
+
+## 2026-11-11 kechqurun → 11-12 — Prixod xabari: sotuvchiga bitta xabar va ikki tugma; mijoz og'irlik va hajmni ham tasdiqlaydi; AI xarajati kechki xulosada
+
+Sizning xabaringiz: «4 ha — tovar nomi, karobka soni, og'irlik va hajmga urg'u berilsin, tekshirib olsin klient va
+tasdiqlasin. 8 ha. Prixod kelganda … 2 marta sms boryapti — u yerga "prixod keldi" desin sotuvchiga: klient,
+karobka soni, tovar nomlari, kg, kub; ikkita button bo'lsin — fayl qo'shish va bitim biriktirish … Qolgan
+savollarimga javob o'zing bergan taklifing bo'yicha» va «mijoz tasdiq bosmasa ham, skladga yuk kelgan zahoti
+borsin xabar».
+
+Bitta migratsiya (**0146**). Deploydan keyin baza hisobi **147** bo'lishi kerak; `/api/version` bugungi vaqtni
+ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0146)».
+
+**Bu deploy pastdagi «AI sotuvchi oddiy javobni o'zi yuboradi» raundini ham olib keladi** (migratsiya 0145),
+agar uni hali deploy qilmagan bo'lsangiz — shuning uchun son 146 emas, **147**. O'sha raundning o'z
+ogohlantirishini ham o'qing: unda **tg-listen qayta qurilishi shart**. (Ikkala raund ham bir xil 0145 raqamini
+olgan edi; u birinchi bo'lib `main`ga kirgani uchun bu raundning migratsiyasi 0146 ga ko'chirildi.)
+
+**Pastdagi «Prixod kartasi» raundi ham** (migratsiyasiz) shu deploy bilan keladi — prixod kartasining
+ko'rinishi o'zgaradi; bu raundning kartadagi qismi o'sha yangi tartibga joylangan (7-band).
+
+### 1. Sotuvchiga bitta «Prixod keldi» xabari, ikki tugma bilan
+- **Avval ikkita xabar borardi** («📥 Prixod …» va alohida «💰❓ Narxi kelishilmagan yuk» yoki «📎 Bitimga
+  biriktirilmagan»). Endi **bitta**: «📥 Prixod keldi — raqam», mijoz (kod va ism), bitim holati, sklad, har
+  bir lot — nomi, quti soni, kg, m³; bir nechta lot bo'lsa «Jami» qatori.
+- **Bitim holati shu xabarning ichida** (alohida ogohlantirish emas): «⚠️ Narxlangan bitimi yo'q — narxlatib
+  qo'ying» · «📎 Bitimga biriktirilmagan — biriktirib qo'ying. Ochiq bitimlar: B-…» · «💰 B-… bitimida narx
+  yo'q — narx qo'ying» · bitimi va narxi bor bo'lsa — «🔗 Bitim: B-…».
+- **Ikki tugma:** «📎 Fayl qo'shish» va «🔗 Bitim biriktirish». Bitimi allaqachon bor prixodda ikkinchi tugma
+  «↗️ Ochish» bo'ladi.
+- **Mijoz tasdig'ini kutmaydi.** Bu xabar skladchi prixodni tasdiqlagan zahoti (bir daqiqa ichida) ketadi —
+  mijoz «✅» bosadimi-yo'qmi, farqi yo'q. (Avval ham shunday edi; endi buni test ushlab turadi.)
+- **Kim oladi:** mijozning sotuvchisi. Hech kim eshitmaydigan holatda — mijozning sotuvchisi yo'q, sotuvchi
+  ishdan ketgan yoki uning Telegrami botga ulanmagan bo'lsa — bitim muammosi bor prixod haqida **adminlar**
+  oladi (shu «Prixod keldi» ko'rinishida, ikki tugma bilan). Adminga borgan nusxada **nega unga kelgani**
+  yoziladi: «👤 Mijozning sotuvchisi yo'q — sizga yuborildi» yoki «👤 Sotuvchi … bu xabarni ololmaydi
+  (Telegrami ulanmagan yoki ishdan ketgan) — sizga yuborildi» — aks holda admin mijoz kartasida sotuvchini
+  ko'rib, «u xabar olgan» deb o'ylashi mumkin edi. Sotuvchi xabarni o'zi ovozsiz qilgan bo'lsa — bu uning
+  tanlovi, adminlarga o'tmaydi.
+- **Ovozsiz qilganlar hech narsa yo'qotmaydi:** «Operatsiya xabarlari»ni o'chirib, «Ogohlantirishlar»ni
+  qoldirgan odam bitimsiz prixodni baribir eshitadi; «Ogohlantirishlar»ni o'chirgan odam har bir prixodni
+  eshitadi; faqat ikkalasini ham o'chirgan odam eshitmaydi.
+- **Egasiz yuk mijozga biriktirilganda** sotuvchiga «📥 Prixod mijozga biriktirildi — …» boradi (yuk bir
+  necha hafta oldin kelgan bo'lishi mumkin — shuning uchun «keldi» emas), shu ikki tugma bilan.
+- Yo'l-yo'lakay topilgan eski xato: egasiz yuk mijozga biriktirilganda jamoa guruhiga «mijozning birinchi
+  yuki keldi» tabrigi chiqib ketar edi (yuk aslida bir necha hafta oldin kelgan). Endi chiqmaydi — tabrik
+  faqat skladchi prixodni tasdiqlaganda.
+- Avtomatik qoidalar (Boshqaruv → Qoidalar) «narxsiz yuk» / «biriktirilmagan yuk» hodisalarini avvalgidek
+  eshitadi — hodisalar yozilishda davom etadi, faqat sotuvchiga ikkinchi xabar bo'lib bormaydi.
+
+### 2. «📎 Fayl qo'shish» — botga tashlaysiz, prixodga biriktiriladi
+- Tugmani bosasiz → bot: «Fayllarni shu yerga yuboring yoki forward qiling» → fayl, rasm, PDF, Excel, Word
+  yuborasiz (mijoz chatidan forward ham bo'ladi) → **har biri kelishi bilan prixodga biriktiriladi** → bot:
+  «📎 …: 3 ta fayl biriktirildi» → «✅ Bo'ldi».
+- Siz «Bo'ldi bosganda biriktirilsin» degan edingiz. Men **kelishi bilan** biriktiradigan qildim, «Bo'ldi» esa
+  yig'ishni yopib, sonini aytadi. Sababi: shunda bot qayta ishga tushsa ham, «Bo'ldi» unutilsa ham hech bir
+  fayl yo'qolmaydi. Xato fayl ketib qolsa — **«↩️ Bekor qilish»**: shu yig'ishda qo'shilganlarning hammasini
+  olib tashlaydi.
+- **Jim yopilmaydi.** 30 daqiqa fayl kelmasa yoki siz boshqa ish boshlasangiz («Hisoblatish», topshiriq,
+  zametka) — yig'ish yopiladi. Shundan keyin fayl yuborsangiz, bot aytadi: «⌛ … yig'ish yopilgan — bu fayl
+  biriktirilmadi» va qayta ochish tugmasini beradi.
+- Video, ovozli xabar, stiker va matn prixodga yozilmaydi — bot buni so'z bilan aytadi (matn AI yordamchiga
+  savol bo'lib ketmaydi).
+- **Boshqa xabarga «javob» (reply) qilib yuborilgan fayl** bu prixodga biriktirilmaydi — u o'sha xabarniki
+  (masalan, boshqa prixodning «Prixod keldi» xabari yoki AI javobi). Hech bir joy uni olmasa, bot aytadi:
+  «↩️ Bu fayl boshqa xabarga javob qilib yuborilgan — prixod … ga biriktirilmadi».
+- To'xtab turgan «Hisoblatish»ni davom ettirsangiz ham fayl yig'ish yopiladi (keyingi fayl prixodga emas,
+  hisobga ketishi uchun).
+- Yopilgan yig'ish 2 soatdan keyin butunlay unutiladi: ertasi kuni yuborilgan boshqa rasmga «biriktirilmadi»
+  deb javob bermaydi va eski «↩️ Bekor qilish» tugmasi kechagi fayllarni o'chirmaydi.
+- Kim qo'sha oladi: prixod kartasini saytda ocha oladigan har bir xodim (sotuvchi, logist, VED, admin; skladchi
+  — o'z skladidagi yukka). Bekor qilingan prixodga qo'shib bo'lmaydi.
+- Bot orqali yuborilgan **rasm ham «fayl» bo'lib saqlanadi** (hujjat sifatida) — yuk rasmi o'rniga invoys
+  rasmi chiqib qolmasligi uchun. Kartadagi «Fayllar»dan ochiladi; tarkibdagi «🤖 Fayldan to'ldirish» uni o'qiydi.
+- Prixod tarixida har bir fayl alohida yoziladi: kim, qachon, qaysi fayl («… · Telegram») — kartadagi
+  fayl nomi bilan bir xil. Fayl **o'chirilganda** ham nomi yoziladi («Fayl o'chirildi: invoice.pdf»); avval
+  tarixda faqat «… o'chirdi» degan yalang'och qator chiqardi.
+- **Prixod kartasida:** o'zingiz qo'shgan faylning yonida endi ✕ bor (sotuvchi ham o'z faylini o'chira oladi).
+
+### 3. «🔗 Bitim biriktirish» — prixod kartasi bitim tanlash joyida ochiladi
+- Tugma prixod kartasini to'g'ridan-to'g'ri «Bitim» bo'limida ochadi — ro'yxatdan bitimni tanlab «Saqlash».
+- Mijozning bitimi bo'lmasa — o'sha joyda **«+ Yangi bitim ochish»**: bitim ochiladi va **shu prixod unga
+  o'zi biriktiriladi**, siz yana prixod kartasiga qaytasiz.
+- **Eskirgan forma prixodni ko'chirib yubormaydi.** Siz «Yangi bitim» formasini ochib turganingizda
+  hamkasbingiz shu prixodni boshqa bitimga biriktirib qo'ysa — «Saqlash» so'z bilan rad etiladi («Bu prixod
+  allaqachon bitimga biriktirilgan — yangi bitim ochilmadi»), yangi bitim ochilmaydi, prixod joyida qoladi.
+- **Mijozi o'zgartirilgan prixod:** unda eski mijozning bitimi qolib ketgan bo'lsa, blok uni «biriktirilgan»
+  deb ko'rsatmaydi — «Boshqa mijozning bitimida qolgan: B-…» deb yozadi va yangi mijozning o'z bitimini
+  tanlash yoki yangisini ochishni taklif qiladi (xabarda ham «bitimi yo'q» deyilgan — endi ikkalasi bir xil).
+- **Bekor qilingan prixod:** eski xabardagi tugma uni ham ochadi — «Bitim» blokining o'zida «Bu prixod bekor
+  qilingan» deb yoziladi va «Yangi bitim ochish» taklif qilinmaydi.
+- Brauzerda tizimga kirilmagan bo'lsa (Telegramning o'z brauzeri, birinchi marta): login so'raydi va bosh
+  sahifaga tushadi — tugmani yana bir marta bosing. (Bu barcha «↗️ Ochish» tugmalarida shunday.)
+
+### 4. Mijoz endi og'irlik va hajmni ham tasdiqlaydi («4 ha»)
+- Mijozga boradigan savol: **«❓ Tovar nomi, quti soni, og'irligi (kg) va hajmi (m³) to'g'rimi? Tekshirib,
+  tasdiqlang.»** — qalin harfda. «📨 Mijozdan so'rash» yuborgan ro'yxatda har bir lotning kg va m³ i turadi.
+- Mijoz «✅» bossa, prixod kartasida: «✅ Mijozning o'zi Telegramda tasdiqladi — nomi, quti soni, og'irligi va
+  hajmi».
+- **Oqibati (oldin aytgandim):** tasdiqdan keyin lotning og'irligi yoki hajmi o'zgartirilsa — lot «o'zgardi —
+  qayta so'rang» bo'lib ❓ ro'yxatiga qaytadi. Farq ro'yxatda ko'rinadigan darajada bo'lsagina (kg — yuzdan
+  bir, m³ — mingdan bir aniqlikda); eski qiymatga qaytarilsa — o'zi yana ✅ bo'ladi.
+- Deploydan OLDIN yuborilgan xabarlardagi eski tugmalar ishlayveradi, lekin ular faqat nom va quti sonini
+  tasdiqlaydi (o'sha xabar og'irlikni so'ramagan) — kartada shunday yoziladi.
+- Rasmli xabarda savol sig'may qolsa, rasm tashlab yuboriladi va savol matn bo'lib boradi — savolsiz tugma
+  ketmaydi.
+
+### 5. Kechki 20:00 xulosasida AI xarajati («8 ha»)
+- Yangi qator: **«🤖 AI (oxirgi 24 soat): ≈ $4.20 · 132 murojaat»**. Dushanbadagi haftalik xulosada **ikki
+  qator**: «🤖 AI (hafta): …» — o'tgan hafta bo'yicha, va uning ostida «🤖 AI (oxirgi 24 soat): …» (dushanba
+  kuni kunlik xulosa bo'lmaydi — bu qatorsiz dushanba kungi ish hech bir kechki xulosaga tushmay qolardi).
+- «Oxirgi 24 soat» — chunki xulosa 20:00 da ketadi: «bugun» deb hisoblansa, kechki 20:00–24:00 dagi xarajat
+  (AI sotuvchi mijozlarga aynan shu paytda javob beradi) hech qaysi kunlik xulosaga tushmay qolardi.
+- Uchta hisobdan yig'iladi: hisob-kitob AI (AI VED, Bojxona 🤖, «Fayldan to'ldirish»), AI sotuvchi va AI
+  yordamchi (bot va /ai). Narxi aniqlanmagan murojaatlar alohida aytiladi («5 tasining narxi noma'lum»),
+  hech qachon $0 deb qo'shilmaydi. Biror hisob o'qilmasa — nomi bilan aytiladi.
+- Bu taxminiy (ro'yxat narxi bo'yicha) raqam. Unga kirmaydi: bitim kartasidagi tovar faylini import
+  qilgandagi AI guruhlash.
+
+### 6. «Qolgan savollar — taklifing bo'yicha»
+Olti savol (1, 2, 3, 5, 6, 7) ⭐ bo'yicha qoldi; har birini ishlab turgan kodga solishtirib, test bilan
+mahkamladim: tugmalar «qabul qilindi» xabarida o'zi chiqadi; mijozning «❌»i xodim ✅ idan ustun; «❌» haqida
+sotuvchi, logistlar va adminlar xabar oladi; ko'p lotli prixodda «❌» hamma lotga yoziladi; xitoycha nomga AI
+ruscha nom beradi; limitlar 300 va 50.
+
+### 7. `main`dagi «Prixod kartasi» raundi bilan birlashtirildi (2026-11-12)
+Shu kunlari boshqa sessiya prixod kartasini qayta tartibga keltirdi («hamma narsa o'z joyida»). Ikkala raund
+bitta kartani o'zgartirgani uchun ularni birlashtirdim: kartaning yangi tartibi — o'sha raundniki, bu raundning
+qo'shganlari (bitim bloki, o'zi yuborgan faylni o'chirish ✕, mijoz javobidagi kg/kub) yangi tartibga joylandi.
+- **«🔗 Bitim biriktirish» tugmasi** endi kartadagi «Bog'lanishlar» kartochkasining «Bitim» qatoriga olib
+  boradi va uni ramka bilan belgilaydi. Telefonda bu kartochka tovarlardan **keyin** turadi: qisqa prixodda
+  sahifa oxirigacha suriladi va «Bitim» qatori ekranda to'liq ko'rinadi.
+- **Kompyuterda manzili bilan ochilgan sahifa tepaga sakrab ketardi** — `#bitim`, lot manzili, «Savol-javob»
+  havolasi: sahifa kerakli joyga tushib, bir lahzadan keyin yana tepaga qaytardi (bo'limlar qatori shunday
+  qilardi). Tuzatildi — endi tushgan joyida qoladi. Bu eski xato edi, faqat kompyuterda.
+- **Mijoz tuzatilib, prixod eski mijozning bitimida qolib ketsa** — karta endi o'sha bitimni prixodniki deb
+  ko'rsatmaydi, «Boshqa mijozning bitimida qolgan: B-…» deb yozadi. Tanlovda «Uzish» turadi — «Saqlash»ni
+  bossangiz, prixod o'sha bitimdan chiqadi; mijozni shu kartaning o'zida tuzatgan zahoti ham shunday.
+- **«Hisob» katagi** faqat prixodning **o'z** bitimidagi hisob-kitoblarni taklif qiladi. Avval yuqoridagi holatda
+  eski mijozning hisob-kitoblari taklif qilinardi va ularni bu yukka bog'lab tasdiqlash mumkin edi (bir mijozning
+  yuki boshqa mijozning narxi bilan solishtirilardi). Endi bunday bog'lash va tasdiqlash qabul qilinmaydi;
+  qolib ketgan bog'lanishni «—» yoki Telegramdagi «❌» bilan olib tashlash mumkin.
+- Sotuvchi o'zi yuborgan **oxirgi** faylni o'chirsa, bo'sh «Fayllar» sarlavhasi ham kartadan ketadi — ikki
+  faylni sekin internetda ketma-ket tez o'chirsa ham.
+
+### Qanday tekshirildi
+- Qurishdan **oldin** rejani uch mustaqil tekshiruvchi o'qidi (35 e'tiroz, uchtasi «xabar jim yo'qoladi»
+  turidagi jiddiy) — hammasi rejaga kiritildi. Qurilgandan **keyin** to'rt tekshiruvchi tayyor kodni o'qidi:
+  jiddiy xato topilmadi, 21 ta kamchilik topildi — hammasi tuzatildi (yuqoridagi bandlarda aytilgan: boshqa
+  xabarga javob qilib yuborilgan fayl, eskirgan «Yangi bitim» formasi, bekor qilingan prixod, dushanba kungi
+  AI qatori va boshqalar). «Nuqson» deb atalgan 6 tasini yana bir tekshiruvchi rad etishga urinib ko'rdi —
+  oltovi ham tasdiqlandi.
+- Birlashtirilgan kartani **yana ikki marta** tekshirtirdim. Ikkinchisi uchta nuqson topdi — uchchalasi
+  yuqoridagi 7-bandda (mijoz kartada tuzatilgandan keyingi «Saqlash», «Hisob» katagi, ikki faylni tez
+  o'chirish); hammasi tuzatildi.
+- Har bir tuzatish uchun test avval «tuzatishsiz qizaradi»mi — tekshirildi: 95 ta shunday isbot (11 tasi
+  brauzerda).
+- To'liq sinov toza bazada, serverdagi tartibda — `main`dagi ikkala raund bilan birlashtirilgan holatda:
+  16 233 ta test va brauzerda 524 ta sinov — hammasi yashil; baza hisobi 147. Oxirgi tuzatishlardan keyin
+  o'zgargan qismlarning testlari va prixod kartasining 34 ta brauzer sinovi qayta o'tdi; `main`ga qo'shishdan
+  oldin GitHub butun to'plamni yana bir bor ishlatdi.
+
+### Bu yerda tekshirib bo'lmagani
+Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy «Prixod keldi» xabari, ikki tugmaning birinchi
+bosilishi va birinchi yuborilgan fayl — haqiqiy sinov. G'alati narsa chiqsa — skrinshot yuboring.
+
+### Savollar (javob bermasangiz ⭐ ishlaydi)
+1. Yuk qayta tortilganda (kg/kub o'zgarganda) mijozga savol **o'zi** qayta borsinmi? ⭐ a) yo'q — lot
+   «o'zgardi» bo'lib ❓ ro'yxatiga tushadi, xodim «Mijozdan so'rash»ni bosadi · b) ha, o'zi qayta so'rasin.
+2. Xodim qo'ygan ✅ (yoki yozilgan tarkib) ham kg/kub o'zgarsa «o'zgardi» bo'lsinmi? ⭐ a) yo'q, faqat mijozning
+   Telegram tasdig'i · b) ha.
+3. Yuk Xitoydan **chiqib ketgandan keyin** qayta tortilsa, mijozning ✅ belgisi ham olib tashlansinmi? (U
+   paytda mijozdan qayta so'rab bo'lmaydi — tugma faqat yuk Xitoyda turganda bor.) ⭐ a) ha — tasdiq aynan o'sha
+   og'irlikka berilgan · b) yo'q, kg/kub faqat yuk Xitoyda turganida solishtirilsin.
+4. Sotuvchi prixod kartasida (saytda) ham fayl **qo'sha** olsinmi? ⭐ a) hozircha faqat bot orqali · b) ha.
+5. Fayl qo'shilganda logist/VED ga xabar borsinmi? ⭐ a) yo'q, kartada va tarixda ko'rinadi · b) ha.
+6. «Yuk hisob-kitobga to'g'ri kelmadi» (bitim narxidan oshganda) va «va'da qilingandan farq qildi» xabarlari
+   ham «Prixod keldi» xabariga qo'shilsinmi? ⭐ a) yo'q, alohida qolsin · b) ha.
+7. Egasiz yuk **sotuvchisi yo'q** mijozga biriktirilganda adminlarga xabar borsinmi? ⭐ a) yo'q, hozirgidek
+   hech kimga · b) ha.
+
 ## 2026-11-12 — Prixod kartasi tartibga keltirildi: hamma narsa o'z joyida
 
 Sizning gapingiz: «Prixodning interfeysini to'g'irlab qo'y, UI/UX dizaynini — hamma narsa har xil joyda bo'lib
@@ -10,7 +302,8 @@ unga tegmadim. Agar aynan «Qabul» ekranini nazarda tutgan bo'lsangiz — aytin
 **Bu faqat joylashuv ishi.** Hech kimning huquqi o'zgarmadi, hech qaysi tugma yo'qolmadi, hisob-kitobga tegilmadi.
 Kim nimani ko'rgan va bosa olgan bo'lsa — hozir ham shuni ko'radi va bosa oladi, faqat joyi tartibli.
 
-Migratsiya **yo'q**. Baza hisobi o'zgarmaydi (boshqa ish bilan birga chiqsa — 146). Bu deployni baza hisobi bilan
+Migratsiya **yo'q**. Baza hisobi o'zgarmaydi (boshqa ish bilan birga chiqsa — 146; yuqoridagi «Prixod xabari»
+raundi bilan birga — **147**). Bu deployni baza hisobi bilan
 emas, **`curl -s https://gsrwms.uz/api/version`** bilan tekshiring: bugungi vaqtni ko'rsatishi kerak.
 
 ### Avval qanday edi (o'lchadim)
@@ -85,7 +378,8 @@ hech qayerda yozilmagan edi.
 Sizning so'zingiz: «sen aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan tasdiq kop
 kutib qolmasin».
 
-**Migratsiya bor: 0145.** Deploydan keyin baza hisobi **146** bo'lishi kerak. **tg-listen ham qayta qurilishi
+**Migratsiya bor: 0145.** Deploydan keyin baza hisobi **146** bo'lishi kerak (yuqoridagi «Prixod xabari»
+raundi bilan birga deploy qilinsa — **147**). **tg-listen ham qayta qurilishi
 shart**, chunki yuborish qadami o'zgardi.
 
 **Bu deploy pastdagi «Tarkib takliflari» va «Tarkib tuzatishlari» raundlarini ham olib keladi** (0143, 0144), agar
@@ -170,7 +464,8 @@ Qayta yoqish har doim faqat sizning bosishingiz bilan bo'ladi.
 3. `docker compose build migrate`.
 4. `docker compose --profile https up -d --build`.
 5. `docker compose --profile telegram up -d --build tg-listen`.
-6. Tekshiring: baza hisobi **146** bo'lsin va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
+6. Tekshiring: baza hisobi **146** bo'lsin («Prixod xabari» raundi bilan birga — **147**) va
+   `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
 7. Haqiqiy Telegram va AI bilan bu yerda sinab bo'lmadi. Yoqqan birinchi kuningiz sahifadagi «🤖 O'zi yuborish»
    blokini va kartalarni kuzatib turing.
 

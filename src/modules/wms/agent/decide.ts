@@ -821,7 +821,7 @@ async function afterMachinePress(
 
 /**
  * The moment his ✅ vouches for the China column (spec SPEC-P1-v2 §1.6): the draft quoted a TRUCK figure (the column
- * prices only the truck — the flight is his rate) that was priced again at this press and stands, and 0146 has
+ * prices only the truck — the flight is his rate) that was priced again at this press and stands, and 0148 has
  * landed. The run's own start: the figure was priced on the column as it stood then, and a write during the run
  * must stay unconfirmed. null: nothing to vouch for.
  */

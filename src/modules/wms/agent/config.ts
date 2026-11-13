@@ -114,10 +114,10 @@ let fullP1Ready = false;
 let fullP1Behind = false;
 
 /**
- * Does 0146 exist — the full AI seller's part 1 (spec SPEC-P1-v2 §6)? Its two side tables, and the two widened
+ * Does 0148 exist — the full AI seller's part 1 (spec SPEC-P1-v2 §6)? Its two side tables, and the two widened
  * CHECKs of `agent_auto_config` (the categories admit `price`, `per_day` admits NULL): a server whose tables are
  * there but whose CHECKs are not would refuse the very writes this asks for. Cached TRUE only (the
- * `agentAutoReady` idiom). Every 0146 writer and reader asks it first: one migration behind, the caps read as
+ * `agentAutoReady` idiom). Every 0148 writer and reader asks it first: one migration behind, the caps read as
  * today's constants, a write of `price` or of no daily count is refused in words, and the prompt has no lessons.
  */
 export async function agentFullP1Ready(): Promise<boolean> {
@@ -136,7 +136,7 @@ export async function agentFullP1Ready(): Promise<boolean> {
                           AND conrelid = 'public.agent_auto_config'::regclass), false) AS ok`);
     fullP1Ready = rows[0]?.ok === true;
   } catch (err) {
-    logger.warn({ err }, '[agent] 0146 not checked');
+    logger.warn({ err }, '[agent] 0148 not checked');
     return false;
   }
   return fullP1Ready;
@@ -149,7 +149,7 @@ export function __forgetAgentFullP1Ready(): void {
 }
 
 /**
- * Tests: a server one migration behind 0146 — the probe answers «no» until forgotten (the `__pretendAgentAutoBehind`
+ * Tests: a server one migration behind 0148 — the probe answers «no» until forgotten (the `__pretendAgentAutoBehind`
  * idiom: the shared database still has the tables for every other process).
  */
 export function __pretendAgentFullP1Behind(): void {

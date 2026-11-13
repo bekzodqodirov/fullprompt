@@ -9,14 +9,26 @@ import { lockReceiptShareNoWait } from './grow-lot';
 import {
   checkTermsSql,
   clientDisputeSql,
+  clientFactsHoldSql,
   clientHoldsSql,
+  clientMeasuresHoldSql,
   lotAskableSql,
   lotCheckStateSql,
+  lotShownKgSql,
+  lotShownM3Sql,
   lotTarkibJoinSql,
+  measuresLine,
   tarkibStandsSql,
   type LotCheckState,
 } from './lot-check-sql';
-import { clientConfirmsReady, lotChecksReady, lotClientConfirmsReady } from './lot-check-ready';
+import {
+  clientConfirmsReady,
+  lotChecksReady,
+  lotClientConfirmsReady,
+  lotClientMeasuresReady,
+  lotTickMeasuresReady,
+  tickMeasuresReady,
+} from './lot-check-ready';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -25,8 +37,9 @@ import { mayReadReceipt } from './read-door';
  * docs/YUK-TEKSHIRUV.md). The owner's flow: the logist (or the VED — his 1a)
  * asks the client «100 karobkangiz keldi, klaviatura ekan, to'g'rimi?» and,
  * if it is, ticks. The row SNAPSHOTS what the person saw (his 2b: the name,
- * the count, the client); every reader compares it with the lot through
- * `lot-check-sql.ts`, so no writer of those facts ever clears it.
+ * the count, the client — and since 0147 the kilos and cubic metres as a list
+ * prints them, his «2 b» of 2026-11-12); every reader compares it with the lot
+ * through `lot-check-sql.ts`, so no writer of those facts ever clears it.
  */
 
 export type LotCheckRefusal = 'forbidden' | 'receipt_not_confirmed' | 'no_client' | 'lot_changed' | 'check_changed';
@@ -62,6 +75,13 @@ export const lotCheckInputSchema = z.object({
     boxCount: z.number().int().positive(),
     /** '' when the panel drew none — answered `no_client` by the door, never a parse refusal. */
     clientId: z.union([z.string().uuid(), z.literal('')]),
+    /**
+     * The lot's kilos and cubic metres as the card PRINTED them (0147): the
+     * stored totals, compared with the locked row as numbers. Absent on a page
+     * opened before the deploy — the press is then judged by the other four.
+     */
+    kg: z.string().max(40).optional(),
+    m3: z.string().max(40).optional(),
   }),
   note: z.string().max(500).optional(),
   /**
@@ -161,6 +181,12 @@ interface LockedLot {
   name_zh: string;
   name_ru: string | null;
   box_count: number;
+  /** The stored totals, as the database's text — what the card prints. */
+  total_kg: string;
+  total_m3: string;
+  /** …and as a list reads them, rounded by the DATABASE (`lotShownKgSql` / `lotShownM3Sql`). */
+  shown_kg: string;
+  shown_m3: string;
 }
 
 /**
@@ -179,15 +205,24 @@ interface LockedLot {
  */
 async function lockLot(tx: Tx, lotId: string): Promise<LockedLot> {
   const rows = (await tx.execute(sql`
-    SELECT id, receipt_id, letter, product_name_zh AS name_zh, box_count
+    SELECT id, receipt_id, letter, product_name_zh AS name_zh, box_count,
+           total_weight_kg::text AS total_kg, total_volume_m3::text AS total_m3
       FROM receipt_lots WHERE id = ${lotId}::uuid FOR NO KEY UPDATE
-  `)) as unknown as Omit<LockedLot, 'name_ru'>[];
+  `)) as unknown as Omit<LockedLot, 'name_ru' | 'shown_kg' | 'shown_m3'>[];
   const lot = rows[0];
   if (!lot) throw new LotCheckError('forbidden');
   const [named] = (await tx.execute(sql`
-    SELECT NULLIF(${lotRuShownSql(sql`l`)}, '') AS shown FROM receipt_lots l WHERE l.id = ${lot.id}::uuid
-  `)) as unknown as { shown: string | null }[];
-  return { ...lot, name_ru: named?.shown ?? null, box_count: Number(lot.box_count) };
+    SELECT NULLIF(${lotRuShownSql(sql`l`)}, '') AS shown,
+           ${lotShownKgSql(sql`l`)}::text AS shown_kg, ${lotShownM3Sql(sql`l`)}::text AS shown_m3
+      FROM receipt_lots l WHERE l.id = ${lot.id}::uuid
+  `)) as unknown as { shown: string | null; shown_kg: string; shown_m3: string }[];
+  return {
+    ...lot,
+    name_ru: named?.shown ?? null,
+    box_count: Number(lot.box_count),
+    shown_kg: named?.shown_kg ?? '',
+    shown_m3: named?.shown_m3 ?? '',
+  };
 }
 
 /**
@@ -205,8 +240,18 @@ export function lotCheckAuditKeys(letter: string | null): { check: string; note:
  * The History's value: «键盘 (Клавиатура) × 100 · GS777» — a re-check after a
  * rename reads different. The lot's letter is in the KEY (`lotCheck:A`).
  */
-function summary(zh: string, ru: string | null, count: number, code: string | null): string {
-  return `${zh}${ru ? ` (${ru})` : ''} × ${count} · ${code ?? '?'}`;
+function summary(
+  zh: string,
+  ru: string | null,
+  count: number,
+  code: string | null,
+  measures: { kg: string | null; m3: string | null } = { kg: null, m3: null },
+): string {
+  // The kilos and cubic metres the tick vouched for (0147), spelled as the
+  // client's answer spells them (`measuresLine`): a re-tick that moves only
+  // the weight must not read as a History row whose before equals its after
+  // (`visibleChanges` drops those, #502).
+  return `${zh}${ru ? ` (${ru})` : ''} × ${count}${measuresLine(measures.kg, measures.m3)} · ${code ?? '?'}`;
 }
 
 async function clientCodesOf(tx: Tx, ids: string[]): Promise<Map<string, string>> {
@@ -243,8 +288,11 @@ export async function checkLot(
   if (!receipt.clientId) throw new LotCheckError('no_client');
   const note = orNull(parsed.note);
   // Asked HERE, on the pool (a pooled read inside the transaction is #714's
-  // freeze): is the client's answer table there at all (0144)?
+  // freeze): is the client's answer table there at all (0144)? Does the tick
+  // remember kilos and cubic metres (0147)? Asked of the probe by the press
+  // itself, never a flag another screen remembered (L1-1).
   const clientSide = await clientConfirmsReady();
+  const tickSide = await tickMeasuresReady();
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
@@ -259,18 +307,32 @@ export async function checkLot(
       parsed.seen.nameZh.trim() !== lot.name_zh.trim() ||
       orNull(parsed.seen.nameRu) !== orNull(lot.name_ru) ||
       parsed.seen.boxCount !== lot.box_count ||
-      parsed.seen.clientId !== current.client_id
+      parsed.seen.clientId !== current.client_id ||
+      // The figures the card printed (0147): a re-weigh that landed after the
+      // page was drawn is a lot the person did not see.
+      (parsed.seen.kg !== undefined && Number(parsed.seen.kg) !== Number(lot.total_kg)) ||
+      (parsed.seen.m3 !== undefined && Number(parsed.seen.m3) !== Number(lot.total_m3))
     ) {
       throw new LotCheckError('lot_changed');
     }
 
-    const prev = await lockCheckRow(tx, lot.id);
+    // What the tick will remember (0147): the lot's figures as a list prints
+    // them, read under the lock. A lot whose totals cannot be a measure (NaN,
+    // negative — the column CHECK refuses them) remembers none, which holds.
+    const measured = tickSide && isMeasure(lot.shown_kg) && isMeasure(lot.shown_m3);
+    const seenKg = measured ? lot.shown_kg : null;
+    const seenM3 = measured ? lot.shown_m3 : null;
+
+    const prev = await lockCheckRow(tx, lot.id, tickSide);
     const holdsNow =
       prev !== null &&
       prev.seen_name_zh === lot.name_zh &&
       prev.seen_name_ru === lot.name_ru &&
       Number(prev.seen_box_count) === lot.box_count &&
-      prev.seen_client_id === current.client_id;
+      prev.seen_client_id === current.client_id &&
+      // A snapshot that remembers no measures says LESS than this press would
+      // (0146's rule for a basic answer): the same person's re-tick is WRITTEN.
+      (!tickSide || (prev.seen_kg === seenKg && prev.seen_m3 === seenM3));
     // The client's own answer (0144). A ❌ not older than the standing tick
     // outranks it (`lotCheckStateSql`, arm 3), so the same press by the same
     // person is then NOT «already confirmed»: it must write, and its new
@@ -293,6 +355,16 @@ export async function checkLot(
         checked_by = EXCLUDED.checked_by,
         checked_at = now()
     `);
+    // The two measures (0147) — SQL-only columns, so a statement of their own
+    // beside the upsert, in the same transaction and under the same locks.
+    // ALWAYS written where the columns exist: a re-tick must not keep the
+    // kilos an earlier tick remembered (the upsert's SET does not name them).
+    if (tickSide) {
+      await tx.execute(sql`
+        UPDATE lot_checks SET seen_kg = ${seenKg}::numeric, seen_m3 = ${seenM3}::numeric
+         WHERE lot_id = ${lot.id}::uuid
+      `);
+    }
 
     const codes = await clientCodesOf(tx, [current.client_id, ...(prev ? [prev.seen_client_id] : [])]);
     const keys = lotCheckAuditKeys(lot.letter);
@@ -302,7 +374,10 @@ export async function checkLot(
       action: 'update',
       before: {
         [keys.check]: prev
-          ? summary(prev.seen_name_zh, prev.seen_name_ru, Number(prev.seen_box_count), codes.get(prev.seen_client_id) ?? null)
+          ? summary(prev.seen_name_zh, prev.seen_name_ru, Number(prev.seen_box_count), codes.get(prev.seen_client_id) ?? null, {
+              kg: prev.seen_kg,
+              m3: prev.seen_m3,
+            })
           : null,
         [keys.note]: prev?.note ?? null,
       },
@@ -310,7 +385,7 @@ export async function checkLot(
         // A re-tick past the client's ❌ changes no word of the snapshot —
         // the History must still show that somebody answered for it.
         [keys.check]:
-          summary(lot.name_zh, lot.name_ru, lot.box_count, codes.get(current.client_id) ?? null) +
+          summary(lot.name_zh, lot.name_ru, lot.box_count, codes.get(current.client_id) ?? null, { kg: seenKg, m3: seenM3 }) +
           (answer.outranksTick ? ' · mijozning ❌ idan keyin qayta tasdiqlandi' : ''),
         [keys.note]: note,
       },
@@ -324,18 +399,33 @@ interface CheckRow {
   seen_name_ru: string | null;
   seen_box_count: number;
   seen_client_id: string;
+  /** The measures it remembered (0147), as the database's text; null = none (or a server before 0147). */
+  seen_kg: string | null;
+  seen_m3: string | null;
   note: string | null;
   checked_by: string;
   checked_at: string;
 }
 
-/** The person's check, FOR UPDATE, with `checked_at` as TEXT — the token the panel posts back. */
-async function lockCheckRow(tx: Tx, lotId: string): Promise<CheckRow | null> {
+/**
+ * The person's check, FOR UPDATE, with `checked_at` as TEXT — the token the
+ * panel posts back. Its two measures only where their columns exist
+ * (`tickSide`, the probe's answer — 0147).
+ */
+async function lockCheckRow(tx: Tx, lotId: string, tickSide: boolean): Promise<CheckRow | null> {
   const rows = (await tx.execute(sql`
-    SELECT seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, note, checked_by, checked_at::text AS checked_at
+    SELECT seen_name_zh, seen_name_ru, seen_box_count, seen_client_id,
+           ${tickSide ? sql`seen_kg::text AS seen_kg, seen_m3::text AS seen_m3` : sql`NULL::text AS seen_kg, NULL::text AS seen_m3`},
+           note, checked_by, checked_at::text AS checked_at
       FROM lot_checks WHERE lot_id = ${lotId}::uuid FOR UPDATE
   `)) as unknown as CheckRow[];
   return rows[0] ?? null;
+}
+
+/** A figure the tick may remember: finite and not negative (the column's CHECK). */
+function isMeasure(text: string): boolean {
+  const value = Number(text);
+  return text !== '' && Number.isFinite(value) && value >= 0;
 }
 
 /**
@@ -352,6 +442,8 @@ export async function uncheckLot(
   const parsed = lotUncheckInputSchema.parse(input);
   const { receipt } = await lotCheckDoor(actor, parsed.lotId);
   if (receipt.status !== 'confirmed') throw new LotCheckError('receipt_not_confirmed');
+  // On the pool, before the transaction (#714, L1-1).
+  const tickSide = await tickMeasuresReady();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
     const lot = await lockLot(tx, parsed.lotId);
@@ -362,7 +454,7 @@ export async function uncheckLot(
       SELECT status FROM receipts WHERE id = ${lot.receipt_id}::uuid
     `)) as unknown as { status: string }[];
     if (!current || current.status !== 'confirmed') throw new LotCheckError('receipt_not_confirmed');
-    const row = await lockCheckRow(tx, lot.id);
+    const row = await lockCheckRow(tx, lot.id, tickSide);
     if (!row) return { changed: false };
     if (row.checked_at !== parsed.seenCheckedAt) throw new LotCheckError('check_changed');
     await tx.execute(sql`DELETE FROM lot_checks WHERE lot_id = ${lot.id}::uuid`);
@@ -373,7 +465,10 @@ export async function uncheckLot(
       entityId: receipt.id,
       action: 'update',
       before: {
-        [keys.check]: summary(row.seen_name_zh, row.seen_name_ru, Number(row.seen_box_count), codes.get(row.seen_client_id) ?? null),
+        [keys.check]: summary(row.seen_name_zh, row.seen_name_ru, Number(row.seen_box_count), codes.get(row.seen_client_id) ?? null, {
+          kg: row.seen_kg,
+          m3: row.seen_m3,
+        }),
         [keys.note]: row.note,
       },
       after: { [keys.check]: null, [keys.note]: null },
@@ -402,7 +497,22 @@ export interface LotCheckView {
     token: string;
     note: string | null;
     holds: boolean;
-    moved: { name: boolean; count: boolean; client: boolean };
+    /** Which term moved: `measures` = the kilos or cubic metres it remembered (0147, his «2 b»). */
+    moved: { name: boolean; count: boolean; client: boolean; measures: boolean };
+    /**
+     * It remembers the kilos and cubic metres (0147) — a re-weigh turns it
+     * «o'zgardi». False on a server one migration behind and on a tick an
+     * old process wrote without them (the NULL arm: it holds through one).
+     */
+    measures: boolean;
+    /**
+     * This owner's ❌ is not older than it — the sentence's arm 3 lets the tick
+     * vouch for nothing, whether or not that ❌ still vetoes the lot (a tarkib
+     * of other goods settles a ❌ without making an older tick true again).
+     * The card draws such a tick as history, never as the green ✅ (the fixes'
+     * review, TICK3-CARD): a holding tick reads green only where it vouches.
+     */
+    outranked: boolean;
   } | null;
   /**
    * The client's own answer in Telegram (0144, `client-confirm.ts`), when
@@ -426,6 +536,19 @@ export interface LotCheckView {
     vetoes: boolean;
     /** The answer is the prixod's CURRENT owner's — a previous owner's is nobody's. */
     ofOwner: boolean;
+    /**
+     * The question asked about the lot's kilos and cubic metres too (0146 —
+     * the owner's «4 ha»), and the answer remembers them. False = it was
+     * about the name and the count: every answer from before 0146.
+     */
+    measures: boolean;
+    /**
+     * …and they are WHY it stopped holding: the five facts every question
+     * printed still stand and only the two figures moved. False when
+     * something else moved too — the card then says «ma'lumot o'zgardi», as
+     * it always has, and never blames a weight for a renamed lot.
+     */
+    measuresMoved: boolean;
     /** Who pressed «Mijozdan so'rash»; null = the receipt's own push asked. */
     askedBy: string | null;
   } | null;
@@ -446,15 +569,23 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
   // The client's answers only where their table exists (0144, #472): one
   // migration behind, the card draws the two bases it has always drawn.
   const withClient = lotClientConfirmsReady();
+  // …and their two measures only where THOSE columns exist (0146).
+  const measureColumns =
+    withClient && lotClientMeasuresReady()
+      ? sql`(lot_client.shown_kg IS NOT NULL) AS client_measures,
+             (${clientFactsHoldSql(refs)} AND NOT ${clientMeasuresHoldSql(sql`l`)}) AS client_measures_moved`
+      : sql`FALSE AS client_measures, FALSE AS client_measures_moved`;
   const clientColumns = withClient
     ? sql`lot_client.verdict AS client_verdict, lot_client.answered_at AS client_at,
            lot_client.answered_at::text AS client_token,
            ${clientHoldsSql(refs)} AS client_holds, ${clientDisputeSql(refs)} AS client_dispute,
+           (${clientDisputeSql(refs)} AND lc.checked_at <= lot_client.answered_at) AS person_outranked,
            (lot_client.shown_client_id IS NOT DISTINCT FROM r.client_id) AS client_of_owner,
-           ua.full_name AS client_asked_by`
+           ua.full_name AS client_asked_by, ${measureColumns}`
     : sql`NULL::text AS client_verdict, NULL::timestamptz AS client_at, NULL::text AS client_token,
-           NULL::boolean AS client_holds, NULL::boolean AS client_dispute, NULL::boolean AS client_of_owner,
-           NULL::text AS client_asked_by`;
+           NULL::boolean AS client_holds, NULL::boolean AS client_dispute, NULL::boolean AS person_outranked,
+           NULL::boolean AS client_of_owner,
+           NULL::text AS client_asked_by, ${measureColumns}`;
   const clientJoins = withClient
     ? sql`LEFT JOIN lot_client_confirms AS lot_client ON lot_client.lot_id = l.id
       LEFT JOIN users ua ON ua.id = lot_client.asked_by`
@@ -469,6 +600,8 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
            ${terms.name} AS name_ok,
            ${terms.count} AS count_ok,
            ${terms.client} AS client_ok,
+           ${terms.measures} AS measures_ok,
+           ${lotTickMeasuresReady() ? sql`(lc.seen_kg IS NOT NULL)` : sql`FALSE`} AS person_measures,
            lc.note, lc.checked_at::text AS checked_at, u.full_name AS checked_by,
            ${clientColumns}
       FROM receipt_lots l
@@ -491,6 +624,8 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     name_ok: boolean | null;
     count_ok: boolean | null;
     client_ok: boolean | null;
+    measures_ok: boolean | null;
+    person_measures: boolean | null;
     note: string | null;
     checked_at: string | null;
     checked_by: string | null;
@@ -499,12 +634,23 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     client_token: string | null;
     client_holds: boolean | null;
     client_dispute: boolean | null;
+    person_outranked: boolean | null;
     client_of_owner: boolean | null;
     client_asked_by: string | null;
+    client_measures: boolean | null;
+    client_measures_moved: boolean | null;
   }[];
   return new Map(
     rows.map((row) => {
-      const moved = { name: row.name_ok !== true, count: row.count_ok !== true, client: row.client_ok !== true };
+      // The sentence's own four terms (`checkTermsSql`): a holding tick here is
+      // exactly a `ticked` there, or the card would draw ✅ beside a lot every
+      // list calls «o'zgardi».
+      const moved = {
+        name: row.name_ok !== true,
+        count: row.count_ok !== true,
+        client: row.client_ok !== true,
+        measures: row.measures_ok !== true,
+      };
       return [
         row.lot_id,
         {
@@ -521,8 +667,10 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
                 at: new Date(row.checked_at!),
                 token: row.checked_at!,
                 note: row.note,
-                holds: !moved.name && !moved.count && !moved.client,
+                holds: !moved.name && !moved.count && !moved.client && !moved.measures,
                 moved,
+                measures: row.person_measures === true,
+                outranked: row.person_outranked === true,
               }
             : null,
           client: row.client_verdict
@@ -536,6 +684,8 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
                 vetoes: row.client_dispute === true && row.state === 'none',
                 ofOwner: row.client_of_owner === true,
                 askedBy: row.client_asked_by,
+                measures: row.client_measures === true,
+                measuresMoved: row.client_measures === true && row.client_measures_moved === true,
               }
             : null,
         },

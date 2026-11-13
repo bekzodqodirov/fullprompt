@@ -76,6 +76,17 @@ export function CalcLink({
           className="input-sm min-w-0 flex-1"
         >
           <option value="">—</option>
+          {/* A link the list does not hold — a calculation of the deal a client
+              correction left the prixod on, or one past the twenty newest — is
+              still the select's value: without its own option the select shows
+              «—» while holding it, so choosing «—» changed nothing and the
+              link could never be cleared. Disabled: it can be kept or cleared,
+              never chosen again. */}
+          {currentId && !options.some((o) => o.requestId === currentId) && (
+            <option value={currentId} disabled>
+              {t('linkCurrentElsewhere')}
+            </option>
+          )}
           {options.map((o) => (
             <option key={o.requestId} value={o.requestId}>
               {t(SECTION_LABELS[o.section as 'podklyuch'] as 'sections.podklyuch')} · {o.sealedAt}

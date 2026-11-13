@@ -4,7 +4,7 @@ import { estimateUnnamed, saysTashkent, type StoredEstimate } from '@/modules/wm
 import type { NumberSource } from '@/modules/wms/agent/numbers';
 
 /**
- * The full AI seller, part 1 — the fences migration 0146 needs, and the pure money facts the auto layer reads off
+ * The full AI seller, part 1 — the fences migration 0148 needs, and the pure money facts the auto layer reads off
  * a reply (spec SPEC-P1-v2 §1.1, §1.8, §6). Each fence is DERIVED from the files it guards, so a kind, a table or
  * a migration added next month is caught the day it lands.
  */
@@ -36,8 +36,8 @@ describe('the bot’s waits: the union, the schema and the last migration that r
   const schema = readFileSync('src/modules/platform/db/schema/platform.ts', 'utf8');
   const schemaKinds = inList(/'telegram_chat_waits_kind_check',\s*sql`([^`]*)`/u.exec(schema)?.[1] ?? '');
 
-  it('the last migration to re-make it is 0146, and it names the two new waits', () => {
-    expect(last).toBe('0146_agent_full_p1.sql');
+  it('the last migration to re-make it is 0148, and it names the two new waits', () => {
+    expect(last).toBe('0148_agent_full_p1.sql');
     expect(migrationKinds).toEqual(expect.arrayContaining(['agent_answer', 'agent_lesson']));
   });
 
@@ -57,17 +57,22 @@ describe('the bot’s waits: the union, the schema and the last migration that r
   });
 });
 
-describe('0146 adds no column to anything that existed (0138’s rule, spec §5.2)', () => {
-  const src = readFileSync(`${MIGRATIONS}/0146_agent_full_p1.sql`, 'utf8');
+describe('0148 adds no column to anything that existed (0138’s rule, spec §5.2)', () => {
+  const src = readFileSync(`${MIGRATIONS}/0148_agent_full_p1.sql`, 'utf8');
 
   it('no ADD COLUMN anywhere — a whole-row reader one migration behind names exactly what it named', () => {
     expect(src).not.toMatch(/ADD\s+COLUMN/iu);
   });
 
-  it('the journal carries it as the 146th, one tick after 0145', () => {
+  // Found by its TAG, never by «the last two»: the next migration must not turn this red (the other
+  // session took 0146 and 0147 while this round was being built — the thirty-eighth collision).
+  it('the journal carries it as the 148th, one tick after 0147', () => {
     const journal = JSON.parse(readFileSync(`${MIGRATIONS}/meta/_journal.json`, 'utf8')) as { entries: { idx: number; tag: string; when: number }[] };
-    const [prev, mine] = journal.entries.slice(-2);
-    expect(mine).toMatchObject({ idx: 146, tag: '0146_agent_full_p1' });
+    const at = journal.entries.findIndex((e) => e.tag === '0148_agent_full_p1');
+    const mine = journal.entries[at];
+    const prev = journal.entries[at - 1];
+    expect(mine).toMatchObject({ idx: 148, tag: '0148_agent_full_p1' });
+    expect(prev).toMatchObject({ idx: 147, tag: '0147_prixod_javoblar' });
     expect(mine!.when).toBe(prev!.when + 1);
   });
 

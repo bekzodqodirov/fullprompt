@@ -363,7 +363,7 @@ function capOf(raw: unknown): number | null {
   return /^\d{1,9}$/u.test(s) ? Number(s) : Number.NaN;
 }
 
-/** The layer's daily count (0146): an empty box is «no cap». The holder's — the service asks. */
+/** The layer's daily count (0148): an empty box is «no cap». The holder's — the service asks. */
 export async function agentAutoPerDayAction(raw: string): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
     try {
@@ -376,7 +376,7 @@ export async function agentAutoPerDayAction(raw: string): Promise<AgentActionRes
 }
 
 /**
- * The account-protection limits (0146): empty boxes are today's defaults. The holder's or a super_admin's — the
+ * The account-protection limits (0148): empty boxes are today's defaults. The holder's or a super_admin's — the
  * service asks; its refusals are the arming doors' own words (`auto_…`).
  */
 export async function agentSendCapsAction(values: { dayCap: string; hourCap: string }): Promise<AgentActionResult> {
@@ -391,7 +391,7 @@ export async function agentSendCapsAction(values: { dayCap: string; hourCap: str
 }
 
 /**
- * «✅ Tarif to'g'ri» on the page (0146, spec SPEC-P1-v2 §1.6): vouches for the China column the page SHOWED (`seen`,
+ * «✅ Tarif to'g'ri» on the page (0148, spec SPEC-P1-v2 §1.6): vouches for the China column the page SHOWED (`seen`,
  * its stamp) — a column written since is refused in words, never confirmed unseen. The holder's or a super_admin's.
  */
 export async function agentConfirmTariffAction(seen: string): Promise<AgentActionResult> {

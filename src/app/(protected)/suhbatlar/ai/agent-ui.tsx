@@ -666,7 +666,7 @@ export function AutoArmButtons({
 
 /**
  * Which kinds go by themselves — a replace-all of the boxes (the five of `AUTO_SEND_CATEGORIES`; the page drops
- * «Narx» on a server one migration behind 0146, `kinds`). Controlled, posted as one list by the action (never a
+ * «Narx» on a server one migration behind 0148, `kinds`). Controlled, posted as one list by the action (never a
  * form whose disabled box posts nothing, #171); a reader who may not change it sees the boxes and no save.
  */
 export function AutoCategoriesForm({
@@ -726,7 +726,7 @@ function typedCap(raw: string): number | null | 'bad' {
 }
 
 /**
- * The layer's daily count (0146, his «7 chegara qoyma»): an empty box is «no cap», a number is a cap. The
+ * The layer's daily count (0148, his «7 chegara qoyma»): an empty box is «no cap», a number is a cap. The
  * holder's alone, as the kinds are; a reader who may not change it sees the value and no save. Controlled — a
  * refusal keeps what he typed (#463).
  */
@@ -769,7 +769,7 @@ export function AutoPerDayForm({ current, editable, max }: { current: number | n
 }
 
 /**
- * The account-protection limits (0146, his «4 hozircha qolsin … o'zgartirish imkoni»): the agent's day and hour
+ * The account-protection limits (0148, his «4 hozircha qolsin … o'zgartirish imkoni»): the agent's day and hour
  * caps, empty = today's default. The holder's or a super_admin's (`setSendCaps`). Controlled.
  */
 export function SendCapsForm({
@@ -823,7 +823,7 @@ export function SendCapsForm({
 }
 
 /**
- * «✅ Tarif to'g'ri» (0146, spec §1.6) — vouches for the China column this page was drawn with (`seen`, its stamp):
+ * «✅ Tarif to'g'ri» (0148, spec §1.6) — vouches for the China column this page was drawn with (`seen`, its stamp):
  * a column written since is refused in words. The bot's 14-day notice carries the same press.
  */
 export function TariffConfirmButton({ seen }: { seen: string }) {

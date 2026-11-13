@@ -755,6 +755,7 @@
       "tnved_ai_daily_limit": "「报关」页的 🤖 按钮每天可调用 AI 的次数——全公司合计（0 表示关闭）",
       "tarkib_ai_daily_limit": "“🤖 从文件填写”每天可让 AI 读取文件多少次 — 全公司合计；PDF、照片和 Excel 每次读取都算一次（0 — 关闭）",
       "client_confirm_on_receipt": "发给客户的「货物已入库」消息下是否显示 ✅ / ❌ 按钮（关闭后消息照旧发送；卡片上的「询问客户」仍可使用）",
+      "client_reask_on_reweigh": "货物重新称重（重量、体积或箱数变化）导致客户手中的确认问题过期时，是否自动重新发送问题（最后一次修改后 10 分钟；关闭后，卡片上的「询问客户」仍可使用）",
       "freight_tariff_cost_type_codes": "车辆费用中自动选择「按运费价目表」的费用类型（代码列表）",
       "staff_rating_goal_m3": "团队群的每周团队目标（立方，仅拼车 LTL 货物，0 = 无目标）。在「团队群」页面修改更方便。"
     },
@@ -893,7 +894,9 @@
       "freightMode": "货物类型（LTL/FTL）",
       "released": "编号已收回",
       "number": "编号",
-      "destBeforeDeparture": "收货仓库（出发前）"
+      "destBeforeDeparture": "收货仓库（出发前）",
+      "fileAdded": "已添加文件",
+      "fileName": "文件已删除"
     }
   },
   "profile": {
@@ -1101,7 +1104,11 @@
     "assignHasCompensation": "此入库单有赔偿记录——更换客户前，请会计作废并记到正确的客户。",
     "dealLinkCompensation": "此入库单有赔偿——将一并转到新交易。",
     "dealLinkUpsalePaid": "该交易的销售员提成已支付 — 移动入库前请会计撤销该笔支付",
-    "attachInUse": "此单据已附在批次组成上 — 从组成中移除前无法删除"
+    "attachInUse": "此单据已附在批次组成上 — 从组成中移除前无法删除",
+    "dealNew": "新建交易",
+    "dealForeign": "仍在其他客户的交易中：{code}。请选择该客户自己的交易、新建一个，或保存「取消关联」将其从该交易中移除。",
+    "dealForeignPick": "仍在其他客户的交易中：{code}。请选择该客户自己的交易，或保存「取消关联」将其从该交易中移除。",
+    "dealVoided": "该入库单已作废——其货物不计入任何交易。"
   },
   "stock": {
     "title": "库存",
@@ -3439,7 +3446,10 @@
       "not_your_client": "此客户的延期由其销售、会计或管理员授予",
       "ftl_office_only": "只有管理员、物流员或会计可以把 FTL 改回 LTL（或更换 FTL 交易的负责人）。",
       "ftl_not_yours": "只能把自己的交易标为 FTL。",
-      "server_behind": "服务器未更新 — 管理员需要运行迁移。"
+      "server_behind": "服务器未更新 — 管理员需要运行迁移。",
+      "receipt_has_deal": "该入库单已关联交易——未新建交易。请重新打开入库单卡片。",
+      "receipt_not_confirmed": "该入库单未确认或已作废——未为其新建交易。",
+      "upsale_paid": "该入库单所在交易已向销售支付提成——需会计先撤回付款，再转移入库单。"
     },
     "discountTitle": "折扣（货损）",
     "discountAmount": "折扣金额",
@@ -3485,7 +3495,9 @@
     "profitCompensation": "− 赔偿（丢失货物）",
     "profitNetRevenue": "收入（扣除赔偿后）",
     "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。",
-    "profitOtherDeal": "{truck} 车上的价格（{amount} $）记入了交易 {code}——不在本交易的收入中。"
+    "profitOtherDeal": "{truck} 车上的价格（{amount} $）记入了交易 {code}——不在本交易的收入中。",
+    "newDealForReceipt": "入库单 {number} 将关联到此交易。",
+    "receiptNotLinked": "交易已新建，但入库单未关联到它。请打开入库单卡片，在「交易」区块中选择此交易。"
   },
   "automation": {
     "title": "自动化规则",
@@ -4015,6 +4027,7 @@
     "linkedReceipts": "已关联的入库单",
     "linkPick": "核算",
     "linkNoneOnCard": "该入库单未关联核算",
+    "linkCurrentElsewhere": "当前计算 — 不在列表中",
     "quoted": "核算",
     "measured": "实际",
     "accuracy": "清关：核算与实际",
@@ -5790,6 +5803,7 @@
     "stale": "组成填写后批次已变化：填写时 {stated}，现在 {current} — 请核对",
     "staleShort": "批次已变化 — 请核对组成",
     "staleOnLotForm": "此批次有组成 — 公斤/箱数变化后需重新核对组成",
+    "measureOnLotForm": "重量或体积变更后，该批次的 ✅ 将失效",
     "frozenInfo": "🔒 {trucks} 的单据已发送 — 该车保持已发送状态；新组成只影响尚未发送的车辆。如需修改该车：报关员取消“已发送”，重新下载单据并发给代理",
     "paperMoved": "单据已变化（组成或该批货的另一辆车）— 请重新下载后再标记",
     "savedBy": "{name} · {date}",
@@ -5944,6 +5958,7 @@
     "movedName": "货物名称",
     "movedCount": "箱数",
     "movedClient": "客户",
+    "movedMeasures": "重量或体积",
     "telegram": "在 Telegram 中联系",
     "notePlaceholder": "备注（可选）：客户怎么说",
     "confirm": "正确 — 客户已确认",
@@ -5970,7 +5985,7 @@
     "clientNo": "客户在 Telegram 点了“有错误”",
     "clientYes": "客户本人已在 Telegram 确认",
     "clientAskedBy": "询问人：{by}",
-    "clientViaPush": "通过“货物已接收”消息下的按钮",
+    "clientViaPush": "通过系统发送的问题下的按钮",
     "clientMovedSince": "此后数据已被修改",
     "documentHeld": "已填写组成 — 但客户正是对这份清单提出异议",
     "personHeld": "此前确认：{by} · {day} — 在客户提出异议之前",
@@ -5993,6 +6008,9 @@
     "askLater": "Telegram 要求稍候 — 询问约在 {when} 发出",
     "askStuck": "询问自 {since} 起一直在排队 — 机器人暂时无法发送。请稍后再看；紧急的话请致电客户。",
     "askSent": "询问已发送：{when} · {by}",
+    "reaskWaiting": "货物信息已更改——系统将于 {when} 自动再次询问客户",
+    "reaskSent": "信息已更改——已自动再次询问客户：{when}",
+    "reaskLabel": "自动再次询问",
     "askFailed": {
       "no_chat": "未送达：客户未绑定 Telegram",
       "client_changed": "未发送：入库单的货主已变更",
@@ -6019,7 +6037,12 @@
       "busy": "入库单正忙 — 请稍后再点",
       "server_behind": "服务器尚未更新 — 请告知管理员",
       "other": "未完成 — 请重试"
-    }
+    },
+    "clientYesFull": "客户已在 Telegram 中确认——品名、箱数、重量和体积",
+    "clientYesBasicNote": "仅品名和箱数（未询问重量和体积）",
+    "clientStaleMeasures": "客户确认（{day}）之后重量或体积发生了变化——请重新询问",
+    "clientYesOldMeasures": "客户曾确认（{day}）——之后重量或体积已变化",
+    "askHintFull": "将向客户发送此入库单的所有批次（含明细、重量和体积）以及「✅ 正确 / ❌ 有误」按钮。客户确认品名、箱数、重量和体积。"
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "为什么赊账放行？（例如：明天付款）",

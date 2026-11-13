@@ -29,7 +29,7 @@ const NOON = new Date('2026-11-11T07:00:00Z');
 /** 23:00 Tashkent — the pump's night (send-step `isTashkentNight`). */
 const NIGHT = new Date('2026-11-11T18:00:00Z');
 
-/** The four kinds the layer shipped with — the stored row 0146 leaves as it found it (the price box ships unticked). */
+/** The four kinds the layer shipped with — the stored row 0148 leaves as it found it (the price box ships unticked). */
 const FOUR = ['greeting', 'qualification', 'faq', 'status'];
 
 function eligible(): AutoGateInput {
@@ -267,10 +267,10 @@ describe('the gate', () => {
     expect(autoVerdict(label)).toEqual({ eligible: true, reasons: [] });
   });
 
-  it('the kinds have ONE home: the gate re-exports the pure module the page reads, and 0146’s CHECK says the same five', () => {
+  it('the kinds have ONE home: the gate re-exports the pure module the page reads, and 0148’s CHECK says the same five', () => {
     expect(AUTO_SEND_CATEGORIES).toBe(ONE_HOME);
     expect([...AUTO_SEND_CATEGORIES]).toEqual(['greeting', 'qualification', 'faq', 'status', 'price']);
-    const sql = readFileSync('src/modules/platform/db/migrations/0146_agent_full_p1.sql', 'utf8');
+    const sql = readFileSync('src/modules/platform/db/migrations/0148_agent_full_p1.sql', 'utf8');
     const check = /"categories" <@ ARRAY\[([^\]]+)\]::text\[\]/u.exec(sql)?.[1];
     expect(check?.split(',').map((x) => x.trim().replace(/'/gu, ''))).toEqual([...AUTO_SEND_CATEGORIES]);
     // The page's file names the one home and never the gate (it would pull the send step into the browser).
@@ -305,7 +305,7 @@ describe('the gate', () => {
     expect(autoVerdict(day).eligible).toBe(true);
   });
 
-  it('no daily count (0146, his «7 chegara qoyma»): perDay null refuses nothing, however many went today', () => {
+  it('no daily count (0148, his «7 chegara qoyma»): perDay null refuses nothing, however many went today', () => {
     const input = eligible();
     input.config.perDay = null;
     input.pressedToday = 10_000;
@@ -386,7 +386,7 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
     }
   });
 
-  it('every money line must be an estimate tool’s total or rate: a balance, a fact, his answer, a line before 0146 — each refuses', () => {
+  it('every money line must be an estimate tool’s total or rate: a balance, a fact, his answer, a line before 0148 — each refuses', () => {
     const line = (l: AutoGateInput['draft']['ledger'][number]) => money((i) => (i.draft.ledger = [...i.draft.ledger, l]));
     // A balance line (own_balance's) — its role and its tool are not an estimate's.
     expect(line({ kind: 'money', origin: 'tool', tool: 'own_balance', role: 'balance' })).toEqual(['money']);
@@ -394,7 +394,7 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
     expect(line({ kind: 'money', origin: 'kb', tool: null, role: 'total' })).toEqual(['money']);
     // His answer's figure (§2.2): never money that goes by itself — and it comes back to him besides.
     expect(line({ kind: 'money', origin: 'owner', tool: null, role: 'total' })).toEqual(['money', 'owner_figure']);
-    // A line stored before 0146 names nobody.
+    // A line stored before 0148 names nobody.
     expect(line({ kind: 'money', origin: null, tool: null, role: null })).toEqual(['money']);
     // A line nothing vouched for (G1 blocks it too).
     expect(line({ kind: 'money', origin: null, tool: null, role: null })).toEqual(['money']);
@@ -414,7 +414,7 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
     ).toEqual(['money']);
   });
 
-  it('a draft with an estimate and none stored (written before 0146) is refused — the press could not re-price it (§1.3)', () => {
+  it('a draft with an estimate and none stored (written before 0148) is refused — the press could not re-price it (§1.3)', () => {
     expect(money((i) => (i.draft.estimatesStored = false))).toEqual(['money']);
     // The tool's priced call alone is enough to ask for them, with no memory flag.
     expect(
@@ -575,7 +575,7 @@ describe('a reply the machine pressed is nobody’s decision — the gate never 
     const greeting = categoryVerdicts(rows).find((v) => v.category === 'greeting')!;
     expect(greeting.decided).toBe(1);
     expect(greeting.proven).toBe(false);
-    // The MEASURED four (calibration.ts): price is gated by the money clause, never measured as clean (0146).
+    // The MEASURED four (calibration.ts): price is gated by the money clause, never measured as clean (0148).
     expect([...AUTO_CATEGORIES, 'price'].sort()).toEqual([...AUTO_SEND_CATEGORIES].sort());
   });
 });

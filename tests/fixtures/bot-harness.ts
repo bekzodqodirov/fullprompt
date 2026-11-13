@@ -54,6 +54,12 @@ export interface BotHarness {
   /** The next call of `method` (grammy or send.ts) fails with this. */
   failNext(method: string, error: FakeError): void;
   /**
+   * The next send.ts call of `method` runs `during` BEFORE it is answered —
+   * something that happens while a message is on its way (a correction landing
+   * mid-send).
+   */
+  duringNext(method: string, during: () => Promise<void>): void;
+  /**
    * A file the bot can download: `getFile` names it and the file endpoint
    * hands these bytes over (anything not served answers as before — no path).
    */
@@ -69,6 +75,7 @@ export function botHarness(): BotHarness {
   const api: ApiCall[] = [];
   const sent: SentCall[] = [];
   const failures = new Map<string, FakeError[]>();
+  const duringSends = new Map<string, (() => Promise<void>)[]>();
   const files = new Map<string, Buffer>();
   // The file endpoint is grammy's own `fetch`, not the transport: a file a
   // test serves is answered there. Installed by the first `serveFile` and
@@ -145,6 +152,8 @@ export function botHarness(): BotHarness {
       for (const [key, value] of init.body.entries()) body[key] = typeof value === 'string' ? value : '[file]';
     }
     sent.push({ method, body });
+    const during = duringSends.get(method)?.shift();
+    if (during) await during();
     const failure = takeFailure(method);
     if (failure) return new Response(JSON.stringify({ ok: false, ...failure }), { status: failure.error_code });
     if (method === 'getFile' && files.has(String(body.file_id))) {
@@ -197,6 +206,9 @@ export function botHarness(): BotHarness {
     },
     failNext(method, error) {
       failures.set(method, [...(failures.get(method) ?? []), error]);
+    },
+    duringNext(method, during) {
+      duringSends.set(method, [...(duringSends.get(method) ?? []), during]);
     },
     serveFile(fileId, body) {
       files.set(fileId, body);

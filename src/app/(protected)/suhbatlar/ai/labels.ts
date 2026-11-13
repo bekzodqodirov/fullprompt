@@ -43,7 +43,7 @@ export type AgentErrorCode =
   | CancelRefusal
   | RetireRefusal
   | PriceRefusal
-  // «✅ Tarif to'g'ri» (0146, tariff-watch `confirmTariff`).
+  // «✅ Tarif to'g'ri» (0148, tariff-watch `confirmTariff`).
   | TariffConfirmRefusal
   // `superseded` as the press found it (decide `redraftNewest`) — web-actions `SUPERSEDED_ERROR`.
   | 'superseded_no_draft'

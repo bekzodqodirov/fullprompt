@@ -21,7 +21,7 @@ import { SITE_TARIFF } from './site-estimate';
  * (`tariff_unconfirmed`, a gate fact): one ✅ on an estimate card priced on that column, or «✅ Tarif to'g'ri» on
  * the 14-day notice or the page, clears it. Before the expiry too: it costs one ✅ per tariff edit.
  *
- * Stored on the 0146 side table (`agent_send_caps.tariff_confirmed_at`), never a column of agent_config.
+ * Stored on the 0148 side table (`agent_send_caps.tariff_confirmed_at`), never a column of agent_config.
  */
 
 /**
@@ -47,7 +47,7 @@ export async function tariffChangedAt(day: string): Promise<Date | null> {
 }
 
 /**
- * Has the China column changed since his last ✅ on it? A server one migration behind 0146 has nowhere to keep a
+ * Has the China column changed since his last ✅ on it? A server one migration behind 0148 has nowhere to keep a
  * ✅ — unconfirmed (it cannot tick «Narx» either, so nothing priced goes by itself there anyway).
  */
 export async function tariffUnconfirmed(now: Date): Promise<boolean> {

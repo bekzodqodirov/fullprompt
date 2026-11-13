@@ -548,7 +548,7 @@ describe('the facts a send is decided from', () => {
     }
   });
 
-  it('his account-protection caps (0146, spec §5.2) are the numbers the step reads at this tick — the ✅ door’s day too', async () => {
+  it('his account-protection caps (0148, spec §5.2) are the numbers the step reads at this tick — the ✅ door’s day too', async () => {
     const own = await makeManager('caps');
     const started = new Date(Date.now() - 30 * 86_400_000); // past the ramp: the ceiling is the day cap itself
     await agentOn(own.userId, started);
@@ -1184,7 +1184,7 @@ describe('an approved 💵 whose request a VED recalculation replaced never goes
       status: 'sent',
     });
     const standing = await sendFactsFor(row, new Date(), ctx(own.account.id));
-    // A reason, never a boolean (0146, spec SPEC-P1-v2 §1.3): «stands», or why it does not.
+    // A reason, never a boolean (0148, spec SPEC-P1-v2 §1.3): «stands», or why it does not.
     expect(standing.offerStands).toBe('stands');
     const on = { agentOn: true, ownerUserId: own.userId, sendingEnabled: true } as const;
     // Nothing makes it WRONG — at most a wait (this file's agent has no start day, so the ramp holds it).

@@ -190,7 +190,7 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
           autoSent: false,
           autoBad: false,
           autoCancel: false,
-          // «✍️ Savolga javob» (0146, spec SPEC-P1-v2 §2.2) — drawn only under a live card, written all the same.
+          // «✍️ Savolga javob» (0148, spec SPEC-P1-v2 §2.2) — drawn only under a live card, written all the same.
           ask: false,
         })}::jsonb`,
         status: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'muted' ELSE ${notifications.status} END`,

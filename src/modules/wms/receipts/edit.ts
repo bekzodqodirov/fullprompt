@@ -23,6 +23,8 @@ import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
 import { qrlessBoxSql } from '../labels/qrless-sql';
 import { computeLotTotals } from './math';
+import { receiptDealInTx } from './deal-state';
+import { arrivalTotals } from '../../platform/notifications/receipt-arrival';
 import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
 import { checkReceiver, ReceiptError, receivedBySchema } from './service';
 import { mayCountMove } from '../scanning/count-door';
@@ -489,8 +491,10 @@ export async function editLot(
       }
     }
     // A correction made over the author's head is told to the author — the
-    // arrival-diff rule: the person whose record changed hears it first,
-    // never the client.
+    // arrival-diff rule: the person whose record changed hears it FIRST. (Its
+    // «never the client» half is the owner's to reverse and he did — «1 b» of
+    // 2026-11-12: the client is asked again, below, ten minutes after the
+    // last correction, so the author still hears it first.)
     if (measureChange && boxesLeft && receipt.createdBy && receipt.createdBy !== actor.id) {
       const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
       await notifyStaffTelegram({
@@ -503,6 +507,16 @@ export async function editLot(
           `${Number(lot.totalVolumeM3)} m³ → ${totals.totalVolumeM3} m³\n` +
           `Tuzatdi: ${actor.fullName}`,
       }).catch(() => {});
+    }
+    // The question the client holds may now describe cargo that no longer
+    // exists: ask again, by itself (docs/PRIXOD-JAVOBLAR.md §1.3). When the
+    // stored totals or the carton count moved — «qayta o'lchansa yoki qayta
+    // sanalsa», both printed on the question and hashed into its tag; a
+    // rename alone asks nothing by itself. Never thrown at a correction that
+    // has committed (U41): the arm logs.
+    if (totalsChanged || countChange) {
+      const { armClientReask } = await import('./client-reask');
+      await armClientReask(lot.id);
     }
     return result;
   });
@@ -874,6 +888,17 @@ export async function assignReceiptClient(
       .from(receiptLots)
       .where(eq(receiptLots.receiptId, receiptId))
       .orderBy(asc(receiptLots.seq));
+    const lotSummaries = lots.map((lot) => ({
+      lotId: lot.id,
+      letter: lot.letter,
+      productNameZh: lot.productNameZh,
+      productNameRu: lot.productNameRu,
+      boxCount: lot.boxCount,
+      totalWeightKg: Number(lot.totalWeightKg),
+      totalVolumeM3: Number(lot.totalVolumeM3),
+    }));
+    const totals = arrivalTotals(lotSummaries);
+    const deal = await receiptDealInTx(tx, { clientId, dealId: receipt.dealId });
     await emitEvent(tx, {
       type: 'ReceiptConfirmed',
       payload: {
@@ -883,15 +908,22 @@ export async function assignReceiptClient(
         warehouseCode: warehouse.code,
         clientId,
         assignedFromUnclaimed: !receipt.clientId,
-        lots: lots.map((lot) => ({
-          lotId: lot.id,
-          letter: lot.letter,
-          productNameZh: lot.productNameZh,
-          productNameRu: lot.productNameRu,
-          boxCount: lot.boxCount,
-          totalWeightKg: Number(lot.totalWeightKg),
-          totalVolumeM3: Number(lot.totalVolumeM3),
-        })),
+        lots: lotSummaries,
+        // «Prixod mijozga biriktirildi» (receipt-arrival.ts): the new owner's
+        // seller gets the one-message shape and its two buttons too — the
+        // deal read by the same rule as the confirm's, so a deal the prixod
+        // carried under its PREVIOUS client is no deal here. `via` keeps this
+        // door out of the alarm: it has never run price control and emits no
+        // alert event, and cargo claimed weeks after it came must not start
+        // alarming the admins as «keldi».
+        via: 'assign',
+        dealState: deal.state,
+        dealCode: deal.dealCode,
+        dealLinked: deal.dealId !== null,
+        openDealCodes: deal.openDealCodes,
+        boxCount: totals.boxCount,
+        weightKg: totals.weightKg,
+        volumeM3: totals.volumeM3,
       },
       entityType: 'receipt',
       entityId: receiptId,
@@ -940,6 +972,24 @@ export async function assignReceiptClient(
           receiptId,
           queueError,
         );
+      }
+    }
+    // The question a client holds is per OWNER (his «1 b»): a correction back
+    // to the owner the system was about to ask — A → B → A inside its window —
+    // finds that owner's question skipped `client_changed`, and nothing else
+    // would ever ask again. Re-decided here by the remembered tag, as the
+    // receipt push's own row is re-armed by `claimReceivedNotice` (the
+    // as-built review, DLV-2). A new owner holds no question and is asked by
+    // the push. Only when the owner MOVED: the picker offers the current client
+    // too, and a save that changed nothing must not slide a held question's
+    // «ten minutes after the LAST correction» (the fixes' review, CONC-6).
+    // Never throws (U41): `armClientReask` logs and returns.
+    if (receipt.clientId !== clientId) {
+      try {
+        const { armClientReask } = await import('./client-reask');
+        await armClientReask(lotIds[0]!);
+      } catch (error) {
+        console.error('[receipt-client] the automatic re-ask could not be re-decided', receiptId, error);
       }
     }
   }

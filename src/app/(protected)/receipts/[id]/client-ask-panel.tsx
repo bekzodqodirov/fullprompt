@@ -19,6 +19,8 @@ import { askClientAction, dismissDisputesAction } from './client-ask-actions';
 export interface ClientAskFace {
   /** A linked chat AND a lot still worth asking about (cargo in China). */
   canAsk: boolean;
+  /** A question sent now asks the kilos and the cubic metres too (0146). */
+  full: boolean;
   /** The client has no Telegram linked — said in words instead of a button. */
   noChat: boolean;
   status: {
@@ -38,6 +40,19 @@ export interface ClientAskFace {
   } | null;
   /** This owner's ❌ rows on the prixod's lots, with the token each card line drew. */
   disputes: { lotId: string; token: string }[];
+  /**
+   * The question the SYSTEM sends by itself after a re-weigh (the owner's
+   * «1 b», docs/PRIXOD-JAVOBLAR.md §1.9): held until `at`, sent at `at`, or
+   * not delivered (`failure`, the same closed words). Null = none to draw —
+   * none, one rightly not sent, or one older than the person's last question.
+   */
+  auto?: {
+    state: 'waiting' | 'sent' | 'failed';
+    at: string | null;
+    /** A waiting one by its age: `stuck` = due long ago and still here (the bot cannot send). */
+    wait?: 'soon' | 'stuck' | null;
+    failure: 'no_chat' | 'client_changed' | 'too_long' | 'receipt_changed' | 'blocked' | 'telegram' | null;
+  } | null;
 }
 
 const KNOWN = [
@@ -105,7 +120,7 @@ export function ClientAskPanel({
       {/* What WILL be sent — said only beside the button that sends it. */}
       {face.canAsk && (
         <p className="text-xs text-ink-500" data-testid="client-ask-hint">
-          {t('askHint')}
+          {t(face.full ? 'askHintFull' : 'askHint')}
         </p>
       )}
 
@@ -135,6 +150,29 @@ export function ClientAskPanel({
       {status && status.failure && (
         <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="client-ask-status" data-state={status.state}>
           ⚠️ {t(`askFailed.${status.failure}`)}
+        </p>
+      )}
+
+      {/* The system's own question (his «1 b»): a person's 📨 below stays
+          pressable while it is held — it sends now and stands this one down. */}
+      {face.auto?.state === 'waiting' && face.auto.wait !== 'stuck' && (
+        <p className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="client-reask" data-state="waiting">
+          🔄 {t('reaskWaiting', { when: face.auto.at ?? '—' })}
+        </p>
+      )}
+      {face.auto?.state === 'waiting' && face.auto.wait === 'stuck' && (
+        <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="client-reask" data-state="stuck">
+          ⚠️ {t('reaskLabel')} · {t('askStuck', { since: face.auto.at ?? '—' })}
+        </p>
+      )}
+      {face.auto?.state === 'sent' && (
+        <p className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="client-reask" data-state="sent">
+          🔄 {t('reaskSent', { when: face.auto.at ?? '—' })}
+        </p>
+      )}
+      {face.auto?.state === 'failed' && face.auto.failure && (
+        <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="client-reask" data-state="failed">
+          ⚠️ {t('reaskLabel')} · {t(`askFailed.${face.auto.failure}`)}
         </p>
       )}
 

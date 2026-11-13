@@ -466,7 +466,7 @@ export const agentAutoConfig = pgTable(
     armedBy: uuid('armed_by').references(() => users.id),
     /** The ⏸ window before a reply goes by itself (his Q3 ⭐ a: 2 minutes). */
     holdSec: integer('hold_sec').notNull().default(120),
-    /** The auto layer's daily count — NULL = no cap (0146, his «7 chegara qoyma»); a number he types stays bounded. */
+    /** The auto layer's daily count — NULL = no cap (0148, his «7 chegara qoyma»); a number he types stays bounded. */
     perDay: integer('per_day'),
     maxChars: integer('max_chars').notNull().default(400),
     minConfidence: numeric('min_confidence', { precision: 3, scale: 2 }).notNull().default('0.80'),
@@ -484,7 +484,7 @@ export const agentAutoConfig = pgTable(
     check('agent_auto_config_confidence_check', sql`${t.minConfidence} >= 0.5 AND ${t.minConfidence} <= 1`),
     check(
       'agent_auto_config_categories_check',
-      // 'price' since 0146 (spec §1.5) — the fifth box, admitted here and unticked in the stored row.
+      // 'price' since 0148 (spec §1.5) — the fifth box, admitted here and unticked in the stored row.
       sql`${t.categories} <@ ARRAY['greeting', 'qualification', 'faq', 'status', 'price']::text[] AND cardinality(${t.categories}) >= 1`,
     ),
   ],
@@ -561,7 +561,7 @@ export const agentAutoChats = pgTable(
 );
 
 /**
- * His lessons (0146, spec §3, his «hato qilgan joyini men aytib ketay va u ozi
+ * His lessons (0148, spec §3, his «hato qilgan joyini men aytib ketay va u ozi
  * organib boradgan bolsin»): an INSTRUCTION to every chat's prompt, never a
  * number source. Written in the bot it waits for his «✅ Saqlash»
  * (`confirmedAt` NULL — not in the prompt yet; `confirmToken` the one-time
@@ -594,7 +594,7 @@ export const agentLessons = pgTable(
 );
 
 /**
- * The account-protection limits he may edit (0146, spec §5.2, his «4 hozircha
+ * The account-protection limits he may edit (0148, spec §5.2, his «4 hozircha
  * qolsin … o'zgartirish imkoni») and his ✅ on the China tariff (§1.6) — a
  * singleton SIDE table: a column on agent_config or agent_auto_config would be
  * a 42703 in every whole-row reader one migration behind. NULL = today's

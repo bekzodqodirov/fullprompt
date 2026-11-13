@@ -111,7 +111,7 @@ export interface SendFacts {
   /** The day's ceiling (`dailySendCeiling` over the effective day cap — the ramp, then the cap). */
   dailyCeiling: number;
   /**
-   * The account-protection caps as they stand (send-caps `readSendCaps`, 0146): his stored numbers, else
+   * The account-protection caps as they stand (send-caps `readSendCaps`, 0148): his stored numbers, else
    * `AGENT_LIMITS.perDay` / `perHour` — the one figure the ✅, the gate and the page read too (spec §5.2).
    */
   dayCap: number;

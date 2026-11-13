@@ -35,8 +35,8 @@ import { sendsToday } from '@/modules/wms/agent/today';
 import { agentToday } from '@/modules/wms/agent/web-page';
 
 /**
- * Migration 0146 (spec SPEC-P1-v2 §5, §1.5, §3.2, §6) against a real database: the CHECKs it widens, the two
- * tables it adds, the stored state it leaves, the probe every 0146 reader and writer asks, and the caps' own door.
+ * Migration 0148 (spec SPEC-P1-v2 §5, §1.5, §3.2, §6) against a real database: the CHECKs it widens, the two
+ * tables it adds, the stored state it leaves, the probe every 0148 reader and writer asks, and the caps' own door.
  *
  * agent_config, agent_auto_config and agent_send_caps are singleton CONFIGURATION rows on the one database every
  * file shares (#183): snapshotted in beforeAll and put back in afterAll. Fixture users are deactivated, never
@@ -107,7 +107,7 @@ afterAll(async () => {
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, adminId, sellerId]));
 });
 
-describe('0146 — what the migration leaves', () => {
+describe('0148 — what the migration leaves', () => {
   it('the probe finds it, and the side table holds its one row with nothing typed', async () => {
     expect(await agentFullP1Ready()).toBe(true);
     const rows = await db.select().from(agentSendCaps);
@@ -115,13 +115,13 @@ describe('0146 — what the migration leaves', () => {
     expect(rows[0]!.id).toBe(1);
   });
 
-  it('it wrote ONE audit row for the daily count it took away — actor none, via 0146', async () => {
+  it('it wrote ONE audit row for the daily count it took away — actor none, via 0148', async () => {
     const rows = await db
       .select({ actor: auditLog.actorId, before: auditLog.before, after: auditLog.after })
       .from(auditLog)
-      .where(and(eq(auditLog.entityType, 'agent_auto_config'), sql`${auditLog.after}->>'via' = '0146'`));
+      .where(and(eq(auditLog.entityType, 'agent_auto_config'), sql`${auditLog.after}->>'via' = '0148'`));
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    expect(rows[0]).toMatchObject({ actor: null, after: { perDay: null, via: '0146' } });
+    expect(rows[0]).toMatchObject({ actor: null, after: { perDay: null, via: '0148' } });
   });
 
   it('the kinds CHECK admits «price» and nothing else new; the daily count admits NULL and a typed 1-1000', async () => {
@@ -180,7 +180,7 @@ describe('0146 — what the migration leaves', () => {
     expect(await lesson({ confirmToken: 'a1b2c3d4' })).toBe('ok');
     expect(await lesson({ confirmToken: 'a1b2c3d4', confirmedAt: new Date() })).toBe('23514');
     expect(await lesson({ confirmedAt: new Date() })).toBe('ok');
-    // Given on a draft; the chat's purge deletes the draft — the lesson stays, its pointer NULL (the 0146 comment).
+    // Given on a draft; the chat's purge deletes the draft — the lesson stays, its pointer NULL (the 0148 comment).
     const [d] = await db
       .insert(agentDrafts)
       .values({ managerUserId: ownerId, peerId: BigInt(`56${SUFFIX}`), anchorTgMessageId: 1n, proposedBody: 'x' })
@@ -227,7 +227,7 @@ describe('the caps’ door (spec §5.2) — the holder or a super_admin, bounded
   });
 });
 
-describe('one migration behind 0146 — every reader runs, every writer says so in words', () => {
+describe('one migration behind 0148 — every reader runs, every writer says so in words', () => {
   it('the caps read as today’s constants; the agent’s config, the layer’s and the page’s day still read', async () => {
     await db.update(agentSendCaps).set({ dayCap: 150, hourCap: 30 }).where(eq(agentSendCaps.id, 1));
     __pretendAgentFullP1Behind();

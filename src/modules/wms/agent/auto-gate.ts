@@ -118,7 +118,7 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
 };
 
 /**
- * The customer's languages a reply may go in by itself — all six the agent writes since 0146 (spec §4, his
+ * The customer's languages a reply may go in by itself — all six the agent writes since 0148 (spec §4, his
  * «mijoz qaysi tilda yozsa usha tilda suhbat olib borilsin fors xitoy rus ingiliz ozbe»).
  */
 export const AUTO_LANGUAGES = ['uz', 'uz_cyrl', 'ru', 'en', 'fa', 'zh'] as const;
@@ -132,7 +132,7 @@ export const AUTO_LANGUAGES = ['uz', 'uz_cyrl', 'ru', 'en', 'fa', 'zh'] as const
 export const AUTO_STRICT_LANGUAGES = ['en', 'fa', 'zh'] as const;
 
 /**
- * The tools whose output is a PRICE or a balance (tools.ts TOOL_SPECS). Judged by OUTCOME since 0146 (spec
+ * The tools whose output is a PRICE or a balance (tools.ts TOOL_SPECS). Judged by OUTCOME since 0148 (spec
  * §1.1): a run that called `own_balance`, or an estimate tool that refused, is a money reply whatever the model
  * labelled it; an estimate that answered with no price (`below_minimum`) is no money at all; a priced estimate
  * goes only through the money clause below.
@@ -143,7 +143,7 @@ export const MONEY_TOOLS = ['own_balance', 'yolkira_estimate', 'avia_estimate'] 
 export interface AutoToolCall {
   name: string;
   ok: boolean;
-  /** A priced yo'lkira or avia answer. A call stored before 0146 carries none and reads as one (fails closed). */
+  /** A priced yo'lkira or avia answer. A call stored before 0148 carries none and reads as one (fails closed). */
   estimate: boolean;
 }
 
@@ -168,7 +168,7 @@ export interface AutoGateInput {
     categories: readonly string[];
     maxChars: number;
     minConfidence: number;
-    /** Auto presses a Tashkent day may hold; null = no cap (0146, his «7 chegara qoyma»). */
+    /** Auto presses a Tashkent day may hold; null = no cap (0148, his «7 chegara qoyma»). */
     perDay: number | null;
   };
   /** The agent runs (shadow) and speaks from the draft holder's account. */
@@ -339,7 +339,7 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
  *  - every money call is a yo'lkira or avia estimate that ANSWERED — never `own_balance` (the customer's debt is
  *    his, ⭐ MAP Q2), never an estimate that refused (a reply after a refusal is the model's own price);
  *  - every money line was vouched for by such a tool, as a total or a rate — never a balance, a fact, his answer,
- *    or a line stored before 0146 with nobody named (fails closed);
+ *    or a line stored before 0148 with nobody named (fails closed);
  *  - the run's priced estimates are stored on the draft (what the press re-prices, §1.3);
  *  - the chat is not about rail (his price, §18.5).
  * `priced`: the money is an estimate's — the facts that concern only a quoted price (the tariff confirmed, the
@@ -365,7 +365,7 @@ function moneyVerdict(input: AutoGateInput): { present: boolean; refused: boolea
 /**
  * The reply's language against the customer's (spec §4): one of the six; English, Persian and Chinese only when
  * the customer's message confidently says that very language; Uzbek and Russian unless it confidently says
- * another. A guess not stored (a draft written before 0146) is no confident guess.
+ * another. A guess not stored (a draft written before 0148) is no confident guess.
  */
 function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale']): boolean {
   const lang = language ?? '';

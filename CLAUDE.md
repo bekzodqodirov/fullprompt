@@ -132,6 +132,13 @@ pnpm build && pnpm e2e  # 44 e2e
   Dockerfile stage that runs `pnpm` must descend from the deps stage (where the
   install downloaded it), or each code change re-fetches it and a deploy dies
   on npm's schedule (#1228). Fenced by `tests/unit/dockerfile-offline.test.ts`.
+- **Layout chrome never calls `scrollIntoView`.** It scrolls every scrollable
+  ancestor, the window included, so a strip or bar mounted in the layout pulls a
+  page opened at `#anchor` back to the top a frame after the browser landed —
+  the workspace strip did it on a desktop for six weeks, to every anchored
+  address whose page lights a tab in the reader's strip (#1739). Move the
+  element's own `scrollLeft`/`scrollTop`; fenced by
+  `tests/unit/anchor-landing.test.ts` (the layout's whole import closure).
 - **`next build` needs more than V8's ~2 GB default heap** since the 2026-10-29
   merge: run it as `NODE_OPTIONS=--max-old-space-size=3072 pnpm build`, the
   image's own heap (Dockerfile) and CI's (#1543). Without it the build dies
@@ -176,6 +183,8 @@ pnpm build && pnpm e2e  # 44 e2e
 | The three suggestions after it — the tarkib filled from the client's file by AI («🤖 Fayldan to'ldirish»), the client's own ✅/❌ in Telegram (the push's third row, «📨 Mijozdan so'rash», the ❌ as a veto, «E'tirozni yopish»), the pressed-AI ledger and its daily limits | `docs/TARKIB-TAKLIFLAR.md` — his «Hammasi yulduzcha javob va taklifingni qoshamiz» (2026-11-11), BUILT; **§7 is binding** (as judged and as built), §8 the deploy, §10 stated-not-built |
 | «🤖 AI rastamojka» reads every file before «Tasdiqlash» — the wholeness predicate, «👤 VED hisoblasin», the streamed reading that keeps a cut, every sheet of a workbook judged, the column reader (deep headers, cards, total and footer rows named) | `docs/FAYL-OQISH.md` — his report of 2026-11-10, §6's three questions built as ⭐ (answer awaited), SHIPPED; its «As built» bullets (A/B, after the review of the fixes, after the check) override the sections they sit in |
 | The prixod CARD in one order — summary with «Jami», one «ties» card, one anatomy and one row of actions per lot, files \| costs, thread \| folds, «Boshqa amallar», the phone's order | `docs/PRIXOD-KARTA.md` — his sentence of 2026-11-11, BUILT; a layout round (no door, action, read or URL changed); **§7 is binding** (as judged by the two lenses that came back) |
+| The seller's ONE «Prixod keldi» message and its two buttons («📎 Fayl qo'shish» — the file collection in the staff bot, «🔗 Bitim biriktirish» — the card at its deal block), the client's ✅/❌ covering kilos and cubic metres, the AI's bill on the evening summary | `docs/PRIXOD-XABARI.md` — his message of 2026-11-11 («4 ha … 8 ha … prixod keldi desin sotuvchiga … ikta button»), BUILT; **§G is binding** (as judged and as built; **§G.G = after the as-built review, overrides G.C-G.E**; **§G.H = after the merge with the card round**), §F stated-not-built and the seven questions out |
+| His answers to those seven — the client asked AGAIN by itself after a re-weigh (1b), the staff tick remembering kg/m³ (2b), a seller adding files on the card (4b); 3a 5a 6a pinned, 7 asked again as 7.1/7.2 | `docs/PRIXOD-JAVOBLAR.md` — his «1 b / 2 b / 4 b / 7 …» of 2026-11-12, BUILT; **§8 is binding** (the four lenses as judged and as built; §8.1 the as-built review, §8.2 the fixes reviewed) |
 
 ## State — 2026-08-23
 
@@ -3561,7 +3570,8 @@ after it** (`docs/UPDATE.md` step 4a — or he says so first and it ships off); 
 server; no Telegram and no key here, so the first real press of each is the proof. OWED to him: the eight ⭐
 questions in the CHANGELOG entry. **15,880 unit/integration (910 files) +
 498 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 2ee5b70, ledger 145; opened as PR #145 together with
-the tarkib tuzatishlari round (0143) it sits on.
+the tarkib tuzatishlari round (0143) it sits on — **MERGED (`6b617d9`) and DEPLOYED: he confirmed «deploy qildim
+145 chiqdi» on 2026-11-11**, so everything through #1682 is live.
 
 **Round — «o'zi yuborish», the AI sotuvchi's auto-send (2026-11-11; DECISIONS #1683-#1696 — renumbered from #1642-#1655 on the
 merge, the THIRTY-SIXTH collision: PR #145's tarkib rounds took #1642-#1682 and 0143-0144 first; migration 0145
@@ -3647,7 +3657,167 @@ the card, the Russian width measure and typecheck were re-run here, and the full
 OWED to him: three ⭐ questions (ties above or below the lots on a phone; the void in the fold; the long QR-less
 label) — CHANGELOG 2026-11-12.
 
-**Latest migration: 0145** (`agent_auto`, `when` …124; ledger must reach **146**). Before
+**Round — Prixod xabari (2026-11-11 evening → 11-12; DECISIONS #1707-#1743 — renumbered twice: from #1683-#1712 on
+the first merge, the THIRTY-SEVENTH collision: main's «o'zi yuborish» (PR #147) took #1683-#1696 and migration 0145 —
+with this round's own `when` …124 — first; then by ten on the second, the THIRTY-EIGHTH by this round's count
+(main's «Prixod kartasi» called its own PR #147 collision the thirty-seventh too): that round (PR #146) took
+#1697-#1706 and rewrote the card this round adds to; migration 0146 `prixod_xabari`, `when` …125 (minted as 0145) — ledger must reach 147; spec
+`docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
+message with the 145 confirmation: «4 ha … og'irlik va hajmga urg'u berilsin … 8 ha … prixod kelganda … 2 marta sms
+boryapti … prixod keldi desin sotuvchiga … ikta button bolsin file qoshish va bitim biriktirish … qolgan savollaringa
+javob o'zing bergan taklifing bo'yicha» + «mijozdan tasdiq bosmasa ham skladga yuk kelgan zahoti borsin». Designed,
+judged by three lenses BEFORE code (35 objections, none refuted, three silent-loss blockers), built solo in a second
+worktree while the judges read a still tree, reviewed as built.
+**(C) ONE message.** `platform/notifications/receipt-arrival.ts` (a leaf) is the home of «this row is the new
+message»: `isReceiptArrival(type, payload)` = one of `ReceiptConfirmed | UnquotedCargo | UnlinkedCargo` AND
+`payload.dealState ∈ none | attachable | unpriced | priced` — asked by the recipients, the renderer, the open
+button's label and `buttonsFor`; a row from before the fold has no `dealState` and reads exactly as it did. The state
+is decided ONCE on the confirm's transaction (`wms/receipts/deal-state.ts` `receiptDealInTx`, «the prixod's deal» =
+`ownDealOf` — a deal of another client is no deal), written on the event and HANDED to `priceControlOnReceipt`
+(`deal`, and `folded` — an ARGUMENT, default false). The alert EVENTS are still emitted (automation rules hear
+them) marked `folded: true` and write no rows; the seller's row carries `alsoType`, and `rowTypeFor` (the one place a
+mute is read at a row's birth) silences only somebody who muted BOTH groups and writes the row under the type they
+still hear. The admins hear the deal problem when nobody is there to: no seller, one who cannot log in, or one with
+no linked chat (`reachOf … 'no_chat'`); a mute never falls back. The claim door (`assignReceiptClient`) carries
+`via: 'assign'`: «📥 Prixod mijozga biriktirildi», the seller alone, no alarm. Words: lot lines at kg 2 / m³ 3, «Jami»
+= the printed lines' sum (`arrivalTotals`), `none` = «Narxlangan bitimi yo'q». Buttons: `pf:<receipt>` («📎 Fayl
+qo'shish», lowercased) + the lifted card link as «🔗 Bitim biriktirish» → `/receipts/<id>#bitim` for none/attachable.
+**(D) The collection** (`platform/telegram/receipt-files.ts` leaf = state + words; `receipt-files-door.ts` = the
+doors; the door of WHO is wms's `receipts/files-door.ts`, the web upload route's own rule): files are stored AS THEY
+ARRIVE on the prixod (`saveBotFile … asPaper` → `kind 'file'`, never a carton photo; id = uuidv5(prixod:chat:message),
+looked up first), one durable wait kind `receipt_files` (30 min, payload `files: [{m, a}]`), ONE kept-last
+acknowledgement per burst. **It never ends in silence**: thirty quiet minutes or another collector opening
+(`closeReceiptFiles` beside each `endBurst(chatId)`) CLOSE it and the next file is told once, with a reopen button.
+`pf:ok:<id>` / `pf:no:<id>` carry their prixod; «↩️ Bekor qilish» deletes exactly what the collection stored. In the
+media ladder it sits after the calc collection / zametka / live draft and BEFORE `draftMedia` (Door B); a backlog
+file IS taken (updates come in order); a video is answered in words; a typed text is told it is not kept BEFORE the
+paid assistant. History: one row per file under `fileAdded:<message>`. Card: ✕ on one's own upload
+(`AttachmentsPanel removableIds`), `DealLink id="bitim"`, «+ Yangi bitim ochish» carries `prixod=` and the deal is
+born with it — returning by `?bitim=1`, because **a server action's `redirect()` drops the `#fragment`** (found by
+the browser spec only).
+**(A) kg and m³ in the client's ✅.** `AskScope basic|full`; `lot_client_confirms.shown_kg/shown_m3` (SQL-only,
+display precision, rounded by the DATABASE on both sides); two tags (`tag`, `basicTag` — old buttons keep working as
+`basic`); a narrower answer never replaces a wider one (`keeps`); the probe has a THIRD answer read off
+`pg_attribute` and remembers «yes» only when all three are yes; a full question never goes without its words (the
+photograph yields). The lists compare named columns under that flag — `to_jsonb` was measured (12.5 µs a row
+against 0.17) and refused.
+**(B) The AI line** (`wms/reports/ai-spend.ts`): three ledgers, «murojaat» defined per ledger, unpriced counted and
+never a $0, a ledger that cannot be read NAMED; window = the LAST 24 HOURS on the daily message and the pull (a
+Tashkent day would never show 20:00-24:00); Monday carries TWO lines — the closed week, and the last 24 hours
+under it (`SummaryFacts.aiDay`; with the week alone Monday's own hours were on no evening's line); the assistant
+now records its own usage (a second, caught UPDATE); the price map carries the cache's two prices.
+TRAPS: typecheck is not lint (a `setState` in an effect passed tsc and failed the BUILD — run both after every
+edit); a red proof that stays green found two weak tests (`redelivery-lookup`, `keeps`). DEPLOY: ledger 147 and
+`/api/version`; customers' question changes within minutes (weight and volume asked), sellers get ONE message.
+No Telegram here: the first real «Prixod keldi», each button's first press and the first file are the proof.
+**Then reviewed as built (#1727-#1736)** — four lenses reading the frozen main checkout while the fixes were made
+in the second worktree: 21 findings, no blocker, all fixed or pinned, each fix red-proven. What it changed, by
+home: **the collection** — a file that swipe-REPLIES to another of the bot's messages is that message's
+(`repliesElsewhere`; said under the file when no door took it), a parked «Hisoblatish» that resumes closes the
+collection (`updateIntake`), a closed collection answers for two hours and no longer (`RECEIPT_FILES_TOLD_S`), a
+file taken by its own date after the window is SAID. **The fold** — the admins' copy says why it came to them
+(`payload.sellerReach`), and `celebrateFirstCargo` no longer fires on the claim door (pre-existing since 0134).
+**The card** — «the prixod's deal» is `ownDealOf` on the card as in the message (a foreign deal is one muted line,
+never «linked»); **«born with the prixod» is ONE rule asked three times** — `bornWithVerdict`
+(`wms/receipts/deal-state.ts`) by the new-deal page, by `createDealAction` BEFORE the deal exists
+(`bornWithRefusal`, refused in words, nothing minted) and by `linkReceipt(…, { bornWith: true })` under the
+prixod's row lock — a stale form used to MOVE the prixod off the deal a colleague had chosen; past the deal's
+creation nothing rethrows (`?prixod=yoq` on the deal card); the link is drawn only for a confirmed prixod and a
+voided one's block says so; the History prints a removed file's name (`removedFile`) and a bot file's stored
+name. **Tests that could not see their subject**: a spy on `pgClient.unsafe` records NO statement of a drizzle
+transaction (`sql.begin` hands a scoped client with its own `unsafe` — wrap `begin`); an e2e region assertion the
+element already satisfied unscrolled (assert `scrollY`); the FULL tag recipe is a literal now (`3795624c`); the
+five 0144 facts are written once in SQL (`clientFactTerms`). A serial browser spec needs ONE BUILD PER STRIP for
+its red proofs, and a strip must typecheck.
+**The merge (#1737)**: found at the push — main's PR #147 held this round's migration number, its `when` and its
+first fourteen decision numbers. Renumbered on this branch FIRST (every «0145» here was still this round's own),
+then merged; main's 0145 re-makes no constraint 0146 re-makes; a fresh database takes both and reads 147; every
+local database was rebuilt (a long-lived one holds …124 as THIS round's and would skip main's 0145 — #1040).
+Fetch main BEFORE the last gate.
+**The second merge (#1738-#1742)**: answering his «merge qildinmi», the fetch showed main's PR #146 «Prixod
+kartasi» — no migration, #1697-#1706, and a rewrite of `/receipts/[id]`. Renumbered by ten FIRST, then merged:
+the card page is MAIN's whole (its §7 binds) with this round's nine edits re-seated; the deal cell keeps main's
+anatomy plus this round's anchor, sentences and door, and its landing frame is an OUTLINE (a ring on a bare cell
+sits on its letters). **The workspace tab strip scrolled the WINDOW** (`scrollIntoView` on its lit tab, in the
+layout): every anchored address (`#bitim`, `#lot-…`, `#ichki`) opened at the top on a desktop for whoever's strip
+lights a tab — measured 322 → 63 px; the row moves its own `scrollLeft` now (#1739, `anchor-landing.test.ts`). On
+a phone the deal cell sits after the cargo, so the landing has two honest outcomes, «under the bar» or «page
+end» (`tests/e2e/prixod-xabari-landing.ts`, #1740). The review of the merged card (two of four lenses came back):
+a deal of ANOTHER client could never be taken off the prixod (`ownDealOf` made «current» null, the select opened
+on «— uzish», so «Saqlash» never drew — «Saqlash» stands while a foreign deal does now), the foreign sentence
+sits under the control row (it had pushed «Bitim»'s select off «Zavod reysi»'s line), and the «Fayllar» card
+leaves with a non-editor's last file (`refreshWhenEmpty`) — #1741; spec §G.H. **Then those fixes were reviewed
+again (#1743)** and three states only the card's own actions make were wrong: the deal cell kept the deal it had
+chosen BEFORE a client correction made in «Boshqa amallar» (a revalidation is not a remount — «Saqlash» over
+«— Uzish» sent the old deal back and nothing moved; both cells of the stack are keyed on the stored facts now),
+«Hisob» offered the OLD client's calculations (it, the seal's guess, `setCalcLink`, the ✓ and the bot's ✅ ask
+`ownDealOf`; «—» and ❌ — taking a link off — are never refused), and two quick ✕ beat the «Fayllar» refresh (an
+effect over the list the deletes leave). LESSON: **a state whose only origin is an action on the same screen is
+reached in a spec by pressing that action** — SQL plus a fresh `goto` remounts everything.
+**16,233 unit/integration (923 files) + 524 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 7bfdb4a,
+after the second merge, ledger 147 — and GitHub's check on that head; after #1743, typecheck, lint, the 24
+integration files that drive the calc link doors (388 tests) and the 34 browser tests of both card rounds and the
+strip walk re-ran green. Earlier: 16,219 + 508 at the first merge's head 218b017; the round alone 15,993 + 504 as
+first built (b9a43fd) and 16,025 + 507 after the review (5dd0b69). Opened as PR #149 (his «merge qildinmi»), merged
+into `main` once GitHub's check on its final head was green; the deploy is not done. OWED to him:
+the seven ⭐ questions in the CHANGELOG entry (re-ask after a re-weigh · the staff tick and kg · a ✅ after the
+cargo left China · seller uploads on the site · a notice on a file · folding `DealDeviation` / `ArrivalDiff` ·
+admins on a claim for a seller-less client).
+
+**Round — Prixod javoblari (2026-11-12 → 11-13; DECISIONS #1754-#1765 — numbered past the other session's open PR #148, which holds #1744-#1753, the THIRTY-NINTH collision; migration 0147 `prixod_javoblar`, `when`
+…126 — ledger must reach 148; spec `docs/PRIXOD-JAVOBLAR.md`, **§8, §8.1 and §8.2 binding**).** His answers to that round's seven ⭐
+questions: «1 b / 2 b / 4 b / 7 …». 3a, 5a, 6a stand (pinned in `prixod-javoblar-answers.test.ts` with the
+answer's number); 7 was neither option and is asked again (7.1 who hears a claim, 7.2 whose KPI a seller-less
+client's cargo joins) — NOTHING of 7 is built. Spec judged by four lenses (delivery, regression, owner, kernel)
+WHILE the build ran in a worktree, every finding re-checked against the built tree. **1b — the automatic re-ask**
+(`receipts/client-reask.ts`): due when the newest question with buttons DELIVERED to this owner about this prixod
+(`received_cn` with buttons, `lot_ask`, `lot_reask`) carries a tag (`askTag`, remembered by the sweep in 0147's
+SQL-only `client_notices.asked_tag/asked_at`) that is not today's (`reaskDue`); with none remembered, a confirmation
+the correction broke — this owner's full answer, or a colleague's tick about this owner broken on kilos, cubic
+metres or count — counted only on lots still on the ❓ list; never when every askable lot reads ✅ (a correction taken
+back after the system asked). Kind `lot_reask`, one row per (client, prixod), due
+10 min after the LAST correction (sliding), armed after commit by `editLot`'s `.then` (totals or count) and
+`afterLotGrown` (both count doors) — `armClientReask` never throws (U41) and asks the person's door's own refusals;
+a question ON ITS WAY counts as due — ONE sentence, `reaskInFlightSql`: `sending`, or our own row re-armed while it
+was out (a kept claim, no delivery remembered since it, no retry error, within `RECLAIM_MINUTES`), asked by the
+arm's check, its stand-down and the re-arm's CASE; every delivery's tag is remembered whatever the settle wrote; only
+`lot_reask`'s settle/defer compare-and-set the CLAIM (`heldClaim`/`claimOf` — `rearmArrivalNotice` re-arms
+mid-send, every other kind settles by id as before); the person's press is ONE transaction holding the system's row
+`FOR UPDATE` (stands it down `superseded`; `already_queued` only for `sending` — a press over a re-armed row sends
+the corrected figures now, §8.2's CONC-2 refuted; `too_soon` by `greatest(asked_at, sent_at)`); `assignReceiptClient`
+re-decides it after a client correction; `lastAsk` keeps a person who asked earlier and was never answered as the
+asker (`answeredSince`); the card draws the system's line by `reaskLineDrawn` against the person's
+`lastDeliveredAt` = `coalesce(sent_at, asked_at)`, and reads a came-back owner's `client_changed` skip as quiet; a
+holding tick a later ❌ outranks is drawn as history (`heldTickFace`, lot-check-face.ts). Quiet skips are the closed `REASK_QUIET`. Setting
+`client_reask_on_reweigh` (default ON). **2b** — `lot_checks.seen_kg numeric(12,2)` / `seen_m3 numeric(12,3)`
+(display precision; the backfill writes today's figures only where the tick's COUNT still holds); the tick's fourth
+term `tickMeasuresHoldSql`; `checkLot` CASes the STORED figures the card posts (`lot_changed`) and remembers the
+database's display rounding; **arm 5 keeps an answered ❌ answered past a re-weigh** — on the tick's FACTS
+(`tickedFacts`) and on a tarkib listing other goods than the ones rejected — the literal matrix is 168 combinations.
+**The mixed count walk is exact** (`mixedTotalsFor` from the walk's BASE, derived by `walkBaseInTx` from the lot's
+lotGrown/lotShrunk audit rows — never stored: the FARTHEST point of the unbroken walk that gives back every figure set
+printed after it, so a chain the old arithmetic drifted, and a walk written on top of one, keep the drifted figures). **4b** — `mayAttachReceiptFile` (confirmed, not voided) AND `mayAddReceiptFiles` (`receipts.edit` ∨
+`plans.manage` ∨ `ved.docs` ∨ `crm.leads` — never the accountant or a report-only viewer) on the bot door, the card's
+tile and the upload route; `AttachmentsPanel attachable` split from `editable`; a picture from an uploader without
+`receipts.edit` is a PAPER (`asPaper`, `DOCUMENT_PHOTO` from import-free `components/photo-grades.ts`); a voided
+prixod is refused at the route; every upload onto a confirmed prixod writes `fileAdded:<id>`; the bot tells a reader
+who opens a prixod but works none `not_worker`. **The probe has FIVE
+answers** (`ok client measures tick asked`): writers ask it themselves (L1-1); the sync `lotTickMeasuresReady()` is
+read only by the sentence and the card's view. ONE kilos spelling for History lines: `measuresLine`
+(lot-check-sql.ts). Fences: `client-reask-wire.test.ts`, `prixod-javoblar-answers.test.ts`; the backfill is run as
+written in a rolled-back transaction (`prixod-javoblar-backfill.integration.test.ts`); the bot harness's
+`duringNext(method, fn)` lands a change WHILE a message is on its way. Reviewed as built (§8.1): 21 findings, all
+fixed — T1 and T2 were tests green under the very defects they were written for. Then the FIXES were reviewed (§8.2,
+#1765): eleven distinct, one refuted — DLV-4 had held for one correction only, a walk on top of a drifted chain
+fell back to the drift's arithmetic (or the weighed figure), and an outranked tick drew green beside ⚠. TRAP: two
+unit files reach postgres and fall back to `gsr_dev` without `DATABASE_URL` — set it for any local vitest run.
+**16,349 unit/integration (931 files) + 526 e2e** (1 skipped) green on a
+fresh gsr_ci in CI's order at 6175c3c, ledger 148; the test-only `79773b9` after it ran its file (50) on its own.
+Before the fixes' review: 16,335 + 526 at `e9b6ab4`. PR bekzodqodirov/fullprompt#150.
+
+**Latest migration: 0147** (`prixod_javoblar`, `when` …126; ledger must reach **148**). Before
+it: 0146 (`prixod_xabari`, `when` …125). Before
+it: 0145 (`agent_auto`, `when` …124). Before
 it: 0144 (`tarkib_takliflar`, `when` …123). Before
 it: 0143 (`tarkib_document_optional`, `when` …122). Before
 it: 0142 (`chat_rule_bound_via`, `when` …121). Before
@@ -3797,7 +3967,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **146** since 0145 (145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **148** since 0147 (147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3816,6 +3986,10 @@ a migration did not land — read the `migrate` container's own output).
 **Then he CONFIRMED 136** («deploy qildim 136 chiqdi», 2026-10-27), so everything through
 the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
 must read **137**, and the yo'ldagi-yuk round (0137) **138**.
+**Then he CONFIRMED 145** («deploy qildim 145 chiqdi», 2026-11-11, after PR #145 — the two tarkib rounds), so
+everything through #1682 is LIVE. PR #147 («o'zi yuborish», 0145) was merged the same day and its deploy is NOT
+confirmed: alone it reads 146, and with the prixod-xabari round (0146) the count must read **147**; with the
+prixod-javoblari round (0147) **148**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

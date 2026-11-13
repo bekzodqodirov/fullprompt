@@ -35,7 +35,10 @@ export type WaitKind =
   // open (0141, docs/IKKI-ESHIK.md §4.1): ONE offer per burst, kept across a
   // deploy. Its payload and its arming are the burst door's own.
   | 'burst'
-  // The AI sotuvchi's two one-text waits of 0146 (spec §2.2, §3.1): his answer to the AI's question
+  // «📎 Fayl qo‘shish» under a prixod's message (0146, docs/PRIXOD-XABARI.md
+  // §C.5): which prixod the chat is feeding files to. receipt-files.ts's own.
+  | 'receipt_files'
+  // The AI sotuvchi's two one-text waits of 0148 (spec §2.2, §3.1): his answer to the AI's question
   // («✍️ Savolga javob»), and a lesson he gives the AI («📝 Tuzatish»).
   | 'agent_answer'
   | 'agent_lesson';

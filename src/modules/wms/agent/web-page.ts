@@ -544,7 +544,7 @@ export interface AutoPanel {
    */
   today: { sent: number; going: number; unclear: number; paused: number; waiting: number; left: number };
   sent: AutoSentRow[];
-  /** 0146 has landed: the «Narx» box and the daily count's own field are offered (one migration behind they are not). */
+  /** 0148 has landed: the «Narx» box and the daily count's own field are offered (one migration behind they are not). */
   fullReady: boolean;
 }
 

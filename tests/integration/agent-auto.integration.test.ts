@@ -546,7 +546,7 @@ describe('the press — the minute sweep, through the same ✅', () => {
     expect(await verdictOf(second.id)).toMatchObject({ eligible: false, reasons: ['daily_cap'] });
   });
 
-  it('per day NULL (0146, his «7 chegara qoyma»): no daily count — the second reply of the day counts down too', async () => {
+  it('per day NULL (0148, his «7 chegara qoyma»): no daily count — the second reply of the day counts down too', async () => {
     await db.update(agentAutoConfig).set({ perDay: null }).where(eq(agentAutoConfig.id, 1));
     expect((await readAutoConfig())!.perDay).toBeNull();
     const first = await drafted();
@@ -652,15 +652,15 @@ describe('arming and disarming', () => {
     expect(await refused(setAutoArmed(actorOf(ownerId), true, { actorId: ownerId }))).toBe('agent_off');
   });
 
-  it('the kinds: the holder chooses among the five, at least one, in the design’s order — «Narx» only where 0146 admits it', async () => {
+  it('the kinds: the holder chooses among the five, at least one, in the design’s order — «Narx» only where 0148 admits it', async () => {
     const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
     expect(await refused(setAutoCategories(actorOf(ownerId), [], { actorId: ownerId }))).toBe('bad_value');
-    // DELIBERATE EDIT (0146, spec §1.5): «price» is the fifth kind now; complaint and other never are.
+    // DELIBERATE EDIT (0148, spec §1.5): «price» is the fifth kind now; complaint and other never are.
     expect(await refused(setAutoCategories(actorOf(ownerId), ['complaint'], { actorId: ownerId }))).toBe('bad_value');
     expect(await refused(setAutoCategories(actorOf(ownerId), ['other', 'faq'], { actorId: ownerId }))).toBe('bad_value');
     expect(await refused(setAutoCategories(actorOf(otherId), ['faq'], { actorId: otherId }))).toBe('not_account_holder');
     expect((await setAutoCategories(actorOf(ownerId), ['price', 'faq'], { actorId: ownerId })).categories).toEqual(['faq', 'price']);
-    // One migration behind 0146 the CHECK refuses «price»: said in words, never a raw 23514 — the four still save.
+    // One migration behind 0148 the CHECK refuses «price»: said in words, never a raw 23514 — the four still save.
     __pretendAgentFullP1Behind();
     try {
       expect(await refused(setAutoCategories(actorOf(ownerId), ['price'], { actorId: ownerId }))).toBe('not_ready');
@@ -673,7 +673,7 @@ describe('arming and disarming', () => {
     expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['category']);
   });
 
-  it('the daily count (0146): the holder types a number or leaves it empty — bounded, audited, said in words one migration behind', async () => {
+  it('the daily count (0148): the holder types a number or leaves it empty — bounded, audited, said in words one migration behind', async () => {
     const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
     for (const bad of [0, 1001, 1.5, Number.NaN, -3]) {
       expect(await refused(setAutoPerDay(actorOf(ownerId), bad, { actorId: ownerId })), String(bad)).toBe('bad_value');
@@ -1315,7 +1315,7 @@ describe('fix pass A — the hold counts from the card reaching him (C4)', () =>
   });
 });
 
-describe('the money clause by OUTCOME (0146, spec §1.1, §1.4) — on a real run, its stored tool calls and the press', () => {
+describe('the money clause by OUTCOME (0148, spec §1.1, §1.4) — on a real run, its stored tool calls and the press', () => {
   const answers = async (question: string, steps: { name: string; input: Record<string, unknown> }[]) => {
     const anchor = await inbound(question);
     const out = await handleInbound(job(anchor), { callModel: scripted(steps), now: () => T0 });
@@ -2327,7 +2327,7 @@ describe('the second check — a card that went silently in the night is no coun
   });
 });
 
-describe('the price that goes by itself — the figure still stands (0146, spec SPEC-P1-v2 §1.3, §1.6, §1.8)', () => {
+describe('the price that goes by itself — the figure still stands (0148, spec SPEC-P1-v2 §1.3, §1.6, §1.8)', () => {
   const PRICED = "5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.";
   const QUESTION = ["Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", "Yiwudan Toshkentga 5 kub 1000 kg kiyim bor, narxi qancha?"];
   let caps: SendCaps = DEFAULT_SEND_CAPS;

@@ -44,6 +44,8 @@ const answer = (over: Partial<NonNullable<LotCheckFace['client']>>): NonNullable
   vetoes: false,
   ofOwner: true,
   askedBy: null,
+  measures: false,
+  measuresMoved: false,
   ...over,
 });
 const face = (over: Partial<LotCheckFace>): LotCheckFace => ({
@@ -160,7 +162,7 @@ describe('the dispute’s hint promises only what the panel draws (L3-5)', () =>
 
 describe('«Mijozdan so‘rash» says what is true of the question NOW', () => {
   const ask = (over: Partial<ClientAskFace>, show = true) =>
-    wrap(h(ClientAskPanel, { receiptId: 'r-1', show, face: { canAsk: true, noChat: false, status: null, disputes: [], ...over } }));
+    wrap(h(ClientAskPanel, { receiptId: 'r-1', show, face: { canAsk: true, full: false, noChat: false, status: null, disputes: [], ...over } }));
   const waitingStatus = (wait: 'soon' | 'later' | 'stuck', at: string | null) => ({
     state: 'pending' as const,
     when: null,
@@ -201,5 +203,130 @@ describe('«Mijozdan so‘rash» says what is true of the question NOW', () => {
 
   it('with nothing to show and nothing just done, the block is not drawn at all', () => {
     expect(ask({ canAsk: false }, false)).toBe('');
+  });
+});
+
+describe('what the client’s ✅ covered — name and count, or the kilos and cubic metres too (0146)', () => {
+  // His «4 ha … og'irlik va hajmga urg'u berilsin»: an answer given to a
+  // question that asked the weight and the volume vouches for them, and the
+  // card must say which kind of answer it is looking at — a re-weigh after
+  // one reads «o'zgardi», and after the other changes nothing.
+  it('a full answer says so; an older one says what it did NOT cover', () => {
+    const full = lotPanel(face({ state: 'checked', client: answer({ holds: true, measures: true }) }));
+    expect(full).toContain(esc(words.clientYesFull!));
+    expect(full).not.toContain(esc(words.clientYesBasicNote!));
+
+    const basic = lotPanel(face({ state: 'checked', client: answer({ holds: true }) }));
+    expect(basic).toContain(esc(words.clientYes!));
+    expect(basic).not.toContain(esc(words.clientYesFull!));
+    expect(basic).toContain(esc(words.clientYesBasicNote!));
+  });
+
+  it('a re-weigh after a full ✅: the card names the weight or the volume, not «the data»', () => {
+    const moved = lotPanel(face({ state: 'stale', client: answer({ holds: false, measures: true, measuresMoved: true }) }));
+    expect(has(moved, 'lot-check-face-client-stale')).toBe(true);
+    expect(moved).toContain(esc(words.clientStaleMeasures!.replace('{day}', '2026-11-11')));
+    expect(moved).not.toContain(esc(words.clientStale!.replace('{day}', '2026-11-11')));
+
+    // The name or the count moved (with or without the measures): the general sentence.
+    const renamed = lotPanel(face({ state: 'stale', client: answer({ holds: false, measures: true }) }));
+    expect(renamed).toContain(esc(words.clientStale!.replace('{day}', '2026-11-11')));
+
+    // Off the Chinese shelf it is history, drawn muted, in the same words' other form.
+    const gone = lotPanel(face({ state: 'stale', askable: false, client: answer({ holds: false, measures: true, measuresMoved: true }) }));
+    expect(has(gone, 'lot-check-face-client-old')).toBe(true);
+    expect(gone).toContain(esc(words.clientYesOldMeasures!.replace('{day}', '2026-11-11')));
+  });
+
+  it('«Mijozdan so‘rash» says what the question sent NOW will ask', () => {
+    const ask = (full: boolean) =>
+      wrap(h(ClientAskPanel, { receiptId: 'r-1', show: true, face: { canAsk: true, full, noChat: false, status: null, disputes: [] } }));
+    expect(ask(true)).toContain(esc(words.askHintFull!));
+    expect(ask(true)).not.toContain(esc(words.askHint!));
+    expect(ask(false)).toContain(esc(words.askHint!));
+  });
+
+  it('the five new sentences exist in all four bundles (#163)', () => {
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { lotCheck: Record<string, string> };
+      for (const key of ['clientYesFull', 'clientYesBasicNote', 'clientStaleMeasures', 'clientYesOldMeasures', 'askHintFull']) {
+        expect(typeof bundle.lotCheck[key], `${locale}: ${key}`).toBe('string');
+      }
+      expect(bundle.lotCheck.clientStaleMeasures).toContain('{day}');
+      expect(bundle.lotCheck.clientYesOldMeasures).toContain('{day}');
+    }
+  });
+});
+
+describe('the system’s own question, and a tick that remembers the weight (the owner’s «1 b» / «2 b» of 2026-11-12)', () => {
+  const ask = (auto: ClientAskFace['auto'], status: ClientAskFace['status'] = null) =>
+    wrap(h(ClientAskPanel, { receiptId: 'r-1', show: true, face: { canAsk: true, full: true, noChat: false, status, disputes: [], auto } }));
+  const failed = uz.lotCheck as unknown as { askFailed: Record<string, string> };
+
+  it('held by us: when it will go — and the person’s 📨 stays pressable', () => {
+    const html = ask({ state: 'waiting', at: '15:40', failure: null });
+    expect(html).toContain(esc(words.reaskWaiting!.replace('{when}', '15:40')));
+    expect(html).toMatch(/data-testid="client-reask"[^>]*data-state="waiting"/);
+    expect(html).not.toMatch(/data-testid="client-ask-send"[^>]*disabled/);
+  });
+
+  it('sent: when, in its own words — never «So‘rov yuborilgan … · —» about nobody', () => {
+    const html = ask({ state: 'sent', at: '13.11.26, 15:40', failure: null });
+    expect(html).toContain(esc(words.reaskSent!.replace('{when}', '13.11.26, 15:40')));
+    expect(html).not.toContain(esc(words.askSent!.replace('{when}', '13.11.26, 15:40').replace('{by}', '—')));
+  });
+
+  it('not delivered: the closed word, under its own label', () => {
+    const html = ask({ state: 'failed', at: null, failure: 'blocked' });
+    expect(html).toContain(esc(words.reaskLabel!));
+    expect(html).toContain(esc(failed.askFailed.blocked!));
+    expect(html).toMatch(/data-testid="client-reask"[^>]*data-state="failed"/);
+  });
+
+  it('held long past its time (the bot cannot send): worded by its age, never «will go at» a time already gone', () => {
+    const html = ask({ state: 'waiting', at: '09:10', wait: 'stuck', failure: null });
+    expect(html).not.toContain(esc(words.reaskWaiting!.replace('{when}', '09:10')));
+    expect(html).toContain(esc(words.askStuck!.replace('{since}', '09:10')));
+    expect(html).toMatch(/data-testid="client-reask"[^>]*data-state="stuck"/);
+  });
+
+  it('none to draw: nothing of it', () => {
+    expect(has(ask(null), 'client-reask')).toBe(false);
+    expect(has(ask(undefined), 'client-reask')).toBe(false);
+  });
+
+  it('a tick whose kilos or cubic metres moved names the weight', () => {
+    const person = (moved: { name: boolean; count: boolean; client: boolean; measures: boolean }) =>
+      lotPanel(face({ state: 'stale', person: { by: 'Sardor', day: '2026-11-12', token: 't', note: null, holds: false, moved, outranked: false } }));
+    const html = person({ name: false, count: false, client: false, measures: true });
+    expect(html).toContain(esc(words.stalePerson!.replace('{what}', words.movedMeasures!)));
+    const both = person({ name: true, count: false, client: false, measures: true });
+    expect(both).toContain(esc(words.stalePerson!.replace('{what}', `${words.movedName!}, ${words.movedMeasures!}`)));
+  });
+
+  it('a tick this owner’s later ❌ outranks is history, never the green ✅ — even where a tarkib settled that ❌ and nothing vetoes (TICK3-CARD)', () => {
+    const still = { name: false, count: false, client: false, measures: false };
+    const tick = (outranked: boolean) => ({ by: 'Sardor', day: '2026-11-12', token: 't', note: null, holds: true, moved: still, outranked });
+    // The lists call this lot ⚠ (a stale tarkib of other goods; the ❌ is settled, so it vetoes nothing).
+    const settled = lotPanel(face({ state: 'stale', documentStale: true, person: tick(true), client: answer({ verdict: 'no', holds: true, vetoes: false }) }));
+    expect(has(settled, 'lot-check-face-person')).toBe(false);
+    expect(has(settled, 'lot-check-face-person-held')).toBe(true);
+    expect(settled).toContain(esc(words.personHeld!.replace('{by}', 'Sardor').replace('{day}', '2026-11-12')));
+    // A tick that vouches stays green.
+    const vouching = lotPanel(face({ state: 'checked', person: tick(false) }));
+    expect(has(vouching, 'lot-check-face-person')).toBe(true);
+    expect(has(vouching, 'lot-check-face-person-held')).toBe(false);
+  });
+
+  it('the new sentences exist in all four bundles (#163)', () => {
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { lotCheck: Record<string, string>; tarkib: Record<string, string> };
+      for (const key of ['reaskWaiting', 'reaskSent', 'reaskLabel', 'movedMeasures', 'clientViaPush']) {
+        expect(typeof bundle.lotCheck[key], `${locale}: ${key}`).toBe('string');
+      }
+      expect(bundle.lotCheck.reaskWaiting).toContain('{when}');
+      expect(bundle.lotCheck.reaskSent).toContain('{when}');
+      expect(typeof bundle.tarkib.measureOnLotForm, `${locale}: tarkib.measureOnLotForm`).toBe('string');
+    }
   });
 });

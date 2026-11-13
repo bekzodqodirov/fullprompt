@@ -755,6 +755,7 @@
       "tnved_ai_daily_limit": "Bojxona bo‘limidagi 🤖 tugmasi kuniga necha marta AI so‘rashi mumkin — butun kompaniya bo‘yicha (0 — o‘chirilgan)",
       "tarkib_ai_daily_limit": "«🤖 Fayldan to‘ldirish» kuniga necha marta AI ga hujjat o‘qitishi mumkin — butun kompaniya bo‘yicha; PDF, rasm va Excel — har bir o‘qish bitta sanaladi (0 — o‘chirilgan)",
       "client_confirm_on_receipt": "Mijozga boradigan «yukingiz qabul qilindi» xabarida ✅ / ❌ tugmalari chiqsinmi (o‘chirilsa, xabar avvalgidek boradi; kartadagi «Mijozdan so‘rash» ishlayveradi)",
+      "client_reask_on_reweigh": "Yuk qayta tortilganda (og‘irlik, hajm yoki quti soni o‘zgarganda) mijozga yuborilgan savol eskirgan bo‘lsa — mijozga yangi savol o‘zi borsinmi (oxirgi tuzatishdan 10 daqiqa keyin; o‘chirilsa, kartadagi «Mijozdan so‘rash» ishlayveradi)",
       "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)",
       "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda, faqat sborniy (LTL) yuk (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq."
     },
@@ -893,7 +894,9 @@
       "freightMode": "Yuk turi (LTL/FTL)",
       "released": "Raqami qaytarildi",
       "number": "Raqam",
-      "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)"
+      "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)",
+      "fileAdded": "Fayl qo'shildi",
+      "fileName": "Fayl o'chirildi"
     }
   },
   "profile": {
@@ -1101,7 +1104,11 @@
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
-    "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi"
+    "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi",
+    "dealNew": "Yangi bitim ochish",
+    "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang, yangisini oching yoki «Uzish»ni saqlab, o'sha bitimdan chiqaring.",
+    "dealForeignPick": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang yoki «Uzish»ni saqlab, o'sha bitimdan chiqaring.",
+    "dealVoided": "Bu prixod bekor qilingan — uning yuki hech qaysi bitimda hisobga olinmaydi."
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -3439,7 +3446,10 @@
       "not_your_client": "Bu mijozga muddatni uning sotuvchisi, buxgalter yoki admin beradi",
       "ftl_office_only": "FTL’ni LTL’ga faqat admin, logist yoki buxgalter qaytaradi (FTL bitimning egasini ham faqat ular almashtiradi).",
       "ftl_not_yours": "Faqat o‘z bitimingizni FTL qila olasiz.",
-      "server_behind": "Server yangilanmagan — administrator migratsiyani ishga tushirsin."
+      "server_behind": "Server yangilanmagan — administrator migratsiyani ishga tushirsin.",
+      "receipt_has_deal": "Bu prixod allaqachon bitimga biriktirilgan — yangi bitim ochilmadi. Prixod kartasini qayta oching.",
+      "receipt_not_confirmed": "Bu prixod tasdiqlanmagan yoki bekor qilingan — unga bitim ochilmadi.",
+      "upsale_paid": "Bu prixod turgan bitim bo‘yicha sotuvchiga ulush to‘langan — avval buxgalter to‘lovni qaytarsin, keyin prixod ko‘chiriladi."
     },
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",
@@ -3485,7 +3495,9 @@
     "profitCompensation": "− kompensatsiya (yo‘qolgan yuk)",
     "profitNetRevenue": "Tushum (kompensatsiyadan keyin)",
     "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi.",
-    "profitOtherDeal": "{truck} mashinasidagi narx ({amount} $) {code} bitimiga yozilgan — bu bitimning daromadida yo‘q."
+    "profitOtherDeal": "{truck} mashinasidagi narx ({amount} $) {code} bitimiga yozilgan — bu bitimning daromadida yo‘q.",
+    "newDealForReceipt": "Prixod {number} shu bitimga biriktiriladi.",
+    "receiptNotLinked": "Bitim ochildi, lekin prixod unga biriktirilmadi. Prixod kartasini ochib, «Bitim» blokidan shu bitimni tanlang."
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",
@@ -4015,6 +4027,7 @@
     "linkedReceipts": "Bog'langan prixodlar",
     "linkPick": "Hisob",
     "linkNoneOnCard": "Prixod hisobga bog'lanmagan",
+    "linkCurrentElsewhere": "hozirgi hisob — ro‘yxatda yo‘q",
     "quoted": "Hisobda",
     "measured": "Haqiqatda",
     "accuracy": "Rastamojka: hisob va haqiqat",
@@ -5790,6 +5803,7 @@
     "stale": "Lot tarkib yozilgandan keyin o'zgardi: tarkibda {stated}, hozir {current} — qayta tekshiring",
     "staleShort": "Lot o'zgardi — tarkibni tekshiring",
     "staleOnLotForm": "Lotda tarkib bor — kg/karobka o'zgarsa tarkibni qayta tekshirish kerak",
+    "measureOnLotForm": "Og'irlik yoki hajm o'zgarsa — lotdagi ✅ o'z kuchini yo'qotadi",
     "frozenInfo": "🔒 {trucks} hujjatlari yuborilgan — u mashina yuborilgan holida qoladi; yangi tarkib faqat hali yuborilmagan mashinalarga tushadi. O'sha mashinani ham o'zgartirish kerak bo'lsa: VED «yuborildi» belgisini olib, hujjatlarni qayta yuklab, agentga qayta yuborsin",
     "paperMoved": "Hujjatlar o'zgardi (tarkib yoki shu lotning boshqa mashinasi) — qayta yuklab oling, keyin belgilang",
     "savedBy": "{name} · {date}",
@@ -5944,6 +5958,7 @@
     "movedName": "tovar nomi",
     "movedCount": "karobka soni",
     "movedClient": "mijoz",
+    "movedMeasures": "og'irlik yoki hajm",
     "telegram": "Telegramda yozish",
     "notePlaceholder": "Izoh (ixtiyoriy): mijoz nima dedi",
     "confirm": "To'g'ri — mijoz tasdiqladi",
@@ -5970,7 +5985,7 @@
     "clientNo": "Mijoz Telegramda «xato bor» dedi",
     "clientYes": "Mijozning o'zi Telegramda tasdiqladi",
     "clientAskedBy": "so'ragan: {by}",
-    "clientViaPush": "«qabul qilindi» xabaridagi tugma orqali",
+    "clientViaPush": "tizim yuborgan savoldagi tugma orqali",
     "clientMovedSince": "ma'lumot shundan keyin o'zgartirilgan",
     "documentHeld": "Tarkib yozilgan — lekin mijoz aynan shu ro'yxatga e'tiroz bildirgan",
     "personHeld": "Avval tasdiqlagan: {by} · {day} — mijozning e'tirozidan oldin",
@@ -5993,6 +6008,9 @@
     "askLater": "Telegram kutishni so'radi — so'rov taxminan {when} da yuboriladi",
     "askStuck": "So'rov {since} dan beri navbatda turibdi — bot hozir yubora olmayapti. Keyinroq qarang; shoshilinch bo'lsa mijozga telefon qiling.",
     "askSent": "So'rov yuborilgan: {when} · {by}",
+    "reaskWaiting": "Yuk ma'lumoti o'zgardi — mijozdan {when} da o'zi qayta so'raladi",
+    "reaskSent": "Ma'lumot o'zgargani uchun mijozdan o'zi qayta so'raldi: {when}",
+    "reaskLabel": "Avtomatik qayta so'rov",
     "askFailed": {
       "no_chat": "So'rov yetib bormadi: mijozning Telegrami ulanmagan",
       "client_changed": "So'rov yuborilmadi: prixod egasi o'zgargan",
@@ -6019,7 +6037,12 @@
       "busy": "Prixod hozir band — bir ozdan keyin qayta bosing",
       "server_behind": "Server hali yangilanmagan — administratorga ayting",
       "other": "Bajarilmadi — qayta urinib ko'ring"
-    }
+    },
+    "clientYesFull": "Mijozning o'zi Telegramda tasdiqladi — nomi, quti soni, og'irligi va hajmi",
+    "clientYesBasicNote": "faqat nomi va quti soni (og'irlik va hajm so'ralmagan)",
+    "clientStaleMeasures": "Mijoz tasdiqlaganidan ({day}) keyin og'irlik yoki hajm o'zgardi — qayta so'rang",
+    "clientYesOldMeasures": "Avval mijozning o'zi tasdiqlagan ({day}) — keyin og'irlik yoki hajm o'zgargan",
+    "askHintFull": "Mijozga shu prixoddagi barcha lotlar (tarkibi, og'irligi va hajmi bilan) va «✅ To'g'ri / ❌ Xato bor» tugmalari yuboriladi. Mijoz tovar nomi, quti soni, og'irligi va hajmini tasdiqlaydi."
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "Nega qarzga berilyapti? (masalan: ertaga to‘laydi)",

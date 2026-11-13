@@ -302,7 +302,7 @@ describe('(9) a consumed wait’s DELETE reaches the table before the effect', (
     between(CABINET, 'dropPendingLink(chatId);', 'await flushWaitWrites()', 'completeClientLink(pending.linkId');
     between(TASKS, 'takeTaskPendingFor(chatId, press.taskId)', 'await flushWaitWrites()', "completeTaskFromBot(chatId, press.taskId, ''");
     // The AI sotuvchi's one text slot (✏️ text, 💵 figure, typed code, ✍️ answer) is a wait consumer too — the call
-    // also hands the bot message his ✍️ answer is keyed by (0146, spec SPEC-P1-v2 §2.2), so the anchor is its prefix.
+    // also hands the bot message his ✍️ answer is keyed by (0148, spec SPEC-P1-v2 §2.2), so the anchor is its prefix.
     between(AGENT, 'dropWait(chatId, target.kind)', 'await flushWaitWrites()', 'agentText(staff.id, target, msg.text');
   });
 

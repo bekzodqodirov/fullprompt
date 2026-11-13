@@ -103,7 +103,7 @@ describe('the fuses (ban-11)', () => {
     expect(AGENT_LIMITS.sendJitterMs[0]).toBeGreaterThanOrEqual(60_000 / HUMAN_LIMITS.perMinute);
   });
 
-  it('…and so do the caps he may type (0146, spec §5.2): the bounds the page, the service and the CHECKs keep', () => {
+  it('…and so do the caps he may type (0148, spec §5.2): the bounds the page, the service and the CHECKs keep', () => {
     expect(SEND_CAP_BOUNDS.day.max).toBeLessThanOrEqual(HUMAN_LIMITS.perDay);
     expect(SEND_CAP_BOUNDS.hour.max / 60).toBeLessThanOrEqual(HUMAN_LIMITS.perMinute);
     expect(SEND_CAP_BOUNDS.hour.max).toBeLessThanOrEqual(100);
@@ -113,7 +113,7 @@ describe('the fuses (ban-11)', () => {
     expect(AGENT_LIMITS.perDay).toBeLessThanOrEqual(SEND_CAP_BOUNDS.day.max);
     expect(AGENT_LIMITS.perHour).toBeLessThanOrEqual(SEND_CAP_BOUNDS.hour.max);
     // The migration's CHECKs say the same numbers.
-    const sql = readFileSync('src/modules/platform/db/migrations/0146_agent_full_p1.sql', 'utf8');
+    const sql = readFileSync('src/modules/platform/db/migrations/0148_agent_full_p1.sql', 'utf8');
     expect(sql).toContain(`"day_cap" IS NULL OR "day_cap" BETWEEN ${SEND_CAP_BOUNDS.day.min} AND ${SEND_CAP_BOUNDS.day.max}`);
     expect(sql).toContain(`"hour_cap" IS NULL OR "hour_cap" BETWEEN ${SEND_CAP_BOUNDS.hour.min} AND ${SEND_CAP_BOUNDS.hour.max}`);
   });
@@ -136,7 +136,7 @@ describe('the fuses (ban-11)', () => {
     expect(dailySendCeiling({ startedAt: null, ownAverage: 5, now, dayCap })).toBe(0);
   });
 
-  it('…to HIS day cap when he typed one (0146): the ramp tops out at it, and after the ramp it IS the ceiling', () => {
+  it('…to HIS day cap when he typed one (0148): the ramp tops out at it, and after the ramp it IS the ceiling', () => {
     const started = new Date(now.getTime() - 3 * 86_400_000);
     expect(dailySendCeiling({ startedAt: started, ownAverage: 500, now, dayCap: 150 })).toBe(150);
     expect(dailySendCeiling({ startedAt: started, ownAverage: 500, now, dayCap: 40 })).toBe(40);
@@ -323,7 +323,7 @@ describe('agentSendVerdict', () => {
     expect(agentSendVerdict(row, { ...facts, sentToChatToday: 12 })).toMatchObject({ final: false, reason: 'chat_day_cap' });
   });
 
-  it('the hour and the day are HIS caps as read at this tick (0146, spec §5.2) — never the constant beside them', () => {
+  it('the hour and the day are HIS caps as read at this tick (0148, spec §5.2) — never the constant beside them', () => {
     // His hour cap of 30: the 21st send of the hour still goes; the 30th waits.
     expect(agentSendVerdict(row, { ...facts, hourCap: 30, sentLastHour: 20 })).toEqual({ ok: true });
     expect(agentSendVerdict(row, { ...facts, hourCap: 30, sentLastHour: 30 })).toMatchObject({ final: false, reason: 'hour_cap' });

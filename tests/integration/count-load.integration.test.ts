@@ -11,6 +11,8 @@ import {
   batches,
   boxes,
   boxMovements,
+  clientNotices,
+  clientTelegramLinks,
   clients,
   events,
   loadPlans,
@@ -401,6 +403,37 @@ describe('the office’s number includes what the phones scanned (Q1 = b)', () =
     expect((await boxRow(lot.boxes[0]!.id)).status).toBe('loading');
     const off = await removeLoadedCode(truck.id, other.boxes[0]!.code, ctx());
     expect(off.removed).toEqual([other.boxes[0]!.code]);
+  });
+});
+
+describe('a count that grows the lot asks the client again by itself (his «1 b»)', () => {
+  it('the press grows the prixod past what the client was asked about: the automatic question is armed, after the commit', async () => {
+    const lot = await mkLot(3);
+    const truck = await planTruck([{ lot, take: 3 }]);
+    const [owning] = await db.select({ receiptId: receiptLots.receiptId }).from(receiptLots).where(eq(receiptLots.id, lot.lotId));
+    const receiptId = owning!.receiptId;
+    const chat = BigInt(8_500_000_000 + Number(S) * 10 + 7);
+    await db.insert(clientTelegramLinks).values({ clientId: lot.clientId, telegramChatId: chat, status: 'linked', linkedAt: new Date() });
+    // The client holds the receipt push's question about 3 cartons (delivered an hour ago).
+    await db.execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, status, sent_at, asked_tag, asked_at)
+      VALUES (${lot.clientId}::uuid, 'received_cn', 'receipt', ${receiptId}::uuid, now() - interval '1 hour', now(), 'sent',
+              now() - interval '1 hour', '00000000', now() - interval '1 hour')
+      ON CONFLICT (client_id, kind, ref_type, ref_id) DO UPDATE
+         SET status = 'sent', sent_at = EXCLUDED.sent_at, asked_tag = EXCLUDED.asked_tag, asked_at = EXCLUDED.asked_at
+    `);
+    try {
+      const res = await count(truck.id, lot, 5, { reason: 'zavod ko‘p berdi' });
+      expect(res.grown).toBe(2);
+      const [armed] = await db
+        .select({ status: clientNotices.status })
+        .from(clientNotices)
+        .where(and(eq(clientNotices.kind, 'lot_reask'), eq(clientNotices.refId, receiptId)));
+      expect(armed?.status).toBe('pending');
+    } finally {
+      await db.delete(clientNotices).where(eq(clientNotices.refId, receiptId));
+      await db.delete(clientTelegramLinks).where(eq(clientTelegramLinks.clientId, lot.clientId));
+    }
   });
 });
 

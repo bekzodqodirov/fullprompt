@@ -348,7 +348,7 @@ describe('words — every code said, never printed', () => {
     expect(autoArmedWords({ holdSec: 120, perDay: 30, categories: FOUR })).toContain('30 ta');
   });
 
-  it('…and «no daily count» as such, never «at most null a day» (0146, his «7 chegara qoyma»)', () => {
+  it('…and «no daily count» as such, never «at most null a day» (0148, his «7 chegara qoyma»)', () => {
     const words = autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR });
     expect(words).toContain('Kunlik chegara yo‘q');
     expect(words).not.toMatch(/null|ko‘pi bilan\s+ta/u);

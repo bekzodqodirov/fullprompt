@@ -16,6 +16,7 @@ import {
   MAX_NOTICE_ATTEMPTS,
   NOTICE_ARRIVED,
   releaseNotices,
+  rememberAskedTag,
   settleArrivalNotice,
 } from './arrival';
 import { emitArrivalStaffEvent, staffPendingNotices } from './arrival-staff';
@@ -38,8 +39,10 @@ import {
 } from './client-push';
 import { issuedFacts, receivedFacts } from './client-summary';
 import { issuedText, pushLotName, receivedText } from './client-text';
-import { clientAskFacts, clientAskOffer, NOTICE_LOT_ASK } from '../receipts/client-confirm';
+import { clientAskFacts, clientAskOffer, NOTICE_LOT_ASK, NOTICE_LOT_REASK } from '../receipts/client-confirm';
 import { askFits, askText } from '../receipts/client-confirm-text';
+import { reaskSendable, recordReaskSent } from '../receipts/client-reask';
+import { askedTagReady } from '../receipts/lot-check-ready';
 import { preparePickupNotice } from '../pickups/notice';
 import { NOTICE_PICKED_UP } from '../pickups/service';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
@@ -107,7 +110,13 @@ async function prepareReceived(notice: NoticeRow, client: ClientRow): Promise<Pr
   // else this push says — cargo still in China that nobody has confirmed, and
   // a prixod the push prints whole. A failure to ask is «no buttons», never
   // «no push»: the sentence is the message, the row is an addition.
-  const printed = summary.lines.map((line) => ({ lotId: line.lotId, name: line.name, boxCount: line.boxCount }));
+  const printed = summary.lines.map((line) => ({
+    lotId: line.lotId,
+    name: line.name,
+    boxCount: line.boxCount,
+    weightKg: line.weightKg,
+    volumeM3: line.volumeM3,
+  }));
   const confirm = await clientAskOffer(notice.refId, notice.clientId, printed, pushLotName).catch((err) => {
     logger.warn({ err, receiptId: notice.refId }, 'client confirm offer failed — the push goes without buttons');
     return null;
@@ -116,13 +125,24 @@ async function prepareReceived(notice: NoticeRow, client: ClientRow): Promise<Pr
     render: (locale) => {
       const plain = receivedText(summary, locale);
       if (!confirm) return { text: plain, caption: plain };
-      const asking = receivedText(summary, locale, { ask: true });
-      // The question must never cost the photograph: a caption that the
-      // extra line would push past Telegram's limit goes without it, and the
-      // buttons — «✅ To'g'ri» / «❌ Xato bor» — carry the question alone.
-      return { text: asking, caption: visibleLength(asking) <= MAX_CAPTION_CHARS ? asking : plain };
+      // The question's words follow its SCOPE (0146): `full` asks about the
+      // kilos and cubic metres the lines above print, and its tag covers them.
+      const asking = receivedText(summary, locale, { ask: confirm.scope });
+      const fits = visibleLength(asking) <= MAX_CAPTION_CHARS;
+      // A FULL question (0146) is never sent without its words: its ✅ is
+      // recorded as «the weight and the volume too», and a client must have
+      // been ASKED that — the owner's «urg'u berilsin, tekshirib olsin». So
+      // where the caption cannot carry the ask line, the PHOTOGRAPH yields:
+      // the push goes as text, lines, question and buttons together (the
+      // design judge, A3 — the picture is one tap away in the Mini App).
+      if (confirm.scope === 'full') return { text: asking, caption: fits ? asking : null };
+      // A BASIC question (a server without 0146) keeps 0144's trade: the
+      // question never costs the photograph — a caption the extra line would
+      // push past Telegram's limit goes without it, and the buttons carry
+      // the question alone.
+      return { text: asking, caption: fits ? asking : plain };
     },
-    keyboard: { lotId: facts.lotIds[0] ?? null, confirm },
+    keyboard: { lotId: facts.lotIds[0] ?? null, confirm: confirm ? { receiptId: confirm.receiptId, tag: confirm.tag } : null },
     photo: await firstLotPhoto(facts.lotIds),
   };
 }
@@ -147,6 +167,26 @@ async function prepareLotAsk(notice: NoticeRow): Promise<PreparedPush | Skip> {
   };
 }
 
+/**
+ * «📋 Yuk ma'lumotini tasdiqlang» asked BY THE SYSTEM after a re-weigh (the
+ * owner's «1 b», docs/PRIXOD-JAVOBLAR.md §1.7) — the person's question with
+ * one line saying why it comes again. Everything the arm proved is proved
+ * again here (`reaskSendable`): the switch, the owner, the length, nobody's
+ * question waiting, the cargo still in China, and the client's question still
+ * out of date. A question rightly not sent settles with a quiet word the
+ * card does not print (`REASK_QUIET`).
+ */
+async function prepareLotReask(notice: NoticeRow): Promise<PreparedPush | Skip> {
+  const facts = await reaskSendable(notice);
+  if ('skip' in facts) return facts;
+  return {
+    render: (locale) => ({ text: askText(facts, locale, { reason: 'updated' }), caption: null }),
+    keyboard: { lotId: facts.lots[0]?.lotId ?? null, confirm: { receiptId: facts.receiptId, tag: facts.tag } },
+    photo: null,
+    afterSent: () => recordReaskSent(facts.receiptId, null, facts.lots.length),
+  };
+}
+
 /** «🤝 Yukingiz berildi» — the handover's own boxes, and what is left. No photo. */
 async function prepareIssued(notice: NoticeRow, client: ClientRow): Promise<PreparedPush | Skip> {
   const facts = await issuedFacts(notice.clientId, notice.refId);
@@ -167,12 +207,20 @@ const PREPARERS: Record<string, Preparer> = {
   [NOTICE_RECEIVED]: prepareReceived,
   [NOTICE_ISSUED]: prepareIssued,
   [NOTICE_LOT_ASK]: prepareLotAsk,
+  [NOTICE_LOT_REASK]: prepareLotReask,
 };
 
 /** The kinds this sweep claims — exactly the ones it can render. */
 export const SWEPT_NOTICE_KINDS = Object.keys(PREPARERS);
 
-type Delivery = { kind: 'skipped'; reason: string } | PushVerdict;
+/**
+ * What the sweep does with a notice, plus — for a delivery — the tag of the
+ * question with buttons it carried (remembered, 0147) and what follows it.
+ */
+type Delivery = ({ kind: 'skipped'; reason: string } | PushVerdict) & {
+  askedTag?: string | null;
+  afterSent?: () => Promise<void>;
+};
 
 /**
  * One notice, every chat of its client, in each chat's own language.
@@ -220,8 +268,31 @@ async function deliverNotice(notice: NoticeRow, now: Date, photos: PhotoBreaker)
     // A refused TOKEN refuses every chat after this one too.
     if (result.botDown) break;
   }
-  return pushVerdict(results);
+  return {
+    ...pushVerdict(results),
+    askedTag: prepared.keyboard?.confirm?.tag ?? null,
+    ...(prepared.afterSent ? { afterSent: prepared.afterSent } : {}),
+  };
 }
+
+/**
+ * After a DELIVERY — whatever the status settle wrote (a row re-armed while
+ * it was out has still put this message in the client's chat): remember the
+ * question the client now holds, and run what the kind does after it went.
+ * Never throws: the message went, and the rest of the sweep's claims must
+ * still be settled.
+ */
+async function afterDelivered(notice: NoticeRow, delivery: Delivery): Promise<void> {
+  try {
+    if (delivery.askedTag && (await askedTagReady())) await rememberAskedTag(notice.id, delivery.askedTag);
+  } catch (err) {
+    logger.warn({ err, noticeId: notice.id }, 'the delivered question’s tag was not remembered');
+  }
+  if (delivery.afterSent) await delivery.afterSent().catch((err) => logger.warn({ err, noticeId: notice.id }, 'after-sent step failed'));
+}
+
+/** The claim a settle must still hold — for the kind that can be re-armed while it is out (`heldClaim`). */
+const claimOf = (notice: NoticeRow): Date | null => (notice.kind === NOTICE_LOT_REASK ? notice.claimedAt : null);
 
 /**
  * Send the customer notices whose window has closed — every kind.
@@ -302,19 +373,21 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
         notice.id,
         notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS ? 'failed' : 'pending',
         String(err),
+        claimOf(notice),
       ).catch(() => {});
       continue;
     }
     switch (delivery.kind) {
       case 'skipped':
-        await settleArrivalNotice(notice.id, 'skipped', delivery.reason);
+        await settleArrivalNotice(notice.id, 'skipped', delivery.reason, claimOf(notice));
         break;
       case 'sent':
-        await settleArrivalNotice(notice.id, 'sent');
+        await settleArrivalNotice(notice.id, 'sent', undefined, claimOf(notice));
+        await afterDelivered(notice, delivery);
         sent += 1;
         break;
       case 'failed':
-        await settleArrivalNotice(notice.id, 'failed', delivery.detail);
+        await settleArrivalNotice(notice.id, 'failed', delivery.detail, claimOf(notice));
         break;
       case 'retry':
         // Zero chats reached and something about it was transient: a RETRY —
@@ -323,10 +396,11 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
           notice.id,
           notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS ? 'failed' : 'pending',
           delivery.detail,
+          claimOf(notice),
         );
         break;
       case 'defer':
-        await deferNotice(notice.id, delivery.retryAfter, delivery.detail);
+        await deferNotice(notice.id, delivery.retryAfter, delivery.detail, claimOf(notice));
         break;
       case 'botDown': {
         /*
@@ -336,7 +410,8 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
          * until the token is fixed (judge REL-1).
          */
         if (delivery.delivered) {
-          await settleArrivalNotice(notice.id, 'sent');
+          await settleArrivalNotice(notice.id, 'sent', undefined, claimOf(notice));
+          await afterDelivered(notice, delivery);
           sent += 1;
         }
         await releaseNotices(due.slice(delivery.delivered ? i + 1 : i).map((row) => row.id));

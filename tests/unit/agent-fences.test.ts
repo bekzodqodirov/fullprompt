@@ -76,11 +76,11 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
     }
   });
 
-  it('every table with an FK to agent_drafts is named by the purge or by a reason (0146, spec §3.2)', () => {
+  it('every table with an FK to agent_drafts is named by the purge or by a reason (0148, spec §3.2)', () => {
     /** Tables that point at a draft and are deliberately NOT a chat's copy. */
     const SURVIVES: Record<string, string> = {
       agent_lessons:
-        'his instruction to EVERY chat, refused personal details at write — it survives the purge with draft_id NULL (0146)',
+        'his instruction to EVERY chat, refused personal details at write — it survives the purge with draft_id NULL (0148)',
     };
     const pointing: string[] = [];
     for (const value of Object.values(schema)) {
@@ -107,7 +107,7 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
       AgentCapReached: "the day's cap — no customer in it",
       AgentForcedOff: 'the account switched itself off — no customer in it',
       TgAccountPaused: 'the account was limited — no customer in it',
-      AgentTariffNotice: 'the website table runs out and the China column is his to vouch for (0146, §1.6) — no customer in it',
+      AgentTariffNotice: 'the website table runs out and the China column is his to vouch for (0148, §1.6) — no customer in it',
     };
     const src = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
     const where = src.slice(src.indexOf('function chatCardsWhere'), src.indexOf('export async function purgeAgentChat'));

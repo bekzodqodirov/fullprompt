@@ -151,7 +151,7 @@ describe('K13 — a bare figure only the money tool vouches for is a quoted pric
       kind: 'money',
       source: "yo'lkira (sayt kalkulyatori)",
       currency: 'USD',
-      // Who vouched, copied from the source (0146, spec §1.1) — the auto layer never reads the label.
+      // Who vouched, copied from the source (0148, spec §1.1) — the auto layer never reads the label.
       origin: 'tool',
       role: 'total',
     });

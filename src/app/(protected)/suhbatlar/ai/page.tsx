@@ -405,10 +405,10 @@ async function SettingsSection({
     superAdmin ? ownerCandidates() : Promise.resolve([]),
     // Null one migration behind 0145: no panel, and the page is today's.
     autoPanel(actor, config.ownerUserId),
-    // Today's constants one migration behind 0146 (`ready` false: no form).
+    // Today's constants one migration behind 0148 (`ready` false: no form).
     readSendCaps(),
   ]);
-  // Asked only where 0146 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
+  // Asked only where 0148 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
   const tariff = caps.ready
     ? { unconfirmed: await tariffUnconfirmed(new Date()), fingerprint: await currentTariffFingerprint() }
     : { unconfirmed: true, fingerprint: '' };
@@ -530,7 +530,7 @@ async function SettingsSection({
         />
       </section>
 
-      {/* The account-protection limits (0146) — only where the side table exists; one migration behind, the constants. */}
+      {/* The account-protection limits (0148) — only where the side table exists; one migration behind, the constants. */}
       {caps.ready && (
         <section className="card space-y-2" data-testid="agent-caps">
           <h2 className="section-title">{t('capsTitle')}</h2>
@@ -546,7 +546,7 @@ async function SettingsSection({
             {t('capsNow', { day: caps.dayCap, hour: caps.hourCap })}
           </p>
           <SendCapsForm stored={caps.stored} editable={holder || superAdmin} />
-          {/* The China column he vouched for (0146, spec §1.6): estimate replies wait for his ✅ after it changes. */}
+          {/* The China column he vouched for (0148, spec §1.6): estimate replies wait for his ✅ after it changes. */}
           <div className="space-y-1 border-t border-line pt-2" data-testid="agent-tariff">
             <p className="text-sm" data-testid="agent-tariff-state">
               {tariff.unconfirmed
@@ -679,7 +679,7 @@ function AutoSection({
         </p>
       )}
       <p className="text-xs text-ink-500" data-testid="agent-auto-numbers">
-        {/* No daily count is said as such (0146, his «7 chegara qoyma») — never «at most 0 a day». */}
+        {/* No daily count is said as such (0148, his «7 chegara qoyma») — never «at most 0 a day». */}
         {c.perDay === null
           ? t('autoNumbersNoCap', { hold: holdWords(t, c.holdSec), maxChars: c.maxChars, confidence: Math.round(c.minConfidence * 100) })
           : t('autoNumbers', {
@@ -709,7 +709,7 @@ function AutoSection({
       )}
       <AutoArmButtons armed={c.armed} canArm={holder} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
       <div className="border-t border-line pt-2">
-        {/* «Narx» is a box only where 0146's CHECK admits it — one migration behind, the four. */}
+        {/* «Narx» is a box only where 0148's CHECK admits it — one migration behind, the four. */}
         <AutoCategoriesForm
           current={c.categories}
           editable={holder}

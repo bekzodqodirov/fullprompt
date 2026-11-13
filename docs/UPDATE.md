@@ -369,6 +369,98 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## Prixod javoblari (2026-11-13, 0147) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0147** — deploydan keyin son **148** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). Agar serveringizda 0145 yoki 0146 hali yo‘q bo‘lsa, ular
+shu deployda birga o‘tadi — son baribir **148** (0146 ning bo‘limi pastda; 0145 niki va uning «tg-listen qayta
+quriladi» talabi — CHANGELOG’da). Migratsiya faqat qo‘shadi: xodim qo‘ygan ✅ ga ikkita ustun (eslab qolingan kg va
+kub — **hozirgi qiymatlar bilan to‘ldiriladi**, shuning uchun deploy kuni hech bir ✅ o‘zgarmaydi) va mijozga borgan
+savolga ikkita ustun (nima so‘ralgani va qachon). Mavjud ma’lumot o‘zgarmaydi.
+
+**Deploydan OLDIN biling:** deploydan keyin biror lotning og‘irligi, hajmi yoki quti soni o‘zgartirilsa va mijozga
+shu prixod haqida **deploydan keyin** tugmali savol borgan bo‘lsa (yoki xodimning «✅ To‘g‘ri»si shu tuzatishdan
+buzilsa) — **10 daqiqadan keyin mijozga yangi savol o‘zi boradi** («🔄 Yukingiz ma’lumoti yangilandi…»). Bu sizning
+«1 b» javobingiz. Deploydan OLDIN borgan savollarni tizim eslamaydi — ular uchun savol o‘zi bormaydi (xodimning ✅ i
+yoki mijozning og‘irlik va hajm bilan bergan ✅ i shu tuzatishdan buzilmagan bo‘lsa), lot avvalgidek «Mijozdan
+so‘rash» bilan so‘raladi. Sozlama (`client_reask_on_reweigh`)
+faqat deploydan keyin paydo bo‘ladi; xohlamasangiz — deploy tugagan zahoti Boshqaruv → Sozlamalar’da o‘chiring
+(birinchi savol eng tez birinchi tuzatishdan 10 daqiqa keyin ketadi — vaqt yetadi).
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+   (Bu raundning o‘zida **tg-listen** o‘zgarmagan; bu buyruq uni ham qayta quradi — zarari yo‘q.)
+3. Sonni o‘qing — **148**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+   (Son 147 bo‘lib qolsa — 0147 o‘tmagan — tizim ishlaydi, faqat avtomatik savol bormaydi va xodimning ✅ i kg/kubni
+   eslamaydi; migratsiya o‘tgach, **qayta ishga tushirmasdan** o‘zi yangisiga o‘tadi.)
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Sinov (bitta prixodda, 25 daqiqa):
+   - Telegrami ulangan mijozga Xitoy skladida prixod qiling. 10 daqiqadan keyin mijozga «Yukingiz qabul qilindi»
+     xabari ✅/❌ bilan boradi (avvalgidek). **Shu xabar borguncha kuting.**
+   - Endi shu lotni ✏️ bilan oching va og‘irligini o‘zgartiring (masalan 40 → 41 kg). Prixod kartasidagi
+     «Mijozdan so‘rash» blokida darhol: «Yuk ma’lumoti o‘zgardi — mijozdan HH:MM da o‘zi qayta so‘raladi».
+   - 10 daqiqadan keyin mijozga yangi savol boradi: tepasida «🔄 Yukingiz ma’lumoti yangilandi — iltimos, qayta
+     tekshirib tasdiqlang.», ostida 41 kg. Kartada: «Ma’lumot o‘zgargani uchun mijozdan o‘zi qayta so‘raldi: HH:MM»;
+     tarixda «Telegram · ma’lumot o‘zgargani uchun o‘zi qayta so‘raldi · 1 lot».
+   - Mijoz «✅» bossa — lot ✅; kartada «tizim yuborgan savoldagi tugma orqali».
+   - Boshqa lotda xodim «✅ To‘g‘ri» qo‘ysin, keyin ✏️ bilan og‘irligini o‘zgartiring — lot «o‘zgardi» bo‘lib ❓ ga
+     qaytadi («… og‘irlik yoki hajm»); eski og‘irlikni qaytarsangiz — yana ✅.
+   - Sotuvchi akkauntida prixod kartasini oching — «Fayllar»da 📎 qo‘shish bor; rasm yuklasa, u «Fayllar»da hujjat
+     bo‘lib turadi (karobka rasmlari orasida emas), tarixda fayl nomi bilan yozuv chiqadi.
+
+## Prixod xabari (2026-11-11, 0146) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0146** — deploydan keyin son **147** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). **147 — ikki raund bilan:** `main`da bu raunddan oldin
+AI sotuvchining «o‘zi yuborish» raundi (migratsiya **0145**) turibdi; u hali deploy qilinmagan bo‘lsa, shu
+deployda birga o‘tadi (uning o‘z bo‘limi va ogohlantirishi — CHANGELOG’da). Shu deploy `main`dagi «Prixod
+kartasi» raundini ham olib keladi (migratsiyasiz — prixod kartasining ko‘rinishi o‘zgaradi). Migratsiya faqat qo‘shadi: mijoz javobiga ikkita
+ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (model va tokenlar) va botning
+«kutish» jadvalidagi ruxsat etilgan turlar ro‘yxatiga bitta yangi tur. Mavjud ma’lumot o‘zgarmaydi.
+
+**Deploydan OLDIN biling (uchta narsa birdan o‘zgaradi):**
+- Mijozga boradigan «Yukingiz qabul qilindi» xabaridagi savol endi **og‘irlik va hajmni ham** so‘raydi
+  («Tovar nomi, quti soni, og‘irligi (kg) va hajmi (m³) to‘g‘rimi?»). Deploydan 10 daqiqa oldin qabul
+  qilingan prixodlar xabari ham shu yangi savol bilan ketadi.
+- Sotuvchiga endi **bitta** xabar boradi («📥 Prixod keldi — …») — avvalgi ikkitasi o‘rniga. Deploy paytida
+  navbatda turgan eski xabarlar eski ko‘rinishda (ikkita bo‘lib) boradi — bu to‘g‘ri, bir martalik.
+- Kechki 20:00 xulosasida yangi qator: «🤖 AI (oxirgi 24 soat): ≈ $… · N murojaat». Dushanbadagi haftalik
+  xulosada ikki qator bo‘ladi: «🤖 AI (hafta): …» va uning ostida «🤖 AI (oxirgi 24 soat): …».
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+   (Bot `app` ichida ishlaydi va u bilan birga yangilanadi. Bu raundning o‘zida **tg-listen** o‘zgarmagan,
+   lekin birga keladigan «o‘zi yuborish» raundi (0145) uni **talab qiladi** — bu buyruq uni ham qayta quradi.)
+3. Sonni o‘qing — **147**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+   (Son 146 bo‘lib qolsa — 0145 o‘tgan, 0146 o‘tmagan — tizim ishlaydi, faqat savol eski ko‘rinishda,
+   og‘irliksiz boradi; migratsiya
+   o‘tgach, **qayta ishga tushirmasdan** o‘zi yangisiga o‘tadi.)
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Sinov (bitta prixodda, 10 daqiqa):
+   - Sotuvchisi bor (va o‘sha sotuvchining Telegrami botga ulangan) mijozga Xitoy skladida prixod qiling.
+     Bir daqiqa ichida sotuvchining Telegramiga **bitta** xabar keladi: «📥 Prixod keldi — …», mijoz, lotlar
+     (nomi, quti, kg, m³), bitim holati va ostida ikki tugma: **«📎 Fayl qo‘shish»** va **«🔗 Bitim
+     biriktirish»** (bitimi bor prixodda ikkinchi tugma «↗️ Ochish» bo‘ladi).
+   - «🔗 Bitim biriktirish» → prixod kartasi «Bitim» bo‘limida ochiladi (birinchi marta brauzer login so‘rasa
+     — kiring va tugmani yana bosing). Mijozning bitimi bo‘lmasa — «+ Yangi bitim ochish»: bitim ochiladi va
+     shu prixod unga o‘zi biriktiriladi.
+   - «📎 Fayl qo‘shish» → bot «Fayllarni shu yerga yuboring» deydi → 1-2 ta fayl yoki rasm yuboring (forward
+     ham bo‘ladi) → «📎 …: 2 ta fayl biriktirildi» → «✅ Bo‘ldi». Prixod kartasidagi «Fayllar»da shu fayllar
+     turadi; tarixda «Fayl qo‘shildi … · Telegram» yozuvi bor. Xato fayl ketgan bo‘lsa — «↩️ Bekor qilish».
+   - 10 daqiqadan keyin mijozga boradigan xabarda yangi savol (og‘irlik va hajm bilan) va «✅ / ❌» turadi;
+     «✅» bosilgach prixod kartasida «✅ Mijozning o‘zi Telegramda tasdiqladi — nomi, quti soni, og‘irligi va
+     hajmi» chiqadi. Shu lotning og‘irligini ✏️ bilan o‘zgartirsangiz — «o‘zgardi — qayta so‘rang» bo‘ladi.
+   - Ertasi 20:00 dagi xulosada «🤖 AI (oxirgi 24 soat): …» qatori (AI umuman ishlatilmagan kunda qator
+     chiqmaydi).
+6. Sotuvchisi yo‘q mijozning bitimsiz prixodi haqidagi ogohlantirish, avvalgidek, adminlarga boradi — endi
+   «📥 Prixod keldi» ko‘rinishida va ikki tugma bilan. Sotuvchisi bor, lekin Telegrami botga **ulanmagan**
+   bo‘lsa ham adminlarga boradi (avval bunday holda hech kim eshitmasdi). Adminga borgan xabarda nega unga
+   kelgani yozilgan bo‘ladi: «👤 Mijozning sotuvchisi yo‘q — sizga yuborildi» yoki «👤 Sotuvchi … bu xabarni
+   ololmaydi … — sizga yuborildi». Ikkinchisi chiqsa — o‘sha sotuvchi botga /start yuborib, telefonini
+   ulasin (yoki ishdan ketgan bo‘lsa, mijozlarini boshqa sotuvchiga o‘tkazing).
+
 ## Tarkib takliflari (2026-11-11, 0144) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0144** — deploydan keyin son **145** bo‘ladi (repo’dagi fayllar soni:

@@ -72,7 +72,7 @@ export interface AutoConfig {
   armedAt: Date | null;
   armedBy: string | null;
   holdSec: number;
-  /** Auto presses a Tashkent day may hold — null = no cap (0146, his «7 chegara qoyma»). */
+  /** Auto presses a Tashkent day may hold — null = no cap (0148, his «7 chegara qoyma»). */
   perDay: number | null;
   maxChars: number;
   minConfidence: number;
@@ -146,7 +146,7 @@ type ToolCall = AutoToolCall;
 
 /**
  * The run's stored tool calls as the gate reads them. The estimate flag is the one the run stored beside each call
- * (spec §1.1); a call stored before 0146 carries none and reads as a PRICED estimate — failing closed: such a
+ * (spec §1.1); a call stored before 0148 carries none and reads as a PRICED estimate — failing closed: such a
  * draft also has no stored estimates, and the money clause refuses it.
  */
 export function toolCallsOf(raw: unknown): ToolCall[] {
@@ -160,7 +160,7 @@ export function toolCallsOf(raw: unknown): ToolCall[] {
     }));
 }
 
-/** The stored ledger as the gate reads it: who vouched for each line — absent fields (a line before 0146) are null. */
+/** The stored ledger as the gate reads it: who vouched for each line — absent fields (a line before 0148) are null. */
 function ledgerLinesOf(raw: unknown): AutoLedgerLine[] {
   if (!Array.isArray(raw)) return [];
   const str = (v: unknown) => (typeof v === 'string' ? v : null);
@@ -334,7 +334,7 @@ export async function autoFactsFor(
       categories: auto?.categories ?? [],
       maxChars: auto?.maxChars ?? 0,
       minConfidence: auto?.minConfidence ?? 1,
-      // NULL is «no cap» and stays NULL (0146): a fallback to a number here would refuse every reply for ever
+      // NULL is «no cap» and stays NULL (0148): a fallback to a number here would refuse every reply for ever
       // while typecheck stays green. No row at all is `not_armed` above.
       perDay: auto ? auto.perDay : null,
     },
@@ -1355,7 +1355,7 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
 
 /**
  * Which kinds of reply may go by themselves — the holder's choice among the five, at least one. Audited. The
- * fifth, `price`, is admitted by 0146's CHECK alone: one migration behind it is refused in words, never a 23514.
+ * fifth, `price`, is admitted by 0148's CHECK alone: one migration behind it is refused in words, never a 23514.
  */
 export async function setAutoCategories(actor: AutoActor, categories: readonly string[], ctx: AuditContext): Promise<AutoConfig> {
   const chosen = [...new Set(categories)];
@@ -1385,7 +1385,7 @@ export async function setAutoCategories(actor: AutoActor, categories: readonly s
   });
 }
 
-/** The bounds a typed daily count keeps (0146's CHECK); null is «no cap». */
+/** The bounds a typed daily count keeps (0148's CHECK); null is «no cap». */
 export const AUTO_PER_DAY_MAX = 1000;
 
 /**

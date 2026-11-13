@@ -1195,14 +1195,14 @@ async function autoCommand(
   }
 }
 
-/** «N/30», or «N, chegara yo‘q» when the layer counts no day (0146, his «7 chegara qoyma»). */
+/** «N/30», or «N, chegara yo‘q» when the layer counts no day (0148, his «7 chegara qoyma»). */
 export function autoTodayWords(today: number, perDay: number | null): string {
   return perDay === null ? `${today}, chegara yo‘q` : `${today}/${perDay}`;
 }
 
 /**
  * What arming promises — the numbers the press keeps (hold, per day), the night, ⏸, and what stays his. The
- * price stays his only while he has not ticked it (0146): the sentence is built from the stored kinds, never
+ * price stays his only while he has not ticked it (0148): the sentence is built from the stored kinds, never
  * a promise the next reply breaks.
  */
 export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categories'>): string {

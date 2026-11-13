@@ -100,6 +100,25 @@ function netChanges(run: HistoryRow[]): HistoryChange[] {
     .filter((change) => !same(change.before, change.after));
 }
 
+/**
+ * A removed FILE names itself.
+ *
+ * `deleteAttachment` audits on the file's PARENT (a prixod, a truck…) with
+ * `before: { attachmentId, fileName }` and no `after`, and the History reads
+ * `after` — so the parent's card printed a bare «o‘chirdi», which on a prixod
+ * reads as cargo data deleted, and three of them after a «↩️ Bekor qilish»
+ * said nothing about what went (the as-built review of 0146, CARD-5: the
+ * round added that row's two commonest producers — the bot's cancel and the
+ * seller's own ✕).
+ *
+ * The file's name and nothing else: a delete row's other `before` fields are
+ * the deleted record's own, and are not this card's to print.
+ */
+export function removedFile(row: Pick<HistoryRow, 'action' | 'before'>): HistoryChange[] {
+  const name = row.action === 'delete' ? row.before?.fileName : null;
+  return typeof name === 'string' && name !== '' ? [{ key: 'fileName', before: name, after: null }] : [];
+}
+
 function single(row: HistoryRow): HistoryGroup {
   return {
     id: row.id,
@@ -107,7 +126,7 @@ function single(row: HistoryRow): HistoryGroup {
     action: row.action,
     at: row.createdAt,
     rows: [row],
-    changes: visibleChanges(row.before, row.after),
+    changes: [...visibleChanges(row.before, row.after), ...removedFile(row)],
   };
 }
 

@@ -33,6 +33,8 @@ import type { DraftFile } from './task-draft';
 import { DAY_BUTTONS } from '../tasks/digest';
 import { logger } from '../logger';
 import { approvalVerdictLine, notificationLabels, textLocaleOf } from '../notifications/labels';
+import { isReceiptArrival } from '../notifications/receipt-arrival';
+import { RECEIPT_FILES_BUTTON } from './receipt-files';
 import {
   appendLine,
   capStaffText,
@@ -397,12 +399,23 @@ export type BotCallback =
    * the stamp of the China column the notice was sent with. `ag:` collides with nothing: `a:` is
    * anchored to `[01]:`.
    */
-  | { kind: 'agent'; op: AgentOp; id: string; digest?: string };
+  | { kind: 'agent'; op: AgentOp; id: string; digest?: string }
+  /**
+   * «📎 Fayl qo‘shish» under a prixod's message — `pf:<receipt>` — and the
+   * collection's own «✅ Bo‘ldi» and «↩️ Bekor qilish», `pf:ok:<receipt>` /
+   * `pf:no:<receipt>` (0146, docs/PRIXOD-XABARI.md §C.5). Both carry their
+   * prixod: a press under an EARLIER prixod's message must never close the
+   * one that is open now. `pf:` collides with nothing: the cabinet's `ph:`
+   * is its own two letters.
+   */
+  | { kind: 'receipt_files'; receiptId: string }
+  | { kind: 'receipt_files_done'; receiptId: string }
+  | { kind: 'receipt_files_cancel'; receiptId: string };
 
 /**
  * ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed ·
  * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0145) · 👎 it sent wrong (0145) ·
- * ✅ the China tariff is right (0146, spec SPEC-P1-v2 §1.6) · ✍️ answer the AI's question (0146, §2.2 — `j`: `q`
+ * ✅ the China tariff is right (0148, spec SPEC-P1-v2 §1.6) · ✍️ answer the AI's question (0148, §2.2 — `j`: `q`
  * stays unparsed).
  */
 export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f', 't', 'j'] as const;
@@ -461,6 +474,12 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   // a live question to «editing» (again on a repeat) and the wait it arms keeps
   // the earlier prompts — the answer is the text after it.
   agent: 'cas',
+  // Opening a prixod's file collection only ASKS (a second press re-sends the
+  // prompt and keeps what it took); «✅ Bo‘ldi» and «↩️ Bekor qilish» end it
+  // once — a second press finds nothing of that prixod's open and says so.
+  receipt_files: 'prompt',
+  receipt_files_done: 'cas',
+  receipt_files_cancel: 'cas',
 };
 
 /** ⏰'s four answers. */
@@ -787,6 +806,13 @@ export function parseCallback(data: string): BotCallback | null {
       ...(agent[3] ? { digest: agent[3] } : {}),
     };
   }
+  // A prixod's file collection (0146). Lowercase hex only — the row is drawn
+  // lowercased (`buttonsFor`), so nothing drawn is refused here (#939).
+  const files = /^pf:(?:(ok|no):)?([0-9a-f-]{36})$/.exec(data);
+  if (files) {
+    const kind = files[1] === 'ok' ? 'receipt_files_done' : files[1] === 'no' ? 'receipt_files_cancel' : 'receipt_files';
+    return { kind, receiptId: files[2]! };
+  }
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -878,6 +904,14 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
   if (type === 'CalcPrefilled' && payload.add === true && typeof payload.requestId === 'string' && UUID.test(payload.requestId)) {
     return [[{ text: '➕ Shu so‘rovga qo‘shish', callback_data: `ca:${payload.requestId.toLowerCase()}` }]];
   }
+  // «Prixod keldi» (0146, receipt-arrival.ts): the first of its two buttons —
+  // the second is the card link the drain lifts into «🔗 Bitim biriktirish».
+  // Keyed on the row being the NEW message (`dealState`), so a prixod message
+  // written before the fold keeps the keyboard it never had; lowercased,
+  // because that is the only shape the parser takes.
+  if (isReceiptArrival(type, payload) && typeof payload.receiptId === 'string' && UUID.test(payload.receiptId)) {
+    return [[{ text: RECEIPT_FILES_BUTTON, callback_data: `pf:${payload.receiptId.toLowerCase()}` }]];
+  }
   return null;
 }
 
@@ -935,7 +969,7 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     if (payload.ask === true) return [[{ text: '✍️ Savolga javob', callback_data: `ag:j:${id}` }], first, lastRow];
     return [first, lastRow];
   }
-  // The website table's 14-day notice (0146, spec §1.6): «✅ Tarif to'g'ri» vouches for the column it was sent with.
+  // The website table's 14-day notice (0148, spec §1.6): «✅ Tarif to'g'ri» vouches for the column it was sent with.
   if (type === 'AgentTariffNotice') {
     const holder = typeof payload.holderId === 'string' && UUID.test(payload.holderId) ? payload.holderId : null;
     const stamp = typeof payload.fingerprint === 'string' && /^[0-9a-f]{8}$/.test(payload.fingerprint) ? payload.fingerprint : null;

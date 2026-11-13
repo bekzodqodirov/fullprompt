@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../platform/db/client';
 import {
@@ -7,8 +7,6 @@ import {
   boxMovements,
   clients,
   costEntries,
-  dealStages,
-  deals,
   productDictionary,
   receiptLots,
   receipts,
@@ -31,6 +29,8 @@ import {
   closeExpectedOnReceipt,
 } from '../arrivals/service';
 import { priceControlOnReceipt } from '../deals/service';
+import { arrivalTotals } from '../../platform/notifications/receipt-arrival';
+import { receiptDealInTx } from './deal-state';
 import { stampCalcLink } from '../calc/link';
 import { computeLotTotals } from './math';
 import { costOrphanedByVoid, lockCostsTouchingLots } from '../costing/void-guard';
@@ -512,45 +512,19 @@ export async function confirmReceipt(
       });
     }
 
-    // Whether this prixod already belongs to a bitim, and which open deals
-    // the client has if not (round 107, owner's item 3): the seller's copy of
-    // the arrival must say «attach it» when there is something to attach to,
-    // and «no deal — set a price» when there is not. Read on the TRANSACTION's
-    // own handle — the pool is off-limits here (#714).
-    const dealLinked = Boolean(input.clientId && input.dealId);
-    const openDealCodes =
-      input.clientId && !dealLinked
-        ? (
-            await tx
-              .select({ code: deals.code })
-              .from(deals)
-              .innerJoin(dealStages, eq(deals.stageId, dealStages.id))
-              .where(
-                and(
-                  eq(deals.clientId, input.clientId),
-                  eq(dealStages.kind, 'open'),
-                  // …and it must be something a person could ATTACH cargo to.
-                  // An empty deal is not: round 111 opens one automatically
-                  // with every client code, and round 107 already opens one on
-                  // every won lead, so without this the first arrival for
-                  // nearly every new customer would read «biriktiring» —
-                  // pointing at a shell with no price — instead of «narx
-                  // qo'ying», and the seller who attached it would then have
-                  // silenced the alarm for good. A deal carries weight once
-                  // somebody has put a price or a goods list on it.
-                  or(
-                    isNotNull(deals.quotedAmount),
-                    // `${deals}.id`, not `${deals.id}` — inside a correlated
-                    // subquery drizzle would render the bare column against
-                    // deal_lines and the EXISTS would be true for every deal
-                    // that has any line at all (#128).
-                    sql`EXISTS (SELECT 1 FROM deal_lines WHERE deal_lines.deal_id = ${deals}.id)`,
-                  ),
-                ),
-              )
-              .limit(4)
-          ).map((row) => row.code)
-        : [];
+    // The prixod's deal as its seller is told about it (docs/PRIXOD-XABARI.md
+    // §C.2) — decided ONCE here, written onto the event below and handed to
+    // price control, so the seller's one message and the alarm behind it
+    // cannot disagree. Round 107's two readings («biriktiring» when there is
+    // something to attach to, «narx qo'ying» when there is not) are two of
+    // its four states. Read on the TRANSACTION's own handle — the pool is
+    // off-limits here (#714).
+    const deal = input.clientId
+      ? await receiptDealInTx(tx, { clientId: input.clientId, dealId: input.dealId ?? null })
+      : null;
+    const dealLinked = deal !== null && deal.dealId !== null;
+    const openDealCodes = deal?.openDealCodes ?? [];
+    const totals = arrivalTotals(summaries);
 
     await emitEvent(tx, {
       type: input.clientId ? 'ReceiptConfirmed' : 'UnknownCargoReceived',
@@ -564,6 +538,12 @@ export async function confirmReceipt(
         lots: summaries,
         dealLinked,
         openDealCodes,
+        // «Prixod keldi» (receipt-arrival.ts): the state makes this the ONE
+        // message its seller gets, and the totals are the lines' own sums.
+        ...(deal ? { dealState: deal.state, dealCode: deal.dealCode } : {}),
+        boxCount: totals.boxCount,
+        weightKg: totals.weightKg,
+        volumeM3: totals.volumeM3,
       },
       entityType: 'receipt',
       entityId: receipt!.id,
@@ -583,6 +563,12 @@ export async function confirmReceipt(
         receiptNumber: number,
         deviationThreshold,
         openDealCodes,
+        // The decision above, handed over — and `folded`, because THIS
+        // transaction wrote the `ReceiptConfirmed` that carries the alarm to
+        // its people: the alert event is still emitted (the owner's rules
+        // listen to it) and tells nobody a second time.
+        deal: deal ? { state: deal.state, dealId: deal.dealId } : null,
+        folded: true,
         clientId: input.clientId,
         warehouseCode: warehouse.code,
         volumeM3: summaries.reduce((sum, s) => sum + s.totalVolumeM3, 0),

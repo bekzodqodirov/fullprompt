@@ -24,7 +24,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { recalcFromSealed, sealCalc, setFreightZone } from '@/modules/wms/calc/workspace';
-import { answerLinkAsk, confirmCalcLink, linkAskTag } from '@/modules/wms/calc/link';
+import { answerLinkAsk, confirmCalcLink, linkAskTag, setCalcLink } from '@/modules/wms/calc/link';
 import { linkSuggestionCount, linkSuggestions } from '@/modules/wms/calc/actuals';
 import { claimLinkAsks, linkAskEligible } from '@/modules/wms/calc/link-ask';
 import { decideLinkFromBot } from '@/modules/wms/calc/link-bot';
@@ -53,6 +53,8 @@ let sealerId = '';
 let colleagueId = '';
 let bystanderId = '';
 let clientId = '';
+/** Another customer — the one a client correction says a prixod on `clientId`'s deal really belongs to. */
+let otherClientId = '';
 let warehouseId = '';
 let stageId = '';
 const sealerChat = BigInt(Date.now()) * 100n + 41n;
@@ -99,6 +101,11 @@ beforeAll(async () => {
     .values({ clientCode: `LA${SUFFIX}`, name: `Link ask fixture ${SUFFIX}` })
     .returning();
   clientId = c!.id;
+  const [o] = await db
+    .insert(clients)
+    .values({ clientCode: `LO${SUFFIX}`, name: `Link ask other client ${SUFFIX}` })
+    .returning();
+  otherClientId = o!.id;
   const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
   stageId = stage!.id;
   const wh = await db.query.warehouses.findFirst();
@@ -135,7 +142,7 @@ afterAll(async () => {
   await db.delete(notifications).where(inArray(notifications.userId, people));
   await db.delete(telegramLinks).where(inArray(telegramLinks.userId, people));
   await db.delete(userRoles).where(inArray(userRoles.userId, people));
-  await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
+  await db.update(clients).set({ active: false }).where(inArray(clients.id, [clientId, otherClientId]));
   // Audited people are deactivated, never deleted (audit_log FK).
   await db.update(users).set({ active: false }).where(inArray(users.id, people));
   await pgClient.end();
@@ -179,13 +186,17 @@ async function openJob(dealId: string): Promise<string> {
   return request.id;
 }
 
-async function receiptOn(dealId: string, confirmedAt: Date, opts: { voided?: boolean } = {}): Promise<string> {
+async function receiptOn(
+  dealId: string,
+  confirmedAt: Date,
+  opts: { voided?: boolean; client?: string } = {},
+): Promise<string> {
   const [row] = await db
     .insert(receipts)
     .values({
       number: `LA${tag()}`,
       warehouseId,
-      clientId,
+      clientId: opts.client ?? clientId,
       status: opts.voided ? 'voided' : 'confirmed',
       createdBy: sealerId,
       confirmedAt,
@@ -555,5 +566,68 @@ describe('a colleague’s link: listed to read, refused to decide', () => {
 
     expect(await answerLinkAsk(id, prefix(requestId), 'confirm', 'own', ctx())).toBe('not_mine');
     expect((await read(id))!.calcLinkConfirmedAt).toBeNull();
+  });
+});
+
+/**
+ * A prixod a client correction left on ANOTHER customer's deal (the merged
+ * card's review, XF-2). The correction rewrites `client_id` and leaves
+ * `deal_id` where it was, so the deal and its calculations are the old
+ * customer's: measuring this cargo against them would score one customer's
+ * shipment against another customer's quote. Every door that MAKES or
+ * BLESSES a link asks the prixod's own deal (`ownDealOf`); the doors that take
+ * one off stay open.
+ */
+describe('a prixod left on another client’s deal is never linked to that deal’s calculations', () => {
+  it('the seal does not guess it onto the calculation; the deal’s own prixod beside it is guessed', async () => {
+    const dealId = await newDeal();
+    const requestId = await openJob(dealId);
+    const own = await receiptOn(dealId, later());
+    const left = await receiptOn(dealId, later(), { client: otherClientId });
+
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
+
+    expect((await read(own))!.calcRequestId).toBe(requestId);
+    const l = await read(left);
+    expect(l!.calcRequestId).toBeNull();
+    expect(l!.calcLinkSource).toBeNull();
+  });
+
+  it('a link made while it was the deal’s own: no ✅ anywhere, no new pick — and «—» and ❌ still take it off', async () => {
+    const dealId = await newDeal();
+    const requestId = await openJob(dealId);
+    const viaScreen = await receiptOn(dealId, later());
+    const viaBot = await receiptOn(dealId, later());
+    const own = await receiptOn(dealId, later());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
+    // Guessed while the cargo was this customer's…
+    for (const id of [viaScreen, viaBot, own]) expect((await read(id))!.calcRequestId).toBe(requestId);
+    // …then the client was corrected underneath the guesses.
+    await db.update(receipts).set({ clientId: otherClientId }).where(inArray(receipts.id, [viaScreen, viaBot]));
+
+    // The screen's ✓ and the bot's ✅ refuse: either would make it MEASURABLE.
+    await expect(confirmCalcLink(viaScreen, 'all', ctx())).rejects.toMatchObject({ code: 'request_foreign' });
+    expect(await answerLinkAsk(viaBot, prefix(requestId), 'confirm', 'all', ctx())).toBe('request_foreign');
+    // A person's pick is refused too: the prixod has no deal of its own to pick from.
+    await expect(setCalcLink(viaScreen, requestId, 'all', ctx())).rejects.toMatchObject({ code: 'no_deal' });
+    for (const id of [viaScreen, viaBot]) {
+      const row = await read(id);
+      expect(row!.calcRequestId).toBe(requestId);
+      expect(row!.calcLinkConfirmedAt).toBeNull();
+      expect(row!.calcLinkSource).toBe('auto');
+    }
+
+    // Taking it off is never refused: the card's «—»…
+    await setCalcLink(viaScreen, null, 'all', ctx());
+    expect((await read(viaScreen))!.calcRequestId).toBeNull();
+    // …and the bot's ❌, which is the true answer about another customer's cargo.
+    expect(await answerLinkAsk(viaBot, prefix(requestId), 'drop', 'all', ctx())).toBe('dropped');
+    expect((await read(viaBot))!.calcRequestId).toBeNull();
+
+    // The control: the deal's own prixod beside them is confirmed by the same doors.
+    await setCalcLink(own, requestId, 'all', ctx());
+    const o = await read(own);
+    expect(o!.calcLinkSource).toBe('person');
+    expect(o!.calcLinkConfirmedAt).not.toBeNull();
   });
 });

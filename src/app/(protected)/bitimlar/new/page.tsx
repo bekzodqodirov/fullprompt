@@ -3,7 +3,9 @@ import { getTranslations } from 'next-intl/server';
 import { asc, eq } from 'drizzle-orm';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
-import { clients, leads } from '@/modules/platform/db/schema';
+import { clients, deals, leads, receipts } from '@/modules/platform/db/schema';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
+import { bornWithVerdict } from '@/modules/wms/receipts/deal-state';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { listStages } from '@/modules/wms/deals/service';
@@ -25,7 +27,7 @@ import { ClientPicker } from './client-picker';
 export default async function NewDealPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; lead?: string }>;
+  searchParams: Promise<{ client?: string; lead?: string; prixod?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -55,6 +57,40 @@ export default async function NewDealPage({
   // LTL / FTL (0135): a won lead's FTL is offered on its deal too (his 1a);
   // null = the server is one migration behind (no choice drawn).
   const leadMode = quote ? await leadLoadMode(quote.id) : (await ftlReady()) ? 'ltl' : null;
+
+  // Arrived from a prixod card's «+ Yangi bitim ochish» (0146): the deal is
+  // being opened FOR that cargo, so it is born with the prixod on it — the
+  // seller who pressed «🔗 Bitim biriktirish» must not land on a new deal
+  // with the prixod still on none. Only a live prixod of THIS client that has
+  // no deal of its own yet (`bornWithVerdict`): a `prixod=` in the URL is a
+  // forged post until proven (#514), and the create action asks the SAME rule
+  // again — before the deal exists, and under the prixod's row lock.
+  const forReceipt =
+    preset && params.prixod && isUuidShaped(params.prixod)
+      ? await db.query.receipts.findFirst({
+          columns: { id: true, number: true, clientId: true, dealId: true, status: true },
+          where: eq(receipts.id, params.prixod),
+        })
+      : null;
+  // «No deal yet» is the card's own reading: none at all, or one left behind
+  // on ANOTHER client's job by a client correction (which the new deal replaces).
+  const standing = forReceipt?.dealId
+    ? await db.query.deals.findFirst({ columns: { clientId: true }, where: eq(deals.id, forReceipt.dealId) })
+    : null;
+  const receipt =
+    forReceipt &&
+    preset &&
+    bornWithVerdict(
+      {
+        status: forReceipt.status,
+        clientId: forReceipt.clientId,
+        dealId: forReceipt.dealId,
+        dealClientId: standing?.clientId ?? null,
+      },
+      preset.id,
+    ) === null
+      ? { id: forReceipt.id, number: forReceipt.number ?? '' }
+      : null;
 
   if (!preset) {
     const list = await db
@@ -90,6 +126,7 @@ export default async function NewDealPage({
       <DealForm
         stages={formStages(stages, null)}
         managers={managers}
+        receipt={receipt}
         load={leadMode ? { initial: quote ? leadMode : 'ltl', office: mayRevertFtl(actor), creating: true } : null}
         initial={{
           clientId: preset.id,

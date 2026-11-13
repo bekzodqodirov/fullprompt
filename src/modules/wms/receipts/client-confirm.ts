@@ -11,11 +11,12 @@ import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
 import { clientsForChat } from '../client-cabinet/service';
 import { linkedChats } from '../notices/client-push';
+import { SKIP_CLIENT_CHANGED } from '../notices/client-claims';
 import { PUSH_LOT_LINES } from '../notices/client-text';
 import { isBusyError, isServerBehind } from '../../platform/db/errors';
 import { lockLotAnswersTx, lotCheckViewsFor, mayCheckLot, type LotCheckActor } from './lot-check';
-import { clientConfirmsReady } from './lot-check-ready';
-import { lotTarkibJoinSql } from './lot-check-sql';
+import { askedTagReady, clientConfirmsReady, clientMeasuresReady } from './lot-check-ready';
+import { lotShownKgSql, lotShownM3Sql, lotTarkibJoinSql, measuresLine } from './lot-check-sql';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -43,6 +44,16 @@ import { mayReadReceipt } from './read-door';
  * «eskirgan» — a client cannot confirm what they were not shown, the staff
  * tick's `lot_changed` in the customer's hands.
  *
+ * THE SCOPE (0146, docs/PRIXOD-XABARI.md §A — the owner's «4 ha … og'irlik
+ * va hajmga urg'u berilsin, tekshirib olsin klient va tasdiqlasin»): a
+ * question asked from now on is `full` — it also asks about the lot's kilos
+ * and cubic metres, its tag covers them, and its answer remembers them
+ * (`shown_kg` / `shown_m3`, at the precision a customer reads). A question
+ * sent before 0146 was `basic`; its buttons still carry the 0144 tag, and a
+ * press on one is judged against that recipe (`basicTag`) and recorded as
+ * what THAT message asked — so no button a customer already holds dies at
+ * the deploy, and none is taken for more than it said.
+ *
  * NO LOT OR PRIXOD LOCK, on purpose. The row is written from the facts just
  * read, and a ✅ is a snapshot every reader COMPARES (`lot-check-sql.ts`): a
  * row that raced a rename simply does not match the lot and reads stale,
@@ -62,6 +73,15 @@ import { mayReadReceipt } from './read-door';
  */
 
 export const NOTICE_LOT_ASK = 'lot_ask';
+/**
+ * The question the system sends BY ITSELF after a re-weigh (the owner's «1 b»
+ * of 2026-11-12, docs/PRIXOD-JAVOBLAR.md §1; `client-reask.ts`). A kind of
+ * its own, never `lot_ask`'s row: that row remembers who ASKED (and tells
+ * them the answer past their mute), its future due time reads «Telegram asked
+ * us to wait», and a quiet skip there would erase the person's delivered
+ * question from the card.
+ */
+export const NOTICE_LOT_REASK = 'lot_reask';
 
 /** «Mijozdan so'rash» is not offered again for this long after a question went out. */
 export const ASK_COOLDOWN_MINUTES = 10;
@@ -69,6 +89,9 @@ export const ASK_COOLDOWN_MINUTES = 10;
 export const ASK_MAX_CHARS = 3500;
 /** …and so is one about more lots than a phone will be read through. */
 export const ASK_MAX_LOTS = 30;
+
+/** What a question asks about (§A.1): `full` = the 0144 five facts plus the lot's kilos and cubic metres. */
+export type AskScope = 'basic' | 'full';
 
 export interface ClientAskLot {
   lotId: string;
@@ -78,6 +101,17 @@ export interface ClientAskLot {
   /** The Russian name as every list SHOWS it (a tarkib's «first +N»); null, never ''. */
   ru: string | null;
   count: number;
+  /** The lot's totals as STORED — what the push's own lines are checked against (`clientAskOffer`). */
+  kg: number;
+  m3: number;
+  /**
+   * …and as a customer reads them, rounded by the DATABASE (`lotShownKgSql`
+   * / `lotShownM3Sql` — the sentence's own two expressions), as its text:
+   * what a `full` tag hashes and a `full` answer remembers. Never rounded in
+   * JS: the two round a half differently.
+   */
+  shownKg: string;
+  shownM3: string;
   /**
    * The tarkib's goods as a question prints them, digested (`lot-check-sql.ts`
    * `goods_key` — the reader's own column, so the answer and the sentence
@@ -96,7 +130,12 @@ export interface ClientAskFacts {
   warehouseName: string;
   receivedAt: Date | null;
   lots: ClientAskLot[];
+  /** `full` on a server whose 0146 has landed (`clientMeasuresReady()`), `basic` otherwise. */
+  scope: AskScope;
+  /** The tag of exactly what a question of this scope prints. */
   tag: string;
+  /** The 0144 recipe over the same facts — what a button sent before 0146 carries. */
+  basicTag: string;
 }
 
 export type ClientAskSkip = 'receipt_gone' | 'voided' | 'not_confirmed' | 'no_client' | 'no_lots';
@@ -112,12 +151,25 @@ export interface ClientAskSkipped {
   clientId: string | null;
 }
 
-/** Eight hex digits of what a question prints. Pure — the send and the press both call it. */
+/**
+ * Eight hex digits of what a question prints. Pure — the send and the press
+ * both call it. `basic` is the 0144 recipe BYTE FOR BYTE (the buttons already
+ * in customers' chats were hashed with it); `full` adds each lot's two
+ * figures as the database's own text.
+ */
 export function askTag(
   clientId: string,
-  lots: readonly Pick<ClientAskLot, 'lotId' | 'zh' | 'ru' | 'count' | 'goodsKey'>[],
+  lots: readonly Pick<ClientAskLot, 'lotId' | 'zh' | 'ru' | 'count' | 'goodsKey' | 'shownKg' | 'shownM3'>[],
+  scope: AskScope = 'basic',
 ): string {
-  const facts = [clientId, lots.map((l) => [l.lotId, l.zh, l.ru ?? '', l.count, l.goodsKey ?? ''])];
+  const facts = [
+    clientId,
+    lots.map((l) =>
+      scope === 'full'
+        ? [l.lotId, l.zh, l.ru ?? '', l.count, l.goodsKey ?? '', l.shownKg, l.shownM3]
+        : [l.lotId, l.zh, l.ru ?? '', l.count, l.goodsKey ?? ''],
+    ),
+  ];
   return createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 8);
 }
 
@@ -147,13 +199,19 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
   if (receipt.voidedAt || receipt.status === 'voided') return { skip: 'voided', clientId: receipt.clientId };
   if (receipt.status !== 'confirmed') return { skip: 'not_confirmed', clientId: receipt.clientId };
   if (!receipt.clientId || !receipt.clientCode) return { skip: 'no_client', clientId: null };
+  // Asked of the probe HERE, by the question's own door (never a flag another
+  // screen remembered): can this server remember kilos and cubic metres?
+  const scope: AskScope = (await clientMeasuresReady()) ? 'full' : 'basic';
 
-  // ONE statement for the names, the counts, the goods and their digest: the
-  // tag vouches for exactly what the message prints, and two reads would let
-  // a tarkib saved between them print one list under the other's tag.
+  // ONE statement for the names, the counts, the measures, the goods and
+  // their digest: the tag vouches for exactly what the message prints, and
+  // two reads would let a tarkib saved between them print one list under the
+  // other's tag.
   const rows = (await db.execute(sql`
     SELECT l.id, l.letter, l.product_name_zh AS zh, NULLIF(${lotRuShownSql(sql`l`)}, '') AS ru,
            l.box_count, lot_tarkib.goods_key,
+           l.total_weight_kg::text AS kg, l.total_volume_m3::text AS m3,
+           ${lotShownKgSql(sql`l`)}::text AS kg_shown, ${lotShownM3Sql(sql`l`)}::text AS m3_shown,
            (SELECT coalesce(json_agg(json_build_object('name', cl.name, 'pieces', cl.pieces) ORDER BY cl.seq), '[]'::json)
               FROM lot_composition_lines cl WHERE cl.lot_id = l.id) AS goods
       FROM receipt_lots l
@@ -167,6 +225,12 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
     ru: string | null;
     box_count: number;
     goods_key: string | null;
+    kg: string;
+    m3: string;
+    // Named apart from the answer's own columns (`shown_kg` / `shown_m3`): these
+    // are read off the LOT and exist on every server.
+    kg_shown: string;
+    m3_shown: string;
     goods: { name: string; pieces: number | null }[] | string | null;
   }[];
   if (rows.length === 0) return { skip: 'no_lots', clientId: receipt.clientId };
@@ -179,6 +243,10 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
       zh: row.zh,
       ru: row.ru,
       count: Number(row.box_count),
+      kg: Number(row.kg),
+      m3: Number(row.m3),
+      shownKg: row.kg_shown,
+      shownM3: row.m3_shown,
       goodsKey: row.goods_key,
       // A tarkib that is WRITTEN prints its goods; none written, none printed.
       goods: row.goods_key === null ? [] : goods.map((line) => ({ name: line.name, pieces: line.pieces === null ? null : Number(line.pieces) })),
@@ -193,7 +261,9 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
     warehouseName: receipt.warehouseName || receipt.warehouseCode,
     receivedAt: receipt.receivedAt,
     lots,
-    tag: askTag(receipt.clientId, lots),
+    scope,
+    tag: askTag(receipt.clientId, lots, scope),
+    basicTag: askTag(receipt.clientId, lots, 'basic'),
   };
 }
 
@@ -202,6 +272,9 @@ export interface PrintedLot {
   lotId: string;
   name: string;
   boxCount: number;
+  /** The totals the line printed its kilos and cubic metres FROM (`receivedFacts`' own read). */
+  weightKg: number;
+  volumeM3: number;
 }
 
 /**
@@ -216,14 +289,16 @@ export interface PrintedLot {
  * is about to PRINT are the lines the tag vouches for (`printed`, with the
  * push's own name rule handed in) — the text and the tag come from two
  * reads, and a rename landing between them must cost the buttons, never
- * record a ✅ for a name the client was not shown.
+ * record a ✅ for a name the client was not shown. A `full` question ties the
+ * two reads by the kilos and cubic metres too: a re-weigh landing between
+ * them must not record a ✅ for a weight the message did not print.
  */
 export async function clientAskOffer(
   receiptId: string,
   clientId: string,
   printed: readonly PrintedLot[],
   nameOf: (ru: string | null, zh: string) => string,
-): Promise<{ receiptId: string; tag: string } | null> {
+): Promise<{ receiptId: string; tag: string; scope: AskScope } | null> {
   if ((await getSetting('client_confirm_on_receipt')) !== true) return null;
   if (!(await clientConfirmsReady())) return null;
   const facts = await clientAskFacts(receiptId);
@@ -235,7 +310,12 @@ export async function clientAskOffer(
     printed.length === facts.lots.length &&
     facts.lots.every((lot) => {
       const line = shown.get(lot.lotId);
-      return line !== undefined && line.boxCount === lot.count && line.name === nameOf(lot.ru, lot.zh);
+      return (
+        line !== undefined &&
+        line.boxCount === lot.count &&
+        line.name === nameOf(lot.ru, lot.zh) &&
+        (facts.scope === 'basic' || (line.weightKg === lot.kg && line.volumeM3 === lot.m3))
+      );
     });
   if (!asPrinted) return null;
   const views = await lotCheckViewsFor(facts.lots.map((lot) => lot.lotId));
@@ -243,7 +323,7 @@ export async function clientAskOffer(
     const view = views.get(lot.lotId);
     return view !== undefined && view.askable && (view.state === 'none' || view.state === 'stale');
   });
-  return worthAsking ? { receiptId, tag: facts.tag } : null;
+  return worthAsking ? { receiptId, tag: facts.tag, scope: facts.scope } : null;
 }
 
 export type ClientVerdict = 'yes' | 'no';
@@ -261,11 +341,16 @@ export type ClientAnswer =
   | { outcome: 'already'; verdict: ClientVerdict }
   /** A lot of this prixod is being edited this very second — nothing written, the buttons stay. */
   | { outcome: 'busy' }
-  | { outcome: 'recorded'; verdict: ClientVerdict; facts: ClientAskFacts };
+  /** `scope` = what the pressed message asked: its thanks name exactly that. */
+  | { outcome: 'recorded'; verdict: ClientVerdict; facts: ClientAskFacts; scope: AskScope };
 
-/** `键盘 (Клавиатура) × 100` — the History's value for one lot of an answer. */
-function shownLine(lot: Pick<ClientAskLot, 'zh' | 'ru' | 'count'>): string {
-  return `${lot.zh}${lot.ru ? ` (${lot.ru})` : ''} × ${lot.count}`;
+
+/**
+ * `键盘 (Клавиатура) × 100` — the History's value for one lot of an answer;
+ * `… × 100 · 200 kg · 1.5 m³` when the answer covered the measures.
+ */
+function shownLine(lot: Pick<ClientAskLot, 'zh' | 'ru' | 'count'>, kg: string | null = null, m3: string | null = null): string {
+  return `${lot.zh}${lot.ru ? ` (${lot.ru})` : ''} × ${lot.count}${measuresLine(kg, m3)}`;
 }
 
 /** The History's key for a lot's answer — per LOT, as the staff tick's (`lotCheck:A`). */
@@ -274,24 +359,88 @@ export function clientConfirmAuditKey(letter: string | null): string {
 }
 
 /**
- * The last «Mijozdan so'rash» for this prixod — of the prixod's CURRENT
- * owner (a prixod that changed owner holds one row per client): who pressed
- * it and when it went out. Null when only the receipt's own push has asked.
+ * The last question asked about this prixod — of the prixod's CURRENT owner
+ * (a prixod that changed owner holds one row per client): who asked and when
+ * it went out. Null when only the receipt's own push has asked.
+ *
+ * Two askers since the owner's «1 b»: a person's «Mijozdan so'rash»
+ * (`lot_ask`, who pressed it) and the system's own question after a re-weigh
+ * (`lot_reask`, nobody). The newer DELIVERY wins — an answer is given to the
+ * newest message the client holds — except that a person's question still
+ * WAITING keeps its asker, as it always has: they pressed, and they are told.
  */
 async function lastAsk(clientId: string, receiptId: string): Promise<{ askedBy: string | null; sentAt: Date | null } | null> {
+  // The system's question is read only where 0147 remembers its delivery
+  // (`asked_at` — never cleared by a later quiet skip, which nulls `sent_at`).
+  const withAuto = await askedTagReady();
   const rows = (await db.execute(sql`
-    SELECT asked_by::text AS asked_by, sent_at FROM client_notices
-     WHERE client_id = ${clientId}::uuid AND kind = ${NOTICE_LOT_ASK} AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
-  `)) as unknown as { asked_by: string | null; sent_at: string | Date | null }[];
-  const row = rows[0];
-  return row ? { askedBy: row.asked_by, sentAt: row.sent_at ? new Date(row.sent_at) : null } : null;
+    SELECT kind, status, asked_by::text AS asked_by, sent_at,
+           ${withAuto ? sql`asked_at` : sql`NULL::timestamptz AS asked_at`}
+      FROM client_notices
+     WHERE client_id = ${clientId}::uuid AND kind IN (${NOTICE_LOT_ASK}, ${withAuto ? NOTICE_LOT_REASK : NOTICE_LOT_ASK})
+       AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
+  `)) as unknown as { kind: string; status: string; asked_by: string | null; sent_at: string | Date | null; asked_at: string | Date | null }[];
+  const person = rows.find((row) => row.kind === NOTICE_LOT_ASK);
+  const auto = rows.find((row) => row.kind === NOTICE_LOT_REASK);
+  const autoAt = auto?.asked_at ? new Date(auto.asked_at) : null;
+  // A person's question is delivered at `sent_at` — or, once a later skip of
+  // the same row nulled that, at the `asked_at` 0147 remembered for it.
+  const personSent = person?.sent_at ?? person?.asked_at ?? null;
+  const personAt = personSent ? new Date(personSent) : null;
+  const personWaiting = person !== undefined && (person.status === 'pending' || person.status === 'sending');
+  // The system's question is the last one once it WENT, unless a person has
+  // asked since — delivered later, or pressed and still waiting to go.
+  if (autoAt && !personWaiting && (personAt === null || personAt.getTime() < autoAt.getTime())) {
+    // …and a person who asked BEFORE it and has had no answer since is still
+    // waiting for one: they pressed, and they are told — the answer is to the
+    // newer message, the asker is theirs (TARKIB-TAKLIFLAR §7.3; the owner
+    // lens, O3 — a VED holds no `plans.manage`, so a ❌ would otherwise
+    // reach nobody who asked).
+    if (person?.asked_by && personAt && !(await answeredSince(clientId, receiptId, personAt))) {
+      return { askedBy: person.asked_by, sentAt: autoAt };
+    }
+    return { askedBy: null, sentAt: autoAt };
+  }
+  return person ? { askedBy: person.asked_by, sentAt: personAt } : null;
 }
 
-/** The staff's sentence about an answer — plain Uzbek, the card's link last (the drain makes it a button). */
-function staffText(facts: ClientAskFacts, verdict: ClientVerdict, opts: { withdraws?: boolean } = {}): string {
+/** Has this owner answered anything about this prixod since `at`? On the pool, before the answer's transaction. */
+async function answeredSince(clientId: string, receiptId: string, at: Date): Promise<boolean> {
+  const rows = (await db.execute(sql`
+    SELECT 1 FROM lot_client_confirms c
+      JOIN receipt_lots l ON l.id = c.lot_id
+     WHERE l.receipt_id = ${receiptId}::uuid AND c.shown_client_id = ${clientId}::uuid
+       AND c.answered_at >= ${at.toISOString()}::timestamptz
+     LIMIT 1
+  `)) as unknown as unknown[];
+  return rows.length > 0;
+}
+
+/**
+ * The staff's sentence about an answer — plain Uzbek, the card's link last
+ * (the drain makes it a button). The lots print what the answer was ABOUT:
+ * their kilos and cubic metres only when the pressed message asked.
+ */
+function staffText(
+  facts: ClientAskFacts,
+  verdict: ClientVerdict,
+  opts: { withdraws?: boolean; scope?: AskScope } = {},
+): string {
+  const full = opts.scope === 'full';
+  // An answer that covered the name and the count only, on a server whose
+  // questions ask about the weight too: a button under a message sent before
+  // 0146 was pressed. Said in words — the lots below print no kilos, and a
+  // reader must not take that for «the weight was confirmed and is not shown».
+  const narrower =
+    opts.scope === 'basic' && facts.scope === 'full'
+      ? ['Eski xabardagi tugma bosildi: bu javob faqat tovar nomi va quti soniga tegishli — og‘irlik va hajm so‘ralmagan.']
+      : [];
   const lots = facts.lots
     .slice(0, 12)
-    .map((lot) => `${lot.letter ? `${lot.letter} · ` : ''}${lot.ru ?? lot.zh} — ${lot.count} quti`);
+    .map(
+      (lot) =>
+        `${lot.letter ? `${lot.letter} · ` : ''}${lot.ru ?? lot.zh} — ${lot.count} quti${full ? measuresLine(lot.shownKg, lot.shownM3) : ''}`,
+    );
   if (facts.lots.length > 12) lots.push(`… yana ${facts.lots.length - 12} ta lot`);
   const link = cardLink('receipt', facts.receiptId);
   const head =
@@ -318,7 +467,7 @@ function staffText(facts: ClientAskFacts, verdict: ClientVerdict, opts: { withdr
       : opts.withdraws
         ? ['Mijozning avvalgi «Xato bor» javobi shu bilan bekor bo‘ldi.']
       : [];
-  return [...head, ...lots, ...tail, ...(link ? [link] : [])].join('\n');
+  return [...head, ...lots, ...narrower, ...tail, ...(link ? [link] : [])].join('\n');
 }
 
 /**
@@ -345,7 +494,18 @@ export async function answerClientAsk(input: {
   const ownerId = facts.clientId;
   if (ownerId === null || !linked.some((client) => client.id === ownerId)) return { outcome: 'unknown' };
   if ('skip' in facts) return { outcome: 'stale', clientId: ownerId };
-  if (facts.tag !== input.tag) return { outcome: 'stale', clientId: ownerId };
+  // What the pressed MESSAGE asked: the tag of today's question, or — on a
+  // message sent before 0146 — the 0144 recipe over the same facts. Anything
+  // else is about data that has since moved.
+  const scope: AskScope | null =
+    input.tag === facts.tag ? facts.scope : facts.scope === 'full' && input.tag === facts.basicTag ? 'basic' : null;
+  if (scope === null) return { outcome: 'stale', clientId: ownerId };
+  /** The two figures this answer remembers for a lot: the scope's, or none. */
+  const kgOf = (lot: ClientAskLot): string | null => (scope === 'full' ? lot.shownKg : null);
+  const m3Of = (lot: ClientAskLot): string | null => (scope === 'full' ? lot.shownM3 : null);
+  // The measure columns are named only where they exist — `facts.scope` is
+  // the probe's own answer, asked a moment ago by `clientAskFacts`.
+  const measuresHere = facts.scope === 'full';
 
   const lotIds = facts.lots.map((lot) => lot.lotId);
   // His 4a, and the question's own door: an answer is taken while some lot
@@ -395,6 +555,7 @@ export async function answerClientAsk(input: {
     // a row that no longer stood (the as-built review, L1-2).
     const held = (await tx.execute(sql`
       SELECT cc.lot_id, cc.verdict, cc.shown_zh, cc.shown_ru, cc.shown_count, cc.shown_client_id, cc.shown_goods_key,
+             ${measuresHere ? sql`cc.shown_kg::text AS shown_kg, cc.shown_m3::text AS shown_m3` : sql`NULL::text AS shown_kg, NULL::text AS shown_m3`},
              (${askedAt}::timestamptz IS NULL OR cc.answered_at > ${askedAt}::timestamptz) AS after_ask,
              coalesce(k.checked_at > cc.answered_at, false) AS ticked_since
         FROM lot_client_confirms cc
@@ -411,23 +572,56 @@ export async function answerClientAsk(input: {
       shown_count: number;
       shown_client_id: string;
       shown_goods_key: string | null;
+      shown_kg: string | null;
+      shown_m3: string | null;
       after_ask: boolean;
       ticked_since: boolean;
     }[];
     const heldBy = new Map(held.map((row) => [row.lot_id, row]));
-    /** The lot holds this very answer about these very facts. */
+    /**
+     * The lot holds this very answer about these very facts — in the terms of
+     * the SCOPE that was pressed. A `full` press compares the two measures
+     * too: over a `basic` answer it says MORE and is written. A `basic` press
+     * compares the five facts it asked about and nothing else: it can say
+     * nothing about a weight.
+     */
     const same = (lot: ClientAskLot): boolean => {
       const row = heldBy.get(lot.lotId);
+      if (
+        row === undefined ||
+        row.verdict !== input.verdict ||
+        row.shown_zh !== lot.zh ||
+        (row.shown_ru ?? null) !== lot.ru ||
+        Number(row.shown_count) !== lot.count ||
+        row.shown_client_id !== facts.clientId ||
+        (row.shown_goods_key ?? null) !== lot.goodsKey
+      ) {
+        return false;
+      }
+      return scope === 'basic' || ((row.shown_kg ?? null) === lot.shownKg && (row.shown_m3 ?? null) === lot.shownM3);
+    };
+    /**
+     * A NARROWER ✅ never replaces a WIDER one (the design judge, A1): the
+     * lot holds this owner's ✅ to a question that asked about the kilos and
+     * cubic metres, and the press is on a message sent before 0146, which
+     * did not. Written, it would strip the figures — and where the lot has
+     * been re-weighed since, turn «o'zgardi» back into ✅ by a button under
+     * a message that printed the OLD weight. Such a lot is left exactly as it
+     * is, whatever else is written by this press. A ❌ is never narrower:
+     * an objection is an objection.
+     */
+    const keeps = (lot: ClientAskLot): boolean => {
+      const row = heldBy.get(lot.lotId);
       return (
+        scope === 'basic' &&
+        input.verdict === 'yes' &&
         row !== undefined &&
-        row.verdict === input.verdict &&
-        row.shown_zh === lot.zh &&
-        (row.shown_ru ?? null) === lot.ru &&
-        Number(row.shown_count) === lot.count &&
+        row.verdict === 'yes' &&
         row.shown_client_id === facts.clientId &&
-        (row.shown_goods_key ?? null) === lot.goodsKey
+        (row.shown_kg ?? null) !== null
       );
     };
+    const writes = facts.lots.filter((lot) => !keeps(lot));
     // «Already» = every lot holds this very answer about these very facts,
     // it was given after the last question went out, AND — for a ❌ — no
     // colleague has ticked the lot since.
@@ -445,25 +639,27 @@ export async function answerClientAsk(input: {
       const row = heldBy.get(lot.lotId);
       return row !== undefined && same(lot) && row.after_ask === true && !(input.verdict === 'no' && row.ticked_since === true);
     };
-    if (facts.lots.every(settled)) return false;
+    if (writes.every(settled)) return false;
 
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
-    for (const lot of facts.lots) {
+    for (const lot of writes) {
       const key = clientConfirmAuditKey(lot.letter);
       const prev = heldBy.get(lot.lotId);
-      before[key] = prev ? `${mark(prev.verdict)} ${shownLine({ zh: prev.shown_zh, ru: prev.shown_ru, count: Number(prev.shown_count) })}` : null;
+      before[key] = prev
+        ? `${mark(prev.verdict)} ${shownLine({ zh: prev.shown_zh, ru: prev.shown_ru, count: Number(prev.shown_count) }, prev.shown_kg ?? null, prev.shown_m3 ?? null)}`
+        : null;
       // Every lot of the message is written again, so every lot is a line —
       // and the same answer about the same facts says that it was given
       // AGAIN. Skipping those left the re-answer's row with nothing under it
       // («Tizim · o'zgartirdi» over an empty box, #502).
-      after[key] = `${mark(input.verdict)} Telegram · ${shownLine(lot)}${same(lot) ? ' · qayta' : ''}`;
+      after[key] = `${mark(input.verdict)} Telegram · ${shownLine(lot, kgOf(lot), m3Of(lot))}${same(lot) ? ' · qayta' : ''}`;
     }
 
     await tx
       .insert(lotClientConfirms)
       .values(
-        facts.lots.map((lot) => ({
+        writes.map((lot) => ({
           lotId: lot.lotId,
           verdict: input.verdict,
           shownZh: lot.zh,
@@ -493,6 +689,22 @@ export async function answerClientAsk(input: {
           answeredAt: sql`clock_timestamp()`,
         },
       });
+    // The two measures (0146) — SQL-only columns, so a statement of their own
+    // beside the upsert, in the same transaction and under the same locks.
+    // ALWAYS written where the columns exist: a `basic` answer that replaces
+    // a `full` one must not keep the old kilos (the upsert's SET does not
+    // name them), or the row would claim a weight nobody was asked about.
+    if (measuresHere) {
+      await tx.execute(sql`
+        UPDATE lot_client_confirms AS cc
+           SET shown_kg = v.kg::numeric, shown_m3 = v.m3::numeric
+          FROM (VALUES ${sql.join(
+            writes.map((lot) => sql`(${lot.lotId}::uuid, ${kgOf(lot)}::text, ${m3Of(lot)}::text)`),
+            sql`, `,
+          )}) AS v(lot_id, kg, m3)
+         WHERE cc.lot_id = v.lot_id
+      `);
+    }
     // Nobody of ours pressed: the actor is null and the VALUE says «Telegram».
     await writeAudit(tx, { actorId: null }, { entityType: 'receipt', entityId: facts.receiptId, action: 'update', before, after });
     // Queued in the SAME transaction as the answer: a crash between the two
@@ -501,7 +713,8 @@ export async function answerClientAsk(input: {
     // This ✅ takes back a ❌ of the same owner that stood on one of the lots.
     const withdraws = input.verdict === 'yes' && held.some((row) => row.verdict === 'no' && row.shown_client_id === facts.clientId);
     const others = input.verdict === 'no' || withdraws ? alarmed : [];
-    const text = staffText(facts, input.verdict, { withdraws });
+    // The lots this press WROTE: one left alone (`keeps`) was not answered about.
+    const text = staffText({ ...facts, lots: writes }, input.verdict, { withdraws, scope });
     if (others.length > 0) await queueStaffTelegram(tx, { userIds: others, type, text });
     // The asker pressed a button and is waiting for this very answer: it goes
     // past their own mute, as the re-run a seller started does.
@@ -514,7 +727,7 @@ export async function answerClientAsk(input: {
   }
   if (!written) return { outcome: 'already', verdict: input.verdict };
   await kickTelegramDrain().catch(() => {});
-  return { outcome: 'recorded', verdict: input.verdict, facts };
+  return { outcome: 'recorded', verdict: input.verdict, facts, scope };
 }
 
 export type ClientAskRefusal =
@@ -568,26 +781,68 @@ export async function askClientAboutReceipt(
   const views = await lotCheckViewsFor(facts.lots.map((lot) => lot.lotId));
   if (!facts.lots.some((lot) => views.get(lot.lotId)?.askable === true)) throw new ClientAskError('not_askable');
   if (facts.lots.length > ASK_MAX_LOTS || !fits(facts)) throw new ClientAskError('too_long');
-
-  // ONE row per (client, kind, prixod) — `client_notices_once`. A question
-  // that already went out is re-armed (the unique row is the cooldown's
-  // clock); one still waiting or going out is left alone.
-  const armed = (await db
-    .execute(sql`
-    INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, asked_by)
-    VALUES (${facts.clientId}::uuid, ${NOTICE_LOT_ASK}, 'receipt', ${receiptId}::uuid, now(), now(), ${actor.id}::uuid)
-    ON CONFLICT (client_id, kind, ref_type, ref_id) DO UPDATE
-       SET status = 'pending', send_after = now(), attempts = 0, last_error = NULL, claimed_at = NULL, asked_by = EXCLUDED.asked_by
-     WHERE client_notices.status IN ('sent', 'failed', 'skipped')
-       AND (client_notices.sent_at IS NULL OR client_notices.sent_at < now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}))
-    RETURNING id
-  `)
-    .catch((err: unknown) => {
-      // `asked_by` is 0144's column: a server that lost it between the probe
-      // and here says so in words, never a digest.
-      if (isServerBehind(err)) throw new ClientAskError('server_behind');
-      throw err;
-    })) as unknown as { id: string }[];
+  // The system's own question about this prixod (his «1 b»): on its way right
+  // now, or delivered within the cooldown — the client has just been asked,
+  // and the same question again minutes later is the noise the cooldown is for.
+  // The check, the person's row and the stand-down are ONE transaction that
+  // holds the system's row (the as-built review, DLV-3): the sweep's claim
+  // (`FOR UPDATE SKIP LOCKED`) either committed first — and is read here as
+  // `sending` — or skips the held row and then finds it stood down. A check
+  // read on its own and a write made after it let both questions go.
+  const withAuto = await askedTagReady();
+  const armed = await db.transaction(async (tx) => {
+    if (withAuto) {
+      // On its way = `sending`: no correction has landed since its claim (one
+      // would have re-armed it), so it carries what this press would — the
+      // same question twice. A row RE-ARMED while it was out is not refused:
+      // its message was rendered before that correction, and the press sends
+      // the corrected figures now and stands the re-armed row down — §1.9; a
+      // refusal would only hold the fresh question back ten minutes behind a
+      // stale one (the fixes' review: CONC-2 refuted). «Just went» by the later
+      // of the settle and the remembered delivery: between the two the row
+      // reads `sent` with the previous `asked_at`.
+      const [auto] = (await tx.execute(sql`
+        SELECT status, greatest(asked_at, sent_at) > now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}) AS recent
+          FROM client_notices
+         WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
+           AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
+           FOR UPDATE
+      `)) as unknown as { status: string; recent: boolean | null }[];
+      if (auto?.status === 'sending') throw new ClientAskError('already_queued');
+      if (auto?.recent === true) throw new ClientAskError('too_soon');
+    }
+    // ONE row per (client, kind, prixod) — `client_notices_once`. A question
+    // that already went out is re-armed (the unique row is the cooldown's
+    // clock); one still waiting or going out is left alone.
+    const rows = (await tx
+      .execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, asked_by)
+      VALUES (${facts.clientId}::uuid, ${NOTICE_LOT_ASK}, 'receipt', ${receiptId}::uuid, now(), now(), ${actor.id}::uuid)
+      ON CONFLICT (client_id, kind, ref_type, ref_id) DO UPDATE
+         SET status = 'pending', send_after = now(), attempts = 0, last_error = NULL, claimed_at = NULL, asked_by = EXCLUDED.asked_by
+       WHERE client_notices.status IN ('sent', 'failed', 'skipped')
+         AND (client_notices.sent_at IS NULL OR client_notices.sent_at < now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}))
+      RETURNING id
+    `)
+      .catch((err: unknown) => {
+        // `asked_by` is 0144's column: a server that lost it between the probe
+        // and here says so in words, never a digest.
+        if (isServerBehind(err)) throw new ClientAskError('server_behind');
+        throw err;
+      })) as unknown as { id: string }[];
+    // A person asked NOW: the system's own question about the same prixod, if
+    // one is still held, stands down — the client must not get two questions
+    // minutes apart (docs/PRIXOD-JAVOBLAR.md §1.9). A question already on its
+    // way was refused above; the held row is ours until commit.
+    if (rows.length > 0) {
+      await tx.execute(sql`
+        UPDATE client_notices SET status = 'skipped', last_error = ${REASK_SUPERSEDED}, claimed_at = NULL
+         WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
+           AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid AND status = 'pending'
+      `);
+    }
+    return rows;
+  });
   if (armed.length === 0) {
     const [standing] = (await db.execute(sql`
       SELECT status FROM client_notices
@@ -604,6 +859,15 @@ export async function askClientAboutReceipt(
   }).catch((err) => logger.warn({ err, receiptId }, '[client-confirm] ask not audited'));
   return { lots: facts.lots.length };
 }
+
+/**
+ * Why the system's own question was RIGHTLY not sent (docs/PRIXOD-JAVOBLAR.md
+ * §1.7) — a closed list the card never prints as a failure: a person asked
+ * instead, the change was taken back, the cargo left China, or the switch is
+ * off. Every other reason it is skipped for is a word like any question's.
+ */
+export const REASK_SUPERSEDED = 'superseded';
+export const REASK_QUIET = ['switched_off', REASK_SUPERSEDED, 'not_askable', 'not_needed'] as const;
 
 /**
  * Why a question did not reach the client — a CLOSED list of words for the
@@ -625,6 +889,15 @@ const SKIP_FAILURE: Record<ClientAskSkip | 'client_changed' | 'too_long' | 'no_l
   no_linked_chat: 'no_chat',
   unknown_kind: 'telegram',
 };
+
+/**
+ * …and for the system's own question (`lot_reask`): null too for a skip that
+ * was RIGHT (`REASK_QUIET` — nothing failed, nothing is drawn).
+ */
+export function reaskFailureOf(status: string, reason: string | null): AskFailure | null {
+  if (status === 'skipped' && (REASK_QUIET as readonly string[]).includes(reason ?? '')) return null;
+  return askFailureOf(status, reason);
+}
 
 /** The word for a question that was not delivered; null while it waits or once it went. */
 export function askFailureOf(status: string, reason: string | null): AskFailure | null {
@@ -662,6 +935,13 @@ export interface ClientAskStatus {
   reason: string | null;
   failure: AskFailure | null;
   askedBy: string | null;
+  /**
+   * When a person's question last REACHED the client — `sent_at`, or, after a
+   * later attempt was skipped (which nulls `sent_at`), the delivery 0147
+   * remembered (`asked_at`). What the card measures the system's question
+   * against (the as-built review, C1); `deliveredAt` stays the line's own.
+   */
+  lastDeliveredAt: Date | null;
 }
 
 /** Of the prixod's CURRENT owner — a prixod that changed owner holds a row per client. */
@@ -670,8 +950,11 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
   // The card's read of a column 0144 added: one migration behind there is no
   // question to report on, and the card must still draw.
   if (!(await clientConfirmsReady())) return null;
+  // …and the remembered delivery is 0147's (L1-1: asked of the probe here).
+  const withAsked = await askedTagReady();
   const rows = (await db.execute(sql`
     SELECT n.status, n.sent_at, n.send_after, n.last_error, u.full_name AS asked_by,
+           ${withAsked ? sql`n.asked_at` : sql`NULL::timestamptz AS asked_at`},
            CASE WHEN n.status NOT IN ('pending', 'sending') THEN NULL
                 WHEN n.send_after < now() - make_interval(mins => ${ASK_STUCK_MINUTES}) THEN 'stuck'
                 WHEN n.send_after > now() + make_interval(mins => ${ASK_LATER_MINUTES}) THEN 'later'
@@ -687,14 +970,17 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
     send_after: string | Date | null;
     last_error: string | null;
     asked_by: string | null;
+    asked_at: string | Date | null;
     wait: ClientAskStatus['wait'];
   }[];
   const row = rows[0];
   if (!row) return null;
   const waiting = row.status === 'pending' || row.status === 'sending';
+  const lastDelivered = row.sent_at ?? row.asked_at;
   return {
     status: row.status,
     deliveredAt: row.sent_at ? new Date(row.sent_at) : null,
+    lastDeliveredAt: lastDelivered ? new Date(lastDelivered) : null,
     dueAt: waiting && row.send_after ? new Date(row.send_after) : null,
     wait: waiting ? (row.wait ?? 'soon') : null,
     reason: row.last_error,
@@ -704,20 +990,93 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
 }
 
 /**
+ * The system's own question about a prixod, for its card (the owner's «1 b»,
+ * docs/PRIXOD-JAVOBLAR.md §1.9): held until `at`, sent at `at`, or not
+ * delivered for a reason with a word. Null = none, or one RIGHTLY not sent
+ * (`REASK_QUIET`) — the card draws nothing of it. Of the prixod's CURRENT
+ * owner, as the person's question is.
+ */
+export interface ClientReaskStatus {
+  state: 'waiting' | 'sent' | 'failed';
+  /**
+   * When it is due (waiting), when it last went (sent), or when it was due
+   * and did not go (failed — it cannot have failed earlier; the card hides a
+   * failure a person's later question has overtaken, DLV-1).
+   */
+  at: Date | null;
+  /**
+   * A waiting question worded by its age, on the DATABASE's clock — the
+   * person's question's own rule (TARKIB-TAKLIFLAR §7.3, L3-4): `stuck` =
+   * due more than `ASK_STUCK_MINUTES` ago and still here (no bot token, a
+   * refused one). Null unless waiting.
+   */
+  wait: 'soon' | 'stuck' | null;
+  failure: AskFailure | null;
+}
+
+export async function clientReaskStatusFor(receiptId: string): Promise<ClientReaskStatus | null> {
+  if (!isUuidShaped(receiptId)) return null;
+  // Its rows and the column that remembers its delivery are 0147's.
+  if (!(await askedTagReady())) return null;
+  const rows = (await db.execute(sql`
+    SELECT n.status, n.send_after, n.last_error, n.asked_at,
+           (n.send_after < now() - make_interval(mins => ${ASK_STUCK_MINUTES})) AS stuck
+      FROM client_notices n
+      JOIN receipts r ON r.id = n.ref_id AND r.client_id = n.client_id
+     WHERE n.kind = ${NOTICE_LOT_REASK} AND n.ref_type = 'receipt' AND n.ref_id = ${receiptId}::uuid
+     LIMIT 1
+  `)) as unknown as {
+    status: string;
+    send_after: string | Date | null;
+    last_error: string | null;
+    asked_at: string | Date | null;
+    stuck: boolean | null;
+  }[];
+  const row = rows[0];
+  if (!row) return null;
+  if (row.status === 'pending' || row.status === 'sending') {
+    return {
+      state: 'waiting',
+      at: row.send_after ? new Date(row.send_after) : null,
+      wait: row.stuck === true ? 'stuck' : 'soon',
+      failure: null,
+    };
+  }
+  // «Owner changed» read HERE is about an owner who went and came back — this
+  // reader takes the current owner's row alone — and the correction that
+  // brought them back re-decided the question (`assignReceiptClient` → the
+  // arm): re-armed, it reads «waiting»; not due, nothing is owed. Drawn as a
+  // failure it stood on the card for good, inviting a press nobody needed
+  // (the fixes' review, CONC-4).
+  const failure = row.status === 'skipped' && row.last_error === SKIP_CLIENT_CHANGED ? null : reaskFailureOf(row.status, row.last_error);
+  if (failure) return { state: 'failed', at: row.send_after ? new Date(row.send_after) : null, wait: null, failure };
+  // Delivered — read from `asked_at`, which no later outcome clears: a
+  // question that went and was then rightly NOT sent again (the correction
+  // taken back) is still the one the client holds.
+  return row.asked_at ? { state: 'sent', at: new Date(row.asked_at), wait: null, failure: null } : null;
+}
+
+/**
  * What the prixod card's «Mijozdan so'rash» block needs, in one call: is the
  * client's side there at all (0144 — null when not, and the card draws
- * nothing of it), can the client be reached, and the last question's fate.
+ * nothing of it), can the client be reached, the last question's fate — and
+ * the system's own question's (`auto`, his «1 b»).
  * Never throws at the card: a block that cannot be read is a block not drawn.
  */
 export async function clientAskCardFor(
   receiptId: string,
   clientId: string | null,
-): Promise<{ hasChat: boolean; status: ClientAskStatus | null } | null> {
+): Promise<{ hasChat: boolean; status: ClientAskStatus | null; full: boolean; auto: ClientReaskStatus | null } | null> {
   if (!clientId) return null;
   try {
     if (!(await clientConfirmsReady())) return null;
-    const [chats, status] = await Promise.all([linkedChats(clientId), clientAskStatusFor(receiptId)]);
-    return { hasChat: chats.length > 0, status };
+    const [chats, status, full, auto] = await Promise.all([
+      linkedChats(clientId),
+      clientAskStatusFor(receiptId),
+      clientMeasuresReady(),
+      clientReaskStatusFor(receiptId),
+    ]);
+    return { hasChat: chats.length > 0, status, full, auto };
   } catch (err) {
     logger.warn({ err, receiptId }, '[client-confirm] the card could not read the last question');
     return null;

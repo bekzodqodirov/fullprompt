@@ -190,7 +190,7 @@ function sum<T>(rows: readonly T[], pick: (row: T) => number): number {
  * as the sum of the lines as printed (`sumRounded`), the way the Mini App adds
  * its lot cards.
  */
-export function measuresOf(lots: readonly PushLot[]) {
+export function measuresOf(lots: readonly Pick<PushLot, 'weightKg' | 'volumeM3'>[]) {
   return {
     weightKg: sumRounded(lots.map((l) => l.weightKg), roundKg),
     volumeM3: sumRounded(lots.map((l) => l.volumeM3), roundM3),
@@ -240,7 +240,11 @@ export interface ReceivedSummary {
  * ago and only now given its owner (unclaimed cargo) → «added to your
  * cabinet», the bar where the cargo really is, and that rung's own sentence.
  */
-export function receivedText(summary: ReceivedSummary, locale?: string | null, opts: { ask?: boolean } = {}): string {
+export function receivedText(
+  summary: ReceivedSummary,
+  locale?: string | null,
+  opts: { ask?: 'basic' | 'full' } = {},
+): string {
   const t = clientLabels(locale);
   const step = milestoneOf(summary.stage);
   const fresh = summary.fresh ?? step === 0;
@@ -254,9 +258,12 @@ export function receivedText(summary: ReceivedSummary, locale?: string | null, o
       summary.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(summary.receiptNumber))}` : '',
     ],
     // The client's own ✅ / ❌ (0144): the question is the LAST line, right
-    // above its buttons, and it names what is being confirmed — the lines
-    // above print kilos and cubic metres too, which are not.
-    opts.ask ? [h(t.confirmAskLine)] : null,
+    // above its buttons, and it names what is being confirmed. `full` (0146,
+    // the owner's «og'irlik va hajmga urg'u berilsin»): the kilos and cubic
+    // metres the lines above print ARE confirmed, and the line is bold;
+    // `basic`: they are not, and the 0144 words say so by naming only the
+    // name and the count.
+    opts.ask === 'full' ? [b(h(t.confirmAskLineFull))] : opts.ask === 'basic' ? [h(t.confirmAskLine)] : null,
   );
 }
 
