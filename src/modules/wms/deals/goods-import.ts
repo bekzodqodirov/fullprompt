@@ -3207,6 +3207,35 @@ export interface SheetHints {
 }
 
 /**
+ * A row figure that is ONE carton's, in the words the row's note carries (review
+ * excel-break-6, doors-6) — the belt's, when it moves a column's figure into
+ * the packing, and the paste's, when a per-carton column («CBM/CTN», «CARTON
+ * CBM», «外箱体积», «Объем коробки», «1 quti hajmi») filled only the packing:
+ * one wording on both paths. The figure as READ, no product — the doors that
+ * keep no packing multiply nothing.
+ */
+export function perCartonWords(field: 'weightKg' | 'volumeM3', value: number, cartons: number | null): string {
+  const figure = field === 'weightKg' ? `vazn ${fmtFigure(value)} kg` : `hajm ${fmtFigure(value)} m³`;
+  return `${figure} — bitta karobkaniki${cartons !== null ? ` (${fmtFigure(cartons)} karobka)` : ''}`;
+}
+
+/**
+ * What a row's PACKING states per carton that its own columns do not — the
+ * note a door that keeps no packing (the VED's paste, `pasteItems`) lands
+ * beside an empty cell, so what it dropped is said (review doors-6). A figure
+ * the row's note already says (the belt's) is not said twice. Null = nothing.
+ */
+export function packedFiguresNote(g: Pick<GoodsRow, 'note' | 'packing' | 'weightKg' | 'volumeM3'>): string | null {
+  const p = g.packing;
+  if (!p) return null;
+  const words = [
+    g.weightKg === null && p.kgPerCarton !== null ? perCartonWords('weightKg', p.kgPerCarton, p.cartons) : null,
+    g.volumeM3 === null && p.m3PerCarton !== null ? perCartonWords('volumeM3', p.m3PerCarton, p.cartons) : null,
+  ].filter((w): w is string => w !== null && !(g.note ?? '').includes(w));
+  return words.length > 0 ? words.join(' · ') : null;
+}
+
+/**
  * The whole file → goods rows. With a header, each mapped column; without
  * one, the first non-empty text cell of each row is the product and nothing
  * else is guessed at.
@@ -3605,9 +3634,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
      * as the file wrote it (X6).
      */
     const perCartonNote = (g: GoodsRow, field: 'weightKg' | 'volumeM3', value: number): string | null =>
-      [g.note, `${field === 'weightKg' ? `vazn ${fmtFigure(value)} kg` : `hajm ${fmtFigure(value)} m³`} — bitta karobkaniki (${fmtFigure(g.packing!.cartons!)} karobka)`]
-        .filter(Boolean)
-        .join(' · ');
+      [g.note, perCartonWords(field, value, g.packing!.cartons)].filter(Boolean).join(' · ');
     /** What a column's kept rows state, added up — the sum a refusal names. */
     const linesSum = (pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null) =>
       keptLanded.reduce((n, l) => {

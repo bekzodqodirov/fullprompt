@@ -14,7 +14,7 @@
  * Pure and import-light, because the browser runs all of it.
  */
 import { doorRow, type DoorItemInput, type DoorRow } from './door-row';
-import { detectColumns, parseGoods, type Cell } from '../deals/goods-import';
+import { detectColumns, packedFiguresNote, parseGoods, type Cell } from '../deals/goods-import';
 import { readNumberCell, type NumberCell } from './number-cell';
 import type { MeasureUnit } from './pricing';
 import {
@@ -395,7 +395,10 @@ export function pasteItems(text: string): PasteItem[] {
           weightKg: g.weightKg,
           volumeM3: g.volumeM3,
           tnvedCode: g.tnvedCode,
-          note: g.note,
+          // …and a figure a per-carton column put only in the PACKING, which
+          // this door does not keep (review doors-6): said, never dropped in
+          // silence — the paste's contract.
+          note: [g.note, packedFiguresNote(g)].filter(Boolean).join(' · ') || null,
         }),
       );
     }
