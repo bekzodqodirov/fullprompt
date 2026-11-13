@@ -53,7 +53,7 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
-import { mayAttachReceiptFile } from '@/modules/wms/receipts/files-door';
+import { mayAddReceiptFiles, mayAttachReceiptFile } from '@/modules/wms/receipts/files-door';
 import { DOCUMENT_PHOTO } from '@/components/photo-grades';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney, payerView } from '@/modules/wms/partners/staff';
@@ -499,12 +499,13 @@ export default async function ReceiptDetailPage({
   // hole beside a short neighbour.
   const tiesLeft = canLinkDeal || showCalcRow;
   const tiesRight = showLoadRow || showPickupRow;
-  // Who may ADD a file here: every reader of a confirmed, live prixod — the
-  // bot's «📎 Fayl qo‘shish» rule, ONE predicate for both doors (the owner's
-  // «4 b» of 2026-11-12, docs/PRIXOD-JAVOBLAR.md §3). Not `canEdit`: that one
+  // Who may ADD a file here: of the readers of a confirmed, live prixod, the
+  // people who work prixods (warehouse, logist, VED, sellers, admins) — the
+  // bot's «📎 Fayl qo‘shish» rule, ONE pair of predicates for both doors (the
+  // owner's «4 b» of 2026-11-12, docs/PRIXOD-JAVOBLAR.md §3, §8). Not `canEdit`: that one
   // also draws the ✏️ lot form, ✕ on lot photos and ✕ on everybody's files —
   // dead or wrong controls for a seller (#531).
-  const mayAttach = mayAttachReceiptFile(receipt);
+  const mayAttach = mayAttachReceiptFile(receipt) && mayAddReceiptFiles(actor);
   // No card for a reader who cannot attach when there is nothing to list —
   // it was a heading over nothing (a voided prixod is the case left).
   const showFiles = mayAttach || receiptFiles.length > 0;

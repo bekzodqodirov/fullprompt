@@ -76,7 +76,8 @@ import {
   type ClientAskFacts,
 } from '@/modules/wms/receipts/client-confirm';
 import { armClientReask } from '@/modules/wms/receipts/client-reask';
-import { checkLot, lotCheckViewsFor, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { checkLot, lotCheckViewsFor, uncheckLot, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { uncheckedPrixodCount } from '@/modules/wms/inventory/lot-check-count';
 import { receivedFacts } from '@/modules/wms/notices/client-summary';
 import { pushLotName } from '@/modules/wms/notices/client-text';
 import { plannableStock } from '@/modules/wms/planning/stock';
@@ -1148,7 +1149,12 @@ describe('«Mijozdan so‘rash» — a person asks, once, and hears the answer',
  */
 describe('the sentence, combination by combination — against literal states', () => {
   type Tarkib = 'none' | 'stands' | 'stale';
-  type Tick = 'none' | 'old' | 'new' | 'stale';
+  /**
+   * «old» / «new» / «stale» remember no kilos (an 0144-era row — the NULL arm holds through them); 0147's three
+   * remember them: «measured» pressed now at the lot's own 100.00 kg / 1.000 m³ (holds), «reweighedOld» pressed
+   * two hours ago and «reweighedNew» pressed now, both at 90.00 kg — a re-weigh moved the lot since (his «2 b»).
+   */
+  type Tick = 'none' | 'old' | 'new' | 'stale' | 'measured' | 'reweighedOld' | 'reweighedNew';
   /**
    * The client's answer, given an hour ago: none · ✅ that matches · ✅ about a count since changed · ❌ on
    * the goods now listed · ❌ on OTHER goods · a previous owner's ❌ — and 0146's two: a FULL ✅ whose kilos
@@ -1162,10 +1168,13 @@ describe('the sentence, combination by combination — against literal states', 
   // The last two letters are 0146's: a full ✅ that matches vouches exactly where a 0144 ✅ does, and one
   // about a weight since changed reads exactly as one about a count since changed — «o'zgardi» where
   // nothing else vouches, and ✅ where a standing tarkib or a holding tick still does (the arms' order).
+  // The re-weighed ticks (0147): one pressed BEFORE the ❌ leaves the ❌ standing (n, a veto) exactly as a
+  // count-stale tick does; one pressed AFTER it settled the ❌, so a re-weigh reads «o'zgardi» (s) — never the
+  // ❌ brought back (the kernel lens, K3).
   const EXPECTED: Record<Tarkib, Record<Tick, string>> = {
-    none: { none: 'ncsnnncs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs' },
-    stands: { none: 'cccncccc', old: 'cccncccc', new: 'cccccccc', stale: 'cccncccc' },
-    stale: { none: 'scsnnscs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs' },
+    none: { none: 'ncsnnncs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs', measured: 'cccccccc', reweighedOld: 'scsnnscs', reweighedNew: 'scsssscs' },
+    stands: { none: 'cccncccc', old: 'cccncccc', new: 'cccccccc', stale: 'cccncccc', measured: 'cccccccc', reweighedOld: 'cccncccc', reweighedNew: 'cccscccc' },
+    stale: { none: 'scsnnscs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs', measured: 'cccccccc', reweighedOld: 'scsnnscs', reweighedNew: 'scsssscs' },
   };
   const LETTER = { checked: 'c', none: 'n', stale: 's', unclaimed: 'u' } as const;
 
@@ -1184,10 +1193,12 @@ describe('the sentence, combination by combination — against literal states', 
     `)) as unknown as { goods_key: string | null }[];
     const goodsKey = key?.goods_key ?? null;
     if (tick !== 'none') {
+      const seenKg = tick === 'measured' ? '100.00' : tick === 'reweighedOld' || tick === 'reweighedNew' ? '90.00' : null;
+      const pressedNow = tick === 'new' || tick === 'measured' || tick === 'reweighedNew';
       await db.execute(sql`
-        INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, checked_by, checked_at)
+        INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, checked_by, checked_at, seen_kg, seen_m3)
         VALUES (${lot.M}::uuid, ${MATRIX_ZH}, ${MATRIX_RU}, ${tick === 'stale' ? 9 : 2}, ${client.A}::uuid, ${staffId}::uuid,
-                now() - make_interval(mins => ${tick === 'new' ? 0 : 120}))
+                now() - make_interval(mins => ${pressedNow ? 0 : 120}), ${seenKg}::numeric, ${seenKg === null ? null : '1.000'}::numeric)
       `);
     }
     if (answer !== 'none') {
@@ -1206,7 +1217,7 @@ describe('the sentence, combination by combination — against literal states', 
   }
   const read = async () => (await lotCheckViewsFor([lot.M])).get(lot.M)!;
 
-  it('96 combinations of tarkib × tick × the client’s answer (0144’s 72 and the two full-scope answers of 0146)', async () => {
+  it('168 combinations of tarkib × tick × the client’s answer (0144’s 72, the two full-scope answers of 0146, the three measured ticks of 0147)', async () => {
     const wrong: string[] = [];
     for (const tarkib of Object.keys(EXPECTED) as Tarkib[]) {
       for (const tick of Object.keys(EXPECTED[tarkib]) as Tick[]) {
@@ -1223,7 +1234,7 @@ describe('the sentence, combination by combination — against literal states', 
       }
     }
     expect(wrong).toEqual([]);
-  }, 60_000);
+  }, 120_000);
 
   it('cargo with no client is never vetoed and never ❓: a previous owner’s ❌ is nobody’s', async () => {
     await db.update(receipts).set({ clientId: null }).where(eq(receipts.id, receipt.matrix));
@@ -1509,7 +1520,7 @@ describe('the measures in the answer (0146)', () => {
 });
 
 describe('a server whose 0147 has not landed (#472) — the 0146 behaviour, no 0147 column named', () => {
-  it('the press, the card’s reading, the automatic arm and the tick: none names `asked_tag` / `asked_at` / `seen_kg` / `seen_m3`', async () => {
+  it('the press, the card’s reading, the automatic arm, the tick, its undo, the views and the ❓ count: none names `asked_tag` / `asked_at` / `seen_kg` / `seen_m3`', async () => {
     ready.v147 = false;
     const pool: string[] = [];
     const inTx: string[] = [];
@@ -1553,6 +1564,14 @@ describe('a server whose 0147 has not landed (#472) — the 0146 behaviour, no 0
       );
       expect(ticked.changed).toBe(true);
       expect(inTx.filter((q) => /insert into "?lot_checks"?/i.test(q)).length, 'the tick’s own upsert was seen').toBeGreaterThan(0);
+      // The undo shares the tick's lock of the row (the kernel lens, K5), and the lists read the sentence.
+      expect((await stateOf('W')).person).not.toBeNull();
+      const token = (
+        (await db.execute(sql`SELECT checked_at::text AS at FROM lot_checks WHERE lot_id = ${lot.W}::uuid`)) as unknown as { at: string }[]
+      )[0]!.at;
+      expect((await uncheckLot({ lotId: lot.W, seenCheckedAt: token }, logist(), ctx())).changed).toBe(true);
+      expect(inTx.filter((q) => /delete from "?lot_checks"?/i.test(q)).length, 'the undo’s own delete was seen').toBeGreaterThan(0);
+      expect(typeof (await uncheckedPrixodCount(logist()))).toBe('number');
       expect([...pool, ...inTx].filter(namesColumn)).toEqual([]);
       // Nothing was armed: the remembered question is 0147's.
       const armed = (await db.execute(sql`SELECT 1 FROM client_notices WHERE kind = 'lot_reask' AND ref_id = ${receipt.weigh}::uuid`)) as unknown as unknown[];

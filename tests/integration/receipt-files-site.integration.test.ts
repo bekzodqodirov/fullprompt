@@ -41,6 +41,15 @@ const PNG = Buffer.from(
 
 const seller = () => ({ id: staffId, fullName: `FS sotuvchi ${RUN}`, roles: ['sales_manager'], permissions: new Set(['crm.leads']), warehouseScoped: false, warehouseIds: [] });
 const keeper = () => ({ id: staffId, fullName: `FS skladchi ${RUN}`, roles: ['warehouse_manager'], permissions: new Set(['receipts.edit']), warehouseScoped: false, warehouseIds: [] });
+// Opens every prixod (an unscoped login) and works none of them.
+const accountant = () => ({
+  id: staffId,
+  fullName: `FS buxgalter ${RUN}`,
+  roles: ['accountant'],
+  permissions: new Set(['finance.manage', 'finance.view', 'finance.reports', 'reports.all_warehouses']),
+  warehouseScoped: false,
+  warehouseIds: [],
+});
 
 async function upload(entityId: string, name = `faktura-${RUN}.png`, type = 'image/png', body: Buffer = PNG) {
   const form = new FormData();
@@ -120,6 +129,15 @@ describe('a file added on the prixod card (4b)', () => {
     expect(line?.actorId).toBe(staffId);
     // The file's own name — the bot's line says «· Telegram», the site's says nothing more.
     expect((line!.after as Record<string, string>)[`fileAdded:${res.id}`]).toBe(`invoys-${RUN}.pdf`);
+  });
+
+  it('a reader who works no prixod — the accountant — opens the card and adds nothing to it (the owner lens, O7)', async () => {
+    who.actor = accountant();
+    const files = async () => (await db.select({ id: attachments.id }).from(attachments).where(eq(attachments.entityId, receipt.live))).length;
+    const before = await files();
+    const res = await upload(receipt.live, `buxgalter-${RUN}.pdf`, 'application/pdf', Buffer.from('%PDF-1.4\n%%EOF\n'));
+    expect(res.status).toBe(403);
+    expect(await files()).toBe(before);
   });
 
   it('a voided prixod takes no file — the bot’s own refusal', async () => {

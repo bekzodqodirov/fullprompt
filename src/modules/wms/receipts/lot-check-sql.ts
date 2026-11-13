@@ -193,6 +193,18 @@ export function lotShownM3Sql(lot: SQL): SQL {
 }
 
 /**
+ * ` · 200 kg · 1.5 m³` — the kilos and cubic metres a ✅ vouched for, as the
+ * History and the staff's sentences print them (the database's display text
+ * read through `Number`, so «1.500» never reads as fifteen hundred in the
+ * default locale); '' when it vouched for none. ONE spelling for the client's
+ * answer (`client-confirm.ts`) and the colleague's tick (`lot-check.ts`),
+ * which cannot import each other (the kernel lens, K7).
+ */
+export function measuresLine(kg: string | null, m3: string | null): string {
+  return kg === null || m3 === null ? '' : ` · ${Number(kg)} kg · ${Number(m3)} m³`;
+}
+
+/**
  * The measures the client confirmed still stand (0146). NULL = the question
  * did not ask about them — every answer given before 0146 and every press on
  * a button sent before it — and such an answer holds on the five 0144 terms
@@ -293,14 +305,21 @@ export function clientDisputeSql(refs: Pick<LotCheckRefs, 'receipt'>): SQL {
  * they are compared in TWO places, each against the figures its own ✅
  * remembered: arm 3, a colleague's tick (0147, his «2 b»), and arm 4, a ✅
  * given to a question that asked about them (0146) — either stops vouching
- * once they move.
+ * once they move. And a re-weigh never brings an ANSWERED ❌ back: a tick
+ * pressed after the ❌ whose facts still hold has settled it (arm 5's
+ * second clause), so when only its kilos moved the lot reads «o'zgardi» —
+ * the warehouse's correction, not the client's complaint (the kernel lens,
+ * K3; the arms are today's for every holding or measure-less tick).
  *
  * On a server whose 0144 has not landed (`lotClientConfirmsReady()`, #472)
  * this is the two-source sentence that shipped with 0123, word for word.
  */
 export function lotCheckStateSql(refs: LotCheckRefs): SQL {
   const terms = checkTermsSql(refs);
-  const ticked = sql`(${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client} AND ${terms.measures})`;
+  // The tick's FACTS — what 0144 decides the ❌ against — and the tick that
+  // vouches: the facts AND the kilos and cubic metres it remembered (0147).
+  const tickedFacts = sql`(${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client})`;
+  const ticked = sql`(${tickedFacts} AND ${terms.measures})`;
   if (!lotClientConfirmsReady()) {
     return sql`(CASE
       WHEN ${tarkibStandsSql(refs.lot)} THEN 'checked'
@@ -318,7 +337,7 @@ export function lotCheckStateSql(refs: LotCheckRefs): SQL {
     WHEN ${ticked}
       AND NOT (${dispute} AND ${refs.check}.checked_at <= ${LOT_CLIENT}.answered_at) THEN 'checked'
     WHEN ${LOT_CLIENT}.verdict = 'yes' AND ${clientHoldsSql(refs)} THEN 'checked'
-    WHEN ${dispute} THEN 'none'
+    WHEN ${dispute} AND NOT (${tickedFacts} AND ${refs.check}.checked_at > ${LOT_CLIENT}.answered_at) THEN 'none'
     WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL
       OR ${LOT_CLIENT}.verdict = 'yes' THEN 'stale'
     ELSE 'none'

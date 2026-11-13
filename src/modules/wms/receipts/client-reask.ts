@@ -64,6 +64,16 @@ const ASKING_KINDS = [NOTICE_RECEIVED, NOTICE_LOT_ASK, NOTICE_LOT_REASK] as cons
  * the caller's own read of the prixod's lots (`lotCheckViewsFor`).
  */
 export async function reaskDue(facts: ClientAskFacts, views: Map<string, LotCheckView>): Promise<boolean> {
+  // Nothing on the ❓ list, nothing to ask: every lot that can still be asked
+  // about reads ✅ now — a client's ✅ that holds again after a correction
+  // was taken back, a colleague's tick, a document. A question then would
+  // ask the client to confirm what they already confirmed (the owner lens,
+  // O9: 40 → 45, the system asked about 45, back to 40 — the ✅ on 40 stands).
+  const open = facts.lots.some((lot) => {
+    const view = views.get(lot.lotId);
+    return view?.askable === true && view.state !== 'checked';
+  });
+  if (!open) return false;
   const rows = (await db.execute(sql`
     SELECT asked_tag FROM client_notices
      WHERE client_id = ${facts.clientId}::uuid AND ref_type = 'receipt' AND ref_id = ${facts.receiptId}::uuid
@@ -77,13 +87,25 @@ export async function reaskDue(facts: ClientAskFacts, views: Map<string, LotChec
   `)) as unknown as { asked_tag: string }[];
   const held = rows[0];
   if (held) return held.asked_tag !== facts.tag;
-  // Delivered before 0147 — no tag remembered: a FULL answer of this owner
-  // that no longer holds is the one thing that says the client was asked about
-  // a weight that has since moved. (A basic answer never asked a weight; an
-  // unanswered question left no trace — stated, §1.1.)
+  // No question with buttons is remembered — delivered before 0147, or never
+  // delivered at all. Then a CONFIRMATION that the correction broke is what
+  // says the client is to be asked again:
+  //  - a FULL answer of this owner that no longer holds (a basic one never
+  //    asked a weight; an unanswered pre-0147 question left no trace —
+  //    stated, §1.1);
+  //  - a colleague's tick about this owner that no longer holds — «To'g'ri —
+  //    mijoz tasdiqladi», the client confirmed by phone, before 0147 or with
+  //    no chat linked then, or under a receipt push that went without buttons
+  //    because the lot was ticked. His «2 b» breaks such a tick on a re-weigh,
+  //    and his «1 b» asks the client rather than leave it to a person (the
+  //    owner lens, O6). A tick about a PREVIOUS owner vouched for nobody here.
   return facts.lots.some((lot) => {
-    const client = views.get(lot.lotId)?.client;
-    return client !== null && client !== undefined && client.ofOwner && client.measures && !client.holds;
+    const view = views.get(lot.lotId);
+    if (view?.askable !== true) return false;
+    const client = view.client;
+    if (client && client.ofOwner && client.measures && !client.holds) return true;
+    const person = view.person;
+    return person !== null && !person.holds && !person.moved.client;
   });
 }
 

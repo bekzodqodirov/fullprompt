@@ -8,6 +8,7 @@ import {
   clientNotices,
   clientTelegramLinks,
   clients,
+  lotChecks,
   lotClientConfirms,
   notifications,
   receiptLots,
@@ -33,7 +34,7 @@ import { askFits } from '@/modules/wms/receipts/client-confirm-text';
 import { armClientReask, REASK_SETTLE_MINUTES } from '@/modules/wms/receipts/client-reask';
 import { editLot } from '@/modules/wms/receipts/edit';
 import { afterLotGrown, growLotInTx, shrinkGrownInTx } from '@/modules/wms/receipts/grow-lot';
-import type { LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { checkLot, lotCheckViewsFor, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
 import { botHarness, type BotHarness } from '../fixtures/bot-harness';
 
 /**
@@ -136,6 +137,27 @@ const reweigh = async (key: keyof typeof lot, kg: number, m3 = 1) => {
     ctx(),
   );
 };
+/** A colleague's «✅ To'g'ri» on a lot, through the real door, posting what the card printed. */
+async function tick(key: keyof typeof lot) {
+  const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot[key]));
+  const token = (
+    (await db.execute(sql`SELECT checked_at::text AS at FROM lot_checks WHERE lot_id = ${lot[key]}::uuid`)) as unknown as { at: string }[]
+  )[0]?.at;
+  return checkLot(
+    {
+      lotId: lot[key],
+      seen: { nameZh: row!.productNameZh, nameRu: row!.productNameRu ?? '', boxCount: row!.boxCount, clientId, kg: row!.totalWeightKg, m3: row!.totalVolumeM3 },
+      seenCheckedAt: token ?? null,
+    },
+    logist(),
+    ctx(),
+  );
+}
+const stateOf = async (key: keyof typeof lot) => (await lotCheckViewsFor([lot[key]])).get(lot[key])!;
+/** The client's answer to whatever question they hold now (the tag of today's facts). */
+const answer = async (verdict: 'yes' | 'no') =>
+  answerClientAsk({ chatId: BigInt(CHAT), receiptId: receipt.main, verdict, tag: await tagNow() });
+
 /** A person's question, delivered by the sweep: the tag the client holds is remembered. */
 async function deliverPersonQuestion(): Promise<string> {
   await db.execute(sql`DELETE FROM client_notices WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
@@ -198,6 +220,8 @@ beforeEach(async () => {
   // Every test starts from «the client holds nothing»: no question, no answer.
   for (const id of Object.values(receipt).filter(Boolean)) await db.delete(clientNotices).where(eq(clientNotices.refId, id));
   await db.delete(lotClientConfirms).where(inArray(lotClientConfirms.lotId, Object.values(lot).filter(Boolean)));
+  // …and no colleague's tick: a ✅ there decides whether a lot is still on the ❓ list.
+  await db.delete(lotChecks).where(inArray(lotChecks.lotId, Object.values(lot).filter(Boolean)));
   await db.update(receiptLots).set({ totalWeightKg: '100.000', totalVolumeM3: '1.0000' }).where(eq(receiptLots.id, lot.K));
   await setSetting('client_reask_on_reweigh', true, null);
 });
@@ -470,10 +494,11 @@ describe('the person’s door after the system asked', () => {
     const row = await rowOf(NOTICE_LOT_REASK);
     expect(row?.status).toBe('skipped');
     expect((await clientReaskStatusFor(receipt.main))?.state).toBe('sent');
-    // …and the client's answer is to the system's question: no asker.
-    await answerClientAsk({ chatId: BigInt(CHAT), receiptId: receipt.main, verdict: 'yes', tag: await tagNow() });
+    // …and the client's answer, given to the system's newer question, reaches the person who asked
+    // first and was never answered (the owner lens, O3).
+    await answer('yes');
     const answers = await db.select({ askedBy: lotClientConfirms.askedBy }).from(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.K));
-    expect(answers.map((r) => r.askedBy)).toEqual([null]);
+    expect(answers.map((r) => r.askedBy)).toEqual([staffId]);
   });
 });
 
@@ -493,20 +518,37 @@ describe('a re-arm while the question is on its way survives the settle', () => 
 });
 
 describe('the answer to the system’s question', () => {
-  it('is nobody’s question: recorded with no asker, and a plain ✅ tells nobody', async () => {
+  const confirmedTold = async () =>
+    (
+      await db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(and(eq(notifications.type, 'ClientLotConfirmed'), sql`${notifications.payload}::text LIKE ${`%${CODE}%`}`))
+    ).length;
+
+  it('is nobody’s question once the person’s was answered: recorded with no asker, and a plain ✅ tells nobody', async () => {
+    await deliverPersonQuestion();
+    // The client answered the person's question — the person was told then.
+    expect((await answer('yes')).outcome).toBe('recorded');
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    await sendDueArrivalNotices(SWEEP_AT);
+    const told = await confirmedTold();
+    expect((await answer('yes')).outcome).toBe('recorded');
+    const rows = await db.select({ askedBy: lotClientConfirms.askedBy }).from(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.K));
+    expect(rows.map((r) => r.askedBy)).toEqual([null]);
+    expect(await confirmedTold()).toBe(told);
+  });
+
+  it('a person who asked and was never answered is the asker of the answer to the system’s newer question (the owner lens, O3)', async () => {
     await deliverPersonQuestion();
     await reweigh('K', 110);
     await dueNow(NOTICE_LOT_REASK);
     await sendDueArrivalNotices(SWEEP_AT);
-    const answer = await answerClientAsk({ chatId: BigInt(CHAT), receiptId: receipt.main, verdict: 'yes', tag: await tagNow() });
-    expect(answer.outcome).toBe('recorded');
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('sent');
+    expect((await answer('no')).outcome).toBe('recorded');
     const rows = await db.select({ askedBy: lotClientConfirms.askedBy }).from(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.K));
-    expect(rows.map((r) => r.askedBy)).toEqual([null]);
-    const told = await db
-      .select({ id: notifications.id })
-      .from(notifications)
-      .where(and(eq(notifications.type, 'ClientLotConfirmed'), sql`${notifications.payload}::text LIKE ${`%${CODE}%`}`));
-    expect(told).toHaveLength(0);
+    expect(rows.map((r) => r.askedBy)).toEqual([staffId]);
   });
 });
 
@@ -536,6 +578,41 @@ describe('a question delivered before 0147 left no tag', () => {
   });
 });
 
+describe('what is on the ❓ list decides (the owner lens, O6 and O9)', () => {
+  it('a correction taken back after the system asked: the client’s ✅ on the old figures stands again, and nothing is asked a third time', async () => {
+    await deliverPersonQuestion();
+    expect((await answer('yes')).outcome).toBe('recorded');
+    await reweigh('K', 110);
+    expect((await stateOf('K')).state).toBe('stale');
+    await dueNow(NOTICE_LOT_REASK);
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('sent');
+    // Back to the figures the client confirmed: their ✅ holds again.
+    await reweigh('K', 100);
+    expect((await stateOf('K')).state).toBe('checked');
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('sent');
+    await dueNow(NOTICE_LOT_REASK);
+    const mark = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect(sentSince(mark).filter((m) => m.chatId === CHAT)).toHaveLength(0);
+  });
+
+  it('a colleague’s tick a re-weigh broke asks the client, though no question was ever delivered («To‘g‘ri — mijoz tasdiqladi»)', async () => {
+    await tick('K');
+    expect((await stateOf('K')).state).toBe('checked');
+    await reweigh('K', 110);
+    expect((await stateOf('K')).person?.moved.measures).toBe(true);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+  });
+
+  it('…and a re-weigh no list would show leaves the tick standing and asks nothing', async () => {
+    await tick('K');
+    await reweigh('K', 100.004);
+    expect((await stateOf('K')).state).toBe('checked');
+    expect(await rowOf(NOTICE_LOT_REASK)).toBeUndefined();
+  });
+});
+
 describe('the count doors reach it through their shared hook', () => {
   it('a growth committed, then `afterLotGrown` — armed', async () => {
     await deliverPersonQuestion();
@@ -557,5 +634,39 @@ describe('the count doors reach it through their shared hook', () => {
     const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.L));
     // The old arithmetic ended this very walk at 40.716 kg (tests/unit/mixed-walk.test.ts).
     expect([row!.boxCount, row!.totalWeightKg, row!.totalVolumeM3]).toEqual([2, '40.714', '0.3140']);
+  });
+
+  it('grown in two presses and taken back one carton a press: every step measured from the same base, and the end is the start', async () => {
+    const batchId = crypto.randomUUID();
+    const first = await db.transaction((tx) =>
+      growLotInTx(tx, { lotId: lot.L, add: 2, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+    );
+    const second = await db.transaction((tx) =>
+      growLotInTx(tx, { lotId: lot.L, add: 3, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+    );
+    const [grown] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.L));
+    // 7 cartons of a 2-carton 40.714 kg lot, from the base — not 4 cartons' rounding scaled again.
+    expect([grown!.boxCount, grown!.totalWeightKg, grown!.totalVolumeM3]).toEqual([7, '142.499', '1.0990']);
+    for (const box of [...second.boxes, ...first.boxes]) {
+      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.L, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
+    }
+    const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.L));
+    expect([row!.boxCount, row!.totalWeightKg, row!.totalVolumeM3]).toEqual([2, '40.714', '0.3140']);
+  });
+
+  it('a colleague’s tick on a mixed lot: grown — «o’zgardi» on the count and the weight; taken back carton by carton — ✅ again by itself (YUK-TEKSHIRUV §7 under his «2 b»)', async () => {
+    await tick('L');
+    expect((await stateOf('L')).state).toBe('checked');
+    const batchId = crypto.randomUUID();
+    const grown = await db.transaction((tx) =>
+      growLotInTx(tx, { lotId: lot.L, add: 3, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+    );
+    const stale = await stateOf('L');
+    expect(stale.state).toBe('stale');
+    expect(stale.person?.moved).toMatchObject({ count: true, measures: true });
+    for (const box of grown.boxes) {
+      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.L, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
+    }
+    expect((await stateOf('L')).state).toBe('checked');
   });
 });

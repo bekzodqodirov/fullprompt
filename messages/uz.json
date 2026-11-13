@@ -5803,7 +5803,7 @@
     "stale": "Lot tarkib yozilgandan keyin o'zgardi: tarkibda {stated}, hozir {current} — qayta tekshiring",
     "staleShort": "Lot o'zgardi — tarkibni tekshiring",
     "staleOnLotForm": "Lotda tarkib bor — kg/karobka o'zgarsa tarkibni qayta tekshirish kerak",
-    "measureOnLotForm": "Og'irlik yoki hajm o'zgarsa — lotdagi ✅ «o'zgardi» bo'ladi",
+    "measureOnLotForm": "Og'irlik yoki hajm o'zgarsa — lotdagi ✅ o'z kuchini yo'qotadi",
     "frozenInfo": "🔒 {trucks} hujjatlari yuborilgan — u mashina yuborilgan holida qoladi; yangi tarkib faqat hali yuborilmagan mashinalarga tushadi. O'sha mashinani ham o'zgartirish kerak bo'lsa: VED «yuborildi» belgisini olib, hujjatlarni qayta yuklab, agentga qayta yuborsin",
     "paperMoved": "Hujjatlar o'zgardi (tarkib yoki shu lotning boshqa mashinasi) — qayta yuklab oling, keyin belgilang",
     "savedBy": "{name} · {date}",

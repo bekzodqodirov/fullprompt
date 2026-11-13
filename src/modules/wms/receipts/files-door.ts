@@ -41,6 +41,23 @@ export function mayAttachReceiptFile(receipt: { status: string; voidedAt: Date |
   return receipt.status === 'confirmed' && receipt.voidedAt === null;
 }
 
+/**
+ * …and WHO, of the people who may open the prixod, adds files to it: the
+ * people who work prixods — the warehouse (`receipts.edit`), the logist
+ * (`plans.manage`), the VED (`ved.docs`) and the sellers (`crm.leads`);
+ * admins hold all four. That is the list the bot's «📎 Fayl qo'shish» was
+ * described to him with («sotuvchi, logist, VED, admin; skladchi»), which he
+ * then asked for on the card (4b). The card's READ door is wider — every
+ * unscoped login opens a prixod — and an accountant or a report-only viewer
+ * adding the papers a customs document cites was never asked (the owner
+ * lens, O7). Asked by the bot's door, the card's tile and the upload route.
+ */
+export const RECEIPT_FILE_WORKERS = ['receipts.edit', 'plans.manage', 'ved.docs', 'crm.leads'] as const;
+
+export function mayAddReceiptFiles(actor: { permissions: ReadonlySet<string> }): boolean {
+  return RECEIPT_FILE_WORKERS.some((code) => actor.permissions.has(code));
+}
+
 export interface ReceiptFilesTarget {
   id: string;
   number: string;
@@ -49,7 +66,7 @@ export interface ReceiptFilesTarget {
   clientCode: string | null;
 }
 
-type DoorActor = ScopedActor & { warehouseIds: string[] };
+type DoorActor = ScopedActor & { warehouseIds: string[]; permissions: ReadonlySet<string> };
 
 export async function receiptFilesDoor(
   actor: DoorActor,
@@ -77,6 +94,7 @@ export async function receiptFilesDoor(
   // …and the card's own rule, so the two doors cannot drift (any other status
   // a prixod may grow is no prixod to add papers to, on either).
   if (!mayAttachReceiptFile(row)) return { ok: false, error: 'not_found' };
+  if (!mayAddReceiptFiles(actor)) return { ok: false, error: 'forbidden' };
   return {
     ok: true,
     receipt: { id: row.id, number: row.number ?? '', warehouseId: row.warehouseId, clientCode: row.clientCode },

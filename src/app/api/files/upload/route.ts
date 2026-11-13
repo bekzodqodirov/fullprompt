@@ -4,7 +4,7 @@ import { requireActor, AuthError } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
 import { broadcasts, pickupStops, receipts, staffNotes } from '@/modules/platform/db/schema';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
-import { recordReceiptFile } from '@/modules/wms/receipts/files-door';
+import { mayAddReceiptFiles, recordReceiptFile } from '@/modules/wms/receipts/files-door';
 import { BROADCAST_ENTITY_TYPE, mayBroadcast } from '@/modules/platform/broadcast/service';
 import { PICKUP_WRITE } from '@/modules/wms/pickups/service';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
@@ -142,6 +142,12 @@ export async function POST(request: Request) {
     // bot's own refusal («Bu prixod bekor qilingan»), and the card draws no 📎
     // there; this is a stale page or a forged post (docs/PRIXOD-JAVOBLAR.md §3.4).
     if (receipt && (receipt.voidedAt || receipt.status === 'voided')) {
+      return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
+    // On a CONFIRMED prixod a file is added by the people who work prixods —
+    // the card's tile and the bot's door ask the same (§8, the owner lens O7);
+    // the wizard's pre-binding (no prixod, or its draft) is the warehouse's.
+    if (receipt && receipt.status === 'confirmed' && !mayAddReceiptFiles(actor)) {
       return Response.json({ error: 'forbidden' }, { status: 403 });
     }
     if (receipt) receiptTarget = { id: receipt.id, warehouseId: receipt.warehouseId, confirmed: receipt.status === 'confirmed' };

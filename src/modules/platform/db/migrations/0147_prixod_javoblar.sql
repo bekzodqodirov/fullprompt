@@ -30,13 +30,17 @@ ALTER TABLE "lot_checks" ADD CONSTRAINT "lot_checks_seen_measures_check" CHECK (
 -- Every tick that already stands takes the lot's figures as they are TODAY: nothing moves on the day of
 -- the deploy, and from then on a re-weigh makes every tick «o'zgardi» — old ones included, which is what
 -- his «ha» asked. (What the lot weighed on the day of an old tick was never recorded; the deploy day's
--- figures are the honest snapshot.) A lot whose totals are NaN or negative keeps NULL and holds on its
--- other three terms, as before.
+-- figures are the honest snapshot.) Only a tick whose COUNT still holds: a lot grown by a count door
+-- since its tick carries the grown figures, and the take-back that heals the count (YUK-TEKSHIRUV §7)
+-- would never heal kilos remembered from the grown lot — such a tick keeps NULL and holds on the
+-- measures, as before, until the next press writes a real snapshot (the kernel lens, K2). A lot whose
+-- totals are NaN or negative keeps NULL too.
 UPDATE "lot_checks" AS k
    SET "seen_kg" = round(l."total_weight_kg", 2),
        "seen_m3" = round(l."total_volume_m3", 3)
   FROM "receipt_lots" AS l
  WHERE l."id" = k."lot_id"
+   AND k."seen_box_count" = l."box_count"
    AND l."total_weight_kg" >= 0 AND l."total_weight_kg" <> 'NaN'::numeric
    AND l."total_volume_m3" >= 0 AND l."total_volume_m3" <> 'NaN'::numeric;
 --> statement-breakpoint

@@ -374,3 +374,111 @@ pre-binding passes.
 - No reminder when a client never answers the automatic question (one question per change, never a nag).
 - A tarkib written or changed later does not ask the client by itself (not a re-weigh; «Mijozdan so'rash» as today).
 - The crash window between a re-weigh's commit and its arm (net: the ❓ worklist and the person's door).
+
+---
+
+## §8 As judged (binding — overrides §1-§3 where they differ)
+
+Four lenses read §0-§7 against the code at `584cf0b` before it was built (delivery, regression, the owner's
+intent, the kernel). What they changed, finding by finding, each fixed and pinned by a test:
+
+**Delivery (9).**
+- **A question IN FLIGHT when a correction lands** (the first blocker). `reaskDue` sees only what was delivered,
+  so a receipt push or a person's question being sent at that moment — read before the commit, delivered after
+  the arm — left the client with stale buttons and nothing armed. Now any asking row of this owner and prixod in
+  `sending` makes the arm ARM; the send-time check then compares the facts with the tag that delivery
+  remembered, and skips `not_needed` when the message in flight already carried the new figures.
+- **Remembered on EVERY delivery** (the second blocker). Remembering the tag «only when the settle wrote» meant a
+  row re-armed while it was out — whose message already carried the new figures — never had its tag kept, and
+  the identical question went again ten minutes later. `rememberAskedTag` writes by id after any delivery
+  (`sent`, or `botDown` with a delivery), whatever the status settle wrote; `asked_at = now()`.
+- **The person's door after the system asked**: a `lot_reask` on its way answers `already_queued`, one delivered
+  within `ASK_COOLDOWN_MINUTES` answers `too_soon` — the same question minutes apart is the noise the cooldown is
+  for. The system's question stands down for a person's question `pending` OR `sending`.
+- **A receipt push that will carry NO buttons never stands the re-ask down**: only one that will (`receivedPushAsks`
+  — the pure half of `clientAskOffer`: the switch, ≤ `PUSH_LOT_LINES` lots, no tarkib).
+- **A quiet skip no longer erases a delivered automatic question**: the card's line and `lastAsk` read
+  `lot_reask.asked_at` (never cleared); a person's question is delivered at `coalesce(sent_at, asked_at)`. And a
+  correction taken back inside the window stands the held row down AT THE ARM (`skipped`, `not_needed`) — the
+  card stops promising it at once, its `asked_*` untouched.
+- **The settle's compare-and-set is the CLAIM, and only for `lot_reask`** (`heldClaim`: id, `sending`, and the
+  `claimed_at` this sweep wrote). §1.6's «no other writer touches a `sending` row» was false —
+  `rearmArrivalNotice` re-arms a truck's «yetib keldi» mid-send, and the arrival's wording relies on today's
+  settle-by-id. Every other kind is settled exactly as before.
+- **Nothing after a delivery may throw out of the sweep** (`afterDelivered`: the tag and the History line each
+  caught), and the stand-down in the person's door is caught.
+- **The automatic line is worded by its age** (`stuck` = due more than `ASK_STUCK_MINUTES` ago — the bot cannot
+  send) and a failure prints the closed word after its own label, never inside a second sentence.
+- **A count corrected through ✏️ arms too** (`totalsChanged || countChange`): the count is printed on the
+  question and hashed into its tag, and §0 promised «qayta sanalsa». A rename alone still asks nothing by itself.
+
+**Regression (10, five shared with the above).**
+- **The L1-1 rule for 0147's flags**: `lotTickMeasuresReady()` is read by the sentence and the card's view alone
+  (fenced); `checkLot` / `uncheckLot` await `tickMeasuresReady()` before their transaction; the sweep, the arm,
+  the card's reading and `lastAsk` await `askedTagReady()` themselves. The cold-process test
+  (`lot-check-probe.integration`) now checks that the FIRST press of a process stores `seen_kg` / `seen_m3`.
+- **One migration behind** (0146 applied, 0147 not): the press, the card's reading, the arm and the tick name no
+  0147 column — recorded statement by statement, the transaction's included (`client-confirm.integration`).
+- **The ✏️ lot form's warning says only what is true**: «Og'irlik yoki hajm o'zgarsa — lotdagi ✅ «o'zgardi»
+  bo'ladi», drawn only when a ✅ that COMPARES the measures holds (a tick that remembers them — `person.measures`
+  on the view — or the client's full ✅). The «the client will be asked» half is gone: it cannot be promised
+  there (no question delivered, no chat, the switch, cargo out of China).
+- **The walk's base is DERIVED, never stored** — a stored `base` would print as raw JSON in the History the owner
+  reads. `walkBaseInTx` walks the lot's growth/take-back rows back while each row's `after` is the lot as it
+  stood next; the first mismatch (a ✏️ correction in between) ends it.
+- **Stated, not changed**: under 2b a re-weigh breaks a tick that had outranked an earlier ❌, so that ❌ leads the
+  card again (red) and the lot is ❓ until the client answers again (1b asks them) or somebody ticks again —
+  the sentence's arms are unchanged; the combination matrix already pins a stale tick over a ❌.
+
+**The owner's intent (12; four already closed by the two lenses above — the cooldown, the remembered delivery,
+the count arm, the stuck line).**
+- **A person who asked and was never answered stays the asker** (O3): when the system's question is newer, the
+  answer still names — and tells, past their mute — a person whose «Mijozdan so'rash» was delivered earlier and
+  has had no answer since (`answeredSince` over this prixod's `lot_client_confirms`, read before the answer's
+  transaction). A VED holds no `plans.manage`, so a ❌ would otherwise reach nobody who asked.
+- **What is on the ❓ list decides** (O9, O6). `reaskDue` is false when every askable lot of the prixod reads ✅
+  now — a client's ✅ that holds again after a correction was taken back must not be asked a third time. And with
+  no question remembered, a colleague's tick about THIS owner that the correction broke is a trigger beside the
+  client's own full answer: «To'g'ri — mijoz tasdiqladi» says the client confirmed (by phone), his «2 b» breaks it
+  on a re-weigh, and his «1 b» asks the client rather than leaving it to a person. A tick about a previous owner
+  vouched for nobody here; a stale TARKIB alone asks nothing (the office restates the paper — stated).
+- **Who adds a file** (O7): the card's read door admits every unscoped login, so `mayAddReceiptFiles` — any of
+  `receipts.edit`, `plans.manage`, `ved.docs`, `crm.leads` (the warehouse, the logist, the VED, the sellers;
+  admins hold all) — is asked by the bot's door, the card's tile AND the upload route on a confirmed prixod: the
+  list the bot's «📎 Fayl qo'shish» was described to him with. The accountant and a report-only viewer read the
+  card and add nothing. Every seller adds to every prixod he can open, as in the bot (stated to him).
+- **The ✏️ form's warning** (O5): «Og'irlik yoki hajm o'zgarsa — lotdagi ✅ o'z kuchini yo'qotadi» ×4 — true in
+  China («o'zgardi») and outside it (the ✅ simply stops showing), where ««o'zgardi» bo'ladi» was not.
+- **The customer's line in ru/en** (O11) puts «again» on the CHECK: «проверьте ещё раз и подтвердите», «check
+  again and confirm» — the client asked may never have answered.
+- **Stated, not changed**: the lot lines' «— qayta so'rang» stay beside the block's «… o'zi qayta so'raladi /
+  so'raldi», as they do beside a person's waiting question — and the 📨 now refuses `already_queued` / `too_soon`
+  around the system's question, so following the line cannot ask the client twice (O1). A picture from the
+  logist or an admin (`receipts.edit`) is still a carton photo, as before this round — the paper rule is the
+  seller's (O12).
+
+**The kernel (8; one already closed — the lowercase tag CHECK).**
+- **The tick's compare-and-set reads both spellings from the LOCK** (K1): the card posts the STORED figures
+  (`lot.totalWeightKg`), compared as numbers with the locked stored totals; the snapshot is the database's own
+  display rounding (`round(…, 2)::text`), compared as text on both sides. Pinned by a lot stored at 1000.005 kg /
+  2.5005 m³ (test 5e): accepted, stores 1000.01 / 2.501, refused after a re-weigh to 1000.006.
+- **The backfill takes only ticks whose COUNT still holds** (K2): a lot grown by a count door since its tick
+  carries the grown figures, and the take-back that heals the count would never heal kilos remembered from the
+  grown lot. Such a tick keeps NULL (the measures hold) until the next press; a NaN lot keeps NULL and never
+  aborts the migration. Pinned by running 0147's own UPDATE in a rolled-back transaction.
+- **A re-weigh never brings back an answered ❌** (K3): the outrank stays on the tick's FACTS — arm 5 is
+  `dispute AND NOT (tickedFacts AND checked_at > answered_at)` — so a tick pressed after the ❌ whose kilos alone
+  moved reads «o'zgardi», not the ❌ in red. Identical to before for every holding or measure-less tick. This
+  REVERSES the «stated, not changed» bullet of the regression lens above. The literal-state matrix gains three
+  measured ticks (168 combinations).
+- **The walk** (K4): the base is derived, never stored (above); the rows are the RECEIPT's, filtered by the lot
+  named inside `lotGrown`/`lotShrunk`; the walk passes through a whole earlier chain that ended where it began and
+  lands on the same base. A pre-0147 chain the old arithmetic DRIFTED is walked back to its true start, so the
+  next count step re-derives from the weighed figures — the drift of thousandths disappears on the next press
+  (stated). §1.10's «count-money covers uniform only» was wrong: it has one mixed growth, and the base reproduces it.
+- **One migration behind** (K5): the undo asks the probe itself and the shared row lock names no 0147 column; the
+  behind test now presses the answer, the arm, the tick, the undo, and reads the views and the ❓ count.
+- **Tests** (K6): the tick heals through the real count doors (a mixed lot grown and taken back carton by carton
+  reads ✅ again), a walk of two growth presses, 12d names the measures it moved.
+- **The History's spelling** (K7): `measuresLine` in `lot-check-sql.ts` is the one ` · 200 kg · 1.5 m³` for the
+  client's answer and the tick, which cannot import each other.

@@ -404,6 +404,32 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
     expect((await press('K', logist(), { seen })).changed).toBe(false);
   });
 
+  it('5e. awkward figures: the card posts the STORED spelling, the tick remembers the DISPLAY one — the press is accepted, and the same press after a re-weigh is not (the kernel lens, K1)', async () => {
+    const setK = (kg: string, m3: string) => db.update(receiptLots).set({ totalWeightKg: kg, totalVolumeM3: m3 }).where(eq(receiptLots.id, lot.K));
+    const remembered = async () =>
+      (
+        (await db.execute(sql`SELECT seen_kg::text AS kg, seen_m3::text AS m3 FROM lot_checks WHERE lot_id = ${lot.K}::uuid`)) as unknown as {
+          kg: string | null;
+          m3: string | null;
+        }[]
+      )[0];
+    try {
+      // A third place of a kilo and a fourth of a cubic metre — a scaled mixed growth's, a typed «…005».
+      await setK('1000.005', '2.5005');
+      const seen = { ...(await seenOf('K')), kg: '1000.005', m3: '2.5005' };
+      expect((await press('K', logist(), { seen })).changed).toBe(true);
+      expect(await remembered()).toEqual({ kg: '1000.01', m3: '2.501' });
+      expect((await stateOf('K')).state).toBe('checked');
+      // A thousandth of a kilo later the page that printed «1000.005» is out of date: refused, in words.
+      await setK('1000.006', '2.5005');
+      expect(await refusal(press('K', logist(), { seen }))).toBe('lot_changed');
+    } finally {
+      await setK('1000.000', '2.5000');
+      await press('K', logist());
+    }
+    expect(await remembered()).toEqual({ kg: '1000.00', m3: '2.500' });
+  });
+
   it('6. a press against what the lot no longer is refuses `lot_changed` and writes nothing', async () => {
     const stale = await seenOf('M');
     await db.update(receiptLots).set({ productNameZh: `鼠标改${SFX}` }).where(eq(receiptLots.id, lot.M));
@@ -621,14 +647,14 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
     );
     // While the tarkib stands it answers first.
     expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: true });
-    // A re-weigh — which a person's tick survived until the owner's «2 b» of 2026-11-12 (test 5) — and the
-    // tarkib no longer stands. The lists print «键盘 (Наушники)»; the tick
-    // was for the lot's own name. With the STORED name compared this read ✅.
+    // A re-weigh — and the tarkib no longer stands. The lists print «键盘 (Наушники)»; the tick was for
+    // the lot's own name. With the STORED name compared this read ✅. (Since the owner's «2 b» of 2026-11-12
+    // the re-weigh moves the tick's kilos too — test 5 — so BOTH are named.)
     await db.update(receiptLots).set({ totalWeightKg: '1000.500' }).where(eq(receiptLots.id, lot.K));
     expect((await lotRuShownFor([lot.K])).get(lot.K)).toBe('Наушники');
     const view = await stateOf('K');
     expect(view.state).toBe('stale');
-    expect(view.person).toMatchObject({ holds: false, moved: { name: true, count: false, client: false } });
+    expect(view.person).toMatchObject({ holds: false, moved: { name: true, count: false, client: false, measures: true } });
     // No writer clears anything: with the tarkib gone the lot shows the name
     // the person confirmed, and the tick stands again by itself.
     await db.update(receiptLots).set({ totalWeightKg: '1000.000' }).where(eq(receiptLots.id, lot.K));

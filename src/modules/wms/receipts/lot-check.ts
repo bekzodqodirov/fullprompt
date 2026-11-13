@@ -17,6 +17,7 @@ import {
   lotShownKgSql,
   lotShownM3Sql,
   lotTarkibJoinSql,
+  measuresLine,
   tarkibStandsSql,
   type LotCheckState,
 } from './lot-check-sql';
@@ -246,11 +247,11 @@ function summary(
   code: string | null,
   measures: { kg: string | null; m3: string | null } = { kg: null, m3: null },
 ): string {
-  // The kilos and cubic metres the tick vouched for (0147), as a list prints
-  // them: a re-tick that moves only the weight must not read as a History row
-  // whose before equals its after (`visibleChanges` drops those, #502).
-  const kgM3 = measures.kg !== null && measures.m3 !== null ? ` · ${Number(measures.kg)} kg · ${Number(measures.m3)} m³` : '';
-  return `${zh}${ru ? ` (${ru})` : ''} × ${count}${kgM3} · ${code ?? '?'}`;
+  // The kilos and cubic metres the tick vouched for (0147), spelled as the
+  // client's answer spells them (`measuresLine`): a re-tick that moves only
+  // the weight must not read as a History row whose before equals its after
+  // (`visibleChanges` drops those, #502).
+  return `${zh}${ru ? ` (${ru})` : ''} × ${count}${measuresLine(measures.kg, measures.m3)} · ${code ?? '?'}`;
 }
 
 async function clientCodesOf(tx: Tx, ids: string[]): Promise<Map<string, string>> {

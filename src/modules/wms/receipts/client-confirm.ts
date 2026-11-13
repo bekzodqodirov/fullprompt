@@ -15,7 +15,7 @@ import { PUSH_LOT_LINES } from '../notices/client-text';
 import { isBusyError, isServerBehind } from '../../platform/db/errors';
 import { lockLotAnswersTx, lotCheckViewsFor, mayCheckLot, type LotCheckActor } from './lot-check';
 import { askedTagReady, clientConfirmsReady, clientMeasuresReady } from './lot-check-ready';
-import { lotShownKgSql, lotShownM3Sql, lotTarkibJoinSql } from './lot-check-sql';
+import { lotShownKgSql, lotShownM3Sql, lotTarkibJoinSql, measuresLine } from './lot-check-sql';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -343,17 +343,13 @@ export type ClientAnswer =
   /** `scope` = what the pressed message asked: its thanks name exactly that. */
   | { outcome: 'recorded'; verdict: ClientVerdict; facts: ClientAskFacts; scope: AskScope };
 
-/** «200 kg · 1.5 m³» from the database's two texts — a History and alert value, never a customer's line. */
-function measuresText(kg: string | null, m3: string | null): string {
-  return kg === null || m3 === null ? '' : ` · ${Number(kg)} kg · ${Number(m3)} m³`;
-}
 
 /**
  * `键盘 (Клавиатура) × 100` — the History's value for one lot of an answer;
  * `… × 100 · 200 kg · 1.5 m³` when the answer covered the measures.
  */
 function shownLine(lot: Pick<ClientAskLot, 'zh' | 'ru' | 'count'>, kg: string | null = null, m3: string | null = null): string {
-  return `${lot.zh}${lot.ru ? ` (${lot.ru})` : ''} × ${lot.count}${measuresText(kg, m3)}`;
+  return `${lot.zh}${lot.ru ? ` (${lot.ru})` : ''} × ${lot.count}${measuresLine(kg, m3)}`;
 }
 
 /** The History's key for a lot's answer — per LOT, as the staff tick's (`lotCheck:A`). */
@@ -394,9 +390,29 @@ async function lastAsk(clientId: string, receiptId: string): Promise<{ askedBy: 
   // The system's question is the last one once it WENT, unless a person has
   // asked since — delivered later, or pressed and still waiting to go.
   if (autoAt && !personWaiting && (personAt === null || personAt.getTime() < autoAt.getTime())) {
+    // …and a person who asked BEFORE it and has had no answer since is still
+    // waiting for one: they pressed, and they are told — the answer is to the
+    // newer message, the asker is theirs (TARKIB-TAKLIFLAR §7.3; the owner
+    // lens, O3 — a VED holds no `plans.manage`, so a ❌ would otherwise
+    // reach nobody who asked).
+    if (person?.asked_by && personAt && !(await answeredSince(clientId, receiptId, personAt))) {
+      return { askedBy: person.asked_by, sentAt: autoAt };
+    }
     return { askedBy: null, sentAt: autoAt };
   }
   return person ? { askedBy: person.asked_by, sentAt: personAt } : null;
+}
+
+/** Has this owner answered anything about this prixod since `at`? On the pool, before the answer's transaction. */
+async function answeredSince(clientId: string, receiptId: string, at: Date): Promise<boolean> {
+  const rows = (await db.execute(sql`
+    SELECT 1 FROM lot_client_confirms c
+      JOIN receipt_lots l ON l.id = c.lot_id
+     WHERE l.receipt_id = ${receiptId}::uuid AND c.shown_client_id = ${clientId}::uuid
+       AND c.answered_at >= ${at.toISOString()}::timestamptz
+     LIMIT 1
+  `)) as unknown as unknown[];
+  return rows.length > 0;
 }
 
 /**
@@ -422,7 +438,7 @@ function staffText(
     .slice(0, 12)
     .map(
       (lot) =>
-        `${lot.letter ? `${lot.letter} · ` : ''}${lot.ru ?? lot.zh} — ${lot.count} quti${full ? measuresText(lot.shownKg, lot.shownM3) : ''}`,
+        `${lot.letter ? `${lot.letter} · ` : ''}${lot.ru ?? lot.zh} — ${lot.count} quti${full ? measuresLine(lot.shownKg, lot.shownM3) : ''}`,
     );
   if (facts.lots.length > 12) lots.push(`… yana ${facts.lots.length - 12} ta lot`);
   const link = cardLink('receipt', facts.receiptId);

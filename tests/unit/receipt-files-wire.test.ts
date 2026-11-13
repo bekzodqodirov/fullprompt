@@ -185,7 +185,7 @@ describe('the «Fayllar» card goes with its last file', () => {
     expect(page).toMatch(/removableIds=\{ownFileIds\}\n\s+refreshWhenEmpty\n/);
     // Who may attach is the bot's own rule, one predicate for both doors (4b) — never `canEdit`, which also
     // draws the ✏️ lot form and ✕ on everybody's files.
-    expect(page).toContain('const mayAttach = mayAttachReceiptFile(receipt);');
+    expect(page).toContain('const mayAttach = mayAttachReceiptFile(receipt) && mayAddReceiptFiles(actor);');
     expect(page).toContain('const showFiles = mayAttach || receiptFiles.length > 0;');
     expect(page).toMatch(/editable=\{canEdit\}\n\s+attachable=\{mayAttach\}/);
   });
