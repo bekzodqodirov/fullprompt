@@ -20,10 +20,20 @@ describe('«Meas» / «Vol» with a unit of its own is the line’s m³ only whe
     }
   });
 
-  it('a cubic foot, a cubic centimetre, a carton’s size or a word that is no unit stays no volume', () => {
-    for (const header of ['MEAS (CU.FT)', 'Vol (cubic feet)', 'Meas (cu.cm)', 'Meas (cubic cm)', 'MEAS(L*W*H CM)', 'Measurement (Total)']) {
+  it('a cubic foot, a carton’s size or a word that is no unit stays no volume', () => {
+    for (const header of ['MEAS (CU.FT)', 'Vol (cubic feet)', 'MEAS(L*W*H CM)', 'Measurement (Total)']) {
       expect(volume(header), header).toBeNull();
     }
+  });
+
+  // Re-anchored (docs/AI-SORAYDI.md §3.2 X6, review JN-13): the sixth review
+  // pinned a cubic CENTIMETRE as «no volume» here; a header's own cm³ / dm³ is
+  // now CONVERTED on both rungs. 720 000 cm³ ÷ 1 000 000 = 0.72 m³;
+  // 720 dm³ ÷ 1000 = 0.72 m³.
+  it('a cubic centimetre and a cubic decimetre are converted, never read as cubic metres', () => {
+    const converted = (header: string, value: number) => first([['Description', 'Qty', header], ['Chair', 10, value]]).volumeM3;
+    for (const header of ['Meas (cu.cm)', 'Meas (cubic cm)', 'MEAS (CUBIC CENTIMETERS)']) expect(converted(header, 720000), header).toBe(0.72);
+    for (const header of ['Meas (cu.dm)', 'Vol (cubic decimetres)']) expect(converted(header, 720), header).toBe(0.72);
   });
 
   it('beside a carton’s centimetres, the cubic-metre column is the line’s — wherever it stands', () => {

@@ -43,7 +43,7 @@ import { amendNoteText } from '@/modules/wms/calc/amend';
 import ExcelJS from 'exceljs';
 import { MAX_GOODS_ROWS, parseGoods } from '@/modules/wms/deals/goods-import';
 import { readGoodsFile } from '@/modules/wms/deals/goods-file';
-import { invoiceFacts } from '@/modules/wms/calc/intake';
+import { invoiceFacts, landingItems } from '@/modules/wms/calc/intake';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { receiveGoodsSheet } from '@/modules/platform/telegram/calc-files';
 
@@ -286,6 +286,17 @@ describe('a PLURAL package after the slash or «in» counts the cartons (fix rev
       g.quantity ?? null,
       g.note ?? null,
     ]);
+  // Re-anchored for docs/AI-SORAYDI.md §3.2 X2 (review JR-20 names the corpus'
+  // twins of these inputs, c2469 / c2470, as cases that MOVE): the carton
+  // count is the row's PACKING now, and the VED reads it on the landed row as
+  // «📦 N karobka — fayldan» — the old «sotuvchi: N ctns» sentence said the
+  // same fact and is gone, never both. What the finding asked for stands: the
+  // count is cartons, never pieces, and the VED does not lose it.
+  const packed = (h: string) => {
+    const rows = parseGoods([['Description', h, 'G.W.(KG)', 'CBM'], ['Kurtka', 10, 100, 1], ['Shim', 4, 50, 0.5]]).goods;
+    const facts = invoiceFacts(rows);
+    return facts.map((g, i) => [g.quantity ?? null, g.packing?.cartons ?? null, landingItems({ goods: facts })[i]!.note, rows[i]!.unit]);
+  };
   for (const [h, unit] of [
     ['QTY IN CTNS', 'ctns'],
     ['Qty in cartons', 'cartons'],
@@ -294,10 +305,10 @@ describe('a PLURAL package after the slash or «in» counts the cartons (fix rev
     ['Quantity in boxes', 'boxes'],
     ['Кол-во/мест', 'мест'],
   ] as const) {
-    it(`«${h}»: the carton column — the VED’s «sotuvchi: N ${unit}» note, as before`, () => {
-      expect(read(h)).toEqual([
-        [null, `sotuvchi: 10 ${unit}`],
-        [null, `sotuvchi: 4 ${unit}`],
+    it(`«${h}»: the carton column — the VED’s carton count on the landed row, and «${unit}» still the reader’s own word`, () => {
+      expect(packed(h)).toEqual([
+        [null, 10, '📦 10 karobka — fayldan', unit],
+        [null, 4, '📦 4 karobka — fayldan', unit],
       ]);
     });
   }

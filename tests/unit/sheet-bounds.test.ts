@@ -439,7 +439,10 @@ describe('the second review of the spreadsheet door', () => {
     const [, first, second] = read.text.split('\n');
     expect(first!.length).toBeLessThanOrEqual(2_000);
     expect(first!.split(' | ').every((cell, i) => cell === row[i])).toBe(true);
-    expect(second).toBe('Стол 5 шт');
+    // …and the second row is written to the sheet's hundred columns, its
+    // ninety-nine empty slots included (docs/AI-SORAYDI.md §3.2 X0, review
+    // JN-14: every kept column for every row).
+    expect(second!.split('|').map((cell) => cell.trim())).toEqual(['Стол 5 шт', ...Array.from({ length: 99 }, () => '')]);
   });
 
   it('a cell’s own line break is not a row: the text keeps one line per row, its lines joined by « / » (S4, R3-S9)', async () => {
@@ -449,7 +452,8 @@ describe('the second review of the spreadsheet door', () => {
     );
     // The goods a seller typed one per line in ONE cell stay apart for the
     // model — «Стол 5 шт Стул 3 шт» read as one run-on product.
-    expect(read?.kind === 'text' && read.text).toBe('[S]\nYiwu Trading\nКуртка / женская | синяя\nСтол 5 шт / Стул 3 шт');
+    // (A one-cell row keeps the empty slot of the sheet's second column — X0.)
+    expect(read?.kind === 'text' && read.text).toBe('[S]\nYiwu Trading |\nКуртка / женская | синяя\nСтол 5 шт / Стул 3 шт |');
     expect(read?.kind === 'text' && [read.textCut, read.cellsCut]).toEqual([false, false]);
   });
 
@@ -689,7 +693,9 @@ describe('the third review of the spreadsheet door', () => {
       '<tr><td>Стол</td><td>5 шт</td><td rowspan=3>160 кг</td></tr><tr><td>Стул</td><td>3 шт</td></tr><tr><td>Полка</td><td>2 шт</td></tr>',
     );
     const read = await readGoodsFile(page, null);
-    expect(read?.kind === 'text' && read.text).toBe('[Jadval 1]\nСтол | 5 шт | 160 кг\nСтул | 3 шт\nПолка | 2 шт');
+    // «Empty» is an empty SLOT — the covered line's last «|» — where the cell
+    // was left out altogether (docs/AI-SORAYDI.md §3.2 X0, review JN-14).
+    expect(read?.kind === 'text' && read.text).toBe('[Jadval 1]\nСтол | 5 шт | 160 кг\nСтул | 3 шт |\nПолка | 2 шт |');
     const book = await merged(
       [
         ['Стол', '5 шт', '160 кг'],
@@ -698,7 +704,7 @@ describe('the third review of the spreadsheet door', () => {
       ['C1:C2'],
     );
     const fromBook = await readGoodsFile(book, null);
-    expect(fromBook?.kind === 'text' && fromBook.text).toBe('[S]\nСтол | 5 шт | 160 кг\nСтул | 3 шт');
+    expect(fromBook?.kind === 'text' && fromBook.text).toBe('[S]\nСтол | 5 шт | 160 кг\nСтул | 3 шт |');
   });
 
   it('a long text merged down five thousand rows is read in linear time (R3-S7)', async () => {
@@ -831,6 +837,7 @@ describe('the fourth review of the readers', () => {
         '<tr><td rowspan=2>LED 50W</td><td>2 шт</td><td rowspan=2>40</td></tr><tr><td>7 шт</td></tr></table>',
     );
     const read = await readGoodsFile(page, null);
-    expect(read?.kind === 'text' && read.text).toBe('[Jadval 1]\n12V | 5 шт | 160 кг\n12V | 3 шт\nLED 50W | 2 шт | 40\nLED 50W | 7 шт');
+    // The figure merged over two lines leaves an empty slot on the second (X0).
+    expect(read?.kind === 'text' && read.text).toBe('[Jadval 1]\n12V | 5 шт | 160 кг\n12V | 3 шт |\nLED 50W | 2 шт | 40\nLED 50W | 7 шт |');
   });
 });

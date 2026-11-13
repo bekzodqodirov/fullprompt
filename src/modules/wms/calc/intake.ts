@@ -309,6 +309,14 @@ export interface CalcGoodsFact {
   /** The picture the good was seen or written on — «Фото N» of the request (1-based). Absent = not from a picture. */
   photoNo?: number;
   /**
+   * A sheet named this row by an ARTICLE NUMBER, not a word — «XJ-200» under
+   * «Item No.» beside a picture column (docs/AI-SORAYDI.md §3.2 X10; the
+   * reader's `GoodsRow.nameIsArticle`). Release 1a carries it; what the table
+   * asks of it, and the rename that clears it, are release 1b's (review JS-9).
+   * Absent = a name in words.
+   */
+  nameIsArticle?: true;
+  /**
    * Which weight the row's own `weightKg` is, when its source SAID
    * (`weight_kind`, a sheet's «N.W.» / «G.W.» column). Customs wants netto;
    * a gross one is said on the row's note by CODE («og‘irlik brutto»), no
@@ -627,14 +635,24 @@ export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
       amount: g.amount,
       tnvedCode: g.tnvedCode,
       note: g.note,
+      // The name is an article number, not a word (§3.2 X10): the reader's flag, kept.
+      ...(g.nameIsArticle ? { nameIsArticle: true as const } : {}),
     };
+    // A carton count the row's PACKING holds is said there, once (§3.2 X2): a
+    // sheet whose only count column counts cartons still writes «15 ctn» as
+    // its count for the doors that keep no packing, and «sotuvchi: 15 ctn»
+    // beside «📦 15 karobka — fayldan» would state one fact twice.
+    const packed = routed.moved && routed.to === 'cartons' && g.packing?.cartons === g.quantity;
     const routedRow = routed.moved
-      ? { ...row, ...routed.patch, note: [g.note, routed.note].filter(Boolean).join(' · ') || null }
+      ? { ...row, ...routed.patch, note: [g.note, packed ? null : routed.note].filter(Boolean).join(' · ') || null }
       : row;
     // What the sheet states PER PACKAGE (docs/AI-SORAYDI.md §2.3): the row's
     // packing goes through the one carton arithmetic here, where every reader
     // of the row — the table, the comparison, the landing — takes it from.
-    return g.packing ? applyPacking({ ...routedRow, packing: g.packing }).line : routedRow;
+    // Which weight the row's own is travels with it (review JN-4).
+    return g.packing
+      ? applyPacking({ ...routedRow, packing: g.packing, ...(g.weightKind ? { weightKind: g.weightKind } : {}) }).line
+      : routedRow;
   });
 }
 

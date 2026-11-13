@@ -1,7 +1,18 @@
 import { clipUnits } from '../../platform/text/clip';
 import { readNumberCell } from '../calc/number-cell';
-import { normalizeTnved, unitOf } from '../calc/units';
-import type { Packing } from '../calc/carton-math';
+import { FIELD_LABELS as SPEC_LABELS, normalizeTnved, PER_PACKAGE_TAIL, PER_PIECE_TAIL, tailAt, unitOf, unitPattern, VOLUME_LABELS, WEIGHT_LABELS } from '../calc/units';
+import {
+  applyPacking,
+  emptyPacking,
+  packingStated,
+  parseSize,
+  fmtFigure,
+  wholeCartons,
+  type CartonSize,
+  type Packing,
+  type PerCartonUnit,
+  type SizeOwner,
+} from '../calc/carton-math';
 
 /**
  * The client's "50 goods" spreadsheet (DEALS.md answer 6): parse whatever
@@ -101,8 +112,54 @@ export interface GoodsRow {
    * cube, weight, pieces (docs/AI-SORAYDI.md §2.3, §3.2 X2-X3). The reader
    * COPIES; the calc door multiplies (`invoiceFacts` → `applyPacking`). A deal
    * line's import ignores it. Absent = the sheet stated none.
+   *
+   * A sheet whose ONLY count column counts cartons still writes that number
+   * as `quantity` under its carton word («15 ctn»), as it did before the
+   * packing: the deal's import and the VED's paste keep no packing, and read
+   * the count there. The calc door reads it HERE and says it once.
    */
   packing?: Packing | null;
+  /**
+   * Which weight the row's own `weightKg` is, by its column — said only on a
+   * row whose packing states a per-carton weight, where the carton arithmetic
+   * needs it: a GROSS line weight a little over its cartons' NETTO is a row,
+   * not a question (review JN-4). Absent = not said.
+   */
+  weightKind?: 'gross' | 'net';
+  /**
+   * The row's NAME cell is no word but an article number or a code — «XJ-200»,
+   * «A17», «2301» (docs/AI-SORAYDI.md §3.2 X10, review CR-3): the commonest
+   * Chinese quotation shows its goods as PICTURES beside «Item No.», and the
+   * number is all the file names the good by. The same test that keeps such a
+   * column from outranking a wordy one (`isWordCell`). A DATA flag only: what
+   * the table asks of such a row is release 1b's. Absent = a name in words.
+   */
+  nameIsArticle?: true;
+}
+
+/**
+ * The columns a header states PER PACKAGE (§3.2 X2-X3) — each read into the
+ * row's `packing`, none of them a line figure.
+ */
+interface PackColumns {
+  /** The carton COUNT: a package column, whichever way it was found. */
+  cartons: number | null;
+  /**
+   * What one carton holds, and in which unit (review JR-1): «PCS/CTN»,
+   * «пар/кор», «m²/ctn». `unit: null` — the header names none («Qty per
+   * carton», «装箱数»): the row's own count unit, else pieces.
+   */
+  pieces: { index: number; unit: PerCartonUnit | null } | null;
+  /** One carton's weight — the NET column when the sheet has both. */
+  weight: { index: number; kind: 'gross' | 'net' | null } | null;
+  /** One carton's cube, and what its figures are divided by to be m³ (X6). */
+  volume: { index: number; divisor: number } | null;
+  /**
+   * A size: one cell («60*40*50») or an L | W | H triplet, the unit its
+   * header names and WHOSE size the header says it is (review JN-11) — null:
+   * the header said «size» and nothing more, so nothing is multiplied by it.
+   */
+  size: { cols: [number] | [number, number, number]; unit: CartonSize['unit']; of: SizeOwner | null } | null;
 }
 
 interface ColumnMap {
@@ -115,6 +172,11 @@ interface ColumnMap {
   unit: number | null;
   weight: number | null;
   volume: number | null;
+  /**
+   * What the volume column's figures are divided by to be cubic metres — 1,
+   * or 1 000 000 / 1000 under a header that names cm³ / dm³ or litres (X6).
+   */
+  volumeDivisor: number;
   amount: number | null;
   /**
    * The money column is a UNIT price (no line total in the file). A price
@@ -125,7 +187,10 @@ interface ColumnMap {
   /**
    * The count headers the ranking passed over that count in ANOTHER unit —
    * «Кол-во, м2», «Кол-во, пар» beside the chosen «Кол-во, шт» (§5.10): the
-   * row's figure there is said on its note for the VED, never dropped.
+   * row's figure there is said on its note for the VED, never dropped. And,
+   * said the same way (X6, review JN-13): a volume column in a unit nobody
+   * converts («Volume (ft3)»), the figure of a CONVERTED one as the file
+   * wrote it («Volume (cm3)»: 120000), and a volumetric weight.
    */
   alsoCounts: { index: number; header: string }[];
   /**
@@ -138,6 +203,8 @@ interface ColumnMap {
   cartons: boolean;
   /** Where the line weights came from (`SheetShape.weightKind`). */
   weightKind: WeightKind;
+  /** What the header states per package (X2-X3) — the row's `packing`. */
+  pack: PackColumns;
 }
 
 /** Which column a sheet's line weights were read from — null = none. */
@@ -309,7 +376,34 @@ const TNVED_KEYS = ['hs code', 'hs-code', 'тн вэд', 'тнвэд', 'tn ved',
 const QTY_KEYS = ['кол-во', 'кол.', 'количество', 'колич', 'soni', 'miqdor', 'dona', 'nechta', 'qty', 'quantity', 'pcs', '数量', '件数'];
 const NECHA_COUNT = /(?<![\p{L}])necha(?![\p{L}])(?!\s*(?:so'?m|pul)(?![\p{L}]))/u;
 const UNIT_KEYS = ['ед.', 'ед изм', 'единиц', 'birlik', 'unit', '单位'];
-const WEIGHT_KEYS = ['вес', 'кг', "og'irl", 'ogirl', 'vazn', 'weight', 'kg', '重量', '毛重', '净重', 'g.w', 'n.w', 'gross', 'брутто', 'brutto'];
+const WEIGHT_KEYS = ['вес', "og'irl", 'ogirl', 'vazn', 'weight', '重量', '总重', '毛重', '净重', 'g.w', 'n.w', 'gross', 'брутто', 'brutto'];
+/**
+ * Kilos as a unit WORD (docs/AI-SORAYDI.md §3.2 X1; XLS-3) — «KG», «KGS»,
+ * «кг», the customs code «KGM», «公斤» — and never a key: as a SUBSTRING «kg» is
+ * inside «PKGS», «PKG» and «BKG NO», so a packing list's package count read
+ * as the line's weight (10 / 20 / 30 «kg» for 120 / 260 / 330), outranked the
+ * «G.W.» beside it — a plain weight column goes before a gross one — and
+ * per-kg customs was computed on 60 kg for a 710 kg shipment. A letter of its
+ * own script on either side makes it another word; a digit («25KG») or a
+ * Chinese character («总KG») does not.
+ */
+const KG_WORD = /(?<![\p{Script=Latin}\p{Script=Cyrillic}])(?:kgs?|kgm|кг)(?![\p{Script=Latin}\p{Script=Cyrillic}])|公斤|千克/iu;
+/**
+ * The weight's ABBREVIATIONS as words, and the «mass» a Russian or an Uzbek
+ * sheet says for it (§3.2 X7; XLS-7, XLS-8). «G.W.» and «N.W.» were keys by
+ * their dots, and a packing list writes «GW», «NW», «G/W», «N/W» as often:
+ * undotted, neither was a weight at all — or, with a unit («NW(KG) |
+ * GW(KG)»), both were «plain» weights by their «kg» and the heavier one, the
+ * GROSS, became the line's, with no brutto read for the shipment. Whole words
+ * only, the two letters together or with their dot or slash between — «S/N
+ * W/H» is a serial number and a warehouse. «T.W» (total weight) needs its dot
+ * or slash: «TW» is Taiwan in a column of origins.
+ */
+const WORD_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
+const GW_WORD = new RegExp(String.raw`(?<!${WORD_EDGE})g(?:\s*[./／]\s*)?w(?!${WORD_EDGE})`, 'iu');
+const NW_WORD = new RegExp(String.raw`(?<!${WORD_EDGE})n(?:\s*[./／]\s*)?w(?!${WORD_EDGE})`, 'iu');
+const TW_WORD = new RegExp(String.raw`(?<!${WORD_EDGE})t\s*[./／]\s*w(?!${WORD_EDGE})`, 'iu');
+const MASS_WORD = /(?<![\p{L}])(?:масс[аыеу]|massa(?:si)?)(?![\p{L}])/iu;
 /**
  * A line's weight is NETTO (the row's own unit of account, `CalcField`), so a
  * packing list carrying both «N.W.» and «G.W.» is read by its net column
@@ -318,6 +412,8 @@ const WEIGHT_KEYS = ['вес', 'кг', "og'irl", 'ogirl', 'vazn', 'weight', 'kg'
  * weight (the review).
  */
 const NET_WEIGHT_KEYS = ['нетто', 'netto', 'n.w', 'net w', 'net.w', '净重'];
+/** A header that names the NET weight: a net key, or «NW» / «N/W» as a word (X7). */
+const namesNet = (text: string): boolean => matchKey(text, NET_WEIGHT_KEYS) || NW_WORD.test(text);
 /**
  * …but «net» as a WORD is the net column when the header says it weighs
  * («Net, kg», «NET (KG)») or a gross column stands in the same header
@@ -327,8 +423,8 @@ const NET_WEIGHT_KEYS = ['нетто', 'netto', 'n.w', 'net w', 'net.w', '净重
  * it is as often the line's money.
  */
 const NET_WORD = /(?:^|[^\p{L}])net(?:[^\p{L}]|$)/iu;
-const WEIGHT_WORD = /kgs?\b|кг|weight|\bwt\b|вес/i;
-const GROSS_HEADER = /gross|g\.\s*w|брутто|brutto|毛重/i;
+const WEIGHT_WORD = new RegExp(`${KG_WORD.source}|weight|\\bwt\\b|вес|${GW_WORD.source}|${NW_WORD.source}|${TW_WORD.source}|${MASS_WORD.source}`, 'iu');
+const GROSS_HEADER = new RegExp(String.raw`gross|g\.\s*w|брутто|brutto|毛重|${GW_WORD.source}`, 'iu');
 /**
  * A weight header that is not the LINE's weight. Per package — «N.W./CTN»
  * stands before «TOTAL N.W.» on a Chinese packing list and is one carton's,
@@ -369,6 +465,68 @@ const PER_PACKAGE_COUNT = new RegExp(
   'iu',
 );
 /**
+ * The PACKAGE half of `PER_PACKAGE` (docs/AI-SORAYDI.md §3.2 X2): a weight or
+ * a cube marked as ONE CARTON's — «CBM/CTN», «G.W./CTN», «毛重/箱», «单箱体积»,
+ * «Объем 1 места», «G.W. (KG)» over «PER CTN». Such a column was passed over
+ * and nothing multiplied it by the «CTNS» standing beside it (XLS-4, DIM-7);
+ * now the row keeps the figure in its packing. Never the PIECE half («/pcs»,
+ * «/шт», «单件», «单重»), and never a mark that may be either: «/件» (a piece
+ * on one list and a package on the next, review JN-8), a bare «per», «each»,
+ * «single» or «每». Each alternative is one of `PER_PACKAGE`'s own, narrowed
+ * — so a column this reads was nobody's line figure before it.
+ */
+const PER_CARTON = new RegExp(
+  [
+    String.raw`[/／]\s*(?:ctns?|cartons?|box(?:es)?|кор|мест|箱|包)`,
+    String.raw`[(（]\s*(?:箱|包)\s*[)）]`,
+    String.raw`\b(?:per|each|single)\s+(?:(?:1|one|a)\s+)?(?:ctns?|cartons?|box(?:es)?|pkgs?|packages?|packs?)\b`,
+    String.raw`на\s*1\s*(?:мест|кор|ящик|упаков)`,
+    String.raw`(?<![\p{L}\d])(?:1|одного)\s*(?:мест|кор|ящик|упаков)`,
+    '每箱|单箱|每包',
+  ].join('|'),
+  'iu',
+);
+/**
+ * A UNIT, then the package it is counted in — «PRS/CTN», «пар/кор», «m²/ctn»,
+ * «SETS/CTN», «шт в коробке», «pairs per carton», «双/箱»: what ONE CARTON
+ * holds a count of, and in which unit (review JR-1). A count with no unit of
+ * its own lands as PIECES, so 12 pairs a carton became 12 pieces a carton —
+ * the calculator round's root defect, a number in the column nobody's unit
+ * named. The word before the mark is the unit; «QTY/CTNS» has none there (it
+ * counts the cartons themselves, FR-REGR-6) and «KGS/CTN» a weight's.
+ */
+const UNIT_PER_CARTON = new RegExp(
+  String.raw`(?<![\p{L}\d])([\p{L}][\p{L}\d²³.]*?)\.?\s*(?:[/／]\s*|\s+(?:in|per|в|на)\s+(?:(?:1|a|one|одн\p{L}*)\s+)?)(?:ctns?|cartons?|box(?:es)?|pkgs?|packs?|bags?|кор\p{L}*\.?|мест\p{L}*|ящ\p{L}*|упаков\p{L}*|箱|包)(?![\p{L}])`,
+  'iu',
+);
+/**
+ * What one carton holds, as a Chinese packing list heads it where no quantity
+ * key stands: «装箱数», «装箱量», «入数», and «每箱…数» with the unit between
+ * («每箱双数», pairs a carton).
+ */
+const PACKED_COUNT_HAN = /装箱数|装箱量|入数|每箱\p{Script=Han}{0,2}数/u;
+/**
+ * The unit a header says one carton holds a count of — the word before the
+ * package mark, else a pair / m² / litre word anywhere in it («Кол-во в
+ * коробке, пар», «每箱双数»); null: it names none, and the count is pieces
+ * unless the row itself counts in another unit (`parseGoods`). A letter alone
+ * («L», «л») is a length as often as a litre and says nothing.
+ */
+function perCartonUnitOf(text: string): PerCartonUnit | null {
+  const lead = UNIT_PER_CARTON.exec(text)?.[1] ?? null;
+  // Before «/箱» a 件 is a piece: the package is named beside it.
+  const led = lead === null ? null : lead === '件' ? 'dona' : unitOf(lead);
+  if (led === 'dona' || led === 'juft' || led === 'm2' || led === 'litr') return led;
+  for (const word of foldKey(text).split(/[^\p{L}\d²³]+/u)) {
+    if (word.length < 2) continue;
+    const unit = unitOf(word);
+    if (unit === 'juft' || unit === 'm2' || unit === 'litr') return unit;
+  }
+  if (/[双对]/u.test(text)) return 'juft';
+  if (/平方米|平米|㎡/u.test(text)) return 'm2';
+  return null;
+}
+/**
  * A money header. A CURRENCY is one too (the third review's S6 note): «Gross
  * (USD) | Net (USD)» is an invoice's money before and after a discount, and
  * read as the gross and net weights its dollars became the line's kilos.
@@ -392,6 +550,95 @@ const VOLUME_WORD = /\b(?:meas(?:urement)?s?|vol)\b/i;
 const OWN_UNIT = /[(（,]/;
 /** Cubic metres written out — «cu.m», «cu m», «cubic metre(s)», «CU.MTS» — never «cu.ft» or «cu.cm». */
 const CUBIC_METRE = /\bcu(?:bic)?\.?\s*m(?:et(?:er|re)s?|trs?|ts?)?\b/i;
+/**
+ * The cube headers no key held (§3.2 X7, XLS-7): «CUBE», «Cubage», «CUBM»,
+ * the transposed «CMB», and cubic metres spelled out as a header of their own
+ * — «CU.M», «Cubic meter» (until now only the UNIT of a «MEAS» / «VOL»
+ * header). With «方数» / «总方数» — 方 («fang») is how a Chinese forwarder
+ * writes cubic metres; never «平方数», which counts SQUARE metres — these are
+ * the cube columns that read as nothing, or, under a «Total», as the line's
+ * MONEY. Whole words: «cub» is inside «Cuba» and «incubator». A bare «CUM» is
+ * not one of them («Cum. qty» counts), and «Cubic feet» never was.
+ */
+const CUBE_WORD = /(?<![\p{Script=Latin}])(?:cubes?|cubage|cubm|cmb)(?![\p{Script=Latin}])|(?<!平)方数/iu;
+const CUBIC_METRE_HEAD = /\b(?:cubic\s*m(?:et(?:er|re)s?|trs?|ts?)?|cu(?:\.\s*|\s+)m(?:trs?|ts?)?)\b/i;
+/** A header that names a VOLUME — one predicate for every reader of «is this a cube column». */
+const namesVolume = (text: string): boolean => matchKey(text, VOLUME_KEYS) || CUBE_WORD.test(text) || CUBIC_METRE_HEAD.test(text);
+/**
+ * A volume header's OWN unit, when it is not cubic metres (docs/AI-SORAYDI.md
+ * §3.2 X6, review JN-13; XLS-10). «m3» is inside «cm3» and «м3» inside «дм3»,
+ * and header keys match as substrings: «Volume (cm3)» 120000 landed as
+ * 120 000 m³ on the line. Cubic centimetres and decimetres are named by their
+ * own spelling wherever they stand; a LITRE by its word anywhere («Hajmi
+ * (litr)», «Объём в литрах») and by its letter only where a header puts its
+ * unit — in brackets, after a comma or a slash — since a bare «L» is as often
+ * a length («L*W*H»).
+ */
+const CUBIC_CM = /(?<![\p{L}])(?:cm|см|sm)\s*[3³]|куб\.?\s*см|(?<![\p{L}])cu(?:bic)?\.?\s*(?:cm|centimet(?:er|re)s?)(?![\p{L}])|立方厘米/iu;
+const CUBIC_DM = /(?<![\p{L}])(?:dm|дм)\s*[3³]|куб\.?\s*дм|(?<![\p{L}])cu(?:bic)?\.?\s*(?:dm|decimet(?:er|re)s?)(?![\p{L}])|立方分米/iu;
+const LITRE_WORD = /(?<![\p{L}])(?:lit(?:er|re)s?|litr\p{L}*|литр\p{L}*|ltrs?)(?![\p{L}])|升/iu;
+const LITRE_LETTER = /^(?:l|л)\.?$/iu;
+/** Where a header writes its unit: in brackets, or after its last comma or slash. */
+const UNIT_PARTS = /[(（\[]([^()（）\[\]]*)[)）\]]|[,，/／]\s*([^,，/／()（）\[\]]*)$/gu;
+function unitParts(text: string): string[] {
+  return [...text.matchAll(UNIT_PARTS)].map((m) => (m[1] ?? m[2] ?? '').trim()).filter(Boolean);
+}
+/**
+ * Cubic metres as a header's unit part writes them — «m3», «м³», «m^3»,
+ * «CBM», «cub.m», «куб.м», «立方米». The caret and «cub.m» are how a Russian
+ * or a Chinese forwarder's sheet spells it; read as a length («m»), they
+ * refused a cube column the base had read (review excel-break-7).
+ */
+const CUBIC_METRE_UNIT = /(?<![\p{L}])(?:m|м)\s*\^?\s*[3³]|cbm|(?<![\p{L}])cub\.?\s*m(?![\p{L}])|куб|kub|立方|方/iu;
+/**
+ * «cc» — cubic centimetres as a quotation writes them («Volume (cc)»): a word
+ * of its own, on the KEY rung only. On the abbreviation rung a bracketed unit
+ * is refused anyway (`OWN_UNIT`), as a bottle's «Vol (L)» is. Read as cubic
+ * metres, «120000» was a line of 120 000 m³ (review excel-break-10).
+ */
+const CC_WORD = /(?<![\p{L}])c\.?c\.?(?![\p{L}])/iu;
+/**
+ * A unit a volume header's unit part names that nobody converts here: a
+ * length («CBM (cm)» is a carton's side), cubic feet and inches, millilitres
+ * (a bottle's — «Vol, ml»), a weight. Read only INSIDE the unit part, and
+ * only where it names no cubic metre («Volume (m3/total)»).
+ */
+const FOREIGN_VOLUME_UNIT =
+  /(?<![\p{L}])(?:ml|мл|mm|мм|cm|см|sm|m|м|inch(?:es)?|ft|feet|foot|cu\.?\s*ft|cuft|cft|gal(?:lon)?s?|oz|yd|kgs?|кг)\.?\s*[23²³]?(?![\p{L}\d])|毫升|厘米|毫米|英尺|英寸|公斤|千克/iu;
+/**
+ * A header that names a WEIGHT in a volume's words (review JN-13):
+ * «Объёмный вес, кг» and «Вес объемный», «Volume weight», «Vol. wt»,
+ * «Volumetric», «Chargeable weight», «体积重», «抛重» — the carrier's
+ * volumetric kilos — and any volume key beside kilos («Плотность, кг/м3»).
+ * Its «объем» / «volume» / «м3» made it the line's cubic metres; it is
+ * neither the cube nor the line's weight.
+ */
+const VOLUMETRIC_WEIGHT =
+  /объ[её]мн\p{L}*\s+(?:вес|масс)|(?:вес|масса)\s+объ[её]мн|(?<![\p{L}])vol(?:ume|umetric|\.)?\s*(?:weight|wt)(?![\p{L}])|(?<![\p{L}])(?:volumetric|chargeable|dimensional)(?![\p{L}])|体积重|材积重|计费重|抛重/iu;
+const volumetricWeight = (text: string): boolean =>
+  VOLUMETRIC_WEIGHT.test(text) || (namesVolume(text) && KG_WORD.test(text));
+/**
+ * What a volume column's figures are divided by to be cubic metres — or
+ * `null`: its header names a unit nobody converts, and the column is no
+ * volume (the cube is asked, the figure said on the line's note).
+ *  - cm³ ÷ 1 000 000 and dm³ ÷ 1000 on both rungs; «cc» ÷ 1 000 000 on the
+ *    key rung;
+ *  - litres ÷ 1000 on the KEY rung («Объем, л», «Hajmi (litr)», «Volume (L)»).
+ *    On the abbreviation rung («Vol (L)», «Vol, ml») a litre is a bottle's
+ *    own — the corpus' c1936, c1937 — and stays refused, as every unit of its
+ *    own does there unless it spells cubic metres out.
+ * A DIVISOR, never a factor: 120000 / 1e6 is 0.12, 120000 × 1e-6 is not.
+ */
+function volumeDivisor(text: string, keyed: boolean): number | null {
+  if (CUBIC_CM.test(text)) return 1_000_000;
+  if (CUBIC_DM.test(text)) return 1000;
+  if (!keyed) return !OWN_UNIT.test(text) || CUBIC_METRE.test(text) ? 1 : null;
+  if (CC_WORD.test(text)) return 1_000_000;
+  const parts = unitParts(text);
+  if (LITRE_WORD.test(text) || parts.some((part) => LITRE_LETTER.test(part))) return 1000;
+  if (parts.some((part) => FOREIGN_VOLUME_UNIT.test(part) && !CUBIC_METRE_UNIT.test(part) && !CUBIC_METRE.test(part))) return null;
+  return 1;
+}
 const WEIGHT_ABBREV = /\bwt\b/i;
 // Totals first: a file carrying both «цена» (per unit) and «сумма» (the line
 // total) must land on the total — profit and customs both read line money.
@@ -444,9 +691,188 @@ const LATIN_PACKAGE = /ctns?\b|cartons?|pkgs?\b|packages?|короб|мест/i;
  */
 const RANK_PACKAGE = /karobka|(?:quti|қути)(?:lar|лар)?(?![\p{L}])|(?<![\p{L}])(?:joy|жой)(?:i|lar|и|лар)?\s+(?:soni|сони)|упаков/iu;
 const namesPackage = (text: string): boolean => PACKAGE_COUNT.test(text) || RANK_PACKAGE.test(foldKey(text));
+/** …and the package a count of BAGS names — rice, sugar and resin ship in them. */
+const BAG_WORD = /(?<![\p{L}])(?:bags?|sacks?|qop\p{L}*)(?![\p{L}])|мешк|мешок|袋/iu;
+/**
+ * A header that names a WEIGHT (X1, X7): a weight's own word (`WEIGHT_KEYS`,
+ * its abbreviations, «масса»), or kilos as a unit word — unless the unit is all it says of a weight and it
+ * names a PACKAGE: «BAGS (25KG)», «PKGS (KG)», «Мест (кг)» count packages of
+ * that size, and a package count is never a weight candidate. «Вес мест, кг»,
+ * «Gross weight of packages», «Bag weight» say «weight» and stay one.
+ */
+const namesWeight = (text: string): boolean =>
+  matchKey(text, WEIGHT_KEYS) ||
+  [GW_WORD, NW_WORD, TW_WORD, MASS_WORD].some((word) => word.test(text)) ||
+  (KG_WORD.test(text) && !namesPackage(text) && !BAG_WORD.test(text));
 /** A count header that is the line's TOTAL — «TOTAL QTY», «Всего шт», «Jami soni», a leading 总 / 總 («总数量»). */
 const COUNT_TOTAL = /(?<![\p{L}])(?:total|totals|ttl|sum|всего|итого|итог|jami|жами|umumiy|умумий)(?![\p{L}])/iu;
 const COUNT_TOTAL_HAN = /^\s*[总總]|合计|总计|合計|總計/u;
+
+/**
+ * ONE carton's cube by the volume's own words (docs/AI-SORAYDI.md §3.2 X5;
+ * XLS-2): the package named BEFORE the cube — «CTN CBM», «Carton CBM»,
+ * «外箱体积», «箱体积» — or the cube OF one package after it — «Объем
+ * коробки», «Объем кор.», «Объем места, м3», «1 quti hajmi», «Karobka
+ * hajmi», «Bir karobka kubi». `PER_PACKAGE` knew a weight's «/CTN» and «1
+ * места» and none of these, so one carton's 0.05 landed as the line's cube
+ * beside its twenty cartons and the shipment came out 21× small. The package
+ * is ONE: «CTNS CBM», «Объем коробок», «Объем мест», «Karobkalar hajmi» are
+ * the cartons together, and a header with a total word in it («Total carton
+ * CBM», «Общий объем коробки», «Jami karobka hajmi», «总箱体积») is the line's.
+ */
+const CARTON_CUBE = new RegExp(
+  [
+    String.raw`(?<![\p{L}])(?:ctn|carton|box)\.?\s*(?:cbm|m3|m³|vol(?:ume)?|meas(?:urement)?|cubes?|cu\.?\s*m)(?![\p{L}])`,
+    '(?:外箱|箱)体积',
+    String.raw`объ[её]м\p{L}*\s+(?:коробк[аиу]|кор\.|мест[аео])(?![\p{L}])`,
+    String.raw`(?<![\p{L}])(?:quti|karobka|korobka|karopka)\s+(?:hajm\p{L}*|kub\p{L}*)`,
+  ].join('|'),
+  'iu',
+);
+const namesCartonCube = (text: string): boolean => CARTON_CUBE.test(text) && !COUNT_TOTAL.test(text) && !COUNT_TOTAL_HAN.test(text) && !/общ|总/iu.test(text);
+/** Two column sums within this share of each other are one figure written twice — the ranking keeps X6's order between them. */
+const SAME_SUM_SHARE = 0.005;
+
+/**
+ * «件数» — a count that is the PIECES when it stands alone (c1778, c2453) and
+ * the packages only beside a piece column («数量 | 件数»): 件 is a piece on one
+ * Chinese list and a package on the next, so the other column decides.
+ */
+const JIANSHU = /件数/u;
+/**
+ * A COUNT header that counts packages by a word nobody reads as a piece
+ * (docs/AI-SORAYDI.md §3.2 X2; XLS-9) — the RANK's own vocabulary
+ * (`namesPackage`), so the rank and «which column is the pieces» cannot
+ * disagree: «Karobka soni», «Joy soni», «Кол-во мест, шт» ranked as packages
+ * and still landed as PIECES when no other count stood beside them — ten
+ * cartons as ten jackets. With «Mesta» and «Korobka», which no list held;
+ * never by «件数» (`JIANSHU`).
+ */
+const MORE_PACKAGES = /(?<![\p{L}])(?:mesta|korobka\p{L}*|karopka\p{L}*)(?![\p{L}])/iu;
+const countsPackages = (text: string): boolean => namesPackage(text.replace(/件数/gu, '')) || MORE_PACKAGES.test(foldKey(text));
+/**
+ * A header that is nothing but a package COUNT (X2, XLS-9): «CTNS», «CTN»,
+ * «Cartons», «PKGS», «Packages», «NO. OF CTNS», «箱数», «总箱数», «Мест», «Мест
+ * (кор)», «Mesta», «Korobka». It carries no quantity key, so it was no count
+ * header and only a flag (`ColumnMap.cartons`): its number stood on no row.
+ * WHOLE words — the flag's `PACKAGE_COUNT` is a substring test, and
+ * «Вместимость» holds «мест» — never «упаков…» (as often HOW the goods are
+ * packed), and never the carton's NUMBER: «CTN NO.», «Carton No.», «箱号», «№
+ * места» label a carton, they do not count them («NO. OF CTNS» does).
+ */
+const BARE_PACKAGES =
+  /(?<![\p{L}])(?:ctns?|cartons?|pkgs?|packages?|короб\p{L}*|мест(?:[аоу]|ами)?|mesta|korobka\p{L}*|karobka\p{L}*|karopka\p{L}*|quti\p{L}*|қути\p{L}*)(?![\p{L}])|箱数|包数/iu;
+const NUMBER_OF = /(?<![\p{L}])(?:nos?|num|number|qty|quantity)\.?\s+of(?![\p{L}])/iu;
+const NUMBER_LABEL = /(?<![\p{L}])(?:nos?|num|number|nr|номер\p{L}*|raqam\p{L}*)(?![\p{L}])|[№#]|箱号|件号|编号/iu;
+/**
+ * The longest header the PACKING's tests read (X2-X4). A header that names a
+ * package, a side or a size is a few words — the longest real ones are a
+ * bilingual «Количество мест / Number of packages / 箱数» — while a cell of
+ * thousands of characters is a merged master repeated across the sheet
+ * (c1306, c1879): it names none of them, and asked of every such cell these
+ * tests cost the one app process seconds (the long-strings sheet of
+ * `fayl-oqish-reader.test.ts` read in 2.9 s before them and 5 s with them).
+ */
+const PACK_HEADER_MAX = 200;
+/** The carton word a package header counts in — its own («мест», «ctns», «karobka», «箱»), else «karobka». */
+function cartonWordOf(text: string): string {
+  for (const word of foldKey(text).split(/[^\p{L}]+/u)) if (unitOf(word) === 'karobka') return word;
+  return text.includes('箱') ? '箱' : 'karobka';
+}
+
+/**
+ * WHOSE size a header names decides the arithmetic (§3.2 X3, review JN-11):
+ * only a PACKAGE's size is multiplied by the packages. The two lists are the
+ * kernel's (`FIELD_LABELS.packageSize` / `.size`, units.ts): «Carton size»,
+ * «CTN SIZE», «MEAS (CM)», «外箱尺寸», «箱规», «Размер коробки», «Karobka
+ * o‘lchami» are the package's; a bare «Size», «Dimensions», «L*W*H», «尺寸»,
+ * «Размер», «Габариты», «O‘lchami» says nobody's — on a quotation it is the
+ * PRODUCT's as often («Sofa | Size 220×95×85 | CTNS 30» is three cartons a
+ * sofa, and 30 × 1.78 m³ a cube nobody shipped), so the size is kept with no
+ * owner and the owner is asked.
+ */
+const PACKAGE_SIZE_LABELS: readonly string[] = SPEC_LABELS.packageSize.map((label) => label.replace(/[ʻ‘’`ʼ]/g, "'"));
+const SIZE_LABELS: readonly string[] = SPEC_LABELS.size.map((label) => label.replace(/[ʻ‘’`ʼ]/g, "'"));
+/**
+ * Does the header carry one of these labels — as written, or as a word that
+ * is a one-word label's stem («Dimension» of «dimensions», «O‘lcham» of
+ * «o‘lchami», «Габарит» of «габариты»)? «L×W×H» is «l*w*h» in any of its signs.
+ */
+function namesSizeLabel(text: string, labels: readonly string[]): boolean {
+  const folded = foldKey(text).replace(/[×✕]/g, '*').replace(/\s+/g, ' ');
+  if (labels.some((label) => folded.includes(label))) return true;
+  const words = folded.match(/[\p{L}']+/gu) ?? [];
+  return words.some((word) => word.length >= 5 && labels.some((label) => !label.includes(' ') && label.startsWith(word)));
+}
+/** «MEAS.», «Measurement» — a packing list's word for its cartons' measurement (a cube, or their size). */
+const MEAS_WORD = /\bmeas(?:urement)?s?\b/i;
+/** A package, said beside a size word: «Box size», «Габариты коробки», «包装尺寸», «Packing size». */
+const SIZE_PACKAGE_WORD =
+  /(?<![\p{L}])(?:ctns?|cartons?|box(?:es)?|pkgs?|packages?|packing|короб\p{L}*|мест[аоу]?|упаков\p{L}*|ящик\p{L}*|karobka\p{L}*|quti\p{L}*)(?![\p{L}])|箱|包装/iu;
+/** …and the goods themselves: «Product size», «Размер товара», «产品尺寸» — a size nobody multiplies by the cartons. */
+const SIZE_PRODUCT_WORD =
+  /(?<![\p{L}])(?:products?|items?|goods|товар\p{L}*|издели\p{L}*|продукт\p{L}*|продукци\p{L}*|mahsulot\p{L}*|tovar\p{L}*)(?![\p{L}])|产品|商品|单品|货物/iu;
+/** A header that may hold sizes — a size label, or «MEAS.» (whose cells are a cube on one list and «60*40*50» on the next). */
+const namesSize = (text: string): boolean => namesSizeLabel(text, PACKAGE_SIZE_LABELS) || namesSizeLabel(text, SIZE_LABELS) || MEAS_WORD.test(text);
+/** Whose size the header — or the label an L | W | H triplet stands under — says it is; null: nobody's. */
+function sizeOwnerOf(text: string): SizeOwner | null {
+  if (namesSizeLabel(text, PACKAGE_SIZE_LABELS) || MEAS_WORD.test(text) || SIZE_PACKAGE_WORD.test(text)) return 'package';
+  return SIZE_PRODUCT_WORD.test(text) ? 'product' : null;
+}
+/** A length as a size header names its unit; `'other'` — one nobody converts here (inches, feet): asked, never read as centimetres. */
+function lengthUnitOf(part: string): CartonSize['unit'] {
+  const unit = part.trim().toLowerCase().replace(/\.$/, '');
+  if (/^(?:cm|см|sm|santimetr\p{L}*|сантиметр\p{L}*|厘米|公分)$/u.test(unit)) return 'cm';
+  if (/^(?:mm|мм|millimetr\p{L}*|миллиметр\p{L}*|毫米)$/u.test(unit)) return 'mm';
+  if (/^(?:m|м|metr\p{L}*|метр\p{L}*|米)$/u.test(unit)) return 'm';
+  if (/^(?:inch(?:es)?|in|дюйм\p{L}*|dyuym\p{L}*|ft|feet|foot|фут\p{L}*|dm|дм|英寸|寸|英尺|["″])$/u.test(unit)) return 'other';
+  return null;
+}
+/** The unit a size header names — «(cm)», «, см», «(sm)», «CTN SIZE CM» — or null: it names none, and the cell's own decides. */
+function sizeUnitOfHeader(text: string): CartonSize['unit'] {
+  for (const part of unitParts(text)) {
+    const unit = lengthUnitOf(part);
+    if (unit !== null) return unit;
+  }
+  // …or as the header's last word, where only centimetres and millimetres are unmistakable.
+  const last = /(?<![\p{L}])(cm|см|sm|mm|мм)\.?\s*$/iu.exec(text);
+  return last ? lengthUnitOf(last[1]!) : null;
+}
+/**
+ * ONE side of a size as a header names it — «L», «W (cm)», «Длина», «Ш», «高»,
+ * «外箱长», «MEAS (CM) H» (a two-row header composed) — and what stands before
+ * the side's word, which says whose size the three are (`sizeOwnerOf`). The
+ * side's word stands ALONE or after a size's own label: «N.W.» and «G.W.» end
+ * in a «W» too, and read as a carton's width the net weight became the size's
+ * second side — and was no weight any more.
+ */
+type Side = 'l' | 'w' | 'h';
+const SIDE_WORD: Record<Side, RegExp> = {
+  l: /^(?:l|len|length|д|дл|длина|uzunlig?i|uzunlik|bo'yi)$/u,
+  w: /^(?:w|wid|width|ш|шир|ширина|eni|kenglig?i|kenglik)$/u,
+  h: /^(?:h|ht|hgt|height|в|выс|высота|balandlig?i|balandlik)$/u,
+};
+const SIDE_HAN: [Side, RegExp][] = [
+  ['l', /[长長]度?$/u],
+  ['w', /[宽寬]度?$/u],
+  ['h', /高度?$/u],
+];
+const sideWord = (word: string): Side | null => (['l', 'w', 'h'] as const).find((side) => SIDE_WORD[side].test(word)) ?? null;
+function dimensionOf(text: string): { side: Side; lead: string } | null {
+  const bare = foldKey(text).replace(UNIT_PARTS, ' ').replace(/[.:：\s]+$/u, '');
+  const words = bare.match(/\p{Script=Han}+|[\p{L}']+/gu) ?? [];
+  const last = words.at(-1);
+  if (last === undefined) return null;
+  const before = words.slice(0, -1).join(' ');
+  const led = (side: Side, lead: string) =>
+    lead === '' || namesSize(lead) || SIZE_PACKAGE_WORD.test(lead) || SIZE_PRODUCT_WORD.test(lead) ? { side, lead } : null;
+  if (/^\p{Script=Han}+$/u.test(last)) {
+    const han = SIDE_HAN.find(([, re]) => re.test(last));
+    return han ? led(han[0], `${before} ${last.replace(han[1], '')}`.trim()) : null;
+  }
+  const side = sideWord(last);
+  return side ? led(side, before) : null;
+}
 
 /**
  * A total word ANYWHERE in a cell — how the HEADER search judges a row's
@@ -545,10 +971,15 @@ const LEAD_TOTAL = new Set(['итого', 'всего', 'jami', 'жами', 'п�
  */
 const LAST_TOTAL = new Set(['total', 'totals', 'ttl', 'subtotal', 'итого', 'итог', 'всего', 'подытог', 'jami', 'жами']);
 const LEAD_TOTAL_HAN = /^(?:合计|总计|合計|總計|小计|小計|共计|共計)/u;
-const TOTAL_HAN = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/u;
-const TOTAL_HINT = /total|ttl|sum|итог|всего|подытог|jami|жами|umumiy|умумий|合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/i;
+// «总毛重», «总体积» — the total brutto, the total cube — say «total» by
+// themselves, as «TOTAL G.W.» does: a summary line «总毛重: 710kg 总体积:
+// 3.8立方» under an invoice is a total row, never a footer (review
+// excel-spec-4; the trade's labels of units.ts WEIGHT_LABELS / VOLUME_LABELS).
+const TOTAL_MEASURE_HAN = '总(?:毛重|净重|重量|体积|方数)|總(?:毛重|淨重|重量|體積|方數)';
+const TOTAL_HAN = new RegExp(`合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|${TOTAL_MEASURE_HAN}`, 'u');
+const TOTAL_HINT = new RegExp(`total|ttl|sum|итог|всего|подытог|jami|жами|umumiy|умумий|合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|${TOTAL_MEASURE_HAN}`, 'i');
 const TOTAL_HAN_LAST = /(?:合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總)$/u;
-const HAN_QUALIFIERS = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|数量|數量|件数|件數|箱数|箱數|重量|毛重|净重|淨重|体积|體積|金额|金額|总额|總額|总价|總價|美元|人民币|公斤|立方米|立方|[总總共箱件个個包元米]/gu;
+const HAN_QUALIFIERS = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|数量|數量|件数|件數|箱数|箱數|重量|毛重|净重|淨重|体积|體積|方数|方數|金额|金額|总额|總額|总价|總價|美元|人民币|公斤|立方米|立方|[总總共箱件个個包元米]/gu;
 
 /** What a cell says as a total label (null: no total word in it at all). */
 interface TotalLabel {
@@ -817,7 +1248,7 @@ export function parseNumber(cell: Cell): number | null {
  * that the checklist then stopped asking about (the review). An ambiguous
  * figure stays unread, as these cells were before; the line is asked.
  */
-function parseMeasure(cell: Cell, accept: 'dona' | 'kg' | 'm3'): number | null {
+function parseMeasure(cell: Cell, accept: MeasuredIn): number | null {
   const plain = parseNumber(cell);
   if (plain !== null || typeof cell !== 'string') return plain;
   const glued = GLUED_FIGURE.exec(cell.trim());
@@ -827,6 +1258,8 @@ function parseMeasure(cell: Cell, accept: 'dona' | 'kg' | 'm3'): number | null {
 }
 
 const GLUED_FIGURE = /^(-?[\d\s.,]*\d)\s*([\p{L}][\p{L}\d²³.]*)$/u;
+/** The units a figure column may be measured in — the unit a cell may carry glued to its number. */
+type MeasuredIn = 'dona' | 'kg' | 'm3' | 'karobka' | 'juft' | 'm2' | 'litr';
 
 /**
  * A cell that states a FIGURE — one number and, around it, only what it is
@@ -894,6 +1327,15 @@ const isWordCell = (cell: Cell) => {
   if ((text.match(/\p{L}/gu) ?? []).length < 2) return false;
   return !ARTICLE_NUMBER.test(text);
 };
+
+/**
+ * A name cell that names no good — an article number («XJ-200», «A-101»), a
+ * figure or a mark — for the X10 flag (docs/AI-SORAYDI.md §3.2). `isWordCell`'s
+ * «two letters at least» is right for choosing the name COLUMN, and wrong of
+ * one Chinese good: «鞋», «伞», «包» are one character each and a whole word
+ * (review excel-break-9) — a Han character is a name by itself.
+ */
+const namesArticle = (cell: Cell): boolean => !isWordCell(cell) && !/\p{Script=Han}/u.test(cellText(cell));
 
 /**
  * A typed line with its figures in it — «Стол офисный 5 шт 100 кг»: a number
@@ -1018,6 +1460,10 @@ const SPLIT_HAN = /[单每合总毛净]/u;
 function subHeaderRow(row: Cell[] | undefined, r: number, covered: Covered | null): boolean {
   if (!row) return false;
   let splits = 0;
+  // (X3) …or the three SIDES of a size under a parent merged across them —
+  // «MEAS (CM)» / «Carton size» over «L | W | H», «Длина | Ширина | Высота»,
+  // «长 | 宽 | 高»: a split of its own kind, and one only when all three stand.
+  const sides = new Set<Side>();
   for (let i = 0; i < row.length; i++) {
     // A label merged DOWN over both rows repeats here, as the reader repeats
     // every downward merge: the parent's own text, never the split's.
@@ -1030,12 +1476,18 @@ function subHeaderRow(row: Cell[] | undefined, r: number, covered: Covered | nul
     if (tokens.length === 0) return false;
     for (const t of tokens) {
       const han = /^\p{Script=Han}+$/u.test(t);
-      if (han ? !SUB_HEADER_HAN.test(t) : /^\d+$/.test(t) ? t !== '1' && t !== '3' : !SUB_HEADER_WORDS.has(t) && !SUB_HEADER_STEM.test(t)) return false;
+      const side = han ? (SIDE_HAN.find(([, re]) => re.test(t))?.[0] ?? null) : sideWord(t);
+      if (side) sides.add(side);
+      else if (han ? !SUB_HEADER_HAN.test(t) : /^\d+$/.test(t) ? t !== '1' && t !== '3' : !SUB_HEADER_WORDS.has(t) && !SUB_HEADER_STEM.test(t) && !SIDE_UNITS.has(t)) return false;
       if (han ? SPLIT_HAN.test(t) : SPLIT_WORDS.has(t)) splits += 1;
     }
   }
-  return splits > 0;
+  return splits > 0 || sides.size === 3;
 }
+/** The unit a side's cell may carry in the sub-header row — «L (cm)», «Ш, мм». */
+const SIDE_UNITS = new Set(['cm', 'mm', 'sm', 'см', 'мм']);
+/** One side of a size as a DATA cell writes it with its unit glued on — «60cm», «0.6 м» (a bare number is read as one). */
+const SIDE_CELL = /^\d+(?:[.,]\d+)?\s*(?:cm|см|sm|mm|мм|m|м)\.?$/iu;
 
 /**
  * The header row as its columns read, a TWO-ROW header composed (as-built
@@ -1248,7 +1700,9 @@ const COLUMN_KEYS = [
 const keyish = (text: string): boolean =>
   fieldLabel(text) !== null ||
   matchKey(text, COLUMN_KEYS) ||
-  [MONEY_HEADER, PACKAGE_COUNT, GROSS_HEADER, VOLUME_WORD, WEIGHT_ABBREV, NET_WORD, NAME_ATTRIBUTE, NAME_PARTY].some((re) => re.test(text));
+  namesWeight(text) ||
+  namesVolume(text) ||
+  [MONEY_HEADER, PACKAGE_COUNT, GROSS_HEADER, VOLUME_WORD, WEIGHT_ABBREV, KG_WORD, NET_WORD, NAME_ATTRIBUTE, NAME_PARTY].some((re) => re.test(text));
 
 /** Row `r` as a header candidate (`findHeader`'s order, steps a-f). */
 function headerAt(
@@ -1522,6 +1976,14 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   let weightFromQty: number | null = null;
   let volumeFromQty: number | null = null;
   let cartonCol: { index: number; word: string } | null = null;
+  // (X2) The column the row's PACKING takes its carton count from. `cartonCol`
+  // above is what it was — the quantity of a sheet that counts nothing else,
+  // and the packing-list flag — and its words decide the sheet's SHAPE, which
+  // this round does not move; `packCol` is found by X2's one vocabulary.
+  let packCol: { index: number; word: string } | null = null;
+  // …and the count headers the ranking passes over as ONE package's (FILES-1):
+  // «PCS/CTN», «每箱数量», «Кол-во в коробке» — what one carton holds.
+  const packedCounts: number[] = [];
   let alsoCounts: { index: number; header: string }[] = [];
   // The line's count is CHOSEN among the count headers, never the first
   // one standing (§5.10, xlsxN-08): «QTY/CTN | CTN QTY | TOTAL QTY» took «CTN
@@ -1540,18 +2002,23 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
       unitOf(headerUnitWord(text)) === 'dona' &&
       !MONEY_HEADER.test(text) &&
       !matchKey(text, UNIT_KEYS) &&
-      !matchKey(text, WEIGHT_KEYS) &&
-      !matchKey(text, VOLUME_KEYS);
+      !namesWeight(text) &&
+      !namesVolume(text);
     if (taken.has(i) || !(namesCount(text) || pieces)) continue;
     // One package's count is nobody's count (FILES-1): passed over, so the
     // line's own total count column is the line's.
-    if (PER_PACKAGE_COUNT.test(text)) continue;
+    if (PER_PACKAGE_COUNT.test(text)) {
+      packedCounts.push(i);
+      continue;
+    }
     const word = headerUnitWord(text);
     const unit = unitOf(word);
     if (unit === 'kg') weightFromQty ??= i;
     else if (unit === 'm3') volumeFromQty ??= i;
-    else if (unit === 'karobka') cartonCol ??= { index: i, word: word! };
-    else {
+    else if (unit === 'karobka') {
+      cartonCol ??= { index: i, word: word! };
+      packCol ??= cartonCol;
+    } else {
       counts.push({ i, text, unit, word });
       continue;
     }
@@ -1573,10 +2040,16 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // piece unit: beside «Кол-во, шт» the pieces are the line's count (review
   // spec-510-unit-rank), and the measure it passed over is said on the line's
   // note (`alsoCounts`), never lost.
+  // (X2) A package is a package to the rank by the SAME words the lone-column
+  // rule reads (`countsPackages`): «Mesta soni», «Korobka soni» ranked as
+  // pieces stood LEFTMOST over «Soni» and took the count — then, a package
+  // header never being the piece column, the 200 pieces beside them were on
+  // no row at all. Only «件数» keeps the rank's own reading (`namesPackage`):
+  // below «数量», the pieces alone.
   const rank = (c: (typeof counts)[number]) => {
-    const packages = namesPackage(c.text);
+    const packages = namesPackage(c.text) || MORE_PACKAGES.test(foldKey(c.text));
     return [
-      MONEY_HEADER.test(c.text) || matchKey(c.text, WEIGHT_KEYS) || matchKey(c.text, VOLUME_KEYS) ? 1 : 0,
+      MONEY_HEADER.test(c.text) || namesWeight(c.text) || namesVolume(c.text) ? 1 : 0,
       !packages && (COUNT_TOTAL.test(c.text) || COUNT_TOTAL_HAN.test(c.text)) ? 0 : 1,
       !packages && c.unit === 'dona' ? 0 : 1,
       packages ? 1 : 0,
@@ -1589,11 +2062,20 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     return k < 0 ? 0 : x[k]! - y[k]!;
   });
   const chosen = byRank[0];
-  if (chosen && counts.length === 1 && chosen.unit === null && LATIN_PACKAGE.test(chosen.text)) {
+  // (X2, XLS-9) A package header is never the PIECE column: the count the
+  // ranking chose counts packages when its header says so — by the rank's own
+  // vocabulary (`countsPackages`), whatever stands beside it. «Karobka soni»,
+  // «Joy soni», «Кол-во мест, шт» alone landed ten cartons as ten pieces; so
+  // did «CTN QTY» beside a «Price/pcs», which ranks below every count.
+  const packageCount = (c: (typeof counts)[number]) =>
+    (c.unit === null || c.unit === 'dona') && c.text.length <= PACK_HEADER_MAX && countsPackages(c.text);
+  if (chosen && packageCount(chosen)) {
     // A LONE «CTN QTY» counts cartons: the door's carton rule sends it to the
     // note, never into pieces. Never by «件数» / «总件数»: alone, that is the
     // pieces (c1778, c2453).
-    cartonCol ??= { index: chosen.i, word: 'ctn' };
+    const latin = chosen.unit === null && LATIN_PACKAGE.test(chosen.text);
+    if (counts.length === 1 && latin) cartonCol ??= { index: chosen.i, word: 'ctn' };
+    packCol ??= { index: chosen.i, word: counts.length === 1 && latin ? 'ctn' : cartonWordOf(chosen.text) };
     taken.add(chosen.i);
   } else if (chosen) {
     quantity = chosen.i;
@@ -1603,19 +2085,29 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     // word is the packing list's carton column, said as one («ctn»).
     const packages = byRank.slice(1).find((c) => c.unit === null && LATIN_PACKAGE.test(c.text));
     if (packages) cartonCol ??= { index: packages.i, word: 'ctn' };
+    // (X2) …and by ANY package word it is where the row's packing reads its
+    // cartons — or, beside a piece column, by «件数»: on «数量 | 件数» the 件
+    // are the packages.
+    const pieces = (chosen.unit === null || chosen.unit === 'dona') && !JIANSHU.test(chosen.text);
+    const packed = byRank.slice(1).find(packageCount) ?? (pieces ? byRank.slice(1).find((c) => c.unit === null && JIANSHU.test(c.text)) : undefined);
+    if (packed) packCol ??= { index: packed.i, word: cartonWordOf(packed.text) };
     // …and one passed over that counts in ANOTHER unit («Кол-во, м2» beside
     // «Кол-во, шт») is the line's measure: said on its note, never lost.
     alsoCounts = byRank
       .slice(1)
       .filter((c) => c.unit !== null && c.unit !== 'dona' && !namesPackage(c.text) && !MONEY_HEADER.test(c.text))
-      .filter((c) => !matchKey(c.text, WEIGHT_KEYS) && !matchKey(c.text, VOLUME_KEYS))
+      .filter((c) => !namesWeight(c.text) && !namesVolume(c.text))
       .map((c) => ({ index: c.i, header: clipUnits(c.text, 30) }));
   }
-  if (quantity === null && cartonCol) {
+  if (quantity === null && (cartonCol ?? packCol)) {
     // Only cartons: their number goes where a carton count goes — through
-    // the door's rule into the note, never into the piece column.
-    quantity = cartonCol.index;
-    quantityUnit = cartonCol.word;
+    // the door's rule into the note, never into the piece column. (The calc
+    // door reads it off the row's packing instead; the doors that keep no
+    // packing — the deal's import, the VED's paste — read it here.)
+    const only = (cartonCol ?? packCol)!;
+    quantity = only.index;
+    quantityUnit = only.word;
+    packCol = only;
   } else if (cartonCol) {
     taken.delete(cartonCol.index);
   }
@@ -1626,23 +2118,121 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const unit = claim(UNIT_KEYS, (i) => !MONEY_HEADER.test(cellText(header[i]!)));
   // Volume before weight: «вес, кг» must not be eaten by a stray m3 match,
   // and the volume keys are the more specific set.
-  const claimWhere = (test: (text: string) => boolean): number | null => {
-    const idx = findWhere(header, taken, test);
-    if (idx !== null) taken.add(idx);
-    return idx;
-  };
   // ONE carton's volume is not the line's (his 2.7 b, probe P1: a
   // «CBM/CTN» standing before «TOTAL CBM» on a Chinese packing list was
   // read as the line and landed 14× short — the weight's PER_PACKAGE rule,
   // which the volume never learned). The same test on the abbreviation
   // rung: «MEAS./CTN» is one carton's too.
-  const volume =
-    volumeFromQty ??
-    claimWhere((text) => matchKey(text, VOLUME_KEYS) && !PER_PACKAGE.test(text)) ??
-    claimWhere(
-      (text) =>
-        VOLUME_WORD.test(text) && !PER_PACKAGE.test(text) && (!OWN_UNIT.test(text) || CUBIC_METRE.test(text)),
+  //
+  // …and a header's OWN unit decides what its figures are (X6, review JN-13):
+  // a column in cubic metres — or naming no unit — is taken before one in
+  // cm³, dm³ or litres whichever stands first («Volume (cm3) | CBM»: the CBM
+  // is the line's), a foreign-unit column is CONVERTED when it is all the
+  // sheet has, and one in a unit nobody converts is no volume at all: its
+  // figure goes on the line's note (`alsoCounts`) and the cube is asked.
+  //
+  // A header naming a WEIGHT in a volume's words — «Объёмный вес, кг»,
+  // «Volume weight», a density «кг/м3» — is nobody's column (JN-13): taken out
+  // before the volume and the weight are chosen (as the heaviest plain weight
+  // column it became the line's kilos), and said on the note.
+  const volumetric = header.flatMap((cell, i) => {
+    const text = cellText(cell);
+    return !taken.has(i) && volumetricWeight(text) ? [{ index: i, header: clipUnits(text, 30) }] : [];
+  });
+  for (const c of volumetric) taken.add(c.index);
+  // (X3; XLS-5, DIM-6) A SIZE — one cell («60*40*50») or an L | W | H triplet
+  // — is found before the volume is chosen: «MEAS.» whose cells are sizes is a
+  // size column, never a cube (its cells read «hajm «60*40*50» — aniq emas»
+  // and the cartons beside them multiplied nothing). By its header AND its
+  // cells: «Size» is as often S / M / L or a tile's «600x600», and only three
+  // sides are a package. The reader copies it into the row's packing with the
+  // unit the header names and WHOSE size the header says it is (review JN-11);
+  // the kernel multiplies — a package's size only.
+  // …judged over the DATA: under a two-row header the row below is the split
+  // («L | W | H», «PER CTN | TOTAL»), and its words are no cell of the column
+  // — on a one-line sheet they were half of it, and the size was not found.
+  const split = header === rows[r] ? null : r + 1;
+  const mostly = (i: number, test: (cell: Cell) => boolean) => {
+    const cells = split === null ? sampled(i) : columnCells(rows, r, i, new Set([...skip, split]));
+    return cells.length > 0 && cells.filter(test).length * 2 > cells.length;
+  };
+  /** The header as the packing's tests read it: one past `PACK_HEADER_MAX` names nothing of theirs. */
+  const packHead = (i: number): string => {
+    const text = head(i);
+    return text.length > PACK_HEADER_MAX ? '' : text;
+  };
+  const sidesAt = new Map<Side, { i: number; lead: string }>();
+  header.forEach((_, i) => {
+    const side = taken.has(i) ? null : dimensionOf(packHead(i));
+    if (side && !sidesAt.has(side.side) && mostly(i, (cell) => parseNumber(cell) !== null || SIDE_CELL.test(cellText(cell)))) {
+      sidesAt.set(side.side, { i, lead: side.lead });
+    }
+  });
+  let size: PackColumns['size'] = null;
+  const [sideL, sideW, sideH] = [sidesAt.get('l'), sidesAt.get('w'), sidesAt.get('h')];
+  if (sideL && sideW && sideH) {
+    const three = [sideL, sideW, sideH];
+    size = {
+      cols: [sideL.i, sideW.i, sideH.i],
+      unit: three.map((side) => sizeUnitOfHeader(head(side.i))).find((unit) => unit !== null) ?? null,
+      of: three.map((side) => sizeOwnerOf(side.lead)).find((owner) => owner !== null) ?? null,
+    };
+  } else {
+    const at = findWhere(
+      header,
+      taken,
+      (text, i) => text.length <= PACK_HEADER_MAX && namesSize(text) && mostly(i, (cell) => typeof cell === 'string' && parseSize(cell)?.size != null),
     );
+    if (at !== null) size = { cols: [at], unit: sizeUnitOfHeader(head(at)), of: sizeOwnerOf(head(at)) };
+  }
+  if (size) for (const i of size.cols) taken.add(i);
+  let volumeDivisorOf = 1;
+  const volumeHeads = (keyed: boolean): { i: number; divisor: number | null }[] =>
+    header.flatMap((cell, i) => {
+      const text = cellText(cell);
+      const named = keyed ? namesVolume(text) : VOLUME_WORD.test(text) && !namesVolume(text);
+      if (taken.has(i) || !named || PER_PACKAGE.test(text) || namesCartonCube(text) || volumetricWeight(text)) return [];
+      return [{ i, divisor: volumeDivisor(text, keyed), keyed }];
+    });
+  // (X5; XLS-2, review JN-13) The line's cube is CHOSEN as its weight is
+  // (`heaviest`): the largest Σ, never the leftmost — one carton's unmarked
+  // «CBM» stands left of «TOTAL CBM», «体积» left of «总体积», «Объем, м3»
+  // left of «Общий объем, м3», and the leftmost was the line 15-21× small.
+  // In cubic metres, after each header's own unit (X6, first): a «Volume
+  // (cm3)» column is converted before it is compared. Within half a per cent
+  // two columns say one figure twice, and X6's order stands — cubic metres,
+  // then the keyed rung, then the leftmost.
+  const volumeCandidates =
+    volumeFromQty === null ? [...volumeHeads(true), ...volumeHeads(false)].filter((c): c is { i: number; divisor: number; keyed: boolean } => c.divisor !== null) : [];
+  const columnM3 = (i: number, divisor: number): number => {
+    let sum = 0;
+    for (let d = r + 1; d < rows.length; d++) {
+      const cell = rows[d]![i] ?? null;
+      if (covered?.has(d, i) || (typeof cell === 'string' && cell.length > 64)) continue;
+      const value = divisor === 1 ? parseMeasure(cell, 'm3') : parseNumber(cell);
+      if (value !== null && value > 0) sum += value / divisor;
+    }
+    return sum;
+  };
+  const volumeHead = ((): { i: number; divisor: number } | null => {
+    if (volumeCandidates.length <= 1) return volumeCandidates[0] ?? null;
+    const ranked = volumeCandidates.map((c) => ({ ...c, sum: columnM3(c.i, c.divisor) }));
+    const top = Math.max(...ranked.map((c) => c.sum));
+    const near = ranked.filter((c) => c.sum >= top * (1 - SAME_SUM_SHARE));
+    return near.find((c) => c.divisor === 1 && c.keyed) ?? near.find((c) => c.divisor === 1) ?? near.find((c) => c.keyed) ?? near[0]!;
+  })();
+  if (volumeHead) {
+    taken.add(volumeHead.i);
+    volumeDivisorOf = volumeHead.divisor!;
+  }
+  const volume = volumeFromQty ?? volumeHead?.i ?? null;
+  // A KEYED header in a unit nobody converts («Volume (ft3)», «CBM (cm)»)
+  // used to land as cubic metres: it is said, where the abbreviation rung's
+  // own refusals («MEAS (CM)», «Vol (L)») stay unsaid, as they always were.
+  const unreadVolumes = volumeHeads(true)
+    .filter((c) => c.divisor === null)
+    .map((c) => ({ index: c.i, header: clipUnits(cellText(header[c.i]!), 30) }));
+  for (const c of unreadVolumes) taken.add(c.index);
   const invoiced = invoiceHeader(header.map(cellText));
   const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
   // What a weight column's figures add up to, over the data rows (a merged
@@ -1710,10 +2300,10 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   });
   const isNetWeight = (text: string) =>
     !moneyTotal(text) &&
-    (matchKey(text, NET_WEIGHT_KEYS) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside)));
+    (namesNet(text) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside)));
   const netWeight = weightFromQty === null ? lineWeight(isNetWeight) : null;
   const weight =
-    weightFromQty ?? netWeight ?? lineWeight((text) => matchKey(text, WEIGHT_KEYS) || WEIGHT_ABBREV.test(text));
+    weightFromQty ?? netWeight ?? lineWeight((text) => namesWeight(text) || WEIGHT_ABBREV.test(text));
   const isGrossWeight = (text: string) =>
     GROSS_HEADER.test(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text);
   const weightKind: WeightKind =
@@ -1740,10 +2330,10 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
       const text = cellText(header[i]!);
       if (MONEY_HEADER.test(text)) return true;
       return !(
-        matchKey(text, WEIGHT_KEYS) ||
+        namesWeight(text) ||
         WEIGHT_ABBREV.test(text) ||
         isNetWeight(text) ||
-        matchKey(text, VOLUME_KEYS) ||
+        namesVolume(text) ||
         VOLUME_WORD.test(text) ||
         namesCount(text) ||
         PER_PACKAGE.test(text) ||
@@ -1756,6 +2346,69 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const total = money(AMOUNT_TOTAL_KEYS);
   const amount = total ?? money(AMOUNT_PRICE_KEYS);
   const amountIsPrice = total === null && amount !== null;
+  // (X2; XLS-4, XLS-9, DIM-7) What the header states PER PACKAGE, read LAST:
+  // every column a line figure could claim has been claimed, so the packing
+  // takes only what was nobody's — the columns passed over as one carton's
+  // («CBM/CTN», «G.W./CTN», «PCS/CTN»), and the carton count itself.
+  const perCarton = (i: number) => {
+    const text = packHead(i);
+    // …and a cube by the volume's own per-package words (X5): «CTN CBM», «外箱体积», «Объем коробки».
+    return !taken.has(i) && (PER_CARTON.test(text) || namesCartonCube(text)) && !MONEY_HEADER.test(text) && !moneyTotal(text) && !volumetricWeight(text);
+  };
+  const cubic = (text: string) => namesVolume(text) || VOLUME_WORD.test(text);
+  // One carton's cube, in the unit its header names (X6): a unit nobody
+  // converts leaves the column unread, as it does the line's.
+  const cartonCube =
+    header.flatMap((_, i) => {
+      const text = head(i);
+      const divisor = perCarton(i) && cubic(text) ? volumeDivisor(text, namesVolume(text)) : null;
+      return divisor === null ? [] : [{ index: i, divisor }];
+    })[0] ?? null;
+  // One carton's weight. A line's weight is NETTO, so with both on the sheet
+  // the net column is the packing's. The gross one beside it is said on the
+  // row's note (a packing holds one weight) — where the sheet states the
+  // line's gross in no column of its own; beside a «TOTAL G.W.» it is noise.
+  const cartonWeights = header.flatMap((_, i) => {
+    const text = head(i);
+    if (!perCarton(i) || cubic(text) || !(namesWeight(text) || WEIGHT_ABBREV.test(text) || isNetWeight(text) || KG_WORD.test(text))) return [];
+    return [{ index: i, kind: isNetWeight(text) ? ('net' as const) : GROSS_HEADER.test(text) ? ('gross' as const) : null }];
+  });
+  const cartonWeight = cartonWeights.find((c) => c.kind === 'net') ?? cartonWeights.find((c) => c.kind === 'gross') ?? cartonWeights[0] ?? null;
+  const cartonGrossBeside =
+    cartonWeight?.kind === 'net' && gross === null
+      ? cartonWeights.filter((c) => c.kind === 'gross').map((c) => ({ index: c.index, header: clipUnits(head(c.index), 30) }))
+      : [];
+  for (const c of cartonWeights) taken.add(c.index);
+  if (cartonCube) taken.add(cartonCube.index);
+  // What one carton HOLDS: a count header passed over as one package's, or a
+  // unit before its package («PRS/CTN», «пар/кор», «m²/ctn») and «装箱数»,
+  // which no quantity key names. The leftmost; its unit is the header's own.
+  const holdsCount = (i: number) => {
+    const text = packHead(i);
+    if (text === '' || taken.has(i) || MONEY_HEADER.test(text)) return false;
+    if (packedCounts.includes(i) || PACKED_COUNT_HAN.test(text)) return true;
+    const led = UNIT_PER_CARTON.exec(text)?.[1] ?? null;
+    return led !== null && (led === '件' || ['dona', 'juft', 'm2', 'litr'].includes(unitOf(led) ?? ''));
+  };
+  const cartonPiecesAt = header.findIndex((_, i) => holdsCount(i));
+  const cartonPieces = cartonPiecesAt < 0 ? null : { index: cartonPiecesAt, unit: perCartonUnitOf(head(cartonPiecesAt)) };
+  if (cartonPieces) taken.add(cartonPieces.index);
+  // The carton COUNT: the column the count ranking found (while nothing since
+  // has claimed it), else a bare package header whose cells are counts — a
+  // «Packages» column of «CARTON» / «PALLET» says how the goods are packed.
+  const bare = (text: string) =>
+    BARE_PACKAGES.test(text) &&
+    (NUMBER_OF.test(text) || !NUMBER_LABEL.test(text)) &&
+    !PER_PACKAGE.test(text) &&
+    !PER_PACKAGE_COUNT.test(text) &&
+    !MONEY_HEADER.test(text) &&
+    !namesWeight(text) &&
+    !WEIGHT_ABBREV.test(text) &&
+    !cubic(text) &&
+    !namesSize(text);
+  const cartonsAt =
+    (packCol && (packCol.index === quantity || !taken.has(packCol.index)) ? packCol.index : null) ??
+    findWhere(header, taken, (text, i) => text.length <= PACK_HEADER_MAX && bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null));
   return {
     name,
     tnved,
@@ -1763,12 +2416,19 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     quantityUnit,
     unit,
     volume,
+    volumeDivisor: volumeDivisorOf,
     weight,
     amount,
     amountIsPrice,
     // A claim made after the count may have taken one (a unit column); then
     // it is that column's, said there.
-    alsoCounts: alsoCounts.filter((c) => !taken.has(c.index)),
+    alsoCounts: [
+      ...alsoCounts.filter((c) => !taken.has(c.index)),
+      ...(volumeHead && volumeHead.divisor !== 1 ? [{ index: volumeHead.i, header: clipUnits(cellText(header[volumeHead.i]!), 30) }] : []),
+      ...unreadVolumes,
+      ...volumetric,
+      ...cartonGrossBeside,
+    ],
     gross,
     // A carton column is any header that counts packages — «Кол-во
     // мест», and a bare «Cartons», «CTNS», «Мест», «Packages» the
@@ -1781,7 +2441,12 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
         const text = cellText(cell);
         return i !== name && PACKAGE_COUNT.test(text) && !MONEY_HEADER.test(text);
       }),
-    weightKind,
+    // A sheet with no line-weight column whose rows are weighed by their
+    // cartons («CTNS» × «N.W./CTN») has its line weights from THAT column, and
+    // of its kind: a netto the next file's rows may be compared with and take,
+    // a brutto they may not (`file-goods.ts`).
+    weightKind: weight === null && cartonWeight && cartonsAt !== null ? (cartonWeight.kind ?? 'plain') : weightKind,
+    pack: { cartons: cartonsAt, pieces: cartonPieces, weight: cartonWeight, volume: cartonCube, size },
   };
 }
 
@@ -1806,9 +2471,9 @@ function repeatsHeader(row: Cell[], d: number, columns: ColumnMap, covered: Cove
   if (!matchKey(name, NAME_KEYS) || carriesFigure(name) || /\d/.test(name)) return false;
   const own: [number | null, (text: string) => boolean][] = [
     [columns.quantity, (text) => namesCount(text)],
-    [columns.weight, (text) => matchKey(text, WEIGHT_KEYS) || matchKey(text, NET_WEIGHT_KEYS) || GROSS_HEADER.test(text) || WEIGHT_ABBREV.test(text)],
-    [columns.gross, (text) => GROSS_HEADER.test(text) || matchKey(text, WEIGHT_KEYS)],
-    [columns.volume, (text) => matchKey(text, VOLUME_KEYS) || VOLUME_WORD.test(text)],
+    [columns.weight, (text) => namesWeight(text) || namesNet(text) || GROSS_HEADER.test(text) || WEIGHT_ABBREV.test(text)],
+    [columns.gross, (text) => GROSS_HEADER.test(text) || namesWeight(text)],
+    [columns.volume, (text) => namesVolume(text) || VOLUME_WORD.test(text)],
     [columns.amount, (text) => matchKey(text, AMOUNT_TOTAL_KEYS) || matchKey(text, AMOUNT_PRICE_KEYS) || MONEY_HEADER.test(text)],
     [columns.tnved, (text) => matchKey(text, TNVED_KEYS)],
     [columns.unit, (text) => matchKey(text, UNIT_KEYS)],
@@ -2081,11 +2746,11 @@ function totalRows(rows: Cell[][], from: number, covered: Covered | null): { d: 
  * or a decimal, nobody can say which: it states nothing (the kernel's
  * `readNumberCell` asks that very cell), and so contradicts nothing.
  */
-function statedFigure(cell: Cell | undefined, unit: 'kg' | 'm3'): { value: number; half: number } | null {
+function statedFigure(cell: Cell | undefined, unit: 'kg' | 'm3' | null): { value: number; half: number } | null {
   if (cell === null || cell === undefined) return null;
   const text = typeof cell === 'number' ? String(Number(cell.toPrecision(12))) : cell.trim().replace(/\s+/gu, '');
   if (typeof cell === 'string' && /^[1-9]\d{0,2}[.,]\d{3}(?![\d.,])/u.test(text)) return null;
-  const value = parseMeasure(cell, unit);
+  const value = unit === null ? parseNumber(cell) : parseMeasure(cell, unit);
   if (value === null || value <= 0) return null;
   const decimals = /[.,](\d+)(?!.*[.,]\d)/u.exec(text)?.[1]?.length ?? 0;
   return { value, half: 0.5 * 10 ** -decimals };
@@ -2100,8 +2765,13 @@ function statedFigure(cell: Cell | undefined, unit: 'kg' | 'm3'): { value: numbe
  * over sections is the Σ itself. Only a Σ that NO reading agrees with is
  * refused: a pallet in the total, one carton's column read for the line's.
  */
-function contradicts(sum: number, rows: readonly Cell[][], column: number, unit: 'kg' | 'm3', step: number): boolean {
-  const stated = rows.map((row) => statedFigure(row[column], unit));
+function contradicts(sum: number, rows: readonly Cell[][], column: number, unit: 'kg' | 'm3', step: number, divisor = 1): boolean {
+  // A total row states its figure in the column's OWN unit (X6): cm³ under
+  // «Volume (cm3)», converted here as the lines were.
+  const stated = rows.map((row) => {
+    const figure = statedFigure(row[column], divisor === 1 ? unit : null);
+    return figure && divisor !== 1 ? { value: figure.value / divisor, half: figure.half / divisor } : figure;
+  });
   const readings: { value: number; half: number }[] = [];
   const last = stated.at(-1);
   if (last) readings.push(last);
@@ -2114,6 +2784,193 @@ function contradicts(sum: number, rows: readonly Cell[][], column: number, unit:
     const gap = Math.abs(sum - value);
     return !(gap < step || gap <= half + 1e-9 || gap <= 0.005 * Math.max(sum, value));
   });
+}
+
+/**
+ * The sheet's TOTAL of one figure column as ONE number, read the belt's way
+ * (review JR-3): exactly one total row → its cell; several → the last only
+ * when it is the sum of the earlier ones (a grand total over sections, by the
+ * belt's own rounding); else their SUM when every one states the figure (a
+ * TOTAL under each section and none at the end); else null. A sectioned list
+ * with one blank weight must never offer its LAST section's total as the
+ * shipment's (166 kg for 266). A cell that reads two ways states nothing.
+ */
+function sheetTotalOf(rows: readonly Cell[][], column: number, unit: 'kg' | 'm3', step: number, divisor = 1): number | null {
+  return combineTotals(
+    rows.map((row) => {
+      const figure = statedFigure(row[column], divisor === 1 ? unit : null);
+      return figure && divisor !== 1 ? { value: figure.value / divisor, half: figure.half / divisor } : figure;
+    }),
+    step,
+  );
+}
+/** `sheetTotalOf`'s rule over figures already read — one per total row, null where a row states none. */
+function combineTotals(stated: readonly ({ value: number; half: number } | null)[], step: number): number | null {
+  if (stated.length === 0) return null;
+  if (stated.length === 1) return stated[0]?.value ?? null;
+  const last = stated.at(-1);
+  const earlier = stated.slice(0, -1);
+  if (last && earlier.every((f) => f !== null)) {
+    const sum = earlier.reduce((n, f) => n + f!.value, 0);
+    const half = earlier.reduce((n, f) => n + f!.half, 0) + last.half;
+    const gap = Math.abs(sum - last.value);
+    if (gap < step || gap <= half + 1e-9 || gap <= 0.005 * Math.max(sum, last.value)) return last.value;
+  }
+  return stated.every((f) => f !== null) ? stated.reduce((n, f) => n + f!.value, 0) : null;
+}
+
+/**
+ * A SUMMARY line's figure (docs/AI-SORAYDI.md §3.2 X8; XLS-6): a total row
+ * that writes its figures as words in one cell — «TOTAL: 60 CTNS / G.W. 710
+ * KGS / 3.8 CBM» under an invoice, «TOTAL G.W.: | 710 KGS», «毛重 507kg 体积
+ * 5.92立方» — read in the trade's words, the kernel's ONE vocabulary
+ * (units.ts `unitPattern`, `WEIGHT_LABELS`, `VOLUME_LABELS`,
+ * `PER_PACKAGE_TAIL`), the way §3.1 T1 reads a typed totals line:
+ *  - the BRUTTO only after a gross label — «G.W. 710 KGS», «G.W.: 507»,
+ *    «毛重 507kg»: kilos with no label, or after a net one, are nobody's
+ *    brutto;
+ *  - the cube by its unit — «3.8 CBM», «5.92立方» — or after a cube label and
+ *    a colon — «TOTAL CBM: 3.8» (review JN-21: a bare figure is a cube only
+ *    after its label and «:» / «=»);
+ *  - never a figure with a per-package tail («15 KGS/CTN»), never one that
+ *    reads two ways («1,650»), never the half of a spaced group («1 136.5»:
+ *    1136.5, or a «1» beside 136.5 — T0's rule; it states nothing).
+ * Two different figures of one kind in one row state nothing either. Null =
+ * the row states none.
+ */
+const GROSS_TEXT_LABELS = WEIGHT_LABELS.filter((label) => GROSS_HEADER.test(label));
+const labelAlternation = (labels: readonly string[]) =>
+  [...labels]
+    .sort((a, b) => b.length - a.length)
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&').replace(/\\\./g, '\\.?').replace(/ /g, '\\s*'))
+    .join('|');
+const TEXT_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
+// A figure, never one of a spaced group: no digit (or a digit and one space)
+// before it, none after it (T0's rule — «1 136.5» is 1136.5 or a «1» beside
+// 136.5, and nobody can say which).
+const TEXT_NUMBER = String.raw`(?<!\d\s?)(?<![.,])(\d{1,3}(?:,\d{3})+\.\d+|\d+(?:[.,]\d+)?)(?![.,]?\d)(?!\s\d)`;
+const TEXT_UNIT_OF = (words: string) => String.raw`(?:${words})(?!${TEXT_EDGE})`;
+const TEXT_LABEL = (labels: readonly string[]) => String.raw`(?<!${TEXT_EDGE})(?:${labelAlternation(labels)})(?!${TEXT_EDGE})\s*(?:[(（][^()（）]{0,12}[)）]\s*)?`;
+// Each reader says whether its figure carries its UNIT: a unitless one
+// («G.W.: 710») is read only on a line with no currency mark (review JN-21,
+// excel-spec-4) — «TOTAL G.W.: 710 USD» is money beside a label.
+const SUMMARY_READERS: Record<'gross' | 'volume', { re: RegExp; unitless: boolean }[]> = {
+  gross: [
+    { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}[:：=]\s*${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'), unitless: false },
+    { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}[:：=]\s*${TEXT_NUMBER}(?!\s*${TEXT_UNIT_OF(unitPattern('kg'))})`, 'giu'), unitless: true },
+    { re: new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'), unitless: false },
+  ],
+  volume: [
+    { re: new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)`, 'giu'), unitless: false },
+    { re: new RegExp(String.raw`${TEXT_LABEL(VOLUME_LABELS)}[:：=]\s*${TEXT_NUMBER}(?!\s*${TEXT_UNIT_OF(unitPattern('m3'))})`, 'giu'), unitless: true },
+  ],
+};
+/** A currency mark or word anywhere on a summary line («USD», «$», «元», «сум»). */
+const SUMMARY_CURRENCY = /[$¥€₽元]|(?<![\p{L}])(?:usd|rmb|cny|eur|uzs|rub|руб|сум|сўм|so['ʻ‘’]?m|yuan|юан\p{L}*|dollars?)(?![\p{L}])/iu;
+function summaryFigure(text: string, kind: 'gross' | 'volume'): number | null {
+  const seen = new Set<number>();
+  const money = SUMMARY_CURRENCY.test(text);
+  for (const { re: reader, unitless } of SUMMARY_READERS[kind]) {
+    if (unitless && money) continue;
+    for (const m of text.matchAll(reader)) {
+      const end = m.index + m[0].length;
+      if (tailAt(text, end, PER_PACKAGE_TAIL) > 0 || tailAt(text, end, PER_PIECE_TAIL) > 0) continue;
+      const raw = m[1]!;
+      if (/^[1-9]\d{0,2}[.,]\d{3}$/.test(raw)) return null;
+      const value = Number(raw.includes('.') ? raw.replace(/,/g, '') : raw.replace(',', '.'));
+      if (Number.isFinite(value) && value > 0) seen.add(Number(value.toFixed(6)));
+    }
+  }
+  return seen.size === 1 ? [...seen][0]! : null;
+}
+/** The sheet's TOTAL of a kind as its summary lines write it, over its total rows — `combineTotals`' rule over the rows that state one. */
+function summaryTotalOf(rows: readonly Cell[][], kind: 'gross' | 'volume', step: number): number | null {
+  const stated = rows.flatMap((row) => {
+    const text = row
+      .map((cell) => (cell === null ? '' : typeof cell === 'number' ? String(Number(cell.toPrecision(12))) : cell))
+      .join(' ')
+      .slice(0, 400);
+    const value = summaryFigure(text, kind);
+    return value === null ? [] : [{ value, half: 0 }];
+  });
+  return combineTotals(stated, step);
+}
+
+/**
+ * What the sheet's own total rows say of ONE figure column (docs/AI-SORAYDI.md
+ * §3.2 X5; review JN-12, JR-11, JS-33):
+ *  - `lines` — nothing contradicts the column (or nothing can): its figures
+ *    are the lines', as they always were. A TOTAL that is the column's own Σ
+ *    proves nothing either way (JN-12: a supplier's SUM is dragged across the
+ *    per-carton column too) — that column is asked once in release 1b;
+ *  - `per_carton` — the column's Σ contradicts the TOTAL while Σ(value ×
+ *    cartons) meets it, by `contradicts`' own rounding and nothing looser
+ *    (JR-11): the one case the column is concluded ONE carton's, and `total`
+ *    is that product's Σ;
+ *  - `unclear` — a column with an EMPTY cell (JS-33's case, and only it):
+ *    the rows that HAVE the figure sum to under half the TOTAL, while their
+ *    figures × their cartons do not pass it by more than 2 % (the blank rows
+ *    hold the rest), on two rows or more of several cartons: one carton's
+ *    figure as like as not, and nothing proves it — never taken as the
+ *    lines'. A COMPLETE column is never `unclear` (review excel-break-4): its
+ *    Σ and its product are both known, and when neither meets the TOTAL
+ *    that is an unexplained mismatch, which never nulls the lines (JN-12);
+ *  - `contradicted` — the column's whole Σ contradicts the TOTAL and nothing
+ *    above explains it (a pallet in the total, a total 1 % heavier): the
+ *    lines STAND and the Σ is refused (JR-11), both sums said.
+ * A merged figure is its master's, stated once: a column with one is never
+ * multiplied row by row. Pure.
+ */
+type ColumnVerdict =
+  | { kind: 'lines' }
+  | { kind: 'per_carton'; total: number }
+  | { kind: 'unclear'; sum: number; total: number }
+  | { kind: 'contradicted'; sum: number; total: number | null };
+function judgeColumn(
+  values: readonly (number | 'covered' | null)[],
+  cartons: readonly (number | null)[],
+  totals: readonly Cell[][],
+  at: { column: number; unit: 'kg' | 'm3'; step: number; divisor: number },
+): ColumnVerdict {
+  if (totals.length === 0 || !values.some((v) => typeof v === 'number' && v > 0)) return { kind: 'lines' };
+  const { column, unit, step, divisor } = at;
+  const merged = values.includes('covered');
+  const complete = values.every((v) => v === 'covered' || (v !== null && v > 0));
+  let sum = 0;
+  let multiplied: number | null = merged ? null : 0;
+  let several = 0;
+  values.forEach((v, k) => {
+    if (typeof v !== 'number' || v <= 0) return;
+    sum += v;
+    const c = cartons[k] ?? null;
+    if (multiplied === null || c === null || !Number.isInteger(c) || c < 1) {
+      multiplied = null;
+      return;
+    }
+    multiplied += v * c;
+    if (c > 1) several += 1;
+  });
+  const total = sheetTotalOf(totals, column, unit, step, divisor);
+  const product = multiplied as number | null;
+  const unclear = total !== null && product !== null && several >= 2 && sum < total / 2 && product <= total * 1.02;
+  if (complete) {
+    if (!contradicts(sum, totals, column, unit, step, divisor)) return { kind: 'lines' };
+    if (product !== null && !contradicts(product, totals, column, unit, step, divisor)) return { kind: 'per_carton', total: product };
+    return { kind: 'contradicted', sum, total };
+  }
+  return unclear ? { kind: 'unclear', sum, total: total! } : { kind: 'lines' };
+}
+
+/**
+ * What the reader says of a SHEET's columns, beside its rows (§3.2 X5): a
+ * column it read as one carton's, and a column whose figures the sheet's own
+ * TOTAL row disowns. The bot says each on the file's receipt — the seller and
+ * the VED read it there (`receiveGoodsSheet`); `warn` = it is a doubt, not a
+ * deed. The deal's import and the VED's paste do not show them.
+ */
+export interface SheetNote {
+  warn: boolean;
+  text: string;
 }
 
 /**
@@ -2206,7 +3063,7 @@ function commaReadings(
  *    (c0076-c0080, c0095, c0456, c0081, all three votes), which xlsxN-07's
  *    verifier kept.
  */
-function readFigure(cell: Cell, accept: 'dona' | 'kg' | 'm3' | null, comma: ColumnComma | null, pieces = false): number | null {
+function readFigure(cell: Cell, accept: MeasuredIn | null, comma: ColumnComma | null, pieces = false): number | null {
   if (typeof cell === 'string' && cell.length <= 64) {
     const text = cell.trim();
     const glued = accept ? GLUED_FIGURE.exec(text) : null;
@@ -2218,6 +3075,28 @@ function readFigure(cell: Cell, accept: 'dona' | 'kg' | 'm3' | null, comma: Colu
     }
   }
   return accept ? parseMeasure(cell, accept) : parseNumber(cell);
+}
+
+/** A volume column's figure as cubic metres (`ColumnMap.volumeDivisor`). */
+const cubicMetres = (value: number | null, divisor: number): number | null => (value === null || divisor === 1 ? value : value / divisor);
+
+/**
+ * A row's SIZE as its cell — or its three cells — write it (§3.2 X3): three
+ * sides through the kernel's own reader (`parseSize`), in the cell's own
+ * unit, else the header's. Null beside its text when the cell holds what no
+ * carton's size is — two sides (a sheet's «600x600»), four, or TWO sizes
+ * («60x40x50 / 30x20x10», mixed cartons): nothing is multiplied from a guess,
+ * and the text goes on the row's note.
+ */
+function readSize(cells: readonly Cell[], unit: CartonSize['unit'], of: SizeOwner | null): { size: CartonSize | null; text: string } {
+  const texts = cells.map(cellText);
+  if (texts.every((text) => text === '')) return { size: null, text: '' };
+  const text = texts.filter((side) => side !== '').join(' x ');
+  // A side left empty is no size: «60 x 45» is two sides of three.
+  const token = texts.some((side) => side === '') ? null : parseSize(text);
+  const size = token?.size ?? null;
+  if (!token || !size || parseSize(text.slice(token.end)) !== null) return { size: null, text };
+  return { size: { l: size.l, w: size.w, h: size.h, unit: size.unit ?? unit, of }, text };
 }
 
 /**
@@ -2245,7 +3124,34 @@ function rowText(row: readonly Cell[], d: number, covered: Covered | null): stri
  * behind a capped file (as-built review REGRESSION-6): a list of exactly 500
  * read whole is no cut, and its caller had guessed one from the row count.
  */
-export type ParsedGoods = { goods: GoodsRow[]; headerRow: number | null; dropped: DroppedRow[]; stoppedShort: boolean } & SheetShape;
+export type ParsedGoods = {
+  goods: GoodsRow[];
+  headerRow: number | null;
+  dropped: DroppedRow[];
+  stoppedShort: boolean;
+  notes: SheetNote[];
+  /** The line columns nothing proved the lines' or one carton's (`ColumnAsk`); absent = none. */
+  asks?: ColumnAsk[];
+} & SheetShape;
+
+/**
+ * A line column the sheet does not say is the LINES' or ONE carton's
+ * (docs/AI-SORAYDI.md §3.2 X5; review JN-12, JR-11, JS-33, excel-spec-1):
+ * «CBM» beside «CTNS» on two rows or more of several cartons, with no header
+ * word, no size column, no TOTAL arithmetic that settles it — a supplier's
+ * SUM dragged across the column, or no TOTAL row at all, proves nothing
+ * (JN-12 (a), (b)). The COLUMN is asked once. Release 1a reads it and keeps
+ * the lines as they stand (the plain door is untouched); the table's hold is
+ * a `TableAsk` the dialogue draws (`columnAsks`, telegram/file-goods.ts) —
+ * by the rows' names and the file's figures, so an answered row is known.
+ */
+export interface ColumnAsk {
+  field: 'weightKg' | 'volumeM3';
+  /** The column's header as the file writes it, clipped. */
+  title: string;
+  /** Each asked row's name and the figure the file gives it (in m³ for a cube). */
+  rows: { name: string; value: number }[];
+}
 
 /** What the FILE says about its figures beyond its cells (§5.9): the comma a CSV's delimiter implies. */
 export interface SheetHints {
@@ -2277,7 +3183,7 @@ export interface SheetHints {
  */
 export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints: SheetHints = {}): ParsedGoods {
   const card = cardGood(rows, covered);
-  if (card) return { ...card, dropped: [], stoppedShort: false };
+  if (card) return { ...card, dropped: [], stoppedShort: false, notes: [] };
   const header = findHeader(rows, covered);
   const detected = header.found;
   const goods: GoodsRow[] = [];
@@ -2303,7 +3209,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     const { headerRow, dataFrom, columns } = detected;
     const headerName = cellText(rows[headerRow]![columns.name] ?? null).toLowerCase();
     const figureCols = [columns.quantity, columns.weight, columns.gross, columns.volume, columns.amount];
-    const comma = commaReadings(rows, dataFrom, figureCols, covered, hints.comma ?? null);
+    // (X2-X3) The columns the row's packing is read from: figures too, read
+    // with their column's comma — and stating one makes a row a line of the
+    // list, never its footer.
+    const pack = columns.pack;
+    const packCols = [pack.cartons, pack.pieces?.index ?? null, pack.weight?.index ?? null, pack.volume?.index ?? null];
+    const comma = commaReadings(rows, dataFrom, [...figureCols, ...packCols], covered, hints.comma ?? null);
     const commaOf = (col: number | null): ColumnComma | null => (col === null ? null : (comma.get(col) ?? null));
     // A row STATES something when a mapped figure column has a figure (or a
     // merge's covered figure stands there), or a TNVED code, or a unit
@@ -2311,14 +3222,29 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     // figures merged down from the line above, and a last row carrying only
     // its code are goods — never a footer.
     const figureIn = (row: Cell[], d: number) => figureCols.some((i) => i !== null && !covered?.has(d, i) && figureCell(row[i] ?? null));
+    // A packing column states something only where its cell READS as that
+    // column's figure, as a line column does (`figureIn`): «CTN NO. 1-27»
+    // under «CTNS», «N/M» under «CTN SIZE» are the shipping marks of a footer,
+    // and a footer kept as a good blanks the sheet's Σ (review excel-break-3).
+    const packStates = (row: Cell[]) =>
+      packCols.some((i) => i !== null && figureCell(row[i] ?? null)) ||
+      (pack.size !== null && readSize(pack.size.cols.map((i) => row[i] ?? null), pack.size.unit, pack.size.of).size !== null);
     const statesIn = (row: Cell[], d: number) =>
       figureIn(row, d) ||
       figureCols.some((i) => i !== null && covered?.has(d, i)) ||
+      packStates(row) ||
       (columns.tnved !== null && cellText(row[columns.tnved] ?? null) !== '' && normalizeTnved(row[columns.tnved] ?? null) !== null) ||
       (columns.unit !== null && cellText(row[columns.unit] ?? null) !== '');
     // Per landed good: where it stands, what it states, and what it adds to
     // the sheet's two sums (a covered position is its master's, stated once).
-    const landed: { d: number; states: boolean; figures: boolean; gross: number | 'covered' | null; volume: number | 'covered' | null }[] = [];
+    const landed: {
+      d: number;
+      states: boolean;
+      figures: boolean;
+      weight: number | 'covered' | null;
+      gross: number | 'covered' | null;
+      volume: number | 'covered' | null;
+    }[] = [];
     // §5.4 (c)'s window: the goods landed since the sheet's start or the last
     // total row, summed per figure kind as Excel's SUM sums a column — a
     // BLANK cell adds nothing (review break-named-total-window-nan: one
@@ -2350,6 +3276,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       }
       return matched > 0;
     };
+    // (X4) A figure the row states that its own packing shows to be ONE
+    // carton's is replaced by the product at the calc door (`applyPacking`,
+    // DIM-8: «CBM» 0.12 beside twenty cartons of 60×40×50). The sheet's Σ of
+    // that column is then a sum of single cartons, and no total: it is not
+    // offered, and the lines' own sum stands for it.
+    const corrected = { volume: false, weight: false };
     let r = dataFrom;
     for (; r < rows.length && goods.length < MAX_GOODS_ROWS; r++) {
       const row = rows[r]!;
@@ -2387,7 +3319,8 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         // another unit («Кол-во, м2») keeps the plain number, as before.
         ['soni', qtyCell, readFigure(qtyCell, columns.quantityUnit ? null : 'dona', commaOf(columns.quantity), pieces)],
         ['vazn', weightCell, readFigure(weightCell, 'kg', commaOf(columns.weight))],
-        ['hajm', volumeCell, readFigure(volumeCell, 'm3', commaOf(columns.volume))],
+        // A column in cm³, dm³ or litres holds plain numbers of that unit (X6).
+        ['hajm', volumeCell, cubicMetres(readFigure(volumeCell, columns.volumeDivisor === 1 ? 'm3' : null, commaOf(columns.volume)), columns.volumeDivisor)],
         ['summa', amountCell, readFigure(amountCell, null, commaOf(columns.amount))],
       ];
       const [quantity, weightKg, rowVolume, amount] = figures.map(([, , value]) => value) as [number | null, number | null, number | null, number | null];
@@ -2423,6 +3356,56 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         const text = cellText(once(index));
         return /\d/.test(text) ? [`«${named}»: ${clipUnits(text, 40)}`] : [];
       });
+      // (X2-X4) What the row states PER PACKAGE, copied into its packing: the
+      // reader multiplies nothing (`applyPacking` does, at the calc door). The
+      // carton COUNT is the line's own, and merged over two lines it is stated
+      // once; what one carton weighs, holds and measures is every covered
+      // line's, as a unit price is (R3-S3).
+      const cartonsCell = once(pack.cartons);
+      const piecesCell = at(pack.pieces?.index ?? null);
+      const cartonKgCell = at(pack.weight?.index ?? null);
+      const cartonM3Cell = at(pack.volume?.index ?? null);
+      // One carton holds a count of what the HEADER names («PRS/CTN»); a header
+      // naming none — or pieces — on a row that itself counts in pairs, m² or
+      // litres counts that: «480 пар | 20 CTNS | PCS/CTN 24» is 24 pairs a
+      // carton, never 480 pieces beside 480 pairs (review JR-1).
+      const rowUnit = unitOf(unitText || columns.quantityUnit || '');
+      const rowMeasure = rowUnit === 'juft' || rowUnit === 'm2' || rowUnit === 'litr' ? rowUnit : null;
+      const said = pack.pieces?.unit ?? null;
+      const piecesUnit: PerCartonUnit = (said === null || said === 'dona') && rowMeasure ? rowMeasure : (said ?? 'dona');
+      const positive = (n: number | null) => (n !== null && n > 0 ? n : null);
+      const packFigures: [what: string, cell: Cell, value: number | null][] = [
+        ['karobka soni', cartonsCell, wholeCartons(readFigure(cartonsCell, 'karobka', commaOf(pack.cartons), true))],
+        ['1 karobkadagi soni', piecesCell, positive(readFigure(piecesCell, piecesUnit, commaOf(pack.pieces?.index ?? null), piecesUnit === 'dona'))],
+        ['1 karobka og‘irligi', cartonKgCell, positive(readFigure(cartonKgCell, 'kg', commaOf(pack.weight?.index ?? null)))],
+        [
+          '1 karobka hajmi',
+          cartonM3Cell,
+          positive(cubicMetres(readFigure(cartonM3Cell, pack.volume?.divisor === 1 ? 'm3' : null, commaOf(pack.volume?.index ?? null)), pack.volume?.divisor ?? 1)),
+        ],
+      ];
+      const [cartons, pcsPerCarton, kgPerCarton, m3PerCarton] = packFigures.map(([, , value]) => value) as [number | null, number | null, number | null, number | null];
+      const sized = pack.size ? readSize(pack.size.cols.map((i) => at(i)), pack.size.unit, pack.size.of) : null;
+      const packing: Packing = {
+        ...emptyPacking('file'),
+        cartons,
+        pcsPerCarton,
+        kgPerCarton,
+        kgPerCartonKind: kgPerCarton === null ? null : (pack.weight?.kind ?? null),
+        m3PerCarton,
+        size: sized?.size ?? null,
+        ...(pcsPerCarton !== null && piecesUnit !== 'dona' ? { perCartonUnit: piecesUnit } : {}),
+      };
+      const rowWeightKind = kgPerCarton !== null && weightKg !== null && (columns.weightKind === 'gross' || columns.weightKind === 'net') ? columns.weightKind : null;
+      if (packingStated(packing) && (rowVolume !== null || weightKg !== null)) {
+        const applied = applyPacking({ quantity, weightKg, volumeM3: rowVolume, packing, ...(rowWeightKind ? { weightKind: rowWeightKind } : {}) }).line;
+        if (rowVolume !== null && applied.volumeM3 !== rowVolume) corrected.volume = true;
+        if (weightKg !== null && applied.weightKg !== weightKg) corrected.weight = true;
+      }
+      const unreadPack = [
+        ...packFigures.filter(([, cell, value]) => value === null && /\d/.test(cellText(cell))).map(([what, cell]) => `${what} «${cellText(cell).slice(0, 40)}» — aniq emas`),
+        ...(sized && sized.size === null && sized.text !== '' ? [`o‘lcham «${sized.text.slice(0, 40)}» — aniq emas`] : []),
+      ];
       const hasFigures = figureIn(row, r);
       // A merge's covered figure is stated too (§5.5's own rule, `statesIn`):
       // «Colgate Total toothpaste» packed with the line above it is a good,
@@ -2438,7 +3421,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           volumeM3: rowVolume,
           amount,
           tnvedCode: code && 'code' in code ? code.code : null,
-          note: [codeNote, ...unread, ...also].filter(Boolean).join(' · ') || null,
+          note: [codeNote, ...unread, ...unreadPack, ...also].filter(Boolean).join(' · ') || null,
+          ...(packingStated(packing) ? { packing } : {}),
+          // Which weight the row's own is, where the carton arithmetic asks (JN-4).
+          ...(rowWeightKind ? { weightKind: rowWeightKind } : {}),
+          // A name that is only an article number (X10): said, never guessed at.
+          ...(namesArticle(at(columns.name)) ? { nameIsArticle: true as const } : {}),
         },
         r,
         { figures: hasFigures || coveredFigure, sum },
@@ -2454,6 +3442,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         d: r,
         states: statesIn(row, r),
         figures: hasFigures || coveredFigure,
+        weight: contribution(columns.weight, weightKg),
         gross: contribution(columns.gross, grossValue),
         volume: contribution(columns.volume, rowVolume),
       });
@@ -2523,24 +3512,208 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       }
       return total;
     };
-    let grossKg = sumOf(columns.gross, (l) => l.gross);
-    let volumeM3 = sumOf(columns.volume, (l) => l.volume);
-    // …and a Σ the sheet's OWN grand total contradicts is no total (as-built
-    // review CRITIC-1, the belt): whatever header shape the reader misread,
-    // the file's «TOTAL» row says what the column adds up to, and a Σ of
-    // single cartons beside it is a smaller number wearing the shipment's
-    // name. Refused, never corrected: the VED reads the file, the model reads
-    // the row.
-    if (stated.length > 0) {
-      const totals = stated.map((t) => t.row);
-      if (grossKg !== null && columns.gross !== null && contradicts(grossKg, totals, columns.gross, 'kg', 1)) grossKg = null;
-      if (volumeM3 !== null && columns.volume !== null && contradicts(volumeM3, totals, columns.volume, 'm3', 0.01)) volumeM3 = null;
+    let grossKg = corrected.weight && columns.gross === columns.weight ? null : sumOf(columns.gross, (l) => l.gross);
+    let volumeM3 = corrected.volume ? null : sumOf(columns.volume, (l) => l.volume);
+    // …and the belt (as-built review CRITIC-1; docs/AI-SORAYDI.md §3.2 X5,
+    // review JN-12, JR-11, JS-33): the file's own «TOTAL» rows say what each
+    // figure column adds up to — the line weight's, the gross's and the
+    // cube's — and `judgeColumn` reads them. A Σ they contradict is no total;
+    // the lines STAND unless the arithmetic itself explains the gap: the one
+    // case a column is corrected is a carton column and Σ(value × cartons)
+    // meeting the TOTAL (JR-11 supersedes «refused, never corrected» for it
+    // alone) — then the figure is ONE carton's, copied into the row's packing,
+    // and the calc door multiplies it like any «CBM/CTN». Each verdict but
+    // «lines» is said on the file's receipt (`notes`).
+    const totals = stated.map((t) => t.row);
+    const notes: SheetNote[] = [];
+    const cartonsOf = kept.map((g) => g.packing?.cartons ?? null);
+    const titleOf = (col: number) => clipUnits(cellText(rows[headerRow]![col] ?? null) || cellText(rows[headerRow + 1]?.[col] ?? null), 30);
+    const cellAt = (d: number, col: number) => clipUnits(cellText(rows[d]![col] ?? null), 40);
+    const UNIT_WORD = { kg: 'kg', m3: 'm³' } as const;
+    const noteOf = (col: number, unit: 'kg' | 'm3', v: Extract<ColumnVerdict, { kind: 'unclear' | 'contradicted' | 'per_carton' }>, outcome: string): SheetNote => {
+      const u = UNIT_WORD[unit];
+      if (v.kind === 'per_carton') {
+        return { warn: false, text: `«${titleOf(col)}» ustunidagi son bitta karobkaniki: karobkalar soni × shu son = ${fmtFigure(v.total)} ${u}, fayldagi jami bilan bir xil — ${outcome}.` };
+      }
+      if (v.kind === 'unclear') {
+        return {
+          warn: true,
+          text: `«${titleOf(col)}» ustuni: qatorlardagi yig‘indi ${fmtFigure(v.sum)} ${u}, jami qatorida ${fmtFigure(v.total)} ${u} — ustundagi son bitta karobkanikimi yoki qatornikimi, aniq emas; ${outcome}.`,
+        };
+      }
+      const against = v.total === null ? `jami qatorlari bilan qatorlar yig‘indisi ${fmtFigure(v.sum)} ${u} mos kelmaydi` : `jami qatorida ${fmtFigure(v.total)} ${u}, qatorlar yig‘indisi ${fmtFigure(v.sum)} ${u}`;
+      return { warn: true, text: `«${titleOf(col)}» ustuni: ${against} — ${outcome}.` };
+    };
+    /** A row figure the belt will not take as the line's: off the row, onto its note as the file wrote it. */
+    const unclearOnNote = (field: 'weightKg' | 'volumeM3', col: number, pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null) => {
+      keptLanded.forEach((l, k) => {
+        const v = pick(l);
+        if (typeof v !== 'number' || v <= 0) return;
+        const g = kept[k]!;
+        const what = field === 'weightKg' ? 'vazn' : 'hajm';
+        kept[k] = { ...g, [field]: null, note: [g.note, `${what} «${cellAt(l.d, col)}» — bitta karobkanikimi yoki qatornikimi, aniq emas`].filter(Boolean).join(' · ') };
+      });
+    };
+    /**
+     * A row figure the belt proved ONE carton's, moved into the packing: said on
+     * the row's note too, as the file wrote it (review excel-break-6). The calc
+     * door multiplies the packing; the doors that keep no packing — the deal
+     * card's import, the VED's paste — read the row's own figure, which is now
+     * empty, and the paste promises that what it drops is in the note. The
+     * figure as READ, in its unit: a cm³ column's cell is already on the note
+     * as the file wrote it (X6).
+     */
+    const perCartonNote = (g: GoodsRow, field: 'weightKg' | 'volumeM3', value: number): string | null =>
+      [g.note, `${field === 'weightKg' ? `vazn ${fmtFigure(value)} kg` : `hajm ${fmtFigure(value)} m³`} — bitta karobkaniki (${fmtFigure(g.packing!.cartons!)} karobka)`]
+        .filter(Boolean)
+        .join(' · ');
+    /** What a column's kept rows state, added up — the sum a refusal names. */
+    const linesSum = (pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null) =>
+      keptLanded.reduce((n, l) => {
+        const v = pick(l);
+        return n + (typeof v === 'number' && v > 0 ? v : 0);
+      }, 0);
+    /** Was the Σ refused — by the belt or the kernel — so that nothing may stand for it? */
+    const refused = { gross: corrected.weight && columns.gross === columns.weight, volume: corrected.volume };
+    /** The line weights the cartons gave, for the brutto check below — the rows then carry none of their own. */
+    let netFromCartons: number | null = null;
+    if (!stoppedShort) {
+      const judge = (col: number, unit: 'kg' | 'm3', step: number, divisor: number, pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null) =>
+        judgeColumn(keptLanded.map(pick), cartonsOf, totals, { column: col, unit, step, divisor });
+      // The line's weight — never belted before: an unmarked «N.W.» of one
+      // carton's figure beside «CTNS» landed as the lines' netto.
+      if (columns.weight !== null && columns.weight !== columns.quantity && !corrected.weight) {
+        const isGross = columns.gross === columns.weight;
+        let v = judge(columns.weight, 'kg', 1, 1, (l) => l.weight);
+        // A row that already states one carton's weight elsewhere («G.W./CTN»)
+        // is not given a second one: the column stays the lines'.
+        if (v.kind === 'per_carton' && kept.some((g) => (g.packing?.kgPerCarton ?? 0) > 0)) v = { kind: 'contradicted', sum: linesSum((l) => l.weight), total: v.total };
+        if (v.kind === 'per_carton') {
+          const kind = columns.weightKind === 'net' ? 'net' : columns.weightKind === 'gross' ? 'gross' : null;
+          keptLanded.forEach((l, k) => {
+            const value = l.weight;
+            if (typeof value !== 'number' || value <= 0) return;
+            const g = kept[k]!;
+            kept[k] = { ...g, weightKg: null, note: perCartonNote(g, 'weightKg', value), packing: { ...g.packing!, kgPerCarton: value, kgPerCartonKind: kind } };
+          });
+          if (isGross) grossKg = v.total;
+          else netFromCartons = v.total;
+          notes.push(noteOf(columns.weight, 'kg', v, 'qatorlar shundan hisoblandi'));
+        } else if (v.kind === 'unclear') {
+          unclearOnNote('weightKg', columns.weight, (l) => l.weight);
+          if (isGross) grossKg = null;
+          notes.push(noteOf(columns.weight, 'kg', v, 'qatorlarga yozilmadi'));
+        } else if (v.kind === 'contradicted') {
+          if (isGross) {
+            grossKg = null;
+            refused.gross = true;
+          }
+          notes.push(noteOf(columns.weight, 'kg', v, isGross ? 'umumiy brutto fayldan olinmadi' : 'bir-biriga mos kelmaydi'));
+        }
+      }
+      // The gross column beside a net one: the shipment's brutto, never a row's figure.
+      if (columns.gross !== null && columns.gross !== columns.weight) {
+        const v = judge(columns.gross, 'kg', 1, 1, (l) => l.gross);
+        if (v.kind === 'per_carton') {
+          grossKg = v.total;
+          notes.push(noteOf(columns.gross, 'kg', v, 'brutto shundan olindi'));
+        } else if (v.kind === 'unclear') {
+          grossKg = null;
+          notes.push(noteOf(columns.gross, 'kg', v, 'umumiy brutto ustundan olinmadi'));
+        } else if (v.kind === 'contradicted') {
+          grossKg = null;
+          refused.gross = true;
+          notes.push(noteOf(columns.gross, 'kg', v, 'umumiy brutto fayldan olinmadi'));
+        }
+      }
+      if (columns.volume !== null && !corrected.volume) {
+        let v = judge(columns.volume, 'm3', 0.01, columns.volumeDivisor, (l) => l.volume);
+        // …and a row whose packing already states one carton's cube, or its
+        // size, is the kernel's to compare (X4): never a second cube.
+        if (v.kind === 'per_carton' && kept.some((g) => (g.packing?.m3PerCarton ?? 0) > 0 || g.packing?.size)) {
+          v = { kind: 'contradicted', sum: linesSum((l) => l.volume), total: v.total };
+        }
+        if (v.kind === 'per_carton') {
+          keptLanded.forEach((l, k) => {
+            const value = l.volume;
+            if (typeof value !== 'number' || value <= 0) return;
+            const g = kept[k]!;
+            kept[k] = { ...g, volumeM3: null, note: perCartonNote(g, 'volumeM3', value), packing: { ...g.packing!, m3PerCarton: value } };
+          });
+          volumeM3 = v.total;
+          notes.push(noteOf(columns.volume, 'm3', v, 'qatorlar shundan hisoblandi'));
+        } else if (v.kind === 'unclear') {
+          unclearOnNote('volumeM3', columns.volume, (l) => l.volume);
+          volumeM3 = null;
+          notes.push(noteOf(columns.volume, 'm3', v, 'qatorlarga yozilmadi'));
+        } else if (v.kind === 'contradicted') {
+          volumeM3 = null;
+          refused.volume = true;
+          notes.push(noteOf(columns.volume, 'm3', v, 'umumiy hajm fayldan olinmadi'));
+        }
+      }
+    }
+    // (X8; XLS-6, review JR-3) …and the sheet's own TOTAL as its total — ONLY
+    // where the Σ is null because a kept line LACKS the figure (or no column
+    // holds it, and a summary line writes it), never where the belt or the
+    // kernel REFUSED a Σ, never on a list stopped short: a sectioned list with
+    // one blank weight takes its sections added, never its last section's.
+    // A per-carton-looking column the belt took off the rows (JS-33) leaves
+    // the TOTAL row standing for the shipment, as the rows lacking it do. The
+    // brutto check below reads the figure like any Σ.
+    // …and only total rows that CLOSE the list: a line standing below the last
+    // of them is covered by no total (a section with none of its own, c3083),
+    // and the rows above would stand for a smaller shipment.
+    const closing = stated.length > 0 && stated.at(-1)!.d > (keptLanded.at(-1)?.d ?? -1);
+    if (!stoppedShort && kept.length > 0 && closing) {
+      // The total rows that state SOME figure of the sheet's own columns — a
+      // «SAY TOTAL: US DOLLARS …» line under the table is no total of a
+      // column, and with it counted no section list could ever sum.
+      const columnTotals = totals.filter((row) => [...figureCols, ...packCols].some((i) => i !== null && figureCell(row[i] ?? null)));
+      if (grossKg === null && !refused.gross) {
+        grossKg = (columns.gross === null ? null : sheetTotalOf(columnTotals, columns.gross, 'kg', 1)) ?? summaryTotalOf(totals, 'gross', 1);
+      }
+      if (volumeM3 === null && !refused.volume) {
+        volumeM3 =
+          (columns.volume === null ? null : sheetTotalOf(columnTotals, columns.volume, 'm3', 0.01, columns.volumeDivisor)) ?? summaryTotalOf(totals, 'volume', 0.01);
+      }
     }
     // …and a brutto lighter than the lines' own netto is no brutto: a column
     // read wrong, never a figure to land.
     if (grossKg !== null && columns.weightKind === 'net' && columns.gross !== columns.weight) {
-      const net = kept.every((g) => g.weightKg !== null) ? kept.reduce((n, g) => n + (g.weightKg ?? 0), 0) : null;
+      const net = kept.every((g) => g.weightKg !== null) ? kept.reduce((n, g) => n + (g.weightKg ?? 0), 0) : netFromCartons;
       if (net !== null && grossKg + 0.5 < net) grossKg = null;
+    }
+    // (X5; review JN-12, JR-11, JS-33, excel-spec-1) …and a line column the
+    // belt could not settle, beside several cartons a row on two rows or more:
+    // asked once, by the rows the question is about. Not a column whose
+    // header says total («TOTAL CBM», «Общий вес» — the line's by its word),
+    // nor a row whose packing states its own per-carton figure or size (the
+    // kernel compares those, X4), nor one the belt concluded one carton's
+    // (its figure is the packing's now), nor a list stopped short.
+    const asks: ColumnAsk[] = [];
+    if (!stoppedShort) {
+      const askOf = (
+        field: ColumnAsk['field'],
+        col: number,
+        pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null,
+        perCarton: (g: GoodsRow) => boolean,
+      ) => {
+        if (TOTAL_HINT.test(titleOf(col))) return;
+        const asked = keptLanded.flatMap((l, k) => {
+          const value = pick(l);
+          const c = cartonsOf[k] ?? null;
+          const g = kept[k]!;
+          return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value }] : [];
+        });
+        if (asked.length >= 2) asks.push({ field, title: titleOf(col), rows: asked });
+      };
+      if (columns.weight !== null && columns.weight !== columns.quantity && !corrected.weight) {
+        askOf('weightKg', columns.weight, (l) => l.weight, (g) => (g.packing?.kgPerCarton ?? 0) > 0);
+      }
+      if (columns.volume !== null && !corrected.volume) {
+        askOf('volumeM3', columns.volume, (l) => l.volume, (g) => (g.packing?.m3PerCarton ?? 0) > 0 || Boolean(g.packing?.size));
+      }
     }
     // A money column is a money HEADER, claimed or not (PF-SPEC-1, §1.2.1's
     // «NO money column»): «Value (USD)», a unit price the amount did not take.
@@ -2551,6 +3724,8 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       headerRow,
       dropped: said(),
       stoppedShort,
+      notes,
+      ...(asks.length > 0 ? { asks } : {}),
       shape: (columns.cartons || columns.gross !== null) && !money ? 'packing' : 'invoice',
       weightKind: columns.weightKind,
       grossKg: round(grossKg, 3),
@@ -2589,5 +3764,5 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
   // Stopped with a named row still below: a list cut short, as the header branch says it.
   const stoppedShort =
     stoppedAt !== null && rows.slice(stoppedAt).some((row) => row.some((cell) => typeof cell === 'string' && cell.trim().length > 0));
-  return { goods, headerRow: null, dropped: said(), stoppedShort, shape: 'invoice', weightKind: null, grossKg: null, grossColumn: false, volumeM3: null };
+  return { goods, headerRow: null, dropped: said(), stoppedShort, notes: [], shape: 'invoice', weightKind: null, grossKg: null, grossColumn: false, volumeM3: null };
 }
