@@ -23,6 +23,9 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPEC
 import { namedOrigins } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
+import { knownNamesFor } from './chat-names';
+import { ownerPersonalOf } from './owner-answer';
+import type { ForcedQuestion } from './types';
 import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, priceActArmed } from './auto-send';
 import { namesForeignPlace } from './destination';
 import {
@@ -30,6 +33,7 @@ import {
   extractNumbers,
   factSources,
   namesMode,
+  ownerAnswerSources,
   oneModeIn,
   pricedRoadOf,
   PROHIBITS,
@@ -89,6 +93,12 @@ export interface ComposeReply {
   actions: { type: string; section: string; citedMessageRefs: string[]; date: string; note: string }[];
   usedFactIds: string[];
   citedMessageRefs: string[];
+  /**
+   * Set by the rule that FORCED the question to him — rail's price (`withRailRule`) or the flight's address
+   * (`withAviaQuestion`) — never by the model (spec SPEC-P1-v2 §2.2): his answer to such a question goes verbatim
+   * through ✏️, so its card offers no «✍️ Savolga javob». Kept on the draft's policy (drafts `draftFromRun`).
+   */
+  forcedQuestion?: ForcedQuestion;
 }
 
 interface LoopResult {
@@ -523,10 +533,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
         target: [agentConversations.managerUserId, agentConversations.peerId],
         set: { locale, updatedAt: new Date() },
       });
-    settle = { ...settle, outcome: written.kind === 'editing' ? 'stood_down' : 'draft', error: written.kind === 'editing' ? 'editing' : null };
-    return written.kind === 'editing'
-      ? { outcome: 'stood_down', reason: 'editing' }
-      : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
+    // `question_gone` is an answer's redraft's alone (`answers`), never this run's — stood down all the same if it came.
+    const stood = written.kind === 'written' ? null : written.kind;
+    settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };
+    return stood !== null ? { outcome: 'stood_down', reason: stood } : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
   } catch (err) {
     logger.error({ err, runId }, '[agent] run failed');
     settle = { ...settle, outcome: 'error', error: err instanceof Error ? err.message.slice(0, 300) : 'error' };
@@ -565,8 +575,13 @@ const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
   { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
 ];
 
-/** What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). */
-export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string): PolicyMemory {
+/**
+ * What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). `ownerAnswer`: his
+ * ✍️ answer this redraft is made of (spec SPEC-P1-v2 §2.2) — a SOURCE, read as a fact is (`ownerAnswerSources`), for
+ * this draft alone; it adds nothing to the phones, links, names or Han text a reply may carry (an address or a
+ * phone is his ✏️ text, verbatim — the bot refuses one in an answer).
+ */
+export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string, ownerAnswer: string | null = null): PolicyMemory {
   // His «Temir yo'l mendan so'rasin»: in a chat about rail no figure the
   // machine found may carry a price — not the truck's website figure worded
   // as a rail one, not the avia rate. Dropped from the memory the ✅ re-runs
@@ -588,6 +603,8 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // number and hour of every other fact a price nobody may repeat.
   for (const f of facts) sources.push(...factSources(f.answer, 'kompaniya bilimi'));
   sources.push(...COMPANY_RULE_SOURCES);
+  // His answer's figures — but never money in a rail chat (his price, his ✏️; rail is a forced question anyway).
+  if (ownerAnswer !== null) sources.push(...ownerAnswerSources(ownerAnswer).filter((s) => !rail || s.kind !== 'money'));
   const urls = [...facts.flatMap((f) => f.urls), ...loop.outcomes.flatMap((o) => o.allowedUrls ?? [])];
   const { mapUrls, allowedUrls } = splitUrls(urls);
   return {
@@ -854,8 +871,11 @@ export function withAviaGuard(
 function withAviaQuestion(c: ComposeReply, air: AviaCargo): ComposeReply {
   const asked = c.ownerQuestion.trim();
   const line = aviaOwnerQuestion(air);
-  if (asksAviaAddress(asked) || asked.includes(line)) return { ...c, needsOwner: true };
-  return { ...c, needsOwner: true, ownerQuestion: asked ? `${asked} · ${line}` : line };
+  // The flight's address is his to give, verbatim (spec SPEC-P1-v2 §1.2, §2.2): a forced question, ✏️ only. A rail
+  // question forced first keeps its name — its price is his ✏️ too, and the rail rule asked first.
+  const forcedQuestion = c.forcedQuestion ?? 'avia';
+  if (asksAviaAddress(asked) || asked.includes(line)) return { ...c, needsOwner: true, forcedQuestion };
+  return { ...c, needsOwner: true, ownerQuestion: asked ? `${asked} · ${line}` : line, forcedQuestion };
 }
 
 /**
@@ -1014,7 +1034,7 @@ export function aviaOwnerQuestion(air: AviaCargo): string {
  */
 export function withRailRule(c: ComposeReply, ctx: Pick<AgentContext, 'burst'>): ComposeReply {
   if (!railQuestion(ctx, c)) return c;
-  return { ...c, needsOwner: true, ownerQuestion: c.ownerQuestion || RAIL_OWNER_QUESTION };
+  return { ...c, needsOwner: true, ownerQuestion: c.ownerQuestion || RAIL_OWNER_QUESTION, forcedQuestion: 'rail' };
 }
 
 /**
@@ -1191,10 +1211,33 @@ export function passesByItself(reason: Ineligible): boolean {
 }
 
 /**
+ * His ✍️ answer an owner-triggered run redrafts from (spec SPEC-P1-v2 §2.2): the question draft it answers, the
+ * customer line that question answered, the bot message his answer was, and his words.
+ */
+export interface OwnerAnswerInput {
+  questionDraftId: string;
+  questionAnchor: bigint;
+  messageId: number;
+  text: string;
+}
+
+/** The card's line on a redraft his answer could not make a reply of (a forcing rule asked him again). */
+export const ANSWER_STILL_HIS =
+  '✍️ Javobingiz olindi, lekin bu savolni AI o‘zi yozmaydi (temir yo‘l narxi yoki avia manzili) — «✏️ O‘zgartirish» bilan o‘zingiz yozing.';
+
+/**
  * A run the OWNER's side starts — a VED hand-back's question for the customer
- * (fit-5). Keyed by its own source (`agent_runs_source_unique`), so the same
- * hand-back drafts once; the token cap holds, the inbound draft cap does not
- * (money-11: his own work must not compete with the customers' day).
+ * (fit-5), or the reply his ✍️ answer makes (`answer`, spec SPEC-P1-v2 §2.2).
+ * Keyed by its own source (`agent_runs_source_unique`), so the same hand-back
+ * — or the same answer — drafts once; the token cap holds, the inbound draft
+ * cap does not (money-11: his own work must not compete with the customers'
+ * day).
+ *
+ * His answer's redraft is the one owner-triggered draft that carries an «o'zi
+ * yuborish» plan (§2.2): judged by the same gate, plus `owner_figure`,
+ * `owner_personal` and `answer_stale` — a figure-free answer may go by itself,
+ * one with his figure always comes back to him. It supersedes the question
+ * draft only when written (`createDraft`'s `answers`), never before.
  */
 export async function runOwnerTriggered(
   input: {
@@ -1203,6 +1246,7 @@ export async function runOwnerTriggered(
     peerId: bigint;
     sourceKey: string;
     instruction: string;
+    answer?: OwnerAnswerInput | null;
   },
   deps: RunDeps = {},
 ): Promise<RunResult> {
@@ -1289,17 +1333,41 @@ export async function runOwnerTriggered(
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
     }
-    const memory = memoryFor(ctx, loop, facts, canary);
+    const answer = input.answer ?? null;
+    const memory = memoryFor(ctx, loop, facts, canary, answer?.text ?? null);
     const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: drafted.replyText, memory, strip: stripFor(ctx) });
     const c = withAviaGuard(drafted, policy, loop, ctx);
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
     const rail = railNote(ctx, c);
     if (rail) notes.push(rail);
-    const written = await writeDraft({ runId, ctx, compose: c, policy, memory, actions, notes, kind: input.trigger === 'hand_back' ? 'hand_back' : 'reply' });
-    settle = { ...settle, outcome: written.kind === 'editing' ? 'stood_down' : 'draft', error: written.kind === 'editing' ? 'editing' : null };
-    return written.kind === 'editing'
-      ? { outcome: 'stood_down', reason: 'editing' }
-      : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
+    // A forcing rule turned his answer's redraft back into a question (§2.2): said on the card, never a loop.
+    if (answer && c.forcedQuestion) notes.push(ANSWER_STILL_HIS);
+    const fromAnswer = answer
+      ? {
+          questionDraftId: answer.questionDraftId,
+          questionAnchor: String(answer.questionAnchor),
+          personal: await ownerPersonalOf({
+            text: answer.text,
+            ownCodes: ctx.identity.codes.map((x) => x.clientCode),
+            ownNames: [
+              ...(await knownNamesFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, clientId: ctx.identity.clientId, leadId: ctx.identity.leadId })),
+              ...(ctx.identity.customerName ? [ctx.identity.customerName] : []),
+            ],
+            cargoAllowed: ctx.identity.cargoAllowed,
+          }),
+        }
+      : null;
+    const draftInput = { runId, ctx, compose: c, policy, memory, actions, notes, kind: input.trigger === 'hand_back' ? ('hand_back' as const) : ('reply' as const), fromAnswer };
+    // His answer's redraft alone carries a plan (§2.2) — judged on the very row about to be written, as the inbound run's.
+    const autoPlan = answer ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
+    const written = await writeDraft({
+      ...draftInput,
+      autoPlan,
+      answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
+    });
+    const stood = written.kind === 'editing' ? 'editing' : written.kind === 'question_gone' ? 'question_gone' : null;
+    settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };
+    return stood !== null ? { outcome: 'stood_down', reason: stood } : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
   } catch (err) {
     logger.error({ err, runId }, '[agent] owner-triggered run failed');
     settle = { ...settle, outcome: 'error', error: err instanceof Error ? err.message.slice(0, 300) : 'error' };

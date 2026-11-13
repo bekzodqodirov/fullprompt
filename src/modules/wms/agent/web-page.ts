@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   agentAutoVerdicts,
@@ -107,7 +107,9 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
 }
 
 function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0, auto: AutoCardState | null = null): WebDraft {
-  const { kb, kbToken } = (d.policy ?? {}) as { kb?: string; kbToken?: string };
+  const { kb, kbToken, ownerAnswer } = (d.policy ?? {}) as { kb?: string; kbToken?: string; ownerAnswer?: { text?: unknown } };
+  // His ✍️ answer (spec SPEC-P1-v2 §2.3): the fact the «remember» buttons save, shown on the card they sit under.
+  const answered = typeof ownerAnswer?.text === 'string' && ownerAnswer.text.trim() !== '' ? ownerAnswer.text : null;
   // The page lists live and approved drafts only, so no line here names his own reply's pause.
   const card = renderDraftCardFull(d, o, [], { surface: 'web', auto });
   const sendable = cardDrawsSend({ blocked: d.blocked || card.tooLong, status: d.status, ownText: d.finalBody !== null });
@@ -122,11 +124,11 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     ownText: d.finalBody !== null,
     body: digestBody(d),
     digest: webDigest(d),
-    cardText: card.text,
+    cardText: answered ? `${card.text}\n\n✍️ Javobingiz: «${answered}»` : card.text,
     chatHref: chatHrefOf(d),
     createdAt: d.createdAt,
     outbox: o ? { id: o.id, status: o.status, nextStepAt: o.nextStepAt, readDone: o.readDone, step: o.step } : null,
-    kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
+    kbAsk: ((d.status === 'approved' && d.needsOwner && d.finalBody !== null) || answered !== null) && kb !== 'saved' && kb !== 'skipped',
     kbArmed: kb === 'general_armed',
     kbArmToken: kb === 'general_armed' && typeof kbToken === 'string' ? kbToken : null,
     waitingInChat,
@@ -214,9 +216,12 @@ export async function webDrafts(viewer: WebViewer, now = new Date()): Promise<{
       .where(
         and(
           seen,
-          eq(agentDrafts.status, 'approved'),
-          eq(agentDrafts.needsOwner, true),
-          sql`${agentDrafts.finalBody} IS NOT NULL`,
+          // An answer of his own the customer got — or his ✍️ answer to the AI's question, whatever became of the
+          // question since (spec SPEC-P1-v2 §2.3: the bot offers the same three under its acknowledgement).
+          or(
+            and(eq(agentDrafts.status, 'approved'), eq(agentDrafts.needsOwner, true), sql`${agentDrafts.finalBody} IS NOT NULL`),
+            sql`coalesce(${agentDrafts.policy}->'ownerAnswer'->>'text', '') <> ''`,
+          ),
           sql`coalesce(${agentDrafts.policy}->>'kb', '') NOT IN ('saved', 'skipped')`,
           gte(agentDrafts.updatedAt, new Date(now.getTime() - 7 * 86_400_000)),
         ),

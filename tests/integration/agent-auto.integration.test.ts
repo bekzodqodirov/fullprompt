@@ -411,11 +411,15 @@ describe('the plan — written beside the draft by the inbound run', () => {
     expect(v!.reasons).toEqual(['money', 'category', 'language']);
   });
 
-  it('an owner-triggered draft writes no row — the inbound run alone plans', () => {
+  it('an owner-triggered draft writes no row — the inbound run plans, and of the owner-triggered ones his ✍️ answer’s redraft alone (spec SPEC-P1-v2 §2.2)', () => {
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
     const owner = src.slice(src.indexOf('export async function runOwnerTriggered'));
     expect(owner.length).toBeGreaterThan(100);
-    expect(owner).not.toMatch(/autoPlan/u);
+    // Every plan in the owner-triggered run is behind his answer: a hand-back's redraft never counts down (the
+    // behaviour is pinned in agent-owner-answer.integration: a hand-back run writes no verdict row).
+    const plans = owner.match(/autoPlanFor\(/gu) ?? [];
+    expect(plans).toHaveLength(1);
+    expect(owner).toMatch(/const autoPlan = answer \? await autoPlanFor\(/u);
     const inbound = src.slice(src.indexOf('export async function handleInbound'), src.indexOf('export async function runOwnerTriggered'));
     expect(inbound).toMatch(/autoPlanFor\(/u);
   });

@@ -8,7 +8,7 @@ import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
 import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
 import type { AutoCardState } from './auto-send';
-import { agentCardText, BLOCK_REMEDY, cardDrawsSend, cardExtra, CardTooLong, digestBody, type CardInput } from './card';
+import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, CardTooLong, digestBody, type CardInput } from './card';
 import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -99,6 +99,28 @@ const CANCEL_WORDS: Record<string, string> = {
 /** The `policy.stale` a ✅ writes when it finds the chat moved (decide `SUPERSEDED_AS`). */
 export type SupersededStale = 'no_redraft' | 'capped' | 'edited' | 'edited_no_redraft' | 'edited_capped' | 'answered';
 
+/** «✍️ Savolga javob» pressed and waiting (spec §2.2) — the status line says where his answer goes. */
+export const ANSWER_STATUS_LINE = '✍️ Javobingizni shu botga yozing — AI mijozga o‘zi yozadi.';
+/** His answer is in and the AI is writing the customer's words (the queued redraft, §2.2). */
+export const ANSWER_TAKEN_LINE = '✍️ Javobingiz olindi — AI javob yozmoqda.';
+
+/** The draft waits for his ✍️ answer (`policy.answering`, §2.2). */
+export function answeringOf(d: Pick<DraftRow, 'status' | 'policy'>): { since: string; until: string } | null {
+  if (d.status !== 'editing') return null;
+  const a = ((d.policy ?? {}) as Partial<DraftPolicyJson>).answering;
+  return a && typeof a.until === 'string' ? { since: typeof a.since === 'string' ? a.since : '', until: a.until } : null;
+}
+
+/**
+ * His answer to THIS ✍️ is in — stored since the press (`ownerAnswer.at` ≥ `answering.since`): an answer kept from an
+ * earlier ✍️ whose redraft did not come (the «📌/👤» offer reads it) is no answer to the question asked again.
+ */
+export function answeredNow(d: Pick<DraftRow, 'status' | 'policy'>): boolean {
+  const a = answeringOf(d);
+  const o = ((d.policy ?? {}) as Partial<DraftPolicyJson>).ownerAnswer;
+  return a !== null && o !== undefined && typeof o.at === 'string' && o.at >= a.since;
+}
+
 /**
  * A draft retired with a reason of its own (`policy.stale`). The figure on it
  * stopped standing, not because the customer wrote again: a recalculation of
@@ -108,7 +130,7 @@ export type SupersededStale = 'no_redraft' | 'capped' | 'edited' | 'edited_no_re
  * approved a reply to as answered. Each said as itself — «Mijoz yana yozdi»
  * would send him looking for a message that is not there.
  */
-const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate', string> = {
+const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answered', string> = {
   recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
   avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
   // ✅ found the customer's newer message and no run will draft it:
@@ -122,6 +144,10 @@ const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate', string> = {
   edited_capped: '↪️ Mijoz xabarini tahrirladi — bu javob ketmaydi. Bugungi AI chegarasi tugagan — unga o‘zingiz javob bering.',
   // ✅ found the newest line's own card already approved: telling him to answer it would be answering twice.
   answered: '↪️ Mijozning so‘nggi xabariga javob allaqachon tasdiqlangan — bu javob ketmaydi.',
+  // His ✍️ answer was taken and the AI wrote the customer's reply on a card of its own (spec §2.2, drafts
+  // `createDraft` with `answersDraftId`) — never «↪️ Mijoz yana yozdi», which is false here. Its own key:
+  // `answered` above already says something else.
+  owner_answered: '✍️ Javobingiz olindi — AI qayta yozdi (yangi kartada).',
 };
 
 /**
@@ -205,6 +231,12 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
       return d.actionStatus === 'failed' ? `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.` : null;
     case 'editing':
+      // «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2): he types the FACT, the AI writes the customer's words — the ✏️
+      // line would tell him to type the customer's text. Once his answer is in, the AI is writing.
+      if (answeringOf(d)) {
+        if (answeredNow(d)) return ANSWER_TAKEN_LINE;
+        return opts.surface === 'web' ? '✍️ Botda savolga javob kutilmoqda — javobni botga yozing.' : ANSWER_STATUS_LINE;
+      }
       // He pressed ✏️ in the BOT (the page's ✏️ is a box and writes no status) — the
       // words say where the text goes, never «the customer's chat». A draft whose
       // machine text could still go says so: its ✅ sends it (decide `decideDraft`).
@@ -457,6 +489,9 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
       live,
       kind: d.kind,
       auto: autoPayload(auto, d, sendable, o ?? null),
+      // «✍️ Savolga javob» while the question is live (spec §2.2) — and gone once his answer is in: the AI is
+      // writing, and a second ✍️ would ask a question it is already answering.
+      ask: cardAsks(d) && !answeredNow(d),
     }),
     // After he answered the agent's question himself and it went out, the
     // card offers to REMEMBER the answer (spec §7.1.4) — once.

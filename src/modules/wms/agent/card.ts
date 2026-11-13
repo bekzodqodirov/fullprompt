@@ -316,6 +316,8 @@ export function cardExtra(draft: {
   live: boolean;
   kind: string;
   auto?: CardAutoPayload | null;
+  /** A question the MODEL put to him (`needs_owner`, no forcing rule): the card offers «✍️ Savolga javob». */
+  ask?: boolean;
 }) {
   return {
     draftId: draft.id,
@@ -323,6 +325,9 @@ export function cardExtra(draft: {
     blocked: draft.blocked,
     live: draft.live,
     kind: draft.kind,
+    // Always written (spec SPEC-P1-v2 §2.2), like the auto keys: `createDraft` re-points an old card's row at a
+    // newer draft by merging the payload, and a key left out would keep the question's ✍️ under a reply.
+    ask: draft.live && draft.ask === true,
     autoAt: draft.auto?.autoAt ?? null,
     autoSent: draft.auto?.autoSent === true,
     autoBad: draft.auto?.autoBad === true,
@@ -330,6 +335,16 @@ export function cardExtra(draft: {
   };
 }
 
+
+/**
+ * Does the card offer «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2)? A live question the model raised itself — never one a
+ * forcing rule put to him (rail's price, the flight's address: `policy.forcedQuestion`), whose answer is his ✏️ text
+ * verbatim. ONE rule for `createDraft`, `refreshAgentCard` and the press that answers it (bot-door `answerPress`).
+ */
+export function cardAsks(d: { status: string; needsOwner: boolean; policy: unknown }): boolean {
+  const forced = ((d.policy ?? {}) as { forcedQuestion?: unknown }).forcedQuestion;
+  return (d.status === 'pending' || d.status === 'editing') && d.needsOwner && (forced === undefined || forced === null);
+}
 
 /** A card written later than this after the customer's message says how long he has waited. */
 export const LATE_CARD_MS = 3 * 60_000;

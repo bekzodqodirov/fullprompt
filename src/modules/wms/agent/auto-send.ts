@@ -35,7 +35,8 @@ import { readSendCaps } from './send-caps';
 import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { CATEGORIES } from './tools';
-import type { DraftPolicyJson } from './types';
+import type { AnswerMark, DraftPolicyJson } from './types';
+import { answerStale } from './owner-answer';
 
 /**
  * «O'zi yuborish» — the impure side of auto-send (docs/AI-SOTUVCHI.md §18.3,
@@ -220,8 +221,11 @@ export async function autoPressedToday(managerUserId: string, now: Date): Promis
 /**
  * Auto replies in a row in this chat (§18.3: at most 2): the presses since the
  * last thing a PERSON did here — a draft he decided himself (his ✅, ✏️, ❌,
- * 🙋; never one the machine pressed), or a message of his own (his phone, the
- * CRM; never the AI's send and never the account's Business robot, `auto_sent`).
+ * 🙋; never one the machine pressed), his ✍️ answer to the AI's question (spec
+ * SPEC-P1-v2 §2.2 — the redraft's plan is judged before `createDraft` stamps
+ * the question decided, so the answer itself is what counts), or a message of
+ * his own (his phone, the CRM; never the AI's send and never the account's
+ * Business robot, `auto_sent`).
  */
 async function autoStreak(managerUserId: string, peerId: bigint): Promise<number> {
   const rows = await db.execute<{ n: number }>(sql`
@@ -231,6 +235,9 @@ async function autoStreak(managerUserId: string, peerId: bigint): Promise<number
           WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
             AND d.decided_by IS NOT NULL
             AND NOT EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = d.id AND v.state = 'pressed')),
+        (SELECT max((d.policy->'ownerAnswer'->>'at')::timestamptz) FROM agent_drafts d
+          WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
+            AND d.policy ? 'ownerAnswer'),
         (SELECT max(m.sent_at) FROM tg_messages m
            LEFT JOIN tg_message_flags f ON f.message_id = m.id
           WHERE m.manager_user_id = ${managerUserId}::uuid AND m.peer_id = ${String(peerId)}::bigint
@@ -317,6 +324,7 @@ export async function autoFactsFor(
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, d.managerUserId), eq(agentConversations.peerId, d.peerId)));
   const memory = policy.memory;
+  const fromAnswer = answerMarkOf(policy.fromAnswer);
   const estimates = Array.isArray(memory?.estimates) ? memory.estimates : [];
   // The machine's words carry the machine's figures; his own (✏️) are never auto-pressed anyway.
   const quoted = estimates.length > 0 && d.finalBody === null;
@@ -361,9 +369,10 @@ export async function autoFactsFor(
       // The customer named another city or region (§1.8), read by the run over the whole window. A memory that does
       // not say (none such carries estimates) reads as named.
       foreignDestination: quoted ? memory?.foreignDestination !== false : false,
-      // §2.2's — the ✍️ answer — false until its part computes them.
-      ownerPersonal: false,
-      answerStale: false,
+      // His ✍️ answer behind this redraft (spec §2.2, `policy.fromAnswer`): another customer named in it — read by the
+      // run that wrote the redraft — and the customer writing again after the line his question answered, read NOW.
+      ownerPersonal: (fromAnswer?.personal.length ?? 0) > 0,
+      answerStale: fromAnswer ? await answerStaleOf(d, fromAnswer) : false,
     },
     burstMedia: await burstHadMedia(d),
     chat: {
@@ -382,6 +391,28 @@ export async function autoFactsFor(
     sendingEnabled: opts.scheduling ? (await getSetting('tg_sending_enabled')) === true : null,
     listenerCurrent: opts.scheduling ? listenerIsCurrent(guard, opts.now) : null,
   };
+}
+
+/** The stored `fromAnswer` as the gate reads it; a malformed one reads as personal (fails closed). */
+function answerMarkOf(raw: unknown): AnswerMark | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const m = raw as Partial<AnswerMark>;
+  const personal = Array.isArray(m.personal) ? m.personal.filter((b): b is string => typeof b === 'string') : ['?'];
+  return {
+    questionDraftId: typeof m.questionDraftId === 'string' ? m.questionDraftId : '',
+    questionAnchor: typeof m.questionAnchor === 'string' && /^\d+$/u.test(m.questionAnchor) ? m.questionAnchor : '0',
+    personal,
+  };
+}
+
+/** `answerStale` for a redraft — one that cannot be read is stale (fails closed): the redraft waits for his eye. */
+async function answerStaleOf(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId'>, mark: AnswerMark): Promise<boolean> {
+  try {
+    return await answerStale(d.managerUserId, d.peerId, BigInt(mark.questionAnchor));
+  } catch (err) {
+    logger.warn({ err }, '[agent] auto: the answered question’s chat not read');
+    return true;
+  }
 }
 
 /** `estimateUnnamed` over a stored memory — one a reader cannot parse names nothing (fails closed). */
@@ -931,8 +962,11 @@ export async function settleSupersededAuto(draftId: string): Promise<void> {
 
 // ── a person on the card ────────────────────────────────────────────────────
 
-/** Why a waiting auto stopped because of HIM: his own decision on the card, or ⏸. */
-export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause';
+/**
+ * Why a waiting auto stopped because of HIM: his own decision on the card, ⏸ — or «✍️ Savolga javob» (spec
+ * SPEC-P1-v2 §2.2: a question never counts down today, and the stop is the press's first act all the same).
+ */
+export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause' | 'owner_answer';
 
 /**
  * His own decision on a draft stops its auto — every non-auto `decideDraft`

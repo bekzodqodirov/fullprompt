@@ -56,5 +56,44 @@ export interface DraftPolicyJson {
   memory: PolicyMemory;
   card: CardMemory;
   notes: string[];
+  /**
+   * A forcing rule put this question to him — rail's price, or the flight's address (spec SPEC-P1-v2 §2.2, run
+   * `withRailRule` / `withAviaQuestion`): his answer goes verbatim through ✏️, so the card draws no «✍️ Savolga javob».
+   * Absent = the model asked it itself (or no question at all).
+   */
+  forcedQuestion?: ForcedQuestion;
+  /**
+   * «✍️ Savolga javob» pressed: the draft is `editing`, waiting for his answer from `since` until `until` (ISO) —
+   * §2.2. An `ownerAnswer` older than `since` belongs to an earlier press.
+   */
+  answering?: { since: string; until: string };
+  /**
+   * His answer to the question as he typed it into the bot (§2.2) — a key no sender reads (decideDraft sends
+   * `finalBody ?? proposedBody`): the redraft's instruction and the «📌/👤» offer under the acknowledgement.
+   */
+  ownerAnswer?: OwnerAnswer;
+  /**
+   * This draft is the AI's redraft of his ✍️ answer to `questionDraftId` (§2.2): what the auto layer asks of it —
+   * the personal bits his answer named (`owner_personal`) and the line the question answered (`answer_stale`).
+   */
+  fromAnswer?: AnswerMark;
+}
+
+export type ForcedQuestion = 'rail' | 'avia';
+
+export interface OwnerAnswer {
+  text: string;
+  /** ISO — when the bot took it. */
+  at: string;
+  /** His message in the bot chat — the run's source key (`answer:<draft>:<message>`). */
+  messageId: number;
+}
+
+export interface AnswerMark {
+  questionDraftId: string;
+  /** The customer line the question answered (`agent_drafts.anchor_tg_message_id`), a bigint as text. */
+  questionAnchor: string;
+  /** What `ownerPersonalOf` found in his answer — another customer, or this chat's code to a chat not proven. */
+  personal: string[];
 }
 

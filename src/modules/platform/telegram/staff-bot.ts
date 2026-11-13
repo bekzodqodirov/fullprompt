@@ -402,9 +402,10 @@ export type BotCallback =
 /**
  * ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed ·
  * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0145) · 👎 it sent wrong (0145) ·
- * ✅ the China tariff is right (0146, spec SPEC-P1-v2 §1.6).
+ * ✅ the China tariff is right (0146, spec SPEC-P1-v2 §1.6) · ✍️ answer the AI's question (0146, §2.2 — `j`: `q`
+ * stays unparsed).
  */
-export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f', 't'] as const;
+export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f', 't', 'j'] as const;
 export type AgentOp = (typeof AGENT_OPS)[number];
 
 /**
@@ -456,7 +457,9 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   // card, redelivered or tapped twice into a bot that was down, only asks.
   // «✅ Tarif to'g'ri» (t) compares the column's stamp each time and only ever
   // moves the mark forward (agent tariff-watch `confirmTariff`): a second press
-  // confirms what the first did.
+  // confirms what the first did. «✍️ Savolga javob» (j) only ASKS: its CAS moves
+  // a live question to «editing» (again on a repeat) and the wait it arms keeps
+  // the earlier prompts — the answer is the text after it.
   agent: 'cas',
 };
 
@@ -927,6 +930,9 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     if (send) first.push({ text: '✅ Yuborish', callback_data: `ag:s:${id}:${send}` });
     // His own word for it (2026-10-29): «O‘zim yozaman» read as «I will answer the customer myself».
     first.push({ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` });
+    // A question the AI raised itself (payload `ask`, spec SPEC-P1-v2 §2.2): he answers the FACT and the AI writes
+    // the customer's words — never under a question a forcing rule put to him (rail's price, the flight's address).
+    if (payload.ask === true) return [[{ text: '✍️ Savolga javob', callback_data: `ag:j:${id}` }], first, lastRow];
     return [first, lastRow];
   }
   // The website table's 14-day notice (0146, spec §1.6): «✅ Tarif to'g'ri» vouches for the column it was sent with.

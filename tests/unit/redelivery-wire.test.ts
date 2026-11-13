@@ -301,8 +301,9 @@ describe('(9) a consumed wait’s DELETE reaches the table before the effect', (
     between(HANDLERS, 'takeStaffEntry(chatId, ctx.message.date)', 'await flushWaitWrites()', 'linkStaffChat(staff.id, chatId)');
     between(CABINET, 'dropPendingLink(chatId);', 'await flushWaitWrites()', 'completeClientLink(pending.linkId');
     between(TASKS, 'takeTaskPendingFor(chatId, press.taskId)', 'await flushWaitWrites()', "completeTaskFromBot(chatId, press.taskId, ''");
-    // The AI sotuvchi's one text slot (✏️ text, 💵 figure, typed code) is a wait consumer too.
-    between(AGENT, 'dropWait(chatId, target.kind)', 'await flushWaitWrites()', 'agentText(staff.id, target, msg.text)');
+    // The AI sotuvchi's one text slot (✏️ text, 💵 figure, typed code, ✍️ answer) is a wait consumer too — the call
+    // also hands the bot message his ✍️ answer is keyed by (0146, spec SPEC-P1-v2 §2.2), so the anchor is its prefix.
+    between(AGENT, 'dropWait(chatId, target.kind)', 'await flushWaitWrites()', 'agentText(staff.id, target, msg.text');
   });
 
   it('every wait consumer MARKS the message it handled, after the effect (final review K23)', () => {
@@ -313,7 +314,7 @@ describe('(9) a consumed wait’s DELETE reaches the table before the effect', (
     const consumers: [string, string, string][] = [
       ['staff-handlers (answer)', HANDLERS, 'answerPendingText(ctx, chatId, pendingTask'],
       ['staff-handlers (result)', HANDLERS, 'completeTaskFromBot(chatId, pendingTask.taskId'],
-      ['agent-bot (text slot)', AGENT, 'agentText(staff.id, target, msg.text)'],
+      ['agent-bot (text slot)', AGENT, 'agentText(staff.id, target, msg.text'],
     ];
     for (const [name, text, effect] of consumers) {
       const at = found(text, effect, name);

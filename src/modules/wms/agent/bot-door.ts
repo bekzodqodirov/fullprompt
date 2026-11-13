@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { agentConversations, agentDrafts, clients, leads, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
+import { agentConversations, agentDrafts, clients, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
@@ -24,11 +24,13 @@ import {
 } from './auto-send';
 import { autoDisarmWords } from './auto-card';
 import { chatProof } from './context';
-import { decideDraft, submitOwnText, type DecideRefusal, type SupersededDetail } from './decide';
+import { answerQuestion, decideDraft, releaseAnswering, storeOwnerAnswer, submitOwnText, type AnswerRefusal, type DecideRefusal, type SupersededDetail } from './decide';
+import { ANSWER_CONTACT_WORDS } from './owner-answer';
 import { KbError, carriesMoney, moneyIn, personalBitsWithBook, writeKbFact, type KbRefusal } from './kb';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { extractNumbers } from './numbers';
 import { knownNamesForMask } from './style';
+import { knownNamesFor } from './chat-names';
 import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
 import { withdrawRepliesFor } from './drafts';
 import { editAgentCopies, type AgentCopy } from './purge';
@@ -43,8 +45,8 @@ import type { ComposedAction, DraftPolicyJson } from './types';
  * nothing».
  */
 
-export type AgentOp = 's' | 'e' | 'r' | 'h' | 'p' | 'n' | 'k' | 'x' | 'c' | 'b' | 'g' | 'u' | 'z' | 'a' | 'f' | 't';
-export type AgentWaitKind = 'agent_edit' | 'agent_price' | 'agent_code';
+export type AgentOp = 's' | 'e' | 'r' | 'h' | 'p' | 'n' | 'k' | 'x' | 'c' | 'b' | 'g' | 'u' | 'z' | 'a' | 'f' | 't' | 'j';
+export type AgentWaitKind = 'agent_edit' | 'agent_price' | 'agent_code' | 'agent_answer';
 
 export interface PressAnswer {
   toast: string;
@@ -62,7 +64,10 @@ export interface PressAnswer {
   arm?: { kind: AgentWaitKind; payload: Record<string, string> };
   /** Drop this wait (the press answered it). */
   drop?: AgentWaitKind;
-  /** Drop the ✏️ wait only if it names THIS draft — a ✅ ended the edit it was armed for (C7). */
+  /**
+   * Drop the ✏️ wait — and the ✍️ wait (spec SPEC-P1-v2 §2.2) — only if it names THIS draft: a ✅, ❌ or 🙋 ended
+   * the edit or the answer it was armed for (C7).
+   */
   dropEditOf?: string;
   /**
    * Said when that wait WAS armed and this press dropped it — a ✅ refused
@@ -259,11 +264,12 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
       const r = await decideDraft(actor, id, op === 'r' ? 'reject' : 'human', {}, ctx);
       if (!r.ok) return { toast: DECIDE_WORDS[r.code].slice(0, 190) };
       // ❌ on a reply the machine approved took that reply back (decide `afterMachinePress`, fix pass A, C3).
-      if (op === 'r') return { toast: r.status === 'cancelled' ? AUTO_TAKEN_BACK_TOAST : '❌ Rad etildi', drop: 'agent_edit' };
+      // …and a ✍️ armed for THIS draft is over too (spec §2.2): its question was decided.
+      if (op === 'r') return { toast: r.status === 'cancelled' ? AUTO_TAKEN_BACK_TOAST : '❌ Rad etildi', drop: 'agent_edit', dropEditOf: id };
       const taken = humanTakeoverWords(r.withdrawn);
       // 🙋 on a reply the machine approved and could no longer take back: the chat is his — and he hears where it is.
       const toast = r.autoReply ? `${taken.toast} — ${AUTO_REPLY_GONE[r.autoReply]}` : taken.toast;
-      return { toast: toast.slice(0, 190), ...(taken.reply ? { reply: taken.reply } : {}), drop: 'agent_edit' };
+      return { toast: toast.slice(0, 190), ...(taken.reply ? { reply: taken.reply } : {}), drop: 'agent_edit', dropEditOf: id };
     }
     case 'p': {
       return {
@@ -297,7 +303,65 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     }
     case 't':
       return tariffPress(actor, id, digest);
+    case 'j': {
+      // «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2): he answers the FACT, the AI writes the customer's words.
+      const r = await answerQuestion(actor, id);
+      if (!r.ok) return { toast: ANSWER_WORDS[r.code].slice(0, 190), ...(r.code === 'not_question' ? { reply: ANSWER_WORDS.not_question } : {}) };
+      return { toast: '✍️', reply: ANSWER_PROMPT, arm: { kind: 'agent_answer', payload: { draftId: id } } };
+    }
   }
+}
+
+/**
+ * «✍️ Savolga javob»'s question (spec SPEC-P1-v2 §2.2). Starts with «✍️»: the ladder's tests find it so. It says WHAT
+ * to write — the fact, never the customer's reply — and where an address or a phone goes instead (✏️, verbatim).
+ */
+export const ANSWER_PROMPT =
+  '✍️ Savolga javobingizni SHU BOTGA yozing (shu xabarga javob qilib yoki 30 daqiqa ichida oddiy xabar bilan) — faqat faktni yozing, mijozga AI o‘zi uning tilida javob yozadi. Manzil yoki telefon bo‘lsa — kartadagi «✏️ O‘zgartirish» bilan o‘zingiz yozing.';
+
+/** His answer taken (§2.2) — and what to press if he wants it changed: the card the AI writes, never this message. */
+export const ANSWER_TAKEN =
+  '✅ Javobingiz olindi — AI javob yozmoqda. Javobni o‘zgartirmoqchi bo‘lsangiz, AI yozgan kartadagi ⏸ / ✏️ / ❌ dan foydalaning.\n\n' +
+  'Bilimga saqlaymi? 📌 — barcha mijozlar uchun, 👤 — faqat shu mijoz uchun. Narx saqlanmaydi — u faqat shu javobda ishlatiladi.';
+
+/** A text that answered a ✍️ whose question is gone (§2.2 `answerStillLive`, a swipe-reply to its prompt). */
+export const ANSWER_NOT_LIVE = 'Savol endi faol emas — javobingiz yozilmadi.';
+
+/** The ✍️ press's and the answer's refusals, in his words. */
+export const ANSWER_WORDS: Record<AnswerRefusal, string> = {
+  not_ready: 'Server hali yangilanmagan — keyinroq bosing.',
+  not_found: 'Topilmadi',
+  agent_off: "AI sotuvchi o'chirilgan.",
+  not_live: 'Bu savol endi faol emas.',
+  not_question: 'Bu savolga javobni «✏️ O‘zgartirish» bilan o‘zingiz yozing — AI uni qayta yozmaydi.',
+  empty: "Javob bo'sh.",
+  contact: ANSWER_CONTACT_WORDS,
+};
+
+/** The «📌/👤/✖» row under his taken answer — `kbPress`'s own ops (§2.3). */
+function answerKbRow(draftId: string): { text: string; callback_data: string }[][] {
+  return [
+    [
+      { text: '📌 Hammaga', callback_data: `ag:g:${draftId}` },
+      { text: '👤 Shu mijoz uchun', callback_data: `ag:u:${draftId}` },
+    ],
+    [{ text: '✖ Saqlamaslik', callback_data: `ag:z:${draftId}` }],
+  ];
+}
+
+/**
+ * Is the draft a ✍️ wait names still waiting for his answer — his own, `editing`, its mark not yet run out? Asked by
+ * the text slot before it consumes a PLAIN text (the `editStillLive` precedent): a dead wait must not swallow the
+ * next thing he types (a «GS777» lookup, a question for the AI yordamchi).
+ */
+export async function answerStillLive(staffId: string, draftId: string | undefined, now: Date = new Date()): Promise<boolean> {
+  if (!draftId) return false;
+  const [d] = await db
+    .select({ status: agentDrafts.status, policy: agentDrafts.policy })
+    .from(agentDrafts)
+    .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.managerUserId, staffId)));
+  const until = ((d?.policy ?? {}) as Partial<DraftPolicyJson>).answering?.until;
+  return d?.status === 'editing' && typeof until === 'string' && new Date(until).getTime() > now.getTime();
 }
 
 /** «✅ Tarif to'g'ri»'s answers (spec SPEC-P1-v2 §1.6, tariff-watch `confirmTariff`). */
@@ -377,10 +441,18 @@ export async function agentText(
   staffId: string,
   target: { kind: AgentWaitKind; payload: Record<string, string> } | null,
   text: string,
+  /** His message in the bot chat — what a ✍️ answer is keyed by (§2.2). */
+  messageId?: number,
 ): Promise<AgentTextAnswer | null> {
   if (!target) return null;
   const actor = await deciderFor(staffId);
   const ctx = { actorId: staffId };
+  if (target.kind === 'agent_answer') {
+    const draftId = target.payload.draftId!;
+    const r = await storeOwnerAnswer(actor, draftId, text, messageId ?? 0, ctx);
+    if (!r.ok) return { text: r.code === 'not_live' ? ANSWER_NOT_LIVE : ANSWER_WORDS[r.code] };
+    return { text: ANSWER_TAKEN, buttons: answerKbRow(draftId) };
+  }
   if (target.kind === 'agent_edit') {
     const draftId = target.payload.draftId!;
     const r = await submitOwnText(actor, draftId, text, ctx);
@@ -447,6 +519,11 @@ export async function agentCardFor(
   staffId: string,
   chatId: bigint,
   messageId: number,
+  /**
+   * The draft a ✍️ wait is armed for (spec §2.2): a swipe-reply to THAT draft's card is his answer. To any other
+   * card — or with no ✍️ armed — it stays his verbatim ✏️ text, as the ✏️ prompt tells him.
+   */
+  answerArmedFor: string | null = null,
 ): Promise<{ kind: AgentWaitKind; payload: Record<string, string> } | null> {
   const [row] = await db
     .select({ type: notifications.type, payload: notifications.payload })
@@ -463,8 +540,11 @@ export async function agentCardFor(
     .limit(1);
   if (!row) return null;
   const p = row.payload as Record<string, unknown>;
-  // A swipe-reply IS an edit: `submitOwnText` takes a pending draft as well as an editing one.
-  if (row.type === 'AgentDraft' && typeof p.draftId === 'string') return { kind: 'agent_edit', payload: { draftId: p.draftId } };
+  // A swipe-reply IS an edit: `submitOwnText` takes a pending draft as well as an editing one — unless he pressed
+  // «✍️ Savolga javob» on this very draft: then it is the answer the press asked for.
+  if (row.type === 'AgentDraft' && typeof p.draftId === 'string') {
+    return p.draftId === answerArmedFor ? { kind: 'agent_answer', payload: { draftId: p.draftId } } : { kind: 'agent_edit', payload: { draftId: p.draftId } };
+  }
   // A purged answer card (`live: false`) is no door: its link is gone with the chat.
   if (row.type === 'AgentCalcAnswered' && typeof p.requestId === 'string' && p.priceable === true && p.live !== false) {
     return { kind: 'agent_price', payload: { requestId: p.requestId } };
@@ -478,41 +558,17 @@ export async function agentCardFor(
   return null;
 }
 
-/**
- * Every name this draft's chat is known by — the client and its phone
- * siblings, the lead, the peer's own Telegram title (review I3). A lead chat
- * has no client, and the old lookup by `clientId` alone gave a lead's general
- * fact no names to refuse at all.
- */
-async function knownNamesFor(d: typeof agentDrafts.$inferSelect): Promise<string[]> {
-  const names: string[] = [];
-  if (d.clientId) {
-    const ids = (await phoneSiblingClients(d.clientId)).map((c) => c.id);
-    if (ids.length > 0) {
-      for (const c of await db.select({ name: clients.name }).from(clients).where(inArray(clients.id, ids))) names.push(c.name);
-    }
-  }
-  if (d.leadId) {
-    const [l] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, d.leadId));
-    // A «📵» lead with no title is named by a placeholder, not by a person.
-    const { PHONELESS_LEAD_NAME } = await import('../crm/chat-rules');
-    if (l && l.name !== PHONELESS_LEAD_NAME) names.push(l.name);
-  }
-  const [rule] = await db
-    .select({ title: tgChatRules.peerTitle })
-    .from(tgChatRules)
-    .where(and(eq(tgChatRules.managerUserId, d.managerUserId), eq(tgChatRules.peerId, d.peerId)));
-  if (rule?.title) names.push(rule.title);
-  return names;
-}
-
 async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string, digest: string | undefined): Promise<PressAnswer> {
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
   if (!d || d.managerUserId !== staffId) return { toast: 'Topilmadi' };
-  // The card offers this only under an APPROVED answer of his own to a question
-  // the machine asked (card-io `kbAsk`); a forged press on anything else is refused.
-  if (d.status !== 'approved' || !d.needsOwner || !d.finalBody) return { toast: 'Topilmadi' };
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson> & { kb?: string; kbToken?: string };
+  // The card offers this only under an APPROVED answer of his own to a question the machine asked (card-io
+  // `kbAsk`) — or under his ✍️ answer's acknowledgement, whatever became of the question since (spec §2.3: the
+  // answer he typed is the fact). A forged press on anything else is refused.
+  const ownWords = d.status === 'approved' && d.needsOwner && d.finalBody ? d.finalBody : null;
+  const answered = typeof p.ownerAnswer?.text === 'string' && p.ownerAnswer.text.trim() !== '' ? p.ownerAnswer.text : null;
+  const factText = ownWords ?? answered;
+  if (factText === null) return { toast: 'Topilmadi' };
   if (p.kb === 'saved' || p.kb === 'skipped') return { toast: 'Allaqachon hal qilingan' };
   const setKb = async (kb: string, extra: Record<string, string> = {}) => {
     await db.update(agentDrafts).set({ policy: { ...p, kb, ...extra } }).where(eq(agentDrafts.id, draftId));
@@ -542,7 +598,7 @@ async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string, di
   }
   let dropped = false;
   try {
-    const answer = d.finalBody ?? '';
+    const answer = factText;
     const chatNames = await knownNamesFor(d);
     // A GENERAL fact is checked against EVERY name the client book and the
     // staff hold, as the page's own add form checks (`addGeneralFact`): his
@@ -1159,6 +1215,17 @@ export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categ
     `🤖 O‘zi yuborish yoqildi: mos javob kartasi ${hold} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing. ` +
     `${day}, tunda yo‘q; ${kept}.`
   );
+}
+
+/**
+ * Another agent press while a ✍️ waits on a DIFFERENT question (spec SPEC-P1-v2 §2.2, one agent wait at a time): that
+ * question goes back to him, its card saying so, the lines that stood down for it asked again (decide
+ * `releaseAnswering`). His own draft only — the wait was armed in his chat, but the id is still checked.
+ */
+export async function releaseAnswer(staffId: string, draftId: string): Promise<void> {
+  const [d] = await db.select({ managerUserId: agentDrafts.managerUserId }).from(agentDrafts).where(eq(agentDrafts.id, draftId));
+  if (!d || d.managerUserId !== staffId) return;
+  await releaseAnswering(draftId, { note: '✍️ Javob kutish bekor — boshqa so‘rovni tanladingiz.', redraft: true });
 }
 
 /** A second ✏️ elsewhere: the first draft is no longer being edited — never silently re-targeted (leak-6). */

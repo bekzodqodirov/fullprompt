@@ -5,6 +5,7 @@ import {
   currenciesNamed,
   currencyOf,
   MONEY_WORD,
+  namesCurrency,
   normalizeDigits,
   type Currency,
 } from './digits';
@@ -83,8 +84,13 @@ export type MoneyRole = 'total' | 'rate' | 'balance';
  * fact, or the customer. Without it a customer's own «5 kunda kelsinmi?»
  * backed the reply's «Odatda 5 kunda yetib keladi» — his wish, worded as our
  * estimate, passed G1 — and a fact's «15–25 kun» could not be told from his.
+ *
+ * `owner`: HIS answer to the AI's question («✍️ Savolga javob», spec SPEC-P1-v2 §2.2) — the company's word like a
+ * fact (`companySaid`), read like a fact (`ownerAnswerSources`), and for ONE redraft only: it lives in that draft's
+ * stored memory and nowhere else. A line it vouches for is the auto layer's `owner_figure` — his figure always comes
+ * back to him as a card, never by itself.
  */
-export type SourceOrigin = 'tool' | 'kb' | 'customer';
+export type SourceOrigin = 'tool' | 'kb' | 'customer' | 'owner';
 
 export interface NumberSource {
   value: number;
@@ -1097,7 +1103,9 @@ function sameValue(a: number, b: number): boolean {
  * to have repeated back.
  */
 const COMPANY_KINDS: ReadonlySet<NumberKind> = new Set(['money', 'duration', 'date', 'percent']);
-const companySaid = (s: NumberSource) => s.origin === 'tool' || s.origin === 'kb';
+// His ✍️ answer is the company speaking too (spec §2.2) — «VED 3 kunda hisoblaydi» vouches for «3 kunda»; the auto
+// layer never lets such a line go by itself (`owner_figure`).
+const companySaid = (s: NumberSource) => s.origin === 'tool' || s.origin === 'kb' || s.origin === 'owner';
 
 /**
  * A money figure and a money source are one claim only when they are in one
@@ -1152,7 +1160,8 @@ export function sourceFor(
     // A fact's bare figure is a house, a building, a distance in an address — «29号», «3栋», «168米» — and
     // vouches for that address said again, never for a time or a count of the same value: «Yukingiz taxminan
     // 29 kunda yetib keladi» passed on Guangzhou's house number (incident 2026-10-29, the fail-open side).
-    if (s.kind === 'plain' && s.origin === 'kb' && found.kind !== 'plain') return false;
+    // His ✍️ answer the same (spec §2.2): a house number in it never vouches for a day count.
+    if (s.kind === 'plain' && (s.origin === 'kb' || s.origin === 'owner') && found.kind !== 'plain') return false;
     if (found.kind === 'plain' && s.kind === 'money') return false;
     // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
     // flight's five is a promise nobody made. A day count naming NO road — and the customer asked none —
@@ -1414,6 +1423,39 @@ export function factSources(text: string, label: string): NumberSource[] {
       ...(f.unit ? { unit: f.unit } : {}),
       // …and a minimum it states vouches for a minimum, as the company's rule does (second review).
       ...(f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length) ? { said: 'minimum' as const } : {}),
+    };
+  });
+}
+
+/** The label his answer's figures carry on the card's «🔢 Raqamlar» line. */
+export const OWNER_ANSWER_LABEL = 'sizning javobingiz';
+
+/**
+ * Sources from HIS answer to the AI's question (spec SPEC-P1-v2 §2.2) — built as `factSources` builds a fact's: the
+ * unit, the road and the minimum read the same way, and a bare figure of his vouches for that figure said again,
+ * never for a time or a count (`sourceFor`'s plain fence). Unlike a fact, his MONEY is a money source — but only
+ * with a currency written in his text («1200 $»: a «narxi 1200» with none vouches for nothing), and in the role its
+ * own form says (a figure said per unit is a rate, anything else a total). Origin `owner`: the reply may say it, the
+ * auto layer never sends it by itself (`owner_figure`).
+ */
+export function ownerAnswerSources(text: string): NumberSource[] {
+  const t = blanked(text, []);
+  // A currency WRITTEN in his text (the bounded reader `money_unread` asks too): the extractor would read a
+  // «narxi 1200» as dollars by default — every tool states dollars — and his bare figure is no price of ours.
+  const written = namesCurrency(text);
+  return extractNumbers(text).map((f): NumberSource => {
+    const mode = f.kind === 'duration' || f.kind === 'measure' ? modeAt(t, f.index) : null;
+    const money = f.kind === 'money' && written && f.currency !== null && f.currency !== undefined;
+    return {
+      value: f.value,
+      kind: f.kind === 'money' ? (money ? 'money' : 'customer_money') : f.kind,
+      label: OWNER_ANSWER_LABEL,
+      origin: 'owner',
+      ...(money ? { currency: f.currency!, role: f.perUnit === true ? ('rate' as const) : ('total' as const) } : {}),
+      ...(mode ? { mode } : {}),
+      ...(f.unit ? { unit: f.unit } : {}),
+      ...(f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length) ? { said: 'minimum' as const } : {}),
+      ...(f.fixed ? { fixed: true } : {}),
     };
   });
 }

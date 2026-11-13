@@ -6,13 +6,13 @@ import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../.
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
 import { autoPayload } from './auto-card';
 import { countdownMayRide, recordAutoVerdictInTx, settleSupersededAuto, type AutoPlan } from './auto-send';
-import { cardDrawsSend, cardExtra } from './card';
+import { cardAsks, cardDrawsSend, cardExtra } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
 import { bindMoved, chatIdentity, type AgentContext } from './context';
 import { estimatesStand } from './estimate-check';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
-import type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
+import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson } from './types';
 
 export type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
 import type { ComposeReply } from './run';
@@ -61,7 +61,11 @@ async function cardRowFor(tx: Tx, draftId: string) {
   return row ?? null;
 }
 
-export type WriteDraftResult = { kind: 'written'; draftId: string; retargeted: boolean } | { kind: 'editing'; draftId: string };
+export type WriteDraftResult =
+  | { kind: 'written'; draftId: string; retargeted: boolean }
+  | { kind: 'editing'; draftId: string }
+  /** The question his ✍️ answer was for is no longer waiting for it (`answersDraftId`) — nothing was written. */
+  | { kind: 'question_gone'; draftId: string };
 
 /** Everything a new draft row carries — the machine's reply, a price, a hand-back question. */
 export interface NewDraft {
@@ -94,6 +98,14 @@ export interface NewDraft {
    * null: no row (an owner-triggered draft, 0145 not landed, a plan that failed).
    */
   autoPlan?: AutoPlan | null;
+  /**
+   * His ✍️ answer's redraft (spec SPEC-P1-v2 §2.2): the question draft it answers, and the bot message his answer
+   * was. Inside this transaction THAT draft — and only while it still waits for this very answer (`editing`, its
+   * `ownerAnswer` this message) — is superseded as decided by him (`decided_by`, `decided_at`, `stale:
+   * 'owner_answered'`), though it is `editing`; anything else and nothing is written (`question_gone`). The redraft
+   * gets a card of its own, a push: never a silent edit of the question far up the chat.
+   */
+  answers?: { draftId: string; messageId: number; decidedBy: string } | null;
 }
 
 const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
@@ -120,8 +132,41 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
         ),
       )
       .for('update');
-    if (live?.status === 'editing') return { kind: 'editing', draftId: live.id };
-    if (live) {
+    if (n.answers) {
+      // The question waits for THIS answer, or the redraft writes nothing: a ✅, ❌ or 🙋 on it, his ✏️ words, a
+      // newer answer, the sweep handing it back — each decided it first.
+      const [q] = await tx
+        .select({ id: agentDrafts.id })
+        .from(agentDrafts)
+        .where(
+          and(
+            eq(agentDrafts.id, n.answers.draftId),
+            eq(agentDrafts.managerUserId, n.managerUserId),
+            eq(agentDrafts.peerId, n.peerId),
+            eq(agentDrafts.status, 'editing'),
+            // Still waiting for an answer: his ✏️ after it took the mark away (decide `decideDraft` 'edit').
+            sql`${agentDrafts.policy} ? 'answering'`,
+            sql`${agentDrafts.policy}->'ownerAnswer'->>'messageId' = ${String(n.answers.messageId)}`,
+          ),
+        )
+        .for('update');
+      if (!q || live?.id !== q.id) return { kind: 'question_gone', draftId: n.answers.draftId };
+      const at = new Date();
+      await tx
+        .update(agentDrafts)
+        .set({
+          status: 'superseded',
+          decidedBy: n.answers.decidedBy,
+          decidedAt: at,
+          updatedAt: at,
+          policy: sql`(coalesce(${agentDrafts.policy}, '{}'::jsonb) - 'answering') || ${JSON.stringify({ stale: 'owner_answered' })}::jsonb`,
+        })
+        .where(eq(agentDrafts.id, q.id));
+      superseded = q.id;
+      closeOld = true;
+    } else if (live?.status === 'editing') {
+      return { kind: 'editing', draftId: live.id };
+    } else if (live) {
       await tx.update(agentDrafts).set({ status: 'superseded', updatedAt: new Date() }).where(eq(agentDrafts.id, live.id));
       superseded = live.id;
     }
@@ -167,8 +212,11 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       kind: row.kind,
       // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
       auto: autoPayload(auto, row, sendable),
+      // A question the model raised (spec §2.2) offers «✍️ Savolga javob».
+      ask: cardAsks(row),
     });
-    const old = live ? await cardRowFor(tx, live.id) : null;
+    // His answer's redraft never rides the question's card (§2.2): a push of its own, the question closed after.
+    const old = live && !n.answers ? await cardRowFor(tx, live.id) : null;
     // A reply that counts down rides only a copy that rang within one hold (the final check, auto-send
     // `countdownMayRide`; a copy sent silently in the night never rang — the second check): an edit rings
     // nothing, so on an older copy it gets a card of its own — a push — and the old copy is closed after the
@@ -194,7 +242,8 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       await settleSupersededAuto(superseded).catch((err: unknown) => logger.warn({ err, draftId: superseded }, '[agent] superseded auto not settled'));
     }
     await kickTelegramDrain();
-    // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`).
+    // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`) — or, for
+    // the question his ✍️ answer was for, «✍️ Javobingiz olindi — AI qayta yozdi» (STALE_WORDS `owner_answered`).
     if (closeOld && superseded) {
       const { refreshAgentCard } = await import('./card-io');
       await refreshAgentCard(superseded).catch((err: unknown) => logger.warn({ err }, '[agent] old card not closed'));
@@ -217,6 +266,8 @@ export interface RunDraftInput {
   actions: ComposedAction[];
   notes: string[];
   kind?: 'reply' | 'hand_back';
+  /** His ✍️ answer behind this redraft (spec §2.2) — kept on its policy for the auto layer (`owner_personal`, `answer_stale`). */
+  fromAnswer?: AnswerMark | null;
 }
 
 /**
@@ -249,6 +300,9 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       memory: input.memory,
       card: cardMemory(ctx),
       notes: input.notes,
+      // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
+      ...(compose.forcedQuestion ? { forcedQuestion: compose.forcedQuestion } : {}),
+      ...(input.fromAnswer ? { fromAnswer: input.fromAnswer } : {}),
     },
     blocked: !policy.ok,
     needsOwner: compose.needsOwner,
@@ -264,11 +318,16 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
 /** The machine's reply to the chat, from a run. */
 export async function writeDraft(
   input: RunDraftInput & {
-    /** The inbound run's «o'zi yuborish» plan (auto-send `autoPlanFor`); never an owner-triggered run's. */
+    /**
+     * The «o'zi yuborish» plan (auto-send `autoPlanFor`): the inbound run's, and — of the owner-triggered ones —
+     * only his ✍️ answer's redraft (spec §2.2).
+     */
     autoPlan?: AutoPlan | null;
+    /** His ✍️ answer's redraft: the question it answers (`NewDraft.answers`). */
+    answers?: NewDraft['answers'];
   },
 ): Promise<WriteDraftResult> {
-  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null });
+  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null, answers: input.answers ?? null });
 }
 
 export { cardMemory };
