@@ -36,6 +36,10 @@ const ALLOWED: Record<string, string> = {
   'agent/site-estimate.ts': 'the volumetric weight of a stated cube',
   // Money: a call's micro-dollars as dollars at six decimals. No sides.
   'calc/ai-press.ts': 'micro-dollars to dollars',
+  // Money again: the evening summary's AI bill (main's «Prixod xabari»,
+  // docs/PRIXOD-XABARI.md) sums frozen dollars as whole micro-dollars so the
+  // total does not drift. Found by this fence on the merge. No sides.
+  'reports/ai-spend.ts': 'dollars to micro-dollars for an exact sum',
   // The WAREHOUSE's measured box — the prixod's lot math (spec 4.6) and the
   // crate's stated cube on /stock — each with its own rounding, which every
   // stored lot and its tannarx were computed with. Found by this fence, and

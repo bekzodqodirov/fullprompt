@@ -29,6 +29,33 @@ function newPairCode(): string {
   return Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
 }
 
+/** How many fresh codes a device row may draw before the insert gives up. */
+const PAIR_CODE_DRAWS = 5;
+
+/**
+ * A device row under a code nobody holds. `pair_code` is UNIQUE and a code
+ * stays on its row until the phone pairs or the code is revoked, so an
+ * unpaired trip keeps its code for ever — CI's shared database holds
+ * thousands, and one draw met another: «driver_devices_pair_code_key», the
+ * whole plan approval (`submitPlan`) rolled back with it. ON CONFLICT DO
+ * NOTHING and draw again, never a caught 23505: inside the batch's own
+ * transaction a failed INSERT aborts everything before it.
+ */
+async function insertWithFreshCode(
+  dbOrTx: Db | Tx,
+  values: Omit<typeof driverDevices.$inferInsert, 'pairCode'>,
+): Promise<typeof driverDevices.$inferSelect> {
+  for (let draw = 0; draw < PAIR_CODE_DRAWS; draw += 1) {
+    const [row] = await dbOrTx
+      .insert(driverDevices)
+      .values({ ...values, pairCode: newPairCode() })
+      .onConflictDoNothing({ target: driverDevices.pairCode })
+      .returning();
+    if (row) return row;
+  }
+  throw new TrackingError('pair_code_taken');
+}
+
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 // The freshness line lives with the engine (pure — eta.ts judges it); the
@@ -45,11 +72,7 @@ export { FRESH_MINUTES };
  * the code, which is why the manual "new code" button stays.
  */
 export async function mintBatchPairCode(dbOrTx: Db | Tx, batchId: string, actorId: string) {
-  const [row] = await dbOrTx
-    .insert(driverDevices)
-    .values({ batchId, pairCode: newPairCode(), createdBy: actorId })
-    .returning();
-  return row!;
+  return insertWithFreshCode(dbOrTx, { batchId, createdBy: actorId });
 }
 
 /** Mint a pairing code for a trip. The phone exchanges it for a token. */
@@ -62,22 +85,14 @@ export async function createDriverDevice(
   if (!batch) throw new TrackingError('batch_not_found');
   if (['closed', 'cancelled'].includes(batch.status)) throw new TrackingError('batch_closed');
 
-  const [row] = await db
-    .insert(driverDevices)
-    .values({
-      batchId: input.batchId,
-      label: input.label || null,
-      pairCode: newPairCode(),
-      createdBy: ctx.actorId,
-    })
-    .returning();
+  const row = await insertWithFreshCode(db, { batchId: input.batchId, label: input.label || null, createdBy: ctx.actorId });
   await writeAudit(db, ctx, {
     entityType: 'driver_device',
-    entityId: row!.id,
+    entityId: row.id,
     action: 'create',
     after: { batchId: input.batchId, label: input.label ?? null },
   });
-  return row!;
+  return row;
 }
 
 export async function revokeDriverDevice(deviceId: string, ctx: AuditContext) {
