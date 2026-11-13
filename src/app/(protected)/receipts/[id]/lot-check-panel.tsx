@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { dismissDisputesAction } from './client-ask-actions';
 import { checkLotAction, uncheckLotAction } from './lot-check-actions';
+import { heldTickFace } from '@/modules/wms/receipts/lot-check-face';
 
 /**
  * «Yuk ma'lumoti tekshirildi» on one lot of the prixod card
@@ -43,7 +44,9 @@ export interface LotCheckFace {
     token: string;
     note: string | null;
     holds: boolean;
-    moved: { name: boolean; count: boolean; client: boolean };
+    moved: { name: boolean; count: boolean; client: boolean; measures: boolean };
+    /** This owner's ❌ is not older than the tick — it vouches for nothing (`heldTickFace`). */
+    outranked: boolean;
   } | null;
   /** The client's own ✅ / ❌ in Telegram (0144); null = none, or a server without 0144. */
   client: {
@@ -78,7 +81,7 @@ export function LotCheckPanel({
   lotId: string;
   face: LotCheckFace;
   /** The lot as this page drew it — the service compares it with the locked row. */
-  seen: { nameZh: string; nameRu: string; boxCount: number; clientId: string | null };
+  seen: { nameZh: string; nameRu: string; boxCount: number; clientId: string | null; kg?: string; m3?: string };
   /** `mayCheckLot` AND a confirmed prixod. */
   canWrite: boolean;
   /** The ✏️ lot form is drawn for this reader (`receipts.edit`) — the VED's is not. */
@@ -107,7 +110,13 @@ export function LotCheckPanel({
   /** «Ask again» is said only where the lot is still asked about. */
   const asking = !checked && face.askable;
   const movedWords = person
-    ? [person.moved.name && t('movedName'), person.moved.count && t('movedCount'), person.moved.client && t('movedClient')]
+    ? [
+        person.moved.name && t('movedName'),
+        person.moved.count && t('movedCount'),
+        person.moved.client && t('movedClient'),
+        // The kilos or the cubic metres the tick remembered (0147, his «2 b»).
+        person.moved.measures && t('movedMeasures'),
+      ]
         .filter((w): w is string => Boolean(w))
         .join(', ')
     : '';
@@ -124,7 +133,16 @@ export function LotCheckPanel({
     try {
       const res = await checkLotAction({
         lotId,
-        seen: { nameZh: seen.nameZh, nameRu: seen.nameRu, boxCount: seen.boxCount, clientId: seen.clientId ?? '' },
+        seen: {
+          nameZh: seen.nameZh,
+          nameRu: seen.nameRu,
+          boxCount: seen.boxCount,
+          clientId: seen.clientId ?? '',
+          // What the line printed: a re-weigh since the page was drawn refuses
+          // the press (`lot_changed`) instead of vouching for a weight unseen.
+          ...(seen.kg !== undefined ? { kg: seen.kg } : {}),
+          ...(seen.m3 !== undefined ? { m3: seen.m3 } : {}),
+        },
         note: note.trim() || undefined,
         seenCheckedAt: person?.token ?? null,
         // Whatever answer the table holds for this lot, as this page drew it:
@@ -210,9 +228,13 @@ export function LotCheckPanel({
       ),
     );
   }
-  if (person?.holds) {
+  const tickFace = person ? heldTickFace(person, vetoed) : null;
+  if (person && tickFace) {
     lines.push(
-      vetoed ? (
+      // A tick this owner's later ❌ outranks vouches for nothing, vetoing or
+      // not (the sentence's arm 3) — history beside a lot the lists call ⚠,
+      // never the green ✅ (the fixes' review, TICK3-CARD).
+      tickFace === 'history' ? (
         <p key="person-held" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-person-held">
           {t('personHeld', { by: person.by ?? '—', day: person.day })}
         </p>

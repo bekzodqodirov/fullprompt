@@ -125,6 +125,8 @@ without. Placed with the cheap terms, before the shown-name subquery.
   colleague ticks after it, the client is asked again and presses ✅, the rejected tarkib goods change, or
   «E'tirozni yopish».
 - The colleague's own tick (`lot_checks`) is NOT touched: his answer is about what the client confirms.
+  **Superseded 2026-11-13 by his «2 b»** (`docs/PRIXOD-JAVOBLAR.md` §2, §8): the tick remembers kg/m³ too
+  (0147) and stops vouching on a re-weigh; a ❌ it had answered is still not brought back.
 - «Already» (`same(lot)` in `answerClientAsk`) compares the measures too, so a `full` ✅ pressed after a
   `basic` one is WRITTEN (it says more) and never answered «allaqachon».
 

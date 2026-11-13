@@ -55,6 +55,10 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // …and 0146's third (the answer's kilos and cubic metres), the same.
   lotClientMeasuresReady: () => ready.on,
   clientMeasuresReady: async () => ready.on,
+  // …and 0147's two (the tick's kilos and cubic metres, the notices' remembered question), the same.
+  lotTickMeasuresReady: () => ready.on,
+  tickMeasuresReady: async () => ready.on,
+  askedTagReady: async () => ready.on,
 }));
 
 import { db, pgClient } from '@/modules/platform/db/client';

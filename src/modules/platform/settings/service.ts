@@ -147,6 +147,15 @@ export const SETTING_DEFAULTS = {
    */
   client_confirm_on_receipt: true,
   /**
+   * Ask the client AGAIN, by itself, when a re-weigh makes the question they
+   * hold describe cargo that no longer exists (the owner's «1 b» of
+   * 2026-11-12, docs/PRIXOD-JAVOBLAR.md §1 — `wms/receipts/client-reask.ts`).
+   * On by his answer; a switch for the same reason as the one above: it writes
+   * to CUSTOMERS by itself. Off: nothing is armed, a question already held is
+   * not sent, and «Mijozdan so'rash» on the card still asks on a press.
+   */
+  client_reask_on_reweigh: true,
+  /**
    * Write the AI-VED's estimate onto the card's lenta as well as into the
    * seller's chat (his answer 2a). A switch because it is the only thing on
    * this path that writes where OTHER people read.

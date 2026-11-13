@@ -2,7 +2,7 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import type { PgSelect } from 'drizzle-orm/pg-core';
 import { lotChecks, receiptLots } from '../../platform/db/schema';
 import type { CheckFilter } from './lot-check-face';
-import { lotClientConfirmsReady, lotClientMeasuresReady } from './lot-check-ready';
+import { lotClientConfirmsReady, lotClientMeasuresReady, lotTickMeasuresReady } from './lot-check-ready';
 import { lotRuShownSql } from './lot-name';
 
 export {
@@ -28,9 +28,12 @@ export {
  *    the client. A rename, a count correction, the QR-siz count growth or a
  *    new client make it read «stale» by COMPARISON — and a take-back to the
  *    vouched count reads checked again by itself, which a clear-on-write
- *    could never do. kg/m³ are deliberately not compared HERE: a re-weigh is
- *    the warehouse's correction, not «what is it» (the CLIENT's own answer
- *    does compare them since 0146 — below). The Russian name compared is
+ *    could never do. Since 0147 the tick also remembers the lot's kilos and
+ *    cubic metres, at the precision a list prints them, and a re-weigh makes
+ *    it «stale» as it does the client's own ✅ (the owner's «2 b» of
+ *    2026-11-12: «xodim qo'ygan ✅ ham kg/kub o'zgarsa «o'zgardi» bo'lsin» —
+ *    which reverses 0123's «a re-weigh is the warehouse's correction, not
+ *    "what is it"»). The Russian name compared is
  *    the one the screens SHOW (`lotRuShownSql` — the tarkib's label while one
  *    is written, standing or not): a person confirms what the card printed,
  *    so a tarkib written, changed or cleared after the tick makes it «stale»,
@@ -142,14 +145,35 @@ export function tarkibStandsSql(lot: SQL): SQL {
  * tick made as «Клавиатура», then a one-line tarkib «Мышь» and a re-weigh,
  * read ✅ «mijoz tasdiqladi» beside «键盘 (Мышь)».
  */
-export function checkTermsSql(refs: LotCheckRefs): { name: SQL; count: SQL; client: SQL } {
+export function checkTermsSql(refs: LotCheckRefs): { name: SQL; count: SQL; client: SQL; measures: SQL } {
   const { lot, receipt, check } = refs;
   return {
     name: sql`(${check}.seen_name_zh = ${lot}.product_name_zh
       AND ${check}.seen_name_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, ''))`,
     count: sql`(${check}.seen_box_count = ${lot}.box_count)`,
     client: sql`(${check}.seen_client_id IS NOT DISTINCT FROM ${receipt}.client_id)`,
+    measures: tickMeasuresHoldSql(refs),
   };
+}
+
+/**
+ * The kilos and cubic metres the colleague's tick remembered still stand
+ * (0147, the owner's «2 b» of 2026-11-12) — compared at the precision a list
+ * PRINTS them, through the very two expressions the client's full ✅ is
+ * compared with (`lotShownKgSql` / `lotShownM3Sql`, rounded by the database on
+ * both sides, #1708): one rule for «the figures a ✅ vouched for». A change
+ * below what a list prints (40.004 kg after 40.000) moves nothing. NULL = a
+ * tick that said nothing about them — one written by an old process in the
+ * minutes between the migration and its restart — and it holds on its other
+ * three terms, as a pre-0146 answer does. Location-free, like every term here
+ * (his 3a: a ✅ is for the figures it was given, wherever the cargo stands).
+ * Named columns, so only where they exist (`lotTickMeasuresReady()`).
+ */
+function tickMeasuresHoldSql(refs: Pick<LotCheckRefs, 'lot' | 'check'>): SQL {
+  if (!lotTickMeasuresReady()) return sql`TRUE`;
+  const { lot, check } = refs;
+  return sql`(${check}.seen_kg IS NULL
+    OR (${check}.seen_kg = ${lotShownKgSql(lot)} AND ${check}.seen_m3 = ${lotShownM3Sql(lot)}))`;
 }
 
 /**
@@ -166,6 +190,18 @@ export function lotShownKgSql(lot: SQL): SQL {
 
 export function lotShownM3Sql(lot: SQL): SQL {
   return sql`round(${lot}.total_volume_m3, 3)`;
+}
+
+/**
+ * ` · 200 kg · 1.5 m³` — the kilos and cubic metres a ✅ vouched for, as the
+ * History and the staff's sentences print them (the database's display text
+ * read through `Number`, so «1.500» never reads as fifteen hundred in the
+ * default locale); '' when it vouched for none. ONE spelling for the client's
+ * answer (`client-confirm.ts`) and the colleague's tick (`lot-check.ts`),
+ * which cannot import each other (the kernel lens, K7).
+ */
+export function measuresLine(kg: string | null, m3: string | null): string {
+  return kg === null || m3 === null ? '' : ` · ${Number(kg)} kg · ${Number(m3)} m³`;
 }
 
 /**
@@ -266,15 +302,28 @@ export function clientDisputeSql(refs: Pick<LotCheckRefs, 'receipt'>): SQL {
  * So a ❌ ends four ways and no fifth: the rejected goods are changed, a
  * colleague ticks after it, the client answers again, or «E'tirozni yopish».
  * kg and m³ lift no ❌ — a complaint about a weight is closed by a person;
- * they are compared in ONE place, arm 4: a ✅ given to a question that asked
- * about them (0146) stops vouching once they move.
+ * they are compared in TWO places, each against the figures its own ✅
+ * remembered: arm 3, a colleague's tick (0147, his «2 b»), and arm 4, a ✅
+ * given to a question that asked about them (0146) — either stops vouching
+ * once they move — and the tarkib's own Σ (arm 1) a third. And a re-weigh
+ * never brings an ANSWERED ❌ back: a tick pressed after the ❌ whose facts
+ * still hold has settled it, and so has a tarkib listing goods other than
+ * the ones the client rejected (arm 5's two NOT clauses) — so when only the
+ * kilos moved the lot reads «o'zgardi», the warehouse's correction, never
+ * the client's complaint in red (the kernel lens K3; the as-built review
+ * TICK-3 — the tarkib half is 0144's own «the rejected goods are changed»,
+ * kept true past a re-weigh). The arms are today's for every holding or
+ * measure-less tick and every standing tarkib.
  *
  * On a server whose 0144 has not landed (`lotClientConfirmsReady()`, #472)
  * this is the two-source sentence that shipped with 0123, word for word.
  */
 export function lotCheckStateSql(refs: LotCheckRefs): SQL {
   const terms = checkTermsSql(refs);
-  const ticked = sql`(${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client})`;
+  // The tick's FACTS — what 0144 decides the ❌ against — and the tick that
+  // vouches: the facts AND the kilos and cubic metres it remembered (0147).
+  const tickedFacts = sql`(${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client})`;
+  const ticked = sql`(${tickedFacts} AND ${terms.measures})`;
   if (!lotClientConfirmsReady()) {
     return sql`(CASE
       WHEN ${tarkibStandsSql(refs.lot)} THEN 'checked'
@@ -292,7 +341,9 @@ export function lotCheckStateSql(refs: LotCheckRefs): SQL {
     WHEN ${ticked}
       AND NOT (${dispute} AND ${refs.check}.checked_at <= ${LOT_CLIENT}.answered_at) THEN 'checked'
     WHEN ${LOT_CLIENT}.verdict = 'yes' AND ${clientHoldsSql(refs)} THEN 'checked'
-    WHEN ${dispute} THEN 'none'
+    WHEN ${dispute}
+      AND NOT (${tickedFacts} AND ${refs.check}.checked_at > ${LOT_CLIENT}.answered_at)
+      AND NOT (${LOT_TARKIB}.lot_id IS NOT NULL AND ${LOT_CLIENT}.shown_goods_key IS DISTINCT FROM ${LOT_TARKIB}.goods_key) THEN 'none'
     WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL
       OR ${LOT_CLIENT}.verdict = 'yes' THEN 'stale'
     ELSE 'none'

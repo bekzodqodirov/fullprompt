@@ -1030,6 +1030,13 @@
       "when": 1785190000125,
       "tag": "0146_prixod_xabari",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1785190000126,
+      "tag": "0147_prixod_javoblar",
+      "breakpoints": true
     }
   ]
 }

@@ -486,6 +486,16 @@ const DICT = {
     ru: '❓ Товары, их количество (шт), число коробок, вес (кг) и объём (м³) указаны верно? Проверьте и подтвердите.',
     en: '❓ Are the goods, their piece counts, the box count, the weight (kg) and the volume (m³) correct? Please check and confirm.',
   },
+  // The question the system sends BY ITSELF after a re-weigh (the owner's
+  // «1 b» of 2026-11-12, docs/PRIXOD-JAVOBLAR.md §1.7): one line under the
+  // title, true of a weight, a volume and a count alike — the lines below
+  // show what changed. «Again» is on the CHECK, never on the confirmation:
+  // the client asked may never have answered, or answered ❌ (the owner lens).
+  confirmAskUpdated: {
+    uz: '🔄 Yukingiz ma’lumoti yangilandi — iltimos, qayta tekshirib tasdiqlang.',
+    ru: '🔄 Данные о вашем грузе обновлены — пожалуйста, проверьте ещё раз и подтвердите.',
+    en: '🔄 Your cargo details were updated — please check again and confirm.',
+  },
   confirmYes: { uz: '✅ To‘g‘ri', ru: '✅ Верно', en: '✅ Correct' },
   confirmNo: { uz: '❌ Xato bor', ru: '❌ Есть ошибка', en: '❌ Something is wrong' },
   confirmThanks: {

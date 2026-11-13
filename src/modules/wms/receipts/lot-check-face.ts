@@ -9,6 +9,21 @@
 export const LOT_CHECK_STATES = ['checked', 'unclaimed', 'stale', 'none'] as const;
 export type LotCheckState = (typeof LOT_CHECK_STATES)[number];
 
+/**
+ * How the prixod card draws a colleague's tick that still HOLDS (its facts and
+ * figures are the lot's): as the green «✅ Mijoz tasdiqladi» only where it
+ * VOUCHES — the sentence's arm 3 — and as history («… mijozning e'tirozidan
+ * oldin») under a veto or past this owner's later ❌, which arm 3 lets no
+ * older tick outrank whether or not that ❌ still vetoes the lot (a tarkib of
+ * other goods settles a ❌ without making an older tick true again — the
+ * fixes' review, TICK3-CARD). Null for a tick that does not hold. The literal
+ * matrix asks it of every combination: green only on a lot the lists call ✅.
+ */
+export function heldTickFace(person: { holds: boolean; outranked: boolean }, vetoed: boolean): 'vouches' | 'history' | null {
+  if (!person.holds) return null;
+  return vetoed || person.outranked ? 'history' : 'vouches';
+}
+
 /** The two filter values; absent = everything. */
 export type CheckFilter = 'ha' | 'yoq';
 

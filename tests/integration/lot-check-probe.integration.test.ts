@@ -153,6 +153,13 @@ describe('the tick asks for 0144 itself — it never trusts what another screen 
     expect(row).not.toBeNull();
     // The tick is the newer of the two — which is what the sentence reads as «lifted».
     expect(row!.newer).toBe(true);
+    // …and it remembers the kilos and cubic metres (0147, his «2 b»): the first press
+    // of a process asks the probe itself — never a flag nobody has warmed — or the
+    // tick would be stored measure-less and hold through every re-weigh.
+    const [measured] = (await db.execute(sql`
+      SELECT seen_kg::text AS kg, seen_m3::text AS m3 FROM lot_checks WHERE lot_id = ${lotId}::uuid
+    `)) as unknown as { kg: string | null; m3: string | null }[];
+    expect(measured).toEqual({ kg: '30.00', m3: '0.300' });
   });
 
   it('…and the presser’s own OLDER tick does not make it «already confirmed»', async () => {

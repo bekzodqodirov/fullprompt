@@ -170,7 +170,7 @@ export async function saveAttachment(
      */
     asPaper?: boolean;
   } = {},
-): Promise<{ id: string }> {
+): Promise<{ id: string; kind: 'photo' | 'file' }> {
   if (opts.keyName !== undefined && !/^[A-Za-z0-9_-]{1,80}$/.test(opts.keyName)) {
     // Never a path: a slash would let a caller write under another entity's prefix.
     throw new Error(`bad attachment key name: ${opts.keyName}`);
@@ -226,7 +226,10 @@ export async function saveAttachment(
       logger.warn({ err, attachmentId: row.id }, 'thumbnail job not queued; the photo is saved');
     }
   }
-  return { id: row!.id };
+  // The kind as STORED — a picture saved as a paper is a file, and the screen
+  // that uploaded it must draw it as one (the prixod card's seller upload,
+  // docs/PRIXOD-JAVOBLAR.md §3.3).
+  return { id: row!.id, kind: isPhoto && !opts.asPaper ? 'photo' : 'file' };
 }
 
 /**

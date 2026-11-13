@@ -4,6 +4,7 @@ import { requireActor, AuthError } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
 import { broadcasts, pickupStops, receipts, staffNotes } from '@/modules/platform/db/schema';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
+import { mayAddReceiptFiles, recordReceiptFile } from '@/modules/wms/receipts/files-door';
 import { BROADCAST_ENTITY_TYPE, mayBroadcast } from '@/modules/platform/broadcast/service';
 import { PICKUP_WRITE } from '@/modules/wms/pickups/service';
 import { FileValidationError, saveAttachment } from '@/modules/platform/files/service';
@@ -128,15 +129,37 @@ export async function POST(request: Request) {
   // prixod. A receipt that EXISTS asks the receipt card's own read door; one
   // that does not exist yet is the wizard pre-binding to the id it minted
   // (#180) and passes, as the note's does above.
+  let receiptTarget: { id: string; warehouseId: string; confirmed: boolean } | null = null;
   if (meta.data.entityType === 'receipt') {
     const receipt = await db.query.receipts.findFirst({
       where: eq(receipts.id, meta.data.entityId),
-      columns: { id: true, warehouseId: true },
+      columns: { id: true, warehouseId: true, status: true, voidedAt: true },
     });
     if (receipt && !(await mayReadReceipt(actor, receipt))) {
       return Response.json({ error: 'forbidden' }, { status: 403 });
     }
+    // A voided prixod is off every shelf and its papers back nothing — the
+    // bot's own refusal («Bu prixod bekor qilingan»), and the card draws no 📎
+    // there; this is a stale page or a forged post (docs/PRIXOD-JAVOBLAR.md §3.4).
+    if (receipt && (receipt.voidedAt || receipt.status === 'voided')) {
+      return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
+    // On a CONFIRMED prixod a file is added by the people who work prixods —
+    // the card's tile and the bot's door ask the same (§8, the owner lens O7);
+    // the wizard's pre-binding (no prixod, or its draft) is the warehouse's.
+    if (receipt && receipt.status === 'confirmed' && !mayAddReceiptFiles(actor)) {
+      return Response.json({ error: 'forbidden' }, { status: 403 });
+    }
+    if (receipt) receiptTarget = { id: receipt.id, warehouseId: receipt.warehouseId, confirmed: receipt.status === 'confirmed' };
   }
+  // A picture added to a CONFIRMED prixod by somebody who does not edit its
+  // cargo is a PAPER — an invoice, a packing list a seller photographed — the
+  // bot's own rule (0146): a prixod's `photo` attachments are its CARTON
+  // photos (the loader's list, /stock, the Ostatka Excel draw the first one
+  // where the cargo should be), and an invoice must never stand there. The
+  // warehouse (`receipts.edit`) goes on adding a missed carton photo as a
+  // photo (§3.3, the owner's «4 b»).
+  const asPaper = receiptTarget?.confirmed === true && !actor.permissions.has('receipts.edit');
 
   if (meta.data.entityType === 'pickup_stop') {
     const stop = await db.query.pickupStops.findFirst({
@@ -161,14 +184,29 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await saveAttachment({
-      entityType: meta.data.entityType,
-      entityId: meta.data.entityId,
-      fileName: file.name,
-      contentType: file.type,
-      body: Buffer.from(await file.arrayBuffer()),
-      uploadedBy: actor.id,
-    });
+    const result = await saveAttachment(
+      {
+        entityType: meta.data.entityType,
+        entityId: meta.data.entityId,
+        fileName: file.name,
+        contentType: file.type,
+        body: Buffer.from(await file.arrayBuffer()),
+        uploadedBy: actor.id,
+      },
+      { asPaper },
+    );
+    // The History line every file added to a confirmed prixod gets (5a's ⭐ —
+    // «kartada va tarixda ko'rinadi»; until now only the bot's did). Never on
+    // the wizard's pre-binding (no prixod yet), never failing the upload.
+    if (receiptTarget?.confirmed) {
+      await recordReceiptFile({
+        actorId: actor.id,
+        receipt: receiptTarget,
+        item: result.id,
+        fileName: file.name,
+        via: 'site',
+      });
+    }
     return Response.json(result, { status: 201 });
   } catch (err) {
     if (err instanceof FileValidationError) {

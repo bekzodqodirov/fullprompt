@@ -24,6 +24,7 @@ import {
   type LotTotals,
 } from '@/modules/wms/receipts/composition-math';
 import { trimMeasure } from '@/modules/wms/receipts/card-totals';
+import { DOCUMENT_PHOTO } from '@/components/photo-grades';
 import { uploadAttachmentFile } from '@/components/upload-attachment';
 import { isProposalWarning, type ProposalWarning } from '@/modules/wms/receipts/tarkib-proposal';
 import {
@@ -131,13 +132,6 @@ type FilledFrom = {
   weightKind?: 'gross' | 'net' | null;
 };
 
-/**
- * A photographed packing list is read by the model afterwards: the warehouse
- * screens' 0.3 MB / 1600 px (the carton photo's size) crushes the small print
- * of a table, so the document uploaded from HERE keeps more of itself. Every
- * other caller of the uploader keeps the default.
- */
-const DOCUMENT_PHOTO = { maxSizeMB: 1, maxWidthOrHeight: 2000 } as const;
 
 const EMPTY_LINE: DraftLine = { name: '', pieces: '', cartons: '', kg: '', m3: '', tnved: '' };
 

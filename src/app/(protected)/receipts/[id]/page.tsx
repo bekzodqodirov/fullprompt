@@ -53,6 +53,9 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
+import { mayAddReceiptFiles, mayAttachReceiptFile } from '@/modules/wms/receipts/files-door';
+import { reaskLineDrawn } from '@/modules/wms/receipts/reask-line';
+import { DOCUMENT_PHOTO } from '@/components/photo-grades';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney, payerView } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -249,7 +252,13 @@ export default async function ReceiptDetailPage({
   const askWait = askCard?.status?.wait ?? 'soon';
   // The block is mounted wherever the client's side exists; `askShow` says
   // whether it has anything to draw (it keeps its own «✅ yopildi» otherwise).
-  const askShow = Boolean(askCard) && (anyAskable || askCard!.status !== null || askDisputes.length > 1);
+  // The system's own question (his «1 b»): drawn while held, and once sent
+  // or failed only while it is the newest thing the client was asked — an
+  // older one under a person's later «Mijozdan so'rash» is history
+  // (`reaskLineDrawn`).
+  const auto = askCard?.auto ?? null;
+  const autoDrawn = reaskLineDrawn(auto, askCard?.status?.lastDeliveredAt ?? null);
+  const askShow = Boolean(askCard) && (anyAskable || askCard!.status !== null || askDisputes.length > 1 || autoDrawn);
   const askFace = askCard
     ? {
         canAsk: askCard.hasChat && anyAskable,
@@ -273,6 +282,18 @@ export default async function ReceiptDetailPage({
             }
           : null,
         disputes: askDisputes,
+        auto:
+          auto && autoDrawn
+            ? {
+                state: auto.state,
+                // The office clock, as the person's line above it.
+                at: auto.at
+                  ? format.dateTime(auto.at, auto.state === 'waiting' ? { timeStyle: 'short' } : { dateStyle: 'short', timeStyle: 'short' })
+                  : null,
+                wait: auto.wait,
+                failure: auto.failure,
+              }
+            : null,
       }
     : null;
   // The client's phones, for the person who rings: this reader has passed
@@ -476,9 +497,16 @@ export default async function ReceiptDetailPage({
   // hole beside a short neighbour.
   const tiesLeft = canLinkDeal || showCalcRow;
   const tiesRight = showLoadRow || showPickupRow;
+  // Who may ADD a file here: of the readers of a confirmed, live prixod, the
+  // people who work prixods (warehouse, logist, VED, sellers, admins) — the
+  // bot's «📎 Fayl qo‘shish» rule, ONE pair of predicates for both doors (the
+  // owner's «4 b» of 2026-11-12, docs/PRIXOD-JAVOBLAR.md §3, §8). Not `canEdit`: that one
+  // also draws the ✏️ lot form, ✕ on lot photos and ✕ on everybody's files —
+  // dead or wrong controls for a seller (#531).
+  const mayAttach = mayAttachReceiptFile(receipt) && mayAddReceiptFiles(actor);
   // No card for a reader who cannot attach when there is nothing to list —
-  // it was a heading over nothing for every seller and VED.
-  const showFiles = canEdit || receiptFiles.length > 0;
+  // it was a heading over nothing (a voided prixod is the case left).
+  const showFiles = mayAttach || receiptFiles.length > 0;
   const showCosts = costMeta !== null || costs.length > 0 || othersLine !== null;
   // What «Boshqa amallar» holds for this reader, named on its closed line:
   // a manager looking for «Bekor qilish» must not have to open a fold called
@@ -865,6 +893,17 @@ export default async function ReceiptDetailPage({
                   {canEdit && (
                     <LotEditForm
                       hasComposition={compositions.has(lot.id)}
+                      // A ✅ that holds now AND compares the kilos and cubic
+                      // metres (a tick that remembers them — 0147; the client's
+                      // full answer — 0146): the form says what a re-weigh does
+                      // to it before the press. Never promised where it is false.
+                      vouched={(() => {
+                        const view = lotChecks.get(lot.id);
+                        return (
+                          (view?.person?.holds === true && view.person.measures) ||
+                          (view?.client?.verdict === 'yes' && view.client.ofOwner && view.client.holds && view.client.measures)
+                        );
+                      })()}
                       shownName={shownRu.get(lot.id) ?? null}
                       lot={{
                         lotId: lot.id,
@@ -944,6 +983,7 @@ export default async function ReceiptDetailPage({
                             note: view.person.note,
                             holds: view.person.holds,
                             moved: view.person.moved,
+                            outranked: view.person.outranked,
                           }
                         : null,
                       client: view.client
@@ -968,6 +1008,10 @@ export default async function ReceiptDetailPage({
                     nameRu: shownRu.get(lot.id) ?? lot.productNameRu ?? '',
                     boxCount: lot.boxCount,
                     clientId: receipt.clientId,
+                    // The figures the lot's line above prints (0147): a tick
+                    // vouches for the weight and the volume the person saw.
+                    kg: lot.totalWeightKg,
+                    m3: lot.totalVolumeM3,
                   }}
                   canWrite={mayCheck}
                   canRename={canEdit}
@@ -1033,6 +1077,11 @@ export default async function ReceiptDetailPage({
                 entityId={id}
                 initial={receiptFiles}
                 editable={canEdit}
+                attachable={mayAttach}
+                // A reader without `receipts.edit` adds PAPERS — the server stores
+                // their pictures as files, never as a carton photo (§3.3) — so
+                // they go at the document grade.
+                photo={canEdit ? undefined : DOCUMENT_PHOTO}
                 removableIds={ownFileIds}
                 refreshWhenEmpty
               />

@@ -2443,7 +2443,7 @@ Both designed, judged by four lenses with refuters (rename: 16 confirmed objecti
 
 1263. **His «1a 2a 3a» to the three questions #1262 owed him keeps all three exactly as shipped, and each was checked against the code before it was written down (#1229).** Three read-only verifiers, each trying to refute its option; all three hold, with qualifications the options' wording did not carry, recorded here so the decision says what the code does: **(1a)** a lot that is ENTIRELY another good gets no composition (`parseDraft` refuses fewer than two lines with `lines_count`, whose sentence in all four bundles sends the VED to the logist); its NAME is corrected through `editLot`, whose door is `receipts.edit` at the receipt's warehouse plus `canEditReceipt` — so the logist, the admins, the warehouse manager and the creating operator on the same day may rename, and the VED (`ved.docs`, no `receipts.*`) may not. Stated, not changed: two differently named lines of ONE good pass (only an exact name duplicate is refused), and the «hujjat yuborildi» freeze copies composition lines and never the lot's own name, so a rename after the tick reaches a sent truck's re-downloaded papers as it always has. **(2a)** a line has no Chinese-name column (`lot_composition_lines` = id, lot, seq, name, pieces, cartons, kg, m³, TNVED); the screen asks for the name in Russian; the agent file keeps the lot's own zh (+ru) name and appends the contents under it on the lot's first plan row, while the invoice and both packing lists print the line names alone. **(3a)** a composed line prints «шт» only when its stated pieces land ≥ 1 on THAT truck, else «кг» with quantity = its kg — so one good can be «кг» on one truck and «шт» on the next, and an «aralash» light line on a one-carton truck prints «кг 0»; an uncomposed lot is unchanged «кг»; the amount column is I×E on every row, so the VED types a per-piece price on a «шт» row and a per-kg price on a «кг» row. **Every part that was true only by reading is now pinned** (commit 8c57b69, tests only): the VED holds neither rename grant while the logist holds both (`rbac-catalog`); `lines_count` names the logist in four bundles and the panel maps it; `editLotAction` asks `authorize('receipts.edit', …)` before `editLot`; the line table's exact column set; the agent cell's zh prefix and the crated row's bare name; the «шт» boundary at exactly 1 piece and the «кг 0» row; lot D's «кг» quantity = kg, lot F's «2 шт», and `I{row}*E{row}` on every row; the VED drawn no ✏️ in the browser. 24 red proofs by string edit of the SOURCE each pins, each restored by the reverse edit.
 
-1264. **«Yuk ma'lumoti tekshirildi» is a SNAPSHOT a person wrote, compared by every reader — never a flag a writer must remember to clear** (0123, docs/YUK-TEKSHIRUV.md; his answers 1a 2b 3a 4a 5b). His request: the logist asks the client «100 karobkangiz keldi, klaviatura ekan, to'g'rimi?» and ticks; the mark is visible on Ostatka and in plan creation, and both filter on it so the prixods «malumoti yo'q» can be found and filled. **Grain: the LOT, spoken as the PRIXOD** — both screens are lot-grained, the call vouches for one lot's name and count, the lot tarkibi is per lot, and his data carries 1.0 lots a receipt (#563); the screens COUNT in prixods (`count(DISTINCT receipt_id)`). **One row per lot** (`lot_checks`) holding what was vouched for — his 2b: `product_name_zh`, `product_name_ru` (NULL, never ''), `box_count`, the client — so a rename, a count correction (including the QR-siz growth, whose take-back heals by itself), or a new client reads «stale» BY COMPARISON, and `editLot`, the count doors and `assignReceiptClient` stay untouched. kg/m³ are deliberately not compared (a re-weigh is the warehouse's correction, not «what is it»). **His 3a is DERIVED, not written**: a lot tarkibi that still stands (`isStale`'s three terms restated in SQL and pinned against it variation by variation) is ✅ «hujjat bo'yicha»; clearing the composition takes it away with no pair writer, and a half-applied deploy cannot break the shipped composition writer. **His 4a**: the ❓ list is cargo in a CHINESE warehouse (`warehouses.country = 'CN'`) — the invoice is made before the border; cargo in Uzbekistan shows ✅ when checked and nothing otherwise. Unclaimed cargo is `unclaimed` (nobody to ring; its own list). **His 1a**: the tick's door is the lot tarkibi's (`ved.docs ∨ plans.manage`, `mayCheckLot` = `mayOpenBatchVed`) plus `mayReadReceipt`; no new permission code (#170). ONE sentence (`receipts/lot-check-sql.ts`: `lotCheckStateSql`, `checkTermsSql`, `tarkibStandsSql`, `askableSql`, `checkFilterSql`, `withLotCheckJoins`; the pure half `lot-check-face.ts` for the plan editor, so drizzle never reaches the browser) read by /stock's rows, Σ and chip counts, the Ostatka XLSX (an export-always «Tekshiruv» column), `plannableStock` (lots and crates — a crate is ✅ only when EVERY member lot is), the prixod card, the client card's «Yuklar» and the logist's and VED's home rows (`uncheckedPrixodCount`, the same number the /stock chip prints); a derived fence (`lot-check-wire.test.ts`) pins ONE writer, no restated term, every reader through the helper. Every reader LEFT JOINs (a correlated subquery in a WHERE measured 3.3 s). The writer (`receipts/lot-check.ts`): door on the pool, then lot `FOR NO KEY UPDATE` → prixod `FOR SHARE NOWAIT` (raw, #1174) → the check row `FOR UPDATE`, and the snapshot is written from the LOCKED values, never the post. His 5b (a ✅/❌ button on the client's «yukingiz keldi») is not built and owed as a later round. 22 integration + 21 unit + 1 e2e spec.
+1264. **«Yuk ma'lumoti tekshirildi» is a SNAPSHOT a person wrote, compared by every reader — never a flag a writer must remember to clear** (0123, docs/YUK-TEKSHIRUV.md; his answers 1a 2b 3a 4a 5b). His request: the logist asks the client «100 karobkangiz keldi, klaviatura ekan, to'g'rimi?» and ticks; the mark is visible on Ostatka and in plan creation, and both filter on it so the prixods «malumoti yo'q» can be found and filled. **Grain: the LOT, spoken as the PRIXOD** — both screens are lot-grained, the call vouches for one lot's name and count, the lot tarkibi is per lot, and his data carries 1.0 lots a receipt (#563); the screens COUNT in prixods (`count(DISTINCT receipt_id)`). **One row per lot** (`lot_checks`) holding what was vouched for — his 2b: `product_name_zh`, `product_name_ru` (NULL, never ''), `box_count`, the client — so a rename, a count correction (including the QR-siz growth, whose take-back heals by itself), or a new client reads «stale» BY COMPARISON, and `editLot`, the count doors and `assignReceiptClient` stay untouched. kg/m³ are deliberately not compared (a re-weigh is the warehouse's correction, not «what is it») — REVERSED 2026-11-13 by his «2 b» (#1758): since 0147 the tick remembers them at the precision a list prints. **His 3a is DERIVED, not written**: a lot tarkibi that still stands (`isStale`'s three terms restated in SQL and pinned against it variation by variation) is ✅ «hujjat bo'yicha»; clearing the composition takes it away with no pair writer, and a half-applied deploy cannot break the shipped composition writer. **His 4a**: the ❓ list is cargo in a CHINESE warehouse (`warehouses.country = 'CN'`) — the invoice is made before the border; cargo in Uzbekistan shows ✅ when checked and nothing otherwise. Unclaimed cargo is `unclaimed` (nobody to ring; its own list). **His 1a**: the tick's door is the lot tarkibi's (`ved.docs ∨ plans.manage`, `mayCheckLot` = `mayOpenBatchVed`) plus `mayReadReceipt`; no new permission code (#170). ONE sentence (`receipts/lot-check-sql.ts`: `lotCheckStateSql`, `checkTermsSql`, `tarkibStandsSql`, `askableSql`, `checkFilterSql`, `withLotCheckJoins`; the pure half `lot-check-face.ts` for the plan editor, so drizzle never reaches the browser) read by /stock's rows, Σ and chip counts, the Ostatka XLSX (an export-always «Tekshiruv» column), `plannableStock` (lots and crates — a crate is ✅ only when EVERY member lot is), the prixod card, the client card's «Yuklar» and the logist's and VED's home rows (`uncheckedPrixodCount`, the same number the /stock chip prints); a derived fence (`lot-check-wire.test.ts`) pins ONE writer, no restated term, every reader through the helper. Every reader LEFT JOINs (a correlated subquery in a WHERE measured 3.3 s). The writer (`receipts/lot-check.ts`): door on the pool, then lot `FOR NO KEY UPDATE` → prixod `FOR SHARE NOWAIT` (raw, #1174) → the check row `FOR UPDATE`, and the snapshot is written from the LOCKED values, never the post. His 5b (a ✅/❌ button on the client's «yukingiz keldi») is not built and owed as a later round. 22 integration + 21 unit + 1 e2e spec.
 
 1265. **The build was reviewed as shipped by five lenses with a skeptic each — 20 findings, 18 confirmed, every one fixed** (two refuted: the card's ❓ on UZ cargo as a spec contradiction — it was then fixed anyway as finding 12's product-fit twin — and unclaimed cargo «falling out» of the filters, which is the rule). **(1) The round broke planning on a half-applied deploy**: the lists JOIN tables this release creates, and on a database whose ledger is 123 (`gsr_lot_perf`, measured) `plannableStock` threw 42P01 where 90be74a returned 3,977 lots — and /stock and its XLSX had no catch at all, while the same round caught the identical failure on the card, Yuklar and the homes. `lotChecksReady()` (one `to_regclass` probe, remembered once true, asked again while false so the screens return the moment the migration lands) makes every list run its pre-0123 shape: no joins, a NULL state (no chip, never ❓), `tek` ignored, no filter row — re-measured on the 123 copy: the plan list 4 lots, the count null, the card empty, no error. Compose's `migrate: service_completed_successfully` keeps the ordinary failure away; trap (2) (`build app` without `migrate`) does not. **(2) The History netted different lots into one line**: `groupHistory` nets a sitting per KEY, so a shared `lotCheck` made «ticked A, B, C» read as one change about C and «undo A, tick B» as A renamed to B; the keys carry the lot now (`lotCheck:A`) and `auditFieldLabel` splits a known base's suffix — a per-item key is the rule for any writer recording one change per item under one entity (the shipped `lotComposition` key has the same shape and is stated, not changed). **(3) «Bekor qilish» erased a colleague's fresh confirmation**: the undo posted only the lot, so a stale card's press deleted the VED's re-confirmation unseen; both doors now post the check the panel drew (`checked_at::text`) and refuse `check_changed` — the same person's same press stays a no-op, never a refusal. **(4) The card ignored 4a**: ~99 % of cards would ask ❓ with a full-width button about cargo already in Tashkent; the card's own «askable» (`lotAskableSql` — a live carton on a Chinese shelf OR on a truck out of China not yet unloaded, because the mismatch is usually found after loading, his lot tarkibi 3b) now decides ❓/⚠/the button, ✅ shows wherever. **(5) The card contradicted the lists**: a lot ✅ by its document with a stale person row said «qayta so'rang» under a ✅; a basis that went stale while the other holds is a muted history line now. **(6) The VED was told to rename via a ✏️ his card never draws** (#1263) — the line names the logist for whoever lacks `receipts.edit`. **(7) Phone width, twice** (#400): the plan editor's crate «❓ n/m» pushed a realistic crate row to 399 px (the button gained `flex-wrap`), and an unbroken note (a copied 1688 link) widened the card to 416 px (`[overflow-wrap:anywhere]`). **(8) «Hammasi» was a bare /stock**, which redirects to a saved default view — with a ❓ worklist as the default «Hammasi» was unreachable; it is `/stock?tek=` now. **(9) The plan editor**: «mos yuk yo'q» ignored the crates; an offline or unparseable answer still drew «no free cargo»; and a tick made in the chip's new tab never reached the editor — coming back to the tab re-reads the list in place (the selection is keyed by lot and stays). **(10) Smaller**: the folded crate summary prints «+» when the list is capped; the home rows say «N prixod»; `uncheckLot` refuses a non-confirmed prixod (its comment promised a door no screen drew). **Performance**, measured on a production-shaped copy with TAS1 flipped to CN (a 3,977-lot Chinese shelf, the worst case): the filter as a WHERE was misjudged at ≈1 % and walked every lot ever received, so the rows and the home count filter AFTER grouping (HAVING) — the home count 36-38 ms; `plannableStock` 689 ms before this round → 689-765 ms with it (its cost was already `arrivalsForLots`'s; a real Chinese shelf today is ~100 cartons).
 
@@ -9270,3 +9270,201 @@ of its eight; #1739 cited the workspaces decision for the strip and gave a false
 only visible effect. THE LESSON: **a state whose only origin is an action on the same screen is reached in a
 spec by pressing that action** — building it by SQL and a fresh `goto` gives every component a fresh mount,
 which is the one thing the person who made the state never gets.
+
+## Prixod javoblari — the client is asked again by itself, the staff tick remembers kilos and cubic metres, a seller adds files on the card (2026-11-12 → 11-13; migration 0147 `prixod_javoblar`, `when` …126, ledger 148; spec `docs/PRIXOD-JAVOBLAR.md`, §8 binding; numbered #1754-#1764 — minted as #1744-#1754 and moved by ten before the push, past the other session's OPEN PR #148, which holds #1744-#1753 — the THIRTY-NINTH collision, avoided the way #1247 and #1469 avoided theirs: by numbering past an open PR rather than waiting for its merge)
+
+His answers to the seven ⭐ questions «Prixod xabari» sent with its result: «1 b / 2 b / 4 b / 7 egasz yuk hech
+kimga habari bormasin va hech kimga birik tirilmasin adminga va logistga habar kelsa yetarla». Three changed the
+system, three were not answered and their ⭐ stand, and the seventh is none of its two options — it went back to
+him as two questions (7.1 who hears a claim, 7.2 whose KPI a seller-less client's cargo joins) and nothing of it
+is built. Mapped by a 12-agent read of `b4ff5f1`, specified, then judged by four lenses (delivery, regression,
+the owner's intent, the kernel) while the build ran in a second worktree; each finding was checked against the
+BUILT code by hand — about a third were already closed by the build or by an earlier lens — and the rest fixed
+there and pinned.
+
+**#1754 — The trigger is the question the client HOLDS, and the ❓ list decides.** A customer's ✅/❌ is one press
+under one message about one prixod, counted only while the facts read now give the message's tag (`askTag`). So
+after a re-weigh every button the client holds answers «eskirgan», answered or not, and the honest trigger is
+«the newest question with buttons DELIVERED to this owner about this prixod carries a tag that is not the tag of
+the question that would be sent now» (`reaskDue`, `receipts/client-reask.ts`). Nothing remembered what was
+delivered: 0147 adds `client_notices.asked_tag` / `asked_at`, SQL-only (`claimReceivedNotice` inserts through the
+drizzle table inside `confirmReceipt`'s transaction), a pair CHECK (both or neither, eight lowercase hex digits —
+`askTag` is lowercase), written by the sweep at delivery and never cleared. Three kinds can carry buttons: the
+receipt push (`received_cn`, when `clientAskOffer` gave it buttons), a person's «Mijozdan so'rash» (`lot_ask`) and
+the system's own (`lot_reask`). With nothing remembered (delivered before 0147, or never delivered) a confirmation
+the correction broke is the trigger: this owner's FULL answer that no longer holds (the 0146 comparison, read
+through `lotCheckViewsFor` — never restated, #513), or a colleague's tick about THIS owner that no longer holds —
+«To'g'ri — mijoz tasdiqladi» says the client confirmed by phone, his «2 b» breaks it on a re-weigh, and his «1 b»
+asks the client rather than leave it to a person (the owner lens, O6). And it is never due when every askable lot
+of the prixod reads ✅ now (O9): 40 → 45, the system asked about 45, back to 40 — the client's ✅ on 40 holds again
+and must not be asked a third time. A stale tarkib alone asks nothing (the office restates the paper); a tick
+about a previous owner vouched for nobody here; a change below display precision moves no tag.
+
+**#1755 — Its own row, a sliding window, armed after the commit by every writer of a lot's totals, never failing
+them.** Kind `lot_reask`, one row per (client, prixod) by `client_notices_once` — not `lot_ask`, whose row records
+WHO asked (the asker hears either answer past their mute), would print «Telegram kutishni so'radi» about our own
+hold, and would disable the person's 📨 for the window. `INSERT … ON CONFLICT DO UPDATE` from any status, due
+`REASK_SETTLE_MINUTES` (10, the house's correction window) after the LAST correction, so an office walk of several
+presses sends one question about where it ended and the person whose record changed (`ReceiptMeasureCorrected`)
+still hears it first — #834's «never the client» is REVERSED in that half only. Armed from `editLot`'s `.then`
+when the totals OR the count moved (the count is printed on the question and hashed into its tag; a mixed lot's
+count correction moves no total — the owner lens, O4) and from `afterLotGrown` (both count doors, after their
+commits). Never inside their transactions: every read is pooled (#714) and the count transactions run under a
+10 s lock timeout. `armClientReask` is one `try` that logs (U41); the import is dynamic (client-reask → lot-check →
+grow-lot would be a cycle). The arm asks the person's door's own refusals through the person's door's functions
+(`clientAskFacts`, `linkedChats`, `ASK_MAX_LOTS`, `askFits` with the «updated» line, `askable`) — never a row the
+sweep would settle with a ⚠ about a question nobody meant. A derived fence (`client-reask-wire.test.ts`) finds
+every module that writes a lot's stored totals and names exactly two. The switch is its own setting,
+`client_reask_on_reweigh` (default true — his «b»). The crash window between a commit and its arm is accepted; its
+net is the ❓ worklist and the person's door.
+
+**#1756 — A question IN FLIGHT counts as due, every delivery is remembered, and only the re-ask's settle is a
+compare-and-set on the claim.** The delivery lens's two blockers. (a) `reaskDue` sees only what was DELIVERED, so
+a receipt push or a person's question being sent at the moment of a correction — its facts read before the
+commit, delivered after the arm — left stale buttons in the client's hands and nothing armed; any asking row of
+this owner and prixod in `sending` now makes the arm ARM, and the send-time check compares the facts with the tag
+that delivery remembered (`not_needed` when the message in flight already carried the new figures). (b)
+Remembering the tag «only when the settle wrote» lost exactly the case it existed for — a row re-armed while it
+was out, whose message already carried the new figures, kept no tag and the identical question went again ten
+minutes later; `rememberAskedTag` writes by id after any delivery (`sent`, or `botDown` with a delivery),
+whatever the status settle wrote, and the History line comes from the delivery too. (c) The spec's «no other
+writer touches a `sending` row» was false — `rearmArrivalNotice` re-arms a truck's «yetib keldi» mid-send and the
+arrival's wording relies on today's settle-by-id — so the compare-and-set is the CLAIM (`heldClaim`: id,
+`sending`, the `claimed_at` this sweep wrote) and only for `lot_reask` (`claimOf`); every other kind settles
+exactly as before, fenced over every settle and defer in the sweep. (d) Nothing after a delivery may throw out of
+the sweep (`afterDelivered` catches the tag and the History line apart).
+
+**#1757 — Two questions minutes apart never go, and a person who asked is never dropped.** A person's «📨
+Mijozdan so'rash» while the system's question waits sends the person's now and stands the system's down
+(`skipped`, `superseded`); while it is on its way the person's door answers `already_queued`, and within
+`ASK_COOLDOWN_MINUTES` of its delivery `too_soon`. The system's question stands down for a person's question
+`pending` OR `sending`, and for the receipt push only when that push WILL carry buttons (`receivedPushAsks` — the
+pure half of `clientAskOffer`). A correction taken back inside the window stands the held row down AT THE ARM
+(`not_needed`). The card reads the system's delivery from `lot_reask.asked_at` and a person's from
+`coalesce(sent_at, asked_at)`, so a later quiet skip (which writes `sent_at = NULL`) no longer erases a delivered
+question; the waiting line is worded by its age (`stuck` past `ASK_STUCK_MINUTES`). `lastAsk` names the system as
+the asker (null — a plain ✅ tells nobody, a ❌ still reaches the seller and `plans.manage`) EXCEPT where a person
+asked before it and has had no answer since (`answeredSince` over this prixod's `lot_client_confirms`, before the
+answer's transaction): they pressed, and they are told — a VED holds no `plans.manage`, so a ❌ would otherwise reach
+nobody who asked (O3). `lotCheck.clientViaPush` is reworded ×4 to be true of the push and the system's question.
+The customer's line puts «again» on the CHECK in every language («проверьте ещё раз и подтвердите», «check again
+and confirm» — O11). STATED: the lot lines' «— qayta so'rang» stay beside the block's «… o'zi qayta so'raladi»,
+as beside a person's waiting question; the 📨 now refuses around the system's question, so following the line
+cannot ask twice.
+
+**#1758 — 2b: the tick remembers the figures it vouched for, and a re-weigh never brings back an answered ❌.**
+`tarkibStandsSql` already compared a tarkib's Σ kg/m³ exactly, so that half was true and stays pinned where it
+was (lot-check test 12). The tick: 0147 `lot_checks.seen_kg numeric(12,2)` / `seen_m3 numeric(12,3)` — the precision
+a list prints, the client's full ✅'s own (`lotShownKgSql` / `lotShownM3Sql`) — a pair CHECK, and a backfill from
+today's figures so deploy day moves no ✅, but only for ticks whose COUNT still holds (the kernel lens, K2): a lot
+grown by a count door since its tick carries the grown figures, and the take-back that heals the count would never
+heal kilos remembered from the grown lot. Such a tick, and a lot whose totals are NaN, keep NULL — which holds, the
+0123 sentence unchanged. `tickMeasuresHoldSql` is the fourth term; `checkLot` compare-and-sets the STORED figures
+the card posts against the locked stored totals as numbers (`lot_changed`), and remembers the database's own
+display rounding read under the same lock (K1 — a lot at 1000.005 kg is accepted and remembers 1000.01). The
+outrank of a ❌ stays on the tick's FACTS — arm 5 is `dispute AND NOT (tickedFacts AND checked_at > answered_at)`
+— so a tick pressed after the ❌ whose kilos alone moved reads «o'zgardi», never the ❌ in red again (K3, which
+reversed this round's own first «stated, not changed»); identical to before for every holding or measure-less
+tick, and the literal-state matrix grows three measured ticks to 168 combinations. The ✏️ form says only what is
+true: «Og'irlik yoki hajm o'zgarsa — lotdagi ✅ o'z kuchini yo'qotadi», drawn where a ✅ that COMPARES the measures
+holds (O5 — the earlier «the client will be asked» half could not be promised there). This reverses #1264's «kg/m³
+are deliberately not compared».
+
+**#1759 — A mixed lot's count walk is exact, and its base is derived from the History it already writes.** A lot
+weighed whole has no per-box figure, so a growth or a take-back scaled its CURRENT totals and kept every rounding:
+dialled 10 → 15 and back one carton a press, it ended a thousandth of a kilo away — a figure a list prints, which
+under 2b breaks a tick and under 1b sends a customer a question about a weight nobody changed. `mixedTotalsFor(base,
+n)` measures every count from the walk's BASE (the base's own count is the base exactly). The base is never stored
+— it would print as raw JSON in the History — but walked back (`walkBaseInTx`): this lot's growth and take-back
+rows, which are the RECEIPT's rows filtered by the lot named inside them, newest first by identity id (the lot row
+is locked), stepping to a row's `before` while its `after` is the lot as it stood next; the first mismatch (a ✏️
+correction between) ends it. A whole earlier chain that ended where it began is walked through to the same base. A
+pre-0147 chain the old arithmetic drifted is walked back to its true start, so its next step re-derives from the
+weighed figures and the thousandths of drift go (stated) — REVERSED by #1764 (TICK-2): a walked base is kept only when
+it gives back the lot as it stands, so a drifted lot keeps its figures until somebody weighs it. Uniform lots were
+already exact.
+
+**#1760 — 4b: one rule for both doors, and only the people who work prixods add to them.** `mayAttachReceiptFile`
+(confirmed and not voided) and `mayAddReceiptFiles` (any of `receipts.edit`, `plans.manage`, `ved.docs`,
+`crm.leads` — the warehouse, the logist, the VED, the sellers; admins hold all) are asked by the bot's
+`receiptFilesDoor`, the card's tile and the upload route on a confirmed prixod. The card's READ door admits every
+unscoped login, so without the second predicate the accountant and a report-only viewer would have been handed the
+papers a customs document cites (O7); the list is the one the bot's «📎 Fayl qo'shish» was described to him with,
+and every seller adds to every prixod he can open, as in the bot (stated to him). `AttachmentsPanel` gains
+`attachable`, split from `editable`. A picture from an uploader without `receipts.edit` is stored as a PAPER
+(`asPaper`), compressed at the document grade (`DOCUMENT_PHOTO`, `components/photo-grades.ts`, import-free); the
+logist's and the admins' pictures stay carton photos as before (stated, O12). A voided prixod is refused at the
+route. Every upload onto a confirmed prixod writes `fileAdded:<attachmentId>`. Nobody is notified (5a).
+
+**#1761 — The probe has five answers, and every 0147 reader asks it itself (L1-1).** One catalog statement: `ok`
+(0122/0123), `client` (0144), `measures` (0146), `tick` (0147's `seen_*`), `asked` (0147's `asked_*`); the early
+return reads all five. The sync flag of the tick's measures is read by the sentence and the card's view alone,
+after they awaited the probe; `checkLot` and `uncheckLot` await `tickMeasuresReady()` on the pool before their
+transaction (the undo shares the tick's row lock — K5); the sweep, the arm, the card's reading and `lastAsk` await
+`askedTagReady()`. One migration behind, the answer, the card, the arm, the tick, the undo, the views and the ❓
+count name no 0147 column — recorded statement by statement, the transactions' included. The History's kilos have
+ONE spelling, `measuresLine` in `lot-check-sql.ts`, for the client's answer and the tick, which cannot import each
+other (K7).
+
+**#1762 — The ⭐ that stand, pinned against the code; 7 asked again.** 3a: neither the client's comparison nor the
+tick's carries a place — a ✅ is for the figures it was given, wherever the cargo stands. 5a: neither file door
+emits an event or a notification. 6a: `DealDeviation` and `ArrivalDiff` stay their own messages. Each is pinned in
+`prixod-javoblar-answers.test.ts` with the answer's own number, beside the tests that hold 1b, 2b and 4b and the
+role matrix of who adds a file. 7: what he described — «❓ Egasiz yuk» to the logist and the admin, nothing attached
+by the system — is what the code does today; 7.1 and 7.2 are out, and «a» changes nothing.
+
+**#1763 — PROCESS.** (1) The four lenses read the SPEC against the code at `584cf0b` while the build ran, so
+every finding was re-checked against the built tree before it was fixed: a third were already closed, and two
+lenses contradicted each other (the delivery lens accepted a revived ❌ as stated; the kernel lens showed it need
+not be). (2) The literal-state matrix's ticks were inserted with no measure columns, so they all held through the
+NULL arm and the new term was invisible to it — a new column needs new rows in every matrix that writes the table.
+(3) Two unit files reach postgres and default to `gsr_dev` when `DATABASE_URL` is unset, which this container does
+not have: a unit run without the variable shows two «failures» that are the environment. (4) A python edit that
+replaced a string and never wrote the file back left an import half-done; typecheck caught it — run typecheck
+after every scripted edit, not only before a push.
+
+**#1764 — Reviewed AS BUILT: 21 findings, all fixed, the fixes red-proven** (spec §8.1). Four lenses read the built
+diff while the CI order ran green on it (3a94836: 16,320 unit/integration, 526 e2e). Delivery: a failed automatic
+question is dated by when it was due and drawn by one pure rule (`reaskLineDrawn`) only while newer than the person's
+last delivery, read as `coalesce(sent_at, asked_at)` (`lastDeliveredAt`) — a later quiet skip nulls `sent_at`
+(DLV-1, C1); `assignReceiptClient` re-decides the question after its commit, so A → B → A no longer loses it
+(DLV-2); the person's 📨 is one transaction holding the system's row `FOR UPDATE` — an unlocked read and a later
+write let a claim between them send both (DLV-3); a re-arm keeps a sending row's `claimed_at` and a held row claimed
+within `RECLAIM_MINUTES` counts as in flight (DLV-4). The sentence: the no-question fallback counts only lots still
+on the ❓ list, and a tick only when kilos, cubic metres or count moved (TICK-1); a walked base must give back the
+lot as it stands, or the walk starts from the lot — the first count step after the deploy had restored 40.714 on a
+lot every ✅ remembered at 40.716 (TICK-2, reversing #1759's last sentence); arm 5 keeps a ❌ settled by a tarkib of
+other goods settled past a re-weigh — 0144's own «the rejected goods are changed», which had held only while the
+paper stood (TICK-3). Words: outside China the tick's ✅ goes with no ❓ and no button; questions delivered before the
+deploy are not remembered; «an invisible difference asks nothing» only when nothing else changed; `not_worker`
+for a reader who opens a prixod and works none (F1-F6, R2). Tests: the bot harness's `duringNext` lands a correction
+WHILE a message is on its way, which the «remembered anyway» test had never reached (T1); the walk tests moved to a
+lot whose figures round — the old rule had given the same numbers (T2); the count-load door arms the re-ask in a
+behavioural test (T3). PROCESS: a lens that reads the SPEC finds design defects, a lens that reads the BUILT diff
+finds the tests that cannot fail — T1 and T2 were both green under the defects they were written for.
+
+**#1765 — The fixes reviewed: «on its way» is a fact, the walk's base gives back every step, a tick the ❌ outranks
+is history** (spec §8.2). Three lenses read `3a94836..e9b6ab4`, each finding given a refuter: fifteen candidates,
+eleven distinct, one refuted. (1) DLV-4 held for ONE correction — the re-arm kept a claim only from a `sending` row,
+so the second re-arm in one send erased it and a third correction stood the question down (CONC-1); and «claimed in
+the last ten minutes» was a clock that outlived the delivery and a retry's failure (CONC-3). One sentence,
+`reaskInFlightSql` (client-reask.ts): `sending`, or `pending` with a kept claim, no delivery remembered since it
+(`asked_at < claimed_at`), no retry error, within `RECLAIM_MINUTES` — the arm's check, its stand-down (as a WHERE) and
+the re-arm's CASE all ask it. (2) CONC-2 was REFUTED and the door keeps §1.9: once a correction lands mid-send the
+message in flight predates it and two questions go in every design, so refusing a press over a re-armed row only
+holds the fresh figures ten minutes behind stale ones — `already_queued` stays `sending` alone (the same question);
+kept from it, «just went» is `greatest(asked_at, sent_at)`, covering the settle-to-remember gap. (3) A walk written
+since 0147 on top of a drifted chain joins it unbroken, and testing only the far end refused it at every press after
+the first — scaling the lot as it stood again, or restoring the weighed 10.714 where that start happened to give back
+one step (WALK-1, FX-T1): the base is the FARTHEST point of the unbroken walk that gives back EVERY figure set printed
+after it. (4) TICK-3 let an older tick fall past its ❌ to «stale» unvetoed and the card drew it green beside ⚠: the
+view says `person.outranked`, `heldTickFace` draws it as history, and the matrix asks the face of all 168
+combinations (TICK3-CARD). (5) Smaller: the came-back owner's `client_changed` skip is quiet on the card (CONC-4);
+a same-client save arms nothing (CONC-6); the door's one transaction is fenced, not only waited on (CONC-5);
+`not_worker` is tested from an accountant's chat (FX-T5); the CHANGELOG quotes the refusals the screen prints and
+UPDATE.md the CHANGELOG's own pre-deploy rule (FX-T2, FX-T3). PROCESS: killing the red-proof harness mid-proof
+leaves the edit in place (SIGTERM runs no `finally`) — the worktree was restored by the reverse string edit, read
+from its diff; a refuter's «the fix only reorders the two messages» is a verdict about the BUSINESS, which no test
+of the code could have given; and a background shell with no `timeout` is stopped at thirty minutes — the CI order
+(~50 min) died in `build` with «ELIFECYCLE Command failed», which reads like a red gate: its last two gates were
+resumed on the same tree and the database vitest left (CI's order kept), with a two-hour limit.

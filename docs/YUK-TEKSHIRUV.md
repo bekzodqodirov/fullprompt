@@ -21,7 +21,7 @@ colapsable bolsin» (§9).
 | # | Question | Answer | Rule |
 |---|---|---|---|
 | 1 | Who ticks | **a** — logist + admin, AND the VED | `mayCheckLot` = the lot tarkibi door `ved.docs ∨ plans.manage` (`mayOpenBatchVed`), plus `mayReadReceipt`. No new permission code (#170). |
-| 2 | What ✅ vouches for | **b** — goods name + carton count + client | The tick SNAPSHOTS `product_name_zh`, `product_name_ru`, `box_count`, `receipts.client_id`; any of them moving reads ⚠ «o'zgardi — qayta so'rang». kg/m³ re-weighs do NOT un-tick. |
+| 2 | What ✅ vouches for | **b** — goods name + carton count + client | The tick SNAPSHOTS `product_name_zh`, `product_name_ru`, `box_count`, `receipts.client_id`; any of them moving reads ⚠ «o'zgardi — qayta so'rang». kg/m³ re-weighs do NOT un-tick — **REVERSED 2026-11-13 by his «2 b»** (`docs/PRIXOD-JAVOBLAR.md` §2, §8): since 0147 the tick also remembers kg/m³ at the precision a list prints, and a re-weigh a list shows un-ticks. |
 | 3 | Tarkib with the client's document | **a** — counts as ✅ «hujjat bo'yicha» | DERIVED, never written: a lot whose composition stands (not `isStale`) is checked. Clearing the composition takes it away by itself. |
 | 4 | Which cargo is on the ❓ list | **a** — only cargo standing in a CHINESE warehouse | «Askable» = the row's warehouse `country = 'CN'`. Cargo in Uzbekistan shows ✅ when checked and nothing otherwise — on every surface, the prixod card included (there «askable» = any live carton still in China: on a Chinese shelf, or on a truck out of China that has not unloaded, `lotAskableSql`). |
 | 5 | Telegram ✅/❌ on the client's «yukingiz keldi» | **b** — later | Not built. Owed to him as a later round. |
@@ -148,7 +148,9 @@ the client cabinet, the /receipts list.
 Nothing hooks a writer; staleness is DERIVED (the lot tarkibi §7 house rule).
 A rename (zh or ru), a count change (`editLot`, the QR-siz count growth, its
 take-back — which SELF-HEALS back to ✅), or a new client turns a person's ✅
-into ⚠. kg/m³/dims, notes, moves, trucks, deal links: untouched. A
+into ⚠. kg/m³/dims, notes, moves, trucks, deal links: untouched. (Since 2026-11-13 —
+his «2 b», `docs/PRIXOD-JAVOBLAR.md` — a re-weigh a list shows turns it too; the count
+take-back still self-heals, kilos included, because a mixed lot's walk is exact.) A
 composition's ✅ follows `isStale`. Void/annul take the cartons off every
 shelf screen; the row stays as history.
 

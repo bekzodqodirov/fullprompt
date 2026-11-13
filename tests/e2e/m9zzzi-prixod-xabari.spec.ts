@@ -110,9 +110,14 @@ test('a seller takes back the file THEY put on the prixod — and nobody else’
   await expect(mine).toBeVisible();
   await expect(office).toBeVisible();
   // One ✕ in the files panel: the seller holds no `receipts.edit`, so the
-  // office's file carries none — and neither does an upload tile.
+  // office's file carries none.
   await expect(mine.locator('xpath=..').getByRole('button', { name: '✕' })).toHaveCount(1);
   await expect(office.locator('xpath=..').getByRole('button', { name: '✕' })).toHaveCount(0);
+  // …but the 📎 tile IS there (the owner's «4 b» of 2026-11-12: «sotuvchi prixod
+  // kartasida ham fayl qo‘sha olsin» — the bot's own rule), and with it not the
+  // editor's ✏️ lot form.
+  await expect(page.getByTestId('receipt-files').locator('input[type="file"]')).toHaveCount(1);
+  await expect(page.getByTestId('lot-actions').getByRole('button', { name: /✏️/ })).toHaveCount(0);
   await mine.locator('xpath=..').getByRole('button', { name: '✕' }).click();
   await expect(mine).toHaveCount(0);
   await expect(office).toBeVisible();
@@ -120,10 +125,10 @@ test('a seller takes back the file THEY put on the prixod — and nobody else’
   await expect(page.locator(`a[title="seller-${run.marker}.pdf"]`)).toHaveCount(0);
   await expect(page.locator(`a[title="office-${run.marker}.pdf"]`)).toBeVisible();
 
-  // The LAST file. A seller cannot attach from the card, so the «Fayllar»
-  // card is drawn for them only while there is something to list
-  // (docs/PRIXOD-KARTA.md §7.1) — taking the last file back must take the
-  // card with it, not leave its heading over nothing until the next visit.
+  // The LAST file. The seller may attach here (4b), so the «Fayllar» card is
+  // theirs whether or not there is anything to list: taking the last file back
+  // leaves the card and its 📎 tile (docs/PRIXOD-KARTA.md §7.1 — «no files card
+  // for a reader who cannot attach when there is nothing to list»).
   const sql = database();
   let last = '';
   try {
@@ -136,7 +141,9 @@ test('a seller takes back the file THEY put on the prixod — and nobody else’
   await expect(only).toBeVisible();
   await expect(page.getByTestId('receipt-files')).toHaveCount(1);
   await only.locator('xpath=..').getByRole('button', { name: '✕' }).click();
-  await expect(page.getByTestId('receipt-files')).toHaveCount(0);
+  await expect(only).toHaveCount(0);
+  await expect(page.getByTestId('receipt-files')).toHaveCount(1);
+  await expect(page.getByTestId('receipt-files').locator('input[type="file"]')).toHaveCount(1);
 });
 
 test('the VED may re-file the cargo but not open a deal: the block, without the link', async ({ page }) => {
@@ -373,10 +380,14 @@ test('two of the seller’s files taken back before the first answer: the «Fayl
   // press used to judge «was that the last?» from the list ITS render held —
   // both saw the other file still there, so nobody asked the page again and
   // the card stayed a heading over nothing (the merged card's review, XF-3).
+  // Since the owner's «4 b» every reader of a LIVE prixod may attach, so the
+  // card that must go is a VOIDED prixod's — the one place a reader still
+  // holds files (their own, with ✕) and may add none.
   const sql = database();
   let names: string[] = [];
   try {
     names = await leaveSellerFiles(sql, run, receiptId, 2);
+    await sql`UPDATE receipts SET status = 'voided', voided_at = now(), void_reason = 'm9zzzi XF-3' WHERE id = ${receiptId}`;
   } finally {
     await sql.end();
   }
@@ -397,6 +408,12 @@ test('two of the seller’s files taken back before the first answer: the «Fayl
     await expect(page.getByTestId('receipt-files')).toHaveCount(0);
   } finally {
     await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+    const back = database();
+    try {
+      await back`UPDATE receipts SET status = 'confirmed', voided_at = NULL, void_reason = NULL WHERE id = ${receiptId}`;
+    } finally {
+      await back.end();
+    }
   }
 });
 

@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  * whose migration has not landed (#472).
  */
 
-const ready = vi.hoisted(() => ({ on: true, client: true, measures: true }));
+const ready = vi.hoisted(() => ({ on: true, client: true, measures: true, v147: true }));
 vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   lotChecksReady: async () => ready.on,
   // The probe's SECOND answer: is 0144's table there? (`ready.client = false` =
@@ -31,6 +31,12 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // (`ready.measures = false` = a deploy whose 0146 did not land.)
   lotClientMeasuresReady: () => ready.on && ready.client && ready.measures,
   clientMeasuresReady: async () => ready.on && ready.client && ready.measures,
+  // …and 0147's two (the tick's kilos and cubic metres; the notices' remembered
+  // question) — there whenever the check tables are: this file's 96-letter
+  // matrix inserts ticks with no measures, which hold (the NULL arm).
+  lotTickMeasuresReady: () => ready.on && ready.v147,
+  tickMeasuresReady: async () => ready.on && ready.v147,
+  askedTagReady: async () => ready.on && ready.v147,
 }));
 vi.mock('@/modules/platform/auth/session', async (original) => ({
   ...(await original<typeof import('@/modules/platform/auth/session')>()),
@@ -64,11 +70,15 @@ import {
   askTag,
   clientAskFacts,
   clientAskOffer,
+  clientAskCardFor,
   clientAskStatusFor,
   dismissClientDisputes,
   type ClientAskFacts,
 } from '@/modules/wms/receipts/client-confirm';
-import { checkLot, lotCheckViewsFor, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { armClientReask } from '@/modules/wms/receipts/client-reask';
+import { checkLot, lotCheckViewsFor, uncheckLot, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
+import { heldTickFace } from '@/modules/wms/receipts/lot-check-face';
+import { uncheckedPrixodCount } from '@/modules/wms/inventory/lot-check-count';
 import { receivedFacts } from '@/modules/wms/notices/client-summary';
 import { pushLotName } from '@/modules/wms/notices/client-text';
 import { plannableStock } from '@/modules/wms/planning/stock';
@@ -1140,7 +1150,12 @@ describe('«Mijozdan so‘rash» — a person asks, once, and hears the answer',
  */
 describe('the sentence, combination by combination — against literal states', () => {
   type Tarkib = 'none' | 'stands' | 'stale';
-  type Tick = 'none' | 'old' | 'new' | 'stale';
+  /**
+   * «old» / «new» / «stale» remember no kilos (an 0144-era row — the NULL arm holds through them); 0147's three
+   * remember them: «measured» pressed now at the lot's own 100.00 kg / 1.000 m³ (holds), «reweighedOld» pressed
+   * two hours ago and «reweighedNew» pressed now, both at 90.00 kg — a re-weigh moved the lot since (his «2 b»).
+   */
+  type Tick = 'none' | 'old' | 'new' | 'stale' | 'measured' | 'reweighedOld' | 'reweighedNew';
   /**
    * The client's answer, given an hour ago: none · ✅ that matches · ✅ about a count since changed · ❌ on
    * the goods now listed · ❌ on OTHER goods · a previous owner's ❌ — and 0146's two: a FULL ✅ whose kilos
@@ -1154,10 +1169,15 @@ describe('the sentence, combination by combination — against literal states', 
   // The last two letters are 0146's: a full ✅ that matches vouches exactly where a 0144 ✅ does, and one
   // about a weight since changed reads exactly as one about a count since changed — «o'zgardi» where
   // nothing else vouches, and ✅ where a standing tarkib or a holding tick still does (the arms' order).
+  // The re-weighed ticks (0147): one pressed BEFORE the ❌ leaves the ❌ standing (n, a veto) exactly as a
+  // count-stale tick does; one pressed AFTER it settled the ❌, so a re-weigh reads «o'zgardi» (s) — never the
+  // ❌ brought back (the kernel lens, K3).
   const EXPECTED: Record<Tarkib, Record<Tick, string>> = {
-    none: { none: 'ncsnnncs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs' },
-    stands: { none: 'cccncccc', old: 'cccncccc', new: 'cccccccc', stale: 'cccncccc' },
-    stale: { none: 'scsnnscs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs' },
+    none: { none: 'ncsnnncs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs', measured: 'cccccccc', reweighedOld: 'scsnnscs', reweighedNew: 'scsssscs' },
+    stands: { none: 'cccncccc', old: 'cccncccc', new: 'cccccccc', stale: 'cccncccc', measured: 'cccccccc', reweighedOld: 'cccncccc', reweighedNew: 'cccscccc' },
+    // A STALE tarkib listing goods other than the ones a ❌ rejected has settled that ❌ («the rejected goods are
+    // changed»): a re-weigh that made the paper stale reads «o'zgardi», never the ❌ in red (TICK-3).
+    stale: { none: 'scsnsscs', old: 'cccnsccc', new: 'cccccccc', stale: 'scsnsscs', measured: 'cccccccc', reweighedOld: 'scsnsscs', reweighedNew: 'scsssscs' },
   };
   const LETTER = { checked: 'c', none: 'n', stale: 's', unclaimed: 'u' } as const;
 
@@ -1176,10 +1196,12 @@ describe('the sentence, combination by combination — against literal states', 
     `)) as unknown as { goods_key: string | null }[];
     const goodsKey = key?.goods_key ?? null;
     if (tick !== 'none') {
+      const seenKg = tick === 'measured' ? '100.00' : tick === 'reweighedOld' || tick === 'reweighedNew' ? '90.00' : null;
+      const pressedNow = tick === 'new' || tick === 'measured' || tick === 'reweighedNew';
       await db.execute(sql`
-        INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, checked_by, checked_at)
+        INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, checked_by, checked_at, seen_kg, seen_m3)
         VALUES (${lot.M}::uuid, ${MATRIX_ZH}, ${MATRIX_RU}, ${tick === 'stale' ? 9 : 2}, ${client.A}::uuid, ${staffId}::uuid,
-                now() - make_interval(mins => ${tick === 'new' ? 0 : 120}))
+                now() - make_interval(mins => ${pressedNow ? 0 : 120}), ${seenKg}::numeric, ${seenKg === null ? null : '1.000'}::numeric)
       `);
     }
     if (answer !== 'none') {
@@ -1198,7 +1220,7 @@ describe('the sentence, combination by combination — against literal states', 
   }
   const read = async () => (await lotCheckViewsFor([lot.M])).get(lot.M)!;
 
-  it('96 combinations of tarkib × tick × the client’s answer (0144’s 72 and the two full-scope answers of 0146)', async () => {
+  it('168 combinations of tarkib × tick × the client’s answer (0144’s 72, the two full-scope answers of 0146, the three measured ticks of 0147)', async () => {
     const wrong: string[] = [];
     for (const tarkib of Object.keys(EXPECTED) as Tarkib[]) {
       for (const tick of Object.keys(EXPECTED[tarkib]) as Tick[]) {
@@ -1211,11 +1233,16 @@ describe('the sentence, combination by combination — against literal states', 
           // The card's «the ❌ is why» is the sentence's own arm: this owner's ❌ and nothing vouching past it.
           const vetoes = (answer === 'no' || answer === 'noOtherGoods') && want === 'n';
           if ((view.client?.vetoes ?? false) !== vetoes) wrong.push(`tarkib ${tarkib} · tick ${tick} · client ${answer}: vetoes ${!vetoes}`);
+          // …and the card's green tick is the sentence's too: a holding tick reads «✅ Mijoz tasdiqladi» only on
+          // a lot every list calls ✅ — a ❌ a tarkib of other goods settled lifts no veto from an OLDER tick
+          // (the fixes' review, TICK3-CARD: stale tarkib · old tick · ❌ on other goods drew it green beside ⚠).
+          const face = view.person ? heldTickFace(view.person, view.client?.vetoes === true) : null;
+          if (face === 'vouches' && view.state !== 'checked') wrong.push(`tarkib ${tarkib} · tick ${tick} · client ${answer}: a green tick on a «${view.state}» lot`);
         }
       }
     }
     expect(wrong).toEqual([]);
-  }, 60_000);
+  }, 120_000);
 
   it('cargo with no client is never vetoed and never ❓: a previous owner’s ❌ is nobody’s', async () => {
     await db.update(receipts).set({ clientId: null }).where(eq(receipts.id, receipt.matrix));
@@ -1497,5 +1524,72 @@ describe('the measures in the answer (0146)', () => {
       ready.measures = true;
     }
     await forget();
+  });
+});
+
+describe('a server whose 0147 has not landed (#472) — the 0146 behaviour, no 0147 column named', () => {
+  it('the press, the card’s reading, the automatic arm, the tick, its undo, the views and the ❓ count: none names `asked_tag` / `asked_at` / `seen_kg` / `seen_m3`', async () => {
+    ready.v147 = false;
+    const pool: string[] = [];
+    const inTx: string[] = [];
+    const unsafe = pgClient.unsafe.bind(pgClient);
+    const poolSpy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      pool.push(query);
+      return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
+    }) as typeof pgClient.unsafe);
+    const begin = pgClient.begin.bind(pgClient) as (...a: unknown[]) => unknown;
+    const beginSpy = vi.spyOn(pgClient, 'begin').mockImplementation(((...args: unknown[]) => {
+      const body = args[args.length - 1] as (scoped: { unsafe: (...a: unknown[]) => unknown }) => unknown;
+      return begin(...args.slice(0, -1), (scoped: { unsafe: (...a: unknown[]) => unknown }) => {
+        const scopedUnsafe = scoped.unsafe.bind(scoped);
+        scoped.unsafe = (query: unknown, ...rest: unknown[]) => {
+          inTx.push(String(query));
+          return scopedUnsafe(query, ...rest);
+        };
+        return body(scoped);
+      });
+    }) as unknown as typeof pgClient.begin);
+    // Constant aliases (`NULL::timestamptz AS asked_at`, `NULL::text AS seen_kg`) are not columns.
+    const namesColumn = (query: string) =>
+      /asked_tag|asked_at|seen_kg|seen_m3/.test(query.replace(/NULL::(text|timestamptz) AS (asked_at|seen_kg|seen_m3)/g, ''));
+    try {
+      const f = await clientAskFacts(receipt.weigh);
+      if ('skip' in f) throw new Error(`facts skipped: ${f.skip}`);
+      const answer = await answerClientAsk({ chatId: CHAT_A, receiptId: receipt.weigh, verdict: 'yes', tag: f.tag });
+      expect(answer).toMatchObject({ outcome: 'recorded' });
+      const card = await clientAskCardFor(receipt.weigh, client.A);
+      expect(card?.auto ?? null).toBeNull();
+      await armClientReask(lot.W);
+      const ticked = await checkLot(
+        {
+          lotId: lot.W,
+          seen: { nameZh: `秤${RUN}`, nameRu: `Tarozi ${RUN}`, boxCount: 2, clientId: client.A },
+          seenCheckedAt: null,
+          seenClientAt: (await stateOf('W')).client?.token ?? null,
+        },
+        logist(),
+        ctx(),
+      );
+      expect(ticked.changed).toBe(true);
+      expect(inTx.filter((q) => /insert into "?lot_checks"?/i.test(q)).length, 'the tick’s own upsert was seen').toBeGreaterThan(0);
+      // The undo shares the tick's lock of the row (the kernel lens, K5), and the lists read the sentence.
+      expect((await stateOf('W')).person).not.toBeNull();
+      const token = (
+        (await db.execute(sql`SELECT checked_at::text AS at FROM lot_checks WHERE lot_id = ${lot.W}::uuid`)) as unknown as { at: string }[]
+      )[0]!.at;
+      expect((await uncheckLot({ lotId: lot.W, seenCheckedAt: token }, logist(), ctx())).changed).toBe(true);
+      expect(inTx.filter((q) => /delete from "?lot_checks"?/i.test(q)).length, 'the undo’s own delete was seen').toBeGreaterThan(0);
+      expect(typeof (await uncheckedPrixodCount(logist()))).toBe('number');
+      expect([...pool, ...inTx].filter(namesColumn)).toEqual([]);
+      // Nothing was armed: the remembered question is 0147's.
+      const armed = (await db.execute(sql`SELECT 1 FROM client_notices WHERE kind = 'lot_reask' AND ref_id = ${receipt.weigh}::uuid`)) as unknown as unknown[];
+      expect(armed).toHaveLength(0);
+    } finally {
+      poolSpy.mockRestore();
+      beginSpy.mockRestore();
+      ready.v147 = true;
+      await db.delete(lotChecks).where(eq(lotChecks.lotId, lot.W));
+    }
+    await db.delete(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.W));
   });
 });
