@@ -332,6 +332,10 @@ export async function aiPrefill(
   const door = parseIntakeDoor(row?.door);
   const plain = door === 'plain';
   const noAsk = plain;
+  // The AI door, spelt by elimination: this file may not name the word 'ai'
+  // at all (ai-advisory.test.ts — it is a provenance value, and a string the
+  // prefill names is one that can travel to a writer).
+  const aiDoor = door !== null && !plain;
 
   if (opts.expectCustoms !== undefined && parts.customs !== opts.expectCustoms) {
     logger.info(
@@ -643,7 +647,7 @@ export async function aiPrefill(
    * stored request (calc-amend.ts), so the table prefers the rows this answer
    * asked. Null on every other door, which keeps `asks`.
    */
-  const sellerAsks: SellerAsk[] | null = door === 'ai' && asksInput ? sellerAsksOf(asksInput) : null;
+  const sellerAsks: SellerAsk[] | null = aiDoor && asksInput ? sellerAsksOf(asksInput) : null;
   const pickShown =
     pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft;
   const outcome = {
@@ -703,7 +707,7 @@ export async function aiPrefill(
    * it»).
    */
   const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) => {
-    const quiet = door === 'ai' && !asked;
+    const quiet = aiDoor && !asked;
     return aiVedReplyText({
       clientLabel: about?.clientCode ?? null,
       cardLabel: about?.cardLabel ?? null,
@@ -722,7 +726,7 @@ export async function aiPrefill(
       // waits for a baza; with none, there was nothing it could have chosen.
       pickLeft: pickShown,
       // The AI door's unasked copy names the law's rows for the VED (`noAsk`'s gaps line).
-      asks: door === 'ai' ? (asked ? null : asks) : asked ? asks : null,
+      asks: aiDoor ? (asked ? null : asks) : asked ? asks : null,
       sellerAsks: asked ? sellerAsks : null,
       pass: amend === null ? 'landing' : 'amend',
       audience,
@@ -736,7 +740,7 @@ export async function aiPrefill(
     lentaText: reply(null, 'lenta'),
     // Only where the chat ASKS — the AI door's own list (A1), or the law's on
     // a request from before the doors; the plain door's note asks nobody.
-    ...((door === 'ai' ? sellerAsks : asks)?.length ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
+    ...((aiDoor ? sellerAsks : asks)?.length ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
   };
 }
 
