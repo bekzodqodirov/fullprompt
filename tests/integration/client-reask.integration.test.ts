@@ -10,6 +10,8 @@ import {
   clients,
   lotChecks,
   lotClientConfirms,
+  lotCompositionLines,
+  lotCompositions,
   notifications,
   receiptLots,
   receipts,
@@ -444,6 +446,23 @@ describe('the person’s question and the system’s never both go', () => {
       expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
     } finally {
       await setSetting('client_confirm_on_receipt', saved as boolean, null);
+    }
+  });
+
+  it('…nor one that goes without buttons because a tarkib is written (the push asks about no lot with a paper)', async () => {
+    await deliverPersonQuestion();
+    await db.execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, status)
+      VALUES (${clientId}::uuid, 'received_cn', 'receipt', ${receipt.main}::uuid, now() + interval '1 day', now(), 'pending')
+    `);
+    await db.insert(lotCompositions).values({ lotId: lot.K, seenBoxCount: 3, savedBy: staffId });
+    await db.insert(lotCompositionLines).values([{ lotId: lot.K, seq: 1, name: `Tarozi ${RUN}`, pieces: 3, weightKg: '100.000', volumeM3: '1.0000' }]);
+    try {
+      await reweigh('K', 110);
+      expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    } finally {
+      await db.delete(lotCompositionLines).where(eq(lotCompositionLines.lotId, lot.K));
+      await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.K));
     }
   });
 
