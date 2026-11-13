@@ -185,9 +185,11 @@ describe('a further sheet, by its shape (§4.2)', () => {
     await forward(chatId, await r1Book({ net: true }), 'CI-PL.xlsx');
     const s = activeIntake(chatId)!;
     expect((s.invoiceGoods ?? []).map((g) => g.weightKg)).toEqual(B.GOODS.map((g) => B.r2(g.nw * g.ctns)));
-    // The brutto stands in a gross column of its OWN beside the asked net one; the asked «体积» gives no cube
-    // (review seams-4 — re-anchored from [1592, 13.58]).
-    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([1592, null]);
+    // The asked «体积» gives no cube (review seams-4 — re-anchored from [1592, 13.58]), and neither does the
+    // «毛重» beside the asked «净重»: a gross column of its own, but beside the same 15, 12, 8 … cartons, its Σ is
+    // exactly as unproven (review seams-2's check, JN-12 — re-anchored from [1592, null]); the brutto is asked.
+    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([null, null]);
+    expect(s.fileTotals?.doubted).toEqual(['weightKg', 'volumeM3']);
   });
 
   it('R1 with another factory folded in before the packing list: its Σ is not the list’s — today’s reading', async () => {

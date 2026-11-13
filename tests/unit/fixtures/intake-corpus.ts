@@ -120,6 +120,8 @@ export interface ParseGoodsExpect {
    * docs/AI-SORAYDI.md §3.2 X5, review JN-12): the asked columns' headers, in order; [] = none.
    */
   asks?: string[];
+  /** Per asked column, in the same order: does the sheet's own total of that field stand apart from it (`ColumnAsk.totalStated`)? */
+  asksTotalStated?: boolean[];
 }
 
 /** A spreadsheet the test builds, then hands to `readGoodsFile`. */

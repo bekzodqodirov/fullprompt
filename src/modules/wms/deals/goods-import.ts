@@ -3215,6 +3215,15 @@ export interface ColumnAsk {
    * answered by the first. Absent on an ask written before it.
    */
   rows: { name: string; value: number; at?: number }[];
+  /**
+   * The sheet's own total of the field — its brutto for a weight, its cube —
+   * stands APART from the asked column (review seams-2's check): a summary
+   * line's own figure («TOTAL G.W.: 710 KGS» over cells adding up to 36), the
+   * cartons' product the belt proved. Absent = the total is that column's Σ,
+   * its TOTAL row, or a gross column's Σ beside the same cartons, so the
+   * question doubts it too (`withoutAskedTotals`).
+   */
+  totalStated?: true;
 }
 
 /** What the FILE says about its figures beyond its cells (§5.9): the comma a CSV's delimiter implies. */
@@ -3607,6 +3616,13 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     };
     let grossKg = corrected.weight && columns.gross === columns.weight ? null : sumOf(columns.gross, (l) => l.gross);
     let volumeM3 = corrected.volume ? null : sumOf(columns.volume, (l) => l.volume);
+    // Where each total came from (review seams-2's check): the COLUMN — its Σ,
+    // its TOTAL row, a summary line restating that Σ — or a figure the sheet
+    // STATES apart from it: the cartons' product the belt proved, a summary
+    // line's own figure. A column the table asks about doubts the first kind
+    // alone (`ColumnAsk.totalStated`).
+    let grossFrom: 'column' | 'stated' = 'column';
+    let volumeFrom: 'column' | 'stated' = 'column';
     // …and the belt (as-built review CRITIC-1; docs/AI-SORAYDI.md §3.2 X5,
     // review JN-12, JR-11, JS-33): the file's own «TOTAL» rows say what each
     // figure column adds up to — the line weight's, the gross's and the
@@ -3687,8 +3703,10 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
             const g = kept[k]!;
             kept[k] = { ...g, weightKg: null, note: perCartonNote(g, 'weightKg', value), packing: { ...g.packing!, kgPerCarton: value, kgPerCartonKind: kind } };
           });
-          if (isGross) grossKg = v.total;
-          else netFromCartons = v.total;
+          if (isGross) {
+            grossKg = v.total;
+            grossFrom = 'stated';
+          } else netFromCartons = v.total;
           notes.push(noteOf(columns.weight, 'kg', v, 'qatorlar shundan hisoblandi'));
         } else if (v.kind === 'unclear') {
           unclearOnNote('weightKg', columns.weight, (l) => l.weight);
@@ -3707,6 +3725,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         const v = judge(columns.gross, 'kg', 1, 1, (l) => l.gross);
         if (v.kind === 'per_carton') {
           grossKg = v.total;
+          grossFrom = 'stated';
           notes.push(noteOf(columns.gross, 'kg', v, 'brutto shundan olindi'));
         } else if (v.kind === 'unclear') {
           grossKg = null;
@@ -3732,6 +3751,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
             kept[k] = { ...g, volumeM3: null, note: perCartonNote(g, 'volumeM3', value), packing: { ...g.packing!, m3PerCarton: value } };
           });
           volumeM3 = v.total;
+          volumeFrom = 'stated';
           notes.push(noteOf(columns.volume, 'm3', v, 'qatorlar shundan hisoblandi'));
         } else if (v.kind === 'unclear') {
           unclearOnNote('volumeM3', columns.volume, (l) => l.volume);
@@ -3761,12 +3781,25 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       // «SAY TOTAL: US DOLLARS …» line under the table is no total of a
       // column, and with it counted no section list could ever sum.
       const columnTotals = totals.filter((row) => [...figureCols, ...packCols].some((i) => i !== null && figureCell(row[i] ?? null)));
+      // A summary line's figure is the sheet's statement — unless it only
+      // restates what the column's cells add up to (the same Σ in words).
+      const restates = (figure: number, pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null, half: number) => {
+        const sum = linesSum(pick);
+        return sum > 0 && Math.abs(sum - figure) < half;
+      };
       if (grossKg === null && !refused.gross) {
-        grossKg = (columns.gross === null ? null : sheetTotalOf(columnTotals, columns.gross, 'kg', 1)) ?? summaryTotalOf(totals, 'gross', 1);
+        grossKg = columns.gross === null ? null : sheetTotalOf(columnTotals, columns.gross, 'kg', 1);
+        if (grossKg === null) {
+          grossKg = summaryTotalOf(totals, 'gross', 1);
+          if (grossKg !== null && !restates(grossKg, (l) => l.gross, 0.5)) grossFrom = 'stated';
+        }
       }
       if (volumeM3 === null && !refused.volume) {
-        volumeM3 =
-          (columns.volume === null ? null : sheetTotalOf(columnTotals, columns.volume, 'm3', 0.01, columns.volumeDivisor)) ?? summaryTotalOf(totals, 'volume', 0.01);
+        volumeM3 = columns.volume === null ? null : sheetTotalOf(columnTotals, columns.volume, 'm3', 0.01, columns.volumeDivisor);
+        if (volumeM3 === null) {
+          volumeM3 = summaryTotalOf(totals, 'volume', 0.01);
+          if (volumeM3 !== null && !restates(volumeM3, (l) => l.volume, 0.005)) volumeFrom = 'stated';
+        }
       }
     }
     // …and a brutto lighter than the lines' own netto is no brutto: a column
@@ -3807,7 +3840,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           const g = kept[k]!;
           return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value, at: k }] : [];
         });
-        if (asked.length >= 2) asks.push({ field, title: titleOf(col), rows: asked });
+        // The sheet's own total of the field stands apart from the column only
+        // where it is STATED (`grossFrom`, `volumeFrom`): a brutto that is the
+        // Σ of a gross column beside these same cartons — the asked one, or the
+        // gross column beside an asked net one — is exactly as unproven.
+        const stated = field === 'weightKg' ? grossKg !== null && grossFrom === 'stated' : volumeM3 !== null && volumeFrom === 'stated';
+        if (asked.length >= 2) asks.push({ field, title: titleOf(col), rows: asked, ...(stated ? { totalStated: true as const } : {}) });
       };
       if (columns.weight !== null && columns.weight !== columns.quantity && !corrected.weight) {
         askOf('weightKg', columns.weight, (l) => l.weight, (g) => (g.packing?.kgPerCarton ?? 0) > 0);

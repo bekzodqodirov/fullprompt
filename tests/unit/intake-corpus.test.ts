@@ -318,6 +318,9 @@ describe('parseGoods', () => {
     }
     if (c.expected.dropped !== undefined) expect(parsed.dropped, 'dropped').toEqual(c.expected.dropped);
     if (c.expected.asks !== undefined) expect((parsed.asks ?? []).map((a) => a.title), 'asks').toEqual(c.expected.asks);
+    if (c.expected.asksTotalStated !== undefined) {
+      expect((parsed.asks ?? []).map((a) => a.totalStated === true), 'asksTotalStated').toEqual(c.expected.asksTotalStated);
+    }
     const notes = parsed.notes.map((n) => `${n.warn ? '⚠️ ' : ''}${n.text}`);
     for (const said of c.expected.notesInclude ?? []) expect(notes.some((n) => n.includes(said)), `notes ${JSON.stringify(notes)}`).toBe(true);
   });
@@ -922,16 +925,23 @@ function sourceFiles(dir: string): string[] {
 
 /**
  * The «🤖 AI rastamojka» door over a real workbook (docs/AI-SORAYDI.md §3.2): files forwarded, read with the
- * model answering NOTHING (every figure is the file's or the kernel's), then each typed table answer
- * written. What the INSERT would take — the cube, the brutto — and the table, after every step.
+ * model answering NOTHING (every figure is the file's or the kernel's) — or, with `modelTotals`, only the
+ * shipment's totals it read off the sheet's text, as the production model does — then each typed table
+ * answer written. What the INSERT would take — the cube, the brutto — and the table, after every step.
  */
-async function aiDoorWalk(section: IntakeState['section'], files: [FileSpec, string][], answers: string[] = []) {
+async function aiDoorWalk(
+  section: IntakeState['section'],
+  files: [FileSpec, string][],
+  answers: string[] = [],
+  modelTotals: { weightKg?: number | null; volumeM3?: number | null } = {},
+) {
   const { chatId } = collection({ ai: true, stage: 'material', material: [] }, section);
   for (const [spec, name] of files) {
     await forward(chatId, spec, name);
     updateIntake(chatId, { fileCount: activeIntake(chatId)!.fileCount + 1 });
   }
-  model.analyze.mockResolvedValueOnce(reads([]));
+  const reading = reads([]);
+  model.analyze.mockResolvedValueOnce({ ...reading, facts: { ...reading.facts, ...modelTotals } });
   const read = await analyzeCollected(activeIntake(chatId)!);
   updateIntake(chatId, { ...read, answered: undefined } as never);
   const ctx = fakeCtx();
@@ -2451,6 +2461,70 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       goods.map((g) => [g.packing?.cartons ?? null, g.packing?.kgPerCarton ?? null, g.packing?.m3PerCarton ?? null]);
     expect(packs(read.goods)).toEqual([[null, 15, 0.12], [null, 15, 0.12], [null, 30, 0.5]]);
     expect(read.moreSheets.map((m) => packs(m.goods))).toEqual([[[null, 8, 0.05], [null, 8, 0.05], [null, 30, 0.5]]]);
+  },
+  c4525: async () => {
+    // review seams-2's check: «G.W.(KGS)» of its own beside the asked «N.W.(KGS)», both beside 10, 20, 30
+    // cartons — its Σ 12 + 13 + 11 = 36 is as unproven as the net column's, so the brutto is asked (710 kg if
+    // per carton), never «✅ 36 kg»; and the model's reading of that TOTAL row (36) does not land either.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'N.W.(KGS)', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 11, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 9, 11, 0.07],
+      ['TOTAL', null, 980, 60, 30, 36, 0.18],
+    ];
+    for (const modelTotals of [{}, { weightKg: 36 }]) {
+      const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], modelTotals);
+      const now = steps[0]!;
+      expect(now.weightKg).toBeNull();
+      expect(now.table).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+      expect(now.table).not.toContain('36 kg');
+    }
+  },
+  c4526: async () => {
+    // review seams-2-fix/summary-line-brutto-dropped: «Bag» lacks its G.W., so the summary line's
+    // «TOTAL G.W.: 710 KGS» is the sheet's own brutto — no Σ of the asked column (12 + 13 + 11 = 36) —
+    // and it stands under ✅ beside the question; the cube's column Σ does not.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      [4, 'Bag', 50, 5, null, 0.02],
+      ['TOTAL G.W.: 710 KGS  CBM: 3.9'],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']]);
+    const now = steps[0]!;
+    expect(now.weightKg).toBe(710);
+    expect(now.table).toContain('✅ Og‘irlik (brutto): 710 kg');
+    expect(now.state.facts.volumeM3 ?? null).toBeNull();
+  },
+  c4527: async () => {
+    // review seams-2's check beside an invoice (seams-4's pair): the packing list's gross column beside its
+    // asked net one is no «✅ brutto» either, and the receipt calls what it did not take a BRUTTO.
+    const ci: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'Unit price', 'Amount'],
+      [1, 'Ladies jacket', 200, 6.5, 1300],
+      [2, 'Kids toy plastic', 480, 1.5, 720],
+      [3, 'LED lamp 50W', 300, 3, 900],
+    ];
+    const pl: Cell[][] = [
+      ['No.', 'Description', 'QTY', 'CTNS', 'N.W.(KGS)', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 11, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 9, 11, 0.07],
+      ['TOTAL', null, 980, 60, 30, 36, 0.18],
+    ];
+    const { said, steps } = await aiDoorWalk('podklyuch', [
+      [xlsx({ name: 'Sheet1', rows: ci }), 'ci.xlsx'],
+      [xlsx({ name: 'Sheet1', rows: pl }), 'pl.xlsx'],
+    ]);
+    const now = steps[0]!;
+    expect(now.weightKg).toBeNull();
+    expect(now.table).not.toContain('36 kg');
+    expect(said.join('\n')).toContain(
+      '«N.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi',
+    );
   },
   c4523: async () => {
     // review seams-5: two rows of one name are two rows — answering rows 1 and 3 leaves row 2's

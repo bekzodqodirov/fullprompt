@@ -949,9 +949,14 @@ export type AskedTotal = 'weightKg' | 'volumeM3';
  * the seller answers it ROW by row, so its Σ, or the TOTAL row that is its Σ,
  * is never the shipment's: under ✅ it stayed 20× small after every row was
  * answered as told. So the cube falls to the current lines' Σ «qatorlardan»,
- * which follows his answers, and the brutto is asked. A brutto in a gross
- * column of its OWN beside an asked NET column is not the asked column's and
- * stands; a netto offered from the asked column is its Σ and goes.
+ * which follows his answers, and the brutto is asked. Every total is judged by
+ * WHERE it came from (`ColumnAsk.totalStated`, review seams-2's check): a
+ * brutto that is the Σ of a gross column — the asked one, or a gross column
+ * of its own beside an asked NET one, sitting beside the same several cartons
+ * a row and exactly as unproven (JN-12) — goes with the question; a figure the
+ * sheet STATES apart from the column («TOTAL G.W.: 710 KGS» on a summary line
+ * over cells adding up to 36, the cartons' product the belt proved) stands. A
+ * netto offered from the asked column is its Σ and goes.
  *
  * `doubted` — what the model's reading of the same file must not stand for
  * either (it reads that TOTAL row as text); `dropped` — the asked columns
@@ -965,16 +970,21 @@ export function withoutAskedTotals(
 ): { totals: PackingTotals; doubted: AskedTotal[]; dropped: ColumnAsk[] } {
   const asks = meta.asks ?? [];
   if (asks.length === 0) return { totals, doubted: [], dropped: [] };
-  const asked = (field: AskedTotal) => asks.some((a) => a.field === field);
+  const askOf = (field: AskedTotal) => asks.find((a) => a.field === field);
   const ownGross = meta.weightKind === 'net' && meta.grossColumn;
   const doubted: AskedTotal[] = [];
   let { weightKg, weightNetto, volumeM3 } = totals;
-  if (asked('weightKg') && (!ownGross || weightNetto)) {
+  const weight = askOf('weightKg');
+  if (weight && weightNetto) {
     weightKg = null;
     weightNetto = false;
     if (!ownGross) doubted.push('weightKg');
+  } else if (weight && weight.totalStated !== true) {
+    weightKg = null;
+    doubted.push('weightKg');
   }
-  if (asked('volumeM3')) {
+  const volume = askOf('volumeM3');
+  if (volume && volume.totalStated !== true) {
     volumeM3 = null;
     doubted.push('volumeM3');
   }

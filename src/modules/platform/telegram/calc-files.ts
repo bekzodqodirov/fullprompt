@@ -677,7 +677,12 @@ export function receiveGoodsSheet(
     return {
       patch: { fileTotals: kept.fileTotals },
       lines: [
-        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled, carried, unplaced, { columns: dropped, weightKind: m.weightKind }),
+        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled, carried, unplaced, {
+          columns: dropped,
+          // The weight the question took is named as what it WAS: a brutto
+          // from a gross column beside an asked net one is no «umumiy netto».
+          weightKind: read.weightKg !== null ? (read.weightNetto ? 'net' : 'gross') : m.weightKind,
+        }),
         ...(kept.clash && state.fileTotals ? [totalsClashNote(m.label, state.fileTotals.label)] : []),
       ],
     };

@@ -56712,6 +56712,676 @@
    "why": "the check of figures-ctn-running-number (mixed carton): a repeated carton number is no count; a repeat of 1 alone would read as a section restarting, so the repeat is pinned away from 1.",
    "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
    "weight": "defect"
+  },
+  {
+   "id": "c4543",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "N.W.(KGS)",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     60,
+     30,
+     36,
+     0.18
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "N.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«G.W.(KGS)» of its own beside the asked «N.W.(KGS)», both beside 10, 20, 30 cartons: its Σ 12 + 13 + 11 = 36 is the column's, so the weight question doubts the brutto too (the plain door, frozen, still reads 36)",
+   "why": "review seams-2's check: withoutAskedTotals kept a gross column's Σ beside an asked net one — exactly as unproven (JN-12): 36 kg under ✅, 710 kg if per carton.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4544",
+   "input": [
+    [
+     "№",
+     "Наименование",
+     "Кол-во",
+     "Мест",
+     "Вес нетто",
+     "Вес брутто",
+     "Объем"
+    ],
+    [
+     1,
+     "Куртка",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Игрушка",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "Лампа",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "Итого",
+     null,
+     980,
+     60,
+     30,
+     36,
+     0.18
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "Вес нетто",
+     "Объем"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«Вес брутто» beside the asked «Вес нетто» (Russian): the brutto Σ 36 is the column's — doubted with the question",
+   "why": "review seams-2's check, a neighbour in Russian.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4545",
+   "input": [
+    [
+     "序号",
+     "品名",
+     "数量",
+     "箱数",
+     "净重",
+     "毛重",
+     "体积"
+    ],
+    [
+     1,
+     "女士夹克",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "玩具",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "灯",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "合计",
+     null,
+     980,
+     60,
+     30,
+     36,
+     0.18
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "净重",
+     "体积"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«毛重» beside the asked «净重» (Chinese): the brutto Σ 36 is the column's — doubted",
+   "why": "review seams-2's check, a neighbour in Chinese.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4546",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "N.W.(KGS)",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "A",
+     200,
+     10,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "B",
+     480,
+     20,
+     11,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "C",
+     300,
+     30,
+     9,
+     11,
+     0.07
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     60,
+     null,
+     710,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "asks": [
+     "N.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "the TOTAL row's 710 is 10 × 12 + 20 × 13 + 30 × 11: the belt PROVES «G.W.(KGS)» one carton's — a brutto stated apart from the asked «N.W.(KGS)», so it stands",
+   "why": "review seams-2's check: only a column's Σ is doubted, never the cartons' product the belt proved.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4547",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "TOTAL G.W.: 710 KGS  CBM: 3.9",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "volumeM3": 0.2,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "«Bag» lacks its G.W., so the summary line's «TOTAL G.W.: 710 KGS» is the brutto — the sheet's statement, never the asked column's Σ (12 + 13 + 11 = 36): it stands beside the question; the cube 0.05 + 0.06 + 0.07 + 0.02 = 0.2 is the column's and is doubted",
+   "why": "review seams-2-fix/summary-line-brutto-dropped: withoutAskedTotals dropped whatever brutto the meta carried, never asking where it came from — 710 kg asked again. Base: «✅ Og‘irlik (brutto): 710 kg».",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4548",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "TOTAL G.W.: 36 KGS",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 36,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "a summary line saying 36 only restates the asked column's cells (12 + 13 + 11): the same Σ in words, doubted with the column",
+   "why": "review seams-2's check: a summary stands apart only when it is not the column's Σ restated.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4549",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "Итого брутто: 710 кг",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "«Итого брутто: 710 кг» (Russian) is the sheet's statement, not 36 — it stands",
+   "why": "review seams-2-fix/summary-line-brutto-dropped, a neighbour in Russian.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4550",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     null,
+     0.02
+    ],
+    [
+     "合计 毛重: 710KG",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 710,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     true,
+     false
+    ]
+   },
+   "said": "«合计 毛重: 710KG» (Chinese) is the sheet's statement — it stands",
+   "why": "review seams-2-fix/summary-line-brutto-dropped, a neighbour in Chinese.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4551",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     3,
+     null
+    ],
+    [
+     "TOTAL CBM: 3.9",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "grossKg": 39,
+    "volumeM3": 3.9,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     true
+    ]
+   },
+   "said": "«Bag» lacks its cube, so «TOTAL CBM: 3.9» is the sheet's statement (the cells add up to 0.18): it stands beside the CBM question; the brutto 12 + 13 + 11 + 3 = 39 is the column's and is doubted",
+   "why": "review seams-2's check, the cube's half: a stated cube is no column Σ.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4552",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     13,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     11,
+     0.07
+    ],
+    [
+     4,
+     "Bag",
+     50,
+     5,
+     3,
+     null
+    ],
+    [
+     "TOTAL 0.18 CBM",
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "volumeM3": 0.18,
+    "asks": [
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    "asksTotalStated": [
+     false,
+     false
+    ]
+   },
+   "said": "«TOTAL 0.18 CBM» only restates the cells 0.05 + 0.06 + 0.07: doubted with the column",
+   "why": "review seams-2's check: the same Σ in words.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
@@ -98692,6 +99362,49 @@
    "why": "the check of review figures-ctn-running-number: PL-1 was fixed and PL-2 of the same workbook read cartons 4, 5, 6 — the guard demanded a run from exactly 1.",
    "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
    "weight": "blocker"
+  },
+  {
+   "id": "c4525",
+   "call": "readIntakeFile + analyzeCollected (a lone packing list on the AI door: its own G.W. column beside an asked N.W. one)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | N.W.(KGS) | G.W.(KGS) | CBM — 10/10/12/0.05, 20/11/13/0.06, 30/9/11/0.07, TOTAL 60/30/36/0.18"
+    },
+    "model": "answers nothing; then reads the TOTAL row's 36 kg"
+   },
+   "said": "the brutto is asked — never «✅ Og‘irlik (brutto): 36 kg» — whether the model is silent or reads the same TOTAL row",
+   "why": "review seams-2's check: the carve-out «a brutto in a gross column of its OWN beside an asked NET column stands» kept a Σ beside the same unproven cartons (JN-12).",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4526",
+   "call": "readIntakeFile + analyzeCollected (a lone packing list on the AI door: a summary line states the brutto a row lacks)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, Bag 5/–/0.02; «TOTAL G.W.: 710 KGS  CBM: 3.9»"
+    },
+    "model": "answers nothing"
+   },
+   "said": "«✅ Og‘irlik (brutto): 710 kg» stands beside the G.W. question: the summary line's figure is the sheet's statement, never the asked column's Σ (36)",
+   "why": "review seams-2-fix/summary-line-brutto-dropped. Base: «✅ Og‘irlik (brutto): 710 kg».",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4527",
+   "call": "readIntakeFile ×2 + analyzeCollected (an invoice, then its packing list whose G.W. sits beside an asked N.W.)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY | Unit price | Amount — 3 rows",
+     "pl.xlsx": "No. | Description | QTY | CTNS | N.W.(KGS) | G.W.(KGS) | CBM — TOTAL 36 / 0.18"
+    },
+    "model": "answers nothing"
+   },
+   "said": "no «✅ 36 kg» beside the invoice, and the receipt says «… shuning uchun umumiy brutto va kub fayldan olinmadi» — the brutto it did not take, never «umumiy netto»",
+   "why": "review seams-2's check on seams-4's pair.",
+   "source": "ai-soraydi 1a review (seams-2, the check)",
+   "weight": "defect"
   }
  ],
  "sameGoodsLineCases": [
