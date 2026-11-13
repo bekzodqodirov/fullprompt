@@ -111,3 +111,48 @@ describe('owner-1 — «1 ta karobka», «1 karobka = 15 kg», «1ctn=15kg» are
     expect(references('stul 20 karobka, 1 karobka 0.12 kub')).toEqual([]);
   });
 });
+
+describe('owner-2 / crit-3 / crit-4 — what ONE carton holds, in every form JN-8 (b) names (20 × 24 = 480, 20 × 25 = 500)', () => {
+  it('owner-2: «1 karobkada 24 dona» beside «20 karobka» is 480 — never the row’s 24 (a 20× customs error under ✅)', () => {
+    // The line was set aside «1 karobkada» as a pair and kept «24 dona» as the row's own count.
+    for (const text of ['Ruchka 20 karobka, 1 karobkada 24 dona', 'Ruchka 20 karobka 1 karobkada 24 dona', 'Ruchka 20 karobka, 1 ta karobkada 24 dona']) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ name: 'Ruchka', quantity: 480, note: null });
+      expect(r.packing, text).toMatchObject({ cartons: 20, pcsPerCarton: 24 });
+    }
+    expect(row('Ruchka 20 ta quti, 1 qutida 24 dona')).toMatchObject({ quantity: 480 });
+  });
+
+  it('crit-3: «в каждой коробке» / «в 1 коробке» / «в каждом месте» — the line no longer vanishes', () => {
+    // Was []: no row, no packing, no note — and the seller asked for everything he typed.
+    for (const text of [
+      'Кукла 20 мест, в каждой коробке 25 шт',
+      'Кукла 20 мест, в 1 коробке 25 шт',
+      'Кукла 20 мест, в каждом месте 25 шт',
+      'Кукла 20 мест, в одной коробке 25 шт',
+    ]) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ name: 'Кукла', quantity: 500 });
+      expect(r.packing, text).toMatchObject({ cartons: 20, pcsPerCarton: 25 });
+    }
+    for (const text of ['Ручка 20 коробок, в каждой коробке 24 шт', 'Ручка 20 коробок в каждой коробке 24 шт']) {
+      expect(row(text), text).toMatchObject({ name: 'Ручка', quantity: 480 });
+    }
+  });
+
+  it('crit-4: the other two forms the ruling names — «в коробке по 25 шт», «25 шт в каждой коробке»', () => {
+    expect(row('Кукла 20 мест, в коробке по 25 шт')).toMatchObject({ name: 'Кукла', quantity: 500 });
+    expect(row('Кукла 20 мест, 25 шт в каждой коробке')).toMatchObject({ name: 'Кукла', quantity: 500 });
+  });
+
+  it('a WEIGHT in one carton: «в каждой коробке 15 кг» — 20 × 15 = 300 kg on the row, no 15 kg total, nothing more asked of the goods', () => {
+    expect(row('Stul 20 мест, в каждой коробке 15 кг')).toMatchObject({ name: 'Stul', weightKg: 300 });
+    expect(totals('Stul 20 мест, в каждой коробке 15 кг')).toEqual(none);
+  });
+
+  it('JN-8 (b) unchanged: «Кукла в коробке» is the product’s own box — 500 pieces, nothing multiplied', () => {
+    const r = row('Кукла в коробке 500 шт, 20 мест');
+    expect(r).toMatchObject({ name: 'Кукла в коробке', quantity: 500 });
+    expect(r.packing ?? null).toBeNull();
+  });
+});

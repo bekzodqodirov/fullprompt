@@ -995,11 +995,13 @@ const MARK_GAP = String.raw`[\s,:：=＝–-]*$`;
 
 /**
  * «har biri», «har birida», «har bir karobka(da)», «har karobkada», «har bir
- * dona», «each», «each carton», «каждая», «каждое место» — closing the text
- * before a figure. Groups 1-4: the noun, when one stands after the mark.
+ * dona», «each», «each carton», «каждая», «каждое место», «в каждой коробке»
+ * — closing the text before a figure. Groups 1-4: the noun, when one stands
+ * after the mark. The Russian «в» belongs to the mark: left out, it stood
+ * alone in the tail and the whole goods line vanished (review owner-2, crit-3).
  */
 const EACH_LEAD = new RegExp(
-  String.raw`(?<![\p{L}])(?:(?:har|ҳар|хар)\s+(?:(?:bir|бир)(?:ining|ida|iga|i|ининг|ида|ига|и)?|(?:bitta|битта)(?:sida|siga|si|сида|сига|си)?)(?:\s+(${COUNT_NOUN}))?|(?:har|ҳар|хар)\s+(${COUNT_NOUN})|(?:each|every)(?:\s+(${COUNT_NOUN}))?|кажд(?:ая|ый|ое|ую|ого|ой|ом)(?:\s+(${COUNT_NOUN}))?)${MEASURE_AFTER_NOUN}${MARK_GAP}`,
+  String.raw`(?<![\p{L}])(?:(?:har|ҳар|хар)\s+(?:(?:bir|бир)(?:ining|ida|iga|i|ининг|ида|ига|и)?|(?:bitta|битта)(?:sida|siga|si|сида|сига|си)?)(?:\s+(${COUNT_NOUN}))?|(?:har|ҳар|хар)\s+(${COUNT_NOUN})|(?:each|every)(?:\s+(${COUNT_NOUN}))?|(?:в\s+)?кажд(?:ая|ый|ое|ую|ого|ой|ом)(?:\s+(${COUNT_NOUN}))?)${MEASURE_AFTER_NOUN}${MARK_GAP}`,
   'iu',
 );
 /**

@@ -15635,6 +15635,178 @@
    "why": "owner-1: «1箱» welded — the Chinese spelling of the mark.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "blocker"
+  },
+  {
+   "id": "c4209",
+   "input": "Ruchka 20 karobka, 1 karobkada 24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ruchka",
+      "quantity": 480,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona = 20 × 24",
+   "why": "owner-2: «1 karobkada» was set aside as a pair, leaving «24 dona» the row's own count (24 for 480 under ✅).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4210",
+   "input": "Ruchka 20 karobka 1 karobkada 24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ruchka",
+      "quantity": 480,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona = 20 × 24",
+   "why": "owner-2, the same line without the comma.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4211",
+   "input": "Ручка 20 коробок, в каждой коробке 24 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ручка",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 = 20 × 24",
+   "why": "owner-2 / crit-3: «в» left out of EACH_LEAD stood alone and the line vanished.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4212",
+   "input": "Ручка 20 коробок в каждой коробке 24 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ручка",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 = 20 × 24",
+   "why": "owner-2, without the comma.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4213",
+   "input": "Кукла 20 мест, в каждой коробке 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-3 / crit-4: JN-8 (b)'s «в каждой коробке» form, pinned with its product.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4214",
+   "input": "Кукла 20 мест, в 1 коробке 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-3 / crit-4: JN-8 (b)'s «в 1 коробке» form (the «1 коробке» pair was set aside).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4215",
+   "input": "Кукла 20 мест, в каждом месте 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-3: «в каждом месте».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4216",
+   "input": "Кукла 20 мест, в коробке по 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-4: JN-8 (b)'s «в коробке по N» form, pinned.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4217",
+   "input": "Кукла 20 мест, 25 шт в каждой коробке",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-4: «N шт в каждой коробке», pinned.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4218",
+   "input": "Stul 20 мест, в каждой коробке 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg = 20 × 15",
+   "why": "crit-3: one carton's weight in the «в каждой коробке» form.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -59240,6 +59412,32 @@
    "why": "owner-1's guard (ONE_LEAD group 1): with no other carton count the «1 ta karobka» is the count, as «1 karobka» always was.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4219",
+   "input": "Stul 20 мест, в каждой коробке 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    },
+    "missing": {
+     "section": "rastamojka",
+     "excludes": [
+      "goods"
+     ]
+    }
+   },
+   "said": "no total; the row 300 kg; the goods are no longer asked",
+   "why": "crit-3: missingFields named «goods» for a line the seller typed whole.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
   }
  ],
  "intakeClientLabelCases": [

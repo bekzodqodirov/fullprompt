@@ -1332,6 +1332,11 @@ function setAsidePairs(text: string): { text: string; aside: string[] } {
   const spans = amountsIn(text);
   const first = spans.findIndex((s) => unitOrScaled(s.word ?? undefined) !== null);
   if (first < 0) return { text, aside: [] };
+  // A per-one MARK is the kernel's, never a pair of the line: «20 karobka, 1
+  // karobkada 24 dona» — set aside, «1 karobkada» left «24 dona» standing as
+  // the row's own count, 24 pieces for 480 under ✅ (review owner-2). What
+  // `packingRead` reads as a mark stays for it (`figureTail`).
+  const marked = packingRead(text, { scaled: true }).consumed;
   // «Kofe 250 gr, 1000 pachka»: the pack count says whose the gram is — it
   // stays for the readers, who then keep the gram in the name (`unitFigures`).
   const gramFirst = (scaledKg(spans[first]!.word)?.factor ?? 1) < 1;
@@ -1344,6 +1349,7 @@ function setAsidePairs(text: string): { text: string; aside: string[] } {
     if (fieldAt(text, s.start + s.number.length)) continue;
     // «1/2 dyuym» — the number is a fraction's, and the pair no pair at all.
     if (/\d[ \t]*\/[ \t]*$/u.test(text.slice(Math.max(0, s.start - 8), s.start))) continue;
+    if (marked.some(([a, b]) => s.start < b && a < s.end)) continue;
     edits.push({ start: s.start, end: s.end });
     aside.push(text.slice(s.start, s.end).replace(/\s+/gu, ' ').trim());
   }
