@@ -547,13 +547,18 @@ async function openAdd(
     return null;
   }
   const atOpen = standing.standing;
-  const { lawAsksInputOfStored, lawAsksOf } = await import('../../wms/calc/law-asks');
+  const { askedSeqsOf, lawAsksInputOfStored, lawAsksOf, sellerAsksOf } = await import('../../wms/calc/law-asks');
   const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
   const base = stored.base;
   // The stored request's ask through P5's ONE adapter (#513): the 2.8 b ask,
   // this table and the VED's chips read the same rows (calc-pass-settle pins
-  // the adapter against the pass's own, performance-9).
-  const asks = lawAsksOf(lawAsksInputOfStored(stored));
+  // the adapter against the pass's own, performance-9). By the request's door
+  // (docs/AI-SORAYDI.md §3.4 A2, review JR-13 — ONE list per door): the AI
+  // door's answer asks every row the seller can give a figure for, and the
+  // table prefers exactly those for an unaddressed «300 dona»; any other door
+  // asks the law's rows, as before.
+  const asksInput = lawAsksInputOfStored(stored);
+  const askedSeqs = stored.door === 'ai' ? askedSeqsOf(sellerAsksOf(asksInput)) : lawAsksOf(asksInput).map((a) => a.seq);
   const sum = volumeIsLinesSum(base.volumeM3, base.items);
   const facts: IntakeState['facts'] = {
     ...stored.facts,
@@ -576,7 +581,7 @@ async function openAdd(
       facts,
       clientHintRaw: base.clientLabel ?? '',
       doorHint: base.clientLabel ?? '',
-      askedSeqs: asks.length > 0 ? asks.map((a) => a.seq) : null,
+      askedSeqs: askedSeqs.length > 0 ? askedSeqs : null,
       standingAtOpen: atOpen,
     },
     { quiet: true },

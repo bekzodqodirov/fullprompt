@@ -10,11 +10,13 @@
  * Two fixers (§0.1(7)): a fact only the customer has (a count, a weight, the
  * city, the brutto) is the SELLER's; a baza, a law, a tariff hole is the
  * VED's. Until the two doors, the seller's tail sent him to the customer —
- * «mijozdan so‘rab, «➕» bilan yuboring». On a request that came in through
- * either bot door (`noAsk`: the door is 'plain' or 'ai'), his 4a and 5a take
- * that question out of the machine's answer: the VED asks the seller, so the
- * seller's tail says so, and the VED's own tails are what they always were.
- * A request from before the doors (NULL) keeps today's words exactly (§0.2).
+ * «mijozdan so‘rab, «➕» bilan yuboring». Where NOBODY asks the seller
+ * (`noAsk`), the VED does, so the seller's tail says so and the VED's own
+ * tails are what they always were. Since docs/AI-SORAYDI.md §3.4 A1 (his 4a
+ * of 2026-11-11, review JR-13) that is the plain door («🧮», his 2a/3a) — and
+ * the AI door's card copy when the seller's own copy reached nobody; the AI
+ * door's answer asks again, in the NULL door's words, and a request from
+ * before the doors (NULL) keeps today's words exactly (§0.2).
  */
 
 /** Who can fix a refusal: a fact only the seller or the customer has, or one
@@ -52,7 +54,7 @@ export const CUSTOMS_TAIL_WORDS: Record<FreightTail, Record<ReplyAudience, strin
 };
 
 /**
- * The seller's tail on a door request (§3.5): the VED asks him. In his chat
+ * The seller's tail where nobody asks him (§3.5): the VED does. In his chat
  * «sizdan» — he is the one asked; on the lenta, which the VED reads, the
  * plain door's own summary words (§2.1, «↳ kg yo‘q — VED xodimi so‘raydi»).
  */
@@ -61,7 +63,7 @@ export const SELLER_TAIL_NO_ASK: Record<ReplyAudience, string> = {
   lenta: '— VED xodimi so‘raydi',
 };
 
-/** The tail for one refusal: the map's own words, or — on a door request — the seller's «VED asks». */
+/** The tail for one refusal: the map's own words, or — where nobody asks him — the seller's «VED asks». */
 export function tailWords(
   words: Record<FreightTail, Record<ReplyAudience, string>>,
   tail: FreightTail,

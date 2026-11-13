@@ -5,7 +5,7 @@ import { SMALL_FREIGHT_USD, type BazaSource } from './pricing';
 import { AI_REPLY_HEAD, RERUN_WORD, VED_ESTIMATE_MARK } from './reply-heads';
 import { figureLabel, type TotalWeightBasis } from './intake';
 import { needWhatUz, needWhyUz, type NeedUnit } from './needs';
-import type { LawAsk } from './law-asks';
+import { askName, type LawAsk, type SellerAsk } from './law-asks';
 import {
   CUSTOMS_TAIL_WORDS,
   FREIGHT_TAIL_WORDS,
@@ -212,9 +212,21 @@ export interface AiVedReplyInput {
    * rows still lack — asked of the seller in the chat, named for the VED on
    * the lenta. REQUIRED-nullable (#790): null when it was not asked (a person
    * has written since the machine, the pass was overtaken), [] when nothing
-   * is owed.
+   * is owed. On a `noAsk` rendering the same rows are the VED's to get
+   * («⚠️ VED uchun:» on the lenta).
    */
   asks: LawAsk[] | null;
+  /**
+   * The AI door's ONE list (docs/AI-SORAYDI.md §3.4 A2, review JR-13):
+   * everything the seller can give — the law's unit, a row with no figure,
+   * an uncoded row, the reading's own question, the road's totals
+   * (`sellerAsksOf`). Non-null REPLACES `asks` as what the answer asks: the
+   * chat's «❓ AI so‘raydi» block and the lenta's «❓ Sotuvchidan so‘raldi»
+   * line are built from it alone. REQUIRED-nullable (#790): null on every
+   * other door, and on the AI door's rendering for a seller whose copy
+   * reached nobody (`noAsk`).
+   */
+  sellerAsks: SellerAsk[] | null;
   /** The landing's pass, or the re-run after a seller's addition — whose
    * heading says «qayta hisob» (§2.5). REQUIRED (#790). */
   pass: 'landing' | 'amend';
@@ -222,12 +234,15 @@ export interface AiVedReplyInput {
    * carries the VED's own line under its heading (§2.6). */
   audience: ReplyAudience;
   /**
-   * The request came in through a bot door (docs/IKKI-ESHIK.md §3.5): the
-   * answer ASKS nothing — no ❓ block, the seller's tails say the VED will ask
-   * him (`tailWords`), the JAMI that cannot be made is the VED's to make, and
-   * the lenta names the same gaps under «⚠️ VED uchun:». False — a request
-   * from before the doors (NULL), the card form, the thread, the agent —
-   * keeps today's words exactly (§0.2). REQUIRED (#790).
+   * Nobody asks the seller (docs/IKKI-ESHIK.md §3.5): no ❓ block, the
+   * seller's tails say the VED will ask him (`tailWords`), the JAMI that
+   * cannot be made is the VED's to make, and the lenta names the same gaps
+   * under «⚠️ VED uchun:». Since docs/AI-SORAYDI.md §3.4 A1 (review JR-13)
+   * that is the plain door's alone — and the AI door's card copy when the
+   * seller's own copy reached nobody (`lentaUnasked`): the AI door ASKS
+   * again, with the NULL door's tails. False — the AI door, a request from
+   * before the doors (NULL), the card form, the thread, the agent — keeps the
+   * asking words. REQUIRED (#790).
    */
   noAsk: boolean;
 }
@@ -352,8 +367,8 @@ export function routeWords(f: Extract<AiVedFreight, { ok: true }>): string {
 /** A refused road — the words and who fixes them, and the seller's own gap
  * on a line of its own when the refusal is the VED's (PF-5). In the
  * reader's words (`audience`): the tails differ between the chat and the
- * lenta — and on a door request (`noAsk`, §3.5) the seller's tail says the
- * VED will ask him, in all four of the seller's cases alike. */
+ * lenta — and where nobody asks him (`noAsk`, §3.5) the seller's tail says
+ * the VED will ask him, in all four of the seller's cases alike. */
 export function roadRefusalLine(
   f: Extract<AiVedFreight, { ok: false }>,
   audience: ReplyAudience,
@@ -365,11 +380,13 @@ export function roadRefusalLine(
 }
 
 /**
- * The gaps a door request leaves for the VED (docs/IKKI-ESHIK.md §3.5), in
- * ONE line under the lenta's heading — where `lawAsksLentaLine` told him what
- * the seller had been asked, this tells him what is his to get: each row the
- * LAW still wants a figure for (the 2.8 b block's own rows, never asked of the
- * seller any more), and the road's facts only the customer has. Null when
+ * The gaps a request nobody asks the seller about leaves for the VED (the
+ * plain door's note, the AI door's card copy for a seller nobody reached —
+ * docs/IKKI-ESHIK.md §3.5), in ONE line under the lenta's heading — where
+ * `lawAsksLentaLine` told him what the seller had been asked, this tells him
+ * what is his to get: each row the LAW still wants a figure for (the 2.8 b
+ * block's own rows, not asked of the seller here), and the road's facts only
+ * the customer has. Null when
  * there are none. Capped like the old line: it sits in the head the fit
  * never cuts (review p5-adv-5).
  *
@@ -438,12 +455,12 @@ const MEDIAN_LEGEND = '📊 deklaratsiyalar medianasi (taxminiy)';
  * printed «1. Нетканый материал…\n…2516 кг» and the NEXT line's number
  * appeared to belong to it. The list stopped being a list. A name is
  * collapsed to one line and cut at 60 characters with an ellipsis — the full
- * text is on the card, which the link goes to.
+ * text is on the card, which the link goes to. ONE cap for the group lines
+ * and the ❓ block: `askName` (law-asks.ts), where the AI door's asks are
+ * worded.
  */
-const NAME_CAP = 60;
 function shortName(raw: string): string {
-  const flat = raw.replace(/\s+/g, ' ').trim();
-  return flat.length <= NAME_CAP ? flat : `${flat.slice(0, NAME_CAP - 1)}…`;
+  return askName(raw);
 }
 
 /** «23», «23 va 8», «23, 8 va 5», then «23, 8, 5 …» — at most three numbers. */
@@ -577,15 +594,20 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   const anyMedian = input.lines.some((l) => l.estimated?.priced === true);
   const head = [title];
   const asks = input.asks ?? [];
+  // The AI door's list, when this rendering asks it (A2) — it replaces the
+  // law's (review JR-13: one list per door).
+  const seller = input.noAsk ? null : (input.sellerAsks ?? null);
   if (input.audience === 'lenta') {
     const ved = vedLine(anyMedian, guessedFrom, roadFromLines);
     if (ved) head.push(ved);
     // The VED skimming the lenta reads its first lines: what the seller was
-    // asked goes there, in one line (§2.5) — or, on a door request, which
-    // asks nothing (docs/IKKI-ESHIK.md §3.5), the same gaps as his to get.
+    // asked goes there, in one line (§2.5) — or, where nobody asks him
+    // (docs/IKKI-ESHIK.md §3.5), the same gaps as the VED's to get.
     if (input.noAsk) {
       const gaps = vedGapsLine(asks, f);
       if (gaps) head.push(gaps);
+    } else if (seller !== null) {
+      if (seller.length > 0) head.push(sellerAsksLentaLine(seller));
     } else if (asks.length > 0) head.push(lawAsksLentaLine(asks));
   }
 
@@ -604,9 +626,15 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   }
   // His 2.8 b — in `fixed`, which the fit never cuts: on a 40-line invoice
   // the group lines shrink and the question the seller must answer stays.
-  // Never on a door request (his 5a): «Tasdiqlash» was the last question, and
-  // what is still missing is the VED's to get.
-  if (input.audience === 'chat' && !input.noAsk && asks.length > 0) fixed.push(...lawAsksBlock(asks));
+  // The AI door asks again after «Tasdiqlash» (docs/AI-SORAYDI.md §3.4 A1,
+  // his 4a of 2026-11-11 reversing IKKI-ESHIK's 5a for that door): its own
+  // block, capped on the UNION of what it asks (review JS-25). Never where
+  // nobody asks (`noAsk` — the plain door).
+  if (input.audience === 'chat' && !input.noAsk) {
+    if (seller !== null) {
+      if (seller.length > 0) fixed.push(...sellerAsksBlock(seller));
+    } else if (asks.length > 0) fixed.push(...lawAsksBlock(asks));
+  }
 
   const tail: string[] = ['━━━━━━━━━━━━'];
   // NO PARTIAL SUMS under the job's name (the kernel's rule, restated as a
@@ -669,8 +697,8 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     } else if (f.ok && (total ?? taxminiy) !== null) {
       tail.push(`JAMI taxminiy (rastamojka + yo‘lkira): ≈ ${money((total ?? taxminiy)! + f.listUsd)}`);
     } else {
-      // «…to‘ldiring» is a request to the seller; on a door request nothing is
-      // asked of him, and the sum is the VED's to make (§3.5).
+      // «…to‘ldiring» is a request to the seller; where nothing is asked of
+      // him, the sum is the VED's to make (§3.5).
       tail.push(
         input.noAsk
           ? 'JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.'
@@ -741,6 +769,99 @@ export function lawAsksBlock(asks: readonly LawAsk[]): string[] {
     ...shown,
     `✍️ Shu xabarga reply qilib yozing: «${example}» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.`,
   ];
+}
+
+/** The AI door's block head (review JS-25): it asks more than the law's unit now. */
+export const SELLER_ASKS_HEAD = '❓ AI so‘raydi — javob yozsangiz qayta hisoblaydi:';
+
+/** More than this many uncoded rows fold into ONE line (review JS-25). */
+export const WHAT_FOLD_AFTER = 3;
+/** …the folded line's words, after its row numbers. */
+export const WHAT_FOLD = 'nima tovar ekanini yozing (nimadan, nima uchun)';
+
+/**
+ * The order the block NAMES its asks in, and so the order the cap cuts in
+ * (review JS-25): a row with no figure at all first — nothing prices it —
+ * then the law's unit, the uncoded rows, the reading's own questions, the
+ * shipment's totals. The certificate is never asked (JR-8).
+ */
+const ASK_RANK: readonly SellerAsk['kind'][] = ['measure', 'law', 'what', 'ai', 'total', 'certificate'];
+
+/**
+ * «2, 5-9, 12» — a run of consecutive rows written as its ends, at most ten
+ * pieces and then «…»: the fold exists to keep forty uncoded rows to one line,
+ * and a list of forty scattered numbers would be the forty lines again.
+ */
+function seqRanges(seqs: readonly number[]): string {
+  const sorted = [...new Set(seqs)].sort((a, b) => a - b);
+  const runs: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j]! + 1) j += 1;
+    runs.push(j === i ? String(sorted[i]) : `${sorted[i]}-${sorted[j]}`);
+    i = j + 1;
+  }
+  return runs.length <= 10 ? runs.join(', ') : `${runs.slice(0, 10).join(', ')}, …`;
+}
+
+/** The totals' examples are the add table's own (`answerHow`): what «jami …» it reads. */
+const TOTAL_EXAMPLE: Partial<Record<NeedUnit, string>> = { kg: 'jami 3500 kg', m3: 'jami 12 kub' };
+
+/** One ask as the ✍️ line's example: a figure for a figure, words for words. */
+function askExample(a: SellerAsk): string | null {
+  const unit = a.needs[0];
+  if (a.kind === 'total') return unit ? (TOTAL_EXAMPLE[unit] ?? null) : null;
+  if (a.seq === null) return null;
+  // A 1000-dona floor is answered in pieces: the law divides.
+  if (unit) return `${a.seq}: ${figureLabel(EXAMPLE_FIGURE[unit === '1000_dona' ? 'dona' : unit], unit === '1000_dona' ? 'dona' : unit)}`;
+  return a.kind === 'what' ? `${a.seq}: metall, tormoz kolodkasi` : null;
+}
+
+/**
+ * The AI door's block in the CHAT rendering (docs/AI-SORAYDI.md §3.4 A2;
+ * review JS-25): ONE head, then at most LAW_ASKS_NAMED lines in `ASK_RANK`'s
+ * order — more than three uncoded rows folded into one «2, 5-9-qator: …» —
+ * then the count of the rest, then how to answer. It sits in `fixed`, which
+ * the fit never cuts, so the cap is on the UNION: forty uncoded rows asked
+ * one line each pushed «Rastamojka jami», the caveat and this very ✍️ line
+ * off the end of the message.
+ *
+ * The example is a FIGURE where one is asked — the add table writes a
+ * figure into the row it names — and words only when nothing but words is.
+ */
+export function sellerAsksBlock(asks: readonly SellerAsk[]): string[] {
+  const ranked = ASK_RANK.flatMap((kind) => asks.filter((a) => a.kind === kind));
+  const what = ranked.filter((a) => a.kind === 'what' && a.seq !== null);
+  const fold = what.length > WHAT_FOLD_AFTER;
+  const entries: { line: string; count: number }[] = [];
+  for (const a of ranked) {
+    if (fold && a.kind === 'what' && a.seq !== null) {
+      if (a === what[0]) entries.push({ line: `${seqRanges(what.map((w) => w.seq!))}-qator: ${WHAT_FOLD}`, count: what.length });
+      continue;
+    }
+    entries.push({ line: a.text, count: 1 });
+  }
+  const shown = entries.slice(0, LAW_ASKS_NAMED).map((e) => `· ${e.line}`);
+  const hidden = entries.slice(LAW_ASKS_NAMED).reduce((n, e) => n + e.count, 0);
+  if (hidden > 0) shown.push(`· … yana ${hidden} ta — «➕» jadvalida`);
+  const figures = ranked.filter((a) => a.needs.length > 0).map(askExample).filter((e): e is string => e !== null);
+  const examples = figures.length > 0 ? figures.slice(0, 2) : ranked.map(askExample).filter((e): e is string => e !== null).slice(0, 1);
+  const how = examples.length > 0 ? `yozing: «${examples.join('; ')}»` : 'javobni yozing';
+  return [SELLER_ASKS_HEAD, ...shown, `✍️ Shu xabarga reply qilib ${how} — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.`];
+}
+
+/**
+ * …and the AI door's line on the LENTA instead (A2): the rows asked, by
+ * number, and the shipment's totals — capped like the block, because the
+ * head is never cut (review p5-adv-5).
+ */
+export function sellerAsksLentaLine(asks: readonly SellerAsk[]): string {
+  const seqs = asks.filter((a) => a.seq !== null).map((a) => a.seq!);
+  const parts = [
+    ...(seqs.length > 0 ? [`${seqRanges(seqs)}-qator`] : []),
+    ...asks.filter((a) => a.kind === 'total').map((a) => (a.needs[0] === 'kg' ? 'umumiy brutto' : 'umumiy hajm')),
+  ];
+  return `❓ Sotuvchidan so‘raldi: ${parts.join('; ')}.`;
 }
 
 /** …and the one line the LENTA carries under its heading instead (§2.5) —

@@ -263,6 +263,7 @@ describe('a bot-door request: the same rows, the VED’s to get — never asked 
     estimate: null,
     pickLeft: null,
     asks,
+    sellerAsks: null,
     pass: 'landing',
     audience: 'chat',
     noAsk: true,

@@ -49,7 +49,7 @@ import { onDate } from './dictionaries';
 import { weightFromTotalNote, type IntakeDoor } from './intake';
 import { intakeDoorSql, parseIntakeDoor } from './intake-door';
 import { CalcError } from './service';
-import { lawAsksInputOf, lawAsksOf, type LawAsk } from './law-asks';
+import { lawAsksInputOf, lawAsksOf, sellerAsksOf, type LawAsk, type SellerAsk } from './law-asks';
 import { aiNoteText } from './ai-note';
 import { carriesAiCode, codesOf, noteGroups, noteRows } from './note-facts';
 
@@ -316,18 +316,22 @@ export async function aiPrefill(
   /**
    * THE DOOR the request came in through (0141, docs/IKKI-ESHIK.md §0.3) —
    * read off the ROW in the statement above, which this pass already makes,
-   * so a direct caller and the worker render alike. It decides WHAT the pass
-   * says, never what it writes:
-   *  - `noAsk` (either bot door): the answer asks the seller nothing — no ❓
-   *    block, the seller's tails say the VED will ask him (his 4a, 5a, §3.5);
+   * so a direct caller and the worker render alike (review JR-13: never from
+   * the job). It decides WHAT the pass says, never what it writes:
    *  - `plain` («🧮 Hisoblatish»): the answer is for the VED alone, with no
-   *    money in it (his 3a, §2.4) — the worker sends the seller nothing.
+   *    money in it (his 3a, §2.4) — the worker sends the seller nothing —
+   *    and it asks nobody (`noAsk`): the seller's tails say the VED will ask;
+   *  - `ai` («🤖 AI rastamojka»): the answer ASKS AGAIN (docs/AI-SORAYDI.md
+   *    §3.4 A1 — his 4a of 2026-11-11, «so‘rasin va to‘ldirsin», reversing
+   *    IKKI-ESHIK's 5a for this door): the ❓ block from `sellerAsksOf` and
+   *    the NULL door's seller tails («mijozdan so‘rab, «➕» bilan yuboring»),
+   *    never «VED xodimi sizdan so‘raydi» about a figure only the seller has.
    * NULL — every request before 0141, the card form, the thread door, the
-   * agent — keeps today's words exactly (§0.2).
+   * agent — keeps today's words exactly (§0.2): the law's ❓ block.
    */
   const door = parseIntakeDoor(row?.door);
-  const noAsk = door !== null;
   const plain = door === 'plain';
+  const noAsk = plain;
 
   if (opts.expectCustoms !== undefined && parts.customs !== opts.expectCustoms) {
     logger.info(
@@ -632,6 +636,14 @@ export async function aiPrefill(
    */
   const asksInput = overtaken === null ? lawAsksInputOf(ws) : null;
   const asks: LawAsk[] | null = asksInput ? lawAsksOf(asksInput) : null;
+  /**
+   * The AI door's ONE list (A2, review JR-13): everything the seller can give
+   * — the law's unit among it — under the same «nobody but the machine has
+   * written» rule. The add door's asked rows read the same function over the
+   * stored request (calc-amend.ts), so the table prefers the rows this answer
+   * asked. Null on every other door, which keeps `asks`.
+   */
+  const sellerAsks: SellerAsk[] | null = door === 'ai' && asksInput ? sellerAsksOf(asksInput) : null;
   const pickShown =
     pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft;
   const outcome = {
@@ -681,8 +693,18 @@ export async function aiPrefill(
     });
     return { ...outcome, text: note, lentaText: note };
   }
-  const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) =>
-    aiVedReplyText({
+  /**
+   * One rendering of the answer (the plain door returned its note above).
+   * `asked` false is the card's copy for a seller whose own copy reached
+   * nobody (muted, no linked chat, cannot log in — review p5-adv-2): the NULL
+   * door drops its «Sotuvchidan so‘raldi» line; the AI door, which asks in
+   * its tails too, is drawn as nobody asks (`noAsk`) — the VED's gaps under
+   * «⚠️ VED uchun:», «— VED xodimi so‘raydi» (A1: «lentaUnasked keeps saying
+   * it»).
+   */
+  const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) => {
+    const quiet = door === 'ai' && !asked;
+    return aiVedReplyText({
       clientLabel: about?.clientCode ?? null,
       cardLabel: about?.cardLabel ?? null,
       lines,
@@ -695,23 +717,26 @@ export async function aiPrefill(
       link,
       aiConfigured: hasKey,
       budgetSpent: hasKey && budgetLeft <= 0,
-      estimate: estimate ? totalsWords(estimate, audience, noAsk) : null,
+      estimate: estimate ? totalsWords(estimate, audience, quiet) : null,
       // A pick skipped past the deadline is news only while a row still
       // waits for a baza; with none, there was nothing it could have chosen.
       pickLeft: pickShown,
-      asks: asked ? asks : null,
+      // The AI door's unasked copy names the law's rows for the VED (`noAsk`'s gaps line).
+      asks: door === 'ai' ? (asked ? null : asks) : asked ? asks : null,
+      sellerAsks: asked ? sellerAsks : null,
       pass: amend === null ? 'landing' : 'amend',
       audience,
-      noAsk,
+      noAsk: quiet,
     });
+  };
 
   return {
     ...outcome,
     text: reply(about?.link ?? null, 'chat'),
     lentaText: reply(null, 'lenta'),
-    // Only where the chat ASKS (a request from before the doors): a door
-    // request's lenta never says the seller was asked (§3.5).
-    ...(!noAsk && asks && asks.length > 0 ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
+    // Only where the chat ASKS — the AI door's own list (A1), or the law's on
+    // a request from before the doors; the plain door's note asks nobody.
+    ...((door === 'ai' ? sellerAsks : asks)?.length ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
   };
 }
 
@@ -750,8 +775,9 @@ async function tariffOnly(
       link,
       pass: amend === null ? 'landing' : 'amend',
       audience,
-      // A door request keeps this answer in the chat (his 2.5 b) and asks
-      // nothing in it (§2.4, §3.5).
+      // The plain door keeps this answer in the chat (his 2.5 b) and asks
+      // nothing in it (§2.4, §3.5); the AI door's road gap is the seller's
+      // to send, in the NULL door's words (docs/AI-SORAYDI.md §3.4 A1).
       noAsk,
     });
   return {

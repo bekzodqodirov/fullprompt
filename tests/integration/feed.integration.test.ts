@@ -508,6 +508,8 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     // REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): the landing's pass,
     // nothing asked — the chip's subject is the heading, which neither moves.
     asks: null,
+    // The AI door's own list (docs/AI-SORAYDI.md §3.4 A2) — not this door's.
+    sellerAsks: null,
     pass: 'landing',
     audience: 'lenta',
     // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.

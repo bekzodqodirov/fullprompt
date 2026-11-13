@@ -276,9 +276,10 @@ const REFUSED_MEASURE = '⚠️ qatorda soni yoki og‘irligi yo‘q';
 
 /**
  * `refused_measure` as its reader is told it: the seller's fact, so the tail
- * is the customs line's own (`tailWords`) — on a bot-door request the VED
- * asks the seller (docs/IKKI-ESHIK.md §3.5), otherwise the seller is sent to
- * the customer, exactly as before (§0.2).
+ * is the customs line's own (`tailWords`) — where nobody asks the seller
+ * (`noAsk`: the plain door, docs/IKKI-ESHIK.md §3.5) the VED does; otherwise
+ * — the AI door since docs/AI-SORAYDI.md §3.4 A1, and a request from before
+ * the doors (§0.2) — the seller is sent to the customer, exactly as before.
  */
 export function refusedMeasureWords(audience: ReplyAudience, noAsk: boolean): string {
   return `${REFUSED_MEASURE} ${tailWords(CUSTOMS_TAIL_WORDS, 'seller', audience, noAsk)}`;

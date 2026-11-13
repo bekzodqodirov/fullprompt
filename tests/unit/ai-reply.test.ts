@@ -74,6 +74,9 @@ const base: AiVedReplyInput = {
   // nothing asked — the 2.8 b block and the re-run heading have their own
   // cases at the end of this file.
   asks: null,
+  // The AI door's own list (docs/AI-SORAYDI.md §3.4 A2) — its cases are at
+  // the end of this file.
+  sellerAsks: null,
   pass: 'landing',
   audience: 'chat',
   // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.

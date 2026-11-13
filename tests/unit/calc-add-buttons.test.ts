@@ -107,6 +107,8 @@ const base: AiVedReplyInput = {
   estimate: null,
   pickLeft: null,
   asks,
+  // The AI door's own list (docs/AI-SORAYDI.md §3.4 A2) — not this door's.
+  sellerAsks: null,
   pass: 'landing',
   audience: 'chat',
   // A request from before the doors (docs/IKKI-ESHIK.md §0.2): the 2.8 b block stands.
