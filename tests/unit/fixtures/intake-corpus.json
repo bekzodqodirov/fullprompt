@@ -16263,6 +16263,42 @@
    "why": "the guard: a label that says the carton keeps its reading after the tail.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4263",
+   "input": "Kurtka 20 x 1 200 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": null,
+      "note": "sotuvchi: 20 x 1 200 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "no 200 pieces; the phrase on the note",
+   "why": "figures-pair-steals-thousands: was «Kurtka 20 x 1» × 200 dona.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4264",
+   "input": "Oyna 2x3 500 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Oyna",
+      "quantity": null,
+      "note": "sotuvchi: 2x3 500 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "no count read — «2x3 500» is a 2×3 sheet of 500 or 2 × 3 500; the phrase on the note, the count asked",
+   "why": "the trade-off of the pair guard, stated: a unitless sheet under 5 before a three-digit group has two readings, so neither lands (it read 500 before).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
@@ -56818,6 +56854,31 @@
    "why": "DIM-3: «1: 60×40×50 15 kg» wrote 50 dona.",
    "source": "ai-soraydi typed-A T6",
    "weight": "blocker"
+  },
+  {
+   "id": "c4265",
+   "input": "Kafel 600x600 500 dona",
+   "expected": {
+    "name": "Kafel 600x600",
+    "quantity": 500,
+    "problemCount": 0
+   },
+   "said": "500 dona — a carton-sized sheet stays a sheet",
+   "why": "the guard of the pair fix: sides ≥ 5.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4266",
+   "input": "Kafel 60x60 1 200 m2",
+   "expected": {
+    "measureUnit": "m2",
+    "measureQty": 1200
+   },
+   "said": "1 200 m²",
+   "why": "the guard of the pair fix (the refuter's counter-case).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
   }
  ],
  "parseManualFactsCases": [
@@ -60149,6 +60210,66 @@
    "why": "crit-1 (seams-7): «pkgs» counts packages.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "defect"
+  },
+  {
+   "id": "c4260",
+   "input": "Stanok 2 x 1 500 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 500/200/400 — neither a total nor the row's weight",
+   "why": "figures-pair-steals-thousands: parseSize's PAIR took «A x 1» as a sheet and «500 kg» was read plainly — a figure neither reading gives (base: 1500).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4261",
+   "input": "Generator 3 x 1 200 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 500/200/400 — neither a total nor the row's weight",
+   "why": "figures-pair-steals-thousands: parseSize's PAIR took «A x 1» as a sheet and «500 kg» was read plainly — a figure neither reading gives (base: 1500).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4262",
+   "input": "Mebel 10 x 2 400 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 500/200/400 — neither a total nor the row's weight",
+   "why": "figures-pair-steals-thousands: parseSize's PAIR took «A x 1» as a sheet and «500 kg» was read plainly — a figure neither reading gives (base: 1500).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
   }
  ],
  "intakeClientLabelCases": [

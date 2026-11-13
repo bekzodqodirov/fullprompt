@@ -3,6 +3,7 @@ import { measureCandidates, type ChatMessage } from '@/modules/wms/agent/context
 import { sizeOwnerUnknown } from '@/modules/wms/calc/carton-math';
 import { parseManualFacts, readGoodsLines } from '@/modules/wms/calc/intake-manual';
 import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
+import { parseGoodsLine } from '@/modules/wms/calc/units';
 
 /**
  * docs/AI-SORAYDI.md §3.1 T4 / T6 as sellers actually write the marks — the
@@ -313,5 +314,45 @@ describe('figures-size-owner-after-per-carton-tail — a per-carton tail’s nou
       // 20 × 0.6 × 0.4 × 0.5 = 2.4 m³.
       expect(row(text), text).toMatchObject({ volumeM3: 2.4 });
     }
+  });
+});
+
+describe('figures-pair-steals-thousands — a tiny «2 x 1» before a three-digit group is no sheet', () => {
+  const oneRow: TableRef = {
+    rows: [{ no: 1, index: 0, seq: null, name: 'Stanok', needs: ['kg'] }],
+    open: [{ line: 1 }, { totals: 'weightKg' }],
+    preferred: [{ line: 1 }, { totals: 'weightKg' }],
+    stage: 'review',
+  };
+
+  it('«Stanok 2 x 1 500 kg» never lands 500 kg — a figure neither reading gives (2 × 1 500, or a 2×1 thing of 500)', () => {
+    for (const text of ['Stanok 2 x 1 500 kg', 'Generator 3 x 1 200 kg', 'Mebel 10 x 2 400 kg']) {
+      expect(totals(text), text).toEqual(none);
+      const r = row(text);
+      // The name no longer swallows «2 x 1»; the figure waits on the note, as written.
+      expect(r.weightKg, text).toBeNull();
+      expect(r.name, text).not.toMatch(/x/u);
+      expect(r.note, text).toBe(`sotuvchi: ${text.slice(text.indexOf(' ') + 1)}`);
+    }
+    expect(row('Kurtka 20 x 1 200 dona')).toMatchObject({ name: 'Kurtka', quantity: null, note: 'sotuvchi: 20 x 1 200 dona' });
+    // The bare row kernel (the card form) asks the grouping instead of reading 500.
+    const bare = parseGoodsLine('Stanok 2 x 1 500 kg');
+    expect(bare.weightKg).toBeNull();
+    expect(bare.problems).toContainEqual(expect.objectContaining({ kind: 'ambiguous', text: '1 500' }));
+  });
+
+  it('as an answer it is refused like «2 x 1500 kg» — no 500 written onto the row or the total', () => {
+    const [addressed] = parseTableAnswer('1: 2 x 1 500 kg', oneRow).segments;
+    expect(addressed!.answer).toMatchObject({ kind: 'refused', reason: 'per_one' });
+    const [total] = parseTableAnswer('jami 2 x 1 500 kg', oneRow).segments;
+    expect(total!.totals).toBeNull();
+  });
+
+  it('a real sheet keeps its reading: «Kafel 600x600 500 dona», «Kafel 60x60 1 200 m2», a size before kilos', () => {
+    expect(row('Kafel 600x600 500 dona')).toMatchObject({ name: 'Kafel 600x600', quantity: 500 });
+    expect(parseGoodsLine('Kafel 60x60 1 200 m2')).toMatchObject({ measureUnit: 'm2', measureQty: 1200 });
+    expect(row('stul 20 karobka 60x40x50 300 kg')).toMatchObject({ weightKg: 300, volumeM3: 2.4 });
+    // A small sheet with its unit written is a size still.
+    expect(row('Oyna 2x3 m 500 dona')).toMatchObject({ quantity: 500 });
   });
 });

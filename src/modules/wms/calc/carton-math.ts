@@ -295,6 +295,19 @@ export function parseSize(text: string): SizeToken | null {
     // A word right after two joined numbers that is no length unit: a count
     // times a per-package figure, not a size.
     if (token && token.unit === null && /^\s*[\p{L}]/u.test(text.slice(token.end))) return null;
+    // «Stanok 2 x 1 500 kg»: a side no carton has (under 5, no unit) with a
+    // three-digit group right after it is the HEAD of a space-grouped number —
+    // taken as a sheet «2 x 1», it left «500 kg» to be read plainly, a figure
+    // neither reading of the line gives (review figures-pair-steals-thousands).
+    // «Kafel 600x600 500 dona» and «Kafel 60x60 1 200 m2» are sheets still.
+    if (
+      token &&
+      token.unit === null &&
+      token.sides.some((side) => side < ASSUMED_CM_SIDE.min) &&
+      /^\s\d{3}(?!\d)/u.test(text.slice(token.end))
+    ) {
+      return null;
+    }
     return token;
   }
   return null;

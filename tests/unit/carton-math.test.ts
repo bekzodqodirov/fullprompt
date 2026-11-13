@@ -127,6 +127,17 @@ describe('parseSize — a size is read before any amount is', () => {
     expect(parseSize('1: 600*600 120 m2')?.sides).toEqual([600, 600]);
   });
 
+  it('a side no carton has, before a three-digit group, is the head of a grouped number — no sheet (review figures-pair-steals-thousands)', () => {
+    expect(parseSize('Stanok 2 x 1 500 kg')).toBeNull();
+    expect(parseSize('Mebel 10 x 2 400 kg')).toBeNull();
+    // Sheets of a carton's sides, or with a unit, stay sizes.
+    expect(parseSize('Kafel 600x600 500 dona')?.sides).toEqual([600, 600]);
+    expect(parseSize('Kafel 60x60 1 200 m2')?.sides).toEqual([60, 60]);
+    expect(parseSize('Oyna 2x3 m 500 dona')?.sides).toEqual([2, 3]);
+    // Four digits after it are no group of three: a sheet and its count.
+    expect(parseSize('List 2x3 1000 dona')?.sides).toEqual([2, 3]);
+  });
+
   it('a count times a per-package figure is NOT a size', () => {
     expect(parseSize('20 x 15 kg')).toBeNull();
     expect(parseSize('20x24 dona')).toBeNull();
