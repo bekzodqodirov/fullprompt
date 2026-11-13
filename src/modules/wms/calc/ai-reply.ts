@@ -698,9 +698,10 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   // the list by name, where no «2: …» could reach it — and the lines are in
   // row order, as the add table and the VED's screen list them.
   const askedWhat = new Set((seller ?? []).filter((a) => a.kind === 'what' && a.seq !== null).map((a) => a.seq!));
+  const uncoded = input.ungrouped.map((row) => ({ row, text: uncodedLine(row, askedWhat.has(row.seq), input.proposeFailed) }));
   const lines = [
     ...input.lines.map((line) => ({ at: firstSeq(line.seqs), text: lineText(line, input.audience, input.noAsk) })),
-    ...input.ungrouped.map((row) => ({ at: row.seq, text: uncodedLine(row, askedWhat.has(row.seq), input.proposeFailed) })),
+    ...uncoded.map((u) => ({ at: u.row.seq, text: u.text })),
   ]
     .sort((a, b) => a.at - b.at)
     .map((e) => e.text);
@@ -814,7 +815,17 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
 
   if (input.link) tail.push(`Karta: ${input.link}`);
 
-  return fitTelegram(head, lines, fixed, tail);
+  const text = fitTelegram(head, lines, fixed, tail);
+  // An uncoded row in its place can fall past the fit's cut on a long
+  // invoice — the old list under the lines never did, it sat in `fixed`. So
+  // when one whose coder is the VED (nobody asks the seller about it, the
+  // model did not fail on it) was cut, every such row is named once more by
+  // its number, where the fit never cuts. The ❓ block and the coding call's
+  // line already name the others.
+  const theVeds = uncoded.filter((u) => !askedWhat.has(u.row.seq) && !input.proposeFailed);
+  const shown = new Set(text.split('\n'));
+  if (!theVeds.some((u) => !shown.has(u.text))) return text;
+  return fitTelegram(head, lines, [...fixed, `⚠️ Kod yo‘q: ${seqRanges(theVeds.map((u) => u.row.seq))}-qator — VED xodimi qo‘yadi`], tail);
 }
 
 /** At most this many rows are named in the 2.8 b block; the rest are counted. */

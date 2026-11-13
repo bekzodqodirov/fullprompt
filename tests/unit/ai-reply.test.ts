@@ -1225,6 +1225,27 @@ describe('the number in front of a line is the number an answer is addressed by 
     expect(heads.map((l) => l.split(' ')[0])).toEqual(['1.', '3.', '4-5.']);
   });
 
+  it('an uncoded row the fit cut off a long invoice is still named — by its number, where the fit never cuts', () => {
+    // Thirty priced rows (1-30), then two uncoded ones (31, 32): row order puts
+    // them past MAX_REPLY_LINES (25), which the old list under the lines never was.
+    const many = Array.from({ length: 30 }, (_, i) => line({ seqs: [i + 1], label: `Tovar ${i + 1}` }));
+    const text = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      lines: many,
+      ungrouped: [
+        { seq: 31, name: 'Sumka' },
+        { seq: 32, name: 'Choynak' },
+      ],
+    });
+    expect(text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
+    expect(text).toContain('… va yana');
+    expect(text).not.toContain('31. Sumka');
+    expect(text).toContain('⚠️ Kod yo‘q: 31-32-qator — VED xodimi qo‘yadi');
+    // Nothing cut, nothing named twice.
+    expect(aiVedReplyText({ ...base, ungrouped: [{ seq: 2, name: 'Sumka' }] })).not.toContain('⚠️ Kod yo‘q');
+  });
+
   it('an uncoded row nobody asks about says who codes it — on the NULL door, and on the card copy nobody reached', () => {
     const legacy = aiVedReplyText({ ...mixed, sellerAsks: null });
     expect(legacy.split('\n')).toContain('2. Zapchast XJ-200 — kod yo‘q — VED xodimi qo‘yadi');

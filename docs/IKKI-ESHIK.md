@@ -499,6 +499,11 @@ fail and land a plain chat as legacy.
   - the bazas filled and where they came from;
   - each row's missing figure;
   - refusals, in words.
+  - **Amended** by docs/AI-SORAYDI.md §3.4 A3 and A6 (review JS-15): each group line opens with its
+    rows' own numbers («1, 3. …», the number the VED's screen and «Kodlar:» print), in row order;
+    the uncoded rows are named by number («⚠️ Kod topilmadi: 2-qator «…»»), and when the coding call
+    did not answer, even after its one retry inside the pass, the note says that instead: «⚠️ AI kod
+    qo‘ya olmadi (javob bermadi) — so‘rov VED navbatida, kodni VED xodimi qo‘yadi».
 
   It carries no «Rastamojka jami», no Taxminiy/Aniq, no road and no JAMI. The VED reads the exact
   figure in his own workspace and the 📊 statistics in its 📥 dialog, so he loses nothing.
@@ -699,6 +704,20 @@ VED's, and the lenta note names them.
   - The lenta lists the same gaps under «⚠️ VED uchun: …».
   - The plain yo‘lkira reply (2.4) follows the same rule.
   - NULL keeps today's words.
+- **Amended on every door** by docs/AI-SORAYDI.md §3.4 A3, A6 and A9 (PA-3, PA-4, PA-11; review
+  JS-15) — what the answer says, not whom it asks, so NULL takes it too:
+  - each line opens with its rows' own `seq` («3. Куртка…», «1-2. Посуда, Чашки»), never the
+    group's index, and the lines are in row order; an uncoded row stands in its place («2.
+    Zapchast XJ-200 — kod yo‘q», with «— VED xodimi qo‘yadi» unless the ❓ block asks it) — the
+    «⚠️ Kod topilmadi: …» list under the lines is gone, and an uncoded row a long list cut is named
+    by its number where the fit never cuts («⚠️ Kod yo‘q: 31-32-qator — …»);
+  - a refusal under its line says the missing figure alone («⚠️ soni (dona) kiritilmagan — boj
+    kamida $4/dona»): never the group's label, and the row only where the line holds others;
+  - a coding call that did not answer is retried ONCE inside the pass while its clock allows, and
+    if it still did not answer the answer says «⚠️ AI kod qo‘ya olmadi (javob bermadi) — so‘rov VED
+    navbatida, kodni VED xodimi qo‘yadi» — and asks the seller nothing about what those rows are;
+  - «Taxminiy: hisoblab bo‘lmadi» names the refusing row's own figure («⚠️ 3-qator: soni (dona)»),
+    the fixed «qatorda soni yoki og‘irligi yo‘q» only when no row names one.
 
 3.6 **The AI door's answer reaches him past the «✅ Mening vazifalarim» mute** (INT-5). He pressed
 the door for it.
