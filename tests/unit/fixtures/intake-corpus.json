@@ -54667,6 +54667,542 @@
    "why": "X8 + units.ts WEIGHT_LABELS / VOLUME_LABELS (excel-spec-4). Base: null / null. The reviewed head read nothing (a total word was demanded beside the labels).",
    "source": "ai-soraydi P-excel review (excel-spec-4)",
    "weight": "defect"
+  },
+  {
+   "id": "c4500",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 10,
+       "weightKg": null,
+       "volumeM3": null,
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Office chair",
+       "quantity": 10,
+       "weightKg": null,
+       "volumeM3": null,
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "quantity": 1,
+       "weightKg": null,
+       "volumeM3": null,
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "grossKg": null,
+    "volumeM3": null
+   },
+   "said": "a bare «CTN» whose cells run 1, 2, 3 is the carton's NUMBER, one carton a row: no carton count — the per-carton 15 kg / 0.12 m³ stay on the packing and the row's weight and cube are asked, never 2 × 15 / 3 × 30",
+   "why": "review figures-ctn-running-number (blocker): X2 read the running number as the count and multiplied each carton's figures by its place in the list (30 kg / 0.24 m³ on row 2, 90 kg / 1.5 m³ on row 3; Σ 135 kg / 1.86 m³ for 60 / 0.74). The same as «CTN NO.» (c3460) and the spec's carton range (§2.3, DIM-11). Base: no packing, weight and cube asked.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4501",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     2,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     3,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     4,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     5,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     6,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     7,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     8,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     9,
+     "Box item",
+     4,
+     10,
+     0.1
+    ],
+    [
+     10,
+     "Box item",
+     4,
+     10,
+     0.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 10,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 10,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "CTN 1 … 10, 10 kg / 0.1 cbm a carton: the tenth row is carton №10, never «10 × 10 kg = 100 kg» — no row multiplies, Σ is not 550 kg / 5.5 m³",
+   "why": "review figures-ctn-running-number, its scaled check (truth 100 kg / 1.0 m³ — asked, never 5.5).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4502",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "packing": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 15,
+       "volumeM3": 0.12,
+       "note": null
+      },
+      {
+       "weightKg": 15,
+       "volumeM3": 0.12,
+       "note": null
+      },
+      {
+       "weightKg": 30,
+       "volumeM3": 0.5,
+       "note": null
+      }
+     ]
+    },
+    "grossKg": 60,
+    "volumeM3": 0.74
+   },
+   "said": "with LINE columns «G.W.(KG)» / «CBM» beside a running «CTN» the figures are the rows' own — 15 / 15 / 30 kg — and no row is told «📦 2 karobka» or «📦 3 karobka»",
+   "why": "review figures-ctn-running-number: the note said «📦 3 karobka — fayldan» for a one-carton row, and the X5 column ask fired on the carton numbers.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4503",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     "TOTAL",
+     null,
+     21,
+     60,
+     0.74
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "a TOTAL row under the running carton numbers is no cell of the run: still the carton's number, no row multiplied (135 kg / 1.86 m³ were landed under a TOTAL saying 60 / 0.74)",
+   "why": "review figures-ctn-running-number (the refuter's TOTAL-row input).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4504",
+   "input": [
+    [
+     "Место",
+     "Наименование",
+     "Кол-во",
+     "Вес 1 места",
+     "Объем 1 места"
+    ],
+    [
+     1,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Стол",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Место» numbered 1, 2, 3 beside «Вес 1 места» / «Объем 1 места»: the place's number, not a count — no 2 × 15 or 3 × 0.5",
+   "why": "review figures-ctn-running-number (the Russian spelling).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4505",
+   "input": [
+    [
+     "Karobka",
+     "Tovar nomi",
+     "Soni",
+     "1 karobka hajmi"
+    ],
+    [
+     1,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     2,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     3,
+     "Stol",
+     1,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Karobka» numbered 1, 2, 3 beside «1 karobka hajmi»: the box's number, so no row's cube is 2 × 0.12 or 3 × 0.5",
+   "why": "review figures-ctn-running-number (the Uzbek spelling).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4506",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     10,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     20,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     30,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 150,
+       "volumeM3": 1.2
+      },
+      {
+       "weightKg": 300,
+       "volumeM3": 2.4
+      },
+      {
+       "weightKg": 900,
+       "volumeM3": 15
+      }
+     ]
+    }
+   },
+   "said": "«CTNS» of 10, 20, 30 IS a count: 10 × 15 = 150 kg, 20 × 15 = 300 kg, 30 × 30 = 900 kg — a run is 1, 2, 3 only",
+   "why": "review figures-ctn-running-number: the guard refuses a run from one and nothing else.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4507",
+   "input": [
+    [
+     "Cartons",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Cartons» 1, 2, 3 is the same running number: no row multiplied",
+   "why": "review figures-ctn-running-number (the English plural spelling).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number)",
+   "weight": "blocker"
   }
  ],
  "parseGoodsLineCases": [
