@@ -6,13 +6,16 @@ import {
   pickLeftOf,
   LAW_ASKS_NAMED,
   ROAD_STALE_LINE,
+  SELLER_ASKS_HEAD,
+  sellerAsksBlock,
+  sellerAsksLentaLine,
   type AiVedEstimate,
   type AiVedFreight,
   type AiVedLine,
   type AiVedReplyInput,
 } from '@/modules/wms/calc/ai-reply';
 import { AI_REPLY_HEAD, MACHINE_REPLY_HEADS, RERUN_WORD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
-import type { LawAsk } from '@/modules/wms/calc/law-asks';
+import type { LawAsk, SellerAsk } from '@/modules/wms/calc/law-asks';
 
 /**
  * What the seller reads in Telegram — the whole of the round's promise, and
@@ -861,16 +864,19 @@ describe('the 2.8 b block and the re-run heading (round 3)', () => {
 });
 
 /**
- * The two bot doors (docs/IKKI-ESHIK.md §3.5, his 4a and 5a, 2026-11-08): the
- * answer after «Tasdiqlash» ASKS NOTHING — «Tasdiqlash» was the last question,
- * and what is still missing is the VED's to get. `noAsk` is the one switch:
- * no ❓ block, a seller's fact reads «— VED xodimi sizdan so‘raydi», the VED's
- * own gaps keep their words, the JAMI that cannot be made is the VED's, and
- * the lenta names the same gaps under «⚠️ VED uchun:». The words are the
- * spec's, typed from it. A request from before the doors (NULL, `noAsk`
- * false) keeps every word above this block — the cases above are its pins.
+ * Where NOBODY asks the seller (docs/IKKI-ESHIK.md §3.5, his 4a and 5a,
+ * 2026-11-08): `noAsk` is the one switch — no ❓ block, a seller's fact reads
+ * «— VED xodimi sizdan so‘raydi», the VED's own gaps keep their words, the
+ * JAMI that cannot be made is the VED's, and the lenta names the same gaps
+ * under «⚠️ VED uchun:». The words are the spec's, typed from it. It was
+ * both bot doors' answer; since docs/AI-SORAYDI.md §3.4 A1 (his 4a of
+ * 2026-11-11, review JR-13) it is the plain door's — and the AI door's card
+ * copy for a seller nobody reached (`lentaUnasked`). The AI door's answer
+ * asks again (the block after this one); a request from before the doors
+ * (NULL, `noAsk` false) keeps every word above this block — the cases above
+ * are its pins.
  */
-describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
+describe('where nobody asks the seller (`noAsk`, §3.5)', () => {
   const ask = (seq: number, name: string, needs: LawAsk['needs']): LawAsk => ({ itemId: `i${seq}`, seq, name, needs });
   const asks: LawAsk[] = [
     ask(2, 'Krossovka', [{ unit: 'juft', why: 'duty', present: false, rate: 3 }]),
@@ -885,7 +891,7 @@ describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
   const vedLine = line({ label: 'Sumka', customsUsd: null, refusal: 'baza yo‘q', refusalTail: 'ved' });
   const ASK_WORDS = ['❓', 'mijozdan so‘rab', '«➕ Shu so‘rovga qo‘shish» bilan yuboring', 'kartadagi lentaga yozing', 'reply qilib yozing', 'to‘ldiring'];
 
-  it('the ❓ block is gone — the rows the law wants are not asked of the seller (his 5a; the 2.8 b ask superseded)', () => {
+  it('the ❓ block is gone — the rows the law wants are not asked of the seller (the plain door, his 2a/3a)', () => {
     const chat = aiVedReplyText({ ...door, asks });
     expect(chat).not.toContain('❓');
     expect(chat).not.toContain('Hisob to‘liq bo‘lishi uchun');
@@ -939,7 +945,7 @@ describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
     );
   });
 
-  it('the figure still goes out — the AI door’s answer is the estimate he pressed for, and its caveat', () => {
+  it('the figure still goes out — the estimate and its caveat, asked or not', () => {
     const chat = aiVedReplyText(door);
     expect(chat).toContain('Rastamojka jami: ≈ $661.76');
     expect(chat).toContain('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
@@ -969,5 +975,140 @@ describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
     // Not on a code the file or a memory stated — and the NULL door marks it too.
     expect(aiVedReplyText(door)).not.toContain('(AI taklifi)');
     expect(aiVedReplyText({ ...base, lines: [ai] })).toContain('8528520000 (AI taklifi)');
+  });
+});
+
+/**
+ * The AI door ASKS AGAIN after «Tasdiqlash» (docs/AI-SORAYDI.md §3.4 A1-A2,
+ * his 4a of 2026-11-11: «yetishmayotgan narsa bo‘lsa … so‘rasin va
+ * to‘ldirsin», reversing IKKI-ESHIK's 5a for this door; review JR-13 — one
+ * list per door, JS-25 — the block's cap on the UNION). Everything the
+ * seller can give, in the NULL door's tails, never «VED xodimi sizdan
+ * so‘raydi» about a figure only he has. The words are the spec's and the
+ * judge's, typed from them.
+ */
+describe('the AI door asks again (A1, A2)', () => {
+  const ask = (seq: number | null, kind: SellerAsk['kind'], text: string, needs: SellerAsk['needs'] = []): SellerAsk => ({
+    itemId: seq === null ? null : `i${seq}`,
+    seq,
+    kind,
+    text,
+    needs,
+  });
+  const LAW = ask(1, 'law', '1-qator «Kurtka»: soni (dona) — boj kamida $3/dona', ['dona']);
+  const MEASURE = ask(2, 'measure', '2-qator «Ryukzak»: soni (dona) yoki sof og‘irligi (kg)', ['dona', 'kg']);
+  const what = (seq: number) => ask(seq, 'what', `${seq}-qator «Zapchast ${seq}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`);
+  const AI = ask(5, 'ai', '5-qator «Stul»: Stul nimadan qilingan?');
+  const BRUTTO = ask(null, 'total', 'umumiy brutto og‘irligi (kg, qadoq bilan) — yo‘lkira shunga bog‘liq', ['kg']);
+  const PLUS = '— yoki «➕ Shu so‘rovga qo‘shish» ni bosing.';
+  const aiDoor: AiVedReplyInput = { ...base, asks: null, sellerAsks: [LAW, MEASURE, what(3), AI, BRUTTO] };
+
+  it('the block: its own head, a row with no figure FIRST, then the law’s, «what», the AI’s, the totals — and how to answer', () => {
+    expect(sellerAsksBlock(aiDoor.sellerAsks!)).toEqual([
+      '❓ AI so‘raydi — javob yozsangiz qayta hisoblaydi:',
+      '· 2-qator «Ryukzak»: soni (dona) yoki sof og‘irligi (kg)',
+      '· 1-qator «Kurtka»: soni (dona) — boj kamida $3/dona',
+      '· 3-qator «Zapchast 3»: bu nima — nimadan qilingan, nima uchun ishlatiladi?',
+      '· 5-qator «Stul»: Stul nimadan qilingan?',
+      '· umumiy brutto og‘irligi (kg, qadoq bilan) — yo‘lkira shunga bog‘liq',
+      // The first two FIGURE asks in that order: row 2's count, row 1's count.
+      `✍️ Shu xabarga reply qilib yozing: «2: 300 dona; 1: 300 dona» ${PLUS}`,
+    ]);
+  });
+
+  it('the chat carries the block; the lenta says who was asked — never «VED uchun», never the law-only block', () => {
+    const chat = aiVedReplyText(aiDoor);
+    for (const l of sellerAsksBlock(aiDoor.sellerAsks!)) expect(chat).toContain(l);
+    expect(chat).not.toContain('Hisob to‘liq bo‘lishi uchun');
+    const lenta = aiVedReplyText({ ...aiDoor, link: null, audience: 'lenta' }).split('\n');
+    // Rows 1, 2, 3, 5 asked (one run 1-3, then 5), and the brutto.
+    expect(lenta[1]).toBe('❓ Sotuvchidan so‘raldi: 1-3, 5-qator; umumiy brutto.');
+    expect(lenta.join('\n')).not.toContain('VED uchun');
+    expect(lenta.join('\n')).not.toContain(SELLER_ASKS_HEAD);
+  });
+
+  it('the AI door’s list REPLACES the law’s: a law-only `asks` beside it is not drawn', () => {
+    const lawOnly: LawAsk[] = [{ itemId: 'i9', seq: 9, name: 'Boshqa', needs: [{ unit: 'juft', why: 'duty', present: false, rate: 3 }] }];
+    const chat = aiVedReplyText({ ...aiDoor, asks: lawOnly });
+    expect(chat).not.toContain('9-qator');
+    // Nothing owed on the AI door: no block at all — and no fallback to the law's.
+    expect(aiVedReplyText({ ...aiDoor, asks: lawOnly, sellerAsks: [] })).not.toContain('❓');
+  });
+
+  it('a seller’s fact keeps the NULL door’s tail — «mijozdan so‘rab, «➕» bilan yuboring», never «VED xodimi sizdan so‘raydi»', () => {
+    const sellerLine = line({ customsUsd: null, refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona', refusalTail: 'seller' });
+    const chat = aiVedReplyText({ ...aiDoor, lines: [sellerLine], totalUsd: null, freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' } });
+    expect(chat).toContain('kamida $3/dona — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    expect(chat).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    expect(chat).toContain('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+    expect(chat).not.toContain('sizdan so‘raydi');
+  });
+
+  it('`noAsk` wins: the card copy for a seller nobody reached draws no block even when handed one', () => {
+    const quiet = aiVedReplyText({ ...aiDoor, noAsk: true });
+    expect(quiet).not.toContain('❓');
+    expect(quiet).not.toContain('reply qilib');
+  });
+
+  it('more than three uncoded rows fold into ONE line, by their numbers (review JS-25)', () => {
+    // Rows 2, 5, 6, 7, 9 → «2, 5-7, 9».
+    const block = sellerAsksBlock([2, 5, 6, 7, 9].map(what));
+    expect(block).toEqual([
+      SELLER_ASKS_HEAD,
+      '· 2, 5-7, 9-qator: nima tovar ekanini yozing (nimadan, nima uchun)',
+      // Words only: the example is words.
+      `✍️ Shu xabarga reply qilib yozing: «2: metall, tormoz kolodkasi» ${PLUS}`,
+    ]);
+    // Three stay three lines.
+    expect(sellerAsksBlock([2, 5, 6].map(what)).filter((l) => l.startsWith('· '))).toHaveLength(3);
+  });
+
+  it('the cap of 8 is on the UNION, in rank order — the rest counted «… yana N ta — «➕» jadvalida»', () => {
+    const measures = Array.from({ length: 10 }, (_, k) => ask(k + 1, 'measure', `${k + 1}-qator «Tovar ${k + 1}»: soni (dona) yoki sof og‘irligi (kg)`, ['dona', 'kg']));
+    // 10 measures, 2 whats and the brutto: the 8 first measures named;
+    // 2 measures + 2 whats + the brutto = 5 counted.
+    const block = sellerAsksBlock([...measures, what(11), what(12), BRUTTO]);
+    expect(block.filter((l) => /^· \d+-qator/.test(l))).toHaveLength(LAW_ASKS_NAMED);
+    expect(block.at(-2)).toBe('· … yana 5 ta — «➕» jadvalida');
+    // With five whats the fold is ONE entry standing for five: 7 + 1 = 8, none counted.
+    const folded = sellerAsksBlock([...measures.slice(0, 7), ...[11, 12, 13, 14, 15].map(what)]);
+    expect(folded).toContain('· 11-15-qator: nima tovar ekanini yozing (nimadan, nima uchun)');
+    expect(folded.some((l) => l.includes('yana'))).toBe(false);
+  });
+
+  it('a total’s example is the add table’s own «jami …»', () => {
+    expect(sellerAsksBlock([BRUTTO]).at(-1)).toBe(`✍️ Shu xabarga reply qilib yozing: «jami 3500 kg» ${PLUS}`);
+  });
+
+  it('the lenta line: the rows by run, then the totals', () => {
+    expect(sellerAsksLentaLine([what(4), MEASURE, BRUTTO, ask(null, 'total', 'umumiy hajmi (kub) — yo‘lkira shunga bog‘liq', ['m3'])])).toBe(
+      '❓ Sotuvchidan so‘raldi: 2, 4-qator; umumiy brutto; umumiy hajm.',
+    );
+  });
+
+  it('FORTY uncoded rows: the JAMI line, the caveat and the ➕ line all survive the 4096 fit (review JS-25)', () => {
+    const names = Array.from({ length: 40 }, (_, k) => `Zapchast avtomobil uchun, model XJ-${200 + k}, metall va plastikdan, katta`);
+    const rows = names.map((n, k) => ({ seq: k + 1, name: n }));
+    // Each uncoded row also states no figure — 80 asks, every one ~120 characters.
+    const asks: SellerAsk[] = rows.flatMap((r) => [
+      ask(r.seq, 'measure', `${r.seq}-qator «${r.name}»: soni (dona) yoki sof og‘irligi (kg)`, ['dona', 'kg']),
+      ask(r.seq, 'what', `${r.seq}-qator «${r.name}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`),
+    ]);
+    const text = aiVedReplyText({
+      ...aiDoor,
+      lines: [],
+      ungrouped: names,
+      totalUsd: null,
+      fee: null,
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+      sellerAsks: [...asks, BRUTTO],
+    });
+    expect(text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
+    expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+    expect(text).toContain('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
+    expect(text).toContain(PLUS);
+    // 8 measures named; 32 measures + the folded 40 whats + the brutto = 73 counted.
+    expect(text).toContain('· … yana 73 ta — «➕» jadvalida');
   });
 });
