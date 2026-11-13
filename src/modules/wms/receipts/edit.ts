@@ -509,10 +509,12 @@ export async function editLot(
       }).catch(() => {});
     }
     // The question the client holds may now describe cargo that no longer
-    // exists: ask again, by itself (docs/PRIXOD-JAVOBLAR.md §1.3). Only when
-    // the stored totals moved — a rename alone asks nothing by itself. Never
-    // thrown at a correction that has committed (U41): the arm logs.
-    if (totalsChanged) {
+    // exists: ask again, by itself (docs/PRIXOD-JAVOBLAR.md §1.3). When the
+    // stored totals or the carton count moved — «qayta o'lchansa yoki qayta
+    // sanalsa», both printed on the question and hashed into its tag; a
+    // rename alone asks nothing by itself. Never thrown at a correction that
+    // has committed (U41): the arm logs.
+    if (totalsChanged || countChange) {
       const { armClientReask } = await import('./client-reask');
       await armClientReask(lot.id);
     }

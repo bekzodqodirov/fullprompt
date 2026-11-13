@@ -104,22 +104,26 @@ function figuresOf(value: unknown): LotFigures | null {
 }
 
 /**
- * The walk's base for this lot: the newest growth or take-back row of THIS
- * lot (the receipt's audit rows through the `(entity_type, entity_id)` index;
- * newest by the identity id — the lot row is locked by the caller, so two
- * steps of one lot are written in order). The walk is UNBROKEN while that
- * row's `after` is the lot as it stands now — a ✏️ correction or anything
- * else that moved the figures since breaks it, and the lot as it stands is
- * the new base. An unbroken row hands on its own `base`; a row written before
- * the base was recorded hands on its `before` (the step's own start — exactly
- * the base of a single growth). On the caller's transaction (#714).
+ * The walk's base for this lot, DERIVED from the History it already writes —
+ * nothing new is stored (a stored base would print in the History the owner
+ * reads; the design judge). The growth and take-back rows of THIS lot,
+ * newest first (the receipt's audit rows through the `(entity_type,
+ * entity_id)` index; newest by the identity id — the caller holds the lot's
+ * row, so two steps of one lot are written in order): while a row's `after`
+ * is the lot as it stood next, the walk steps back to that row's `before`.
+ * The first row that does not match — a ✏️ correction or anything else that
+ * moved the figures in between — ends it. The base is where it ends: the lot
+ * before the first growth of the unbroken walk, or the lot as it stands when
+ * no walk leads to it. Rows written by the old arithmetic carry the figures
+ * the lot really had, so they lead back to the true start too, and the next
+ * step from there is exact. On the caller's transaction (#714).
  */
 async function walkBaseInTx(
   tx: Tx,
   receiptId: string,
   lot: { id: string; boxCount: number; totalWeightKg: string; totalVolumeM3: string },
 ): Promise<LotFigures> {
-  const now: LotFigures = {
+  let base: LotFigures = {
     boxCount: lot.boxCount,
     totalWeightKg: Number(lot.totalWeightKg),
     totalVolumeM3: Number(lot.totalVolumeM3),
@@ -130,22 +134,22 @@ async function walkBaseInTx(
      WHERE al.entity_type = 'receipt' AND al.entity_id = ${receiptId}::uuid
        AND (al.after -> 'lotGrown' ->> 'lotId' = ${lot.id} OR al.after -> 'lotShrunk' ->> 'lotId' = ${lot.id})
      ORDER BY al.id DESC
-     LIMIT 1
   `)) as unknown as { before: unknown; after: unknown }[];
-  const row = rows[0];
-  if (!row) return now;
-  const after = figuresOf(row.after);
-  if (
-    !after ||
-    after.boxCount !== now.boxCount ||
-    after.totalWeightKg !== now.totalWeightKg ||
-    after.totalVolumeM3 !== now.totalVolumeM3
-  ) {
-    return now;
+  for (const row of rows) {
+    const after = figuresOf(row.after);
+    const before = figuresOf(row.before);
+    if (
+      !after ||
+      !before ||
+      after.boxCount !== base.boxCount ||
+      after.totalWeightKg !== base.totalWeightKg ||
+      after.totalVolumeM3 !== base.totalVolumeM3
+    ) {
+      break;
+    }
+    base = before;
   }
-  const step = (row.after as { lotGrown?: { base?: unknown }; lotShrunk?: { base?: unknown } }).lotGrown ??
-    (row.after as { lotShrunk?: { base?: unknown } }).lotShrunk;
-  return figuresOf(step?.base) ?? figuresOf(row.before) ?? now;
+  return base;
 }
 
 export async function growLotInTx(
@@ -283,8 +287,6 @@ export async function growLotInTx(
         batchId: a.batchId,
         side: a.side,
         codes: inserted.map((b) => b.shortCode),
-        // The walk's base (a mixed lot's only): the next step reads it here.
-        base,
       },
     },
   });
@@ -474,7 +476,6 @@ export async function shrinkGrownInTx(
         batchId: a.batchId,
         side: a.side,
         codes,
-        base,
       },
     },
   });

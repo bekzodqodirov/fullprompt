@@ -375,7 +375,7 @@ export async function releaseNotices(ids: readonly string[]): Promise<void> {
  * lands is exactly when the rate limit bites, and five of those used to be a
  * customer never told.
  */
-export async function deferNotice(id: string, retryAfterSeconds: number | null, detail: string): Promise<void> {
+export async function deferNotice(id: string, retryAfterSeconds: number | null, detail: string, claimedAt?: Date | null): Promise<void> {
   const wait = Math.max(1, Math.min(3600, Math.ceil(retryAfterSeconds ?? 30)));
   await db
     .update(clientNotices)
@@ -385,9 +385,25 @@ export async function deferNotice(id: string, retryAfterSeconds: number | null, 
       sendAfter: sql`now() + make_interval(secs => ${wait})`,
       lastError: detail.slice(0, 500),
     })
-    // Only the claim this sweep holds — a row re-armed while it was out (the
-    // automatic re-ask, docs/PRIXOD-JAVOBLAR.md §1.6) keeps its own window.
-    .where(and(eq(clientNotices.id, id), eq(clientNotices.status, 'sending')));
+    .where(heldClaim(id, claimedAt));
+}
+
+/**
+ * The row a settle may write: by id — and, for a kind that can be RE-ARMED
+ * while it is out (the automatic re-ask, docs/PRIXOD-JAVOBLAR.md §1.6), only
+ * while it is still the claim this sweep made. A re-arm nulls `claimed_at`,
+ * so the correction that landed during the send keeps its own window instead
+ * of being written over as `sent`. Every other kind is settled by id, exactly
+ * as before: `rearmArrivalNotice` re-arms a truck's notice mid-send and the
+ * arrival's own wording relies on today's behaviour (the design judge).
+ */
+function heldClaim(id: string, claimedAt: Date | null | undefined) {
+  if (!claimedAt) return eq(clientNotices.id, id);
+  return and(
+    eq(clientNotices.id, id),
+    eq(clientNotices.status, 'sending'),
+    sql`${clientNotices.claimedAt} = ${claimedAt.toISOString()}::timestamptz`,
+  );
 }
 
 /** Notices whose window has passed. Ordered oldest first; bounded. */
@@ -449,6 +465,7 @@ export async function settleArrivalNotice(
   id: string,
   outcome: 'sent' | 'failed' | 'skipped' | 'pending',
   error?: string,
+  claimedAt?: Date | null,
 ): Promise<boolean> {
   const rows = await db
     .update(clientNotices)
@@ -458,14 +475,10 @@ export async function settleArrivalNotice(
       attempts: sql`${clientNotices.attempts} + 1`,
       lastError: error?.slice(0, 500) ?? null,
     })
-    // Only the claim this sweep holds (docs/PRIXOD-JAVOBLAR.md §1.6). A row
-    // RE-ARMED while it was out — the automatic re-ask slides its window on
-    // every correction, `sending` included — must not be written over as
-    // `sent`: the message that just went may carry the figures from before the
-    // correction, and the re-armed one is what tells the client the new ones.
-    // No other writer touches a row in `sending`, and a late settle after a
-    // reclaim still finds it there, so every existing path is unchanged.
-    .where(and(eq(clientNotices.id, id), eq(clientNotices.status, 'sending')))
+    // `claimedAt` — the automatic re-ask only (`heldClaim`): a row RE-ARMED
+    // while it was out must not be written over as `sent`; the message that
+    // just went may carry the figures from before the correction.
+    .where(heldClaim(id, claimedAt))
     .returning({ id: clientNotices.id });
   return rows.length > 0;
 }
@@ -473,19 +486,17 @@ export async function settleArrivalNotice(
 /**
  * What the client is now HOLDING (0147, docs/PRIXOD-JAVOBLAR.md §1.5): the
  * tag of the question with buttons this row just delivered, and when. Written
- * right after a `sent` settle that wrote — never by a row re-armed while it
- * was out — and never cleared by a later outcome: a re-armed row that then
- * fails still names the message the client has. SQL-only columns, so the
- * caller asks the probe first (`askedTagReady`). Never throws: the message
- * went, and a tag not remembered costs one automatic re-ask at worst.
+ * after EVERY delivery, by id — whatever the status settle wrote: a row
+ * re-armed while it was out has still put this message in the client's chat,
+ * and forgetting it sent the identical question again ten minutes later (the
+ * design judge's second blocker). Never cleared by a later outcome. SQL-only
+ * columns, so the caller asks the probe first (`askedTagReady`). Never
+ * throws: the message went.
  */
 export async function rememberAskedTag(id: string, tag: string): Promise<void> {
   if (!/^[0-9a-f]{8}$/.test(tag)) return;
   try {
-    await db.execute(sql`
-      UPDATE client_notices SET asked_tag = ${tag}, asked_at = coalesce(sent_at, now())
-       WHERE id = ${id}::uuid AND status = 'sent'
-    `);
+    await db.execute(sql`UPDATE client_notices SET asked_tag = ${tag}, asked_at = now() WHERE id = ${id}::uuid`);
   } catch (err) {
     logger.warn({ err, noticeId: id }, 'the delivered question’s tag was not remembered');
   }

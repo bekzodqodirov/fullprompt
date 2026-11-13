@@ -621,7 +621,7 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
     );
     // While the tarkib stands it answers first.
     expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: true });
-    // A re-weigh — which a person's tick alone survives (test 5) — and the
+    // A re-weigh — which a person's tick survived until the owner's «2 b» of 2026-11-12 (test 5) — and the
     // tarkib no longer stands. The lists print «键盘 (Наушники)»; the tick
     // was for the lot's own name. With the STORED name compared this read ✅.
     await db.update(receiptLots).set({ totalWeightKg: '1000.500' }).where(eq(receiptLots.id, lot.K));

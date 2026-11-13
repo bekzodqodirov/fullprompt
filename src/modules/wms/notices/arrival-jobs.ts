@@ -276,15 +276,23 @@ async function deliverNotice(notice: NoticeRow, now: Date, photos: PhotoBreaker)
 }
 
 /**
- * After a delivery the sweep SETTLED (`wrote` — a row re-armed while it was
- * out is not this delivery's to describe): remember the question the client
- * now holds, and run what the kind does after it went. Never throws.
+ * After a DELIVERY — whatever the status settle wrote (a row re-armed while
+ * it was out has still put this message in the client's chat): remember the
+ * question the client now holds, and run what the kind does after it went.
+ * Never throws: the message went, and the rest of the sweep's claims must
+ * still be settled.
  */
-async function afterDelivered(notice: NoticeRow, delivery: Delivery, wrote: boolean): Promise<void> {
-  if (!wrote) return;
-  if (delivery.askedTag && (await askedTagReady().catch(() => false))) await rememberAskedTag(notice.id, delivery.askedTag);
+async function afterDelivered(notice: NoticeRow, delivery: Delivery): Promise<void> {
+  try {
+    if (delivery.askedTag && (await askedTagReady())) await rememberAskedTag(notice.id, delivery.askedTag);
+  } catch (err) {
+    logger.warn({ err, noticeId: notice.id }, 'the delivered question’s tag was not remembered');
+  }
   if (delivery.afterSent) await delivery.afterSent().catch((err) => logger.warn({ err, noticeId: notice.id }, 'after-sent step failed'));
 }
+
+/** The claim a settle must still hold — for the kind that can be re-armed while it is out (`heldClaim`). */
+const claimOf = (notice: NoticeRow): Date | null => (notice.kind === NOTICE_LOT_REASK ? notice.claimedAt : null);
 
 /**
  * Send the customer notices whose window has closed — every kind.
@@ -365,19 +373,21 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
         notice.id,
         notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS ? 'failed' : 'pending',
         String(err),
+        claimOf(notice),
       ).catch(() => {});
       continue;
     }
     switch (delivery.kind) {
       case 'skipped':
-        await settleArrivalNotice(notice.id, 'skipped', delivery.reason);
+        await settleArrivalNotice(notice.id, 'skipped', delivery.reason, claimOf(notice));
         break;
       case 'sent':
-        await afterDelivered(notice, delivery, await settleArrivalNotice(notice.id, 'sent'));
+        await settleArrivalNotice(notice.id, 'sent', undefined, claimOf(notice));
+        await afterDelivered(notice, delivery);
         sent += 1;
         break;
       case 'failed':
-        await settleArrivalNotice(notice.id, 'failed', delivery.detail);
+        await settleArrivalNotice(notice.id, 'failed', delivery.detail, claimOf(notice));
         break;
       case 'retry':
         // Zero chats reached and something about it was transient: a RETRY —
@@ -386,10 +396,11 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
           notice.id,
           notice.attempts + 1 >= MAX_NOTICE_ATTEMPTS ? 'failed' : 'pending',
           delivery.detail,
+          claimOf(notice),
         );
         break;
       case 'defer':
-        await deferNotice(notice.id, delivery.retryAfter, delivery.detail);
+        await deferNotice(notice.id, delivery.retryAfter, delivery.detail, claimOf(notice));
         break;
       case 'botDown': {
         /*
@@ -399,7 +410,8 @@ export async function sendDueArrivalNotices(now = new Date()): Promise<number> {
          * until the token is fixed (judge REL-1).
          */
         if (delivery.delivered) {
-          await afterDelivered(notice, delivery, await settleArrivalNotice(notice.id, 'sent'));
+          await settleArrivalNotice(notice.id, 'sent', undefined, claimOf(notice));
+          await afterDelivered(notice, delivery);
           sent += 1;
         }
         await releaseNotices(due.slice(delivery.delivered ? i + 1 : i).map((row) => row.id));

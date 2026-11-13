@@ -283,18 +283,43 @@ describe('a re-weigh through ✏️ asks the client again, by itself', () => {
     expect((await clientReaskStatusFor(receipt.main))?.state).toBe('sent');
   });
 
-  it('an edit and its reversal inside the window: the held question is not sent, quietly', async () => {
+  it('an edit and its reversal inside the window: the held question is stood down at once, and never sent', async () => {
     await deliverPersonQuestion();
     await reweigh('K', 110);
+    expect((await clientReaskStatusFor(receipt.main))?.state).toBe('waiting');
     await reweigh('K', 100);
+    const row = await rowOf(NOTICE_LOT_REASK);
+    expect([row?.status, row?.last_error]).toEqual(['skipped', 'not_needed']);
+    // Rightly not sent: the card stops promising it.
+    expect(await clientReaskStatusFor(receipt.main)).toBeNull();
     await dueNow(NOTICE_LOT_REASK);
     const mark = h.mark();
     await sendDueArrivalNotices(SWEEP_AT);
     expect(sentSince(mark).filter((m) => m.chatId === CHAT)).toHaveLength(0);
-    const row = await rowOf(NOTICE_LOT_REASK);
-    expect([row?.status, row?.last_error]).toEqual(['skipped', 'not_needed']);
-    // Rightly not sent: the card draws nothing of it.
-    expect(await clientReaskStatusFor(receipt.main)).toBeNull();
+  });
+
+  it('a count corrected through ✏️ (the same kilos) asks too — the count is on the question and in its tag', async () => {
+    await deliverPersonQuestion();
+    const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.K));
+    await editLot(
+      { lotId: lot.K, productNameZh: row!.productNameZh, productNameRu: row!.productNameRu ?? '', boxCount: 2, totalWeightKg: 100, totalVolumeM3: 1, note: null } as Parameters<
+        typeof editLot
+      >[0],
+      manager(),
+      ctx(),
+    );
+    try {
+      expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    } finally {
+      // Back to three cartons: the third is minted again, the lot as it was.
+      await editLot(
+        { lotId: lot.K, productNameZh: row!.productNameZh, productNameRu: row!.productNameRu ?? '', boxCount: 3, totalWeightKg: 100, totalVolumeM3: 1, note: null } as Parameters<
+          typeof editLot
+        >[0],
+        manager(),
+        ctx(),
+      );
+    }
   });
 
   it('below what a list prints (100.004 kg after 100.000) nothing is armed', async () => {
@@ -328,12 +353,14 @@ describe('a re-weigh through ✏️ asks the client again, by itself', () => {
 
   it('cargo that left China (unloaded in Uzbekistan) is not asked', async () => {
     await deliverPersonQuestion();
-    await db.update(boxes).set({ status: 'ready_for_pickup', currentWarehouseId: wh.uz }).where(inArray(boxes.lotId, [lot.K, lot.L]));
+    // The LIVE cartons only: a carton an earlier count correction voided stays void.
+    const live = and(inArray(boxes.lotId, [lot.K, lot.L]), sql`${boxes.status} <> 'void'`);
+    await db.update(boxes).set({ status: 'ready_for_pickup', currentWarehouseId: wh.uz }).where(live);
     try {
       await reweigh('K', 110);
       expect(await rowOf(NOTICE_LOT_REASK)).toBeUndefined();
     } finally {
-      await db.update(boxes).set({ status: 'in_stock', currentWarehouseId: wh.cn }).where(inArray(boxes.lotId, [lot.K, lot.L]));
+      await db.update(boxes).set({ status: 'in_stock', currentWarehouseId: wh.cn }).where(live);
     }
   });
 });
@@ -358,6 +385,98 @@ describe('the person’s question and the system’s never both go', () => {
   });
 });
 
+describe('a question ON ITS WAY when the correction lands (the design judge’s two blockers)', () => {
+  it('the receipt push in flight with no earlier question: armed anyway, and sent only if the push carried the OLD figures', async () => {
+    await db.execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, status, claimed_at)
+      VALUES (${clientId}::uuid, 'received_cn', 'receipt', ${receipt.main}::uuid, '2001-01-01', now(), 'sending', now())
+    `);
+    const oldTag = await tagNow();
+    await reweigh('K', 110);
+    // Nothing delivered, nothing answered — but a question is on its way: armed.
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    // The push delivered the figures it read BEFORE the correction.
+    await db.execute(sql`
+      UPDATE client_notices SET status = 'sent', sent_at = now(), asked_tag = ${oldTag}, asked_at = now()
+       WHERE kind = 'received_cn' AND ref_id = ${receipt.main}::uuid
+    `);
+    await dueNow(NOTICE_LOT_REASK);
+    const mark = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect(sentSince(mark).filter((m) => m.chatId === CHAT)).toHaveLength(1);
+  });
+
+  it('…and when the push in flight already carried the NEW figures, the armed question is not sent', async () => {
+    await db.execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, status, claimed_at)
+      VALUES (${clientId}::uuid, 'received_cn', 'receipt', ${receipt.main}::uuid, '2001-01-01', now(), 'sending', now())
+    `);
+    await reweigh('K', 110);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    await db.execute(sql`
+      UPDATE client_notices SET status = 'sent', sent_at = now(), asked_tag = ${await tagNow()}, asked_at = now()
+       WHERE kind = 'received_cn' AND ref_id = ${receipt.main}::uuid
+    `);
+    await dueNow(NOTICE_LOT_REASK);
+    const mark = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect(sentSince(mark).filter((m) => m.chatId === CHAT)).toHaveLength(0);
+    expect((await rowOf(NOTICE_LOT_REASK))?.last_error).toBe('not_needed');
+  });
+
+  it('a re-armed question that went anyway is REMEMBERED — the same question never goes twice', async () => {
+    await deliverPersonQuestion();
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    // The sweep claims it; a further correction re-arms it while it is out; it is
+    // delivered with what the preparer reads NOW (the latest figures).
+    const [claimed] = (await claimNoticesForSending(50, SWEEP_AT, [NOTICE_LOT_REASK])).filter((row) => row.refId === receipt.main);
+    await reweigh('K', 120);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    await db.execute(sql`UPDATE client_notices SET status = 'sending', claimed_at = ${claimed!.claimedAt!.toISOString()}::timestamptz WHERE id = ${claimed!.id}::uuid`);
+    // (Re-claimed by hand above so the real sweep can deliver it; then re-armed again by the correction's own arm.)
+    await reweigh('K', 120.004);
+    await dueNow(NOTICE_LOT_REASK);
+    const mark = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect(sentSince(mark).filter((m) => m.chatId === CHAT)).toHaveLength(1);
+    expect((await rowOf(NOTICE_LOT_REASK))?.asked_tag).toBe(await tagNow());
+    // Ten minutes later the held row is looked at again: the client already holds these figures.
+    await dueNow(NOTICE_LOT_REASK);
+    const again = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect(sentSince(again).filter((m) => m.chatId === CHAT)).toHaveLength(0);
+  });
+});
+
+describe('the person’s door after the system asked', () => {
+  it('right after the system’s question went, a person’s press is «too soon» — the same question minutes apart is noise', async () => {
+    await deliverPersonQuestion();
+    await db.execute(sql`UPDATE client_notices SET sent_at = now() - interval '1 hour' WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    await sendDueArrivalNotices(SWEEP_AT);
+    await expect(askClientAboutReceipt(receipt.main, logist(), ctx(), askFits)).rejects.toMatchObject({ code: 'too_soon' });
+  });
+
+  it('a delivered automatic question stays on the card after a later one is rightly not sent', async () => {
+    await deliverPersonQuestion();
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    await sendDueArrivalNotices(SWEEP_AT);
+    // A further correction arms it again, and its reversal stands it down.
+    await reweigh('K', 120);
+    await reweigh('K', 110);
+    const row = await rowOf(NOTICE_LOT_REASK);
+    expect(row?.status).toBe('skipped');
+    expect((await clientReaskStatusFor(receipt.main))?.state).toBe('sent');
+    // …and the client's answer is to the system's question: no asker.
+    await answerClientAsk({ chatId: BigInt(CHAT), receiptId: receipt.main, verdict: 'yes', tag: await tagNow() });
+    const answers = await db.select({ askedBy: lotClientConfirms.askedBy }).from(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.K));
+    expect(answers.map((r) => r.askedBy)).toEqual([null]);
+  });
+});
+
 describe('a re-arm while the question is on its way survives the settle', () => {
   it('the sweep’s settle of a claim no longer held writes nothing', async () => {
     await deliverPersonQuestion();
@@ -368,7 +487,7 @@ describe('a re-arm while the question is on its way survives the settle', () => 
     // A further correction lands while the message is out.
     await reweigh('K', 120);
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
-    expect(await settleArrivalNotice(claimed[0]!.id, 'sent')).toBe(false);
+    expect(await settleArrivalNotice(claimed[0]!.id, 'sent', undefined, claimed[0]!.claimedAt)).toBe(false);
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
   });
 });

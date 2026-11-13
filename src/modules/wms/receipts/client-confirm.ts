@@ -14,7 +14,7 @@ import { linkedChats } from '../notices/client-push';
 import { PUSH_LOT_LINES } from '../notices/client-text';
 import { isBusyError, isServerBehind } from '../../platform/db/errors';
 import { lockLotAnswersTx, lotCheckViewsFor, mayCheckLot, type LotCheckActor } from './lot-check';
-import { clientConfirmsReady, clientMeasuresReady } from './lot-check-ready';
+import { askedTagReady, clientConfirmsReady, clientMeasuresReady } from './lot-check-ready';
 import { lotShownKgSql, lotShownM3Sql, lotTarkibJoinSql } from './lot-check-sql';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
@@ -373,16 +373,23 @@ export function clientConfirmAuditKey(letter: string | null): string {
  * WAITING keeps its asker, as it always has: they pressed, and they are told.
  */
 async function lastAsk(clientId: string, receiptId: string): Promise<{ askedBy: string | null; sentAt: Date | null } | null> {
+  // The system's question is read only where 0147 remembers its delivery
+  // (`asked_at` — never cleared by a later quiet skip, which nulls `sent_at`).
+  const withAuto = await askedTagReady();
   const rows = (await db.execute(sql`
-    SELECT kind, status, asked_by::text AS asked_by, sent_at FROM client_notices
-     WHERE client_id = ${clientId}::uuid AND kind IN (${NOTICE_LOT_ASK}, ${NOTICE_LOT_REASK})
+    SELECT kind, status, asked_by::text AS asked_by, sent_at,
+           ${withAuto ? sql`asked_at` : sql`NULL::timestamptz AS asked_at`}
+      FROM client_notices
+     WHERE client_id = ${clientId}::uuid AND kind IN (${NOTICE_LOT_ASK}, ${withAuto ? NOTICE_LOT_REASK : NOTICE_LOT_ASK})
        AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
-  `)) as unknown as { kind: string; status: string; asked_by: string | null; sent_at: string | Date | null }[];
+  `)) as unknown as { kind: string; status: string; asked_by: string | null; sent_at: string | Date | null; asked_at: string | Date | null }[];
   const person = rows.find((row) => row.kind === NOTICE_LOT_ASK);
   const auto = rows.find((row) => row.kind === NOTICE_LOT_REASK);
-  const at = (row: { sent_at: string | Date | null } | undefined) => (row?.sent_at ? new Date(row.sent_at) : null);
-  const autoAt = at(auto);
-  const personAt = at(person);
+  const autoAt = auto?.asked_at ? new Date(auto.asked_at) : null;
+  // A person's question is delivered at `sent_at` — or, once a later skip of
+  // the same row nulled that, at the `asked_at` 0147 remembered for it.
+  const personSent = person?.sent_at ?? person?.asked_at ?? null;
+  const personAt = personSent ? new Date(personSent) : null;
   const personWaiting = person !== undefined && (person.status === 'pending' || person.status === 'sending');
   // The system's question is the last one once it WENT, unless a person has
   // asked since — delivered later, or pressed and still waiting to go.
@@ -757,6 +764,19 @@ export async function askClientAboutReceipt(
   const views = await lotCheckViewsFor(facts.lots.map((lot) => lot.lotId));
   if (!facts.lots.some((lot) => views.get(lot.lotId)?.askable === true)) throw new ClientAskError('not_askable');
   if (facts.lots.length > ASK_MAX_LOTS || !fits(facts)) throw new ClientAskError('too_long');
+  // The system's own question about this prixod (his «1 b»): on its way right
+  // now, or delivered within the cooldown — the client has just been asked,
+  // and the same question again minutes later is the noise the cooldown is for.
+  if (await askedTagReady()) {
+    const [auto] = (await db.execute(sql`
+      SELECT status, asked_at > now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}) AS recent
+        FROM client_notices
+       WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
+         AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
+    `)) as unknown as { status: string; recent: boolean | null }[];
+    if (auto?.status === 'sending') throw new ClientAskError('already_queued');
+    if (auto?.recent === true) throw new ClientAskError('too_soon');
+  }
 
   // ONE row per (client, kind, prixod) — `client_notices_once`. A question
   // that already went out is re-armed (the unique row is the cooldown's
@@ -930,28 +950,52 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
  */
 export interface ClientReaskStatus {
   state: 'waiting' | 'sent' | 'failed';
-  /** When it is due (waiting) or when it went (sent); null for a failure. */
+  /** When it is due (waiting) or when it last went (sent); null for a failure. */
   at: Date | null;
+  /**
+   * A waiting question worded by its age, on the DATABASE's clock — the
+   * person's question's own rule (TARKIB-TAKLIFLAR §7.3, L3-4): `stuck` =
+   * due more than `ASK_STUCK_MINUTES` ago and still here (no bot token, a
+   * refused one). Null unless waiting.
+   */
+  wait: 'soon' | 'stuck' | null;
   failure: AskFailure | null;
 }
 
 export async function clientReaskStatusFor(receiptId: string): Promise<ClientReaskStatus | null> {
   if (!isUuidShaped(receiptId)) return null;
+  // Its rows and the column that remembers its delivery are 0147's.
+  if (!(await askedTagReady())) return null;
   const rows = (await db.execute(sql`
-    SELECT n.status, n.sent_at, n.send_after, n.last_error
+    SELECT n.status, n.send_after, n.last_error, n.asked_at,
+           (n.send_after < now() - make_interval(mins => ${ASK_STUCK_MINUTES})) AS stuck
       FROM client_notices n
       JOIN receipts r ON r.id = n.ref_id AND r.client_id = n.client_id
      WHERE n.kind = ${NOTICE_LOT_REASK} AND n.ref_type = 'receipt' AND n.ref_id = ${receiptId}::uuid
      LIMIT 1
-  `)) as unknown as { status: string; sent_at: string | Date | null; send_after: string | Date | null; last_error: string | null }[];
+  `)) as unknown as {
+    status: string;
+    send_after: string | Date | null;
+    last_error: string | null;
+    asked_at: string | Date | null;
+    stuck: boolean | null;
+  }[];
   const row = rows[0];
   if (!row) return null;
   if (row.status === 'pending' || row.status === 'sending') {
-    return { state: 'waiting', at: row.send_after ? new Date(row.send_after) : null, failure: null };
+    return {
+      state: 'waiting',
+      at: row.send_after ? new Date(row.send_after) : null,
+      wait: row.stuck === true ? 'stuck' : 'soon',
+      failure: null,
+    };
   }
-  if (row.status === 'sent') return { state: 'sent', at: row.sent_at ? new Date(row.sent_at) : null, failure: null };
   const failure = reaskFailureOf(row.status, row.last_error);
-  return failure ? { state: 'failed', at: null, failure } : null;
+  if (failure) return { state: 'failed', at: null, wait: null, failure };
+  // Delivered — read from `asked_at`, which no later outcome clears: a
+  // question that went and was then rightly NOT sent again (the correction
+  // taken back) is still the one the client holds.
+  return row.asked_at ? { state: 'sent', at: new Date(row.asked_at), wait: null, failure: null } : null;
 }
 
 /**

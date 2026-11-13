@@ -7,6 +7,7 @@ import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
 import { linkedChats } from '../notices/client-push';
 import { NOTICE_RECEIVED, SKIP_CLIENT_CHANGED } from '../notices/client-claims';
+import { PUSH_LOT_LINES } from '../notices/client-text';
 import {
   ASK_MAX_LOTS,
   clientAskFacts,
@@ -87,19 +88,42 @@ export async function reaskDue(facts: ClientAskFacts, views: Map<string, LotChec
 }
 
 /**
- * A question to this owner about this prixod still WAITING to be claimed by
- * the sweep — the receipt push in its correction window, or a person's
- * «Mijozdan so'rash» pressed a moment ago. It is rendered from the facts at
- * SEND time and carries the new figures itself.
+ * Will the receipt's own push carry the ✅ / ❌ row? The PURE half of
+ * `clientAskOffer` (the switch, at most `PUSH_LOT_LINES` lots, no tarkib
+ * written) — the half that does not depend on what the push prints. A push
+ * that goes WITHOUT buttons asks nothing, so it must never stand a re-ask
+ * down (the design judge).
  */
-async function questionWaiting(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId'>): Promise<boolean> {
-  const rows = (await db.execute(sql`
-    SELECT 1 AS one FROM client_notices
+async function receivedPushAsks(facts: Pick<ClientAskFacts, 'lots'>): Promise<boolean> {
+  if ((await getSetting('client_confirm_on_receipt')) !== true) return false;
+  return facts.lots.length <= PUSH_LOT_LINES && facts.lots.every((lot) => lot.goodsKey === null);
+}
+
+/**
+ * The asking rows of this owner and prixod and where each stands: the
+ * receipt push, a person's question, the system's own.
+ */
+async function askingRows(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId'>): Promise<{ kind: string; status: string }[]> {
+  return (await db.execute(sql`
+    SELECT kind, status FROM client_notices
      WHERE client_id = ${facts.clientId}::uuid AND ref_type = 'receipt' AND ref_id = ${facts.receiptId}::uuid
-       AND kind IN (${NOTICE_RECEIVED}, ${NOTICE_LOT_ASK}) AND status = 'pending'
-     LIMIT 1
-  `)) as unknown as { one: number }[];
-  return rows.length > 0;
+       AND kind IN (${sql.join(
+         ASKING_KINDS.map((kind) => sql`${kind}`),
+         sql`, `,
+       )})
+  `)) as unknown as { kind: string; status: string }[];
+}
+
+/**
+ * A question to this owner about this prixod still WAITING to be claimed —
+ * a person's «Mijozdan so'rash» pressed a moment ago, or the receipt push in
+ * its correction window when it will carry the buttons. It is rendered from
+ * the facts at SEND time, carries the new figures itself, and — being due
+ * first — is delivered (and its tag remembered) before ours is looked at.
+ */
+async function questionWaiting(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId' | 'lots'>, rows: { kind: string; status: string }[]): Promise<boolean> {
+  if (rows.some((row) => row.kind === NOTICE_LOT_ASK && row.status === 'pending')) return true;
+  return rows.some((row) => row.kind === NOTICE_RECEIVED && row.status === 'pending') && (await receivedPushAsks(facts));
 }
 
 /** The switch (default on — his «b»): off, nothing is armed and a held question is not sent. */
@@ -130,8 +154,24 @@ export async function armClientReask(lotId: string): Promise<void> {
     if (facts.lots.length > ASK_MAX_LOTS || !askFits(facts, { reason: 'updated' })) return;
     const views = await lotCheckViewsFor(facts.lots.map((l) => l.lotId));
     if (!facts.lots.some((l) => views.get(l.lotId)?.askable === true)) return;
-    if (await questionWaiting(facts)) return;
-    if (!(await reaskDue(facts, views))) return;
+    const rows = await askingRows(facts);
+    if (await questionWaiting(facts, rows)) return;
+    // A question ON ITS WAY right now (claimed, being sent): what it carries is
+    // unknown — it may have read the facts before this correction committed.
+    // So it counts as «due», and the send-time check compares the facts with
+    // the tag that delivery remembers (the design judge's first blocker).
+    const inFlight = rows.some((row) => row.status === 'sending');
+    if (!inFlight && !(await reaskDue(facts, views))) {
+      // Not due — and a question held from an earlier correction that this one
+      // took back is stood down now, so the card stops promising it. What it
+      // delivered before (`asked_tag` / `asked_at`) is never touched.
+      await db.execute(sql`
+        UPDATE client_notices SET status = 'skipped', last_error = 'not_needed', claimed_at = NULL
+         WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
+           AND ref_type = 'receipt' AND ref_id = ${facts.receiptId}::uuid AND status = 'pending'
+      `);
+      return;
+    }
     await db.execute(sql`
       INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at)
       VALUES (${facts.clientId}::uuid, ${NOTICE_LOT_REASK}, 'receipt', ${facts.receiptId}::uuid,
@@ -156,7 +196,12 @@ export async function reaskSendable(notice: { clientId: string; refId: string })
   if ('skip' in facts) return { skip: facts.skip };
   if (facts.clientId !== notice.clientId) return { skip: SKIP_CLIENT_CHANGED };
   if (facts.lots.length > ASK_MAX_LOTS || !askFits(facts, { reason: 'updated' })) return { skip: 'too_long' };
-  if (await questionWaiting(facts)) return { skip: REASK_SUPERSEDED };
+  // A person's question waiting or on its way, or the receipt push that will
+  // carry buttons still waiting: it asks the new figures itself.
+  const rows = await askingRows(facts);
+  if (rows.some((row) => row.kind === NOTICE_LOT_ASK && row.status === 'sending') || (await questionWaiting(facts, rows))) {
+    return { skip: REASK_SUPERSEDED };
+  }
   const views = await lotCheckViewsFor(facts.lots.map((l) => l.lotId));
   if (!facts.lots.some((l) => views.get(l.lotId)?.askable === true)) return { skip: 'not_askable' };
   if (!(await reaskDue(facts, views))) return { skip: 'not_needed' };

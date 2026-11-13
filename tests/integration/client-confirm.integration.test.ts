@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  * whose migration has not landed (#472).
  */
 
-const ready = vi.hoisted(() => ({ on: true, client: true, measures: true }));
+const ready = vi.hoisted(() => ({ on: true, client: true, measures: true, v147: true }));
 vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   lotChecksReady: async () => ready.on,
   // The probe's SECOND answer: is 0144's table there? (`ready.client = false` =
@@ -34,9 +34,9 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // …and 0147's two (the tick's kilos and cubic metres; the notices' remembered
   // question) — there whenever the check tables are: this file's 96-letter
   // matrix inserts ticks with no measures, which hold (the NULL arm).
-  lotTickMeasuresReady: () => ready.on,
-  tickMeasuresReady: async () => ready.on,
-  askedTagReady: async () => ready.on,
+  lotTickMeasuresReady: () => ready.on && ready.v147,
+  tickMeasuresReady: async () => ready.on && ready.v147,
+  askedTagReady: async () => ready.on && ready.v147,
 }));
 vi.mock('@/modules/platform/auth/session', async (original) => ({
   ...(await original<typeof import('@/modules/platform/auth/session')>()),
@@ -70,10 +70,12 @@ import {
   askTag,
   clientAskFacts,
   clientAskOffer,
+  clientAskCardFor,
   clientAskStatusFor,
   dismissClientDisputes,
   type ClientAskFacts,
 } from '@/modules/wms/receipts/client-confirm';
+import { armClientReask } from '@/modules/wms/receipts/client-reask';
 import { checkLot, lotCheckViewsFor, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
 import { receivedFacts } from '@/modules/wms/notices/client-summary';
 import { pushLotName } from '@/modules/wms/notices/client-text';
@@ -1503,5 +1505,64 @@ describe('the measures in the answer (0146)', () => {
       ready.measures = true;
     }
     await forget();
+  });
+});
+
+describe('a server whose 0147 has not landed (#472) — the 0146 behaviour, no 0147 column named', () => {
+  it('the press, the card’s reading, the automatic arm and the tick: none names `asked_tag` / `asked_at` / `seen_kg` / `seen_m3`', async () => {
+    ready.v147 = false;
+    const pool: string[] = [];
+    const inTx: string[] = [];
+    const unsafe = pgClient.unsafe.bind(pgClient);
+    const poolSpy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      pool.push(query);
+      return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
+    }) as typeof pgClient.unsafe);
+    const begin = pgClient.begin.bind(pgClient) as (...a: unknown[]) => unknown;
+    const beginSpy = vi.spyOn(pgClient, 'begin').mockImplementation(((...args: unknown[]) => {
+      const body = args[args.length - 1] as (scoped: { unsafe: (...a: unknown[]) => unknown }) => unknown;
+      return begin(...args.slice(0, -1), (scoped: { unsafe: (...a: unknown[]) => unknown }) => {
+        const scopedUnsafe = scoped.unsafe.bind(scoped);
+        scoped.unsafe = (query: unknown, ...rest: unknown[]) => {
+          inTx.push(String(query));
+          return scopedUnsafe(query, ...rest);
+        };
+        return body(scoped);
+      });
+    }) as unknown as typeof pgClient.begin);
+    // Constant aliases (`NULL::timestamptz AS asked_at`, `NULL::text AS seen_kg`) are not columns.
+    const namesColumn = (query: string) =>
+      /asked_tag|asked_at|seen_kg|seen_m3/.test(query.replace(/NULL::(text|timestamptz) AS (asked_at|seen_kg|seen_m3)/g, ''));
+    try {
+      const f = await clientAskFacts(receipt.weigh);
+      if ('skip' in f) throw new Error(`facts skipped: ${f.skip}`);
+      const answer = await answerClientAsk({ chatId: CHAT_A, receiptId: receipt.weigh, verdict: 'yes', tag: f.tag });
+      expect(answer).toMatchObject({ outcome: 'recorded' });
+      const card = await clientAskCardFor(receipt.weigh, client.A);
+      expect(card?.auto ?? null).toBeNull();
+      await armClientReask(lot.W);
+      const ticked = await checkLot(
+        {
+          lotId: lot.W,
+          seen: { nameZh: `秤${RUN}`, nameRu: `Tarozi ${RUN}`, boxCount: 2, clientId: client.A },
+          seenCheckedAt: null,
+          seenClientAt: (await stateOf('W')).client?.token ?? null,
+        },
+        logist(),
+        ctx(),
+      );
+      expect(ticked.changed).toBe(true);
+      expect(inTx.filter((q) => /insert into "?lot_checks"?/i.test(q)).length, 'the tick’s own upsert was seen').toBeGreaterThan(0);
+      expect([...pool, ...inTx].filter(namesColumn)).toEqual([]);
+      // Nothing was armed: the remembered question is 0147's.
+      const armed = (await db.execute(sql`SELECT 1 FROM client_notices WHERE kind = 'lot_reask' AND ref_id = ${receipt.weigh}::uuid`)) as unknown as unknown[];
+      expect(armed).toHaveLength(0);
+    } finally {
+      poolSpy.mockRestore();
+      beginSpy.mockRestore();
+      ready.v147 = true;
+      await db.delete(lotChecks).where(eq(lotChecks.lotId, lot.W));
+    }
+    await db.delete(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.W));
   });
 });

@@ -292,6 +292,7 @@ export default async function ReceiptDetailPage({
                 at: auto.at
                   ? format.dateTime(auto.at, auto.state === 'waiting' ? { timeStyle: 'short' } : { dateStyle: 'short', timeStyle: 'short' })
                   : null,
+                wait: auto.wait,
                 failure: auto.failure,
               }
             : null,
@@ -893,13 +894,15 @@ export default async function ReceiptDetailPage({
                   {canEdit && (
                     <LotEditForm
                       hasComposition={compositions.has(lot.id)}
-                      // A tick or the client's own ✅ that holds now: the form
-                      // says what a re-weigh does to it before the press.
+                      // A ✅ that holds now AND compares the kilos and cubic
+                      // metres (a tick that remembers them — 0147; the client's
+                      // full answer — 0146): the form says what a re-weigh does
+                      // to it before the press. Never promised where it is false.
                       vouched={(() => {
                         const view = lotChecks.get(lot.id);
                         return (
-                          view?.person?.holds === true ||
-                          (view?.client?.verdict === 'yes' && view.client.ofOwner && view.client.holds)
+                          (view?.person?.holds === true && view.person.measures) ||
+                          (view?.client?.verdict === 'yes' && view.client.ofOwner && view.client.holds && view.client.measures)
                         );
                       })()}
                       shownName={shownRu.get(lot.id) ?? null}

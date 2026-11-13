@@ -20,7 +20,14 @@ import {
   tarkibStandsSql,
   type LotCheckState,
 } from './lot-check-sql';
-import { clientConfirmsReady, lotChecksReady, lotClientConfirmsReady, lotClientMeasuresReady, tickMeasuresReady } from './lot-check-ready';
+import {
+  clientConfirmsReady,
+  lotChecksReady,
+  lotClientConfirmsReady,
+  lotClientMeasuresReady,
+  lotTickMeasuresReady,
+  tickMeasuresReady,
+} from './lot-check-ready';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -491,6 +498,12 @@ export interface LotCheckView {
     holds: boolean;
     /** Which term moved: `measures` = the kilos or cubic metres it remembered (0147, his «2 b»). */
     moved: { name: boolean; count: boolean; client: boolean; measures: boolean };
+    /**
+     * It remembers the kilos and cubic metres (0147) — a re-weigh turns it
+     * «o'zgardi». False on a server one migration behind and on a tick an
+     * old process wrote without them (the NULL arm: it holds through one).
+     */
+    measures: boolean;
   } | null;
   /**
    * The client's own answer in Telegram (0144, `client-confirm.ts`), when
@@ -577,6 +590,7 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
            ${terms.count} AS count_ok,
            ${terms.client} AS client_ok,
            ${terms.measures} AS measures_ok,
+           ${lotTickMeasuresReady() ? sql`(lc.seen_kg IS NOT NULL)` : sql`FALSE`} AS person_measures,
            lc.note, lc.checked_at::text AS checked_at, u.full_name AS checked_by,
            ${clientColumns}
       FROM receipt_lots l
@@ -600,6 +614,7 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     count_ok: boolean | null;
     client_ok: boolean | null;
     measures_ok: boolean | null;
+    person_measures: boolean | null;
     note: string | null;
     checked_at: string | null;
     checked_by: string | null;
@@ -642,6 +657,7 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
                 note: row.note,
                 holds: !moved.name && !moved.count && !moved.client && !moved.measures,
                 moved,
+                measures: row.person_measures === true,
               }
             : null,
           client: row.client_verdict

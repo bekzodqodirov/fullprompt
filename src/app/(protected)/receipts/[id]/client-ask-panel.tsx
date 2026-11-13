@@ -49,6 +49,8 @@ export interface ClientAskFace {
   auto?: {
     state: 'waiting' | 'sent' | 'failed';
     at: string | null;
+    /** A waiting one by its age: `stuck` = due long ago and still here (the bot cannot send). */
+    wait?: 'soon' | 'stuck' | null;
     failure: 'no_chat' | 'client_changed' | 'too_long' | 'receipt_changed' | 'blocked' | 'telegram' | null;
   } | null;
 }
@@ -153,9 +155,14 @@ export function ClientAskPanel({
 
       {/* The system's own question (his «1 b»): a person's 📨 below stays
           pressable while it is held — it sends now and stands this one down. */}
-      {face.auto?.state === 'waiting' && (
+      {face.auto?.state === 'waiting' && face.auto.wait !== 'stuck' && (
         <p className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="client-reask" data-state="waiting">
           🔄 {t('reaskWaiting', { when: face.auto.at ?? '—' })}
+        </p>
+      )}
+      {face.auto?.state === 'waiting' && face.auto.wait === 'stuck' && (
+        <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="client-reask" data-state="stuck">
+          ⚠️ {t('reaskLabel')} · {t('askStuck', { since: face.auto.at ?? '—' })}
         </p>
       )}
       {face.auto?.state === 'sent' && (
