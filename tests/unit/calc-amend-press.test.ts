@@ -278,6 +278,34 @@ describe('the open', () => {
     ]);
   });
 
+  /**
+   * The rows the AI's answer asked are the rows the add table prefers for an
+   * unaddressed figure (docs/AI-SORAYDI.md §3.4 A2, review JR-13 — ONE list
+   * per door): on the AI door `sellerAsksOf`'s figure asks, not the law's
+   * alone. Row 2 «Krossovka» states no figure and no code (asked its count or
+   * weight, and what it is); row 1 «Sumka» is what the law-only list (stood
+   * in by `stub.asks`) would name.
+   */
+  it('an AI-door request: the asked rows are the AI answer’s figure asks — any other door keeps the law’s', async () => {
+    const facts = {
+      weightKg: 500,
+      volumeM3: 3,
+      goods: [
+        { name: 'Sumka', quantity: 10, tnvedCode: '4202920000', itemId: I1, seq: 1 },
+        { name: 'Krossovka', itemId: I2, seq: 2 },
+      ],
+    };
+    stub.asks = [{ itemId: I1, seq: 1, name: 'Sumka', needs: [] }];
+    stub.stored = storedOf({ door: 'ai', facts });
+    const ai = chat();
+    await press(ai);
+    expect(activeIntake(ai)!.askedSeqs).toEqual([2]);
+    stub.stored = storedOf({ door: null, facts });
+    const legacy = chat();
+    await press(legacy);
+    expect(activeIntake(legacy)!.askedSeqs).toEqual([1]);
+  });
+
   it('a job the VED started: the standing line first, and the save button says where it goes', async () => {
     stub.stored = storedOf();
     stub.standing = { ...stub.standing, standing: 'started', handsoffRev: null };

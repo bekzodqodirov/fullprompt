@@ -54,7 +54,7 @@ vi.mock('@/modules/platform/telegram/send', async (importOriginal) => ({
 }));
 
 import { factsVolumeM3, intakeTableText, tableOpenOf, type CalcFacts, type CalcSection } from '@/modules/wms/calc/intake';
-import { nameWordFor } from '@/modules/wms/calc/line-address';
+import { nameWordFor, TOTALS_UNIT_WORDS } from '@/modules/wms/calc/line-address';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import {
   activeIntake,
@@ -564,22 +564,43 @@ describe('material sent AFTER the answer (review CONC-2, re-driven through the t
 });
 
 describe('an answer with no collection to answer (judge concurrency-5, re-anchored onto orphanAnswerSentence)', () => {
+  // Re-anchored (docs/AI-SORAYDI.md §2.4, review JB-20): the shape test kept a
+  // unit list of its own (`TOTALS_UNIT`) — the third one. It is handed the
+  // vocabulary's words now (`TOTALS_UNIT_WORDS`, built from units.ts), so
+  // every pin below asks it the way line-address.ts does.
   it('reads only digits and the kg / kub words as a totals answer', () => {
     for (const text of ['3500', '3500 kg', '12 kub', '12 kub 3500 kg', '3 500', '3500kg', '12 m³']) {
-      expect(looksLikeTotalsAnswer(text), text).toBe(true);
+      expect(looksLikeTotalsAnswer(text, TOTALS_UNIT_WORDS), text).toBe(true);
     }
     for (const text of ['Kurtka 300 kg', 'GS777', 'kg', '', 'YW26-000123', '12 kub qayerda']) {
-      expect(looksLikeTotalsAnswer(text), text).toBe(false);
+      expect(looksLikeTotalsAnswer(text, TOTALS_UNIT_WORDS), text).toBe(false);
     }
+  });
+
+  it('…in every word the vocabulary has: «cbm», «kgs», «кубов» — and «m3», whose 3 is no second figure', () => {
+    for (const text of ['5.9 cbm', '507 kgs', '507 kgs 5.9 cbm', '12 кубов', '5.9 cu.m', '5.9 cubic meters', '12 m3', '12 м3 3500 кг', '3500 kg brutto']) {
+      expect(totalsAnswerShape(text, TOTALS_UNIT_WORDS), text).toBe('worded');
+    }
+    // A word of a unit is a WORD: «kubik» and «kgb» are none.
+    for (const text of ['12 kubik', '5 kgb', '12 m3 qayerda']) expect(totalsAnswerShape(text, TOTALS_UNIT_WORDS), text).toBeNull();
+  });
+
+  it('handed no vocabulary it knows no unit: a worded answer is no totals answer, a bare figure still is', () => {
+    // The platform file imports nothing; a caller that forgot the words gets
+    // fewer answers recognised, never a list of its own again.
+    expect(totalsAnswerShape('3500 kg')).toBeNull();
+    expect(looksLikeTotalsAnswer('12 kub')).toBe(false);
+    expect(totalsAnswerShape('3500')).toBe('bare');
+    expect(totalsAnswerShape('3 500')).toBe('bare');
   });
 
   it('a phone number is not a totals answer — the assistant finds people by it (review P3-R1)', () => {
     for (const text of ['+998 90 123 45 67', '+998901234567', '998901234567', '901234567', '90 123 45 67', '123 45 67']) {
-      expect(looksLikeTotalsAnswer(text), text).toBe(false);
+      expect(looksLikeTotalsAnswer(text, TOTALS_UNIT_WORDS), text).toBe(false);
     }
     // …while a figure grouped by thousands, beside a cube, still is one.
     for (const text of ['12 kub 3 500 kg', '12.5 kub 3500 kg', '1,200 kg', '3500 kg.']) {
-      expect(looksLikeTotalsAnswer(text), text).toBe(true);
+      expect(looksLikeTotalsAnswer(text, TOTALS_UNIT_WORDS), text).toBe(true);
     }
   });
 
@@ -650,9 +671,9 @@ describe('an answer with no collection to answer (judge concurrency-5, re-anchor
   });
 
   it('tells a worded figure from a bare one', () => {
-    for (const text of ['3500 kg', '12 kub', '12 kub 3500 kg', '3 500 кг', '12 m³']) expect(totalsAnswerShape(text), text).toBe('worded');
-    for (const text of ['777', '3 500', '12 3500', '1,5']) expect(totalsAnswerShape(text), text).toBe('bare');
-    for (const text of ['GS777', 'Kurtka 300 kg', '+998 90 123 45 67', '']) expect(totalsAnswerShape(text), text).toBeNull();
+    for (const text of ['3500 kg', '12 kub', '12 kub 3500 kg', '3 500 кг', '12 m³']) expect(totalsAnswerShape(text, TOTALS_UNIT_WORDS), text).toBe('worded');
+    for (const text of ['777', '3 500', '12 3500', '1,5']) expect(totalsAnswerShape(text, TOTALS_UNIT_WORDS), text).toBe('bare');
+    for (const text of ['GS777', 'Kurtka 300 kg', '+998 90 123 45 67', '']) expect(totalsAnswerShape(text, TOTALS_UNIT_WORDS), text).toBeNull();
   });
 
   it('any other words still reach the assistant', async () => {

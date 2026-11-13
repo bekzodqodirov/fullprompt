@@ -106,7 +106,9 @@ describe('the reader hands every mapped sheet over (§4.1, sheets-07)', () => {
     expect(read.moreSheets[0]!.ownText.text).toContain('[Zavod B]');
     // The mapped «Zavod B» left the text: left there, it sat under the model's
     // «for totals» heading and its Σ came back as the shipment's.
-    expect(read.text).toBe('[Note]\nShipping mark: GS777\nTOTAL G.W. | 1592 KGS');
+    // Every row is written to the sheet's two columns (docs/AI-SORAYDI.md §3.2
+    // X0, review JN-14): the one-cell line keeps its empty second slot.
+    expect(read.text).toBe('[Note]\nShipping mark: GS777 |\nTOTAL G.W. | 1592 KGS');
     expect(read.text).not.toContain('Zavod B');
   });
 
@@ -125,9 +127,14 @@ describe('a further sheet, by its shape (§4.2)', () => {
     // The cartons-only Chinese packing list, line for line in another script:
     // its brutto and cube are the shipment's — no model asked.
     expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3, s.fileTotals?.weightNetto]).toEqual([1592, 13.58, false]);
+    // …and each invoice row takes its line's carton count, place for place
+    // (docs/AI-SORAYDI.md §3.2 X4, the seam — re-anchored: the list's «箱数»
+    // was read and thrown away before), said once beside the totals. The
+    // list states no per-carton figure, so nothing is computed from them.
+    expect(s.invoiceGoods?.map((g) => [g.packing?.cartons ?? null, g.derived ?? null])).toEqual(B.GOODS.map((g) => [g.ctns, null]));
     expect(answer.say).toBe(
       '📄 «CI-PL.xlsx» — 12 ta tovar o‘qildi («INVOICE» varag‘idan).\n' +
-        '📄 «CI-PL.xlsx», «PACKING» varag‘i — o‘sha tovarlar: qatorlar «INVOICE» varag‘idan, bundan faqat umumiy brutto va kub olindi.',
+        '📄 «CI-PL.xlsx», «PACKING» varag‘i — o‘sha tovarlar: qatorlar «INVOICE» varag‘idan, bundan faqat umumiy brutto va kub olindi. 12 ta qatorga karobka ma’lumoti shu fayldan olindi.',
     );
     // Its text still rides to the model under the totals heading (the C2/C6 fence stands).
     // The FILE's label: a later file that squeezes it says ««CI-PL.xlsx» ning boshqa varaqlari».

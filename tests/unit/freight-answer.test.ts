@@ -247,14 +247,16 @@ describe('every refusal names what is missing and who can fix it (§2.5)', () =>
 });
 
 /**
- * The bot doors (docs/IKKI-ESHIK.md §2.4, §3.5): the seller is asked nothing,
- * so EVERY case whose fixer is the seller — the four of them, not only the
- * cube — reads «— VED xodimi sizdan so‘raydi» in his chat (the plain door's
- * yo‘lkira answer keeps going there, his 2.5 b), and the VED's cases keep
- * their «— VED xodimi hisoblaydi». The words are the spec's; NULL keeps
- * today's tails (the cases above, and ai-reply.test.ts's).
+ * Where nobody asks the seller (docs/IKKI-ESHIK.md §2.4, §3.5 — the plain
+ * door, and the AI door's card copy for a seller nobody reached): EVERY case
+ * whose fixer is the seller — the four of them, not only the cube — reads
+ * «— VED xodimi sizdan so‘raydi» in his chat (the plain door's yo‘lkira answer
+ * keeps going there, his 2.5 b), and the VED's cases keep their «— VED xodimi
+ * hisoblaydi». The words are the spec's; NULL — and the AI door's answer since
+ * docs/AI-SORAYDI.md §3.4 A1 — keeps today's tails (the cases above, and
+ * ai-reply.test.ts's).
  */
-describe('a door request’s road: the VED asks the seller, in all four of the seller’s cases', () => {
+describe('a road nobody asks the seller about: the VED asks him, in all four of the seller’s cases', () => {
   const lineOf = (over: Partial<FreightAnswerInput>, noAsk: boolean) => {
     const out = freightAnswerFor(input(over), TARIFF);
     if (!out || out.ok) throw new Error(`expected a refusal, got ${JSON.stringify(out)}`);
@@ -269,7 +271,7 @@ describe('a door request’s road: the VED asks the seller, in all four of the s
 
   it.each(SELLER)('%s → «— VED xodimi sizdan so‘raydi», never «mijozdan so‘rab»', (_c, over, words) => {
     expect(lineOf(over, true)).toBe(`Yo‘lkira: ⚠️ ${words} — VED xodimi sizdan so‘raydi`);
-    // A request from before the doors keeps today's tail.
+    // A request from before the doors — and the AI door's answer (A1) — keeps today's tail.
     expect(lineOf(over, false)).toBe(`Yo‘lkira: ⚠️ ${words} — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring`);
   });
 
@@ -278,7 +280,7 @@ describe('a door request’s road: the VED asks the seller, in all four of the s
     expect(sellers.sort()).toEqual(SELLER.map(([c]) => c).sort());
   });
 
-  it('the VED’s own cases keep their words on a door request; the seller’s gap beside one says the VED asks', () => {
+  it('the VED’s own cases keep their words where nobody asks; the seller’s gap beside one says the VED asks', () => {
     expect(lineOf({ freightZone: null, fromCity: 'Foshan' }, true)).toBe(
       'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi',
     );

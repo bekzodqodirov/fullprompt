@@ -24,6 +24,7 @@ import {
   updateIntake,
 } from './calc-store';
 import { promptFileLines, type SheetFit } from './calc-files';
+import { columnAsks } from './file-goods';
 import {
   aiConfirmKeyboard,
   certificateButton,
@@ -69,6 +70,8 @@ type TableRow = import('../../wms/calc/line-address').TableRow;
 type TableSegment = import('../../wms/calc/line-address').TableSegment;
 type TableTarget = import('../../wms/calc/line-address').TableTarget;
 type TableRefusal = import('../../wms/calc/line-address').TableRefusal;
+type TotalsLeft = import('../../wms/calc/line-address').TotalsLeft;
+type UnitAsk = import('../../wms/calc/line-address').UnitAsk;
 type LineAnswer = import('../../wms/calc/intake-manual').LineAnswer;
 type GoodsFact = NonNullable<IntakeState['facts']['goods']>[number];
 
@@ -548,6 +551,33 @@ export function landingRetryWords(state: IntakeState): string {
 }
 
 /** The table's input — the state as `intakeTableText` reads it. */
+/**
+ * Does an add collection hold anything its save would write or name to the
+ * VED (review ask-break-6)? The same inputs `amendSubmissionOf` (calc-amend.ts)
+ * builds the submission from, asked the way `changeSays` (wms/calc/amend.ts)
+ * asks it: a stored row answered, a conflict (chosen or left to the VED), a
+ * new line, a totals or route answer, a doubted total answered, typed words,
+ * a file. It cannot see a typed figure that equals the stored one — the save
+ * still says «Hech narsa o‘zgarmadi» to that. Pure.
+ */
+export function amendAdds(
+  state: Pick<IntakeState, 'conflicts' | 'lineAnswers' | 'facts' | 'totalsAnswer' | 'routeAnswer' | 'ambiguousTotals' | 'material' | 'answers' | 'fileCount'>,
+): boolean {
+  const FIELDS = ['quantity', 'weightKg', 'volumeM3', 'measureUnit', 'measureQty', 'tnvedCode'] as const;
+  const answered = state.lineAnswers.some((e) => e.itemId && FIELDS.some((k) => e.patch[k] !== undefined && e.patch[k] !== null));
+  return (
+    answered ||
+    state.conflicts.length > 0 ||
+    (state.facts.goods ?? []).some((g) => !g.itemId) ||
+    state.totalsAnswer.weightKg !== null ||
+    state.totalsAnswer.volumeM3 !== null ||
+    Boolean(state.routeAnswer?.fromCity || state.routeAnswer?.toCity) ||
+    state.ambiguousTotals.some((a) => 'answered' in a) ||
+    [...state.material, ...state.answers].some((m) => m.trim() !== '') ||
+    state.fileCount > 0
+  );
+}
+
 function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/calc/intake').TableInput {
   return {
     section: state.section,
@@ -567,6 +597,7 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
           conflicts: state.conflicts,
           askedSeqs: state.askedSeqs,
           started: state.standingAtOpen === 'started',
+          adds: amendAdds(state),
         }
       : null,
     tail: tableTail(state, tc.intake),
@@ -580,6 +611,13 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
     // A cut reading on the plain door is said on its summary (as-built review
     // OWNER-3); the AI door says it through `reading`.
     cut: state.aiCut ?? null,
+    // What the model asked at the last reading (docs/AI-SORAYDI.md §3.3 M4).
+    aiQuestions: state.aiQuestions ?? [],
+    // A file's line column nothing settled as the line's or one carton's
+    // (§3.2 X5, review JN-12): asked under the table until every row it names
+    // carries the seller's own figure. `tableAsksOf` draws none on the plain
+    // door, which is frozen and asks nothing (IKKI-ESHIK §3).
+    asks: columnAsks(state.goodsFiles, state.facts.goods ?? []),
     ai:
       collectionDoor(state) === 'ai'
         ? {
@@ -791,6 +829,9 @@ const LINE_REFUSAL: Record<LineAnswerRefusal, (detail?: string) => string> = {
   two_pairs: () => 'Bitta qatorda ikki xil o‘lchov — bittasini yozing.',
   unlabelled: () => 'Raqamlarni birlik bilan yozing: «300 dona 150 kg».',
   repeated: () => 'Bitta birlikda ikki xil son — bittasini yozing.',
+  // One carton's or one piece's figure (docs/AI-SORAYDI.md §3.1 T4) — never
+  // the row's own; the example is a row's whole figure, nothing per one.
+  per_one: (d) => `«${d ?? ''}» — bittasiniki, qatorning jamisi emas. Qatorning jamisini yozing: masalan «300 dona» yoki «150 kg».`,
 };
 
 /** A unit the seller WROTE, as a figure's unit — a carton is no figure. */
@@ -834,21 +875,100 @@ const TABLE_REFUSAL: Record<TableRefusal, (seg: TableSegment, ref: TableRef, int
     const nos = seg.refused!.candidates ?? [];
     return `«${seg.refused!.detail}» — ${nos.join(', ')}-qatorda bor: raqam bilan yozing, masalan «${nos.at(-1)}: ${exampleOf(seg.answer, intake)}»`;
   },
-  name_none: (seg) =>
-    `«${seg.refused!.detail}» — jadvalda bunday qator yo‘q. Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing; qator bo‘lsa raqami bilan yozing: «3: 50 dona»`,
+  // A figure and a word that is no unit — «5.9 kubik» — is asked as a UNIT
+  // (docs/AI-SORAYDI.md §3.1 T3): the word is nobody's goods.
+  name_none: (seg) => {
+    const { unit, detail } = seg.refused!;
+    if (unit) return `${unitAskWords(unit.word, unit.number, unit.near, 'row')} Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing.`;
+    return `«${detail}» — jadvalda bunday qator yo‘q. Yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing; qator bo‘lsa raqami bilan yozing: «3: 50 dona»`;
+  },
   name_mismatch: (seg, ref, intake) => {
     const n = seg.refused!.candidates?.[0] ?? 0;
+    const { unit } = seg.refused!;
+    if (unit) return `${n}-qator: ${unitAskWords(unit.word, unit.number, unit.near, 'row', `${n}: `)}`;
     const row = ref.rows.find((r) => r.no === n);
     return `${n}-qator «${rowLabel(row?.name ?? '')}», siz «${seg.refused!.detail}» yozdingiz — yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing; shu qator bo‘lsa faqat sonini yozing: «${n}: ${exampleOf(seg.answer, intake)}».`;
   },
-  no_address: () => NO_ADDRESS,
+  no_address: (seg) => {
+    const { unit } = seg.refused!;
+    return unit ? unitAskWords(unit.word, unit.number, unit.near, 'row') : NO_ADDRESS;
+  },
   address_unclear: (seg) => {
     const n = seg.refused!.detail;
     const rest = seg.raw.trim().replace(/^\d{1,4}\s+/u, '');
     return `«${seg.raw.trim()}» — ${n}-qatorgami yoki ${n} tami? Ikki nuqta bilan yozing: «${n}: ${rest}».`;
   },
-  totals_unit: () => 'Umumiy uchun birlik bilan yozing: «jami 3500 kg» yoki «jami 12 kub».',
+  totals_unit: (seg, ref) =>
+    seg.refused!.left?.length ? totalsLeftWords(seg.refused!.left, ref) : 'Umumiy uchun birlik bilan yozing: «jami 3500 kg» yoki «jami 12 kub».',
 };
+
+/**
+ * The figures of a totals answer that no total took, each named with the way
+ * to write it (line-address.ts `TotalsLeft`, docs/AI-SORAYDI.md §3.1 T2): the
+ * kilos of «jami 507 kg 300 dona» were written under a 👍 and the count went
+ * nowhere. One sentence per reason, the seller's own words quoted; a row's
+ * figure is shown with a row's number the table really has.
+ */
+function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
+  const of = (why: TotalsLeft['why']) => left.filter((l) => l.why === why);
+  const quoted = (items: readonly TotalsLeft[]) => items.map((l) => `«${l.text}»`).join(', ');
+  const firstOpen = ref.open.find((t): t is { line: number } => 'line' in t);
+  const no = firstOpen?.line ?? ref.rows[0]?.no;
+  const onRow = (figure: string) => (no === undefined ? '' : ` Qatorniki bo‘lsa raqami bilan yozing: «${no}: ${figure}».`);
+  const out: string[] = [];
+  for (const unit of of('unit')) out.push(unitAskWords(unit.word ?? unit.text, unit.number, unit.near ?? null, 'total', 'jami '));
+  const bare = of('bare');
+  if (bare.length > 0) {
+    const n = bare[0]!.number;
+    out.push(`${quoted(bare)} — birligi yozilmagan: «jami ${n} kg» yoki «jami ${n} kub» deb yozing.`);
+  }
+  const netto = of('netto');
+  if (netto.length > 0) {
+    out.push(`${quoted(netto)} — umumiy og‘irlik brutto (qadoq bilan) yoziladi, netto umumiyga yozilmadi.${onRow(netto[0]!.figure)}`);
+  }
+  for (const [why, what] of [
+    ['weight', 'og‘irlik'],
+    ['volume', 'hajm'],
+  ] as const) {
+    const items = of(why);
+    if (items.length === 0) continue;
+    // The example is the seller's own figure, in his own unit («jami 2 tonna»).
+    out.push(
+      items.length > 1
+        ? `${quoted(items)} — ikki xil ${what}: bittasini yozing, masalan «jami ${items[0]!.figure}».`
+        : `${quoted(items)} — umumiyga yozilmadi: «jami ${items[0]!.figure}» deb qayta yozing.`,
+    );
+  }
+  const row = of('row');
+  if (row.length > 0) out.push(`${quoted(row)} — umumiyga yozilmaydi (umumiyda faqat og‘irlik va hajm).${onRow(row[0]!.figure)}`);
+  // One carton's or one piece's figure (§3.1 T4): no total — the example is a
+  // whole shipment's figure, never the seller's per-one one.
+  const perOne = of('per_one');
+  if (perOne.length > 0) {
+    out.push(`${quoted(perOne)} — bittasiniki, umumiy emas: umumiyini yozing, masalan «jami 3500 kg» yoki «jami 12 kub».`);
+  }
+  return out.join(' ');
+}
+
+/**
+ * A figure whose word is no unit, asked AS a unit (§3.1 T3, dg3-04): «5.9
+ * kubik» was «jadvalda bunday qator yo‘q», as if «kubik» were goods nobody
+ * had listed. `near` is the kilo or the cube the word most likely means
+ * (units.ts `nearUnit`) — a question, never a reading. `lead` opens the
+ * example the way the answer is addressed: «jami » for a total, «3: » for a
+ * row. A word that resembles nothing gets the units its place can take — a
+ * total's two, or the row answer's own list (`LINE_REFUSAL.unknown_unit`).
+ */
+function unitAskWords(word: string, number: string, near: UnitAsk['near'], where: 'total' | 'row', lead = ''): string {
+  if (near === 'm3') return `«${word}» — kubmi? «${lead}${number} kub» deb yozing.`;
+  if (near === 'kg') return `«${word}» — kgmi? «${lead}${number} kg» deb yozing.`;
+  // A lone «t» / «g» is a model's letter as often as a weight («5T», «128G») —
+  // asked, with the spelling the bot reads (docs/AI-SORAYDI.md §3.1 T14).
+  if (near === 'tonna') return `«${word}» — tonnami? «${lead}${number} tonna» deb yozing.`;
+  if (near === 'gr') return `«${word}» — grammi? «${lead}${number} gr» deb yozing.`;
+  if (where === 'total') return `«${word}» — bu birlikni bilmayman. Umumiy uchun kg yoki kubda yozing: «jami 3500 kg», «jami 12 kub».`;
+  return LINE_REFUSAL.unknown_unit(word);
+}
 
 /** «Qaysi qatorga?» — an answer the table cannot place, and a reply to a message that is not the table's. */
 const NO_ADDRESS = 'Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».';
@@ -949,7 +1069,9 @@ function planWrites(
       (before as Record<string, unknown>)[key] = g[key] ?? null;
     }
     if (opts.kept) before.tnvedCode = g.tnvedCode ?? null;
-    goods()[row.index] = { ...g, ...patch };
+    // A figure he typed is HIS on a row the bot computes (review JN-15, JB-1):
+    // marked so, and the packing's arithmetic re-runs over what he said.
+    goods()[row.index] = intake.answeredRow({ ...g, ...patch }, patch);
     // Keyed by the stored row's id when it has one, else by where the line
     // is placed NOW — an entry placed nowhere this reading (-1) is never
     // matched by index, so this answer cannot delete another line's kept
@@ -2610,7 +2732,11 @@ function undoEcho(
     for (const k of fields) {
       if (!keptCode(line, k, (line.patch as Record<string, unknown>)[k])) restore[k] = (line.before as Record<string, unknown>)[k];
     }
-    goods[at] = restore as typeof row;
+    // What the answer wrote is no longer his (review JN-15): a figure the
+    // bot had computed there is its own again, with its mark.
+    const restored: Record<string, unknown> = {};
+    for (const k of fields) if (!keptCode(line, k, (line.patch as Record<string, unknown>)[k])) restored[k] = restore[k];
+    goods[at] = tc.intake.unansweredRow(restore as typeof row, restored);
     if (entry) revert(entry, line, fields);
     for (const c of conflicts) {
       if (c.itemId === line.itemId && c.choice !== null && fields.includes(c.field)) c.choice = priorChoice(c);
@@ -2618,7 +2744,8 @@ function undoEcho(
     done.push(`${no}-qator «${rowLabel(line.name)}» — ${figures}`);
   }
 
-  let facts: IntakeState['facts'] = { ...state.facts, goods };
+  // An OLDER answer's figure that came back is still the seller's.
+  let facts: IntakeState['facts'] = { ...state.facts, goods: tc.intake.answersStated(goods, lineAnswers) };
   let totalsAnswer = state.totalsAnswer;
   let ambiguousTotals = state.ambiguousTotals;
   let routeAnswer = state.routeAnswer;

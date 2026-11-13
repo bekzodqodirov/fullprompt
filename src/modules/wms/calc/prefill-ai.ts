@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { logger } from '../../platform/logger';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 import type { ImportBazaRow } from '../customs/import-baza';
+import { answerFacts, listingNote } from '../tnved/service';
 
 /**
  * The model PICKS A ROW out of the customs file — it never states a price.
@@ -34,6 +35,15 @@ export interface PickRequest {
   seq: number;
   name: string;
   tnvedCode: string;
+  /**
+   * The row's note — what the reading saw on the picture, what the good is
+   * made of and for (docs/AI-SORAYDI.md §3.4 A12, PR-9). The grouping that
+   * coded the row reads it; the pick choosing between declarations of that
+   * code read the name alone, and «Стул офисный» is a chair of WHAT. Listed as
+   * the grouping lists it (`listingNote`). REQUIRED-nullable (#790): a caller
+   * that forgot would send a thinner listing in silence.
+   */
+  note: string | null;
   candidates: ImportBazaRow[];
 }
 
@@ -66,7 +76,41 @@ export interface PickOutcome {
   answers: PickAnswer[] | null;
   /** null = the model never answered (no key, a timeout, a network error). */
   usage: PickUsage | null;
+  /**
+   * WHY there are no answers, when the call was made and gave none (A12):
+   * `cut` — stopped at the size (`max_tokens`), `refused`, `unreadable` — it
+   * answered and the answer was not the schema, `no_answer` — a timeout, the
+   * network, an HTTP error. A cut answer used to read «baza yo‘q», silently,
+   * for rows that had candidates (PR-9); the pass now says the model did not
+   * answer them. Absent: the call answered, or was never made — no key,
+   * nothing to ask — which nothing needs to be told about.
+   */
+  failed?: PickFailure;
 }
+
+export type PickFailure = 'cut' | 'refused' | 'unreadable' | 'no_answer';
+
+/**
+ * The room the pick's answer gets — and the thinking before it, counted
+ * INSIDE `max_tokens` (docs/AI-SORAYDI.md §3.4 A12). At 4096 the analyst
+ * model's thinking left the JSON no room on a long list: the answer stopped
+ * mid-object, `JSON.parse` threw, and the pass printed «baza yo‘q — VED xodimi
+ * qo‘yadi» for rows that had declarations to choose from (PR-9) — the trap the
+ * reading met and fixed (`INTAKE_MAX_TOKENS`). Not streamed: the call's own
+ * deadline bounds the whole answer, as the grouping's does.
+ */
+export const PICK_MAX_TOKENS = 16_000;
+
+/**
+ * How hard the pick thinks — SET, never the model's default (A12): the
+ * default moves with the model. Choosing which of a few real declarations
+ * describes the good is a judgement the VED re-reads (the reason is on the
+ * row), not a derivation; the reading and the grouping think at this level.
+ */
+export const PICK_EFFORT = 'medium' as const;
+
+/** The stops that cut an answer at a SIZE — no JSON is whole after them. */
+const CUT_STOPS: ReadonlySet<string> = new Set<Anthropic.StopReason>(['max_tokens', 'model_context_window_exceeded']);
 
 const SYSTEM = `Ты — помощник декларанта карго-компании GSR LOGISTICS.
 
@@ -74,6 +118,8 @@ const SYSTEM = `Ты — помощник декларанта карго-ком
 таможенных деклараций с тем же кодом или из той же товарной позиции; у каждой
 строки свой код — выбирай строку, чей код подходит товару. Твоя задача —
 выбрать ОДНУ строку, которая описывает тот же товар, или не выбрать ни одной.
+«прим.» после товара — что о нём известно: материал, назначение, что видно
+на фото. Это подсказка, о каком товаре речь.
 
 Ты НЕ называешь цену и НЕ придумываешь её. Ты выбираешь НОМЕР строки.
 Цену возьмёт система из выбранной строки.
@@ -118,7 +164,9 @@ export async function pickImportRows(
             (c.tnvedCode !== r.tnvedCode ? ` (код ${c.tnvedCode})` : ''),
         )
         .join('\n');
-      return `Строка ${r.seq}: «${r.name}» (код ${r.tnvedCode})\n${lines}`;
+      // The row's note, as the grouping that coded it read it (A12).
+      const note = listingNote(r.note);
+      return `Строка ${r.seq}: «${r.name}» (код ${r.tnvedCode})${note ? ` — ${note}` : ''}\n${lines}`;
     })
     .join('\n\n');
 
@@ -128,9 +176,10 @@ export async function pickImportRows(
     const client = new Anthropic({ timeout: opts.timeoutMs ?? 60_000, maxRetries: 1 });
     const response = await client.messages.create({
       model: ANALYST_MODEL,
-      max_tokens: 4096,
+      max_tokens: PICK_MAX_TOKENS,
       system: SYSTEM,
       output_config: {
+        effort: PICK_EFFORT,
         format: {
           type: 'json_schema',
           schema: {
@@ -161,10 +210,12 @@ export async function pickImportRows(
     // every model call was a person pressing a button; the pass makes
     // them automatic, so what it costs has to be readable in the log or
     // the owner cannot answer whether it is affordable.
-    logger.info(
-      { in: response.usage?.input_tokens, out: response.usage?.output_tokens },
-      '[calc-prefill pick] model tokens',
-    );
+    //
+    // The line carries the thinking and why the model stopped too (A12), and
+    // a refusal's category (`stop_details`): a pick that came back empty is
+    // otherwise one shape in the log whatever stopped it.
+    const facts = { ...answerFacts(response), rows: asking.length };
+    logger.info(facts, '[calc-prefill pick] model tokens');
     // …and told to the caller, which is the one that knows WHICH request to
     // bill — beside the answers (`PickOutcome`), never inside them: the
     // answer's shape is law 1's own fence («seq, candidate, reason» and
@@ -174,7 +225,16 @@ export async function pickImportRows(
       inputTokens: response.usage?.input_tokens ?? 0,
       outputTokens: response.usage?.output_tokens ?? 0,
     };
-    if (response.stop_reason === 'refusal') return { answers: null, usage };
+    if (response.stop_reason === 'refusal') {
+      logger.warn(facts, '[calc-prefill pick] refused');
+      return { answers: null, usage, failed: 'refused' };
+    }
+    // A cut answer is NAMED (A12): half a JSON document, parsed, reads as
+    // «unreadable» below — or, before this round, as nothing at all.
+    if (response.stop_reason !== null && CUT_STOPS.has(response.stop_reason)) {
+      logger.warn(facts, '[calc-prefill pick] answer cut at max_tokens');
+      return { answers: null, usage, failed: 'cut' };
+    }
     const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = picksSchema.parse(JSON.parse(raw));
 
@@ -198,8 +258,11 @@ export async function pickImportRows(
     }
     return { answers: out, usage };
   } catch (err) {
-    // Never fatal: the bazas stay empty and the VED fills them.
+    // Never fatal: the bazas stay empty and the VED fills them — and the
+    // reply says the model did not answer them (A12). An answer that came
+    // back and was not the schema is `unreadable`; no answer at all — a
+    // timeout, the network, an HTTP error — is `no_answer`.
     logger.warn({ err }, 'calc prefill pick failed');
-    return { answers: null, usage };
+    return { answers: null, usage, failed: usage ? 'unreadable' : 'no_answer' };
   }
 }

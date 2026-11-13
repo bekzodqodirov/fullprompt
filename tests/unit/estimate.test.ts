@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MISS_WORDS,
   TAXMINIY_BLOCK_WORDS,
+  measureMissesOf,
   refusedMeasureWords,
   UNIT_BASIS,
   bandKeyOf,
@@ -479,18 +480,68 @@ describe('R2 late pass — a miss says what the file has', () => {
 
 /**
  * `refused_measure` is the seller's fact, so its tail is the one tail rule's
- * (`tailWords`, docs/IKKI-ESHIK.md §3.5): on a bot-door request the VED asks
- * the seller, and a request from before the doors keeps today's words — which
- * ARE `TAXMINIY_BLOCK_WORDS.refused_measure`, the spec's own above.
+ * (`tailWords`, docs/IKKI-ESHIK.md §3.5): where nobody asks the seller
+ * (`noAsk` — the plain door; the AI door's copy for a seller nobody reached)
+ * the VED asks him, and everywhere else — the AI door's answer since
+ * docs/AI-SORAYDI.md §3.4 A1, a request from before the doors — today's
+ * words, which ARE `TAXMINIY_BLOCK_WORDS.refused_measure`, the spec's own above.
  */
 describe('refused_measure by door (§3.5)', () => {
-  it('a door request: «— VED xodimi sizdan so‘raydi» in the chat, «— VED xodimi so‘raydi» on the lenta', () => {
-    expect(refusedMeasureWords('chat', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi sizdan so‘raydi');
-    expect(refusedMeasureWords('lenta', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi so‘raydi');
+  it('nobody asks the seller: «— VED xodimi sizdan so‘raydi» in the chat, «— VED xodimi so‘raydi» on the lenta', () => {
+    expect(refusedMeasureWords('chat', true, [])).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi sizdan so‘raydi');
+    expect(refusedMeasureWords('lenta', true, [])).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi so‘raydi');
   });
 
-  it('a request from before the doors: exactly today’s words', () => {
-    expect(refusedMeasureWords('chat', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.chat);
-    expect(refusedMeasureWords('lenta', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.lenta);
+  it('the AI door’s answer and a request from before the doors: exactly today’s words (A1)', () => {
+    expect(refusedMeasureWords('chat', false, [])).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.chat);
+    expect(refusedMeasureWords('lenta', false, [])).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.lenta);
+  });
+});
+
+/**
+ * The Taxminiy block names the missing figure from the refusing rows' OWN
+ * needs (docs/AI-SORAYDI.md §3.4 A9 — PA-11): «qatorda soni yoki og‘irligi
+ * yo‘q» was said about a jacket that HAS its 120 kg and lacks its count,
+ * sending the seller for a figure he had already given.
+ */
+describe('refused_measure names the rows and the figure (A9)', () => {
+  // 20 %, at least $3 a piece: a row stating only its kilos is refused on the count.
+  const floor = law({ seq: 1, label: 'Kurtka', dutyPct: 20, dutyMode: 'max', dutyUnit: 'dona', dutySpecific: 3 });
+  const kurtka = group('K', floor, [item('k3', 3, { label: 'Kurtka', weightKg: 120, bazaUsd: 5, bazaBasis: 'kg' })]);
+  // A per-kg baza on a row stating only its count: refused on the weight.
+  const sumka = group('S', law({ seq: 2, label: 'Sumka' }), [item('s5', 5, { label: 'Sumka', weightKg: null, quantity: 40, bazaUsd: 2, bazaBasis: 'kg' })]);
+  // No baza at all: the VED's, not a missing measure.
+  const stol = group('T', law({ seq: 3, label: 'Stol' }), [item('t1', 1, { label: 'Stol', bazaUsd: null })]);
+
+  it('the premise: the engine stopped on row 3’s count and row 5’s weight', () => {
+    expect(kurtka.customs).toMatchObject({ ok: false, reason: 'measure_missing', itemSeq: 3, unit: 'dona', half: 'duty' });
+    expect(sumka.customs).toMatchObject({ ok: false, reason: 'measure_missing', itemSeq: 5, unit: 'kg', half: 'baza' });
+  });
+
+  it('measureMissesOf: each refused group’s own row and unit, in row order — a baza nobody has is not a measure', () => {
+    const out = estimateCustoms({ groups: [sumka, stol, kurtka], ungroupedCount: 0, ...FEE, medians: new Map() });
+    expect(out.taxminiyBlock).toBe('refused_measure');
+    expect(measureMissesOf(out)).toEqual([
+      { seq: 3, unit: 'dona' },
+      { seq: 5, unit: 'kg' },
+    ]);
+  });
+
+  it('the words: «⚠️ 3-qator: soni (dona); 5-qator: sof og‘irligi (kg)», then the door’s own tail', () => {
+    const misses = [
+      { seq: 3, unit: 'dona' as const },
+      { seq: 5, unit: 'kg' as const },
+    ];
+    expect(refusedMeasureWords('chat', false, misses)).toBe(
+      '⚠️ 3-qator: soni (dona); 5-qator: sof og‘irligi (kg) — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    );
+    expect(refusedMeasureWords('lenta', true, misses)).toBe('⚠️ 3-qator: soni (dona); 5-qator: sof og‘irligi (kg) — VED xodimi so‘raydi');
+    // Four rows: three named, then «…».
+    const four = [1, 2, 3, 4].map((seq) => ({ seq, unit: 'dona' as const }));
+    expect(refusedMeasureWords('chat', true, four)).toBe(
+      '⚠️ 1-qator: soni (dona); 2-qator: soni (dona); 3-qator: soni (dona) … — VED xodimi sizdan so‘raydi',
+    );
+    // A 1000-dona floor is asked as pieces, the kernel's own word.
+    expect(refusedMeasureWords('chat', true, [{ seq: 7, unit: '1000_dona' }])).toBe('⚠️ 7-qator: soni (dona) — VED xodimi sizdan so‘raydi');
   });
 });

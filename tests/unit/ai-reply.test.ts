@@ -6,13 +6,22 @@ import {
   pickLeftOf,
   LAW_ASKS_NAMED,
   ROAD_STALE_LINE,
+  SELLER_ASKS_HEAD,
+  SELLER_WORDS_HEAD,
+  WHAT_ANSWER_LINE,
+  AI_QUESTION_ANSWER_LINE,
+  sellerAsksBlock,
+  sellerAsksLentaLine,
+  lineNumber,
+  CODING_FAILED_LINE,
   type AiVedEstimate,
   type AiVedFreight,
   type AiVedLine,
   type AiVedReplyInput,
 } from '@/modules/wms/calc/ai-reply';
 import { AI_REPLY_HEAD, MACHINE_REPLY_HEADS, RERUN_WORD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
-import type { LawAsk } from '@/modules/wms/calc/law-asks';
+import type { LawAsk, SellerAsk } from '@/modules/wms/calc/law-asks';
+import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 
 /**
  * What the seller reads in Telegram — the whole of the round's promise, and
@@ -23,6 +32,8 @@ import type { LawAsk } from '@/modules/wms/calc/law-asks';
  * to a customer.
  */
 const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
+  // Row 1 of the request unless a case numbers it (docs/AI-SORAYDI.md §3.4 A3).
+  seqs: [1],
   label: 'Monitor 24"',
   code: '8528520000',
   aiCode: false,
@@ -61,6 +72,8 @@ const base: AiVedReplyInput = {
   cardLabel: 'B-000067',
   lines: [line()],
   ungrouped: [],
+  // The coding call answered (A6's failure has its own cases below).
+  proposeFailed: false,
   fee: { bhm: 5, usd: 164.8 },
   totalUsd: 661.76,
   feeRefusal: null,
@@ -74,6 +87,9 @@ const base: AiVedReplyInput = {
   // nothing asked — the 2.8 b block and the re-run heading have their own
   // cases at the end of this file.
   asks: null,
+  // The AI door's own list (docs/AI-SORAYDI.md §3.4 A2) — its cases are at
+  // the end of this file.
+  sellerAsks: null,
   pass: 'landing',
   audience: 'chat',
   // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.
@@ -84,6 +100,8 @@ const base: AiVedReplyInput = {
 /** An estimated group's line — 📊 beside a figure from the medians. */
 const estimatedLine = (over: Partial<AiVedLine> = {}): AiVedLine =>
   line({
+    // Rows 2 and 3 of the request, one code — the line opens «2-3.» (A3).
+    seqs: [2, 3],
     label: 'Shim, Ko‘ylak',
     code: '6203420000',
     measureText: null,
@@ -205,11 +223,18 @@ describe('the AI-VED reply', () => {
     expect(text).not.toContain('$0.00');
   });
 
-  it('uncoded items are NAMED, and Taxminiy waits for their code', () => {
+  it('uncoded items are NAMED in their place by their own number, and Taxminiy waits for their code', () => {
+    // Re-anchored for docs/AI-SORAYDI.md §3.4 A3 (PA-3): the old pin read
+    // «⚠️ Kod topilmadi: Sumka, Choynak» UNDER the list — a list of names no
+    // «2: …» could reach. Each uncoded row now stands on its own line by its
+    // seq, in row order among the priced lines, and says who codes it.
     const text = aiVedReplyText({
       ...base,
       totalUsd: null,
-      ungrouped: ['Sumka', 'Choynak'],
+      ungrouped: [
+        { seq: 3, name: 'Choynak' },
+        { seq: 2, name: 'Sumka' },
+      ],
       estimate: twoTotals({
         rows: 3,
         exactRows: 1,
@@ -219,7 +244,17 @@ describe('the AI-VED reply', () => {
         taxminiyBlock: 'kodsiz qator bor (VED kod qo‘yadi)',
       }),
     });
-    expect(text).toContain('⚠️ Kod topilmadi: Sumka, Choynak');
+    // Row 1 is the priced Monitor (`line()`), then rows 2 and 3 in order —
+    // whatever order they were handed in.
+    expect(text).toContain(
+      [
+        '1. Monitor 24" · 8528520000 · 100 dona × $20/dona 🧠',
+        '   boj 10% · QQS 12% → $496.96',
+        '2. Sumka — kod yo‘q — VED xodimi qo‘yadi',
+        '3. Choynak — kod yo‘q — VED xodimi qo‘yadi',
+      ].join('\n'),
+    );
+    expect(text).not.toContain('Kod topilmadi');
     expect(text).toContain('  Aniq: $496.96 (3 tadan 1 qator, yig‘imsiz)');
     expect(text).toContain('  Taxminiy: hisoblab bo‘lmadi — kodsiz qator bor (VED kod qo‘yadi)');
   });
@@ -229,7 +264,7 @@ describe('the AI-VED reply', () => {
     // carry it, on a podklyuch job too (no JAMI over half a declaration).
     const text = aiVedReplyText({
       ...base,
-      ungrouped: ['Sumka'],
+      ungrouped: [{ seq: 2, name: 'Sumka' }],
       freight: road({ listUsd: 500, routeLabel: 'Xitoy → O‘zbekiston', bandText: '90 kg/m³' }),
       estimate: twoTotals({
         rows: 2,
@@ -306,7 +341,7 @@ describe('the AI-VED reply', () => {
 
   it('a long list collapses with a count, never in silence', () => {
     const many = Array.from({ length: MAX_REPLY_LINES + 7 }, (_, i) =>
-      line({ label: `Tovar ${i + 1}` }),
+      line({ seqs: [i + 1], label: `Tovar ${i + 1}` }),
     );
     const text = aiVedReplyText({ ...base, lines: many });
     expect(text).toContain('… va yana 7 ta qator');
@@ -398,7 +433,7 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
 
   it('an estimated group: 📊 beside the measure, «≈» and the declarations on the figure', () => {
     const text = aiVedReplyText({ ...estimated, estimate: twoTotals() });
-    expect(text).toContain('2. Shim, Ko‘ylak · 6203420000 · 120 kg × $3.8/kg 📊');
+    expect(text).toContain('2-3. Shim, Ko‘ylak · 6203420000 · 120 kg × $3.8/kg 📊');
     expect(text).toContain(
       '   boj 10% · qo‘shimcha boj 10% (sertifikat yo‘q) · QQS 12% → ≈ $142.30 (taxminiy, 23 ta deklaratsiyadan)',
     );
@@ -416,7 +451,7 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
       ],
       estimate: twoTotals(),
     });
-    expect(text).toContain('1. Shim, Ko‘ylak · 6203420000 🧠 📊');
+    expect(text).toContain('2-3. Shim, Ko‘ylak · 6203420000 🧠 📊');
     expect(text).toContain('(taxminiy: 23 va 8 ta deklaratsiyadan · eski fayl, 2025-12-31 gacha)');
     expect(text).toContain('🧠 avvalgi muhrdan · 📊 deklaratsiyalar medianasi (taxminiy)');
     const four = aiVedReplyText({
@@ -716,7 +751,7 @@ describe('R2 late pass — the reply says what it is', () => {
   });
 
   it('the pick’s confessions are said under the totals, in one line (review regression-10)', () => {
-    const left = { capped: 12, refused: 2, overtaken: 0, timedOut: 1, skipped: false };
+    const left = { capped: 12, refused: 2, overtaken: 0, timedOut: 1, unanswered: 0, skipped: false };
     const text = aiVedReplyText({ ...base, pickLeft: left });
     expect(text).toContain(
       '⚠️ AI bazasini qo‘ymadi: 12 ta qator ko‘rilmadi (juda ko‘p), 2 tasida tanlangan deklaratsiya o‘lchovi mos kelmadi, 1 tasini bojxona faylidan o‘qib ulgurilmadi — VED to‘ldiradi',
@@ -730,13 +765,27 @@ describe('R2 late pass — the reply says what it is', () => {
   });
 
   it('a row the deadline left unread mid-pick is said with the reads that ran out of time (the merge’s seam)', () => {
-    const left = pickLeftOf({ capped: 0, refused: 0, overtaken: 0, timedOut: 1, pastDeadline: 2 });
+    const left = pickLeftOf({ capped: 0, refused: 0, overtaken: 0, timedOut: 1, pastDeadline: 2, unanswered: 0 });
     expect(aiVedReplyText({ ...base, pickLeft: left })).toContain(
       '⚠️ AI bazasini qo‘ymadi: 3 tasini bojxona faylidan o‘qib ulgurilmadi — VED to‘ldiradi',
     );
     // The pick DID run: the «vaqt yetmadi — tanlamadi» words are the
     // skipped pick's alone.
     expect(left.skipped).toBe(false);
+  });
+
+  it('a pick call that gave no answer says so in A6’s words — never «baza yo‘q» alone (docs/AI-SORAYDI.md §3.4 A12, PR-9)', () => {
+    // Four rows were asked and the call was cut at max_tokens: the four rows
+    // had declarations to choose from, and the model never chose.
+    const left = pickLeftOf({ capped: 0, refused: 0, overtaken: 0, timedOut: 0, pastDeadline: 0, unanswered: 4 });
+    expect(left.unanswered).toBe(4);
+    expect(aiVedReplyText({ ...base, pickLeft: left })).toContain('⚠️ AI bazasini qo‘ymadi: 4 tasiga javob bermadi — VED to‘ldiradi');
+    // …beside the other confessions, after the skipped pick's words and
+    // before the capped rows', in the line's one order.
+    const both = pickLeftOf({ capped: 2, refused: 0, overtaken: 0, timedOut: 0, pastDeadline: 0, unanswered: 4 });
+    expect(aiVedReplyText({ ...base, pickLeft: both })).toContain(
+      '⚠️ AI bazasini qo‘ymadi: 4 tasiga javob bermadi, 2 ta qator ko‘rilmadi (juda ko‘p) — VED to‘ldiradi',
+    );
   });
 
   it('a VED zone refusal still names the seller’s own missing kilos, on its own line (review PF-5)', () => {
@@ -858,16 +907,19 @@ describe('the 2.8 b block and the re-run heading (round 3)', () => {
 });
 
 /**
- * The two bot doors (docs/IKKI-ESHIK.md §3.5, his 4a and 5a, 2026-11-08): the
- * answer after «Tasdiqlash» ASKS NOTHING — «Tasdiqlash» was the last question,
- * and what is still missing is the VED's to get. `noAsk` is the one switch:
- * no ❓ block, a seller's fact reads «— VED xodimi sizdan so‘raydi», the VED's
- * own gaps keep their words, the JAMI that cannot be made is the VED's, and
- * the lenta names the same gaps under «⚠️ VED uchun:». The words are the
- * spec's, typed from it. A request from before the doors (NULL, `noAsk`
- * false) keeps every word above this block — the cases above are its pins.
+ * Where NOBODY asks the seller (docs/IKKI-ESHIK.md §3.5, his 4a and 5a,
+ * 2026-11-08): `noAsk` is the one switch — no ❓ block, a seller's fact reads
+ * «— VED xodimi sizdan so‘raydi», the VED's own gaps keep their words, the
+ * JAMI that cannot be made is the VED's, and the lenta names the same gaps
+ * under «⚠️ VED uchun:». The words are the spec's, typed from it. It was
+ * both bot doors' answer; since docs/AI-SORAYDI.md §3.4 A1 (his 4a of
+ * 2026-11-11, review JR-13) it is the plain door's — and the AI door's card
+ * copy for a seller nobody reached (`lentaUnasked`). The AI door's answer
+ * asks again (the block after this one); a request from before the doors
+ * (NULL, `noAsk` false) keeps every word above this block — the cases above
+ * are its pins.
  */
-describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
+describe('where nobody asks the seller (`noAsk`, §3.5)', () => {
   const ask = (seq: number, name: string, needs: LawAsk['needs']): LawAsk => ({ itemId: `i${seq}`, seq, name, needs });
   const asks: LawAsk[] = [
     ask(2, 'Krossovka', [{ unit: 'juft', why: 'duty', present: false, rate: 3 }]),
@@ -882,7 +934,7 @@ describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
   const vedLine = line({ label: 'Sumka', customsUsd: null, refusal: 'baza yo‘q', refusalTail: 'ved' });
   const ASK_WORDS = ['❓', 'mijozdan so‘rab', '«➕ Shu so‘rovga qo‘shish» bilan yuboring', 'kartadagi lentaga yozing', 'reply qilib yozing', 'to‘ldiring'];
 
-  it('the ❓ block is gone — the rows the law wants are not asked of the seller (his 5a; the 2.8 b ask superseded)', () => {
+  it('the ❓ block is gone — the rows the law wants are not asked of the seller (the plain door, his 2a/3a)', () => {
     const chat = aiVedReplyText({ ...door, asks });
     expect(chat).not.toContain('❓');
     expect(chat).not.toContain('Hisob to‘liq bo‘lishi uchun');
@@ -936,7 +988,7 @@ describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
     );
   });
 
-  it('the figure still goes out — the AI door’s answer is the estimate he pressed for, and its caveat', () => {
+  it('the figure still goes out — the estimate and its caveat, asked or not', () => {
     const chat = aiVedReplyText(door);
     expect(chat).toContain('Rastamojka jami: ≈ $661.76');
     expect(chat).toContain('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
@@ -966,5 +1018,350 @@ describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
     // Not on a code the file or a memory stated — and the NULL door marks it too.
     expect(aiVedReplyText(door)).not.toContain('(AI taklifi)');
     expect(aiVedReplyText({ ...base, lines: [ai] })).toContain('8528520000 (AI taklifi)');
+  });
+});
+
+/**
+ * The AI door ASKS AGAIN after «Tasdiqlash» (docs/AI-SORAYDI.md §3.4 A1-A2,
+ * his 4a of 2026-11-11: «yetishmayotgan narsa bo‘lsa … so‘rasin va
+ * to‘ldirsin», reversing IKKI-ESHIK's 5a for this door; review JR-13 — one
+ * list per door, JS-25 — the block's cap on the UNION). Everything the
+ * seller can give, in the NULL door's tails, never «VED xodimi sizdan
+ * so‘raydi» about a figure only he has. The words are the spec's and the
+ * judge's, typed from them.
+ */
+describe('the AI door asks again (A1, A2)', () => {
+  const ask = (seq: number | null, kind: SellerAsk['kind'], text: string, needs: SellerAsk['needs'] = []): SellerAsk => ({
+    itemId: seq === null ? null : `i${seq}`,
+    seq,
+    kind,
+    text,
+    needs,
+  });
+  const LAW = ask(1, 'law', '1-qator «Kurtka»: soni (dona) — boj kamida $3/dona', ['dona']);
+  const MEASURE = ask(2, 'measure', '2-qator «Ryukzak»: soni (dona) yoki sof og‘irligi (kg)', ['dona', 'kg']);
+  const what = (seq: number) => ask(seq, 'what', `${seq}-qator «Zapchast ${seq}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`);
+  const AI = ask(5, 'ai', '5-qator «Stul»: Stul nimadan qilingan?');
+  const BRUTTO = ask(null, 'total', 'umumiy brutto og‘irligi (kg, qadoq bilan) — yo‘lkira shunga bog‘liq', ['kg']);
+  const PLUS = '— yoki «➕ Shu so‘rovga qo‘shish» ni bosing.';
+  const aiDoor: AiVedReplyInput = { ...base, asks: null, sellerAsks: [LAW, MEASURE, what(3), AI, BRUTTO] };
+
+  it('the block: its own head, a row with no figure FIRST, then the law’s, «what», the AI’s, the totals — and how to answer', () => {
+    expect(sellerAsksBlock(aiDoor.sellerAsks!)).toEqual([
+      '❓ AI so‘raydi — javob yozsangiz qayta hisoblaydi:',
+      '· 2-qator «Ryukzak»: soni (dona) yoki sof og‘irligi (kg)',
+      '· 1-qator «Kurtka»: soni (dona) — boj kamida $3/dona',
+      '· 3-qator «Zapchast 3»: bu nima — nimadan qilingan, nima uchun ishlatiladi?',
+      '· 5-qator «Stul»: Stul nimadan qilingan?',
+      '· umumiy brutto og‘irligi (kg, qadoq bilan) — yo‘lkira shunga bog‘liq',
+      // The first two FIGURE asks in that order: row 2's count, row 1's count.
+      `✍️ Shu xabarga reply qilib yozing: «2: 300 dona; 1: 300 dona» ${PLUS}`,
+      // Re-anchored (review ask-break-1): row 3's words have no reply form in
+      // this release — they go to the card's lenta, and the VED codes it.
+      '📝 Nima tovar ekanini (nimadan, nima uchun) kartadagi lentaga yozing — kodni VED xodimi qo‘yadi.',
+    ]);
+  });
+
+  it('the chat carries the block; the lenta says who was asked — never «VED uchun», never the law-only block', () => {
+    const chat = aiVedReplyText(aiDoor);
+    for (const l of sellerAsksBlock(aiDoor.sellerAsks!)) expect(chat).toContain(l);
+    expect(chat).not.toContain('Hisob to‘liq bo‘lishi uchun');
+    const lenta = aiVedReplyText({ ...aiDoor, link: null, audience: 'lenta' }).split('\n');
+    // Rows 1, 2, 3, 5 asked (one run 1-3, then 5), and the brutto.
+    expect(lenta[1]).toBe('❓ Sotuvchidan so‘raldi: 1-3, 5-qator; umumiy brutto.');
+    expect(lenta.join('\n')).not.toContain('VED uchun');
+    expect(lenta.join('\n')).not.toContain(SELLER_ASKS_HEAD);
+  });
+
+  it('the AI door’s list REPLACES the law’s: a law-only `asks` beside it is not drawn', () => {
+    const lawOnly: LawAsk[] = [{ itemId: 'i9', seq: 9, name: 'Boshqa', needs: [{ unit: 'juft', why: 'duty', present: false, rate: 3 }] }];
+    const chat = aiVedReplyText({ ...aiDoor, asks: lawOnly });
+    expect(chat).not.toContain('9-qator');
+    // Nothing owed on the AI door: no block at all — and no fallback to the law's.
+    expect(aiVedReplyText({ ...aiDoor, asks: lawOnly, sellerAsks: [] })).not.toContain('❓');
+  });
+
+  it('a seller’s fact keeps the NULL door’s tail — «mijozdan so‘rab, «➕» bilan yuboring», never «VED xodimi sizdan so‘raydi»', () => {
+    const sellerLine = line({ customsUsd: null, refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona', refusalTail: 'seller' });
+    const chat = aiVedReplyText({ ...aiDoor, lines: [sellerLine], totalUsd: null, freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' } });
+    expect(chat).toContain('kamida $3/dona — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    expect(chat).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    expect(chat).toContain('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+    expect(chat).not.toContain('sizdan so‘raydi');
+  });
+
+  it('`noAsk` wins: the card copy for a seller nobody reached draws no block even when handed one', () => {
+    const quiet = aiVedReplyText({ ...aiDoor, noAsk: true });
+    expect(quiet).not.toContain('❓');
+    expect(quiet).not.toContain('reply qilib');
+  });
+
+  it('more than three uncoded rows fold into ONE line, by their numbers (review JS-25)', () => {
+    // Rows 2, 5, 6, 7, 9 → «2, 5-7, 9».
+    const block = sellerAsksBlock([2, 5, 6, 7, 9].map(what));
+    expect(block).toEqual([
+      // Re-anchored (review ask-break-1, ask-spec-1): words only — no «javob
+      // yozsangiz qayta hisoblaydi» (nothing re-runs on words in this
+      // release), no words example (the add table refuses it «name_mismatch»),
+      // and where the words do go.
+      '❓ AI so‘raydi:',
+      '· 2, 5-7, 9-qator: nima tovar ekanini yozing (nimadan, nima uchun)',
+      '📝 Nima tovar ekanini (nimadan, nima uchun) kartadagi lentaga yozing — kodni VED xodimi qo‘yadi.',
+    ]);
+    // Three stay three lines.
+    expect(sellerAsksBlock([2, 5, 6].map(what)).filter((l) => l.startsWith('· '))).toHaveLength(3);
+  });
+
+  it('the cap of 8 is on the UNION, in rank order — the rest counted «… yana N ta — «➕» jadvalida»', () => {
+    const measures = Array.from({ length: 10 }, (_, k) => ask(k + 1, 'measure', `${k + 1}-qator «Tovar ${k + 1}»: soni (dona) yoki sof og‘irligi (kg)`, ['dona', 'kg']));
+    // 10 measures, 2 whats and the brutto: the 8 first measures named;
+    // 2 measures + 2 whats + the brutto = 5 counted.
+    const block = sellerAsksBlock([...measures, what(11), what(12), BRUTTO]);
+    expect(block.filter((l) => /^· \d+-qator/.test(l))).toHaveLength(LAW_ASKS_NAMED);
+    // The count ends the asks; the ✍️ line and the words' line follow it.
+    expect(block.at(-3)).toBe('· … yana 5 ta — «➕» jadvalida');
+    // With five whats the fold is ONE entry standing for five: 7 + 1 = 8, none counted.
+    const folded = sellerAsksBlock([...measures.slice(0, 7), ...[11, 12, 13, 14, 15].map(what)]);
+    expect(folded).toContain('· 11-15-qator: nima tovar ekanini yozing (nimadan, nima uchun)');
+    expect(folded.some((l) => l.includes('yana'))).toBe(false);
+  });
+
+  it('a total’s example is the add table’s own «jami …»', () => {
+    expect(sellerAsksBlock([BRUTTO]).at(-1)).toBe(`✍️ Shu xabarga reply qilib yozing: «jami 3500 kg» ${PLUS}`);
+  });
+
+  /**
+   * Review ask-break-1 / ask-spec-1: the block told the seller to reply
+   * «2: metall, tormoz kolodkasi», and the add table that reply opens (stage
+   * `review`, calc-amend.ts `openAdd`) refused it «name_mismatch» — words on a
+   * stored row are A5, release 2. So every example the block teaches is fed
+   * to the table's own reader over the rows it names, and none may be
+   * refused; and a block that asks only words teaches no reply at all.
+   */
+  it('every ✍️ example the block teaches is an answer the add table takes — and words get none', () => {
+    // The table the reply opens: rows 1-3 as the asks name them — row 1 owes
+    // the law's count, row 2 a count or a weight, row 3 words only (no figure
+    // owed) — plus the brutto the road needs.
+    const table: TableRef = {
+      rows: [
+        { no: 1, index: 0, seq: 1, name: 'Kurtka', needs: ['dona'] },
+        { no: 2, index: 1, seq: 2, name: 'Ryukzak', needs: ['dona', 'kg'] },
+        { no: 3, index: 2, seq: 3, name: 'Zapchast 3', needs: [] },
+      ],
+      open: [{ line: 1 }, { line: 2 }, { totals: 'weightKg' }],
+      preferred: [{ line: 1 }, { line: 2 }],
+      stage: 'review',
+    };
+    const blocks = [
+      sellerAsksBlock([LAW, MEASURE, what(3), BRUTTO]),
+      sellerAsksBlock([what(3)]),
+      sellerAsksBlock([BRUTTO]),
+      sellerAsksBlock([MEASURE, AI]),
+    ];
+    const examples = blocks
+      .flat()
+      .filter((l) => l.startsWith('✍️'))
+      .flatMap((l) => /«([^»]*)»/.exec(l)![1]!.split('; '));
+    for (const e of examples) {
+      const { segments } = parseTableAnswer(e, table);
+      expect(segments.length, e).toBeGreaterThan(0);
+      for (const seg of segments) expect(seg.refused, e).toBeNull();
+    }
+    // Typed from the asks, in ASK_RANK's order and at most two a block: the
+    // first block's row 2 (no figure ranks first) and row 1 — its brutto is
+    // the third figure ask and not shown; the words-only block none; the
+    // brutto's own «jami 3500 kg»; row 2's «300 dona» beside the AI's
+    // question. Never row 3's words.
+    expect(examples).toEqual(['2: 300 dona', '1: 300 dona', 'jami 3500 kg', '2: 300 dona']);
+    // A words-only block: no reply form, no promise of a re-run, and where the
+    // words go instead — the reading's own question likewise.
+    const words = sellerAsksBlock([what(3)]);
+    expect(words[0]).toBe(SELLER_WORDS_HEAD);
+    expect(words.some((l) => l.includes('reply qilib'))).toBe(false);
+    expect(words.at(-1)).toBe(WHAT_ANSWER_LINE);
+    expect(sellerAsksBlock([AI])).toEqual([SELLER_WORDS_HEAD, `· ${AI.text}`, AI_QUESTION_ANSWER_LINE]);
+    // A block that asks a figure keeps the judge's head (JS-25).
+    expect(sellerAsksBlock([LAW, what(3)])[0]).toBe(SELLER_ASKS_HEAD);
+  });
+
+  it('the lenta line: the rows by run, then the totals', () => {
+    expect(sellerAsksLentaLine([what(4), MEASURE, BRUTTO, ask(null, 'total', 'umumiy hajmi (kub) — yo‘lkira shunga bog‘liq', ['m3'])])).toBe(
+      '❓ Sotuvchidan so‘raldi: 2, 4-qator; umumiy brutto; umumiy hajm.',
+    );
+  });
+
+  it('FORTY uncoded rows: the JAMI line, the caveat and the ➕ line all survive the 4096 fit (review JS-25)', () => {
+    const names = Array.from({ length: 40 }, (_, k) => `Zapchast avtomobil uchun, model XJ-${200 + k}, metall va plastikdan, katta`);
+    const rows = names.map((n, k) => ({ seq: k + 1, name: n }));
+    // Each uncoded row also states no figure — 80 asks, every one ~120 characters.
+    const asks: SellerAsk[] = rows.flatMap((r) => [
+      ask(r.seq, 'measure', `${r.seq}-qator «${r.name}»: soni (dona) yoki sof og‘irligi (kg)`, ['dona', 'kg']),
+      ask(r.seq, 'what', `${r.seq}-qator «${r.name}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`),
+    ]);
+    const text = aiVedReplyText({
+      ...aiDoor,
+      lines: [],
+      ungrouped: rows,
+      totalUsd: null,
+      fee: null,
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+      sellerAsks: [...asks, BRUTTO],
+    });
+    expect(text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
+    expect(text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
+    expect(text).toContain('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+    expect(text).toContain('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
+    expect(text).toContain(PLUS);
+    // 8 measures named; 32 measures + the folded 40 whats + the brutto = 73 counted.
+    expect(text).toContain('· … yana 73 ta — «➕» jadvalida');
+  });
+});
+
+/**
+ * ONE numbering in the whole message (docs/AI-SORAYDI.md §3.4 A3 — PA-3,
+ * reproduced end to end in the diagnosis): the answer numbered its lines by
+ * GROUP («2. Куртка…») while every answer is addressed by the row's `seq`,
+ * so «2: 300 dona» typed against line 2 overwrote row 2's count (10 → 300).
+ * Every literal below is the row numbers typed by hand.
+ */
+describe('the number in front of a line is the number an answer is addressed by (A3)', () => {
+  it('lineNumber: one row, a run, rows apart, and past five pieces a count — never a range over a gap', () => {
+    expect(lineNumber([3])).toBe('3.');
+    // Handed out of order and twice: sorted, each once.
+    expect(lineNumber([2, 1, 2])).toBe('1-2.');
+    expect(lineNumber([1, 3])).toBe('1, 3.');
+    expect(lineNumber([1, 2, 3, 5])).toBe('1-3, 5.');
+    // Seven rows apart: five pieces shown (1, 3, 5, 7, 9), rows 11 and 13 counted.
+    expect(lineNumber([1, 3, 5, 7, 9, 11, 13])).toBe('1, 3, 5, 7, 9 (+2).');
+    // A run among the hidden pieces counts each of its rows: 13-15 is three.
+    expect(lineNumber([1, 3, 5, 7, 9, 11, 13, 14, 15])).toBe('1, 3, 5, 7, 9 (+4).');
+    // A group of no rows has nothing to address.
+    expect(lineNumber([])).toBe('·');
+  });
+
+  // PA-3's three rows: 1 the priced dishes, 2 an uncoded part, 3 the jacket
+  // the law wants counted. On the AI door the block asks row 3's count and
+  // what row 2 is.
+  const dishes = line({
+    seqs: [1],
+    label: 'Посуда пластиковая хозяйственная',
+    code: '3924100000',
+    measureText: '500 kg × $2/kg',
+    bazaSource: 'import',
+    dutyText: '20%',
+    customsUsd: 344,
+  });
+  const jacket = line({
+    seqs: [3],
+    label: 'Куртка мужская зимняя',
+    code: '6201400000',
+    measureText: '120 kg × $5/kg',
+    bazaSource: 'import',
+    dutyText: '20% / min 4 $/dona',
+    customsUsd: null,
+    refusal: 'soni (dona) kiritilmagan — boj kamida $4/dona',
+    refusalTail: 'seller',
+  });
+  const asked: SellerAsk[] = [
+    { itemId: 'i2', seq: 2, kind: 'what', text: '2-qator «Zapchast XJ-200»: bu nima — nimadan qilingan, nima uchun ishlatiladi?', needs: [] },
+    { itemId: 'i3', seq: 3, kind: 'law', text: '3-qator «Куртка мужская зимняя»: soni (dona) — boj kamida $4/dona', needs: ['dona'] },
+  ];
+  const mixed: AiVedReplyInput = {
+    ...base,
+    totalUsd: null,
+    fee: null,
+    lines: [dishes, jacket],
+    ungrouped: [{ seq: 2, name: 'Zapchast XJ-200' }],
+    sellerAsks: asked,
+  };
+
+  it('PA-3: every line opens with its row’s own number, the uncoded row in its place — and the ❓ block and its example say the same numbers', () => {
+    const text = aiVedReplyText(mixed);
+    const lines = text.split('\n');
+    expect(lines).toContain('1. Посуда пластиковая хозяйственная · 3924100000 · 500 kg × $2/kg 📥');
+    // Asked what it is below: no «VED xodimi qo‘yadi» on its own line.
+    expect(lines).toContain('2. Zapchast XJ-200 — kod yo‘q');
+    expect(lines).toContain('3. Куртка мужская зимняя · 6201400000 · 120 kg × $5/kg 📥');
+    expect(lines).toContain('   ⚠️ soni (dona) kiritilmagan — boj kamida $4/dona — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring');
+    // The old numbering's tell: the jacket as line «2.».
+    expect(text).not.toContain('2. Куртка');
+    expect(text).not.toContain('Kod topilmadi');
+    // The line heads, in order, are the rows 1, 2, 3 — the numbers the block asks by.
+    expect(lines.filter((l) => /^\d+\. /.test(l)).map((l) => l.split('.')[0])).toEqual(['1', '2', '3']);
+    expect(lines).toContain('· 3-qator «Куртка мужская зимняя»: soni (dona) — boj kamida $4/dona');
+    expect(lines).toContain('· 2-qator «Zapchast XJ-200»: bu nima — nimadan qilingan, nima uchun ishlatiladi?');
+    expect(text).toContain('✍️ Shu xabarga reply qilib yozing: «3: 300 dona» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.');
+  });
+
+  it('the lines are in row order whatever order the groups come in', () => {
+    const text = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      lines: [line({ seqs: [4, 5], label: 'B, B2' }), line({ seqs: [1], label: 'A' })],
+      ungrouped: [{ seq: 3, name: 'C' }],
+    });
+    const heads = text.split('\n').filter((l) => /^[\d, -]+\. /.test(l));
+    expect(heads.map((l) => l.split(' ')[0])).toEqual(['1.', '3.', '4-5.']);
+  });
+
+  it('an uncoded row the fit cut off a long invoice is still named — by its number, where the fit never cuts', () => {
+    // Thirty priced rows (1-30), then two uncoded ones (31, 32): row order puts
+    // them past MAX_REPLY_LINES (25), which the old list under the lines never was.
+    const many = Array.from({ length: 30 }, (_, i) => line({ seqs: [i + 1], label: `Tovar ${i + 1}` }));
+    const text = aiVedReplyText({
+      ...base,
+      totalUsd: null,
+      lines: many,
+      ungrouped: [
+        { seq: 31, name: 'Sumka' },
+        { seq: 32, name: 'Choynak' },
+      ],
+    });
+    expect(text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
+    expect(text).toContain('… va yana');
+    expect(text).not.toContain('31. Sumka');
+    expect(text).toContain('⚠️ Kod yo‘q: 31-32-qator — VED xodimi qo‘yadi');
+    // Nothing cut, nothing named twice.
+    expect(aiVedReplyText({ ...base, ungrouped: [{ seq: 2, name: 'Sumka' }] })).not.toContain('⚠️ Kod yo‘q');
+  });
+
+  it('an uncoded row nobody asks about says who codes it — on the NULL door, and on the card copy nobody reached', () => {
+    const legacy = aiVedReplyText({ ...mixed, sellerAsks: null });
+    expect(legacy.split('\n')).toContain('2. Zapchast XJ-200 — kod yo‘q — VED xodimi qo‘yadi');
+    const unasked = aiVedReplyText({ ...mixed, noAsk: true, audience: 'lenta', link: null });
+    expect(unasked.split('\n')).toContain('2. Zapchast XJ-200 — kod yo‘q — VED xodimi qo‘yadi');
+  });
+});
+
+/**
+ * A coding call that did not answer says what is TRUE (docs/AI-SORAYDI.md
+ * §3.4 A6, review JS-15 — binding): the request is in the VED's queue and
+ * the VED codes it. Never «Kod topilmadi: Куртка мужская зимняя» about a
+ * jacket the model never looked at (PA-4), and never «🔄 … qayta urinib
+ * ko‘ring», which names a button the answer does not carry.
+ */
+describe('a coding call that failed says so (A6)', () => {
+  const failed: AiVedReplyInput = {
+    ...base,
+    totalUsd: null,
+    fee: null,
+    lines: [],
+    ungrouped: [{ seq: 1, name: 'Куртка мужская зимняя' }],
+    proposeFailed: true,
+  };
+
+  it('the ruling’s sentence, once; the row says only «kod yo‘q»; no «Kod topilmadi», no 🔄', () => {
+    expect(CODING_FAILED_LINE).toBe('⚠️ AI kod qo‘ya olmadi (javob bermadi) — so‘rov VED navbatida, kodni VED xodimi qo‘yadi');
+    for (const audience of ['chat', 'lenta'] as const) {
+      const text = aiVedReplyText({ ...failed, audience, link: null });
+      const lines = text.split('\n');
+      expect(lines.filter((l) => l === CODING_FAILED_LINE), audience).toHaveLength(1);
+      expect(lines).toContain('1. Куртка мужская зимняя — kod yo‘q');
+      for (const w of ['Kod topilmadi', '🔄', 'qayta urinib']) expect(text, `${audience}: ${w}`).not.toContain(w);
+    }
+  });
+
+  it('with every row coded there is nothing to say about a code', () => {
+    expect(aiVedReplyText({ ...base, proposeFailed: true })).not.toContain(CODING_FAILED_LINE);
   });
 });

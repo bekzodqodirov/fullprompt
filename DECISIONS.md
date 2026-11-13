@@ -9270,3 +9270,101 @@ of its eight; #1739 cited the workspaces decision for the strip and gave a false
 only visible effect. THE LESSON: **a state whose only origin is an action on the same screen is reached in a
 spec by pressing that action** — building it by SQL and a fresh `goto` gives every component a fresh mount,
 which is the one thing the person who made the state never gets.
+
+## AI so'raydi va to'ldiradi — the AI door names goods from a picture, reads «cbm», derives the cube from carton sizes, and asks for what is missing (2026-11-11 → ; NO migration of its own — it rides on main's 0146, ledger 147; spec `docs/AI-SORAYDI.md` v4 + `docs/AI-SORAYDI-REVIEW.md`, the review's rulings binding; numbered #1744-#1753 — minted as #1697-#1706 and moved by forty-seven on the merge, the THIRTY-NINTH collision: main's «Prixod kartasi» (PR #146, #1697-#1706) and «Prixod xabari» (PR #149, #1707-#1743, migration 0146 — ledger 147) merged while release 1a was being built)
+
+**#1744 — His report, and what it was.** «Yana o'xshamadi … rasm … unda nima tovar borligini bila olmayapti, cbm
+degan yozuvni o'qiy olmayapti, razmerlari berilgan bo'lsa hajmni o'zi chiqara olmayapti … yetishmayotgan narsa
+bo'lsa AI rastamojka bilan hisoblatayotgan bo'lsa so'rasin va to'ldirsin» — the day after «Fayl o'qish» reached
+production. Nine traces through the real handler chain and a critic (ids PG, dg2, dg3, DIM, XLS, AB, PA, MP, PR,
+CR — §1 of the spec). Four causes, none of them the model's eyes: (1) the prompt told the model a picture is a
+DOCUMENT to transcribe, so a product photo gave «no goods» by instruction; (2) «cbm» was a word no typed reader
+knew — the unit vocabulary lived in four lists that disagreed, and «5 cbm» was read as a product called «cbm»;
+(3) nothing in the system multiplied: a size and a carton count were kept as text, and a per-carton figure landed
+as the row's; (4) his 5a of two days earlier («the pass answers and asks NOTHING», docs/IKKI-ESHIK.md §3.5) is
+exactly what he now reports as «AI so'ramayapti».
+
+**#1745 — His answers, and the three earlier answers they touch.** «1 d / qolgani sen aytganingdek»: a picture
+may be goods, a document's photo or a screenshot (1d); the AI names goods from a picture, marked «📷 rasmdan
+taxmin», and count and weight are ASKED, never guessed (2a); carton size × count is computed by the BOT and
+written «hisoblangan» (3a); what is missing is asked in ONE message, the seller answers, the table fills, then it
+calculates (4a). 4a reverses §3.5 of IKKI-ESHIK for the AI door ONLY — the plain «🧮» door still asks nothing and
+its guard files are frozen for the round. Two more are touched and SAID to him rather than quietly moved: the
+certificate as a seller's fact after the pass (SAKKIZ-R3 §0.1(2) — question 9, not built before he answers), and
+one offer instead of a question per file (IKKI-ESHIK 1a — kept).
+
+**#1746 — The answer's shape has a budget, and there is no key here to find it out.** A strict structured
+output may carry at most 16 union-typed parameters and 24 optional ones; the reading's schema already spent 12
+unions. Past the limit the API answers 400 «Schema is too complex» to EVERY reading — and the first real request
+under a new schema is made in production. So every new key is required and non-nullable (0 / "unknown" / [] /
+""), `intake-schema-budget.test.ts` counts what the request sends, and a 400 that names the schema is asked once
+more under the LEGACY contract, latched for the process (on `globalThis` — Next bundles the worker apart from the
+routes, JB-14). The legacy pair is byte-identical to what production ran, and pinned so.
+
+**#1747 — The bot multiplies; the model transcribes; and the judge re-wrote the arithmetic's safety.**
+`wms/calc/carton-math.ts` is the ONE home of «cartons × one carton's»: no reader multiplies. The first kernel was
+judged before any package was built on it, and four of its rules were wrong in ways no test of mine could see
+because I had written both: (a) a size with no unit was taken as centimetres whenever each side sat in 5…300 —
+«120*80*60MM» in capitals read as cm, a thousand times the cube (the unit regex was case-sensitive; a foreign
+unit word after the size is now `'other'`, and the assumption also needs a believable package); (b) **a row
+figure equal to ONE carton's was replaced by the product even when BOTH numbers were the model's** — the bot
+correcting the model against the model. For `from: 'ai'` it is a doubt the table asks; only a file's or a typed
+line's is replaced, and the original is kept; (c) a computed figure was recognised by a mark, so a figure the
+seller typed over it was reverted on the next pass — it is recognised BY ITS VALUE now, and a person's figure
+carries its own mark; (d) a per-carton count had no unit, so «12 пар/кор × 40» landed as 480 PIECES. Only a
+PACKAGE's size is multiplied (a product's own size is offered, an unowned one asked).
+
+**#1748 — A figure the seller typed is his, in one place.** `row-answer.ts` (`answeredRow`, `answersStated`,
+`unansweredRow`) marks every figure an answer writes (`setStated`) and re-runs the arithmetic over it — a count
+answered is what one piece's weight was waiting for. Three callers: the table's write, the undo, and the
+re-read's placement. `placeByName` was deliberately NOT given a writer argument: it is called from twenty tests
+and a source-shape pin, platform may not import wms statically, and the placement is a different question from
+«whose figure is this». A row with no packing is returned as the SAME object, so no existing table moves — and
+the structural rule of #1747 (c) means a path that forgets the mark re-asks a question; it can never revert a
+number.
+
+**#1749 — What the table asks is built in pure files and drawn in ONE place.** Five items of the design each
+wanted to «hold Ma'lumot to'liq», with no predicate and no word on whether the line or the button is held; three
+packages were about to edit one 300-line function. `TableAsk` / `tableAsksOf` (review JB-6): an ask stands under
+its row or above the closing; `holds` removes the «✅ Ma'lumot to'liq» LINE and leaves the ✅ button — only a
+table with no goods changes the keyboard; the closing's words come from what is MISSING, and when nothing is,
+from the question's own example (never «Yiwu → Toshkent» on a job whose route nobody asked). A computed figure
+carries «*» with one legend line; a replaced figure, an assumed «sm», an unsaid netto/brutto and a 📷 name are
+one fixed line each, never cut (JS-7). `tableOpenOf` is untouched on purpose: an ask is no target of an
+UNADDRESSED answer — adding the row there would have stopped a bare «3500 kg» from being the only open total.
+
+**#1750 — The model's questions are kept by the good's NAME, and `...live` hid them.** The model numbers ITS
+list; the merge renumbers the table; a question stored by index would be drawn under another good (JR-2). The
+contract says which list a number is in (`list: goods | known`), the reading resolves the name where both lists
+are at hand, and the collection keeps `{about, kind, text}`. The dialogue test found what reading did not:
+`settleAnalysis` builds the settled state from `...live` and names each field it takes from the reading, so the
+new field was silently the PREVIOUS reading's — the trap its own comments describe for `aiCut`. In release 1a a
+question is answered through «➕ Yana ma'lumot» (the model reads the words on the next «Bo'ldi»); only «what are
+these goods?» holds the line.
+
+**#1751 — The contract is frozen by its hash.** Seven packages are built against the prompt and the answer's
+shape, with no key to show what a rewording does. `intake-contract-frozen.test.ts` pins sha256 of both, for both
+contracts; a red run is never fixed by pasting the hash it prints. Before the freeze the contract took what the
+later releases need, so it is not re-opened: `known_codes[].name` (a quotation whose goods are pictures beside an
+article number), `questions[].list`, and three prompt lines.
+
+**#1752 — How a figure came to be is written where the VED reads the row.** `provenanceNote` is `itemFacts`'
+note for every door (`intake-items-wire` walks the doors): the sentence CODE reads back first, the source's own
+words, the marks, the packing as stated, each computed figure with its arithmetic. The door cuts a note at 500
+characters from the head, so the renderer has its own budget (440) and gives way from the back — the arithmetic
+to one clause, then the source's words with «…»; the machine-read sentence and the packing line are never the
+part that is cut. One pin was re-anchored for it and says why: the lone-weight sentence stands FIRST now.
+
+**#1753 — PROCESS.** (1) **Judged before built, again, and it paid again**: 104 objections to v3 from four lenses
+(22 blockers), none refuted; twenty-two were about the kernel I had already committed. (2) **Three releases, not
+one** (JB-15): the readers and the words (1a), the table and the pictures (1b), the writes after the pass (2) —
+each shippable alone, each ending in a tree CI can prove. (3) **CI caught what the src-only typecheck cannot**:
+four pushes went red on a TEST's types (#591's rule; `pnpm typecheck` before every push, read by its exit code).
+(4) **Three red proofs stayed green and were re-anchored** (#166): the case-insensitive flag removed from one
+regex still passed, because a second regex read the unit after the size (now pinned on per-side capitals, «60CM x
+40CM x 50CM»); the re-read's mark removed still passed, because the test's seller had answered with the PRODUCT,
+which agrees with the arithmetic whoever wrote it (now he answers «it is the whole row's», and corrects a
+computed figure, across a re-read); and an edit to the note's order moved only the length computed for the
+budget. Thirty-one red proofs by string edit over the kernel, each restored by hash. (5) The full unit suite runs
+one file at a time (~10 min): a red proof is run in a second worktree, never in the tree a run is reading — the
+one file that «failed» in the kernel's full run was the file I had edited under it.

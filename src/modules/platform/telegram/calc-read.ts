@@ -457,6 +457,10 @@ export function settleAnalysis(
       (c) => live.conflicts.find((x) => x.itemId === c.itemId && x.field === c.field && x.read === c.read) ?? c,
     ),
     steps: analysed.steps,
+    // What THIS reading asked (docs/AI-SORAYDI.md §3.3 M4) — the reading's
+    // own, as `steps` is: `...live` would keep the previous reading's
+    // questions under a reading that asked nothing, and drop a new one's.
+    aiQuestions: analysed.aiQuestions ?? [],
     notes: analysed.notes,
     aiUsed: analysed.aiUsed,
     aiFailure: analysed.aiFailure,
@@ -659,8 +663,19 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     // The table's own context (laws, the wms module, an addition's stale
     // totals): the table this job sends is the one every later edit redraws.
     const tc = await tableContext(coded);
-    const outcome = settleAnalysis(activeIntake(chatId), state, coded, data.token);
-    if (outcome.kind === 'gone') return;
+    const settled = settleAnalysis(activeIntake(chatId), state, coded, data.token);
+    if (settled.kind === 'gone') return;
+    // The answers were just put back on the freshly read rows — and a figure
+    // the seller typed is HIS there too (review JN-15, JB-1): the packing's
+    // arithmetic, which the reading ran over each row, must not fill over it,
+    // replace it or ask about it again.
+    const outcome = {
+      ...settled,
+      state: {
+        ...settled.state,
+        facts: { ...settled.state.facts, goods: tc.intake.answersStated(settled.state.facts.goods ?? [], settled.state.lineAnswers) },
+      },
+    };
     let patch: Partial<IntakeState>;
     let text: string;
     let keyboard: InlineKeyboard | null;

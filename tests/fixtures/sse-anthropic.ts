@@ -31,6 +31,8 @@ import type { AddressInfo } from 'node:net';
  */
 export interface SseReply {
   status?: number;
+  /** The error body's own message on a non-200 (default «stand-in») — what a rule that reads the message is tested with. */
+  message?: string;
   delayMs?: number;
   text?: string;
   thinking?: string;
@@ -51,7 +53,12 @@ export interface SseStandIn {
   url: string;
   script: SseReply[];
   /** Every request body the SDK sent, parsed. */
-  bodies: { messages: { content: { type: string; text?: string }[] }[]; output_config?: unknown; max_tokens?: number }[];
+  bodies: {
+    messages: { content: { type: string; text?: string }[] }[];
+    system?: string;
+    output_config?: unknown;
+    max_tokens?: number;
+  }[];
   /** …and as the bytes on the wire, for what parsing would hide (a lone surrogate's `\udXXX` escape). */
   raws: string[];
   calls(): number;
@@ -90,7 +97,10 @@ export async function startSseStandIn(): Promise<SseStandIn> {
           res.end(
             JSON.stringify({
               type: 'error',
-              error: { type: status === 529 ? 'overloaded_error' : status === 429 ? 'rate_limit_error' : 'invalid_request_error', message: 'stand-in' },
+              error: {
+                type: status === 529 ? 'overloaded_error' : status === 429 ? 'rate_limit_error' : 'invalid_request_error',
+                message: reply.message ?? 'stand-in',
+              },
             }),
           );
         });

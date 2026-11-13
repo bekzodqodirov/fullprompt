@@ -1,0 +1,138 @@
+import { describe, expect, it } from 'vitest';
+import { parseManualFacts, readGoodsLines } from '@/modules/wms/calc/intake-manual';
+import { packingRead, parseGoodsLine } from '@/modules/wms/calc/units';
+
+/**
+ * docs/AI-SORAYDI.md §3.1 T12 — a supplier's spec block is ONE good (MP-3,
+ * MP-2), with the size owner of review JN-11.
+ *
+ * With the model silent a forwarded «品名 折叠椅⏎尺寸 60*40*50cm⏎20箱⏎毛重
+ * 15kg/箱» was judged line by line: the weight line became a PRODUCT «毛重
+ * /箱» of 15 kg, landed through «✅ Tasdiqlash»; the English and Russian
+ * blocks gave a figure-less «folding chair» beside a «G.W. /ctn». A name
+ * label opens the block now; the count, carton, weight and size lines under
+ * it — until a blank line, the next name or a line that is no field — are
+ * ITS figures and packing, and the carton arithmetic (carton-math.ts) is the
+ * only one that multiplies.
+ *
+ * Every figure below is worked by hand in the comment beside it.
+ */
+
+const row = (text: string) => {
+  const goods = readGoodsLines(text);
+  expect(goods, text).toHaveLength(1);
+  return goods[0]!;
+};
+
+describe('T12 — the block is one good, its field lines its figures', () => {
+  it('MP-3, the Chinese block: 折叠椅, 20 cartons of 15 kg brutto — 20 × 15 = 300 kg; «尺寸» is nobody’s size, so no cube (JN-11)', () => {
+    const r = row('品名 折叠椅\n尺寸 60*40*50cm\n20箱\n毛重 15kg/箱');
+    expect(r).toMatchObject({ name: '折叠椅', weightKg: 300, volumeM3: null });
+    expect(r.packing).toMatchObject({
+      cartons: 20,
+      kgPerCarton: 15,
+      kgPerCartonKind: 'gross',
+      size: { l: 60, w: 40, h: 50, unit: 'cm', of: null },
+    });
+  });
+
+  it('with the PACKAGE’s size word «外箱尺寸» the cube is computed: 20 × (0.6 × 0.4 × 0.5 = 0.12) = 2.4 m³', () => {
+    const r = row('品名 折叠椅\n外箱尺寸 60*40*50cm\n箱数 20\n毛重 15kg/箱');
+    expect(r).toMatchObject({ name: '折叠椅', weightKg: 300, volumeM3: 2.4 });
+    expect(r.packing).toMatchObject({ cartons: 20, size: { of: 'package' } });
+  });
+
+  it('MP-3, the English and Russian blocks: one good of 200 pieces, 300 kg and 2.4 m³ — never a row named after a field', () => {
+    for (const text of [
+      'Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nCarton size: 60*40*50cm',
+      'Наименование: стул складной\nКол-во: 200 шт\nМест: 20\nВес брутто: 15 кг/место\nРазмер коробки: 60*40*50 см',
+    ]) {
+      // 20 cartons × 15 kg = 300 kg; 20 × 0.12 m³ = 2.4 m³; «200 pcs» the count, never the 20 places.
+      expect(row(text), text).toMatchObject({ quantity: 200, weightKg: 300, volumeM3: 2.4 });
+    }
+    expect(row('Product: folding chair\nQty: 200 pcs\nCartons: 20').name).toBe('folding chair');
+  });
+
+  it('the same block on ONE line reads the same way', () => {
+    expect(row('Product: folding chair Qty: 200 pcs Cartons: 20 G.W.: 15 kg/ctn Carton size: 60*40*50cm')).toMatchObject({
+      name: 'folding chair',
+      quantity: 200,
+      weightKg: 300,
+      volumeM3: 2.4,
+    });
+  });
+
+  it('MP-2, the forwarded line with its name label AFTER the figures: the same good as the block', () => {
+    const r = row('尺寸 60*40*50cm 20箱 毛重 15kg/箱 品名 折叠椅');
+    expect(r).toMatchObject({ name: '折叠椅', weightKg: 300, volumeM3: null });
+    expect(r.packing).toMatchObject({ cartons: 20, kgPerCarton: 15, size: { of: null } });
+  });
+
+  it('a block’s per-carton weight is no total; a block’s own total line is the shipment’s, as one goods line’s is', () => {
+    // 15 kg is one carton's (MP-2: it landed as the shipment's and the row's).
+    expect(parseManualFacts('品名 折叠椅\n尺寸 60*40*50cm\n20箱\n毛重 15kg/箱', 'podklyuch').weightKg ?? null).toBeNull();
+    // «总毛重 300kg» states the whole good's brutto; one good IS the shipment.
+    const facts = parseManualFacts('品名 折叠椅\n数量 200个\n箱数 20箱\n毛重 15kg/箱\n总毛重 300kg\n体积 2.4立方', 'podklyuch');
+    expect(facts).toMatchObject({ weightKg: 300, volumeM3: 2.4 });
+    expect(facts.goods).toEqual([expect.objectContaining({ name: '折叠椅', quantity: 200, weightKg: 300, volumeM3: 2.4, weightKind: 'gross' })]);
+  });
+
+  it('a field line opening its own line is a field however it is written — «Soni 300» under «Tovar: kurtka»', () => {
+    expect(row('Tovar: kurtka\nSoni 300\nVazni 150 kg\nHajmi 3 kub')).toMatchObject({
+      name: 'kurtka',
+      quantity: 300,
+      weightKg: 150,
+      volumeM3: 3,
+    });
+  });
+});
+
+describe('T12 — where a block ends, and what is no block', () => {
+  it('a blank line and the next name label end it: two blocks are two goods, each 300 kg (20 × 15, 10 × 30)', () => {
+    const goods = readGoodsLines('品名 折叠椅\n20箱\n毛重 15kg/箱\n\n品名 桌子\n10箱\n毛重 30kg/箱');
+    expect(goods.map((g) => [g.name, g.weightKg])).toEqual([
+      ['折叠椅', 300],
+      ['桌子', 300],
+    ]);
+  });
+
+  it('a block whose lines read no figured good is read line by line, as it always was', () => {
+    // «20 ctns» is a carton count and nothing a table can price (c0649).
+    expect(readGoodsLines('Tovar: kurtka\n20 ctns').map((g) => [g.name, g.quantity])).toEqual([['kurtka', null]]);
+  });
+
+  it('a name line that says something ABOUT the goods opens nothing — «Tovar: tayyor»', () => {
+    expect(readGoodsLines('Tovar: tayyor\nVazni: 150 kg')).toEqual([]);
+    expect(parseManualFacts('Tovar: tayyor\nVazni: 150 kg', 'podklyuch').weightKg).toBe(150);
+  });
+
+  it('a block NAMES its goods: it still answers when the model read the material and found none (labelledOnly)', () => {
+    const block = 'Item: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn';
+    expect(readGoodsLines(block, { labelledOnly: true })).toEqual([
+      expect.objectContaining({ name: 'folding chair', quantity: 200, weightKg: 300 }),
+    ]);
+  });
+
+  it('a field line alone is still no goods line of its own (T3/T4)', () => {
+    for (const line of ['毛重 15kg/箱', 'G.W.: 15 kg/ctn', 'Вес брутто 15 кг/место', 'Carton size: 60*40*50cm', '20箱']) {
+      expect(readGoodsLines(line), line).toEqual([]);
+    }
+  });
+});
+
+describe('T12 in the kernel — a label before a tail-marked figure, and the size word that names nobody', () => {
+  it('«Вес брутто: 15 кг/место» — the tail says one package’s, the label which weight, and neither is a word of the name', () => {
+    const line = parseGoodsLine('стул Вес брутто: 15 кг/место 20 мест', { packing: true });
+    expect(line.name).toBe('стул');
+    expect(line.packing).toMatchObject({ cartons: 20, kgPerCarton: 15, kgPerCartonKind: 'gross' });
+    expect(packingRead('折叠椅 毛重 15kg/箱 20箱').figures).toEqual([expect.objectContaining({ unit: 'kg', value: 15, owner: 'package', kind: 'gross' })]);
+  });
+
+  it('JN-11: a size word that names nobody’s size is asked even right beside the carton count — and a package’s word still multiplies', () => {
+    expect(packingRead('折叠椅 尺寸 60*40*50cm 20箱').size).toMatchObject({ of: null });
+    expect(packingRead('Kurtka razmeri 60x40x50 sm 20 karobka').size).toMatchObject({ of: null });
+    expect(packingRead('Kurtka karobka razmeri 60x40x50 sm 20 karobka').size).toMatchObject({ of: 'package' });
+    // No size word at all, right beside the count: the package's (JS-2), as before.
+    expect(packingRead('stul 60x40x50 sm 20 karobka').size).toMatchObject({ of: 'package' });
+  });
+});

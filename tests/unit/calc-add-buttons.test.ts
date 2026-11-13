@@ -70,6 +70,7 @@ describe('the ➕ on a CalcPrefilled message', () => {
 });
 
 const line = (k: number): AiVedLine => ({
+  seqs: [k], // row k: the line opens «k.» (docs/AI-SORAYDI.md §3.4 A3)
   label: `Uzun nomli tovar ${k} — ${'x'.repeat(120)}`,
   code: '8528520000',
   aiCode: false,
@@ -97,6 +98,7 @@ const base: AiVedReplyInput = {
   cardLabel: 'B-000067',
   lines: Array.from({ length: 40 }, (_, k) => line(k + 1)),
   ungrouped: [],
+  proposeFailed: false,
   fee: { bhm: 5, usd: 164.8 },
   totalUsd: 4980,
   feeRefusal: null,
@@ -107,6 +109,8 @@ const base: AiVedReplyInput = {
   estimate: null,
   pickLeft: null,
   asks,
+  // The AI door's own list (docs/AI-SORAYDI.md §3.4 A2) — not this door's.
+  sellerAsks: null,
   pass: 'landing',
   audience: 'chat',
   // A request from before the doors (docs/IKKI-ESHIK.md §0.2): the 2.8 b block stands.

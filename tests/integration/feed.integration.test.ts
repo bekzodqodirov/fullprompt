@@ -478,6 +478,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     cardLabel: 'B-000067',
     lines: [
       {
+        seqs: [1], // the line opens with its row's own number (docs/AI-SORAYDI.md §3.4 A3)
         label: 'Monitor 24"',
         code: '8528520000',
         aiCode: false,
@@ -496,6 +497,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
       },
     ],
     ungrouped: [],
+    proposeFailed: false, // the coding call answered (A6)
     fee: { bhm: 5, usd: 164.8 },
     totalUsd: 661.76,
     feeRefusal: null,
@@ -508,6 +510,8 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     // REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): the landing's pass,
     // nothing asked — the chip's subject is the heading, which neither moves.
     asks: null,
+    // The AI door's own list (docs/AI-SORAYDI.md §3.4 A2) — not this door's.
+    sellerAsks: null,
     pass: 'landing',
     audience: 'lenta',
     // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.
@@ -521,6 +525,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     ...aiInput,
     lines: [
       {
+        seqs: [1],
         label: 'Kurtka',
         code: '6201400000',
         aiCode: false,

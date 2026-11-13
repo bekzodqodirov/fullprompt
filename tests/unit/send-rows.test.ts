@@ -77,6 +77,21 @@ describe('only three things stop a send, each with one-tap answers (UX3)', () =>
     expect(itemOfRow(one(answerAmbiguous(r.raw!, '1,200', 1.2)))).toMatchObject({ weightKg: 1.2 });
   });
 
+  it('a grouped number asked both ways (JN-6): the short reading keeps the first group as a fact of its own (review typed-break-8)', () => {
+    // «Stul 20 300 kg»: 300 kg of twenty chairs, or 20 300 kg. Choosing 300
+    // deleted the 20 from the row's text — the chairs' count gone.
+    const r = one('Stul 20 300 kg');
+    expect(rowIssues(r).blocking).toHaveLength(1);
+    const short = answerAmbiguous(r.raw!, '20 300', 300);
+    expect(short).toBe('Stul 20, 300 kg');
+    // Re-read: the 20 is the count it was, the 300 the kilos.
+    expect(itemOfRow(one(short))).toMatchObject({ name: 'Stul', quantity: 20, weightKg: 300 });
+    // The long reading is the whole number, as before: 20 300 kg.
+    expect(itemOfRow(one(answerAmbiguous(r.raw!, '20 300', 20300)))).toMatchObject({ weightKg: 20300 });
+    // A model's number stays in the TEXT the seller sees, never deleted from it.
+    expect(answerAmbiguous('iPhone 15 128 dona', '15 128', 128)).toBe('iPhone 15, 128 dona');
+  });
+
   it('two pairs on one line: keep one and the other leaves the text', () => {
     const raw = 'Plitka 120 m2 40 juft';
     const r = one(raw);

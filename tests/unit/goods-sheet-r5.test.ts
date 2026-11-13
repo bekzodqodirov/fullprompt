@@ -38,7 +38,10 @@ describe('a figure under a merge is said once in the model’s text; a word that
     );
     const read = await readGoodsFile(body, null);
     expect(read?.kind).toBe('text');
-    expect(read && read.kind !== 'refused' ? read.text : '').toBe('[PL]\nMarka | Spec | Dona | Pul\nGS777 | USB 3.0 | 10 | USD 1 200\nGS777 | USB 3.0 | 10');
+    // The merged sum's slot on the covered line is written EMPTY — its «|» —
+    // where the cell was left out (docs/AI-SORAYDI.md §3.2 X0, review JN-14):
+    // every line has the header's four cells, and the sum is still said once.
+    expect(read && read.kind !== 'refused' ? read.text : '').toBe('[PL]\nMarka | Spec | Dona | Pul\nGS777 | USB 3.0 | 10 | USD 1 200\nGS777 | USB 3.0 | 10 |');
   });
 });
 

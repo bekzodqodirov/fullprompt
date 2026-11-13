@@ -1,6 +1,7 @@
 import { tierWords } from './name-tiers';
-import type { CalcGoodsFact } from '../../wms/calc/intake';
-import type { WeightKind } from '../../wms/deals/goods-import';
+import type { Packing } from '../../wms/calc/carton-math';
+import type { CalcGoodsFact, TableAsk } from '../../wms/calc/intake';
+import type { ColumnAsk, WeightKind } from '../../wms/deals/goods-import';
 import type { IntakeState, SheetText, TotalsMark } from './calc-intake';
 
 /**
@@ -346,6 +347,54 @@ export interface GoodsFileMeta {
    * the lines' netto.
    */
   capped?: boolean;
+  /**
+   * How many pictures the file's WORKBOOK carries (`GoodsFileRead.pictures`,
+   * docs/AI-SORAYDI.md §3.2 X10): its rows may be named by article numbers
+   * beside the pictures that show the goods (`nameIsArticle`). On the block
+   * of the workbook's goods sheet only — a count of the BOOK, said once.
+   * Absent = none, or a block written before the count.
+   */
+  pictures?: number;
+  /**
+   * The file's line columns nothing settled as the lines' or one carton's
+   * (`ParsedGoods.asks`, docs/AI-SORAYDI.md §3.2 X5, review JN-12): asked
+   * once, by the rows' names and figures (`columnAsks`). Absent = none, or a
+   * block written before the round.
+   */
+  asks?: ColumnAsk[];
+}
+
+/**
+ * The column questions of the collection's goods files as the table's asks
+ * (review JN-12, JR-11, JS-33; excel-spec-1) — one per column, above the
+ * closing, holding «Ma’lumot to‘liq» while it stands. Release 1a answers it
+ * by TYPING (the kernel's minimal draw): a row's figure given by a person
+ * (`derived.person`), or changed from the file's, answers that row; the ask
+ * stands while some asked row still has the file's figure, or none, as the
+ * file left it. Pure; the dialogue hands it the state (`tableInputOf`'s
+ * `asks`, the lead's wiring — release 1a builds the ask, never the draw).
+ */
+export function columnAsks(files: readonly GoodsFileMeta[] | undefined, goods: GoodsList): TableAsk[] {
+  const out: TableAsk[] = [];
+  (files ?? []).forEach((file, i) => {
+    for (const ask of file.asks ?? []) {
+      const open = ask.rows.some(({ name, value }) => {
+        const row = goods.find((g) => g.name === name);
+        if (!row || (row.derived?.person ?? []).includes(ask.field)) return false;
+        const now = row[ask.field] ?? null;
+        return now === null || now === value;
+      });
+      if (!open) continue;
+      const what = ask.field === 'weightKg' ? 'og‘irligini (kg)' : 'hajmini (m³)';
+      out.push({
+        id: `col:${i}:${ask.field}`,
+        row: null,
+        holds: true,
+        text: `«${ask.title}» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy ${what} yozing: «1: …».`,
+      });
+    }
+  });
+  return out;
 }
 
 /** Each held row's weight kind, from the file blocks — unknown when they do not add up. */
@@ -366,6 +415,26 @@ const UNKNOWN_KINDS: RowKinds = { held: null, read: null };
 const grossOnly = (k: WeightKind) => k === 'gross';
 
 /**
+ * A row's weight computed from its cartons' GROSS — «G.W./CTN» × «CTNS», the
+ * row's own column empty (docs/AI-SORAYDI.md §3.2 X4; `derived.weightIsGross`,
+ * carton-math.ts) — is a brutto whatever column its FILE's line weights came
+ * from: such a sheet has no line-weight column at all, so its kind reads
+ * unknown, and compared as «the line's own» the brutto disagreed with the
+ * same row's netto in the next file — one order, landed twice. Nor is it a
+ * netto a packing list may write into a goods row, or sum as one.
+ */
+const cartonsGross = (g: GoodsList[number]): boolean => g.derived?.weightIsGross === true;
+/**
+ * A packing list row's weight that is the KERNEL's product, of any kind — what
+ * its packages give, never a figure its line states (docs/AI-SORAYDI.md §3.2
+ * X4). A netto fill copies only what the list STATES: the packages themselves
+ * travel (`packingCarries`), and the goods row's weight is computed from them
+ * there, marked as the bot's — or judged against a weight the row states.
+ */
+const fillable = (p: GoodsList[number]): boolean => !cartonsGross(p) && p.derived?.weightKg === undefined;
+const kindOf = (g: GoodsList[number], fileKind: WeightKind): WeightKind => (cartonsGross(g) ? 'gross' : fileKind);
+
+/**
  * The same-unit figures two rows of two files BOTH state: a count with a
  * count (a carton count never reaches `quantity` — the door routes it into
  * the note), a weight with a weight of the same kind (never a gross with a
@@ -377,7 +446,7 @@ function sharedFigures(held: GoodsList[number], read: GoodsList[number], kinds: 
   return LINE_FIGURES.filter((f) => {
     if (f.field === 'amount') return false;
     if (figureOf(held, f.field) === null || figureOf(read, f.field) === null) return false;
-    if (f.field === 'weightKg') return grossOnly(kinds.held) === grossOnly(kinds.read);
+    if (f.field === 'weightKg') return grossOnly(kindOf(held, kinds.held)) === grossOnly(kindOf(read, kinds.read));
     if (f.field === 'measureQty') return held.measureUnit != null && held.measureUnit === read.measureUnit;
     return true;
   });
@@ -567,9 +636,17 @@ export function namesContradict(a: string, b: string): boolean {
 
 /**
  * What a held row takes from its duplicate — only what it LACKS: the code,
- * the unit word, the measure pair, the money. Its own figures stand (§1.2.2).
+ * the unit word, the measure pair, the money, and — given the kernel
+ * (`repack`) — the packages its duplicate states (`carriedPacking`, the seam:
+ * a second file's «CTNS | CTN SIZE» beside a first that states none). Its own
+ * figures stand (§1.2.2); the kernel judges them against the packages.
  */
-function fillGaps(held: GoodsList[number], dup: GoodsList[number]): GoodsList[number] {
+function fillGaps(held: GoodsList[number], dup: GoodsList[number], repack?: Repack): GoodsList[number] {
+  const filled = fillFigureGaps(held, dup);
+  return (repack && carryOnto(filled, dup, repack)) || filled;
+}
+
+function fillFigureGaps(held: GoodsList[number], dup: GoodsList[number]): GoodsList[number] {
   const out = { ...held };
   if (!out.tnvedCode && dup.tnvedCode) out.tnvedCode = dup.tnvedCode;
   if (!out.unit && dup.unit) out.unit = dup.unit;
@@ -749,6 +826,8 @@ export function foldInvoice(
   label: string,
   /** Between the label and the head's count: « — » for a file; a sheet's label ends «… varag‘idan», which reads on with a space. */
   join = ' — ',
+  /** The kernel, for the packages a duplicate carries onto its held row (`fillGaps`); absent = none carried. */
+  repack?: Repack,
 ): FoldedInvoice {
   const out = held.map((g) => ({ ...g }));
   const claimed = new Set<number>();
@@ -766,7 +845,7 @@ export function foldInvoice(
     const at = named.find((i) => !claimed.has(i) && sameRowAgain(out[i]!, r, kinds(i)));
     if (at !== undefined) {
       claimed.add(at);
-      out[at] = fillGaps(out[at]!, r);
+      out[at] = fillGaps(out[at]!, r, repack);
       again += 1;
       continue;
     }
@@ -778,7 +857,7 @@ export function foldInvoice(
       const i = twins[0]!;
       claimed.add(i);
       cross.push(`📄 ${label} — «${clip(r.name)}» va «${clip(out[i]!.name)}»: nomi boshqacha, raqamlari bir xil — bitta deb olindi.`);
-      out[i] = fillGaps(out[i]!, r);
+      out[i] = fillGaps(out[i]!, r, repack);
       again += 1;
       continue;
     }
@@ -833,7 +912,7 @@ export function packingTotals(
   // A list the reader stopped short of its end gives no totals (PF-ADV-2).
   if (meta.capped) return { weightKg: null, weightNetto: false, volumeM3: null };
   if (meta.grossKg !== null) return { weightKg: meta.grossKg, weightNetto: false, volumeM3: meta.volumeM3 };
-  if (meta.weightKind === 'net' && rows.length > 0 && rows.every((g) => figureOf(g, 'weightKg') !== null && g.weightKg! > 0)) {
+  if (meta.weightKind === 'net' && rows.length > 0 && rows.every((g) => figureOf(g, 'weightKg') !== null && g.weightKg! > 0 && !cartonsGross(g))) {
     const sum = rows.reduce((n, g) => n + g.weightKg!, 0);
     return { weightKg: Number(sum.toFixed(3)), weightNetto: true, volumeM3: meta.volumeM3 };
   }
@@ -904,13 +983,23 @@ function packingMeets(
     rows.every((g) => figureOf(g, 'quantity') !== null) ? rows.reduce((n, g) => n + g.quantity!, 0) : null;
   const heldPieces = total(held);
   if (heldPieces !== null && heldPieces > 0 && heldPieces === total(packing)) return { samePieces: true, met: 0 };
+  return { samePieces: false, met: meetPairs(held, heldKinds, packing, packingKind).length };
+}
+
+/**
+ * Which held row each row of a packing list meets, one held row to one row of
+ * the list (`[packingIndex, heldIndex]`, in the list's order) — the meeting
+ * `packingOfHeld` counts, and the one a row's packages travel by
+ * (`packingCarries`).
+ */
+function meetPairs(held: GoodsList, heldKinds: readonly WeightKind[], packing: GoodsList, packingKind: WeightKind): [number, number][] {
   const claimed = new Set<number>();
-  let met = 0;
+  const pairs: [number, number][] = [];
   // A held row meets by name, or — names apart — by an equal count (a twin by
   // figures states one too): only those rows are asked, in list order
   // (DURABILITY-1).
   const index = rowIndex(held);
-  for (const p of packing) {
+  packing.forEach((p, j) => {
     const candidates = unionSorted(index.named(keysOf(p.name)), index.counted(figureOf(p, 'quantity')));
     const at = candidates.find((i) => {
       if (claimed.has(i)) return false;
@@ -920,11 +1009,11 @@ function packingMeets(
       const q = figureOf(h, 'quantity');
       return q !== null && q === figureOf(p, 'quantity') && !namesContradict(h.name, p.name);
     });
-    if (at === undefined) continue;
+    if (at === undefined) return;
     claimed.add(at);
-    met += 1;
-  }
-  return { samePieces: false, met };
+    pairs.push([j, at]);
+  });
+  return pairs;
 }
 
 /** The letter scripts a key writes — han, cyrillic, latin (numbers and other scripts are none of them). */
@@ -1008,6 +1097,201 @@ export function samePositions(goodsSheet: GoodsList, packing: GoodsList): boolea
 }
 
 /**
+ * The kernel's carton arithmetic (`applyPacking(row).line`, carton-math.ts),
+ * handed in by the door that reads the file: this file has no runtime import
+ * of wms, and the multiplication has ONE home.
+ */
+export type Repack = (row: GoodsList[number]) => GoodsList[number];
+
+const packingSaid = (p: Packing | null | undefined): p is Packing =>
+  Boolean(p) &&
+  (p!.cartons !== null || p!.pcsPerCarton !== null || p!.kgPerCarton !== null || p!.m3PerCarton !== null || p!.size !== null || (p!.kgPerPiece ?? null) !== null);
+
+/**
+ * What a packing list states per package, as it may stand on the GOODS row it
+ * matched (docs/AI-SORAYDI.md §3.2 X4 — the seam): the carton count, what one
+ * carton holds, its cube and its size travel whole, so the invoice's row has
+ * its cube computed exactly as the packing list's own row did. The weight
+ * travels only as a NETTO (`kgPerCartonKind: 'net'`): a goods row's weight is
+ * the customs netto, and a packing list's brutto never fills it — its G.W.
+ * column never did (`packingFills`), and its cartons' gross is that column one
+ * carton at a time. Null = nothing left to carry.
+ */
+export function carriedPacking(p: Packing | null | undefined): Packing | null {
+  if (!packingSaid(p)) return null;
+  const net = p.kgPerCartonKind === 'net' && p.kgPerCarton !== null;
+  const out: Packing = { ...p };
+  if (!net) {
+    out.kgPerCarton = null;
+    out.kgPerCartonKind = null;
+  }
+  if ((out.kgPerPiece ?? null) !== null) out.kgPerPiece = null;
+  // A factor left behind leaves its source behind with it.
+  if (out.fromOf) {
+    const fromOf = { ...out.fromOf };
+    if (!net) delete fromOf.kgPerCarton;
+    delete fromOf.kgPerPiece;
+    out.fromOf = fromOf;
+  }
+  return packingSaid(out) ? out : null;
+}
+
+/**
+ * One packing row's packages onto one goods row — only onto a row that states
+ * none of its own. The goods row's weight KIND goes with them (review
+ * excel-break-2, JN-4): its own weight is a G.W. column's brutto beside the
+ * list's N.W./CTN, and a gross line weight up to 25 % over its cartons' netto
+ * is a row, never a «qaysi biri to‘g‘ri?» — so the kernel must be told which
+ * weight the row's is. A kind the row already carries stands.
+ */
+function carryOnto(h: GoodsList[number], p: GoodsList[number] | undefined, repack: Repack, kind: WeightKind = null): GoodsList[number] | null {
+  if (!p || packingSaid(h.packing)) return null;
+  const packing = carriedPacking(p.packing);
+  if (!packing) return null;
+  const said = h.weightKind ?? (kind === 'gross' || kind === 'net' ? kind : null);
+  return repack({ ...h, packing, ...(said ? { weightKind: said } : {}) });
+}
+
+/**
+ * Which held row a packing list's row may hand its PACKAGES to (review
+ * excel-break-1): `meetPairs` narrowed to a pairing that NAMES the row. An
+ * equal count proves the list is of these goods (`packingOfHeld` counts it),
+ * never WHICH row — an invoice «Office chair 40» and «Desk 40» beside a list
+ * sorted the other way gave the chair the desk's cartons and size, both rows
+ * marked computed and asked nothing. So, in three passes over the whole list:
+ * a name that meets (and no count against it); then a twin by count AND
+ * weight (`sameFigures`); and only then an equal count under names that do
+ * not contradict — when that count is the ONLY one of its value left on both
+ * sides, so nothing else could be the row. A list row that met a held row and
+ * carries nothing here is `unplaced`: its packages are said not taken. Pure.
+ */
+function carryPairs(
+  held: GoodsList,
+  heldKinds: readonly WeightKind[],
+  packing: GoodsList,
+  packingKind: WeightKind,
+): { pairs: [number, number][]; unplaced: number } {
+  const index = rowIndex(held);
+  const claimed = new Set<number>();
+  const paired = new Map<number, number>();
+  const take = (j: number, test: (h: GoodsList[number], i: number) => boolean, candidates: (p: GoodsList[number]) => number[]) => {
+    if (paired.has(j)) return;
+    const p = packing[j]!;
+    const at = candidates(p).find((i) => !claimed.has(i) && test(held[i]!, i));
+    if (at === undefined) return;
+    claimed.add(at);
+    paired.set(j, at);
+  };
+  const named = (p: GoodsList[number]) => index.named(keysOf(p.name));
+  const counted = (p: GoodsList[number]) => index.counted(figureOf(p, 'quantity'));
+  packing.forEach((p, j) => take(j, (h) => namesMeetLine(h, p) && !countsDisagree(h, p), named));
+  packing.forEach((p, j) => take(j, (h, i) => sameFigures(h, p, { held: heldKinds[i] ?? null, read: packingKind }), counted));
+  // An equal count, only where it is the one count of its value left on each side.
+  const left = (rows: GoodsList, taken: (k: number) => boolean) => {
+    const by = new Map<number, number[]>();
+    rows.forEach((g, k) => {
+      const q = figureOf(g, 'quantity');
+      if (q === null || taken(k)) return;
+      by.set(q, [...(by.get(q) ?? []), k]);
+    });
+    return by;
+  };
+  const heldLeft = left(held, (i) => claimed.has(i));
+  const listLeft = left(packing, (j) => paired.has(j));
+  for (const [q, js] of listLeft) {
+    const is = heldLeft.get(q);
+    if (js.length !== 1 || is?.length !== 1) continue;
+    const [j, i] = [js[0]!, is[0]!];
+    if (namesContradict(held[i]!.name, packing[j]!.name)) continue;
+    claimed.add(i);
+    paired.set(j, i);
+  }
+  // What met (`meetPairs`) and carries nothing for want of a row it names.
+  let unplaced = 0;
+  for (const [j, i] of meetPairs(held, heldKinds, packing, packingKind)) {
+    if (paired.has(j) || packingSaid(held[i]!.packing) || !carriedPacking(packing[j]!.packing)) continue;
+    unplaced += 1;
+  }
+  return { pairs: [...paired.entries()].sort((a, b) => a[0] - b[0]), unplaced };
+}
+
+/**
+ * A packing list over a goods list (docs/IKKI-ESHIK.md §1.2.2) gives each
+ * goods row it meets (`meetPairs` — the very meeting that made it a packing
+ * list OF these goods) the packages its own row states (`carriedPacking`),
+ * and the kernel computes the row's figures from them (`repack`): an invoice
+ * of names, counts and money beside the factory's «CTNS | CTN SIZE | G.W./CTN»
+ * gets its cube, where before the list's cartons and sizes were read and
+ * thrown away and the cube was asked (the seam, §3.2 X4). A row that states a
+ * packing of its own keeps it — two packings are never merged here, a clash
+ * would have nobody to ask. The row's own figures are judged by the kernel as
+ * any file's are: one that agrees stands, one carton's is replaced and said,
+ * any other is a doubt the table asks. Runs AFTER the netto fills, which copy
+ * only what the list's lines STATE (`fillable`): a line's netto is the file's
+ * figure and the packages are judged against it; a weight only the packages
+ * give is computed here, marked as the bot's. No `repack` — a caller from
+ * before — carries nothing. Pure but for `repack`.
+ */
+export function packingCarries(
+  held: GoodsList,
+  heldKinds: readonly WeightKind[],
+  packing: GoodsList,
+  packingKind: WeightKind,
+  repack?: Repack,
+): { goods: GoodsList; carried: number; unplaced: number } {
+  if (!repack) return { goods: held, carried: 0, unplaced: 0 };
+  const goods = [...held];
+  let carried = 0;
+  const { pairs, unplaced } = carryPairs(held, heldKinds, packing, packingKind);
+  for (const [j, i] of pairs) {
+    const next = carryOnto(goods[i]!, packing[j], repack, heldKinds[i] ?? null);
+    if (!next) continue;
+    goods[i] = next;
+    carried += 1;
+  }
+  return { goods, carried, unplaced };
+}
+
+/**
+ * `packingCarries` by POSITION, for the workbook `samePositions` lines up —
+ * never across two counts that disagree. Position IS the pairing there (no
+ * name meets across the two scripts), with `samePositions`' own stated
+ * exposure: a workbook whose two sheets list the goods in different orders.
+ */
+export function positionalCarries(
+  held: GoodsList,
+  packing: GoodsList,
+  repack?: Repack,
+  heldKinds: readonly WeightKind[] = [],
+): { goods: GoodsList; carried: number; unplaced: number } {
+  if (!repack) return { goods: held, carried: 0, unplaced: 0 };
+  let carried = 0;
+  const goods = held.map((h, i) => {
+    const p = packing[i];
+    const next = p && !countsDisagree(h, p) ? carryOnto(h, p, repack, heldKinds[i] ?? null) : null;
+    if (!next) return h;
+    carried += 1;
+    return next;
+  });
+  return { goods, carried, unplaced: 0 };
+}
+
+/**
+ * «N ta qatorga karobka ma’lumoti shu fayldan olindi» — what `packingCarries`
+ * did, said beside the fills. It promises no figure: a list that states only
+ * its carton counts computes none, and what the kernel did compute carries
+ * its own «*» on the table.
+ */
+export function carriedWords(carried: number, unplaced = 0): string {
+  const took = carried > 0 ? `${carried} ta qatorga karobka ma’lumoti shu fayldan olindi.` : '';
+  // A packing row met only by a count another row shares (review
+  // excel-break-1): which row its packages are, nobody can say — said, so the
+  // asked cube is no surprise.
+  const left = unplaced > 0 ? `${unplaced} ta qatorniki olinmadi: nomi mos kelmadi, soni boshqa qatorniki bilan bir xil — qaysi qatorniki ekani aniq emas.` : '';
+  return [took, left].filter(Boolean).join(' ');
+}
+
+/**
  * `packingFills` by POSITION, for the workbook `samePositions` lines up: the
  * row at the same place takes the packing line's NET weight when it states
  * none — never a gross weight, never over a figure the row states, never
@@ -1018,7 +1302,7 @@ export function positionalFills(held: GoodsList, packing: GoodsList, packingKind
   let filled = 0;
   const goods = held.map((h, i) => {
     const p = packing[i];
-    if (!p || figureOf(h, 'weightKg') !== null || figureOf(p, 'weightKg') === null || p.weightKg! <= 0 || countsDisagree(h, p)) return h;
+    if (!p || figureOf(h, 'weightKg') !== null || figureOf(p, 'weightKg') === null || p.weightKg! <= 0 || !fillable(p) || countsDisagree(h, p)) return h;
     filled += 1;
     return { ...h, weightKg: p.weightKg! };
   });
@@ -1052,6 +1336,7 @@ export function packingFills(
           !claimed.has(j) &&
           figureOf(packing[j]!, 'weightKg') !== null &&
           packing[j]!.weightKg! > 0 &&
+          fillable(packing[j]!) &&
           sameRowAgain(h, packing[j]!, { held: heldKinds[i] ?? null, read: packingKind }),
       );
     if (at === undefined) return h;
@@ -1073,12 +1358,17 @@ export function packingNote(
   totals: PackingTotals,
   grossColumn: boolean,
   filled: number,
+  /** Goods rows the list's packages went onto (`packingCarries`). */
+  carried = 0,
+  /** List rows whose packages no goods row could be named for (`packingCarries`' `unplaced`). */
+  unplaced = 0,
 ): string {
   const taken = [
     totals.weightKg !== null ? (totals.weightNetto ? 'umumiy netto' : 'umumiy brutto') : null,
     totals.volumeM3 !== null ? 'kub' : null,
   ].filter((t): t is string => t !== null);
-  const fills = filled > 0 ? ` ${fillsWords(filled)}` : '';
+  const carriedSaid = carriedWords(carried, unplaced);
+  const fills = `${filled > 0 ? ` ${fillsWords(filled)}` : ''}${carriedSaid ? ` ${carriedSaid}` : ''}`;
   if (taken.length === 0) return `📄 ${label} — o‘sha tovarlar: qatorlar ${rowsFrom}, jami o‘qilmadi — VED fayldan ko‘radi.${fills}`;
   const noBrutto = totals.weightKg === null || totals.weightNetto;
   const brutto = noBrutto ? (grossColumn ? '; brutto ba’zi qatorlarda yo‘q.' : '; brutto ustuni yo‘q.') : '.';

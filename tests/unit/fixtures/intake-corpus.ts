@@ -95,6 +95,14 @@ export interface HintExpect {
 
 export interface ParseGoodsExpect {
   goods?: GoodsExpect;
+  /**
+   * The same rows as the CALC DOOR takes them (`invoiceFacts`): the reader
+   * copies what a sheet states per package into the row's `packing`, and the
+   * door multiplies (docs/AI-SORAYDI.md §3.2 X2-X4) — so a figure computed
+   * from the cartons, and a carton count that left the row's count, are
+   * pinned here, beside the reader's own rows.
+   */
+  facts?: GoodsExpect;
   headerRow?: number | null;
   /** The sheet's own sums and shape (`SheetShape`), where the reviewer named them. */
   grossKg?: number | null;
@@ -102,6 +110,11 @@ export interface ParseGoodsExpect {
   shape?: 'invoice' | 'packing';
   /** The rows the reader did not take as goods, in order, exactly (`ParsedGoods.dropped`, FAYL-OQISH §5.4-§5.5). */
   dropped?: { text: string; why: string }[];
+  /**
+   * What the reader says of the SHEET's columns (`ParsedGoods.notes`, docs/AI-SORAYDI.md
+   * §3.2 X5): each string is contained in one of them, rendered «⚠️ …» when it warns.
+   */
+  notesInclude?: string[];
 }
 
 /** A spreadsheet the test builds, then hands to `readGoodsFile`. */
@@ -217,11 +230,18 @@ export interface GoodsLineExpect {
   quantity?: number | null;
   weightKg?: number | null;
   volumeM3?: number | null;
+  measureUnit?: string | null;
+  measureQty?: number | null;
+  cartons?: number | null;
   unitWords?: string[];
   /** Problem kinds the answer carries (at least these). */
   problems?: string[];
   /** The `text` of each problem of that kind. */
   problemTexts?: string[];
+  /** The answer carries exactly this many problems (0 = it is settled). */
+  problemCount?: number;
+  /** A number with two readings, both named: `short` is the one without its first group or the decimal one, `long` the whole (`decimal` / `thousands`). */
+  twoReadings?: { text: string; short: number; long: number }[];
   /** The name does not contain this. */
   nameExcludes?: string[];
   /** quantity is not this number. */
@@ -232,6 +252,8 @@ export interface ManualFactsExpect {
   goods?: GoodsExpect;
   weightKg?: number | null;
   volumeM3?: number | null;
+  /** The totals the text states two ways, exactly and in order (`facts.ambiguous`); `[]` = nothing is asked. */
+  ambiguous?: { field: 'weightKg' | 'volumeM3'; text: string; decimal: number; thousands: number }[];
   fromCity?: string | null;
   toCity?: string | null;
   /** landingItems(facts) as a goods list. */
@@ -1045,11 +1067,12 @@ export const readGoodsFileCases = corpusCases<CorpusCase<FileSpec, FileExpect>>(
   {
     id: "c1312",
     input: { kind: "csv", text: () => (Array.from({length:20},(_,i)=>`${i+1};${i===3?'Женская куртка, материал 100% полиэстер, утеплитель синтепон, '+'x'.repeat(320):`Куртка модель YW-${i}`};${300+i};PCS;${i}.5;${i}.9;0.${i}`).join('\n')+'\n;TOTAL;;;;1234;5.6'), contentType: "text/csv" },
-    expected: {"kind": "text", "textCut": false, "cellsCut": true, "textIncludes": ["TOTAL | 1234 | 5.6"]},
+    expected: {"kind": "text", "textCut": false, "cellsCut": true, "textIncludes": ["| TOTAL |  |  |  | 1234 | 5.6"]},
     said: "kind 'text', textCut false (every row and the TOTAL row visible), cellsCut true",
     why: "R3-S6: a complete 20-row CSV + TOTAL with one 383-char description.",
     source: "r3 collector rv1 newDefect 1 + lead R3-S6",
     weight: "defect",
+    pick: "AI-SORAYDI §3.2 X0 (review JN-14, 2026-11-12): every kept column is written for every row, so «;TOTAL;;;;1234;5.6» is «| TOTAL |  |  |  | 1234 | 5.6» — re-anchored from «TOTAL | 1234 | 5.6», which put 1234 under the names' neighbour and 5.6 under the counts (CR-1). The answer the reviewer asked for — the TOTAL row visible, nothing cut — stands.",
   },
   {
     id: "c1762",

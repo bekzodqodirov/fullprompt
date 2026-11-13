@@ -144,7 +144,7 @@ describe('the plain door’s note (§2.4)', () => {
     const note = aiNoteText({
       ...base,
       feeRefusal: 'so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi',
-      pickLeft: { capped: 0, refused: 1, overtaken: 0, timedOut: 0, skipped: false },
+      pickLeft: { capped: 0, refused: 1, overtaken: 0, timedOut: 0, unanswered: 0, skipped: false },
     });
     expect(note).toContain('⚠️ Bojxona yig‘imi: so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi');
     expect(note).toContain('⚠️ AI bazasini qo‘ymadi: 1 tasida tanlangan deklaratsiya o‘lchovi mos kelmadi — VED to‘ldiradi');

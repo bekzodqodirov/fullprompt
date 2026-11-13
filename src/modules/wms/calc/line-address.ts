@@ -14,9 +14,38 @@
  * the whole database (re-check p3-10, p3-16).
  */
 import { exampleFigure, type AmbiguousTotal } from './intake';
-import { looksLikeMaterial, MATERIAL_ROW_ADDRESS, parseLineAnswer, parseManualFacts, type LineAnswer } from './intake-manual';
+import {
+  looksLikeMaterial,
+  loneScaledAnswer,
+  MATERIAL_ROW_ADDRESS,
+  parseLineAnswer,
+  parseManualFacts,
+  readTypedTotals,
+  slashedFigures,
+  type LineAnswer,
+} from './intake-manual';
 import type { NeedUnit } from './needs';
-import { unitOf } from './units';
+import {
+  amountsIn,
+  blankSpan,
+  blankSpans,
+  codeIn,
+  joinUnitPhrases,
+  labelPattern,
+  nearUnit,
+  NET_LABELS,
+  packingRead,
+  perOneIn,
+  scaledKg,
+  scaledPattern,
+  TOTALS_LEAD_LABELS,
+  UNIT_FREE_LABELS,
+  unitOf,
+  unitPattern,
+  unitWords,
+  VOLUME_LABELS,
+  WEIGHT_LABELS,
+} from './units';
 import { bareTotalsNumber, totalsAnswerShape, totalsFigureCount } from '../../platform/telegram/totals-shape';
 import { TIER_WORDS, tierWords } from '../../platform/telegram/name-tiers';
 
@@ -59,10 +88,67 @@ export type TableRefusal =
   | 'address_unclear'
   | 'totals_unit';
 
+/**
+ * A figure of a totals answer that no total could take (docs/AI-SORAYDI.md
+ * §3.1 T2) — named in the refusal, never dropped: «jami 507 kg 300 dona»
+ * wrote the kilos and put a 👍 over a count nobody kept.
+ *  - `row`: a count or a pair («300 dona», «40 juft») — a row's figure;
+ *  - `netto`: a kilo labelled netto — the total is asked as BRUTTO (PF-1);
+ *  - `weight` / `volume`: a kilo / a cube the reading did not take — two
+ *    different ones were written;
+ *  - `bare`: a number with no unit;
+ *  - `unit`: a number and a word that is no unit («5.9 kubik») — asked as a
+ *    unit (T3), with the kilo or cube the word most likely means (`near`);
+ *  - `per_one`: ONE package's or ONE piece's figure («15 kg/ctn», «har biri
+ *    15 kg», T4) — no total at all, and never one to write as «jami 15 kg».
+ */
+export interface TotalsLeft {
+  why: 'row' | 'netto' | 'weight' | 'volume' | 'bare' | 'unit' | 'per_one';
+  /** As the seller wrote it — «300 dona», «netto 480 kg», «5.9 kubik», «7.19». */
+  text: string;
+  /** The figure without its label — «480 kg» of «netto 480 kg» — what an example is built from. */
+  figure: string;
+  /** The number alone, as written. */
+  number: string;
+  word?: string;
+  near?: UnitAsk['near'];
+}
+
+/**
+ * A figure whose word is NO unit and names no row — «5.9 kubik», «507
+ * kilogr», «300 banka» (docs/AI-SORAYDI.md §3.1 T3, dg3-04): asked as a unit,
+ * never called goods the table has no row for. `near` is the kilo or the cube
+ * the word most likely means (units.ts `nearUnit`); the refusal's REASON stays
+ * what it was, so every door files the segment as it always did.
+ */
+export interface UnitAsk {
+  word: string;
+  /** The number as written — what the example is built from. */
+  number: string;
+  /**
+   * What the word most likely means: a kilo or a cube with an ending on it
+   * (`nearUnit`), or — for a lone «t» / «g» where nothing says it is a weight,
+   * and for one glued to its digits («2T») — the tonne or the gram it would
+   * be (T14, review JN-9): asked, never read.
+   */
+  near: 'kg' | 'm3' | 'tonna' | 'gr' | null;
+}
+
+/** `UnitAsk.near` of a word that is no unit. */
+function nearOf(word: string): UnitAsk['near'] {
+  const scale = scaledKg(word);
+  if (scale?.lone) return scale.factor > 1 ? 'tonna' : 'gr';
+  return nearUnit(word);
+}
+
 export interface TableSegment {
   raw: string;
   at: TableTarget | null;
-  refused: { reason: TableRefusal; detail: string; candidates?: number[] } | null;
+  /**
+   * `left` (a `totals_unit` refusal): the figures it is about — the words name
+   * each (T2). `unit`: the refusal is about a word that is no unit (T3).
+   */
+  refused: { reason: TableRefusal; detail: string; candidates?: number[]; left?: TotalsLeft[]; unit?: UnitAsk } | null;
   /** `parseLineAnswer(remainder)` for a line — kept on a refused name too, so the words can
    * show the seller his own figure back. */
   answer: LineAnswer | null;
@@ -78,15 +164,17 @@ export interface TableSegment {
  * Matched folded: apostrophes removed, Cyrillic kept for the Russian words
  * (and an Uzbek word typed in Cyrillic — «Жами», «умумий» — is read through
  * the same transliteration the names use).
+ *
+ * The words that name a FIELD — «hajmi 12» is the cube, «vazni 3500» the
+ * kilos — are the vocabulary's (units.ts `TOTALS_LEAD_LABELS`, docs/
+ * AI-SORAYDI.md §2.4): this file kept a list of its own, the third one, and
+ * the three had drifted apart. Only the words that say «all of it» live here.
  */
 export const TOTALS_WORDS: readonly string[] = [
-  'jami', 'jamisi', 'umumiy', 'obshiy', 'brutto', 'og‘irlik', 'og‘irligi', 'vazn', 'vazni', 'hajm',
-  'hajmi', 'итого', 'всего', 'общий вес', 'брутто', 'вес', 'объём', 'объем', 'total', 'gross',
+  'jami', 'jamisi', 'umumiy', 'obshiy', 'итого', 'всего', 'total',
+  ...TOTALS_LEAD_LABELS.weightKg,
+  ...TOTALS_LEAD_LABELS.volumeM3,
 ];
-
-/** The totals words that name a field — «hajmi 12» is the cube, «vazni 3500» the kilos. */
-const WEIGHT_WORDS = ['brutto', 'og‘irlik', 'og‘irligi', 'vazn', 'vazni', 'общий вес', 'брутто', 'вес', 'gross'];
-const VOLUME_WORDS = ['hajm', 'hajmi', 'объём', 'объем'];
 
 const APOSTROPHES = /[ʻʼ’'`‘ˈ]/gu;
 
@@ -116,8 +204,26 @@ export function foldName(text: string): string {
 
 const totalsKey = (word: string) => word.normalize('NFKC').toLowerCase().replace(APOSTROPHES, '');
 const TOTALS_SET = new Set(TOTALS_WORDS.map(totalsKey));
-const WEIGHT_SET = new Set(WEIGHT_WORDS.map(totalsKey));
-const VOLUME_SET = new Set(VOLUME_WORDS.map(totalsKey));
+const WEIGHT_SET = new Set(TOTALS_LEAD_LABELS.weightKg.map(totalsKey));
+const VOLUME_SET = new Set(TOTALS_LEAD_LABELS.volumeM3.map(totalsKey));
+
+/**
+ * The words a worded totals answer is written in — every kilo and cube word
+ * of the vocabulary, the tonne and the gram in the spellings that can be
+ * nothing else («jami 2 tonna», T14), and the labels a totals answer may
+ * carry («3500 kg brutto») — for the platform's shape test (`totalsAnswerShape`, which imports
+ * nothing and so is handed it). Matched over a lower-cased text; a word,
+ * never a part of one («kubik»).
+ */
+export const TOTALS_UNIT_WORDS = new RegExp(
+  `(?<![\\p{L}])(?:${unitPattern('kg')}|${unitPattern('m3')}|${scaledPattern('words')}|${labelPattern([
+    ...TOTALS_LEAD_LABELS.weightKg,
+    ...TOTALS_LEAD_LABELS.volumeM3,
+  ])})(?![\\p{L}\\d])`,
+  'giu',
+);
+/** `totalsAnswerShape` in the vocabulary's words — the one way this file asks it. */
+const totalsShape = (text: string) => totalsAnswerShape(text, TOTALS_UNIT_WORDS);
 const isTotalsKey = (key: string) => TOTALS_SET.has(key) || TOTALS_SET.has(foldName(key));
 const fieldOfKey = (key: string): 'weightKg' | 'volumeM3' | null =>
   WEIGHT_SET.has(key) || WEIGHT_SET.has(foldName(key))
@@ -171,17 +277,148 @@ function readTotals(
   rest: string,
   field: 'weightKg' | 'volumeM3' | null,
   open: readonly TableTarget[],
-): NonNullable<TableSegment['totals']> | 'totals_unit' {
-  const read = parseManualFacts(rest);
+  /** `rest` follows a weight's label the caller read off (`totalsLead`) — never a field only inferred. */
+  labelled = false,
+): TotalsReading {
+  // The answer to the bot's own question about the totals: a lone «t» / «g»
+  // after a number is its unit there («jami 2 t» — T14, review JN-9).
+  // A gram is read only after a weight's label (review typed-break-9): the
+  // lead word the caller took off («og‘irligi 500 g») is one; an un-addressed
+  // «500 g» is no truck's brutto.
+  const { facts: read, taken } = readTypedTotals(rest, undefined, { totalsAnswer: true, weightLabel: labelled && field === 'weightKg' });
+  const left = totalsLeft(rest, taken);
   if (read.weightKg != null || read.volumeM3 != null || read.ambiguous.length > 0) {
-    return { weightKg: read.weightKg ?? null, volumeM3: read.volumeM3 ?? null, ambiguous: read.ambiguous };
+    const totals = { weightKg: read.weightKg ?? null, volumeM3: read.volumeM3 ?? null, ambiguous: read.ambiguous };
+    // «og‘irligi 3500, 12 kub»: the word named the field of the one bare
+    // figure the answer holds — it is that field's, when nothing else is.
+    const bare = left.filter((l) => l.why === 'bare');
+    const doubted = (f: 'weightKg' | 'volumeM3') => totals.ambiguous.some((a) => a.field === f);
+    if (field !== null && bare.length === 1 && totals[field] === null && !doubted(field)) {
+      const worded = wordedTotal(bare[0]!.number, field);
+      if (worded[field] != null || worded.ambiguous.length > 0) {
+        return {
+          totals: { ...totals, [field]: worded[field] ?? null, ambiguous: [...totals.ambiguous, ...worded.ambiguous] },
+          left: left.filter((l) => l !== bare[0]),
+        };
+      }
+    }
+    return { totals, left };
   }
-  if (!bareTotalsNumber(rest)) return 'totals_unit';
-  if (totalsFigureCount(rest) > 1) return 'totals_unit';
+  // Nothing a total could take. A bare figure keeps its own sentence (the
+  // unit is asked); anything else the answer holds is named.
+  const named = left.filter((l) => l.why !== 'bare');
+  if (!bareTotalsNumber(rest)) return { totals: null, left: named };
+  if (totalsFigureCount(rest) > 1) return { totals: null, left: [] };
   const unit = field ?? onlyOpenTotal(open);
-  if (unit === null) return 'totals_unit';
-  const worded = parseManualFacts(`${rest.trim()} ${unit === 'weightKg' ? 'kg' : 'kub'}`);
-  return { weightKg: worded.weightKg ?? null, volumeM3: worded.volumeM3 ?? null, ambiguous: worded.ambiguous };
+  if (unit === null) return { totals: null, left: [] };
+  const worded = wordedTotal(rest.trim(), unit);
+  return { totals: { weightKg: worded.weightKg ?? null, volumeM3: worded.volumeM3 ?? null, ambiguous: worded.ambiguous }, left: [] };
+}
+
+/** A bare figure read as `field`'s — through the same reader, in the field's first unit word. */
+const wordedTotal = (number: string, field: 'weightKg' | 'volumeM3') =>
+  parseManualFacts(`${number} ${unitWords(field === 'weightKg' ? 'kg' : 'm3')[0]}`);
+
+/** What a totals remainder states: the totals it gives (null — none), and every figure of it no total took. */
+interface TotalsReading {
+  totals: NonNullable<TableSegment['totals']> | null;
+  left: TotalsLeft[];
+}
+
+/**
+ * A word that LABELS a figure and is no unit of it — «3500 brutto», «12
+ * hajmi», «507 G.W.»: the number before it is bare, never «507 of brutto».
+ */
+const LABEL_WORD = new RegExp(
+  `^(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS])}|sof|jami|jamisi|umumiy|obshiy|итого|всего|total)$`,
+  'iu',
+);
+/** A netto label closing the words before a figure («netto 480 kg», «N.W.: 480 kg»), or opening the words after it. */
+const NETTO_LABEL_BEFORE = new RegExp(`(?<![\\p{L}])((?:${labelPattern(NET_LABELS)}|sof))[\\s.:：=–—-]*$`, 'iu');
+const NETTO_LABEL_AFTER = new RegExp(`^\\s*[(\\[]?\\s*((?:${labelPattern(NET_LABELS)}))(?![\\p{L}])(?![\\s.:：=–—-]*\\d)`, 'iu');
+
+/** A unit word right before a figure, itself after no number (the «kg» of «507 kg 5.9» is the 507's). */
+const UNIT_BEFORE = /(?<!\d[\d.,]*\s*)(?<![\p{L}])([\p{L}][\p{L}\d²³.]*)\s*$/u;
+
+/**
+ * The figures of a text whose word is no unit and no label — «5.9 kubik»,
+ * «300 banka», «15 Pro» — as the kernel's own grammar finds them (T3).
+ */
+function unknownUnits(text: string): UnitAsk[] {
+  return amountsIn(text).flatMap((a) =>
+    // A tonne or a gram spelled out is READ; a lone «t» / «g» is a word nobody placed.
+    a.word !== null && unitOf(a.word) === null && scaledKg(a.word)?.lone !== false && !LABEL_WORD.test(a.word)
+      ? [{ word: a.word, number: a.number, near: nearOf(a.word) }]
+      : [],
+  );
+}
+
+/**
+ * Every figure of a totals answer that stands OUTSIDE what the totals reading
+ * took (`taken`, intake-manual.ts `readTypedTotals`) — T2. The figures are
+ * found by the kernel's own grammar (`amountsIn`), a TNVED code set aside.
+ * NOT left: a carton count — «TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92 CBM»
+ * is the forwarder's line as he writes it, no total asks how the cargo is
+ * packed, and a carton is no figure of a row either.
+ */
+function totalsLeft(rest: string, taken: readonly [number, number][]): TotalsLeft[] {
+  let remainder = rest;
+  for (const [start, end] of taken) remainder = blankSpan(remainder, start, end);
+  const code = codeIn(remainder);
+  if (code) remainder = blankSpan(remainder, code.start, code.end);
+  const out: TotalsLeft[] = [];
+  // What the totals reader left as one package's or one piece's (T4): named as
+  // that, in the seller's own words — told «jami 15 kg» it would be one
+  // carton's figure written as the shipment's.
+  const perOne = perOneIn(rest, { scaled: true });
+  // A bare number with a slash and a word — «G.W.: 15/ctn» — is one too (review typed-break-1).
+  const slashed = slashedFigures(rest);
+  for (const amount of amountsIn(remainder)) {
+    const unit = amount.word ? unitOf(amount.word) : null;
+    if (unit === 'karobka') continue;
+    const { number } = amount;
+    const one = perOne.find((f) => amount.start < f.end && amount.end > f.start);
+    if (one) {
+      out.push({ why: 'per_one', text: one.text, figure: rest.slice(one.start, one.end).trim(), number });
+      continue;
+    }
+    const cut = slashed.find(([a, b]) => amount.start < b && amount.end > a);
+    if (cut) {
+      out.push({ why: 'per_one', text: rest.slice(cut[0], cut[1]), figure: number, number });
+      continue;
+    }
+    if (amount.word === null || (unit === null && LABEL_WORD.test(amount.word))) {
+      // «CBM 7.19», «KG 507» — a cube's or a kilo's word written BEFORE the
+      // figure and owned by no other figure: asked as that unit («“CBM” —
+      // kubmi?»), never «birligi yozilmagan» about a unit he wrote (review
+      // typed-spec-7). Not read: JN-21 wants a «:», a «=» or the unit after.
+      const before = UNIT_BEFORE.exec(remainder.slice(Math.max(0, amount.start - 24), amount.start));
+      const near = before ? unitOf(before[1]) : null;
+      if (before && (near === 'm3' || near === 'kg')) {
+        out.push({ why: 'unit', text: `${before[1]} ${number}`, figure: number, number, word: before[1]!, near });
+        continue;
+      }
+      out.push({ why: 'bare', text: number, figure: number, number });
+      continue;
+    }
+    const text = remainder.slice(amount.start, amount.end).replace(/\s+/gu, ' ').trim();
+    // A tonne or a gram is a KILO figure here — the answer's reader reads the
+    // spelled word and the lone letter alike (`totalsAnswer`). Only a lone
+    // letter GLUED to its digits («2T») is read by nobody, and is asked.
+    const scale = unit === null ? scaledKg(amount.word) : null;
+    const kilos = unit === 'kg' || (scale !== null && !(scale.lone && !/\s/u.test(text)));
+    if (unit === null && !kilos) {
+      out.push({ why: 'unit', text, figure: text, number, word: amount.word, near: nearOf(amount.word) });
+    } else if (kilos) {
+      const label =
+        NETTO_LABEL_BEFORE.exec(remainder.slice(Math.max(0, amount.start - 24), amount.start))?.[1] ??
+        NETTO_LABEL_AFTER.exec(remainder.slice(amount.end, amount.end + 16))?.[1];
+      out.push(label ? { why: 'netto', text: `${label} ${text}`, figure: text, number } : { why: 'weight', text, figure: text, number });
+    } else {
+      out.push({ why: unit === 'm3' ? 'volume' : 'row', text, figure: text, number });
+    }
+  }
+  return out;
 }
 
 /**
@@ -251,6 +488,40 @@ const GROUPED_FIRST = /^\s*\d{1,3}(?:\s\d{3})+(?![\d.,])/u;
  */
 const figureText = (text: string) => text.replace(/(\p{L}[\p{L}\p{N}]*)\s+[-–—]\s+(?=\d)/gu, '$1 ');
 
+/**
+ * A measure's LABEL as one token — «MEAS», «Measurement», «G.W.», «毛重»,
+ * «体积» — says which figure, never which goods (T3, dg3-08: «MEAS: 5.92
+ * CBM» typed at the table was «“MEAS” — jadvalda bunday qator yo‘q»). Only
+ * the labels that can name nothing but that measure (units.ts
+ * `UNIT_FREE_LABELS`, review JN-21): «net», «gross», «vol», «cube», «вес» are
+ * product nouns too, and a row may be addressed by one — «Net 30 dona».
+ */
+const MEASURE_LABELS = [...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.netKg, ...UNIT_FREE_LABELS.volumeM3].filter(
+  (label) => !label.includes(' '),
+);
+const MEASURE_LABEL_TOKEN = new RegExp(`^(?:${labelPattern(MEASURE_LABELS)})$`, 'iu');
+/**
+ * The brutto's and the cube's own labels that are no unit — «G.W.», «gross
+ * weight», «MEAS», «毛重», «体积» — anywhere in a segment: the words a
+ * forwarder's shipment line sets its figures off with (T2). Never the netto's
+ * (a netto is a ROW's weight — `NETTO_FIRST`), and never «cbm», which is the
+ * cube's unit and says nothing of whose cube it is.
+ */
+const SHIPMENT_LABEL = new RegExp(
+  `(?<![\\p{L}])(?:${labelPattern(
+    [...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.volumeM3].filter((label) => unitOf(label) === null),
+  )})(?![\\p{L}])`,
+  'iu',
+);
+/** A Han label is written glued to its figure («毛重507kg»): taken out of the text, longest first («总毛重» before «毛重»). */
+const HAN_LABELS = [...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS]
+  .filter((label) => /^\p{Script=Han}+$/u.test(label))
+  .sort((a, b) => b.length - a.length)
+  .join('|');
+const HAN_MEASURE_LABEL = new RegExp(HAN_LABELS, 'gu');
+/** …and asked for, without a global regex's memory of where it last looked. */
+const HAS_HAN_MEASURE_LABEL = new RegExp(HAN_LABELS, 'u');
+
 /** What a segment says about WHICH goods, once its figures, units, codes and field words are set aside. */
 interface NameParts {
   /** Goods words, folded, three letters or more. */
@@ -270,9 +541,16 @@ interface NameParts {
 const digitKey = (run: string) => run.replace(/^0+(?=\d)/u, '');
 
 function nameParts(raw: string): NameParts {
-  const text = raw
+  // «5.9 cubic meters»: a unit of two words is one unit, never a goods name.
+  const text = joinUnitPhrases(raw)
     .replace(ENGINE_FIELD, ' ')
+    .replace(HAN_MEASURE_LABEL, ' ')
     .replace(GROUPED, (_m, head: string, groups: string) => head + groups.replace(/\s/gu, ''))
+    // «1'200 dona»: the apostrophe sets a digit group off — one figure, never a model «1200» of the name (T14).
+    .replace(/(?<=\d)['’ʼʻ](?=\d{3}(?!\d))/gu, '')
+    // …and a comma between two digits is the number's own — «2,5 kg», «1,136.5 kg»: the tokens
+    // below are cut at commas, and «Kurtka 2,5 kg» was «2» of the NAME and a «5 kg» of another row.
+    .replace(/(?<=\d),(?=\d)/gu, '.')
     // A figure glued to a name by a dash («Sumka-50 dona») is the figure, as
     // `parseLineAnswer` reads it — never a model number of «Sumka».
     .replace(/(\p{L})[-–—](\d[\d.,]*)(?=\s*([\p{L}²³]+))/gu, (m, letter: string, digits: string, unit: string) =>
@@ -285,7 +563,9 @@ function nameParts(raw: string): NameParts {
   const typed: string[] = [];
   let carton = false;
   const tiers = tierWords(foldPlain(text));
-  const isUnit = (t: string) => unitOf(t) !== null || unitOf(foldName(t)) !== null;
+  // A tonne or a gram in a spelling that can be nothing else is the figure's unit too (T14) —
+  // never a lone «t» / «g», which names a model as often («5 t domkrat»).
+  const isUnit = (t: string) => unitOf(t) !== null || unitOf(foldName(t)) !== null || scaledKg(t)?.lone === false;
   tokens.forEach((token, i) => {
     if (unitOf(token) === 'karobka' || unitOf(foldName(token)) === 'karobka') {
       carton = true;
@@ -306,6 +586,7 @@ function nameParts(raw: string): NameParts {
     }
     const glued = /^(\d[\d.,]*)(\p{L}+)$/u.exec(token);
     if (glued && isUnit(glued[2]!)) return;
+    if (MEASURE_LABEL_TOKEN.test(token)) return;
     for (const word of foldName(token).split(' ').filter(Boolean)) {
       for (const run of word.match(/\d+/gu) ?? []) digits.push(digitKey(run));
       const letters = word.replace(/[^\p{L}]/gu, '');
@@ -382,8 +663,12 @@ function answerUnits(answer: LineAnswer): NeedUnit[] {
   return [];
 }
 
-/** A segment the seller labelled NETTO — the row's own weight, never the brutto total. */
-const NETTO_FIRST = /^\s*(?:sof|netto|нетто|net|n\.?\s?w\.?)(?![\p{L}])/iu;
+/**
+ * A segment the seller labelled NETTO — the row's own weight, never the brutto
+ * total. The labels are the vocabulary's (units.ts `NET_LABELS`: «N/W», «净重»
+ * were on no list here), and «sof» alone.
+ */
+const NETTO_FIRST = new RegExp(`^\\s*(?:${labelPattern(NET_LABELS)}|sof)(?![\\p{L}])`, 'iu');
 
 const isLine = (t: TableTarget): t is { line: number } => 'line' in t;
 
@@ -449,16 +734,83 @@ function totalsTarget(totals: NonNullable<TableSegment['totals']>): TableTarget 
 /** «3 50 dona» — no separator: the row's number or a count? Asked, never guessed. */
 const UNCLEAR = /^\s*(\d{1,4})\s+(\d[\d.,]*)\s*([\p{L}²³]+)/u;
 
+/**
+ * T3: is the segment a figure and a WORD THAT IS NO UNIT, and nothing that
+ * names goods beside it — «5.9 kubik», «507 kg 5.9 kubik», «300 banka»? Then
+ * the word is asked as a unit. Every goods word the segment holds must be
+ * such a word: «Shapka 5 banka» names a product, and «iPhone 15 Pro 30 dona»
+ * a model — those keep the refusal they had.
+ */
+function unitAsked(text: string, parts: NameParts): UnitAsk | null {
+  const unknown = unknownUnits(figureText(text));
+  if (unknown.length === 0) return null;
+  const keys = new Set(unknown.map((u) => foldName(u.word).replace(/[^\p{L}]/gu, '')));
+  return [...parts.words, ...parts.han].every((w) => keys.has(w)) ? unknown[0]! : null;
+}
+
+/**
+ * A lone-letter weight — «1: 128 g», «1.5 t» — stands only where the bot
+ * asked that row's WEIGHT (review JN-9, «as the answer to the bot's own
+ * weight question»): to a row that owes no kilos the letter is a capacity as
+ * often as a gram — a flash drive's «128 g» — and the answer is what it was
+ * before the tonne was a word, a unit nobody knows, asked in the row answer's
+ * own words. Spelled out («1.5 tonna», «128 gr») it is read anywhere.
+ */
+function loneWeightAsked(row: TableRow | undefined, text: string, answer: LineAnswer): LineAnswer {
+  const lone = loneScaledAnswer(figureText(text));
+  if (lone === null || row === undefined || row.needs.includes('kg')) return answer;
+  return { kind: 'refused', reason: 'unknown_unit', detail: lone.word };
+}
+
 interface ReadSegment extends TableSegment {
   /** Addressed by a number, a sign or a totals word — what the material stage takes. */
   explicit: boolean;
   /** A goods-word segment that named no row (rule 3's evidence of a typed goods list). */
   namedNone: boolean;
+  /**
+   * The part of a totals answer no total took (T2), as a refusal of its own
+   * beside the totals that WERE written: «jami 507 kg 300 dona» writes the
+   * kilos and says the count went nowhere — neither half is lost to the other.
+   */
+  also?: ReadSegment;
+}
+
+/**
+ * A totals reading as the segment(s) it becomes: the totals written, what was
+ * left named beside them — or, with nothing a total could take, the refusal
+ * alone (with the figures it is about, when there are any to name).
+ */
+function totalsSegment(raw: string, reading: TotalsReading, flags: { explicit: boolean; namedNone: boolean }): ReadSegment {
+  const detail = reading.left.map((l) => l.text).join(', ');
+  if (reading.totals === null) {
+    const whole = refused(raw, 'totals_unit', raw);
+    return reading.left.length > 0
+      ? { ...whole, refused: { reason: 'totals_unit', detail, left: reading.left }, ...flags }
+      : { ...whole, ...flags };
+  }
+  const placed: ReadSegment = { raw, at: totalsTarget(reading.totals), refused: null, answer: null, totals: reading.totals, route: null, ...flags };
+  if (reading.left.length === 0) return placed;
+  return {
+    ...placed,
+    also: { ...refused(detail, 'totals_unit', detail), refused: { reason: 'totals_unit', detail, left: reading.left }, ...flags },
+  };
 }
 
 /** A row's folded name — `rowName`, or one the caller already folded (`nameWordFor`, perf review PERF-1). */
 type NameOf = (row: TableRow) => RowName;
 const foldEach: NameOf = (row) => rowName(row.name);
+
+/**
+ * An answer the row kernel refused as ONE package's or ONE piece's (T4) with
+ * nothing left of a name once its per-one figures and their marks are taken
+ * out — «1: 15 kg/ctn», «1: har biri 15 kg», «15 kg/ctn». Its words were read
+ * as a NAME and the answer refused «kg/ctn — yangi tovarmi?» / «jadvalda
+ * bunday qator yo‘q», the wording T3/T4 exist to remove (review typed-spec-3).
+ */
+function perOneOnly(text: string, answer: LineAnswer): boolean {
+  if (answer.kind !== 'refused' || answer.reason !== 'per_one') return false;
+  return !hasName(nameParts(blankSpans(text, [...packingRead(text, { scaled: true }).consumed, ...slashedFigures(text)])));
+}
 
 function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment {
   const plain = { explicit: false, namedNone: false };
@@ -467,29 +819,31 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
     const row = table.rows.find((r) => r.no === address.n);
     if (!row) return { ...refused(raw, 'no_line', String(address.n)), explicit: true, namedNone: false };
     const answer = parseLineAnswer(figureText(address.rest));
+    // One carton's figure to a row: the line answer's own refusal speaks («bittasiniki»), never a name question.
+    if (perOneOnly(address.rest, answer)) {
+      return { raw, at: { line: row.no }, refused: null, answer, totals: null, route: null, explicit: true, namedNone: false };
+    }
     const parts = nameParts(address.rest);
     // The words after the number must not name ANOTHER row (regression-3):
     // «1. Kurtka 300 dona» on row 1 Krossovka is a list of other goods, asked.
     if (hasName(parts)) {
       const name = nameOf(row);
       if (!namesRow(parts, name) || !holdsModel(parts, name)) {
+        const unit = unitAsked(address.rest, parts);
         return {
           ...refused(raw, 'name_mismatch', parts.typed || raw, { at: { line: row.no }, answer }),
-          refused: { reason: 'name_mismatch', detail: parts.typed || raw, candidates: [row.no] },
+          refused: { reason: 'name_mismatch', detail: parts.typed || raw, candidates: [row.no], ...(unit ? { unit } : {}) },
           explicit: true,
           namedNone: false,
         };
       }
     }
-    return { raw, at: { line: row.no }, refused: null, answer, totals: null, route: null, explicit: true, namedNone: false };
+    const asked = loneWeightAsked(row, address.rest, answer);
+    return { raw, at: { line: row.no }, refused: null, answer: asked, totals: null, route: null, explicit: true, namedNone: false };
   }
 
   const lead = totalsLead(raw);
-  if (lead) {
-    const totals = readTotals(lead.rest, lead.field, table.open);
-    if (totals === 'totals_unit') return { ...refused(raw, 'totals_unit', raw), explicit: true, namedNone: false };
-    return { raw, at: totalsTarget(totals), refused: null, answer: null, totals, route: null, explicit: true, namedNone: false };
-  }
+  if (lead) return totalsSegment(raw, readTotals(lead.rest, lead.field, table.open, true), { explicit: true, namedNone: false });
 
   // The material stage takes only an explicit address; everything else is goods.
   if (table.stage === 'material') return { ...refused(raw, 'no_address', raw), ...plain };
@@ -507,25 +861,60 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
   }
 
   const answer = parseLineAnswer(figureText(raw));
+  // Un-addressed, one carton's figure is named as that by the totals reading —
+  // «⚠️ «15 kg/ctn» — bittasiniki, umumiy emas» — and written nowhere.
+  if (perOneOnly(raw, answer)) return totalsSegment(raw, readTotals(raw, null, table.open), plain);
   const parts = nameParts(raw);
   if (parts.carton) return { ...refused(raw, 'no_address', raw), ...plain };
   // No goods word left over: an ANSWER, to the target its unit fits.
   if (!hasName(parts)) {
-    if (answer.kind === 'refused') return { ...refused(raw, 'no_address', raw), ...plain };
+    // What the row kernel cannot read as ONE row's answer may still be the
+    // shipment's own line: two kilos, a brutto and a netto («G.W.: 507 KGS
+    // N.W.: 480 KGS MEAS: 5.92 CBM»), a weight in a lone letter after its
+    // label («G.W. 2.5 MT»), or a Han label glued to its figure («毛重507kg» —
+    // no amount to a reader that never splits letters from digits). The
+    // totals reader takes what it can and names the rest (T2).
+    const loneScaled = answer.kind === 'refused' && answer.reason === 'unknown_unit' && scaledKg(answer.detail) !== null;
+    if (answer.kind === 'refused' && (answer.reason === 'repeated' || loneScaled || HAS_HAN_MEASURE_LABEL.test(raw))) {
+      const typed = readTotals(raw, null, table.open);
+      if (typed.totals !== null || typed.left.length > 0) return totalsSegment(raw, typed, plain);
+    }
+    if (answer.kind === 'refused') {
+      // «5 kb»: a word too short to be anybody's name, and no unit either.
+      const unit = answer.reason === 'unknown_unit' ? unitAsked(raw, parts) : null;
+      const none = refused(raw, 'no_address', raw);
+      return { ...none, ...(unit ? { refused: { ...none.refused!, unit } } : {}), ...plain };
+    }
     const target = targetFor(answer, table, NETTO_FIRST.test(raw));
+    // A brutto's or a cube's label says the shipment's line no row takes —
+    // «G.W. 480 kg CBM 3.66» read as 480 kg and a COUNT of 3.66, and was
+    // «Qaysi qatorga?» with the labelled kilos dropped (T2, dg2-10): the
+    // totals take what they can, and the rest is named.
+    if (target === null && SHIPMENT_LABEL.test(raw)) {
+      const typed = readTotals(raw, null, table.open);
+      if (typed.totals !== null) return totalsSegment(raw, typed, plain);
+    }
     if (target === null) return { ...refused(raw, 'no_address', raw, { answer }), ...plain };
     if (target === 'both' || 'totals' in target) {
-      const totals = readTotals(raw, target === 'both' ? null : target.totals, table.open);
-      if (totals === 'totals_unit') return { ...refused(raw, 'totals_unit', raw), ...plain };
-      return { raw, at: target === 'both' ? totalsTarget(totals) : target, refused: null, answer: null, totals, route: null, ...plain };
+      const read = totalsSegment(raw, readTotals(raw, target === 'both' ? null : target.totals, table.open), plain);
+      // A bare figure is the one total the table had open for it.
+      return target === 'both' || read.refused ? read : { ...read, at: target };
     }
-    return { raw, at: target, refused: null, answer, totals: null, route: null, ...plain };
+    const asked = loneWeightAsked('line' in target ? table.rows.find((r) => r.no === target.line) : undefined, raw, answer);
+    return { raw, at: target, refused: null, answer: asked, totals: null, route: null, ...plain };
   }
 
   // Goods words: the NAME address, read before or after the figure («50 dona
   // sumka», «40 juft krossovka» — ordinary Uzbek word order, product-fit-13).
   const met = table.rows.filter((r) => namesRow(parts, nameOf(r)));
-  if (met.length === 0) return { ...refused(raw, 'name_none', parts.typed || raw, { answer }), explicit: false, namedNone: true };
+  if (met.length === 0) {
+    const unit = unitAsked(raw, parts);
+    const none = refused(raw, 'name_none', parts.typed || raw, { answer });
+    // A unit asked about names no goods at all: it is no evidence of a typed
+    // goods list (rule 3), so «5.9 kubik⏎507 kilogr» is asked twice, never
+    // filed as material and re-read as two products (T3, dg3-04).
+    return { ...none, ...(unit ? { refused: { ...none.refused!, unit } } : {}), explicit: false, namedNone: unit === null };
+  }
   const kept = met.filter((r) => holdsModel(parts, nameOf(r)));
   if (kept.length === 0) {
     return {
@@ -682,7 +1071,10 @@ function readAll(text: string, table: TableRef, nameOf: NameOf): ReadSegment[] {
     addressOf(part, table.stage) !== null ||
     totalsLead(part) !== null ||
     (table.stage === 'review' && hasName(nameParts(part)) && table.rows.some((r) => namesRow(nameParts(part), nameOf(r))));
-  return segmentsOf(text, startsAddressed).map((raw) => readSegment(raw, table, nameOf));
+  return segmentsOf(text, startsAddressed).flatMap((raw) => {
+    const read = readSegment(raw, table, nameOf);
+    return read.also ? [read, read.also] : [read];
+  });
 }
 
 const strip = (s: ReadSegment): TableSegment => ({
@@ -795,7 +1187,7 @@ export function looksLikeLineAnswer(text: string): boolean {
 /** A totals word followed only by figures and units — «jami 3500 kg», «og‘irligi 3500 kg», «брутто 3500 кг». */
 function totalsWordAnswer(segment: string): boolean {
   const lead = totalsLead(segment);
-  return lead !== null && lead.rest !== '' && totalsAnswerShape(lead.rest) !== null;
+  return lead !== null && lead.rest !== '' && totalsShape(lead.rest) !== null;
 }
 
 /**
@@ -809,6 +1201,6 @@ export function looksLikeTableAnswer(text: string): boolean {
   const segments = shapeSegments(text);
   return (
     segments.length > 0 &&
-    segments.every((s) => totalsAnswerShape(s) === 'worded' || totalsWordAnswer(s) || lineAnswerSegment(s))
+    segments.every((s) => totalsShape(s) === 'worded' || totalsWordAnswer(s) || lineAnswerSegment(s))
   );
 }

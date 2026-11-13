@@ -22,6 +22,7 @@ import {
   normalizeTnved,
   parseGoodsLine,
   unitOf,
+  withoutFirstGroup,
   type GoodsLine,
   type GoodsLineProblem,
 } from './units';
@@ -275,8 +276,23 @@ export function itemOfRow(row: SendRow): DoorItemInput | null {
 // again, so an answer is never a second reading rule.
 // ---------------------------------------------------------------------------
 
-/** «1,200» → the chosen reading, in the text it was written in. */
+/**
+ * «1,200» → the chosen reading, in the text it was written in.
+ *
+ * A space-grouped number asked for both readings (units.ts `groupedReading`,
+ * review JN-6) — «Stul 20 300 kg» — is two facts when its reading WITHOUT the
+ * first group is chosen: the 20 is the chairs' count (or a model's number),
+ * and replacing the run by «300» deleted it from the row's text (review
+ * typed-break-8). The first group stays, set apart by a comma — «Stul 20,
+ * 300 kg» — which the kernel reads as a cell of its own.
+ */
 export function answerAmbiguous(raw: string, problemText: string, value: number): string {
+  const tail = withoutFirstGroup(problemText);
+  if (tail !== null && value === tail) {
+    const number = problemText.trim();
+    const first = /^\d{1,3}/u.exec(number)![0];
+    return raw.replace(problemText, `${first}, ${number.slice(first.length).trim()}`);
+  }
   return raw.replace(problemText, String(value));
 }
 

@@ -5,6 +5,7 @@ import { db } from '../../platform/db/client';
 import { warehouses } from '../../platform/db/schema';
 import { balanceMessages, cargoMessages } from '../client-cabinet/bot-text';
 import { cargoOverview, debtSummary } from '../client-cabinet/service';
+import { parseSize, round3, sizeCube } from '../calc/carton-math';
 import { FIELD_LABEL, missingFields, type CalcFacts, type CalcGoodsFact, type CalcSection } from '../calc/intake';
 import { parseManualFacts } from '../calc/intake-manual';
 import { freightFor } from '../calc/pricing';
@@ -204,6 +205,31 @@ function stated(ctx: AgentContext, values: readonly (number | null | undefined)[
 }
 
 /**
+ * Did the customer write this SIDE of a size — «60x40x50 sm» is three
+ * figures, and the policy's number reader takes it for one («60»), so
+ * `cargo_volume`'s own check refused the commonest way a carton's size is
+ * typed and the model asked again for what it had been told. Read by the
+ * kernel's one size reader (carton-math.ts `parseSize`, docs/AI-SORAYDI.md
+ * §3.1 T16), in centimetres as the tool's input names them; a size in a unit
+ * it cannot convert vouches for nothing.
+ */
+function sideStated(ctx: AgentContext, side: number): boolean {
+  for (const m of ctx.messages) {
+    if (m.direction !== 'in') continue;
+    let text = m.body;
+    // Each round takes one size out; the bound is for a message made of nothing else.
+    for (let round = 0; round < 20; round += 1) {
+      const token = parseSize(text);
+      if (!token) break;
+      const toCm = token.unit === 'mm' ? 0.1 : token.unit === 'm' ? 100 : token.unit === 'other' ? null : 1;
+      if (toCm !== null && token.sides.some((s) => close(s * toCm, side))) return true;
+      text = text.slice(0, token.start) + ' '.repeat(token.end - token.start) + text.slice(token.end);
+    }
+  }
+  return false;
+}
+
+/**
  * A tool's own text read for its figures — every one of them the tool's word
  * (B3). A money figure of the balance is a BALANCE (K21), in the currency the
  * text writes it in — «+5 000 000 UZS (≈ 380 $)» is so'm and dollars, not two
@@ -358,10 +384,17 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
       const w = Number(input.width_cm);
       const h = Number(input.height_cm);
       if (![n, l, w, h].every((x) => Number.isFinite(x) && x > 0)) return { ok: false, text: "O'lchovlar to'liq emas.", sources: [] };
-      if (!stated(ctx, [n, l, w, h])) {
+      if (!stated(ctx, [n]) || ![l, w, h].every((side) => stated(ctx, [side]) || sideStated(ctx, side))) {
         return { ok: false, text: "Bu sonlar mijozning \"Suhbat\" qismidagi xabarida yo'q (oldingi suhbatdagi son eskirgan) — o'lchamlarni mijozdan so'ra.", sources: [] };
       }
-      const m3 = Math.round(((n * l * w * h) / 1_000_000) * 1000) / 1000;
+      // ONE carton arithmetic (docs/AI-SORAYDI.md §3.1 T16, review JB-16): the
+      // package's cube is the kernel's (`sizeCube`, the unit as the tool's
+      // input names it), and the count times it rounds the kernel's way.
+      // This tool had its own «÷ 1 000 000» since 0138 — a second home of the
+      // arithmetic with a rounding of its own (CR-4).
+      const cube = sizeCube({ l, w, h, unit: 'cm' });
+      if (!cube) return { ok: false, text: "O'lchovlar to'liq emas.", sources: [] };
+      const m3 = round3(n * cube.m3);
       const ref = `d${ctx.measures.filter((m) => m.ref.startsWith('d')).length + 1}`;
       const volume: MeasureCandidate = { ref, kind: 'volume', value: m3, messageRef: 'hisob' };
       ctx.measures.push(volume);

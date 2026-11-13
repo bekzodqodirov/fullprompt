@@ -7,6 +7,7 @@ import { SHEET_TEXT_BUDGET } from '../deals/goods-file';
 import type { AiUsage } from '../tnved/service';
 import type { AiReadFailure, CalcFacts, CalcGoodsFact, CalcSection } from './intake';
 import { normalizeRowUnit, normalizeTnved, unitOf } from './units';
+import { applyPacking, emptyPacking, packingStated, wholeCartons, type Packing, type SizeUnit } from './carton-math';
 
 /**
  * Reading a pile of forwarded material into the handful of facts a quote
@@ -32,6 +33,14 @@ import { normalizeRowUnit, normalizeTnved, unitOf } from './units';
 const AI_UNITS = ['dona', 'kg', 'm2', 'juft', 'litr', 'm3', 'karobka'] as const;
 
 /**
+ * The packing contract's second measure (docs/AI-SORAYDI.md §2.2): m², pairs
+ * and litres ONLY. Pieces, kilos, cubes and cartons each have a key of their
+ * own there; `AI_UNITS` stays the LEGACY contract's list, and `aiGoodsLine`
+ * still routes whatever word arrives.
+ */
+const AI_MEASURE_UNITS = ['m2', 'juft', 'litr'] as const;
+
+/**
  * One good of the answer — every key present, nothing defaulted: it is also
  * the test a CUT answer's goods must pass one by one (`salvageCut`), where a
  * key absent is a good the stream did not finish.
@@ -47,7 +56,38 @@ const goodSchema = z.object({
   unit: z.string().nullable(),
   measure_qty: z.number().nullable(),
   tnved_code: z.string().nullable(),
+  // The packing, the name's source and the code's doubt (docs/AI-SORAYDI.md
+  // §2.2). In the SCHEMA every one is required and none is nullable — a
+  // number says «not stated» as 0, a word as "unknown" — because the API
+  // caps a request at 16 union-typed parameters and this answer already
+  // spends 12 (§2.1). Here they are read leniently: the LEGACY contract's
+  // answer (`intakeContract`) carries none of them, and neither does a
+  // stand-in written before them.
+  name_source: z.string().nullish(),
+  photo: z.number().nullish(),
+  weight_kind: z.string().nullish(),
+  // An ARRAY of 0 or 1 objects, read entry by entry (`packingOfAnswer`): a
+  // good that states no packing costs «"packing":[]» to write, not eleven
+  // zeros — a 300-row document under the flat form was cut at ~40 % of the
+  // rows it completes today (the prompt audit's PR-10).
+  packing: z.array(z.unknown()).nullish(),
+  code_sure: z.boolean().nullish(),
   note: z.string().nullable(),
+});
+
+/** One packing object of a good, read leniently (a word outside its enum is «not said»). */
+const packSchema = z.object({
+  cartons: z.number().nullish(),
+  pieces_per_carton: z.number().nullish(),
+  carton_weight_kg: z.number().nullish(),
+  carton_weight_kind: z.string().nullish(),
+  carton_volume_m3: z.number().nullish(),
+  l: z.number().nullish(),
+  w: z.number().nullish(),
+  h: z.number().nullish(),
+  size_unit: z.string().nullish(),
+  size_of: z.string().nullish(),
+  piece_weight_kg: z.number().nullish(),
 });
 
 const factsSchema = z.object({
@@ -64,9 +104,18 @@ const factsSchema = z.object({
   // this field, or one bad entry, must never cost the WHOLE reading — the
   // codes are a proposal, the goods and totals are the reading.
   known_codes: z.array(z.unknown()).nullish(),
+  // The model's own questions (§2.2) — read entry by entry (`questionsOf`),
+  // for the same reason as the codes: one odd entry must not cost the reading.
+  questions: z.array(z.unknown()).nullish(),
 });
 
-const SYSTEM = `Ты — помощник карго-компании GSR LOGISTICS (Китай → Узбекистан).
+/**
+ * The contract of 2026-10/11, kept verbatim as the LEGACY one (docs/AI-SORAYDI.md
+ * §2.1): if the API refuses the new schema, the reading falls back to this
+ * prompt and `FACTS_JSON_SCHEMA_V1` — today's reading — instead of failing
+ * every request. Do not edit it: it is what production is known to accept.
+ */
+const SYSTEM_V1 = `Ты — помощник карго-компании GSR LOGISTICS (Китай → Узбекистан).
 Сотрудник прислал материалы по заявке клиента: тексты, списки товаров, фото накладных.
 Твоя задача — ИЗВЛЕЧЬ факты, а не считать цену. Цену называет сотрудник.
 
@@ -123,6 +172,146 @@ tnved_code — код). Сами эти строки в goods не повтор�
 не уверен — пустой массив.`;
 
 /**
+ * The reading's contract (docs/AI-SORAYDI.md §2.2). What changed against
+ * `SYSTEM_V1`, each for a sentence of his 2026-11-11 report:
+ *  - a photo is a DOCUMENT (read) or the GOODS themselves (looked at and
+ *    named, `name_source: "picture"`) — the old prompt knew only paperwork and
+ *    told the model an empty list beats a guess, so a product photo read
+ *    «Tovarlar (0)»;
+ *  - what is written PER PACKAGE is copied into its own keys and never
+ *    multiplied — the bot multiplies (carton-math.ts). The old sentence «null,
+ *    не умножай» kept the wrong number out and threw the factors away;
+ *  - a code always, with its doubt (`code_sure`): an uncoded row cannot be
+ *    asked its law's unit before «Tasdiqlash»;
+ *  - `questions`, each with a KIND its consumer switches on: the model had no
+ *    way to say what it could not read;
+ *  - every figure has ONE home: `unit` + `measure_qty` carry m², pairs and
+ *    litres only — the old «(или measure_qty + unit "m3")» let one carton's
+ *    cube land as the line's through the second door;
+ *  - a size says WHOSE it is (`size_of`), and a marketplace card describes
+ *    one piece — its MOQ is not the order.
+ * The wording follows the prompt audit of 2026-11-12 (PR-1…PR-15): the
+ * suppressors it lists («фото накладных» as the only photo, «лучше пустой
+ * список», the two homes of a cube) are what this text removes.
+ */
+const SYSTEM = `Ты — помощник карго-компании GSR LOGISTICS (Китай → Узбекистан).
+Сотрудник прислал материалы по заявке клиента: тексты, списки товаров, фото накладных,
+фото самого товара или коробок, скриншоты переписки и карточек товара.
+Твоя задача — ИЗВЛЕЧЬ факты, а не считать. Цену называет сотрудник; умножает и складывает бот.
+
+Извлеки:
+- город отправления и город назначения (если названы);
+- общий вес ОТПРАВКИ — БРУТТО в килограммах (с упаковкой: G.W., gross, брутто, 毛重, 总毛重) — и
+  общий объём в кубометрах (TOTAL CBM, MEAS, Volume, 总体积, 方数, «Итого м³») — только если ИТОГ
+  НАПИСАН (единицы пересчитай: т → кг, л и см³ → м³). Строки сам не складывай: итога нет — null,
+  бот сложит строки сам. Если документ называет только НЕТТО всей отправки — как поступить,
+  сказано в строке «Только нетто:» под разделом заявки;
+- список товаров: название, количество ШТУК, вес позиции, объём позиции, упаковку и код ТН ВЭД.
+
+ЕДИНИЦЫ — у каждой цифры ОДНО место:
+  · quantity — только ШТУКИ всего по позиции (шт, pcs, dona, ta, комплект). Штук нет — null;
+  · weight_kg — килограммы ВСЕЙ позиции, если они написаны. weight_kind: "net" (N.W., нетто,
+    净重), "gross" (G.W., брутто, 毛重) или "unknown". Есть и нетто, и брутто — бери нетто.
+    Веса позиции нет — null, общий вес не дели;
+  · volume_m3 — кубометры ВСЕЙ позиции (все её коробки), если этот итог написан;
+  · unit + measure_qty — ТОЛЬКО квадратные метры ("m2"), ПАРЫ ("juft": обувь, носки, перчатки)
+    и ЛИТРЫ ("litr"). Штуки, килограммы, кубометры и коробки сюда не пиши — у них свои поля.
+    Другой единицы нет — оба null;
+  · одна позиция может иметь и штуки, и вес, и пары — заполни всё, что написано.
+
+УПАКОВКА — ты ПЕРЕПИСЫВАЕШЬ, бот УМНОЖАЕТ. packing — пустой массив, если о коробках, размерах
+и весе одной штуки ничего не написано. Иначе ОДИН объект (несколько — только когда позиция едет
+в коробках разных размеров: тогда бот не умножает, а спросит):
+  · cartons — число коробок (мест) ЭТОЙ позиции: CTNS, 箱数, «мест», 件数 рядом со штуками;
+  · pieces_per_carton — штук в одной коробке (PCS/CTN, 装箱数, «по 24 шт»). Если в коробке
+    считают ПАРЫ, м² или литры («12 пар/кор», «1.44 м²/кор») — пиши это число сюда же, unit
+    позиции поставь "juft" / "m2" / "litr", а measure_qty оставь null: бот умножит;
+  · carton_weight_kg — вес ОДНОЙ коробки; carton_weight_kind — "gross" (G.W./CTN, 毛重/箱),
+    "net" (N.W./CTN, 净重/箱) или "unknown";
+  · carton_volume_m3 — объём ОДНОЙ коробки (CBM/CTN, 单箱体积);
+  · l, w, h — размер, как написан (60×40×50); size_unit — "cm", "mm" или "m"; единица не
+    написана — "unknown" (не угадывай);
+  · size_of — ЧЕЙ это размер: "package" — коробки или места (CTN SIZE, 外箱尺寸, 箱规, «размер
+    коробки», размер, написанный рядом с числом коробок: «20 коробок 60×40×50», а также габарит
+    груза, который едет без коробки: станок, рулон, мебель в сборе); "product" — самого изделия
+    (размер в названии или в карточке товара: «Стол 120×80×75»); не ясно — "unknown";
+  · piece_weight_kg — вес ОДНОЙ ШТУКИ («4.5 кг/шт», 单重);
+  · чего нет — 0, для слов — "unknown".
+Итог по позиции, если он НАПИСАН, пиши как всегда — в quantity, weight_kg, volume_m3. Написано
+только «на одну коробку» или «на одну штуку» — итог оставь null: бот умножит сам. Ты не
+умножаешь, не складываешь и не делишь.
+Не можешь понять, на одну коробку цифра или на всю позицию (столбец назван просто «CBM»,
+«G.W.», «KG») — не решай сам: запиши её в weight_kg / volume_m3 и задай вопрос kind
+"per_or_total".
+Два числа («Плитка 600×600», «экран 55"») — не объём: оставь их в названии.
+
+СЛОВА: CBM, M3, «куб», 方, 立方, MEAS, Measurement, Volume — кубометры; KGS, G.W., N.W., 毛重,
+净重 — вес. Столбец «MEAS (CM)», «CTN SIZE», 外箱尺寸 с числами вида 60*40*50 — это РАЗМЕР,
+не объём.
+
+КАРТОЧКА ТОВАРА (скриншот 1688, Taobao, Alibaba) описывает ОДНУ штуку: её вес —
+piece_weight_kg, её размер — l/w/h с size_of "product". MOQ, 起批量, «мин. заказ», ступени
+цены («≥100 шт — ¥85») — это НЕ заказанное количество: quantity null, пока количество заказа
+не написано в тексте или переписке.
+
+КОД ТН ВЭД: всегда дай лучший код, который подходит названию и тому, что видно: 10 цифр или
+товарная позиция из 4-6 цифр (точки и пробелы можно). code_sure = true, только если код не
+зависит от того, чего ты не знаешь; если его решает материал, пол или назначение, а их не
+видно — code_sure = false и вопрос kind "material". Товар не удалось назвать — tnved_code
+null и code_sure false.
+
+ФОТО подписаны «Фото 1», «Фото 2»… Они бывают двух видов.
+1) ДОКУМЕНТ — накладная, упаковочный лист, инвойс, наклейка на коробке, запись от руки,
+   скриншот переписки или карточки товара. Его ЧИТАЙ так же внимательно, как текст: вес и
+   объём чаще всего написаны именно на фото. name_source = "document".
+2) САМ ТОВАР или коробки. Его РАССМОТРИ: назови каждый РАЗНЫЙ товар, который видно, —
+   конкретно («Стул офисный на колёсах», а не «мебель»); в note коротко (до 100 знаков)
+   напиши, из чего он сделан и для чего, если это видно; name_source = "picture".
+   Количество, вес и объём по фото не угадывай. Называй товар, РАДИ которого снято фото: фон,
+   мебель, упаковка и люди вокруг — не товар. Закрытые коробки без надписей — не товар:
+   вопрос kind "what_goods".
+photo — номер фото, на котором товар виден или написан; 0 — не с фото.
+
+questions — чего тебе НЕ ХВАТИЛО и что сотрудник ответит в двух словах: не больше пяти, самые
+важные первыми. list — к какому списку относится n: "goods" — твой список goods, "known" —
+пронумерованный список «уже взятых» товаров. n — номер строки в этом списке (с 1), 0 — про
+всю отправку. В самом тексте вопроса номер строки НЕ пиши: бот поставит его сам. kind:
+  · "what_goods" — товар нельзя назвать;
+  · "material" — из чего сделан, для кого, для чего — когда от этого зависит код;
+  · "size_unit" — в каких единицах размер;
+  · "size_of" — чей это размер: коробки (места) или самого изделия;
+  · "per_or_total" — цифра на одну коробку (штуку) или на всю позицию;
+  · "which_row" — к какому товару относится цифра или подпись;
+  · "other" — остальное.
+text — один короткий вопрос ПО-УЗБЕКСКИ (латиницей), с самой цифрой, если он о ней:
+«0.083 kub — bitta karobkanikimi yoki hammasinikimi?».
+НЕ спрашивай: количество, вес и объём, которых просто нет, общий брутто и общий объём — их
+бот спросит САМ по своей таблице; то, что уже есть в материалах; «пришлите файл получше».
+Нечего спросить — пустой массив.
+
+steps — короткие строки на узбекском о том, ЧТО ты сделал: что прочитал или увидел на каком
+фото, как сгруппировал товары, почему такой код. Вопросы — не сюда, а в questions.
+
+ВСЁ ВМЕСТЕ. Сотрудник пересылает материал кусками: текст, фото, PDF, таблицу Excel (её
+содержимое дано текстом). Это ОДНА заявка — прочитай всё и собери один список. Один и тот же
+товар в тексте и в документе — одна строка, не две. Если число в тексте сотрудника и число в
+документе расходятся — в поле пиши число ДОКУМЕНТА и назови оба в steps: бот сам сравнит и
+спросит. Документа нет — бери из текста.
+
+НАЗВАНИЕ товара пиши по-русски; если в документе оно на китайском или английском, добавь
+оригинал в скобках: «Куртка женская (女士夹克)».
+
+Ничего не выдумывай: ни одной ЦИФРЫ, которой нет в материалах, и ни одного товара, который
+нигде не написан и не виден на фото. Если факта нет — null (в упаковке — 0). Лучше вопрос в
+questions, чем придуманный факт.
+
+known_codes — только если ниже дан ПРОНУМЕРОВАННЫЙ список «уже взятых» товаров: по номеру
+строки (n) — код ТН ВЭД, где ты уверен (tnved_code; не уверен — ""), и name — русское
+название товара, ТОЛЬКО если в списке вместо названия стоит артикул или код («XJ-200») и по
+фото или документу видно, что это за товар (иначе ""). Сами эти строки в goods не повторяй.
+Нет такого списка — пустой массив.`;
+
+/**
  * A code the model proposed for a row of the «already taken» list, by the
  * row's INDEX into the `knownGoods` the caller passed (docs/IKKI-ESHIK.md
  * §3.1) — re-checked by `knownCodesOf`: a number the model was not shown, or
@@ -134,12 +323,119 @@ export interface KnownCode {
   code: string;
 }
 
+/**
+ * A NAME the model gave a row of the «already taken» list — a row the sheet
+ * calls «XJ-200» and a picture shows to be a chair (review JS-9, CR-3). By
+ * the caller's index, re-checked like a code (`knownNamesOf`).
+ */
+export interface KnownName {
+  index: number;
+  name: string;
+}
+
+/**
+ * One question of the model's to the seller (docs/AI-SORAYDI.md §2.2):
+ * `row` is the INDEX into the reading's own `goods` (the answer's `n` less
+ * one), null for the shipment. Re-checked by `questionsOf` — a number past
+ * the goods the model listed is asked about the shipment, never about a row
+ * that does not exist.
+ */
+export interface AiQuestion {
+  /**
+   * Which list `row` indexes: the reading's own `goods`, or the «already
+   * taken» rows it was shown (`known` — the caller's index, as a known code's
+   * is). The TABLE numbers its rows after a merge, so neither is a table row:
+   * the settle re-keys every question through the placement its good ended at
+   * (review JR-2, JS-3) — until then a question carries no address a writer
+   * may act on.
+   */
+  list: 'goods' | 'known';
+  row: number | null;
+  /** What is being asked — each kind has ONE consumer (§3.3 M4); an unknown word reads `other`. */
+  kind: AiQuestionKind;
+  text: string;
+  /**
+   * The NAME of the good it asks about, as its own list has it — what the
+   * question is kept by (review JR-2): the table draws «❓ Стул офисный: …»,
+   * and no index of the model's survives into a table the merge renumbered.
+   * Absent = about the shipment, or the name is not known here.
+   */
+  about?: string;
+}
+
+export const AI_QUESTION_KINDS = ['what_goods', 'material', 'size_unit', 'size_of', 'per_or_total', 'which_row', 'other'] as const;
+export type AiQuestionKind = (typeof AI_QUESTION_KINDS)[number];
+const QUESTION_KIND_SET: ReadonlySet<string> = new Set(AI_QUESTION_KINDS);
+
+export const AI_QUESTIONS_MAX = 5;
+const AI_QUESTION_CHARS = 200;
+
+/**
+ * The model's questions, entry by entry: an odd one is dropped, never the
+ * reading. `shown` — the numbers the «already taken» list was shown with
+ * (`knownCodesOf`'s map): a question about one of THOSE rows is kept with the
+ * caller's index, one about a number the model was not shown is the
+ * shipment's. `goods` — the reading's goods (their names are what a question
+ * is kept by), or just how many there are; `knownNames` — the caller's
+ * «already taken» names, by the caller's index.
+ */
+export function questionsOf(
+  raw: unknown,
+  goods: number | readonly { name: string }[],
+  shown: readonly number[] = [],
+  knownNames: readonly string[] = [],
+): AiQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const goodsCount = typeof goods === 'number' ? goods : goods.length;
+  const nameOf = (list: AiQuestion['list'], row: number | null): string | null => {
+    if (row === null) return null;
+    const name = list === 'known' ? knownNames[row] : typeof goods === 'number' ? null : goods[row]?.name;
+    return name?.replace(/\s+/g, ' ').trim() || null;
+  };
+  const out: AiQuestion[] = [];
+  for (const entry of raw) {
+    if (out.length >= AI_QUESTIONS_MAX) break;
+    if (!entry || typeof entry !== 'object') continue;
+    const { n, kind, text, list: listed } = entry as { n?: unknown; kind?: unknown; text?: unknown; list?: unknown };
+    if (typeof text !== 'string') continue;
+    // The bot numbers the rows itself: a number the model wrote into its words
+    // is the model's own list's, and would name another row of the table.
+    // Only a LABEL is cut («2-qator: …», «2) …») — never a number that is part
+    // of the sentence («0.12 kub …», «3-qatordagi …» stays as the model wrote it).
+    const said = text
+      .replace(/\s+/g, ' ')
+      .replace(/^\s*(?:\d+\s*[-‑]?\s*(?:qator|қатор|строка|стр\.?)\s*[:.,—–-]\s*|\d+\s*[:)]\s+|\d+\.\s+(?=\p{L}))/iu, '')
+      .trim();
+    if (!said) continue;
+    const list = typeof listed === 'string' && listed.trim().toLowerCase() === 'known' ? ('known' as const) : ('goods' as const);
+    const whole = typeof n === 'number' && Number.isInteger(n) && n >= 1 ? n : null;
+    const row = whole === null ? null : list === 'known' ? (whole <= shown.length ? shown[whole - 1]! : null) : whole <= goodsCount ? whole - 1 : null;
+    // A number past the goods the model listed is asked of the shipment — and
+    // said in the log, since the question's own words usually name the row.
+    if (row === null && typeof n === 'number' && n !== 0) logger.warn({ n, goodsCount }, '[calc intake] a question names a row the answer does not have');
+    const word = typeof kind === 'string' ? kind.trim().toLowerCase() : '';
+    const about = nameOf(list, row);
+    out.push({
+      list,
+      row,
+      kind: QUESTION_KIND_SET.has(word) ? (word as AiQuestionKind) : 'other',
+      text: clipUnits(said, AI_QUESTION_CHARS),
+      ...(about ? { about: clipUnits(about, 80) } : {}),
+    });
+  }
+  return out;
+}
+
 export interface AiIntakeResult {
   facts: CalcFacts;
   /** What the model says it did — shown on the card's lenta. */
   steps: string[];
   /** The model's codes for the Excel's rows (`codeKnown`); absent = none. */
   knownCodes?: KnownCode[];
+  /** Names the model gave rows the sheet calls by an article; absent = none. */
+  knownNames?: KnownName[];
+  /** What the model could not read and asks the seller (§2.2); absent = nothing. */
+  questions?: AiQuestion[];
   /**
    * What the call cost, carried out so the LANDING can record it.
    *
@@ -618,6 +914,24 @@ export function knownCodesOf(raw: unknown, shown: readonly number[]): KnownCode[
   return [...byIndex].flatMap(([index, code]) => (code ? [{ index, code }] : []));
 }
 
+/** The names of `known_codes`, re-checked as its codes are: a number the model was not shown is dropped; two names for one row is no answer. Pure. */
+export function knownNamesOf(raw: unknown, shown: readonly number[]): KnownName[] {
+  if (!Array.isArray(raw)) return [];
+  const byIndex = new Map<number, string | null>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { n, name } = entry as { n?: unknown; name?: unknown };
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > shown.length) continue;
+    if (typeof name !== 'string') continue;
+    const said = clipUnits(name.replace(/\s+/g, ' ').trim(), 120);
+    if (!said) continue;
+    const index = shown[n - 1]!;
+    const before = byIndex.get(index);
+    byIndex.set(index, before === undefined || before === said ? said : null);
+  }
+  return [...byIndex].flatMap(([index, name]) => (name ? [{ index, name }] : []));
+}
+
 /**
  * What a cut answer COMPLETED (docs/FAYL-OQISH.md §3.3, judge
  * model-salvage-scanner) — pure, over the text the stream delivered.
@@ -631,8 +945,8 @@ export function knownCodesOf(raw: unknown, shown: readonly number[]): KnownCode[
  * by the per-good schema with every key present and nothing defaulted. A
  * number counts as ended only when a character follows it. The totals are
  * kept when their value closed BEFORE the goods array opened (the schema's
- * order puts them first); `steps` only when its whole array closed; the
- * codes never (they come last — a cut drops them, and the landing pass codes
+ * order puts them first); `questions` and `steps` only when their whole
+ * array closed; the codes never (they come last — a cut drops them, and the landing pass codes
  * the rows). `goodsClosed`: the goods array's own «]» was reached — every good
  * the answer meant to list is in `goods`, none of them or all of them.
  */
@@ -641,8 +955,10 @@ export function salvageCut(text: string): {
   goods: z.infer<typeof goodSchema>[];
   steps: string[];
   goodsClosed: boolean;
+  /** The model's questions, when their whole array closed before the cut (raw — `questionsOf` reads them). */
+  questions: unknown[];
 } {
-  const out: ReturnType<typeof salvageCut> = { totals: {}, goods: [], steps: [], goodsClosed: false };
+  const out: ReturnType<typeof salvageCut> = { totals: {}, goods: [], steps: [], goodsClosed: false, questions: [] };
   let i = skipWs(text, 0);
   if (text[i] !== '{') return out;
   i += 1;
@@ -690,6 +1006,9 @@ export function salvageCut(text: string): {
         const steps = z.array(z.string()).safeParse(value);
         if (steps.success) out.steps = steps.data;
       }
+      // The schema puts `questions` right after `goods`, so a cut in the long
+      // tail (steps, codes) still keeps what the model asked.
+      if (key === 'questions' && Array.isArray(value)) out.questions = value;
       i = end;
     }
     i = skipWs(text, i);
@@ -800,7 +1119,11 @@ type Attempt =
  * accumulator drops — judge model-thinking-null) only ever arrives in
  * `message_delta`.
  */
-async function streamAttempt(content: Anthropic.ContentBlockParam[], leftMs: number): Promise<Attempt> {
+async function streamAttempt(
+  content: Anthropic.ContentBlockParam[],
+  leftMs: number,
+  contract: IntakeContract = intakeContract(),
+): Promise<Attempt> {
   const began = Date.now();
   const clock = new AbortController();
   const timer = setTimeout(() => clock.abort(), Math.max(0, leftMs));
@@ -825,8 +1148,11 @@ async function streamAttempt(content: Anthropic.ContentBlockParam[], leftMs: num
       {
         model: ANALYST_MODEL,
         max_tokens: INTAKE_MAX_TOKENS,
-        system: SYSTEM,
-        output_config: { effort: INTAKE_EFFORT, format: { type: 'json_schema', schema: FACTS_JSON_SCHEMA } },
+        system: contract.system,
+        output_config: {
+          effort: INTAKE_EFFORT,
+          format: { type: 'json_schema', schema: contract.schema as Record<string, unknown> },
+        },
         messages: [{ role: 'user', content }],
       },
       { signal: clock.signal },
@@ -1076,6 +1402,15 @@ export async function analyzeIntake(input: {
       // Never fatal: the intake goes on with what the person typed, and the
       // seller is told WHY. The reason is in the log beside the error.
       logger.warn({ err: run.err, failure, attempt, ms: run.ms, ...counts() }, 'calc intake AI failed');
+      // The API refused the SCHEMA (docs/AI-SORAYDI.md §2.1): asked once more
+      // under the legacy contract, which stays for the process — before the
+      // PDF branch below, or a schema's refusal would be blamed on the PDFs.
+      if (!latch.__gsrIntakeLegacyContract && isSchemaRefusal(run.err)) {
+        latch.__gsrIntakeLegacyContract = true;
+        logger.error({ err: run.err }, '[calc intake] schema refused — legacy contract');
+        counted -= 1;
+        continue;
+      }
       // A request REFUSED with documents in it is read once more without
       // them (docs/FAYL-OQISH.md §3.4, pdfimg-9 a+b): one bad PDF used to sink
       // the photos' and the text's reading with it, and every re-read after.
@@ -1129,7 +1464,7 @@ export async function analyzeIntake(input: {
     // the reading is the refusal, named and billed.
     if (probeOnly) return withUnread({ ok: false, failure: 'rejected', answered });
     if (run.kind === 'answered') {
-      const read = readIntakeResponse(run.message, shown);
+      const read = readIntakeResponse(run.message, shown, input.knownGoods ?? []);
       if (read.ok) return withUnread(withBill(read));
       if (read.failure === 'truncated') {
         // Cut at a size (`SIZE_STOPS`): what it completed is the reading.
@@ -1195,7 +1530,12 @@ const textOf = (message: { content: { type: string; text?: string }[] }): string
  */
 function keptOf(text: string, why: AiReadingCut['why']): ({ ok: true; cut?: AiReadingCut } & AiIntakeResult) | null {
   const cut = salvageCut(text);
-  const read = { facts: factsOf({ ...cut.totals, goods: cut.goods }), steps: cut.steps.slice(0, 20) };
+  const questions = questionsOf(cut.questions, cut.goods);
+  const read = {
+    facts: factsOf({ ...cut.totals, goods: cut.goods }),
+    steps: cut.steps.slice(0, 20),
+    ...(questions.length > 0 ? { questions } : {}),
+  };
   if (cut.goodsClosed) {
     logger.warn({ why, goods: cut.goods.length }, '[calc intake] answer cut after its goods — the codes are lost, the reading kept whole');
     return { ok: true, ...read };
@@ -1216,6 +1556,8 @@ export function readIntakeResponse(
   },
   /** The numbers the «already taken» list was shown with (`knownCodesOf`); none = no codes asked. */
   shown: readonly number[] = [],
+  /** The caller's «already taken» names, by the caller's index — what a question about one of them is kept by. */
+  takenNames: readonly string[] = [],
 ): AiIntakeRead {
   const usage = {
     model: ANALYST_MODEL,
@@ -1238,12 +1580,31 @@ export function readIntakeResponse(
     return { ok: false, failure: 'unreadable', usage };
   }
   const knownCodes = knownCodesOf(parsed.known_codes ?? [], shown);
+  const knownNames = knownNamesOf(parsed.known_codes ?? [], shown);
+  const questions = questionsOf(parsed.questions ?? [], parsed.goods, shown, takenNames);
+  // What the reading held, for the one who reads the server's log after a
+  // «nothing was read» report (docs/AI-SORAYDI.md §3.3 M9): how many goods,
+  // how many named from a picture, how many carry a packing, how many
+  // questions — the token line above it says none of these.
+  logger.info(
+    {
+      goods: parsed.goods.length,
+      pictureNamed: parsed.goods.filter((g) => lower(g.name_source) === 'picture').length,
+      packed: parsed.goods.filter((g) => (g.packing ?? []).length > 0).length,
+      coded: parsed.goods.filter((g) => g.tnved_code).length,
+      questions: questions.length,
+      contract: intakeContract().name,
+    },
+    '[calc intake] reading',
+  );
   return {
     ok: true,
     usage,
     facts: factsOf(parsed),
     steps: parsed.steps.slice(0, 20),
     ...(knownCodes.length > 0 ? { knownCodes } : {}),
+    ...(knownNames.length > 0 ? { knownNames } : {}),
+    ...(questions.length > 0 ? { questions } : {}),
   };
 }
 
@@ -1260,8 +1621,8 @@ function factsOf(p: Partial<Pick<z.infer<typeof factsSchema>, keyof typeof TOTAL
   };
 }
 
-/** The structured-output schema the answer must follow. */
-const FACTS_JSON_SCHEMA = {
+/** The LEGACY answer schema — `SYSTEM_V1`'s (docs/AI-SORAYDI.md §2.1). Not to be edited. */
+const FACTS_JSON_SCHEMA_V1 = {
   type: 'object',
   properties: {
     from_city: { type: ['string', 'null'] },
@@ -1316,6 +1677,187 @@ const FACTS_JSON_SCHEMA = {
 } as const;
 
 /**
+ * The structured-output schema the answer must follow (docs/AI-SORAYDI.md
+ * §2.1-§2.2).
+ *
+ * THE BUDGET: the API allows at most 16 parameters with a union type across
+ * a request's strict schemas (a `["number","null"]` type array is one) and 24
+ * optional ones; past either it answers 400 «Schema is too complex for
+ * compilation» — to EVERY reading. `FACTS_JSON_SCHEMA_V1` already spends 12.
+ * So every key added here is required and non-nullable: a number says «not
+ * stated» as 0, a word as "unknown", a list as []. `intake-schema-budget.test`
+ * walks this object and counts.
+ */
+const FACTS_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    from_city: { type: ['string', 'null'] },
+    to_city: { type: ['string', 'null'] },
+    weight_kg: {
+      type: ['number', 'null'],
+      description: 'Общий вес отправки БРУТТО, кг — только если итог НАПИСАН; строки не складывай.',
+    },
+    weight_netto: { type: ['boolean', 'null'], description: 'true — общий вес выше это НЕТТО; иначе false.' },
+    volume_m3: {
+      type: ['number', 'null'],
+      description: 'Общий объём отправки, м³ — только если итог НАПИСАН; строки не складывай.',
+    },
+    goods: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          name_source: {
+            type: 'string',
+            enum: ['document', 'picture'],
+            description: '"picture" — название дано по ФОТО самого товара (нигде не написано); иначе "document".',
+          },
+          photo: { type: 'integer', description: 'Номер фото («Фото N»), где товар виден или написан; 0 — не с фото.' },
+          quantity: { type: ['number', 'null'], description: 'ШТУК всего по позиции; не коробок.' },
+          weight_kg: {
+            type: ['number', 'null'],
+            description: 'Вес ВСЕЙ позиции, кг, если написан. Вес одной коробки или штуки — в packing.',
+          },
+          weight_kind: { type: 'string', enum: ['net', 'gross', 'unknown'] },
+          volume_m3: {
+            type: ['number', 'null'],
+            description: 'Объём ВСЕЙ позиции, м³, если НАПИСАН. Объём одной коробки и размеры — в packing.',
+          },
+          // ONE home per figure (the prompt audit's PR-3): pieces, kilos, cubes
+          // and cartons have their own keys, so the second measure is m², pairs
+          // or litres and nothing else.
+          unit: { type: ['string', 'null'], enum: [...AI_MEASURE_UNITS, null] },
+          measure_qty: { type: ['number', 'null'] },
+          packing: {
+            type: 'array',
+            description: 'Пустой массив, если про упаковку ничего не написано; иначе один объект.',
+            items: {
+              type: 'object',
+              properties: {
+                cartons: { type: 'number', description: 'Число коробок (мест) этой позиции; не написано — 0.' },
+                pieces_per_carton: { type: 'number', description: 'Штук в ОДНОЙ коробке; не написано — 0.' },
+                carton_weight_kg: { type: 'number', description: 'Вес ОДНОЙ коробки, кг; не написан — 0.' },
+                carton_weight_kind: { type: 'string', enum: ['gross', 'net', 'unknown'] },
+                carton_volume_m3: { type: 'number', description: 'Объём ОДНОЙ коробки, м³ (CBM/CTN); не написан — 0.' },
+                l: { type: 'number', description: 'Размер, как написан: первое число; нет — 0.' },
+                w: { type: 'number', description: 'второе; нет — 0.' },
+                h: { type: 'number', description: 'третье; нет — 0.' },
+                size_unit: { type: 'string', enum: ['cm', 'mm', 'm', 'unknown'] },
+                size_of: {
+                  type: 'string',
+                  enum: ['package', 'product', 'unknown'],
+                  description: 'Чей размер: коробки/места или самого изделия.',
+                },
+                piece_weight_kg: { type: 'number', description: 'Вес ОДНОЙ ШТУКИ, кг; не написан — 0.' },
+              },
+              required: [
+                'cartons', 'pieces_per_carton', 'carton_weight_kg', 'carton_weight_kind', 'carton_volume_m3', 'l', 'w',
+                'h', 'size_unit', 'size_of', 'piece_weight_kg',
+              ],
+              additionalProperties: false,
+            },
+          },
+          tnved_code: { type: ['string', 'null'] },
+          code_sure: { type: 'boolean', description: 'false — код это предположение.' },
+          // LAST on purpose: a cut answer keeps a good only once its «}» closed.
+          note: { type: ['string', 'null'] },
+        },
+        required: [
+          'name', 'name_source', 'photo', 'quantity', 'weight_kg', 'weight_kind', 'volume_m3', 'unit', 'measure_qty',
+          'packing', 'tnved_code', 'code_sure', 'note',
+        ],
+        additionalProperties: false,
+      },
+    },
+    // Right after the goods, before the long tail: a cut keeps them (`salvageCut`).
+    questions: {
+      type: 'array',
+      description: 'Не больше пяти, самые важные первыми; нечего спросить — пустой массив.',
+      items: {
+        type: 'object',
+        properties: {
+          list: { type: 'string', enum: ['goods', 'known'], description: 'к какому списку относится n' },
+          n: { type: 'integer', description: 'номер строки в этом списке (с 1); 0 — про всю отправку' },
+          kind: { type: 'string', enum: [...AI_QUESTION_KINDS] },
+          text: { type: 'string', description: 'один короткий вопрос по-узбекски (латиницей)' },
+        },
+        required: ['list', 'n', 'kind', 'text'],
+        additionalProperties: false,
+      },
+    },
+    steps: FACTS_JSON_SCHEMA_V1.properties.steps,
+    // The legacy list, each entry also able to NAME its row — a quotation
+    // whose «goods» are pictures beside an article number (review JS-9, CR-3).
+    known_codes: {
+      type: 'array',
+      description: 'По номеру строки списка «уже взятых» товаров: код и/или название; нет списка — пустой массив.',
+      items: {
+        type: 'object',
+        properties: {
+          n: { type: 'integer', description: 'номер строки в списке' },
+          tnved_code: { type: 'string', description: 'код ТН ВЭД, если уверен; иначе пустая строка' },
+          name: { type: 'string', description: 'название, если в списке вместо него артикул; иначе пустая строка' },
+        },
+        required: ['n', 'tnved_code', 'name'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['from_city', 'to_city', 'weight_kg', 'weight_netto', 'volume_m3', 'goods', 'questions', 'steps', 'known_codes'],
+  additionalProperties: false,
+} as const;
+
+/**
+ * The contract a reading is asked under: the prompt and the schema TOGETHER,
+ * so no request can pair one's prompt with the other's shape.
+ */
+export interface IntakeContract {
+  name: 'packing' | 'legacy';
+  system: string;
+  schema: object;
+}
+export const INTAKE_CONTRACTS: Record<IntakeContract['name'], IntakeContract> = {
+  packing: { name: 'packing', system: SYSTEM, schema: FACTS_JSON_SCHEMA },
+  legacy: { name: 'legacy', system: SYSTEM_V1, schema: FACTS_JSON_SCHEMA_V1 },
+};
+
+/**
+ * Latched for the PROCESS once the API refuses the new schema (§2.1): there
+ * is no key in the place this is written, so the first real request is made
+ * in production — and a schema the API will not compile would otherwise fail
+ * every reading until the next deploy. Falling back is today's reading.
+ *
+ * On `globalThis`, as boss.ts keeps its own state: Next bundles the worker's
+ * entry apart from the routes, so a module-level flag latched by the reading
+ * worker would not cover the thread door's copy of this file (review JB-14).
+ */
+const latch = globalThis as typeof globalThis & { __gsrIntakeLegacyContract?: boolean };
+export const intakeContract = (): IntakeContract =>
+  latch.__gsrIntakeLegacyContract ? INTAKE_CONTRACTS.legacy : INTAKE_CONTRACTS.packing;
+/** Test seam: a process that latched the legacy contract must be able to forget it. */
+export function __resetIntakeContract(): void {
+  latch.__gsrIntakeLegacyContract = false;
+}
+
+/**
+ * Did the API refuse the SCHEMA (not the documents, not the key)? A 400 whose
+ * message names it — «Schema is too complex for compilation», an unsupported
+ * keyword, the union or optional-parameter cap.
+ */
+export function isSchemaRefusal(err: unknown): boolean {
+  if (!(err instanceof Anthropic.APIError) || err.status !== 400) return false;
+  const said = err.message ?? '';
+  // The message must NAME the schema: «output_config.effort: Input should be …
+  // (invalid)» is a 400 about another field, and latching the legacy contract
+  // on it would silently lose the packing for the life of the process (PR-14).
+  return (
+    /schema|output_config\.format|output_format/i.test(said) &&
+    /complex|compil|unsupported|invalid|too many|limit|grammar/i.test(said)
+  );
+}
+
+/**
  * What a document stating only the NETTO of the whole shipment becomes —
  * per section, because only the freight sections must have the BRUTTO (the
  * table's ⚠️ brutto row, `totalsMissing` in intake.ts; R2's retired
@@ -1329,6 +1871,16 @@ const FACTS_JSON_SCHEMA = {
  * single line's copied weight, the summary and the Telegram line call it
  * netto too, never the «brutto» the lone copy's note used to claim.
  */
+/** «Фото N:» — the label of the N-th picture of a request, 1-based, in the order they are sent. */
+export const photoLabel = (n: number): string => `Фото ${n}:`;
+
+/**
+ * The user turn's last line when only pictures and documents were sent. It
+ * used to end «читай фото и документы» — the last word the model heard was
+ * «read», about a photograph of chairs (PR-1).
+ */
+export const CLOSING_FILES_ONLY = 'Текста нет. Посмотри фото и документы: документ прочитай, товар на фото назови.';
+
 const NETTO_ONLY: Record<CalcSection, string> = {
   yolkira: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
   podklyuch: 'Только нетто: общий вес null — сотрудник спросит брутто. Нетто вместо брутто не подставляй.',
@@ -1386,7 +1938,7 @@ function intakeContent(
   const closing = material
     ? `Материалы:\n${clipUnits(material, 20000)}`
     : images.length > 0 || pdfs.length > 0
-      ? 'Текста нет — читай фото и документы.'
+      ? CLOSING_FILES_ONLY
       : sheets.some((t) => t.text.trim() !== '')
         ? 'Текста нет — читай таблицу выше.'
         : ask
@@ -1397,12 +1949,16 @@ function intakeContent(
   return [
     // Images FIRST: the model reads them as context for the text that
     // follows, which is how the packing list and its caption actually relate.
-    ...images.map(
-      (img): Anthropic.ContentBlockParam => ({
+    // Each picture is NUMBERED («Фото 1:») — the prompt speaks of «Фото N»,
+    // a good says which one it was seen on (`photo`), and a caption can be
+    // tied to its picture (§3.3 M10). The label is a text block of its own.
+    ...images.flatMap((img, index): Anthropic.ContentBlockParam[] => [
+      { type: 'text', text: photoLabel(index + 1) },
+      {
         type: 'image',
         source: { type: 'base64', media_type: img.mediaType, data: img.data.toString('base64') },
-      }),
-    ),
+      },
+    ]),
     // …and the invoices after them, before the text: they are the most exact
     // thing in the message and the caption usually refers to them.
     ...pdfs.map(
@@ -1446,16 +2002,81 @@ function intakeContent(
  * digits or nothing, so «6907.21» and a heading «6403» were thrown away; a
  * typed nine-digit code is noted, never padded.
  */
+/** A figure the answer states — the schema's «not stated» is 0, a stand-in's may be null or absent. */
+const stated = (n: number | null | undefined): number | null =>
+  typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+
+const SIZE_UNITS: Record<string, SizeUnit> = { cm: 'cm', mm: 'mm', m: 'm' };
+
+/** An enum word as the model wrote it, folded: «Picture», « gross » and "GROSS" are the word (PR-14). */
+const lower = (word: string | null | undefined): string => (word ?? '').trim().toLowerCase();
+
+/**
+ * The packing keys of one answered good, as the kernel's `Packing`
+ * (docs/AI-SORAYDI.md §2.2-§2.3) — COPIED, never multiplied: `applyPacking`
+ * does that. A size needs all three sides; a carton count that is not a whole
+ * number is no count (the arithmetic would refuse it, and «2.5 коробки» is a
+ * misreading, not a fact).
+ */
+export function packingOfAnswer(g: z.infer<typeof goodSchema>): Packing | null {
+  const stated1 = (g.packing ?? []).map((entry) => packSchema.safeParse(entry)).filter((r) => r.success);
+  // Cartons of several sizes: nothing is multiplied (`severalPackings`), the row's figures are asked.
+  if (stated1.length !== 1) return null;
+  const k = stated1[0]!.data;
+  const l = stated(k.l);
+  const w = stated(k.w);
+  const h = stated(k.h);
+  const weightKind = lower(k.carton_weight_kind);
+  const kind = weightKind === 'gross' || weightKind === 'net' ? weightKind : null;
+  const owner = lower(k.size_of);
+  const packing: Packing = {
+    ...emptyPacking('ai'),
+    cartons: wholeCartons(k.cartons),
+    pcsPerCarton: stated(k.pieces_per_carton),
+    kgPerCarton: stated(k.carton_weight_kg),
+    kgPerCartonKind: stated(k.carton_weight_kg) !== null ? kind : null,
+    m3PerCarton: stated(k.carton_volume_m3),
+    size:
+      l !== null && w !== null && h !== null
+        ? {
+            l,
+            w,
+            h,
+            unit: SIZE_UNITS[lower(k.size_unit)] ?? null,
+            // Whose size it is — the model's word, or nobody's: then nothing is multiplied.
+            of: owner === 'package' || owner === 'product' ? owner : null,
+          }
+        : null,
+    kgPerPiece: stated(k.piece_weight_kg),
+  };
+  return packingStated(packing) ? packing : null;
+}
+
+/** Did the answer give this good cartons of SEVERAL sizes? Then the bot multiplies nothing and says so. */
+export const severalPackings = (g: z.infer<typeof goodSchema>): boolean => (g.packing ?? []).length > 1;
+
+/** Said on the row when its cartons come in several sizes — written by code, never asked of the model. */
+export const SEVERAL_PACKINGS_NOTE = 'karobkalar har xil o‘lchamda — hajm va og‘irlik hisoblanmadi';
+
 export function aiGoodsLine(g: z.infer<typeof goodSchema>): CalcGoodsFact {
-  const notes = [g.note?.trim() || null];
+  const notes = [g.note?.trim() || null, severalPackings(g) ? SEVERAL_PACKINGS_NOTE : null];
   let quantity = g.quantity;
   let weightKg = g.weight_kg;
   let volumeM3 = g.volume_m3;
   let measureUnit: CalcGoodsFact['measureUnit'] = null;
   let measureQty: number | null = null;
+  let packing = packingOfAnswer(g);
   if (g.measure_qty !== null && g.unit !== null) {
     if (unitOf(g.unit) === 'dona') {
       quantity = quantity ?? g.measure_qty;
+    } else if (unitOf(g.unit) === 'karobka') {
+      // The legacy shape of a carton count (`SYSTEM_V1`, and a model that
+      // still answers so): it IS the packing's count — and the model's, so it
+      // no longer becomes the seller's «sotuvchi: N karobka» note (dg2-12).
+      const cartons = wholeCartons(g.measure_qty);
+      if (cartons !== null && (packing?.cartons ?? null) === null) {
+        packing = { ...(packing ?? emptyPacking('ai')), cartons };
+      }
     } else {
       const routed = normalizeRowUnit({
         quantity: g.measure_qty,
@@ -1470,22 +2091,45 @@ export function aiGoodsLine(g: z.infer<typeof goodSchema>): CalcGoodsFact {
         volumeM3 = routed.patch.volumeM3;
         measureUnit = routed.patch.measureUnit;
         measureQty = routed.patch.measureQty;
-        // A move into an empty column says nothing new; a carton count, or a
-        // figure that met a different one already there, is the VED's to see.
+        // A move into an empty column says nothing new; a figure that met a
+        // different one already there, or an unknown unit, is the VED's to see.
         if (routed.to === 'cartons' || routed.to === 'unknown' || routed.conflict) notes.push(routed.note);
       }
     }
   }
+  // What ONE carton holds is counted in the row's own measure when the row
+  // has one and states no total (review JR-1): «12 пар/кор × 40 кор» is 480
+  // PAIRS — landed as pieces it would be priced under a per-piece law, and a
+  // per-pair law would read the row as missing its measure.
+  if (packing && packing.pcsPerCarton !== null && g.unit !== null && g.measure_qty === null) {
+    const per = unitOf(g.unit);
+    if (per === 'juft' || per === 'm2' || per === 'litr') packing = { ...packing, perCartonUnit: per };
+  }
   const code = normalizeTnved(g.tnved_code);
   if (code && 'problem' in code) notes.push(`TNVED «${code.text}» — 9 xonali: boshida 0 tushib qolganmi?`);
-  return {
+  const tnvedCode = code && 'code' in code ? code.code : null;
+  const line: CalcGoodsFact = {
     name: g.name,
     quantity,
     weightKg,
     volumeM3,
     measureUnit,
     measureQty,
-    tnvedCode: code && 'code' in code ? code.code : null,
+    tnvedCode,
+    // Only a code can be doubted, and only the model's own doubt is recorded.
+    ...(tnvedCode && g.code_sure === false ? { tnvedSure: false } : {}),
+    ...(lower(g.name_source) === 'picture' ? { nameFrom: 'photo' as const } : {}),
+    // The picture it was seen or written on («Фото N») — M10's «📷 2-rasm».
+    ...(typeof g.photo === 'number' && Number.isInteger(g.photo) && g.photo >= 1 ? { photoNo: g.photo } : {}),
+    // Which weight the row's own is: only a weight that is THERE has a kind.
+    ...(weightKg !== null && (lower(g.weight_kind) === 'gross' || lower(g.weight_kind) === 'net')
+      ? { weightKind: lower(g.weight_kind) as 'gross' | 'net' }
+      : {}),
+    ...(packing ? { packing } : {}),
     note: notes.filter(Boolean).join(' · ') || null,
   };
+  // The bot multiplies (§2.3): what the packing computes is written here with
+  // its arithmetic, and a stated figure it does not explain is left for the
+  // table to ask (`applyPacking(row).doubts`, recomputed wherever it is drawn).
+  return applyPacking(line).line;
 }
