@@ -279,11 +279,22 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     // to the model under the totals heading, as a packing sheet's is.
     const handed = model.analyze.mock.calls.at(-1)?.[0] as { goodsSheetText?: { text: string } } | undefined;
     expect(handed?.goodsSheetText?.text).toContain('TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM');
-    // The reader reads the cube too (3.8); the lone file's totals do not take an invoice's cube
-    // (`loneFileTotals`, calc-intake.ts — under «open» for the lead), so with the model silent the table still
-    // asks it: the figure reaches the shipment only through the model's own reading of that text.
+    // The reader reads the cube too (3.8), and the lone invoice's totals now carry it (the lead's call on
+    // the fixer's «open» excel-spec-3, `loneFileTotals`): with the model silent the table states the
+    // file's own 3.8 instead of asking a cube the seller's file already wrote.
     expect(got.state.goodsFiles?.[0]).toMatchObject({ shape: 'invoice', volumeM3: 3.8 });
-    expect(got.totals).toMatchObject({ volumeM3: null });
+    expect(got.totals).toMatchObject({ volumeM3: 3.8 });
+    expect(got.table).toContain('✅ Hajm: 3.8');
+    expect(got.table).not.toContain('umumiy hajmi (kub) — yozilmagan');
+  });
+
+  it('…an invoice whose every line states its cube: the lone totals are the lines’ own Σ — the INSERT’s sum, nothing moves', async () => {
+    const head = [...INVOICE_HEAD, 'CBM'];
+    const rows: R[] = [[1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
+    const got = await collect('rastamojka', [[await B.sheetsBook([['Sheet1', head, rows]]), 'ci.xlsx']]);
+    // 1.2 + 1.1 + 1.5, by hand.
+    expect(got.totals).toMatchObject({ volumeM3: 3.8 });
+    expect(got.cube).toBe(3.8);
   });
 
   it('…an invoice whose TOTAL row states only the count and the money keeps no text of its own: nothing new under the totals heading', async () => {
