@@ -19,6 +19,16 @@ import {
 import { bookLawsFor } from './book-laws';
 import { parseManualFacts, readGoodsLines, totalWeightFrom } from './intake-manual';
 import { routeAmount } from './units';
+import {
+  CARTONS_MAX,
+  packingStated,
+  type CartonSize,
+  type LineDerived,
+  type PackedField,
+  type Packing,
+  type PackingFactor,
+  type PackingSource,
+} from './carton-math';
 import { analyzeIntake } from './intake-ai';
 import { landCodedRequest, rootRequestOfNote } from './intake-land';
 import { queueCalcPrefill } from './prefill-queue';
@@ -299,10 +309,111 @@ function cleanFacts(
           // bounds a forged post.
           tnvedCode: str(g?.tnvedCode, 20),
           note: str(g?.note, 300),
+          // …and HOW the preview's figures were made (review doors-2): dropped
+          // here, a cube the typed reader computed from an assumed-centimetre
+          // size, a weight multiplied from one carton's or one piece's, a
+          // brutto standing as the customs weight landed as if typed — the
+          // VED read no «sm deb olindi», no «20 × 15 kg» on the row (JB-2,
+          // JN-25). Shape-checked; like `weightNetto` a forged one only
+          // changes the note's words (`provenanceNote`), never a column.
+          ...postedProvenance(g, num, str),
         },
       ];
     }),
   };
+}
+
+const PACKED_FIELDS: readonly PackedField[] = ['volumeM3', 'weightKg', 'quantity', 'measureQty'];
+const PACKING_FACTORS: readonly PackingFactor[] = ['cartons', 'pcsPerCarton', 'kgPerCarton', 'm3PerCarton', 'size', 'kgPerPiece'];
+const PACKING_SOURCES: readonly PackingSource[] = ['ai', 'file', 'typed'];
+const PER_CARTON_UNITS = ['dona', 'juft', 'm2', 'litr'] as const;
+const SIZE_UNITS = ['cm', 'mm', 'm', 'other'] as const;
+
+type Num = (v: unknown) => number | null;
+type Str = (v: unknown, cap: number) => string | null;
+const oneOf = <T extends string>(list: readonly T[], v: unknown): T | null => (list.includes(v as T) ? (v as T) : null);
+const objectOf = (v: unknown): Record<string, unknown> | null => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+
+/** A posted line's provenance — its packing, its arithmetic, its weight's kind and the model's marks — shape-checked. */
+function postedProvenance(raw: unknown, num: Num, str: Str): Pick<NonNullable<CalcFacts['goods']>[number], 'weightKind' | 'packing' | 'derived' | 'tnvedSure' | 'nameFrom' | 'photoNo'> {
+  const g = objectOf(raw);
+  if (!g) return {};
+  const weightKind = oneOf(['gross', 'net'] as const, g.weightKind);
+  const packing = postedPacking(g.packing, num);
+  const derived = postedDerived(g.derived, num, str);
+  const photoNo = num(g.photoNo);
+  return {
+    ...(weightKind ? { weightKind } : {}),
+    ...(packing ? { packing } : {}),
+    ...(derived ? { derived } : {}),
+    ...(g.tnvedSure === false ? { tnvedSure: false } : {}),
+    ...(g.nameFrom === 'photo' ? { nameFrom: 'photo' as const } : {}),
+    ...(g.nameFrom === 'photo' && photoNo !== null && Number.isInteger(photoNo) && photoNo >= 1 ? { photoNo } : {}),
+  };
+}
+
+function postedPacking(raw: unknown, num: Num): Packing | null {
+  const p = objectOf(raw);
+  if (!p) return null;
+  const cartons = num(p.cartons);
+  const size = objectOf(p.size);
+  const side = (v: unknown) => {
+    const n = num(v);
+    return n !== null && n > 0 ? n : null;
+  };
+  const [l, w, h] = [side(size?.l), side(size?.w), side(size?.h)];
+  const cartonSize: CartonSize | null =
+    size && l !== null && w !== null && h !== null
+      ? { l, w, h, unit: oneOf(SIZE_UNITS, size.unit), of: oneOf(['package', 'product'] as const, size.of) }
+      : null;
+  const perCartonUnit = oneOf(PER_CARTON_UNITS, p.perCartonUnit);
+  const fromOf = objectOf(p.fromOf);
+  const factorSources = fromOf
+    ? Object.fromEntries(PACKING_FACTORS.flatMap((f) => (oneOf(PACKING_SOURCES, fromOf[f]) ? [[f, fromOf[f] as PackingSource]] : [])))
+    : {};
+  const packing: Packing = {
+    cartons: cartons !== null && Number.isInteger(cartons) && cartons >= 1 && cartons <= CARTONS_MAX ? cartons : null,
+    pcsPerCarton: num(p.pcsPerCarton),
+    ...(perCartonUnit ? { perCartonUnit } : {}),
+    kgPerCarton: num(p.kgPerCarton),
+    kgPerCartonKind: oneOf(['gross', 'net'] as const, p.kgPerCartonKind),
+    m3PerCarton: num(p.m3PerCarton),
+    size: cartonSize,
+    ...(num(p.kgPerPiece) !== null ? { kgPerPiece: num(p.kgPerPiece) } : {}),
+    from: oneOf(PACKING_SOURCES, p.from) ?? 'typed',
+    ...(Object.keys(factorSources).length > 0 ? { fromOf: factorSources } : {}),
+  };
+  return packingStated(packing) ? packing : null;
+}
+
+function postedDerived(raw: unknown, num: Num, str: Str): LineDerived | null {
+  const d = objectOf(raw);
+  if (!d) return null;
+  const figures = (v: unknown): Partial<Record<PackedField, number>> | null => {
+    const o = objectOf(v);
+    if (!o) return null;
+    const out = Object.fromEntries(PACKED_FIELDS.flatMap((f) => (num(o[f]) !== null ? [[f, num(o[f])!]] : [])));
+    return Object.keys(out).length > 0 ? out : null;
+  };
+  const out: LineDerived = {};
+  for (const f of PACKED_FIELDS) {
+    const how = str(d[f], 120);
+    if (how) out[f] = how;
+  }
+  const computed = figures(d.computed);
+  const replaced = figures(d.replaced);
+  if (computed) out.computed = computed;
+  if (replaced) out.replaced = replaced;
+  const person = Array.isArray(d.person) ? PACKED_FIELDS.filter((f) => (d.person as unknown[]).includes(f)) : [];
+  if (person.length > 0) out.person = person;
+  for (const flag of ['weightIsGross', 'weightFromPieces', 'assumedCm', 'cubeIsLine', 'measureUnitSet'] as const) {
+    if (d[flag] === true) out[flag] = true;
+  }
+  const gross = objectOf(d.grossKg);
+  const grossValue = num(gross?.value);
+  const grossHow = str(gross?.how, 120);
+  if (grossValue !== null && grossHow) out.grossKg = { value: grossValue, how: grossHow };
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 /**
