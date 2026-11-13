@@ -98,7 +98,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { openCalcRequest, storedRequestFacts } from '@/modules/wms/calc/service';
 import { queueCalcPrefill } from '@/modules/wms/calc/prefill-queue';
-import { JOB_CALC_PREFILL, registerCalcPrefillWorker, type CalcPrefillJob } from '@/modules/wms/calc/jobs';
+import { registerCalcPrefillWorker, type CalcPrefillJob } from '@/modules/wms/calc/jobs';
 import { SELLER_ASKS_HEAD } from '@/modules/wms/calc/ai-reply';
 import { AI_NOTE_HEAD, AI_REPLY_HEAD } from '@/modules/wms/calc/reply-heads';
 import { SILENT_DOOR_ERROR } from '@/modules/wms/calc/say-once';
