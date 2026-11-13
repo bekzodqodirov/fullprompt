@@ -1320,6 +1320,21 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     expect(askedSeqsOf(sellerAsksOf(lawAsksInputOfStored(stored)))).toEqual([1, 3]);
   });
 
+  it('…and the plain door’s note numbers its groups the same way, for the VED (A3)', async () => {
+    const [a, part, b] = [`Sviter A plain ${SUFFIX}`, `Zapchast plain ${SUFFIX}`, `Sviter B plain ${SUFFIX}`];
+    const id = await openAs('plain', [
+      { name: a, tnvedCode: '6110200000', weightKg: 150 },
+      { name: part, weightKg: 5 },
+      { name: b, tnvedCode: '6110200000', weightKg: 100 },
+    ]);
+    const note = await aiPrefill(id, ctx(), { propose: idle, pick: noPick, configured: true });
+    const lines = note.text.split('\n');
+    expect(lines.some((l) => l.startsWith(`1, 3. ${a}, ${b} · 6110200000 · `))).toBe(true);
+    // The uncoded row by its own number, in «Kodlar:» and in the VED's line.
+    expect(lines).toContain(`· 2-qator «${part}» — kod yo‘q`);
+    expect(note.text).toContain(`⚠️ Kod topilmadi: 2-qator «${part}» — VED xodimi qo‘yadi`);
+  });
+
   it('A6: a grouping call that fails is asked once more inside the pass — and when it answers, nothing says it failed', async () => {
     const row = await importRow();
     const id = await openAs('ai', [{ name: `${row.name} retry`, weightKg: 100 }]);
@@ -1365,6 +1380,36 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     expect(note.text).not.toContain('Kod topilmadi');
   });
 
+  it('A6: a call that answered for only SOME batches is a failure too — its unanswered rows are asked once more', async () => {
+    // `proposeGroups` survives a batch that failed and reports it in `failed`
+    // (eight hundred classified beats a thousand left); the rows of that
+    // batch are still uncoded, and the retry asks only them.
+    const row = await importRow();
+    const id = await openAs('ai', [{ name: `${row.name} yarim`, weightKg: 100 }]);
+    let calls = 0;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      pick: noPick,
+      propose: async (requestId, c, o) => {
+        calls += 1;
+        // The first call: one batch of one, unanswered — nothing coded.
+        if (calls === 1) return { ...(await idle(requestId, c, o)), batches: 1, failed: 1 };
+        return proposeAs(row.tnvedCode)(requestId, c, o);
+      },
+    });
+    expect(calls).toBe(2);
+    expect((await loadWorkspace(id))!.groups[0]!.tnvedCode).toBe(row.tnvedCode);
+    expect(out.text).not.toContain(CODING_FAILED_LINE);
+    // Unanswered twice: said as a failure, never «Kod topilmadi».
+    const again = await openAs('ai', [{ name: `${row.name} yarim ikki`, weightKg: 100 }]);
+    const twice = await aiPrefill(again, ctx(), {
+      configured: true,
+      pick: noPick,
+      propose: async (requestId, c, o) => ({ ...(await idle(requestId, c, o)), batches: 1, failed: 1 }),
+    });
+    expect(twice.text).toContain(CODING_FAILED_LINE);
+  });
+
   it('A6: the retry waits on the clock — a first call that ran past the deadline is not asked again', async () => {
     const id = await openAs('ai', [{ name: `Kepka sekin ${SUFFIX}`, weightKg: 20 }]);
     let calls = 0;
@@ -1382,6 +1427,21 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     expect(calls).toBe(1);
     expect(out.pastDeadline).toBe(true);
     expect(out.text).toContain(CODING_FAILED_LINE);
+  });
+
+  it('A6: a grouping refused for something that is not the model’s (a ✅’d group) is neither retried nor called a failure', async () => {
+    const id = await openAs('ai', [{ name: `Shim tasdiqli ${SUFFIX}`, weightKg: 20 }]);
+    let calls = 0;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      pick: noPick,
+      propose: async () => {
+        calls += 1;
+        throw new CalcError('groups_confirmed');
+      },
+    });
+    expect(calls).toBe(1);
+    expect(out.text).not.toContain(CODING_FAILED_LINE);
   });
 
   it('A6: no key behind the model is a fact about the server — said, and not asked twice', async () => {
