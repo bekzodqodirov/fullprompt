@@ -278,3 +278,57 @@ describe('the model’s questions are kept by the reading and drawn by the good�
     expect(table.text).toContain('✅ Ma’lumot to‘liq');
   });
 });
+
+describe('a file’s line column nothing settled is asked under the table (§3.2 X5, review JN-12)', () => {
+  // What the reader recorded for a G.W. column whose figures are 15 / 12 on
+  // rows of 20 cartons with no TOTAL to settle it (ParsedGoods.asks): the
+  // figure may be one carton’s or the line’s.
+  const meta = (asks: { field: 'weightKg' | 'volumeM3'; title: string; rows: { name: string; value: number }[] }[]) => ({
+    label: 'invoice.xlsx',
+    shape: 'invoice' as const,
+    weightKind: null,
+    grossKg: null,
+    grossColumn: true,
+    volumeM3: null,
+    rows: 2,
+    text: null,
+    asks,
+  });
+  const GW = { field: 'weightKg' as const, title: 'G.W.(KGS)', rows: [{ name: 'Sumka', value: 15 }, { name: 'Ryukzak', value: 12 }] };
+  const ASK = '❓ «G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy og‘irligini (kg) yozing: «1: …».';
+  const rows = () => [
+    { name: 'Sumka', quantity: 400, weightKg: 15, tnvedCode: '4202920000', tnvedSource: 'row' as const },
+    { name: 'Ryukzak', quantity: 300, weightKg: 12, tnvedCode: '4202920000', tnvedSource: 'row' as const },
+  ];
+
+  it('the AI door asks it and holds «Ma’lumot to‘liq»; the seller’s figures close it', async () => {
+    const { chatId } = collection({ stage: 'review', goodsFiles: [meta([GW])], facts: { weightKg: 560, volumeM3: 1.2, goods: rows() } });
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    expect(table.text).toContain(ASK);
+    expect(table.text).not.toContain('Ma’lumot to‘liq');
+
+    // One row answered is not the column answered.
+    await say(ctx, chatId, '1: 300 kg');
+    expect(tableNow(ctx, table).text).toContain(ASK);
+    await say(ctx, chatId, '2: 240 kg');
+    const answered = tableNow(ctx, table);
+    expect(answered.text).not.toContain('ustuni — bitta karobkanikimi');
+    expect(answered.text).toContain('2. Ryukzak — 300 dona · 240 kg');
+    expect(answered.text).toContain('✅ Ma’lumot to‘liq');
+  });
+
+  it('a row whose figure already differs from the file’s is no longer the file’s question; the plain door asks nothing', async () => {
+    const goods = rows();
+    goods[0]!.weightKg = 300;
+    goods[1]!.weightKg = 240;
+    const { chatId } = collection({ stage: 'review', goodsFiles: [meta([GW])], facts: { weightKg: 560, volumeM3: 1.2, goods } });
+    const ctx = fakeCtx();
+    expect((await drawn(ctx, chatId)).text).not.toContain('ustuni — bitta karobkanikimi');
+
+    const plain = collection({ stage: 'review', goodsFiles: [meta([GW])], facts: { weightKg: 560, volumeM3: 1.2, goods: rows() } });
+    updateIntake(plain.chatId, { ai: false });
+    const ctx2 = fakeCtx();
+    expect((await drawn(ctx2, plain.chatId)).text).not.toContain('ustuni — bitta karobkanikimi');
+  });
+});

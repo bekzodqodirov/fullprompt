@@ -24,6 +24,7 @@ import {
   updateIntake,
 } from './calc-store';
 import { promptFileLines, type SheetFit } from './calc-files';
+import { columnAsks } from './file-goods';
 import {
   aiConfirmKeyboard,
   certificateButton,
@@ -584,6 +585,11 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
     cut: state.aiCut ?? null,
     // What the model asked at the last reading (docs/AI-SORAYDI.md §3.3 M4).
     aiQuestions: state.aiQuestions ?? [],
+    // A file's line column nothing settled as the line's or one carton's
+    // (§3.2 X5, review JN-12): asked under the table until every row it names
+    // carries the seller's own figure. `tableAsksOf` draws none on the plain
+    // door, which is frozen and asks nothing (IKKI-ESHIK §3).
+    asks: columnAsks(state.goodsFiles, state.facts.goods ?? []),
     ai:
       collectionDoor(state) === 'ai'
         ? {
