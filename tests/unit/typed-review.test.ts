@@ -185,9 +185,11 @@ describe('typed-break-5 — a counted cube after the line’s first figure is th
     expect(parseLineAnswer('300 dona 5 kubov')).toMatchObject({ kind: 'figures', figures: { quantity: 300, volumeM3: 5 } });
   });
 
-  it('…and inside the name run, before any figure, the toy’s cubes stay the toy’s (JN-22)', () => {
-    expect(rows('Набор 4 кубов 20 шт')).toEqual([{ name: 'Набор 4 кубов', q: 20, kg: null, m3: null, note: null }]);
+  it('…and inside the name run, before any figure, the toy’s cubes stay the toy’s (JN-22) — and the note names them (crit-6)', () => {
+    // JN-22: «stays in the name AND is asked» — the row's note says a figure that may be the cargo's cube was typed.
+    expect(rows('Набор 4 кубов 20 шт')).toEqual([{ name: 'Набор 4 кубов', q: 20, kg: null, m3: null, note: 'sotuvchi: 4 кубов' }]);
     expect(totals('Набор 4 кубов 20 шт')).toEqual(none);
+    expect(rows('Kurtka 5 kubov 200 dona')).toEqual([{ name: 'Kurtka 5 kubov', q: 200, kg: null, m3: null, note: 'sotuvchi: 5 kubov' }]);
   });
 });
 

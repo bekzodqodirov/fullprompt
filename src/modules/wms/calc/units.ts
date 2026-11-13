@@ -2211,7 +2211,13 @@ export function parseGoodsLine(
       // «Kurtka 300 dona 450 kg 5 kubov» is the trade's own way of writing the
       // cube beside the count, and folded into the name it was dropped with no
       // word (review typed-break-5, JN-22's «inside a goods line»).
-      if (unit === 'm3' && piecesStated && !figureSeen && COUNTED_CUBES.has(normalizeWord(word!))) continue;
+      if (unit === 'm3' && piecesStated && !figureSeen && COUNTED_CUBES.has(normalizeWord(word!))) {
+        // …and is ASKED (JN-22): the row's note names it — «sotuvchi: 4 кубов» — so the VED
+        // sees a figure that may be the cargo's cube was typed, never only a word of the
+        // name (review crit-6). The cube stays unread; the table asks it where it is owed.
+        groupedAside.push(cellText.slice(start, end).replace(/\s+/gu, ' ').trim());
+        continue;
+      }
       const amount = readAmountText(number);
       if (amount.state === 'bad') continue;
       // Both readings of a doubted figure are in KILOS when its word scales it («1,200 тн»).

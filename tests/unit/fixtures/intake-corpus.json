@@ -16864,6 +16864,44 @@
    "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "defect"
+  },
+  {
+   "id": "c4370",
+   "input": "Kurtka 5 kubov 200 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka 5 kubov",
+      "quantity": 200,
+      "volumeM3": null,
+      "note": "sotuvchi: 5 kubov"
+     }
+    ],
+    "count": 1
+   },
+   "said": "in the name, unread, and named on the note",
+   "why": "crit-6 (completeness critic, reproduced at e8a7758): JN-22 — a counted cube («kubov», «кубов», «куба») inside a goods line that states pieces stays in the name AND is asked; 1a's row-level ask is the note (the grouped-number precedent): «sotuvchi: 5 kubov», the cube unread and asked where owed.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4371",
+   "input": "Набор 4 кубов 20 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Набор 4 кубов",
+      "quantity": 20,
+      "volumeM3": null,
+      "note": "sotuvchi: 4 кубов"
+     }
+    ],
+    "count": 1
+   },
+   "said": "the toy's cubes stay its name, and the note names them",
+   "why": "crit-6 (completeness critic, reproduced at e8a7758): JN-22 — a counted cube («kubov», «кубов», «куба») inside a goods line that states pieces stays in the name AND is asked; 1a's row-level ask is the note (the grouped-number precedent): «sotuvchi: 5 kubov», the cube unread and asked where owed.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
