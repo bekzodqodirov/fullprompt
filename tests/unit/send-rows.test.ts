@@ -92,6 +92,27 @@ describe('only three things stop a send, each with one-tap answers (UX3)', () =>
     expect(answerAmbiguous('iPhone 15 128 dona', '15 128', 128)).toBe('iPhone 15, 128 dona');
   });
 
+  // Review doors-4: «00 120» reads 120 either way, and a question offering
+  // «120 mi yoki 120 mi?» blocked the seller's send while the VED's paste
+  // landed no count — the spaced code «6907 21 00 00» before a bare count is
+  // corpus c1548-c1551's shape.
+  it('a grouped number whose first group is zeros has ONE reading: no question, the count lands (doors-4)', () => {
+    for (const [text, qty] of [
+      ['Kafel 6907 21 00 00 120', 120],
+      ['Kurtka 6201 93 00 00 300', 300],
+      ['Moy 2710 19 820 0 200', 200],
+      ['Kurtka 0 300 dona', 300],
+    ] as const) {
+      const r = one(text);
+      expect(rowIssues(r).blocking, text).toEqual([]);
+      expect(itemOfRow(r), text).toMatchObject({ quantity: qty, tnvedCode: null });
+      expect(pasteItems(text)[0], text).toMatchObject({ quantity: qty, note: null });
+    }
+    // «007 300» still reads two ways: 300, or 7 300.
+    expect(rowIssues(one('Kurtka 007 300 dona')).blocking).toHaveLength(1);
+    expect(parseGoodsLine('Kurtka 007 300 dona').problems).toContainEqual(expect.objectContaining({ decimal: 300, thousands: 7300 }));
+  });
+
   it('two pairs on one line: keep one and the other leaves the text', () => {
     const raw = 'Plitka 120 m2 40 juft';
     const r = one(raw);

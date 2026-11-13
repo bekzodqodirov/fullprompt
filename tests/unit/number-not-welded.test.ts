@@ -259,6 +259,17 @@ describe('the typed reader keeps the row and asks its figure', () => {
   });
 });
 
+describe('a first group of zeros is no first group (review doors-4)', () => {
+  it('the totals and the typed rows read the one number it is', () => {
+    expect(totals('Kurtka 0 300 kg')).toEqual({ kg: 300, m3: null, asked: [] });
+    expect(totals('Kurtka 00 120 kg')).toEqual({ kg: 120, m3: null, asked: [] });
+    expect(parseGoodsLine('Kafel 6907 21 00 00 120')).toMatchObject({ quantity: 120, tnvedCode: null, problems: [] });
+    expect(readGoodsLines('Kurtka 0 300 dona')).toEqual([expect.objectContaining({ name: 'Kurtka', quantity: 300 })]);
+    // «007 300» is still 300 or 7 300.
+    expect(totals('Kurtka 007 300 kg').asked).toEqual(asked('007 300', 300, 7300));
+  });
+});
+
 describe('the rule itself (units.ts)', () => {
   it('withoutFirstGroup: the second reading of a grouped number', () => {
     expect(withoutFirstGroup('20 300')).toBe(300);
@@ -269,6 +280,11 @@ describe('the rule itself (units.ts)', () => {
     // One piece: one reading.
     expect(withoutFirstGroup('1200')).toBeNull();
     expect(withoutFirstGroup('12.5')).toBeNull();
+    // Review doors-4: a first group of zeros leaves the same number — one reading, no question.
+    expect(withoutFirstGroup('00 120')).toBeNull();
+    expect(withoutFirstGroup('0 300')).toBeNull();
+    expect(withoutFirstGroup('000 300')).toBeNull();
+    expect(withoutFirstGroup('007 300')).toBe(300);
   });
 
   it('blanking keeps every offset: the text is as long as it was', () => {

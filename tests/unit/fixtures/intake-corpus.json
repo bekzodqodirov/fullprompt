@@ -57220,6 +57220,74 @@
    "why": "the guard of the pair fix (the refuter's counter-case).",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4345",
+   "input": "Kafel 6907 21 00 00 120",
+   "expected": {
+    "quantity": 120,
+    "tnvedCode": null,
+    "problemCount": 0
+   },
+   "said": "120, no code, no question",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4346",
+   "input": "Kurtka 6201 93 00 00 300",
+   "expected": {
+    "quantity": 300,
+    "tnvedCode": null,
+    "problemCount": 0
+   },
+   "said": "300, no code, no question",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4347",
+   "input": "Moy 2710 19 820 0 200",
+   "expected": {
+    "quantity": 200,
+    "problemCount": 0
+   },
+   "said": "200, no question (c1548's line)",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4348",
+   "input": "Kurtka 0 300 dona",
+   "expected": {
+    "quantity": 300,
+    "problemCount": 0
+   },
+   "said": "300 pieces",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4349",
+   "input": "Kurtka 007 300 dona",
+   "expected": {
+    "quantity": null,
+    "twoReadings": [
+     {
+      "text": "007 300",
+      "short": 300,
+      "long": 7300
+     }
+    ]
+   },
+   "said": "still asked: 300 or 7 300",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "parseManualFactsCases": [
@@ -61020,6 +61088,18 @@
    "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4350",
+   "input": "Kurtka 0 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "300 kg, nothing asked",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
   }
  ],
  "intakeClientLabelCases": [

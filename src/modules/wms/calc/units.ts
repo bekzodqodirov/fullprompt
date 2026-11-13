@@ -696,13 +696,19 @@ const GROUPED_NUMBER = new RegExp(String.raw`^\d{1,3}${GROUP_GAP}(\d{3}.*)$`, 'u
 /**
  * The second reading of a space-grouped number — what is left when its first
  * group is something else's: «20 300» → 300, «1 200 000,5» → 200000.5. Null
- * for a number written in one piece (it has one reading).
+ * for a number written in one piece (it has one reading) — and for one whose
+ * first group is zeros: «00 120» is 120 either way, and two equal readings are
+ * no choice (review doors-4: the spaced code «6907 21 00 00» before a bare
+ * count drew «120 mi yoki 120 mi?», and the VED's paste landed no count).
+ * «007 300» still has two (300, 7300).
  */
 export function withoutFirstGroup(number: string): number | null {
   const tail = GROUPED_NUMBER.exec(number.trim())?.[1];
   if (tail === undefined) return null;
   const read = readAmountText(tail);
-  return read.state === 'ok' ? read.value : null;
+  if (read.state !== 'ok') return null;
+  const whole = readAmountText(number.trim());
+  return whole.state === 'ok' && whole.value === read.value ? null : read.value;
 }
 
 /**
