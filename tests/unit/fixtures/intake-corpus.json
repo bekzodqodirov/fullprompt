@@ -15581,6 +15581,60 @@
    "why": "typed-spec-2: JN-8 (e)'s second spelling.",
    "source": "ai-soraydi typed-A review",
    "weight": "defect"
+  },
+  {
+   "id": "c4206",
+   "input": "Stul 40 pcs, 20 ctns, 1 ctn = 0.12 cbm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 40,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "Stul 40 pcs, 20 × 0.12 = 2.4 m³",
+   "why": "owner-1: the English «1 ctn = 0.12 cbm».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4207",
+   "input": "Kurtka 300 dona, 20 ta quti, 1 ta quti 15 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "owner-1: «1 ta quti» — the same mark with the other package noun.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4208",
+   "input": "折叠椅 200个 20箱 1箱 15kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "折叠椅",
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "owner-1: «1箱» welded — the Chinese spelling of the mark.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
   }
  ],
  "parseGoodsCases": [
@@ -59064,6 +59118,127 @@
    "said": "asked — 200 kg or 1 200 kg",
    "why": "Guard for typed-break-4: after a product's NAME word a grouped number is still asked with both readings (JN-6); only a place, a greeting, the cargo or an approximator opens it.",
    "source": "ai-soraydi typed-A review",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4200",
+   "input": "Kurtka 300 dona, 300 kg, 20 ta karobka, 1 ta karobka 0.12 kub\njami 320 kg",
+   "expected": {
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 0.12 m³ total; the row 20 × 0.12 = 2.4 m³",
+   "why": "owner-1: «1 ta karobka» (the Uzbek counter) is the per-package mark T4 names as «1 karobka»; was the shipment's 0.12 m³ under ✅.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4201",
+   "input": "Kurtka 300 dona, 20 karobka, 1 karobka = 15 kg, karobka o‘lchami 60x40x50 sm",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 20 × 15 = 300 kg, 20 × 60×40×50 sm = 2.4 m³",
+   "why": "owner-1: «=» between the mark and its figure (MARK_GAP); was the request's weight_kg 15.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4202",
+   "input": "Куртка 300 шт, 20 коробок, 1 коробка = 15 кг, размер коробки 60х40х50 см",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 300 kg and 2.4 m³ on the row",
+   "why": "owner-1: the Russian «1 коробка = 15 кг».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4203",
+   "input": "Kurtka 300 dona, 20 ctns, 1ctn=15kg",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 20 × 15 = 300 kg",
+   "why": "owner-1: the «1» welded to its noun, «=» and the figure welded too.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4204",
+   "input": "Kurtka 300 dona, 20 karobka, 1 ta karobka 15 kg",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 300 kg on the row",
+   "why": "owner-1: «1 ta karobka 15 kg».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4205",
+   "input": "Stul 1 ta karobka 15 kg",
+   "expected": {
+    "weightKg": 15
+   },
+   "said": "15 kg — one carton alone is the line's own count",
+   "why": "owner-1's guard (ONE_LEAD group 1): with no other carton count the «1 ta karobka» is the count, as «1 karobka» always was.",
+   "source": "ai-soraydi 1a review (Ta)",
    "weight": "pinned"
   }
  ],

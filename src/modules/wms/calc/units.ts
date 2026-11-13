@@ -990,8 +990,8 @@ function nounOwner(word: string | undefined): PerOneOwner | null {
 
 /** A measure's word after the noun — «har bir karobka og‘irligi 15 kg», «каждое место вес 15 кг». */
 const MEASURE_AFTER_NOUN = String.raw`(?:\s+(?:og[‘'’ʻ]?irlig?i|vazni|hajmi|soni|вес|объ[её]м))?`;
-/** What may stand between a mark and its figure. */
-const MARK_GAP = String.raw`[\s,:：–-]*$`;
+/** What may stand between a mark and its figure — «1 karobka = 15 kg», «1ctn=15kg» included (review owner-1). */
+const MARK_GAP = String.raw`[\s,:：=＝–-]*$`;
 
 /**
  * «har biri», «har birida», «har bir karobka(da)», «har karobkada», «har bir
@@ -1008,9 +1008,14 @@ const EACH_LEAD = new RegExp(
  * alone, «Stul 1 karobka 15 kg» is one carton of 15 kg, read as it always
  * was), or «в каждой коробке», «в одной коробке», «в 1 коробке» (group 2:
  * always one package's). Group 3: the noun.
+ *
+ * The «1» takes the Uzbek counter — «1 ta karobka», «1 та қути», the
+ * commonest way a seller writes it — and may touch its noun: «1ctn=15kg»,
+ * «1箱 15kg» (review owner-1: each was the shipment's 15 kg under ✅). A
+ * word numeral still needs its space — «biroz», «onex» are no marks.
  */
 const ONE_LEAD = new RegExp(
-  String.raw`(?<![\p{L}\d.,])(?:(1|bitta|bir|one|одн(?:ого|ой|ом|а|о|у))|(в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))))\s+(${PACKAGE_NOUN})${MEASURE_AFTER_NOUN}${MARK_GAP}`,
+  String.raw`(?<![\p{L}\d.,])(?:(1(?:\s*(?:ta|та)(?=\s))?\s*|(?:bitta|битта|bir|бир|one|одн(?:ого|ой|ом|а|о|у))\s+)|(в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))\s+))(${PACKAGE_NOUN})${MEASURE_AFTER_NOUN}${MARK_GAP}`,
   'iu',
 );
 /** «в коробке по 24 шт» — what one box holds (review JN-8 (b): a bare «в коробке» describes the product, «Кукла в коробке»). */
@@ -1644,8 +1649,8 @@ export function perOneIn(text: string, opts: { scaled?: boolean } = {}): PerOneF
   return out;
 }
 
-/** A carton COUNT on a line — «20 karobka», «20 ta karobka», «20 ctns» — but not «1 karobka» (the mark itself). */
-const CARTON_COUNT = new RegExp(String.raw`(?<![\p{L}\d.,])(?!1\s)\d+\s*(?:(?:ta|та)\s+)?(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
+/** A carton COUNT on a line — «20 karobka», «20 ta karobka», «20 ctns» — but not «1 karobka», «1ctn» (the mark itself). */
+const CARTON_COUNT = new RegExp(String.raw`(?<![\p{L}\d.,])(?!1(?![\d.,]))\d+\s*(?:(?:ta|та)\s+)?(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
 
 /** `[start, end)` of every per-one figure of a text (`perOneIn`). */
 export const perOneSpans = (text: string, opts: { scaled?: boolean } = {}): [number, number][] =>
