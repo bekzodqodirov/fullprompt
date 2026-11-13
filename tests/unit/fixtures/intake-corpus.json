@@ -62248,6 +62248,40 @@
    "why": "check R2's other side: the price is in the figure's own clause, the cargo stated in another.",
    "source": "ai-soraydi 1a check (T)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4451",
+   "input": "Kurtka 300 dona, 300 kg, 20 ta karobka, 1 ta karobka 0.12 kub\njami 320 kg",
+   "expected": {
+    "weightKg": 320
+   },
+   "said": "the brutto is 320 kg",
+   "why": "check owner-1 (a): beside one goods line, «jami 320 kg» and the line's own 300 kg cancelled each other and the brutto was asked; a line that speaks of the whole shipment says that field.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4452",
+   "input": "Kurtka 300 dona, 300 kg\njami 320 kg",
+   "expected": {
+    "weightKg": 320
+   },
+   "said": "the brutto is 320 kg",
+   "why": "check owner-1 (a): beside one goods line, «jami 320 kg» and the line's own 300 kg cancelled each other and the brutto was asked; a line that speaks of the whole shipment says that field.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4453",
+   "input": "Kurtka 300 dona, 300 kg, 2 kub\njami 320 kg",
+   "expected": {
+    "weightKg": 320,
+    "volumeM3": 2
+   },
+   "said": "320 kg; the line's 2 m³ still the cube",
+   "why": "check owner-1 (a): beside one goods line, «jami 320 kg» and the line's own 300 kg cancelled each other and the brutto was asked; a line that speaks of the whole shipment says that field. Per field.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [

@@ -109,6 +109,9 @@ const figureOf = (unit: 'kg' | 'm3' | 'dona') =>
   new RegExp(String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})${GAP}(${unitPattern(unit)})(?![\p{L}\d])`, 'giu');
 const KG_FIGURE = figureOf('kg');
 const M3_FIGURE = figureOf('m3');
+/** A kilo, a cube on a line — the one-shot tests (the two above are global). */
+const KG_ON_LINE = new RegExp(KG_FIGURE.source, 'iu');
+const M3_ON_LINE = new RegExp(M3_FIGURE.source, 'iu');
 /** A piece count on the line — what keeps a counted cube («4 кубов») in the name (review JN-22). */
 const PIECES_FIGURE = new RegExp(figureOf('dona').source, 'iu');
 /** A figure with any unit of the vocabulary — the end of a line's name run. */
@@ -766,9 +769,19 @@ export function readTypedTotals(
   const route = readRoute(text);
   const typed = typedGoods(text, { prefix: opts.prefix });
   const spans = lineSpans(text);
-  const onGoodsLine = (start: number) => {
-    if (!opts.goodsBeside && typed.figured < 2) return false;
+  // A line that speaks of the WHOLE shipment — «jami 320 kg» — beside a lone goods
+  // line: the goods line's figures are its own, and the shipment's are said
+  // (check owner-1 (a): «Kurtka 300 dona, 300 kg⏎jami 320 kg» — the row's 300 kg
+  // and the «jami» 320 cancelled each other, and the brutto he typed was asked).
+  // Per field: «jami 320 kg» says the weight, and the line's «2 kub» is still the one cube there is.
+  const said: Partial<Record<'kg' | 'm3', boolean>> = {};
+  const shipmentElsewhere = (line: number, field: 'kg' | 'm3') =>
+    (said[field] ??= spans.some(
+      ([a, b], i) => i !== line && !typed.lines.has(i) && shipmentLine(text.slice(a, b)) && (field === 'kg' ? KG_ON_LINE : M3_ON_LINE).test(text.slice(a, b)),
+    ));
+  const onGoodsLine = (start: number, field: 'kg' | 'm3') => {
     const line = spans.findIndex(([a, b]) => start >= a && start <= b);
+    if (!opts.goodsBeside && typed.figured < 2) return typed.lines.has(line) && shipmentElsewhere(line, field);
     const lineText = line >= 0 ? text.slice(spans[line]![0], spans[line]![1]) : '';
     if (opts.goodsBeside && line >= 0 && MATERIAL_ROW_ADDRESS.test(lineText)) return true;
     if (!typed.lines.has(line)) return false;
@@ -796,7 +809,7 @@ export function readTypedTotals(
     const span = perOne[lo - 1];
     return span !== undefined && start < span[1];
   };
-  const notTotal = (start: number) => start < from || onGoodsLine(start) || onePackage(start);
+  const notTotal = (start: number, field: 'kg' | 'm3' = 'kg') => start < from || onGoodsLine(start, field) || onePackage(start);
   // What is no amount — a size, a code, a phone — is blanked before a figure
   // is looked for (§3.1 T0): its digits were the thousands of the weight after.
   const scan = blankForTotals(text, clientCodePrefix(opts));
@@ -851,7 +864,7 @@ export function readTypedTotals(
       ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b) || otherField(text, a, b, 'weight'), tonnes)
       : { value: null, ambiguous: null, taken: [] };
   const weight = netto.value !== null || netto.ambiguous ? netto : plain;
-  const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a, b) => notTotal(a) || otherField(text, a, b, 'volume'));
+  const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a, b) => notTotal(a, 'm3') || otherField(text, a, b, 'volume'));
   const ambiguous: AmbiguousTotal[] = [];
   if (weight.ambiguous) ambiguous.push({ field: 'weightKg', ...weight.ambiguous });
   if (volume.ambiguous) ambiguous.push({ field: 'volumeM3', ...volume.ambiguous });

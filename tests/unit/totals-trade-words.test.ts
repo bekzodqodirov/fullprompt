@@ -325,6 +325,29 @@ describe('a figure after another field’s label is that field’s (seams-1)', (
   });
 });
 
+// Check owner-1 (a): beside ONE goods line, «jami 320 kg» and the line's own
+// 300 kg cancelled each other — two weights, no total — and the brutto he typed
+// was asked. A line that speaks of the whole shipment says that field; the lone
+// line's figure of the same field is its own, and its other fields still stand.
+describe('a «jami» line beside a lone goods line says the shipment’s figure (owner-1 a)', () => {
+  it('«Kurtka 300 dona, 300 kg⏎jami 320 kg» — the brutto is 320, in every spelling of the totals word', () => {
+    for (const text of [
+      'Kurtka 300 dona, 300 kg\njami 320 kg',
+      'Kurtka 300 dona, 300 kg, 20 ta karobka, 1 ta karobka 0.12 kub\njami 320 kg',
+      'Куртка 300 шт, 300 кг\nИтого: 320 кг',
+      'Kurtka 300 dona, 300 kg\numumiy 320 kg',
+      'Kurtka 300 dona, 300 kg\nTotal: 320 kg',
+    ]) {
+      expect(totals(text, 'podklyuch').kg, text).toBe(320);
+    }
+    // Per field: «jami 320 kg» says the weight, the line's 2 m³ is still the cube; and the other way round.
+    expect(totals('Kurtka 300 dona, 300 kg, 2 kub\njami 320 kg', 'podklyuch')).toEqual({ ...none, kg: 320, m3: 2 });
+    expect(totals('Kurtka 300 dona, 300 kg, 2 kub\njami 2.5 kub', 'podklyuch')).toEqual({ ...none, kg: 300, m3: 2.5 });
+    // With no totals line the lone line's figures are the shipment's, as before.
+    expect(totals('Kurtka 300 dona, 300 kg', 'podklyuch')).toEqual({ ...none, kg: 300 });
+  });
+});
+
 describe('the rules that stood, stand', () => {
   it('one distinct figure per field, in every spelling of the unit — two are no total', () => {
     // dg3-01: one carton's «34kg» was the only weight this reader saw, and
