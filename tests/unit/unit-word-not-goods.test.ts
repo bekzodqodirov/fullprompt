@@ -249,17 +249,21 @@ describe('the shipment’s own line, typed at the table without «jami»', () =>
     // The row kernel reads «G.W. 1136.5 kg CBM 7.19» as 1136.5 kg and a COUNT
     // of 7.19 — no total takes a count, no row was addressed: it was «Qaysi
     // qatorga?» and the brutto the seller labelled went nowhere.
-    for (const [text, kg, bare] of [
-      ['G.W. 1136.5 kg CBM 7.19', 1136.5, '7.19'],
-      ['G.W. 480 kg CBM 3.66', 480, '3.66'],
-      ['Gross weight 507 kg MEAS 5.92', 507, '5.92'],
+    for (const [text, kg, left] of [
+      // «CBM 7.19» has no colon and no unit after it: not READ (T1, JN-21) — but
+      // the seller wrote the cube's word, before the figure: RE-ANCHORED (review
+      // typed-spec-7) from «7.19 — birligi yozilmagan» to the unit's question,
+      // «“CBM” — kubmi?».
+      ['G.W. 1136.5 kg CBM 7.19', 1136.5, { why: 'unit', text: 'CBM 7.19', figure: '7.19', number: '7.19', word: 'CBM', near: 'm3' }],
+      ['G.W. 480 kg CBM 3.66', 480, { why: 'unit', text: 'CBM 3.66', figure: '3.66', number: '3.66', word: 'CBM', near: 'm3' }],
+      // «MEAS» is a label and no unit: the figure is still asked by its number.
+      ['Gross weight 507 kg MEAS 5.92', 507, { why: 'bare', text: '5.92', figure: '5.92', number: '5.92' }],
     ] as const) {
       const segments = read(text);
       expect(segments, text).toHaveLength(2);
       expect(segments[0]!.at, text).toEqual({ totals: 'weightKg' });
       expect(segments[0]!.totals, text).toEqual({ weightKg: kg, volumeM3: null, ambiguous: [] });
-      // «CBM 7.19» has no colon and no unit after it: not READ (T1, JN-21) — asked, by its number.
-      expect(segments[1]!.refused?.left, text).toEqual([{ why: 'bare', text: bare, figure: bare, number: bare }]);
+      expect(segments[1]!.refused?.left, text).toEqual([left]);
     }
   });
 

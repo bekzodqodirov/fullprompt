@@ -132,6 +132,29 @@ describe('T16 — measureCandidates: one package’s or one piece’s figure is 
   });
 });
 
+describe('T16 — the review’s own finds reach the agent the same way (typed-break-1, -3, -6)', () => {
+  it('a label-first figure with a per-package tail is no reference — «G.W.: 15/ctn» priced 255 $ of avia for a 300 kg cargo', () => {
+    expect(of('Yiwudan, stullar 20 karobka, G.W.: 15/ctn, MEAS: 0.12/ctn')).toEqual([]);
+    expect(of('毛重: 15/箱, 体积: 0.12/箱')).toEqual([]);
+  });
+
+  it('a pack’s grams and a carton’s «each» are no weight: «Choy 500 gr 200 karobka», «Chair 20 ctns, 15 kg each»', () => {
+    expect(of('Choy 500 gr 200 karobka')).toEqual([]);
+    expect(of('Kofe 250 gr')).toEqual([]);
+    expect(of('Chair 20 ctns, 15 kg each')).toEqual([]);
+    expect(of('Jacket 300 pcs, 20 ctns, carton weight 22.5 kg')).toEqual([]);
+  });
+
+  it('…and the yo’lkira tool, handed the chat, finds no weight to price: the checklist asks it', async () => {
+    const out = await runTool(
+      'calc_checklist',
+      { section: 'yolkira', goods: [] },
+      env(ctxWith(['Yiwudan Toshkentga, stullar 20 karobka, G.W.: 15/ctn, MEAS: 0.12/ctn'])),
+    );
+    expect(out.checklist?.facts).toMatchObject({ weightKg: null, volumeM3: null });
+  });
+});
+
 describe('T16 — the references count per kind across the chat, and the agent’s own lines are not the customer’s', () => {
   it('two inbound messages: w1 and v1, each naming its message; an outbound line is read by nobody', () => {
     const messages = [

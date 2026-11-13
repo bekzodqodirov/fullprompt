@@ -155,6 +155,29 @@ describe('T4 at the table — an answer holding one package’s figure writes it
     expect(out.replies.join('\n')).toContain('⚠️ «har biri 15 kg» — bittasiniki, umumiy emas');
   });
 
+  it('review typed-spec-3: «1: 15 kg/ctn» is asked as one carton’s at its row — never «kg/ctn» as a new product', async () => {
+    for (const text of ['1: 15 kg/ctn', '1: har biri 15 kg']) {
+      const out = await answer(atTable([{ name: 'Kurtka', quantity: 300, weightKg: null }]), text);
+      expect(out.goods[0], text).toMatchObject({ weightKg: null });
+      const said = out.replies.join('\n');
+      const figure = text.slice(3);
+      expect(said, text).toContain(`⚠️ 1-qator: «${figure}» — bittasiniki, qatorning jamisi emas.`);
+      expect(said, text).not.toContain('yangi');
+    }
+    // Un-addressed: the totals' own sentence, never «jadvalda bunday qator yo‘q».
+    const out = await answer(atTable([{ name: 'Kurtka', quantity: 300, weightKg: 150 }]), '15 kg/ctn');
+    expect(out.kg).toBeNull();
+    expect(out.replies.join('\n')).toContain('⚠️ «15 kg/ctn» — bittasiniki, umumiy emas');
+    expect(out.replies.join('\n')).not.toContain('bunday qator');
+  });
+
+  it('review typed-spec-7: «G.W. 1136.5 kg CBM 7.19» — the brutto written, the cube asked as the unit he wrote', async () => {
+    const out = await answer(atTable([{ name: 'Kurtka', quantity: 300, weightKg: 150 }]), 'G.W. 1136.5 kg CBM 7.19');
+    expect(out.kg).toBe(1136.5);
+    expect(out.replies.join('\n')).toContain('«CBM» — kubmi? «jami 7.19 kub» deb yozing.');
+    expect(out.replies.join('\n')).not.toContain('birligi yozilmagan');
+  });
+
   it('a row answer «1: 20 x 15 kg» leaves the row’s weight as it was, and asks for the row’s whole figure', async () => {
     const out = await answer(atTable([{ name: 'Kurtka', quantity: 300, weightKg: null }]), '1: 20 x 15 kg');
     expect(out.goods[0]).toMatchObject({ weightKg: null });
