@@ -61,6 +61,9 @@ const WORDS: Record<SellerUnit, readonly string[]> = {
     'carton', 'cartons', 'box', 'boxes', 'кути', 'quti', '箱', 'место', 'мест', 'места', 'joy',
     // The Uzbek Cyrillic spellings of «quti», «qop», «joy» (review owner-1/owner-4's neighbours).
     'қути', 'қоп', 'жой',
+    // A forwarder's packages — the word of a «PKGS» column, NOT_GOODS_WORDS' too (T3): «Stul 20 pkgs»
+    // kept «20 pkgs» in the NAME while «20 ctns» was its carton count (review seams-7).
+    'pkg', 'pkgs', 'package', 'packages',
   ],
 };
 
@@ -302,7 +305,7 @@ export const PER_PACKAGE_TAIL: readonly string[] = [
   // «/件» is NOT here (review JN-8): «件» is a piece as often as a package,
   // and a tail that may be either marks nothing.
   '/箱', '/ctn', '/ctns', '/carton', '/box', '/кор', '/коробка', '/коробку', '/место', '/karobka',
-  '/quti', '/joy',
+  '/quti', '/joy', '/pkg', '/pkgs', '/package',
   // A sack is a package of its own trade — cement, flour, granules: «50 kg/qop» (T4).
   '/qop', '/bag', '/мешок',
 ];

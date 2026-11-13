@@ -1372,7 +1372,14 @@ function readFieldLabels(text: string, fields: readonly number[] = []): LineFiel
     // A label that is a unit word of its own — «CBM: 5.92», «Cartons: 20», «Мест: 20».
     const own = unitOf(label);
     if (own !== null) {
-      if (word !== undefined) continue;
+      // «Cartons: 15 ctns», «Packages: 15 CTNS», «CBM: 5.92 cbm»: the figure
+      // names its unit itself, the label the same one — the label goes, or the
+      // kernel reads the unit twice («repeated») and the block it stands in
+      // dies (review owner-3, seams-7).
+      if (word !== undefined) {
+        if (unitOf(word) === own) edits.push(labelEdit);
+        continue;
+      }
       // Written after its figure — «5.92 CBM», «20 Cartons» — the way the
       // kernel reads every unit: as a field before it, «200 pcs Cartons: 20»
       // was read as 200 cartons by the counter-then-unit rule («120 ta juft»).

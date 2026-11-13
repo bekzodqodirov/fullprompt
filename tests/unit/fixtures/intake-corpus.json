@@ -16640,6 +16640,76 @@
    "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4353",
+   "input": "Stul 200 dona 20 pkgs 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Stul», 200 dona, 300 kg",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4354",
+   "input": "Stul 20 packages 15 kg/pkg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Stul», 20 × 15 kg = 300 kg",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4355",
+   "input": "Stul 20 pkgs, har biri 15 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Stul», 20 × 15 kg = 300 kg",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4356",
+   "input": "Gift packages 200 dona 30 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gift packages",
+      "quantity": 200,
+      "weightKg": 30
+     }
+    ],
+    "count": 1
+   },
+   "said": "a brand's word keeps its name",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
@@ -61139,6 +61209,22 @@
    "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "defect"
+  },
+  {
+   "id": "c4357",
+   "input": "TOTAL: 20 PKGS, G.W. 300 KGS, 5.9 CBM",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": 5.9,
+    "ambiguous": [],
+    "goods": {
+     "count": 0
+    }
+   },
+   "said": "a totals line, no row",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [
