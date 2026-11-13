@@ -31,6 +31,12 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // (`ready.measures = false` = a deploy whose 0146 did not land.)
   lotClientMeasuresReady: () => ready.on && ready.client && ready.measures,
   clientMeasuresReady: async () => ready.on && ready.client && ready.measures,
+  // …and 0147's two (the tick's kilos and cubic metres; the notices' remembered
+  // question) — there whenever the check tables are: this file's 96-letter
+  // matrix inserts ticks with no measures, which hold (the NULL arm).
+  lotTickMeasuresReady: () => ready.on,
+  tickMeasuresReady: async () => ready.on,
+  askedTagReady: async () => ready.on,
 }));
 vi.mock('@/modules/platform/auth/session', async (original) => ({
   ...(await original<typeof import('@/modules/platform/auth/session')>()),

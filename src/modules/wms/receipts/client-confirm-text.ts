@@ -40,7 +40,17 @@ import { ASK_MAX_CHARS, type ClientAskFacts } from './client-confirm';
  */
 const clip = (text: string): string => clipKeepingCount(text.replace(/\s+/g, ' ').trim(), PUSH_NAME_CHARS);
 
-export function askText(facts: ClientAskFacts, locale?: string | null): string {
+/**
+ * `reason: 'updated'` — the question the system sends BY ITSELF after a
+ * re-weigh (the owner's «1 b», docs/PRIXOD-JAVOBLAR.md §1.7): the same
+ * question with ONE line under its title saying why it comes again. True of a
+ * weight, a volume and a count alike, so it names none of them.
+ */
+export interface AskTextOptions {
+  reason?: 'updated';
+}
+
+export function askText(facts: ClientAskFacts, locale?: string | null, opts: AskTextOptions = {}): string {
   const t = clientLabels(locale);
   const full = facts.scope === 'full';
   const measures = (lot: ClientAskFacts['lots'][number]): string =>
@@ -76,14 +86,18 @@ export function askText(facts: ClientAskFacts, locale?: string | null): string {
         )
       : null;
   return joinBlocks(
-    [b(h(t.confirmAskTitle)), headerLine(facts.clientCode, facts.warehouseName, facts.receivedAt)],
+    [
+      b(h(t.confirmAskTitle)),
+      ...(opts.reason === 'updated' ? [h(t.confirmAskUpdated)] : []),
+      headerLine(facts.clientCode, facts.warehouseName, facts.receivedAt),
+    ],
     lots,
     total,
     [ask, facts.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(facts.receiptNumber))}` : ''],
   );
 }
 
-/** Does the question fit one Telegram message, in every customer language? */
-export function askFits(facts: ClientAskFacts): boolean {
-  return (['uz', 'ru', 'en'] as const).every((locale) => visibleLength(askText(facts, locale)) <= ASK_MAX_CHARS);
+/** Does the question fit one Telegram message, in every customer language — with its reason line, when it has one? */
+export function askFits(facts: ClientAskFacts, opts: AskTextOptions = {}): boolean {
+  return (['uz', 'ru', 'en'] as const).every((locale) => visibleLength(askText(facts, locale, opts)) <= ASK_MAX_CHARS);
 }

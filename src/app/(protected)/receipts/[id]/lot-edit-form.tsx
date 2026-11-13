@@ -33,10 +33,18 @@ export interface LotEditValues {
 export function LotEditForm({
   lot,
   hasComposition = false,
+  vouched = false,
   shownName = null,
 }: {
   lot: LotEditValues;
   hasComposition?: boolean;
+  /**
+   * A colleague's tick or the client's own ✅ vouches for this lot NOW: a
+   * change of its kilos or cubic metres turns it «o'zgardi» (0146/0147) and,
+   * where the client holds a question about it, asks them again by itself
+   * (the owner's «1 b» / «2 b» of 2026-11-12). Said BEFORE the press.
+   */
+  vouched?: boolean;
   /** The tarkib's name the lists show in place of the Russian name below, when a tarkib stands. */
   shownName?: string | null;
 }) {
@@ -90,6 +98,11 @@ export function LotEditForm({
           {hasComposition && (
             <p className="text-xs font-semibold text-warn" data-testid="lot-edit-tarkib-warning">
               ⚠ {tk('staleOnLotForm')}
+            </p>
+          )}
+          {vouched && (
+            <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="lot-edit-measure-warning">
+              ⚠ {tk('measureOnLotForm')}
             </p>
           )}
           <input

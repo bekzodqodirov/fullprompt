@@ -28,6 +28,19 @@ import { mayReadReceipt } from './read-door';
 
 export type ReceiptFilesRefusal = 'not_found' | 'voided' | 'forbidden';
 
+/**
+ * May a reader who has OPENED this prixod add a file to it? The ONE rule for
+ * both doors (the owner's «4 b» of 2026-11-12, docs/PRIXOD-JAVOBLAR.md §3):
+ * the bot's «📎 Fayl qo‘shish» and the card's «Fayllar» tile. A confirmed
+ * prixod that is not voided — a draft is the wizard's, and a voided one is
+ * off every shelf, its papers backing nothing. Pure: the caller has already
+ * passed the read door (`mayReadReceipt`) — the card to render at all, the
+ * bot below.
+ */
+export function mayAttachReceiptFile(receipt: { status: string; voidedAt: Date | null }): boolean {
+  return receipt.status === 'confirmed' && receipt.voidedAt === null;
+}
+
 export interface ReceiptFilesTarget {
   id: string;
   number: string;
@@ -61,6 +74,9 @@ export async function receiptFilesDoor(
   if (!(await mayReadReceipt(actor, { id: row.id, warehouseId: row.warehouseId }))) {
     return { ok: false, error: 'forbidden' };
   }
+  // …and the card's own rule, so the two doors cannot drift (any other status
+  // a prixod may grow is no prixod to add papers to, on either).
+  if (!mayAttachReceiptFile(row)) return { ok: false, error: 'not_found' };
   return {
     ok: true,
     receipt: { id: row.id, number: row.number ?? '', warehouseId: row.warehouseId, clientCode: row.clientCode },
@@ -68,13 +84,15 @@ export async function receiptFilesDoor(
 }
 
 /**
- * The History's line for a file the bot attached. `saveAttachment` writes no
- * audit row (the web's panel never has), but a file that arrives from a
- * chat has no screen behind it: without this line nobody could say who put
- * an invoice on the prixod, or when. One row per file, each under its own
- * key, so the History's grouping folds a burst from one person into one
- * entry that still names every file. (A file uploaded on the SITE still
- * writes no row — «no line» does not mean «nobody added it».)
+ * The History's line for a file added to a confirmed prixod — from the bot
+ * («📎 Fayl qo‘shish») or, since the owner's «4 b» of 2026-11-12, on the SITE
+ * (`/api/files/upload`): 5a's ⭐ told him a file «kartada va tarixda
+ * ko'rinadi», and only the bot's ever did. `saveAttachment` writes no audit
+ * row, so without this line nobody could say who put an invoice on the
+ * prixod, or when. One row per file, each under its own key, so the
+ * History's grouping folds a burst from one person into one entry that still
+ * names every file. Action `update`, never `create`: `staffActivity` counts a
+ * receipt's `create` rows as receipts MADE.
  *
  * Never throws: the file IS stored, and a History that cannot be written
  * must not tell the seller it was not.
@@ -82,9 +100,14 @@ export async function receiptFilesDoor(
 export async function recordReceiptFile(input: {
   actorId: string;
   receipt: Pick<ReceiptFilesTarget, 'id' | 'warehouseId'>;
-  /** What tells this file from the next one in the same burst — its Telegram message. */
+  /**
+   * What tells this file from the next one in the same burst — its Telegram
+   * message for the bot, the attachment's own id for the site.
+   */
   item: string;
   fileName: string;
+  /** Where it came from: the bot's line says «· Telegram», the site's says nothing more. */
+  via?: 'telegram' | 'site';
 }): Promise<void> {
   try {
     await writeAudit(
@@ -98,7 +121,10 @@ export async function recordReceiptFile(input: {
         // A per-file key (`fileAdded:<message>`): the History nets a run of
         // one person's edits PER KEY, so a shared key folded an album of
         // three into one line naming the last (audit/fields.ts's own rule).
-        after: { [`fileAdded:${input.item}`]: `${input.fileName.slice(0, 200)} · Telegram` },
+        after: {
+          [`fileAdded:${input.item}`]:
+            (input.via ?? 'telegram') === 'telegram' ? `${input.fileName.slice(0, 200)} · Telegram` : input.fileName.slice(0, 200),
+        },
       },
     );
   } catch (err) {

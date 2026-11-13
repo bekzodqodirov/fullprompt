@@ -30,8 +30,12 @@ export async function uploadAttachmentFile(
   formData.set('entityId', entityId);
   const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
   if (res.ok) {
-    const { id } = (await res.json()) as { id: string };
-    return { ok: true, item: { id, fileName: file.name, contentType: file.type, kind: isImage ? 'photo' : 'file' } };
+    // The kind the SERVER stored: a picture it kept as a paper is a file.
+    const { id, kind } = (await res.json()) as { id: string; kind?: string };
+    return {
+      ok: true,
+      item: { id, fileName: file.name, contentType: file.type, kind: kind === 'photo' || kind === 'file' ? kind : isImage ? 'photo' : 'file' },
+    };
   }
   try {
     const answer = (await res.json()) as { error?: string };

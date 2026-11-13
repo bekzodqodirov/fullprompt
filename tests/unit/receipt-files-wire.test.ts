@@ -171,7 +171,11 @@ describe('the «Fayllar» card goes with its last file', () => {
 
   it('a reader who may not attach and removes the last file asks the page again — decided from the list the deletes LEFT', () => {
     const panel = code('src/components/attachments-panel.tsx');
-    expect(panel).toContain('if (refreshWhenEmpty && !editable && removedAny && items.length === 0) router.refresh();');
+    // «May not ATTACH» — its own flag since the owner's «4 b» (2026-11-12): on the card every reader of a live
+    // prixod may attach while only an editor removes another's file, so `editable` no longer answers it.
+    expect(panel).toContain('if (refreshWhenEmpty && !attachable && removedAny && items.length === 0) router.refresh();');
+    expect(panel).toContain('attachable = editable,');
+    expect(panel).toContain('{attachable && (');
     expect(panel).toContain('setRemovedAny(true);');
     // Not from the render a press closed over: two ✕ before the first answer each saw the other file (XF-3).
     expect(panel).not.toMatch(/const left = items\.filter/);
@@ -179,7 +183,11 @@ describe('the «Fayllar» card goes with its last file', () => {
     // to list or to attach (`showFiles`), so an emptied one is a heading over nothing.
     const page = code('src/app/(protected)/receipts/[id]/page.tsx');
     expect(page).toMatch(/removableIds=\{ownFileIds\}\n\s+refreshWhenEmpty\n/);
-    expect(page).toContain('const showFiles = canEdit || receiptFiles.length > 0;');
+    // Who may attach is the bot's own rule, one predicate for both doors (4b) — never `canEdit`, which also
+    // draws the ✏️ lot form and ✕ on everybody's files.
+    expect(page).toContain('const mayAttach = mayAttachReceiptFile(receipt);');
+    expect(page).toContain('const showFiles = mayAttach || receiptFiles.length > 0;');
+    expect(page).toMatch(/editable=\{canEdit\}\n\s+attachable=\{mayAttach\}/);
   });
 });
 

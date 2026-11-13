@@ -72,6 +72,15 @@ import { mayReadReceipt } from './read-door';
  */
 
 export const NOTICE_LOT_ASK = 'lot_ask';
+/**
+ * The question the system sends BY ITSELF after a re-weigh (the owner's «1 b»
+ * of 2026-11-12, docs/PRIXOD-JAVOBLAR.md §1; `client-reask.ts`). A kind of
+ * its own, never `lot_ask`'s row: that row remembers who ASKED (and tells
+ * them the answer past their mute), its future due time reads «Telegram asked
+ * us to wait», and a quiet skip there would erase the person's delivered
+ * question from the card.
+ */
+export const NOTICE_LOT_REASK = 'lot_reask';
 
 /** «Mijozdan so'rash» is not offered again for this long after a question went out. */
 export const ASK_COOLDOWN_MINUTES = 10;
@@ -353,17 +362,34 @@ export function clientConfirmAuditKey(letter: string | null): string {
 }
 
 /**
- * The last «Mijozdan so'rash» for this prixod — of the prixod's CURRENT
- * owner (a prixod that changed owner holds one row per client): who pressed
- * it and when it went out. Null when only the receipt's own push has asked.
+ * The last question asked about this prixod — of the prixod's CURRENT owner
+ * (a prixod that changed owner holds one row per client): who asked and when
+ * it went out. Null when only the receipt's own push has asked.
+ *
+ * Two askers since the owner's «1 b»: a person's «Mijozdan so'rash»
+ * (`lot_ask`, who pressed it) and the system's own question after a re-weigh
+ * (`lot_reask`, nobody). The newer DELIVERY wins — an answer is given to the
+ * newest message the client holds — except that a person's question still
+ * WAITING keeps its asker, as it always has: they pressed, and they are told.
  */
 async function lastAsk(clientId: string, receiptId: string): Promise<{ askedBy: string | null; sentAt: Date | null } | null> {
   const rows = (await db.execute(sql`
-    SELECT asked_by::text AS asked_by, sent_at FROM client_notices
-     WHERE client_id = ${clientId}::uuid AND kind = ${NOTICE_LOT_ASK} AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
-  `)) as unknown as { asked_by: string | null; sent_at: string | Date | null }[];
-  const row = rows[0];
-  return row ? { askedBy: row.asked_by, sentAt: row.sent_at ? new Date(row.sent_at) : null } : null;
+    SELECT kind, status, asked_by::text AS asked_by, sent_at FROM client_notices
+     WHERE client_id = ${clientId}::uuid AND kind IN (${NOTICE_LOT_ASK}, ${NOTICE_LOT_REASK})
+       AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
+  `)) as unknown as { kind: string; status: string; asked_by: string | null; sent_at: string | Date | null }[];
+  const person = rows.find((row) => row.kind === NOTICE_LOT_ASK);
+  const auto = rows.find((row) => row.kind === NOTICE_LOT_REASK);
+  const at = (row: { sent_at: string | Date | null } | undefined) => (row?.sent_at ? new Date(row.sent_at) : null);
+  const autoAt = at(auto);
+  const personAt = at(person);
+  const personWaiting = person !== undefined && (person.status === 'pending' || person.status === 'sending');
+  // The system's question is the last one once it WENT, unless a person has
+  // asked since — delivered later, or pressed and still waiting to go.
+  if (autoAt && !personWaiting && (personAt === null || personAt.getTime() < autoAt.getTime())) {
+    return { askedBy: null, sentAt: autoAt };
+  }
+  return person ? { askedBy: person.asked_by, sentAt: personAt } : null;
 }
 
 /**
@@ -758,6 +784,17 @@ export async function askClientAboutReceipt(
     `)) as unknown as { status: string }[];
     throw new ClientAskError(standing?.status === 'pending' || standing?.status === 'sending' ? 'already_queued' : 'too_soon');
   }
+  // A person asked NOW: the system's own question about the same prixod, if
+  // one is still held, stands down — the client must not get two questions
+  // minutes apart (docs/PRIXOD-JAVOBLAR.md §1.9). A question already on its
+  // way (`sending`) is not touched; the person's goes after it.
+  await db
+    .execute(sql`
+      UPDATE client_notices SET status = 'skipped', last_error = ${REASK_SUPERSEDED}, claimed_at = NULL
+       WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
+         AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid AND status = 'pending'
+    `)
+    .catch((err: unknown) => logger.warn({ err, receiptId }, '[client-confirm] the held automatic question was not stood down'));
   await writeAudit(db, ctx, {
     entityType: 'receipt',
     entityId: receiptId,
@@ -767,6 +804,15 @@ export async function askClientAboutReceipt(
   }).catch((err) => logger.warn({ err, receiptId }, '[client-confirm] ask not audited'));
   return { lots: facts.lots.length };
 }
+
+/**
+ * Why the system's own question was RIGHTLY not sent (docs/PRIXOD-JAVOBLAR.md
+ * §1.7) — a closed list the card never prints as a failure: a person asked
+ * instead, the change was taken back, the cargo left China, or the switch is
+ * off. Every other reason it is skipped for is a word like any question's.
+ */
+export const REASK_SUPERSEDED = 'superseded';
+export const REASK_QUIET = ['switched_off', REASK_SUPERSEDED, 'not_askable', 'not_needed'] as const;
 
 /**
  * Why a question did not reach the client — a CLOSED list of words for the
@@ -788,6 +834,15 @@ const SKIP_FAILURE: Record<ClientAskSkip | 'client_changed' | 'too_long' | 'no_l
   no_linked_chat: 'no_chat',
   unknown_kind: 'telegram',
 };
+
+/**
+ * …and for the system's own question (`lot_reask`): null too for a skip that
+ * was RIGHT (`REASK_QUIET` — nothing failed, nothing is drawn).
+ */
+export function reaskFailureOf(status: string, reason: string | null): AskFailure | null {
+  if (status === 'skipped' && (REASK_QUIET as readonly string[]).includes(reason ?? '')) return null;
+  return askFailureOf(status, reason);
+}
 
 /** The word for a question that was not delivered; null while it waits or once it went. */
 export function askFailureOf(status: string, reason: string | null): AskFailure | null {
@@ -867,20 +922,59 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
 }
 
 /**
+ * The system's own question about a prixod, for its card (the owner's «1 b»,
+ * docs/PRIXOD-JAVOBLAR.md §1.9): held until `at`, sent at `at`, or not
+ * delivered for a reason with a word. Null = none, or one RIGHTLY not sent
+ * (`REASK_QUIET`) — the card draws nothing of it. Of the prixod's CURRENT
+ * owner, as the person's question is.
+ */
+export interface ClientReaskStatus {
+  state: 'waiting' | 'sent' | 'failed';
+  /** When it is due (waiting) or when it went (sent); null for a failure. */
+  at: Date | null;
+  failure: AskFailure | null;
+}
+
+export async function clientReaskStatusFor(receiptId: string): Promise<ClientReaskStatus | null> {
+  if (!isUuidShaped(receiptId)) return null;
+  const rows = (await db.execute(sql`
+    SELECT n.status, n.sent_at, n.send_after, n.last_error
+      FROM client_notices n
+      JOIN receipts r ON r.id = n.ref_id AND r.client_id = n.client_id
+     WHERE n.kind = ${NOTICE_LOT_REASK} AND n.ref_type = 'receipt' AND n.ref_id = ${receiptId}::uuid
+     LIMIT 1
+  `)) as unknown as { status: string; sent_at: string | Date | null; send_after: string | Date | null; last_error: string | null }[];
+  const row = rows[0];
+  if (!row) return null;
+  if (row.status === 'pending' || row.status === 'sending') {
+    return { state: 'waiting', at: row.send_after ? new Date(row.send_after) : null, failure: null };
+  }
+  if (row.status === 'sent') return { state: 'sent', at: row.sent_at ? new Date(row.sent_at) : null, failure: null };
+  const failure = reaskFailureOf(row.status, row.last_error);
+  return failure ? { state: 'failed', at: null, failure } : null;
+}
+
+/**
  * What the prixod card's «Mijozdan so'rash» block needs, in one call: is the
  * client's side there at all (0144 — null when not, and the card draws
- * nothing of it), can the client be reached, and the last question's fate.
+ * nothing of it), can the client be reached, the last question's fate — and
+ * the system's own question's (`auto`, his «1 b»).
  * Never throws at the card: a block that cannot be read is a block not drawn.
  */
 export async function clientAskCardFor(
   receiptId: string,
   clientId: string | null,
-): Promise<{ hasChat: boolean; status: ClientAskStatus | null; full: boolean } | null> {
+): Promise<{ hasChat: boolean; status: ClientAskStatus | null; full: boolean; auto: ClientReaskStatus | null } | null> {
   if (!clientId) return null;
   try {
     if (!(await clientConfirmsReady())) return null;
-    const [chats, status, full] = await Promise.all([linkedChats(clientId), clientAskStatusFor(receiptId), clientMeasuresReady()]);
-    return { hasChat: chats.length > 0, status, full };
+    const [chats, status, full, auto] = await Promise.all([
+      linkedChats(clientId),
+      clientAskStatusFor(receiptId),
+      clientMeasuresReady(),
+      clientReaskStatusFor(receiptId),
+    ]);
+    return { hasChat: chats.length > 0, status, full, auto };
   } catch (err) {
     logger.warn({ err, receiptId }, '[client-confirm] the card could not read the last question');
     return null;

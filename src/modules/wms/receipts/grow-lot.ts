@@ -48,6 +48,106 @@ export class GrowLotError extends Error {
 
 export const GROW_LOT_MAX = 1000;
 
+/** A lot's three figures at one moment of a count walk. */
+export interface LotFigures {
+  boxCount: number;
+  totalWeightKg: number;
+  totalVolumeM3: number;
+}
+
+/**
+ * A MIXED lot's totals for a count of `n` (docs/PRIXOD-JAVOBLAR.md §1.10).
+ * A lot weighed whole has no per-box figure, so a growth or a take-back
+ * scales its totals — and scaling the CURRENT totals kept every rounding, so
+ * a walk drifted: grown 10 → 15 and taken back one carton per press, the lot
+ * ended a thousandth of a kilo away from where it began, and on a figure a
+ * list prints that moved a client's ✅ (0146) and a colleague's tick (0147)
+ * — and, since the owner's «1 b», would have sent the CUSTOMER a question
+ * about a weight nobody changed. So every count is measured from the walk's
+ * BASE — the lot as it stood before the first growth of the walk — and any
+ * route to `n` lands on the same figures; `n` = the base's own count is the
+ * base, exactly. Pure.
+ */
+export function mixedTotalsFor(base: LotFigures, n: number): { totalWeightKg: number; totalVolumeM3: number } {
+  const totals =
+    n === base.boxCount
+      ? computeLotTotals({ dimsMode: 'mixed', boxCount: n, totalWeightKg: base.totalWeightKg, totalVolumeM3: base.totalVolumeM3 }, 0)
+      : computeLotTotals(
+          {
+            dimsMode: 'mixed',
+            boxCount: n,
+            totalWeightKg: (base.totalWeightKg * n) / base.boxCount,
+            totalVolumeM3: (base.totalVolumeM3 * n) / base.boxCount,
+          },
+          0,
+        );
+  return { totalWeightKg: totals.totalWeightKg, totalVolumeM3: totals.totalVolumeM3 };
+}
+
+/** A figure set read back from an audit row's JSON — or null when it is not one. */
+function figuresOf(value: unknown): LotFigures | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  const figures = {
+    boxCount: Number(row.boxCount),
+    totalWeightKg: Number(row.totalWeightKg),
+    totalVolumeM3: Number(row.totalVolumeM3),
+  };
+  return Number.isInteger(figures.boxCount) &&
+    figures.boxCount > 0 &&
+    Number.isFinite(figures.totalWeightKg) &&
+    figures.totalWeightKg >= 0 &&
+    Number.isFinite(figures.totalVolumeM3) &&
+    figures.totalVolumeM3 >= 0
+    ? figures
+    : null;
+}
+
+/**
+ * The walk's base for this lot: the newest growth or take-back row of THIS
+ * lot (the receipt's audit rows through the `(entity_type, entity_id)` index;
+ * newest by the identity id — the lot row is locked by the caller, so two
+ * steps of one lot are written in order). The walk is UNBROKEN while that
+ * row's `after` is the lot as it stands now — a ✏️ correction or anything
+ * else that moved the figures since breaks it, and the lot as it stands is
+ * the new base. An unbroken row hands on its own `base`; a row written before
+ * the base was recorded hands on its `before` (the step's own start — exactly
+ * the base of a single growth). On the caller's transaction (#714).
+ */
+async function walkBaseInTx(
+  tx: Tx,
+  receiptId: string,
+  lot: { id: string; boxCount: number; totalWeightKg: string; totalVolumeM3: string },
+): Promise<LotFigures> {
+  const now: LotFigures = {
+    boxCount: lot.boxCount,
+    totalWeightKg: Number(lot.totalWeightKg),
+    totalVolumeM3: Number(lot.totalVolumeM3),
+  };
+  const rows = (await tx.execute(sql`
+    SELECT al.before, al.after
+      FROM audit_log al
+     WHERE al.entity_type = 'receipt' AND al.entity_id = ${receiptId}::uuid
+       AND (al.after -> 'lotGrown' ->> 'lotId' = ${lot.id} OR al.after -> 'lotShrunk' ->> 'lotId' = ${lot.id})
+     ORDER BY al.id DESC
+     LIMIT 1
+  `)) as unknown as { before: unknown; after: unknown }[];
+  const row = rows[0];
+  if (!row) return now;
+  const after = figuresOf(row.after);
+  if (
+    !after ||
+    after.boxCount !== now.boxCount ||
+    after.totalWeightKg !== now.totalWeightKg ||
+    after.totalVolumeM3 !== now.totalVolumeM3
+  ) {
+    return now;
+  }
+  const step = (row.after as { lotGrown?: { base?: unknown }; lotShrunk?: { base?: unknown } }).lotGrown ??
+    (row.after as { lotShrunk?: { base?: unknown } }).lotShrunk;
+  return figuresOf(step?.base) ?? figuresOf(row.before) ?? now;
+}
+
 export async function growLotInTx(
   tx: Tx,
   a: {
@@ -115,16 +215,12 @@ export async function growLotInTx(
           },
           0,
         )
-      : computeLotTotals(
-          {
-            dimsMode: 'mixed',
-            boxCount: after,
-            // A lot weighed whole has no per-box figure but its own average.
-            totalWeightKg: before > 0 ? (Number(lot.totalWeightKg) * after) / before : Number(lot.totalWeightKg),
-            totalVolumeM3: before > 0 ? (Number(lot.totalVolumeM3) * after) / before : Number(lot.totalVolumeM3),
-          },
-          0,
-        );
+      : null;
+  // A lot weighed whole has no per-box figure but its own average — measured
+  // from the walk's base, so a dial up and back lands where it started
+  // (`mixedTotalsFor`).
+  const base = totals === null ? await walkBaseInTx(tx, receipt.id, lot) : null;
+  const grownTotals = totals ?? mixedTotalsFor(base!, after);
 
   // The birth warehouse is key-shared BEFORE the code counter is bumped: the
   // cartons' foreign key would take it after, while a prixod confirmed at that
@@ -161,8 +257,8 @@ export async function growLotInTx(
     .update(receiptLots)
     .set({
       boxCount: after,
-      totalWeightKg: totals.totalWeightKg.toString(),
-      totalVolumeM3: totals.totalVolumeM3.toString(),
+      totalWeightKg: grownTotals.totalWeightKg.toString(),
+      totalVolumeM3: grownTotals.totalVolumeM3.toString(),
     })
     .where(eq(receiptLots.id, lot.id));
   await writeAudit(tx, { actorId: a.actorId, warehouseId: receipt.warehouseId }, {
@@ -177,8 +273,8 @@ export async function growLotInTx(
     },
     after: {
       boxCount: after,
-      totalWeightKg: totals.totalWeightKg,
-      totalVolumeM3: totals.totalVolumeM3,
+      totalWeightKg: grownTotals.totalWeightKg,
+      totalVolumeM3: grownTotals.totalVolumeM3,
       lotGrown: {
         lotId: lot.id,
         letter: lot.letter,
@@ -187,6 +283,8 @@ export async function growLotInTx(
         batchId: a.batchId,
         side: a.side,
         codes: inserted.map((b) => b.shortCode),
+        // The walk's base (a mixed lot's only): the next step reads it here.
+        base,
       },
     },
   });
@@ -196,7 +294,11 @@ export async function growLotInTx(
 /**
  * After the count's commit: the lot's cartons changed, so every cost shared
  * over them re-splits now — the same net `editLot` casts (a failure is logged
- * and queued, never thrown at a count that has already happened).
+ * and queued, never thrown at a count that has already happened). And the
+ * lot's kilos and cubic metres moved with its count, so the question the
+ * client holds may be out of date: the system asks again by itself (the
+ * owner's «1 b», docs/PRIXOD-JAVOBLAR.md §1.3) — both count doors reach it
+ * here, after every commit that grew or shrank the lot.
  */
 export async function afterLotGrown(lotId: string): Promise<void> {
   try {
@@ -210,6 +312,14 @@ export async function afterLotGrown(lotId: string): Promise<void> {
     } catch (queueError) {
       console.error('[lot-grow] recompute retry could not be queued', lotId, queueError);
     }
+  }
+  // Its own net (U41): `armClientReask` logs and never throws; the import is
+  // dynamic because client-reask → lot-check → this module would be a cycle.
+  try {
+    const { armClientReask } = await import('./client-reask');
+    await armClientReask(lotId);
+  } catch (error) {
+    console.error('[lot-grow] the automatic re-ask could not be armed', lotId, error);
   }
 }
 
@@ -307,15 +417,11 @@ export async function shrinkGrownInTx(
           },
           0,
         )
-      : computeLotTotals(
-          {
-            dimsMode: 'mixed',
-            boxCount: after,
-            totalWeightKg: (Number(lot.totalWeightKg) * after) / before,
-            totalVolumeM3: (Number(lot.totalVolumeM3) * after) / before,
-          },
-          0,
-        );
+      : null;
+  // The mirror of the growth: from the walk's base, so the take-back of a
+  // whole growth — in one press or one carton a press — is the lot as it was.
+  const base = totals === null ? await walkBaseInTx(tx, receipt.id, lot) : null;
+  const shrunkTotals = totals ?? mixedTotalsFor(base!, after);
   for (const row of takeable) {
     await tx
       .update(boxes)
@@ -342,8 +448,8 @@ export async function shrinkGrownInTx(
     .update(receiptLots)
     .set({
       boxCount: after,
-      totalWeightKg: totals.totalWeightKg.toString(),
-      totalVolumeM3: totals.totalVolumeM3.toString(),
+      totalWeightKg: shrunkTotals.totalWeightKg.toString(),
+      totalVolumeM3: shrunkTotals.totalVolumeM3.toString(),
     })
     .where(eq(receiptLots.id, lot.id));
   const codes = takeable.map((row) => row.shortCode);
@@ -358,8 +464,8 @@ export async function shrinkGrownInTx(
     },
     after: {
       boxCount: after,
-      totalWeightKg: totals.totalWeightKg,
-      totalVolumeM3: totals.totalVolumeM3,
+      totalWeightKg: shrunkTotals.totalWeightKg,
+      totalVolumeM3: shrunkTotals.totalVolumeM3,
       lotShrunk: {
         lotId: lot.id,
         letter: lot.letter,
@@ -368,6 +474,7 @@ export async function shrinkGrownInTx(
         batchId: a.batchId,
         side: a.side,
         codes,
+        base,
       },
     },
   });

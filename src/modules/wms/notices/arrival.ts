@@ -10,6 +10,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { roundKg, roundM3, shareOf, sumRounded } from '@/modules/platform/telegram/format';
 import { isPermanentFailure } from '@/modules/platform/telegram/send';
+import { logger } from '@/modules/platform/logger';
 import { landedHereSql } from '../documents/arrivals';
 import { lotRuShownSql } from '../receipts/lot-name';
 import { pushLotName, type PushLot } from './client-text';
@@ -384,7 +385,9 @@ export async function deferNotice(id: string, retryAfterSeconds: number | null, 
       sendAfter: sql`now() + make_interval(secs => ${wait})`,
       lastError: detail.slice(0, 500),
     })
-    .where(eq(clientNotices.id, id));
+    // Only the claim this sweep holds — a row re-armed while it was out (the
+    // automatic re-ask, docs/PRIXOD-JAVOBLAR.md §1.6) keeps its own window.
+    .where(and(eq(clientNotices.id, id), eq(clientNotices.status, 'sending')));
 }
 
 /** Notices whose window has passed. Ordered oldest first; bounded. */
@@ -446,8 +449,8 @@ export async function settleArrivalNotice(
   id: string,
   outcome: 'sent' | 'failed' | 'skipped' | 'pending',
   error?: string,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const rows = await db
     .update(clientNotices)
     .set({
       status: outcome,
@@ -455,5 +458,35 @@ export async function settleArrivalNotice(
       attempts: sql`${clientNotices.attempts} + 1`,
       lastError: error?.slice(0, 500) ?? null,
     })
-    .where(eq(clientNotices.id, id));
+    // Only the claim this sweep holds (docs/PRIXOD-JAVOBLAR.md §1.6). A row
+    // RE-ARMED while it was out — the automatic re-ask slides its window on
+    // every correction, `sending` included — must not be written over as
+    // `sent`: the message that just went may carry the figures from before the
+    // correction, and the re-armed one is what tells the client the new ones.
+    // No other writer touches a row in `sending`, and a late settle after a
+    // reclaim still finds it there, so every existing path is unchanged.
+    .where(and(eq(clientNotices.id, id), eq(clientNotices.status, 'sending')))
+    .returning({ id: clientNotices.id });
+  return rows.length > 0;
+}
+
+/**
+ * What the client is now HOLDING (0147, docs/PRIXOD-JAVOBLAR.md §1.5): the
+ * tag of the question with buttons this row just delivered, and when. Written
+ * right after a `sent` settle that wrote — never by a row re-armed while it
+ * was out — and never cleared by a later outcome: a re-armed row that then
+ * fails still names the message the client has. SQL-only columns, so the
+ * caller asks the probe first (`askedTagReady`). Never throws: the message
+ * went, and a tag not remembered costs one automatic re-ask at worst.
+ */
+export async function rememberAskedTag(id: string, tag: string): Promise<void> {
+  if (!/^[0-9a-f]{8}$/.test(tag)) return;
+  try {
+    await db.execute(sql`
+      UPDATE client_notices SET asked_tag = ${tag}, asked_at = coalesce(sent_at, now())
+       WHERE id = ${id}::uuid AND status = 'sent'
+    `);
+  } catch (err) {
+    logger.warn({ err, noticeId: id }, 'the delivered question’s tag was not remembered');
+  }
 }

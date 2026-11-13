@@ -522,11 +522,16 @@ describe('the browser’s half', () => {
     expect(panel).toContain('if (filled?.single) forgetRead(filled.attachmentId);');
   });
 
-  it('a photographed packing list is uploaded from the editor at document grade — every other caller keeps the default', () => {
+  it('a photographed packing list is uploaded from the editor at document grade — the files panel only where its caller says so', () => {
     const panel = read(PANEL);
-    expect(panel).toContain("const DOCUMENT_PHOTO = { maxSizeMB: 1, maxWidthOrHeight: 2000 } as const;");
+    // The grade lives in an import-free module since the prixod card hands it to a seller's uploads too
+    // (the owner's «4 b», docs/PRIXOD-JAVOBLAR.md §3.3): a server component names it without the compressor.
+    expect(read('src/components/photo-grades.ts')).toContain('export const DOCUMENT_PHOTO = { maxSizeMB: 1, maxWidthOrHeight: 2000 } as const;');
+    expect(read('src/components/photo-grades.ts')).not.toMatch(/^import /m);
+    expect(panel).toContain("import { DOCUMENT_PHOTO } from '@/components/photo-grades';");
     expect(panel).toContain("uploadAttachmentFile(file, 'receipt', receiptId, DOCUMENT_PHOTO)");
-    expect(read('src/components/attachments-panel.tsx')).toContain('uploadAttachmentFile(file, entityType, entityId)');
+    // The files panel passes its caller's grade — absent, every screen's default.
+    expect(read('src/components/attachments-panel.tsx')).toContain('uploadAttachmentFile(file, entityType, entityId, photo)');
     expect(read('src/components/upload-attachment.ts')).toContain('const body = isImage ? await compressPhoto(file, photo) : file;');
   });
 

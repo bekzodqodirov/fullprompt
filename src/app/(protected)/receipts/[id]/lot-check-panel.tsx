@@ -43,7 +43,7 @@ export interface LotCheckFace {
     token: string;
     note: string | null;
     holds: boolean;
-    moved: { name: boolean; count: boolean; client: boolean };
+    moved: { name: boolean; count: boolean; client: boolean; measures: boolean };
   } | null;
   /** The client's own ✅ / ❌ in Telegram (0144); null = none, or a server without 0144. */
   client: {
@@ -78,7 +78,7 @@ export function LotCheckPanel({
   lotId: string;
   face: LotCheckFace;
   /** The lot as this page drew it — the service compares it with the locked row. */
-  seen: { nameZh: string; nameRu: string; boxCount: number; clientId: string | null };
+  seen: { nameZh: string; nameRu: string; boxCount: number; clientId: string | null; kg?: string; m3?: string };
   /** `mayCheckLot` AND a confirmed prixod. */
   canWrite: boolean;
   /** The ✏️ lot form is drawn for this reader (`receipts.edit`) — the VED's is not. */
@@ -107,7 +107,13 @@ export function LotCheckPanel({
   /** «Ask again» is said only where the lot is still asked about. */
   const asking = !checked && face.askable;
   const movedWords = person
-    ? [person.moved.name && t('movedName'), person.moved.count && t('movedCount'), person.moved.client && t('movedClient')]
+    ? [
+        person.moved.name && t('movedName'),
+        person.moved.count && t('movedCount'),
+        person.moved.client && t('movedClient'),
+        // The kilos or the cubic metres the tick remembered (0147, his «2 b»).
+        person.moved.measures && t('movedMeasures'),
+      ]
         .filter((w): w is string => Boolean(w))
         .join(', ')
     : '';
@@ -124,7 +130,16 @@ export function LotCheckPanel({
     try {
       const res = await checkLotAction({
         lotId,
-        seen: { nameZh: seen.nameZh, nameRu: seen.nameRu, boxCount: seen.boxCount, clientId: seen.clientId ?? '' },
+        seen: {
+          nameZh: seen.nameZh,
+          nameRu: seen.nameRu,
+          boxCount: seen.boxCount,
+          clientId: seen.clientId ?? '',
+          // What the line printed: a re-weigh since the page was drawn refuses
+          // the press (`lot_changed`) instead of vouching for a weight unseen.
+          ...(seen.kg !== undefined ? { kg: seen.kg } : {}),
+          ...(seen.m3 !== undefined ? { m3: seen.m3 } : {}),
+        },
         note: note.trim() || undefined,
         seenCheckedAt: person?.token ?? null,
         // Whatever answer the table holds for this lot, as this page drew it:

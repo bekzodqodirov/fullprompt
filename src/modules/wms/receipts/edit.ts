@@ -491,8 +491,10 @@ export async function editLot(
       }
     }
     // A correction made over the author's head is told to the author — the
-    // arrival-diff rule: the person whose record changed hears it first,
-    // never the client.
+    // arrival-diff rule: the person whose record changed hears it FIRST. (Its
+    // «never the client» half is the owner's to reverse and he did — «1 b» of
+    // 2026-11-12: the client is asked again, below, ten minutes after the
+    // last correction, so the author still hears it first.)
     if (measureChange && boxesLeft && receipt.createdBy && receipt.createdBy !== actor.id) {
       const { notifyStaffTelegram } = await import('../../platform/notifications/staff');
       await notifyStaffTelegram({
@@ -505,6 +507,14 @@ export async function editLot(
           `${Number(lot.totalVolumeM3)} m³ → ${totals.totalVolumeM3} m³\n` +
           `Tuzatdi: ${actor.fullName}`,
       }).catch(() => {});
+    }
+    // The question the client holds may now describe cargo that no longer
+    // exists: ask again, by itself (docs/PRIXOD-JAVOBLAR.md §1.3). Only when
+    // the stored totals moved — a rename alone asks nothing by itself. Never
+    // thrown at a correction that has committed (U41): the arm logs.
+    if (totalsChanged) {
+      const { armClientReask } = await import('./client-reask');
+      await armClientReask(lot.id);
     }
     return result;
   });

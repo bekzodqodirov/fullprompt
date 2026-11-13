@@ -323,11 +323,13 @@ describe('one writer, one probe, and columns that stay SQL-only', () => {
     // The columns, asked of the catalogue (a table that exists says nothing
     // about a column added to it later).
     expect(ready).toContain("AND attname IN ('shown_kg', 'shown_m3') AND NOT attisdropped) AS measures");
-    // The early return reads ALL THREE flags: with the first two alone, a
+    // The early return reads EVERY flag: with the first two alone, a
     // process that had seen 0144 and not 0146 never asked again, and the
-    // repaired migration switched nothing on until a restart.
-    expect(ready).toContain('if (ready && clientReady && measuresReady) return true;');
+    // repaired migration switched nothing on until a restart (0147 added two
+    // more — the tick's measures and the notices' remembered question).
+    expect(ready).toContain('if (ready && clientReady && measuresReady && tickReady && askedReady) return true;');
     expect(ready).not.toContain('if (ready && clientReady) return true;');
+    expect(ready).not.toContain('if (ready && clientReady && measuresReady) return true;');
   });
 
   it('0146: the measure columns are named in four files and nowhere else, and the remembered third answer is read only by the sentence and the card', () => {

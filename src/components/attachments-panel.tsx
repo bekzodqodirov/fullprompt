@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import type { CompressOptions } from '@/components/compress-photo';
 import { LightboxImg } from '@/components/lightbox-img';
 import { uploadAttachmentFile } from '@/components/upload-attachment';
 
@@ -23,6 +24,8 @@ export function AttachmentsPanel({
   entityId,
   initial,
   editable,
+  attachable = editable,
+  photo,
   removableIds,
   refreshWhenEmpty = false,
   onAdd,
@@ -31,7 +34,21 @@ export function AttachmentsPanel({
   entityType: string;
   entityId: string;
   initial: AttachmentItem[];
+  /** ✕ on EVERY file — the editor's power (`receipts.edit` on the prixod card). */
   editable: boolean;
+  /**
+   * The 📎 tile — who may ADD a file (default: whoever may edit). Its own
+   * flag since the owner's «4 b» of 2026-11-12: on the prixod card every
+   * reader of a confirmed prixod may attach (`mayAttachReceiptFile`, the
+   * bot's own rule) while only an editor may remove somebody else's file.
+   */
+  attachable?: boolean;
+  /**
+   * How hard a picture is shrunk before it goes — absent = every screen's
+   * default; the prixod card hands `DOCUMENT_PHOTO` to a reader whose
+   * pictures the server keeps as papers.
+   */
+  photo?: CompressOptions;
   /**
    * Files that carry a ✕ even for a reader who may not edit — their OWN
    * uploads (0146). The delete door decides again; this only draws what it
@@ -41,7 +58,7 @@ export function AttachmentsPanel({
   /**
    * The caller draws this panel only while there is something to list or to
    * attach (the prixod card's «Fayllar», docs/PRIXOD-KARTA.md §7.1): when a
-   * reader who may not attach removes the last file, ask the page again, so
+   * reader who may not ATTACH removes the last file, ask the page again, so
    * that it takes its heading away instead of leaving it over nothing.
    */
   refreshWhenEmpty?: boolean;
@@ -72,8 +89,8 @@ export function AttachmentsPanel({
   // pressed before the first answer each saw the other file still there
   // (the merged card's review, XF-3).
   useEffect(() => {
-    if (refreshWhenEmpty && !editable && removedAny && items.length === 0) router.refresh();
-  }, [refreshWhenEmpty, editable, removedAny, items.length, router]);
+    if (refreshWhenEmpty && !attachable && removedAny && items.length === 0) router.refresh();
+  }, [refreshWhenEmpty, attachable, removedAny, items.length, router]);
   const removable = (id: string) => editable || mine.includes(id);
 
   async function remove(id: string) {
@@ -103,7 +120,7 @@ export function AttachmentsPanel({
     setError(null);
     try {
       for (const file of Array.from(files)) {
-        const res = await uploadAttachmentFile(file, entityType, entityId);
+        const res = await uploadAttachmentFile(file, entityType, entityId, photo);
         if (res.ok) {
           setItems((prev) => [...prev, res.item]);
           setMine((prev) => [...prev, res.item.id]);
@@ -164,7 +181,7 @@ export function AttachmentsPanel({
             simply let it hang outside the card — over the first photo on the
             receipt screen and off the left edge of the batch panel. The tile
             grows to its own word instead. */}
-        {editable && (
+        {attachable && (
           <label className="btn-secondary flex h-16 min-w-[4rem] cursor-pointer flex-col items-center justify-center gap-0.5 overflow-hidden !px-2 !py-1 text-xs">
             {uploading ? '…' : '📎'}
             <span className="max-w-full truncate">{t('attach')}</span>

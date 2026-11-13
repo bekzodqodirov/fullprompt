@@ -40,6 +40,17 @@ export interface ClientAskFace {
   } | null;
   /** This owner's ❌ rows on the prixod's lots, with the token each card line drew. */
   disputes: { lotId: string; token: string }[];
+  /**
+   * The question the SYSTEM sends by itself after a re-weigh (the owner's
+   * «1 b», docs/PRIXOD-JAVOBLAR.md §1.9): held until `at`, sent at `at`, or
+   * not delivered (`failure`, the same closed words). Null = none to draw —
+   * none, one rightly not sent, or one older than the person's last question.
+   */
+  auto?: {
+    state: 'waiting' | 'sent' | 'failed';
+    at: string | null;
+    failure: 'no_chat' | 'client_changed' | 'too_long' | 'receipt_changed' | 'blocked' | 'telegram' | null;
+  } | null;
 }
 
 const KNOWN = [
@@ -137,6 +148,24 @@ export function ClientAskPanel({
       {status && status.failure && (
         <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="client-ask-status" data-state={status.state}>
           ⚠️ {t(`askFailed.${status.failure}`)}
+        </p>
+      )}
+
+      {/* The system's own question (his «1 b»): a person's 📨 below stays
+          pressable while it is held — it sends now and stands this one down. */}
+      {face.auto?.state === 'waiting' && (
+        <p className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="client-reask" data-state="waiting">
+          🔄 {t('reaskWaiting', { when: face.auto.at ?? '—' })}
+        </p>
+      )}
+      {face.auto?.state === 'sent' && (
+        <p className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="client-reask" data-state="sent">
+          🔄 {t('reaskSent', { when: face.auto.at ?? '—' })}
+        </p>
+      )}
+      {face.auto?.state === 'failed' && face.auto.failure && (
+        <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="client-reask" data-state="failed">
+          ⚠️ {t('reaskLabel')} · {t(`askFailed.${face.auto.failure}`)}
         </p>
       )}
 

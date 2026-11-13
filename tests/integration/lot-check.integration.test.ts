@@ -28,7 +28,7 @@ vi.mock('next/cache', async (original) => ({
   revalidatePath: () => {},
 }));
 /** A server whose migration has not landed (#472) — test 18 alone turns it off. */
-const ready = vi.hoisted(() => ({ on: true, client: true }));
+const ready = vi.hoisted(() => ({ on: true, client: true, tick: true }));
 vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   lotChecksReady: async () => ready.on,
   // 0144's second answer (the client's own ✅/❌ table): `ready.client = false`
@@ -38,6 +38,12 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // 0146's third answer (the answer's kilos and cubic metres): there whenever the second is.
   lotClientMeasuresReady: () => ready.on && ready.client,
   clientMeasuresReady: async () => ready.on && ready.client,
+  // 0147's two (the owner's «2 b» / «1 b»): the tick remembers kilos and cubic
+  // metres — `ready.tick = false` is a deploy whose 0147 did not land — and the
+  // notices remember the question the client holds.
+  lotTickMeasuresReady: () => ready.on && ready.tick,
+  tickMeasuresReady: async () => ready.on && ready.tick,
+  askedTagReady: async () => ready.tick,
 }));
 vi.mock('@/modules/platform/rbac/authorize', async (original) => {
   const real = await original<typeof import('@/modules/platform/rbac/authorize')>();
@@ -191,7 +197,12 @@ async function tokenOf(key: LotKey): Promise<string | null> {
 }
 
 /** A press drawn from the card as it stands now (the panel's own post). */
-async function press(key: LotKey, actor: LotCheckActor, opts: { note?: string; seen?: Awaited<ReturnType<typeof seenOf>> } = {}) {
+async function press(
+  key: LotKey,
+  actor: LotCheckActor,
+  // `kg` / `m3`: what the card PRINTED (0147) — absent on a page opened before the deploy.
+  opts: { note?: string; seen?: Awaited<ReturnType<typeof seenOf>> & { kg?: string; m3?: string } } = {},
+) {
   return checkLot(
     { lotId: lot[key], seen: opts.seen ?? (await seenOf(key)), note: opts.note, seenCheckedAt: await tokenOf(key) },
     actor,
@@ -301,7 +312,7 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
     await db.update(receiptLots).set({ productNameRu: 'Мышь' }).where(eq(receiptLots.id, lot.K));
     const view = await stateOf('K');
     expect(view.state).toBe('stale');
-    expect(view.person?.moved).toEqual({ name: true, count: false, client: false });
+    expect(view.person?.moved).toEqual({ name: true, count: false, client: false, measures: false });
     await press('K', logist());
     expect((await stateOf('K')).state).toBe('checked');
   });
@@ -310,7 +321,7 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
     await db.update(receiptLots).set({ boxCount: 102 }).where(eq(receiptLots.id, lot.K));
     const view = await stateOf('K');
     expect(view.state).toBe('stale');
-    expect(view.person?.moved).toEqual({ name: false, count: true, client: false });
+    expect(view.person?.moved).toEqual({ name: false, count: true, client: false, measures: false });
     await db.update(receiptLots).set({ boxCount: 100 }).where(eq(receiptLots.id, lot.K));
     expect((await stateOf('K')).state).toBe('checked');
   });
@@ -319,15 +330,78 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
     await db.update(receipts).set({ clientId: cl.B }).where(eq(receipts.id, rc.R1));
     const view = await stateOf('K');
     expect(view.state).toBe('stale');
-    expect(view.person?.moved).toEqual({ name: false, count: false, client: true });
+    expect(view.person?.moved).toEqual({ name: false, count: false, client: true, measures: false });
     await db.update(receipts).set({ clientId: cl.A }).where(eq(receipts.id, rc.R1));
     expect((await stateOf('K')).state).toBe('checked');
   });
 
-  it('5. a re-weigh (kg, m³) is the warehouse\'s correction and leaves the check standing', async () => {
-    await db.update(receiptLots).set({ totalWeightKg: '1100.000', totalVolumeM3: '2.6000' }).where(eq(receiptLots.id, lot.K));
+  // The owner's «2 b» of 2026-11-12 REVERSED what this test used to pin («a re-weigh is the warehouse's
+  // correction and leaves the check standing», 0123): the tick remembers the kilos and cubic metres at the
+  // precision a list prints them, and a re-weigh a list would SHOW turns it «o'zgardi» (docs/PRIXOD-JAVOBLAR.md §2).
+  it('5. a re-weigh a list would show (kg alone, m³ alone) makes it «stale» naming the weight; back at the vouched figures it heals by itself; below what a list prints it stands', async () => {
+    const setK = (set: Partial<typeof receiptLots.$inferInsert>) => db.update(receiptLots).set(set).where(eq(receiptLots.id, lot.K));
+    try {
+      await setK({ totalWeightKg: '1100.000' });
+      let view = await stateOf('K');
+      expect(view.state).toBe('stale');
+      expect(view.person?.moved).toEqual({ name: false, count: false, client: false, measures: true });
+      expect(view.person?.holds).toBe(false);
+      await setK({ totalWeightKg: '1000.000', totalVolumeM3: '2.6000' });
+      view = await stateOf('K');
+      expect(view.state).toBe('stale');
+      expect(view.person?.moved.measures).toBe(true);
+      // Back at the figures the tick remembered: ✅ again, by itself — no writer clears anything.
+      await setK({ totalVolumeM3: '2.5000' });
+      expect((await stateOf('K')).state).toBe('checked');
+      // A correction below what any list prints (two places of a kilo, three of a cubic metre) moves nothing.
+      await setK({ totalWeightKg: '1000.004', totalVolumeM3: '2.5004' });
+      expect((await stateOf('K')).state).toBe('checked');
+    } finally {
+      await setK({ totalWeightKg: '1000.000', totalVolumeM3: '2.5000' });
+    }
     expect((await stateOf('K')).state).toBe('checked');
-    await db.update(receiptLots).set({ totalWeightKg: '1000.000', totalVolumeM3: '2.5000' }).where(eq(receiptLots.id, lot.K));
+  });
+
+  it('5b. the tick remembers what the list printed, and a re-tick after a re-weigh WRITES (it says more than the old snapshot)', async () => {
+    const remembered = async () =>
+      (
+        (await db.execute(sql`SELECT seen_kg::text AS kg, seen_m3::text AS m3 FROM lot_checks WHERE lot_id = ${lot.K}::uuid`)) as unknown as {
+          kg: string | null;
+          m3: string | null;
+        }[]
+      )[0];
+    expect(await remembered()).toEqual({ kg: '1000.00', m3: '2.500' });
+    await db.update(receiptLots).set({ totalWeightKg: '1100.000' }).where(eq(receiptLots.id, lot.K));
+    try {
+      expect((await stateOf('K')).state).toBe('stale');
+      expect((await press('K', logist())).changed).toBe(true);
+      expect(await remembered()).toEqual({ kg: '1100.00', m3: '2.500' });
+      expect((await stateOf('K')).state).toBe('checked');
+    } finally {
+      await db.update(receiptLots).set({ totalWeightKg: '1000.000' }).where(eq(receiptLots.id, lot.K));
+      await press('K', logist());
+    }
+    expect(await remembered()).toEqual({ kg: '1000.00', m3: '2.500' });
+  });
+
+  it('5c. a tick written with NO measures (an old process, the minutes of a deploy) holds on its other three terms', async () => {
+    await db.execute(sql`UPDATE lot_checks SET seen_kg = NULL, seen_m3 = NULL WHERE lot_id = ${lot.K}::uuid`);
+    await db.update(receiptLots).set({ totalWeightKg: '1100.000' }).where(eq(receiptLots.id, lot.K));
+    try {
+      expect((await stateOf('K')).state).toBe('checked');
+      // …and the same person's tick again WRITES: it says more than the snapshot did.
+      expect((await press('K', logist())).changed).toBe(true);
+    } finally {
+      await db.update(receiptLots).set({ totalWeightKg: '1000.000' }).where(eq(receiptLots.id, lot.K));
+      await press('K', logist());
+    }
+  });
+
+  it('5d. a press against a weight the page did not show refuses `lot_changed`', async () => {
+    const seen = await seenOf('K');
+    expect(await refusal(press('K', logist(), { seen: { ...seen, kg: '999.000', m3: '2.5000' } }))).toBe('lot_changed');
+    // Absent (a page opened before the deploy): judged by the other four facts.
+    expect((await press('K', logist(), { seen })).changed).toBe(false);
   });
 
   it('6. a press against what the lot no longer is refuses `lot_changed` and writes nothing', async () => {
@@ -574,7 +648,9 @@ describe('the worklist (his 4a: only cargo standing in China)', () => {
      * row on a Chinese shelf, green or red by the order the files happen to
      * run in). ✅ = a standing tarkib the owner has not rejected the goods of,
      * or a tick the owner has not said ❌ after, or the owner's own ✅ that
-     * still matches.
+     * still matches. Both ✅ compare the kilos and cubic metres they
+     * remembered at the precision a list prints them — the client's since 0146,
+     * the tick's since 0147 (his «2 b»); NULL = they remembered none.
      */
     const directCount = async (): Promise<number> => {
       const [direct] = (await db.execute(sql`
@@ -595,12 +671,14 @@ describe('the worklist (his 4a: only cargo standing in China)', () => {
                              AND cc.shown_goods_key IS NOT DISTINCT FROM lot_tarkib.goods_key))
            AND NOT ((lc.lot_id IS NOT NULL AND lc.seen_name_zh = l.product_name_zh
                      AND lc.seen_name_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
-                     AND lc.seen_box_count = l.box_count AND lc.seen_client_id = r.client_id)
+                     AND lc.seen_box_count = l.box_count AND lc.seen_client_id = r.client_id
+                     AND (lc.seen_kg IS NULL OR (lc.seen_kg = round(l.total_weight_kg, 2) AND lc.seen_m3 = round(l.total_volume_m3, 3))))
                     AND NOT coalesce(cc.verdict = 'no' AND cc.shown_client_id = r.client_id AND lc.checked_at <= cc.answered_at, false))
            AND NOT coalesce(cc.verdict = 'yes' AND cc.shown_zh = l.product_name_zh
                             AND cc.shown_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
                             AND cc.shown_count = l.box_count AND cc.shown_client_id = r.client_id
-                            AND cc.shown_goods_key IS NOT DISTINCT FROM lot_tarkib.goods_key, false)
+                            AND cc.shown_goods_key IS NOT DISTINCT FROM lot_tarkib.goods_key
+                            AND (cc.shown_kg IS NULL OR (cc.shown_kg = round(l.total_weight_kg, 2) AND cc.shown_m3 = round(l.total_volume_m3, 3))), false)
       `)) as unknown as { n: number }[];
       return Number(direct!.n);
     };
