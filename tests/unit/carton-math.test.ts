@@ -22,6 +22,8 @@ import {
   type Packing,
 } from '@/modules/wms/calc/carton-math';
 import { FREIGHT_LIGHT_BELOW } from '@/modules/wms/costing/freight-split';
+import { parseGoodsLine } from '@/modules/wms/calc/units';
+import { parseGoods } from '@/modules/wms/deals/goods-import';
 
 /**
  * docs/AI-SORAYDI.md §2.3 — the ONE home of «cartons × a per-carton figure»,
@@ -125,6 +127,28 @@ describe('parseSize — a size is read before any amount is', () => {
     expect(parseSize('1: 600*600 120 m2')?.sides).toEqual([600, 600]);
   });
 
+  it('a side no carton has, before a three-digit group, is the head of a grouped number — no sheet (review figures-pair-steals-thousands)', () => {
+    expect(parseSize('Stanok 2 x 1 500 kg')).toBeNull();
+    expect(parseSize('Mebel 10 x 2 400 kg')).toBeNull();
+    // Sheets of a carton's sides, or with a unit, stay sizes.
+    expect(parseSize('Kafel 600x600 500 dona')?.sides).toEqual([600, 600]);
+    expect(parseSize('Kafel 60x60 1 200 m2')?.sides).toEqual([60, 60]);
+    expect(parseSize('Oyna 2x3 m 500 dona')?.sides).toEqual([2, 3]);
+    // Four digits after it are no group of three: a sheet and its count.
+    expect(parseSize('List 2x3 1000 dona')?.sides).toEqual([2, 3]);
+  });
+
+  it('only a SPACED joiner of whole numbers opens that doubt — a glued or a decimal pair is a sheet (check R1)', () => {
+    expect(parseSize('Gilam 2x3 100 dona')?.sides).toEqual([2, 3]);
+    expect(parseSize('Ковер 2х3 150 шт')?.sides).toEqual([2, 3]);
+    expect(parseSize('Gilam 2*3 100 dona')?.sides).toEqual([2, 3]);
+    expect(parseSize('Matras 1.6x2 100 dona')?.sides).toEqual([1.6, 2]);
+    expect(parseSize('Samorez 4,2x16 100 kg')?.sides).toEqual([4.2, 16]);
+    // Spaced, whole: the head of «3 100» or «1 500», as before.
+    expect(parseSize('Gilam 2 x 3 100 dona')).toBeNull();
+    expect(parseSize('Stanok 2 x 1 500 kg')).toBeNull();
+  });
+
   it('a count times a per-package figure is NOT a size', () => {
     expect(parseSize('20 x 15 kg')).toBeNull();
     expect(parseSize('20x24 dona')).toBeNull();
@@ -136,6 +160,45 @@ describe('parseSize — a size is read before any amount is', () => {
     expect(parseSize('60/40/50')).toBeNull();
     expect(parseSize('iPhone15x2x3')).toBeNull();
     expect(parseSize('2026-11-12')).toBeNull();
+  });
+
+  // Review load-2: the unit reader after a size opened with `\s*[(]?\s*`, two
+  // runs that could split one stretch of spaces n ways when no bracket stood
+  // there — 1.4 s for ONE cell padded with 16 000 spaces, 12 s for 500 Excel
+  // rows of 2 000, on the one app process. The bracket and its spaces are one
+  // optional group now: the same language, read in one pass.
+  it('a size followed by a long run of spaces is read in linear time — the unit it reads unchanged', () => {
+    const padded = `60*40*50${' '.repeat(20_000)}外箱`;
+    let at = performance.now();
+    const token = parseSize(padded)!;
+    expect(performance.now() - at, 'parseSize of 20 000 spaces').toBeLessThan(250);
+    expect(token.sides).toEqual([60, 40, 50]);
+    expect(token.unit).toBeNull();
+    expect(token.end).toBe(8);
+    const rows = [
+      ['No', 'Description', 'QTY', 'CTNS', 'CTN SIZE', 'G.W.', 'CBM'],
+      ...Array.from({ length: 500 }, (_, i) => [i + 1, 'Chair', 10, 1, `60*40*50${' '.repeat(2_000)}外箱`, 15, 0.12]),
+    ];
+    at = performance.now();
+    parseGoods(rows);
+    expect(performance.now() - at, 'parseGoods of 500 padded size cells').toBeLessThan(3_000);
+    at = performance.now();
+    parseGoodsLine(`Stul 60*40*50${' '.repeat(4_000)}（外箱） 20 karobka`);
+    expect(performance.now() - at, 'parseGoodsLine of 4 000 spaces').toBeLessThan(250);
+  });
+
+  it.each([
+    ['60*40*50 (cm)', 'cm', '60*40*50 (cm)'],
+    ['60*40*50 ( cm )', 'cm', '60*40*50 ( cm )'],
+    ['60*40*50   cm', 'cm', '60*40*50   cm'],
+    ['60x40x50 (in)', 'other', '60x40x50 (in)'],
+    ['60x40x50   inch', 'other', '60x40x50   inch'],
+    ['60*40*50 ( 外箱 )', null, '60*40*50'],
+    ['60*40*50 (', null, '60*40*50'],
+  ])('a bracket and the spaces beside it, as before: «%s» → %s', (text, unit, taken) => {
+    const token = parseSize(text)!;
+    expect(token.unit).toBe(unit);
+    expect(text.slice(token.start, token.end)).toBe(taken);
   });
 });
 

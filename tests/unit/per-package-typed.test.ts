@@ -186,13 +186,18 @@ describe('T4 — the typed goods row: the figure goes onto its packing, the cart
 
   it('JN-8 (c): a bare «20 x 15 kg» sets no carton count and no carton’s figure — the phrase is kept on the note', () => {
     const r = row('Stul 20 x 15 kg');
-    expect(r).toMatchObject({ name: 'Stul', quantity: null, weightKg: null, note: 'sotuvchi: 20 x 15 kg' });
+    // RE-ANCHORED (review crit-2 of 1a as built): weightKg null → 300. JN-8 (c)
+    // is binding — «a bare A x B unit GIVES THE PRODUCT and sets no carton
+    // count»; the null was typed-spec-4's narrowing, never a ruling, and it
+    // asked the seller for the weight he typed. 20 × 15 = 300 kg.
+    expect(r).toMatchObject({ name: 'Stul', quantity: null, weightKg: 300, note: 'sotuvchi: 20 x 15 kg' });
     // RE-ANCHORED (review typed-spec-4): this pinned kgPerCarton 15 — a claim
     // the line never made (its 20 may be pieces), and a later «nechta
     // karobka?» answer would have multiplied it. Nobody's: no packing at all.
     expect(r.packing ?? null).toBeNull();
     const pieces = row('Stul 20 x 24 dona');
-    expect(pieces).toMatchObject({ quantity: null, note: 'sotuvchi: 20 x 24 dona' });
+    // RE-ANCHORED (crit-2): quantity null → 480 = 20 × 24, still no packing.
+    expect(pieces).toMatchObject({ quantity: 480, note: 'sotuvchi: 20 x 24 dona' });
     expect(pieces.packing ?? null).toBeNull();
     // With a carton word beside A, A IS the carton count: 20 × 15 = 300 kg.
     expect(row('Stul 20 karobka x 15 kg')).toMatchObject({ weightKg: 300 });
@@ -419,5 +424,30 @@ describe('the other doors read what they always read (review JR-22)', () => {
   it('the typed reader’s packing is built from `packingRead` alone — the two agree', () => {
     const text = 'Kurtka 20 ctns 0.12 cbm/ctn 15 kg/ctn';
     expect(parseGoodsLine(text, { packing: true }).packing).toEqual(typedPacking(packingRead(text)).packing);
+  });
+});
+
+// Review seams-7: «pkgs» stayed in the product's NAME and its carton count was
+// lost, where «20 ctns» on the same line was a packing — one vocabulary (§2.4).
+describe('a forwarder’s «pkgs» is a carton count, as «ctns» is (seams-7)', () => {
+  it('the row is «Stul»; 20 × 15 kg = 300 kg; the tail «/pkg» is one package’s', () => {
+    expect(readGoodsLines('Stul 200 dona 20 pkgs 300 kg')).toEqual([expect.objectContaining({ name: 'Stul', quantity: 200, weightKg: 300 })]);
+    for (const text of ['Stul 20 pkgs, har biri 15 kg', 'Stul 20 packages 15 kg/pkg', 'Stul 20 pkg, 15 kg each']) {
+      const [row] = readGoodsLines(text);
+      expect(row, text).toMatchObject({ name: 'Stul', weightKg: 300 });
+      expect(row!.packing, text).toMatchObject({ cartons: 20, kgPerCarton: 15 });
+    }
+    // A brand's word keeps its name; a totals line stays a totals line.
+    expect(readGoodsLines('Gift packages 200 dona 30 kg')).toEqual([expect.objectContaining({ name: 'Gift packages', quantity: 200, weightKg: 30 })]);
+    expect(parseManualFacts('TOTAL: 20 PKGS, G.W. 300 KGS, 5.9 CBM')).toMatchObject({ weightKg: 300, volumeM3: 5.9, goods: [] });
+  });
+
+  it('a cartons label whose figure names the unit itself is no second carton count: the block stays ONE good (owner-3’s second half)', () => {
+    // «Packages: 15 CTNS» — the label and the figure's word both say packages; read twice it was «repeated» and the block died.
+    expect(parseManualFacts('Description: LED lamp\nQuantity: 3000 PCS\nPackages: 15 CTNS\nG.W.: 507 KGS\nN.W.: 480 KGS\nMeasurement: 5.92 CBM').goods).toEqual([
+      expect.objectContaining({ name: 'LED lamp', quantity: 3000, weightKg: 480, volumeM3: 5.92 }),
+    ]);
+    expect(readGoodsLines('Product: LED lamp\nQty: 3000 pcs\nCartons: 15 ctns')).toEqual([expect.objectContaining({ name: 'LED lamp', quantity: 3000 })]);
+    expect(parseManualFacts('CBM: 5.92 cbm').volumeM3).toBe(5.92);
   });
 });

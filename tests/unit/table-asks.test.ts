@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPacking, emptyPacking, type Packing } from '@/modules/wms/calc/carton-math';
 import { intakeTableText, tableAsksOf, type AskedQuestion, type CalcFacts, type CalcGoodsFact, type TableInput } from '@/modules/wms/calc/intake';
+import { readGoodsLines } from '@/modules/wms/calc/intake-manual';
 import { nameWordFor, parseTableAnswer } from '@/modules/wms/calc/line-address';
 import { answeredRow } from '@/modules/wms/calc/row-answer';
 import { packingAsks, ROW_ASKS_MAX } from '@/modules/wms/calc/table-asks';
@@ -40,6 +41,25 @@ describe('a figure the BOT multiplied is marked, and the mark is explained once'
     expect(text.match(/bot hisoblagan/g)).toHaveLength(1);
     // Nothing is in doubt: the table is complete.
     expect(text).toContain('✅ Ma’lumot to‘liq');
+  });
+
+  // Check crit-2: a bare «A x B unit» is the line's own product (JN-8 (c),
+  // binding) — and it was drawn «1. Stul — 300 kg» as if he had typed 300.
+  it('a product the LINE wrote — «Stul 20 x 15 kg» — is marked «300 kg*» and said as written, not as cartons', () => {
+    // 20 × 15 = 300 kg; 20 × 24 = 480 dona. No carton count: the legend says so.
+    const [stul] = readGoodsLines('Stul 20 x 15 kg');
+    const [kurtka] = readGoodsLines('Kurtka 20*24 dona');
+    const text = table({ facts: { ...totals, goods: [stul!, kurtka!] } });
+    expect(text).toContain('1. Stul — 300 kg*');
+    expect(text).toContain('2. Kurtka — 480 dona*');
+    expect(text).toContain('* — bot hisoblagan (yozilgan ko‘paytmadan).');
+    // Beside a carton product both ways are said, in one line.
+    const carton = read({ name: 'Shim', packing: pack({ cartons: 20, kgPerCarton: 15, kgPerCartonKind: 'net' }) });
+    const both = table({ facts: { ...totals, goods: [stul!, carton] } });
+    expect(both).toContain('* — bot hisoblagan (karobka soni × bittasiniki, yoki yozilgan ko‘paytmadan).');
+    // A later pass of the carton arithmetic keeps the mark, and a figure he changes loses it.
+    expect(read(stul!)).toMatchObject({ weightKg: 300, derived: { product: { weightKg: { value: 300, how: '20 × 15 kg' } } } });
+    expect(table({ facts: { ...totals, goods: [{ ...stul!, weightKg: 280 }] } })).not.toContain('*');
   });
 
   it('a row nobody computed carries no mark and the table no legend', () => {

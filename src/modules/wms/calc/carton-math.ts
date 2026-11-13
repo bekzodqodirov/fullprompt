@@ -179,6 +179,18 @@ export function wholeCartons(n: number | null | undefined): number | null {
  */
 export const round3 = roundM3;
 
+/**
+ * A bare «A x B unit» the seller wrote — «Stul 20 x 15 kg», «Kurtka 20*24
+ * dona» — is the PRODUCT for that unit (review JN-8 (c), binding: «gives the
+ * product and sets no carton count without a carton word»): 300 kg, 480
+ * pieces, whichever A counts. The kernel's multiplication and rounding, here
+ * and nowhere else; nothing else is multiplied by A — it is no carton count.
+ * Null when either side is no positive figure.
+ */
+export function timesProduct(times: number, per: number): number | null {
+  return positive(times) && positive(per) ? round3(times * per) : null;
+}
+
 /** A figure as a person writes it: at most four decimals, no trailing zeros. */
 export const fmtFigure = (n: number): string => String(Number(n.toFixed(4)));
 
@@ -210,14 +222,19 @@ const FOURTH = new RegExp(String.raw`^${JOIN}${NUM}`, 'u');
  * The unit written AFTER the whole size — bare or bracketed, any case, and
  * the Chinese forms («60*40*50(CM)», «60*40*50厘米», «60х40х50 СМ»). A Han
  * unit needs no boundary after it; a Latin or Cyrillic one must end there.
+ *
+ * The bracket and the spaces after it are ONE optional group: written as
+ * `\s*[(]?\s*` the two runs could split one stretch of spaces n ways when no
+ * bracket stood there, and a size cell padded with spaces cost seconds a row
+ * on the one app process (review load-2 — 12 s for 500 such Excel rows).
  */
 const UNIT_AFTER = new RegExp(
-  String.raw`^\s*[(（\[]?\s*(?:(厘米|公分|毫米|米)|(sm|cm|см|сантиметр\p{L}*|santimetr\p{L}*|mm|мм|миллиметр\p{L}*|millimetr\p{L}*|metr\p{L}*|метр\p{L}*|m|м)(?![\p{L}\d]))\s*[)）\]]?`,
+  String.raw`^\s*(?:[(（\[]\s*)?(?:(厘米|公分|毫米|米)|(sm|cm|см|сантиметр\p{L}*|santimetr\p{L}*|mm|мм|миллиметр\p{L}*|millimetr\p{L}*|metr\p{L}*|метр\p{L}*|m|м)(?![\p{L}\d]))\s*[)）\]]?`,
   'iu',
 );
 /** A length unit this file does not convert — the size is real, its cube is asked. */
 const FOREIGN_UNIT_AFTER = new RegExp(
-  String.raw`^\s*[(（\[]?\s*(?:inch(?:es)?|in|дюйм\p{L}*|dyuym\p{L}*|ft|feet|foot|фут\p{L}*|dm|дм|英寸|寸|英尺)(?![\p{L}\d])\s*[)）\]]?|^\s*[″"]`,
+  String.raw`^\s*(?:[(（\[]\s*)?(?:inch(?:es)?|in|дюйм\p{L}*|dyuym\p{L}*|ft|feet|foot|фут\p{L}*|dm|дм|英寸|寸|英尺)(?![\p{L}\d])\s*[)）\]]?|^\s*[″"]`,
   'iu',
 );
 
@@ -290,6 +307,30 @@ export function parseSize(text: string): SizeToken | null {
     // A word right after two joined numbers that is no length unit: a count
     // times a per-package figure, not a size.
     if (token && token.unit === null && /^\s*[\p{L}]/u.test(text.slice(token.end))) return null;
+    // «Stanok 2 x 1 500 kg»: a side no carton has (under 5, no unit) with a
+    // three-digit group right after it is the HEAD of a space-grouped number —
+    // taken as a sheet «2 x 1», it left «500 kg» to be read plainly, a figure
+    // neither reading of the line gives (review figures-pair-steals-thousands).
+    // «Kafel 600x600 500 dona» and «Kafel 60x60 1 200 m2» are sheets still.
+    // Only a SPACED joiner of whole numbers opens that doubt (review R1): a
+    // side glued to its joiner («Gilam 2x3 100 dona», «Ковер 2х3 150 шт»,
+    // «Gilam 2*3») is joined to a letter or a sign — no group's head (JN-6's
+    // mask) — and a decimal side («Matras 1.6x2 100 dona», «Samorez 4,2x16
+    // 100 kg») is a length, never a count to multiply nor a thousands head: a
+    // carpet's, a tile's, a mattress's metres beside its count. Taken for a
+    // grouped number they cost the line its count and its size — or the whole
+    // row. «Gilam 2 x 3 100 dona», spaced, is the doubt still: the same shape
+    // as «Stanok 2 x 1 500 kg».
+    if (
+      token &&
+      token.unit === null &&
+      /\d\s+[xX×хХ*]|[xX×хХ*]\s+\d/u.test(whole) &&
+      token.sides.every((side) => Number.isInteger(side)) &&
+      token.sides.some((side) => side < ASSUMED_CM_SIDE.min) &&
+      /^\s\d{3}(?!\d)/u.test(text.slice(token.end))
+    ) {
+      return null;
+    }
     return token;
   }
   return null;
@@ -568,6 +609,13 @@ export interface LineDerived {
   cubeIsLine?: boolean;
   /** This call set the row's `measureUnit` with a computed measure — taken back with it. */
   measureUnitSet?: boolean;
+  /**
+   * A figure the LINE wrote as a product — a bare «20 x 15 kg» (units.ts
+   * `timesFigures`, review JN-8 (c)): computed, but by no packing, so no pass
+   * of this file makes or takes it back; it carries the «*» while its field
+   * still holds it (check crit-2: the table drew it as if typed).
+   */
+  product?: Partial<Record<PackedField, Derived>>;
 }
 
 /**
@@ -817,6 +865,12 @@ export function applyPacking<T extends PackedLine>(input: T): PackingOutcome<T> 
   }
 
   if (person.size > 0) derived.person = FIELDS.filter((f) => person.has(f));
+  // The line's own product goes on while its field holds it and no packing wrote it.
+  const product = FIELDS.filter((f) => {
+    const made = before.product?.[f];
+    return made !== undefined && derived[f] === undefined && !person.has(f) && line[f] === made.value;
+  });
+  if (product.length > 0) derived.product = Object.fromEntries(product.map((f) => [f, before.product![f]!]));
   if (Object.keys(derived).length > 0) line.derived = derived;
   else delete line.derived;
   return { line, doubts };
@@ -848,6 +902,12 @@ export function setStated<T extends PackedLine>(line: T, field: PackedField, val
     delete derived.cubeIsLine;
   }
   if (field === 'measureQty') delete derived.measureUnitSet;
+  if (derived.product?.[field] !== undefined) {
+    const kept = { ...derived.product };
+    delete kept[field];
+    if (Object.keys(kept).length > 0) derived.product = kept;
+    else delete derived.product;
+  }
   const others = (before.person ?? []).filter((f) => f !== field);
   const person = positive(value) ? [...others, field] : others;
   if (person.length > 0) derived.person = FIELDS.filter((f) => person.includes(f));
@@ -911,7 +971,17 @@ export function derivedNotes(line: PackedLine): string[] {
     }
   }
   if (d.weightIsGross) out.push('og‘irlik brutto (karobka og‘irligidan)');
+  for (const field of productFields(line)) {
+    const unit = UNIT_OF(field, line);
+    out.push(`${WORD_OF[field]} hisoblangan: ${d.product![field]!.how} = ${fmtFigure(line[field] as number)}${unit ? ` ${unit}` : ''}`);
+  }
   return out;
+}
+
+/** The fields a line wrote as a product («20 x 15 kg») that still hold it — `LineDerived.product`. */
+export function productFields(line: PackedLine): PackedField[] {
+  const made = line.derived?.product;
+  return made ? FIELDS.filter((f) => made[f] !== undefined && line[f] === made[f]!.value) : [];
 }
 
 /**
@@ -926,9 +996,12 @@ export function derivedBrief(line: PackedLine): string | null {
     const was = d.replaced?.[f];
     return was !== undefined ? `${WORD_OF[f]} (asli ${fmtFigure(was)})` : WORD_OF[f];
   });
-  if (made.length === 0) return d.weightIsGross ? 'og‘irlik brutto' : null;
+  const product = productFields(line).map((f) => WORD_OF[f]);
+  const multiplied = product.length > 0 ? `ko‘paytmadan hisoblangan: ${product.join(', ')}` : null;
+  if (made.length === 0) return [d.weightIsGross ? 'og‘irlik brutto' : null, multiplied].filter(Boolean).join('; ') || null;
   const marks = [d.assumedCm ? 'sm deb olindi' : null, d.weightIsGross ? 'og‘irlik brutto' : null].filter(Boolean);
-  return `karobkadan hisoblangan: ${made.join(', ')}${marks.length > 0 ? ` — ${marks.join(', ')}` : ''}`;
+  const cartons = `karobkadan hisoblangan: ${made.join(', ')}${marks.length > 0 ? ` — ${marks.join(', ')}` : ''}`;
+  return multiplied ? `${cartons}; ${multiplied}` : cartons;
 }
 
 /**

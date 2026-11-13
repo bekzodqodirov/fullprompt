@@ -17,6 +17,7 @@ import { addressWord } from './address-words';
 import { applyPacking } from './carton-math';
 import type { MeasureUnit } from './pricing';
 import {
+  PACKAGE_NOUN,
   AMOUNT_NUMBER,
   amountsIn,
   BLANK,
@@ -26,6 +27,7 @@ import {
   blankSpans,
   codeIn,
   COUNTED_CUBES,
+  countUnitWord,
   FIELD_LABELS,
   groupedReading,
   labelPattern,
@@ -35,6 +37,7 @@ import {
   packingRead,
   packWord,
   parseGoodsLine,
+  perOneLabelLine,
   perOneSpans,
   readAmountText,
   scaledKg,
@@ -72,6 +75,12 @@ import {
  * 507, once «cbm» was a word this reader knew.
  */
 const GAP = String.raw`[ \t\u00a0\u202f]*`;
+// An optional mark between two gaps carries its OWN gap — `(?:${GAP}[:：=])?`,
+// never `${GAP}[:：=]?${GAP}`: two or three runs of spaces with only optional
+// characters between them split one stretch of spaces every way when the
+// figure after it is missing, and a label followed by a long run of spaces was
+// cubic — one Telegram message froze the one app process for ~50 s (review
+// load-1). The two are the same language.
 
 /**
  * Never a number glued to a letter on its left (review JN-5): the 777 of
@@ -100,6 +109,9 @@ const figureOf = (unit: 'kg' | 'm3' | 'dona') =>
   new RegExp(String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})${GAP}(${unitPattern(unit)})(?![\p{L}\d])`, 'giu');
 const KG_FIGURE = figureOf('kg');
 const M3_FIGURE = figureOf('m3');
+/** A kilo, a cube on a line — the one-shot tests (the two above are global). */
+const KG_ON_LINE = new RegExp(KG_FIGURE.source, 'iu');
+const M3_ON_LINE = new RegExp(M3_FIGURE.source, 'iu');
 /** A piece count on the line — what keeps a counted cube («4 кубов») in the name (review JN-22). */
 const PIECES_FIGURE = new RegExp(figureOf('dona').source, 'iu');
 /** A figure with any unit of the vocabulary — the end of a line's name run. */
@@ -137,7 +149,7 @@ const LONE_SCALED_FIGURE = new RegExp(
 
 /** A weight's label closing the text right before a figure — «G.W.:», «brutto», «og‘irligi», «вес брутто =». */
 const WEIGHT_LABEL_BEFORE = new RegExp(
-  String.raw`(?<![\p{L}])(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS])})${GAP}[.)]?${GAP}[:：=]?${GAP}$`,
+  String.raw`(?<![\p{L}])(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS])})(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}$`,
   'iu',
 );
 
@@ -152,7 +164,7 @@ const WEIGHT_LABEL_BEFORE = new RegExp(
  * and there it is). Group 1 is the number, and the match ENDS with it.
  */
 const labelFirst = (free: readonly string[], all: readonly string[], unit: 'kg' | 'm3') => {
-  const unitWritten = String.raw`${GAP}[,(（\[]?${GAP}(?:${unitPattern(unit)})(?![\p{L}\d])${GAP}[)）\]]?${GAP}[:：=]?`;
+  const unitWritten = String.raw`(?:${GAP}[,(（\[])?${GAP}(?:${unitPattern(unit)})(?![\p{L}\d])(?:${GAP}[)）\]])?(?:${GAP}[:：=])?`;
   return new RegExp(
     String.raw`(?<![\d])(?<!(?!\p{Script=Han})\p{L})(?:(?:${labelPattern(free)})(?:${unitWritten}|${GAP}[:：=])|(?:${labelPattern(all)})${unitWritten})${GAP}(${AMOUNT_NUMBER})(?![\d.,]*\d)`,
     'giu',
@@ -288,6 +300,148 @@ function blankForTotals(text: string, prefix: string | null): string {
 }
 
 /**
+ * A field's label closing the text right before a figure — «G.W. », «G.W.: »,
+ * «brutto kg », «CBM », «TOTAL QTY », «CTNS » — its unit after it allowed
+ * («brutto kg 710»). Every optional mark carries its own gap (load-1).
+ */
+const fieldLabelBefore = (labels: readonly string[]) =>
+  new RegExp(
+    String.raw`(?<![\p{L}])(${labelPattern(labels)})(?:${GAP}(?:[,(（\[]${GAP})?(?:${(['kg', 'm3'] as const).map(unitPattern).join('|')})(?![\p{L}\d])(?:${GAP}[)）\]])?)?(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}$`,
+    'iu',
+  );
+const WEIGHT_FIELD_BEFORE = fieldLabelBefore([...WEIGHT_LABELS, ...NET_LABELS]);
+const VOLUME_FIELD_BEFORE = fieldLabelBefore(VOLUME_LABELS);
+const COUNT_FIELD_BEFORE = fieldLabelBefore([...FIELD_LABELS.count, ...FIELD_LABELS.cartons]);
+/** A bare figure right after a unit word — the next field's: «CBM 3.8», «KGS: 710». No unit of its own follows it. */
+const BARE_FIGURE_NEXT = new RegExp(
+  String.raw`^${GAP}(?:[:：=]${GAP})?(?:${AMOUNT_NUMBER})(?![\d.,]*\d)(?!${GAP}(?:${(['kg', 'm3', 'dona', 'karobka'] as const).map(unitPattern).join('|')})(?![\p{L}\d]))`,
+  'iu',
+);
+
+/**
+ * Is the unit-written figure at `[start, end)` ANOTHER field's (review
+ * seams-1)? A forwarder's footer writes each field as label, figure: «G.W.
+ * 710 CBM 3.8». The cube reader took «710 CBM» — the m³ word that OPENS the
+ * next field as the unit of the figure before it — and «G.W. 710 CBM 3.8»
+ * was a cube of 710 m³ (187 × the cargo's 3.8) under ✅, over the model's
+ * correct figure. So:
+ *  - a figure right after the OTHER measure's label is that label's — a
+ *    weight's figure is no cube («G.W. 710 CBM», «Brutto: 710 CBM 3.8»), a
+ *    cube's no weight («CBM 3.8 KGS 710»);
+ *  - a figure right after a count's or the cartons' label («TOTAL QTY 980 CBM
+ *    3.8») is no measure when its unit word is followed by a bare figure — the
+ *    next field's label, not this figure's unit. «Qty: 300 kg» alone is still
+ *    a weight.
+ * A label that is a UNIT word is a label only where no figure stands right
+ * before it: «5 kub 300 kg» is 5 m³ and 300 kg, «20 ctns 300 kg» 300 kg. A
+ * label that is no unit word heads its figure whatever stands before it —
+ * «N.W. 650 G.W. 710 CBM 3.8», «QTY 980 G.W. 710», «Мест 60 брутто 710 куб
+ * 3.8»: the figure before it is the previous field's (check seams-1: the 710
+ * was a cube again whenever any figure stood before «G.W.»). What neither
+ * reading can place is asked (JN-21 reads no «G.W. 710» without its «:»).
+ */
+function otherField(text: string, start: number, end: number, field: 'weight' | 'volume'): boolean {
+  const [from] = lineAround(text, start);
+  const before = text.slice(Math.max(from, start - 40), start);
+  const labelled = (re: RegExp) => {
+    const hit = re.exec(before);
+    return hit !== null && !(unitOf(hit[1]) !== null && /\d[.,]?\s*$/u.test(before.slice(0, hit.index)));
+  };
+  if (labelled(field === 'volume' ? WEIGHT_FIELD_BEFORE : VOLUME_FIELD_BEFORE)) return true;
+  return labelled(COUNT_FIELD_BEFORE) && BARE_FIGURE_NEXT.test(text.slice(end, end + 40));
+}
+
+/**
+ * A price on the line — a currency (`CURRENCY`, and the yuan's Han words) or a
+ * word that asks or states one: «narxi», «qancha», «necha pul», «цена»,
+ * «стоит», «сколько», «price», «how much», «多少钱». Word FORMS, never a stem:
+ * «Narxlagich 20 kg» is a price-labelling gun (c1416).
+ */
+const PRICE_ON_LINE =
+  /(?<![\p{L}])(?:narx(?:i|ni|ini|ga|iga|lar|lari)?|нарх(?:и|ни|ини|га|ига|лар|лари)?|qancha|қанча|nech[ae]?\s+pul\p{L}*|неча\s+пул\p{L}*|tarif(?:i|ga)?|тариф(?:и|а|у)?|цен(?:а|у|ы|е|ой)|стои(?:т|мость|мости|ят)|сколько|почём|почем|prices?|costs?|rate|how\s+much)(?![\p{L}])|多少钱|价格|价钱|单价|运费|美元|元|美金/iu;
+/** A rate's own mark right before its base — «per 1 cbm», «за 1 куб», «har 1 kub», «每1立方». */
+const RATE_MARK_BEFORE = /(?<![\p{L}])(?:per|за|har|хар|each|every)\s*$|每\s*$/iu;
+/** …or right after its unit — «1 kub uchun», «1 cbm = 150$». */
+const RATE_MARK_AFTER = /^\s*(?:(?:uchun|учун|для)(?![\p{L}])|[=＝]\s*\d)/iu;
+/** A comparison beside a figure — «10 cbm dan ko‘p», «больше 10 кубов», «от 10 кубов», «over 10 cbm», «10 cbm or more». */
+const COMPARE_AFTER =
+  /^\s*(?:(?:dan|дан)\s+(?:ko[‘'’ʻ`]?p|ortiq|osh|ziyod|yuqori|kam|кўп|ортиқ|ош|зиёд|юқори|кам)\p{L}*|(?:and|or)\s+(?:more|above|over|less)|(?:и|или)\s+(?:более|больше|выше|меньше|менее))(?![\p{L}])|^\s*(?:以上|以下)/iu;
+const COMPARE_BEFORE = /(?<![\p{L}])(?:больше|более|свыше|меньше|менее|от|over|above|more\s+than|less\s+than|under)\s*$|(?:超过|大于|少于)\s*$/iu;
+/** …said as a condition, an offer's: «bo‘lsa», «oshsa», «agar», «chegirma», «если», «скидка», «if», «discount», «优惠». */
+const CONDITION_ON_LINE =
+  /(?<![\p{L}])(?:bo[‘'’ʻ`]?lsa|бўлса|oshsa|ошса|agar|агар|chegirma\p{L}*|чегирма\p{L}*|если|при|скидк\p{L}*|if|discount\p{L}*|aksiya\p{L}*|акци\p{L}*)(?![\p{L}])|优惠|折扣|如果/iu;
+
+/** Where a clause ends — a comma, a stop (never a decimal point), a question or an exclamation. */
+const CLAUSE_BREAK = /[,;!?。，；！？]|\.(?!\d)/gu;
+
+/** `[start, end)` of the clause of `line` the span `[s, e)` stands in. */
+function clauseAround(line: string, s: number, e: number): [number, number] {
+  let start = 0;
+  let end = line.length;
+  for (const hit of line.matchAll(CLAUSE_BREAK)) {
+    if (hit.index + hit[0].length <= s) start = hit.index + hit[0].length;
+    else if (hit.index >= e) {
+      end = hit.index;
+      break;
+    }
+  }
+  return [start, end];
+}
+/** The seller speaking of HIS cargo — «yukim», «yuk bor», «у меня груз», «I have», «我有». */
+const CARGO_SPOKEN =
+  /(?<![\p{L}])(?:yuk(?:im|imiz|um|imni|ingiz|lar|larim)?|юк(?:им|имиз|ум|лар)?|груз\p{L}*|gruz\p{L}*|groz\p{L}*|cargo|mol(?:im|imiz)|tovar(?:im|imiz|lar|larim)?|товар\p{L}*|bor|бор|есть|у\s+меня|у\s+нас|menda|bizda|mening|i\s+have|we\s+have|my\s+(?:cargo|goods|shipment))(?![\p{L}])|我有|货物/iu;
+
+/**
+ * Does the clause state the seller's CARGO beside a one-unit figure at
+ * `[start, end)` of it — his words for it, or another figure of the goods
+ * («1 dona», «1200 kg»: a count, a weight, a cube, a carton count; never
+ * money)?
+ */
+function statesCargo(clause: string, start: number, end: number): boolean {
+  if (CARGO_SPOKEN.test(clause)) return true;
+  return amountsIn(clause).some((s) => (s.end <= start || s.start >= end) && unitOrScaled(s.word ?? undefined) !== null);
+}
+
+/**
+ * Is the unit-written figure at `[start, end)` no statement of THIS cargo
+ * (review figures-cbm-rate-as-total)? Two shapes, each its own:
+ *  - a RATE's base — ONE unit, with a price on its line or a rate's mark
+ *    beside it: «1 cbm narxi qancha?», «1 cbm = 150$», «Narxi 1 cbm uchun 150
+ *    dollar», «price 150 usd per 1 cbm», «1 куба 150$», «1 kgs = 3 usd». Read
+ *    as the shipment's they were a cube of 1 m³ — and the typed total outranks
+ *    the Excel's and the model's — so podklyuch freight was priced on 1 m³,
+ *    the seller's real cube never asked. Only the figure 1: «Kurtka 500 dona
+ *    1200 kg 2500$» is 1200 kg and its price, and «12 kub narxi qancha?» is a
+ *    request for 12 m³;
+ *  - a CONDITION — a comparison beside the figure on a line that offers or
+ *    supposes: «10 cbm dan ko‘p bo‘lsa chegirma», «от 10 кубов скидка».
+ *    Without the condition the comparison describes the cargo («jami 500 kg
+ *    dan ortiq», c3183; «300 kg dan oshmaydi», c3391) and stands.
+ * The labelled figures carry their own guard (a currency on the line, JN-21).
+ */
+function rateOrCondition(text: string, start: number, end: number, number: string): boolean {
+  const [from, to] = lineAround(text, start);
+  const before = text.slice(from, start);
+  const after = text.slice(end, to);
+  const line = text.slice(from, to);
+  const read = readAmountText(number);
+  if (read.state === 'ok' && read.value === 1) {
+    if (RATE_MARK_BEFORE.test(before) || RATE_MARK_AFTER.test(after)) return true;
+    // A price IN the figure's clause — «1 cbm narxi qancha?», «сколько стоит 1
+    // куб?», «1 куба 150$» — is a rate's base, unless that clause states the
+    // seller's cargo («Stanok 1 dona 1 kub 1200 kg 5000$»). A price question in
+    // a clause of its own asks about the cargo stated before it — «Yukim 1 kub,
+    // narxi qancha?», «Kurtka 300 dona, 1 kub. Narx qancha bo'ladi», «I have 1
+    // cbm, 150 kg, how much?» (check R2: the price word ANYWHERE on the line
+    // dropped the commonest first message's one cube, and asked it).
+    const [cs, ce] = clauseAround(line, start - from, end - from);
+    const clause = line.slice(cs, ce);
+    if ((CURRENCY.test(clause) || PRICE_ON_LINE.test(clause)) && !statesCargo(clause, start - from - cs, end - from - cs)) return true;
+  }
+  return (COMPARE_AFTER.test(after) || COMPARE_BEFORE.test(before)) && CONDITION_ON_LINE.test(line);
+}
+
+/**
  * A word that modifies the figure itself — «taxminan 1 200 kg», «около 1 200
  * кг», «hammasi bo‘lib 1 200 kg» — never a count before it, in the spellings a
  * phone writes («tahminan», «тахминий»; review typed-break-4).
@@ -371,6 +525,7 @@ function readNumber(
       const [from, to] = lineAround(scan, hit.index);
       if (PIECES_FIGURE.test(scan.slice(from, to)) && !ANY_FIGURE.test(scan.slice(from, hit.index))) continue;
     }
+    if (rateOrCondition(text, hit.index, end, hit[1]!)) continue;
     take(hit[1]!, hit.index, false, [hit.index, end]);
   }
   for (const reader of scaled) {
@@ -378,6 +533,7 @@ function readNumber(
       const end = hit.index + hit[0].length;
       const factor = scaledKg(hit[2])?.factor;
       if (factor === undefined || skip(hit.index, end) || !reader.when(hit.index, factor)) continue;
+      if (rateOrCondition(text, hit.index, end, hit[1]!)) continue;
       take(hit[1]!, hit.index, false, [hit.index, end], factor);
     }
   }
@@ -393,6 +549,8 @@ function readNumber(
     const at = end - hit[1]!.length;
     if (skip(at, end) || !standsAlone(text, end) || !labelStands(scan, hit.index)) continue;
     if (hasCurrency(at)) continue;
+    // «单箱体积: 0.395», «karobka hajmi: 0.12» — a package's own measure, never the shipment's (T4, review owner-3).
+    if (packagePossessesLabel(text.slice(lineAround(text, hit.index)[0], hit.index))) continue;
     take(hit[1]!, at, true, [hit.index, end]);
   }
   // A doubt covers the whole field: every figure of it is the question's.
@@ -611,9 +769,19 @@ export function readTypedTotals(
   const route = readRoute(text);
   const typed = typedGoods(text, { prefix: opts.prefix });
   const spans = lineSpans(text);
-  const onGoodsLine = (start: number) => {
-    if (!opts.goodsBeside && typed.figured < 2) return false;
+  // A line that speaks of the WHOLE shipment — «jami 320 kg» — beside a lone goods
+  // line: the goods line's figures are its own, and the shipment's are said
+  // (check owner-1 (a): «Kurtka 300 dona, 300 kg⏎jami 320 kg» — the row's 300 kg
+  // and the «jami» 320 cancelled each other, and the brutto he typed was asked).
+  // Per field: «jami 320 kg» says the weight, and the line's «2 kub» is still the one cube there is.
+  const said: Partial<Record<'kg' | 'm3', boolean>> = {};
+  const shipmentElsewhere = (line: number, field: 'kg' | 'm3') =>
+    (said[field] ??= spans.some(
+      ([a, b], i) => i !== line && !typed.lines.has(i) && shipmentLine(text.slice(a, b)) && (field === 'kg' ? KG_ON_LINE : M3_ON_LINE).test(text.slice(a, b)),
+    ));
+  const onGoodsLine = (start: number, field: 'kg' | 'm3') => {
     const line = spans.findIndex(([a, b]) => start >= a && start <= b);
+    if (!opts.goodsBeside && typed.figured < 2) return typed.lines.has(line) && shipmentElsewhere(line, field);
     const lineText = line >= 0 ? text.slice(spans[line]![0], spans[line]![1]) : '';
     if (opts.goodsBeside && line >= 0 && MATERIAL_ROW_ADDRESS.test(lineText)) return true;
     if (!typed.lines.has(line)) return false;
@@ -641,7 +809,7 @@ export function readTypedTotals(
     const span = perOne[lo - 1];
     return span !== undefined && start < span[1];
   };
-  const notTotal = (start: number) => start < from || onGoodsLine(start) || onePackage(start);
+  const notTotal = (start: number, field: 'kg' | 'm3' = 'kg') => start < from || onGoodsLine(start, field) || onePackage(start);
   // What is no amount — a size, a code, a phone — is blanked before a figure
   // is looked for (§3.1 T0): its digits were the thousands of the weight after.
   const scan = blankForTotals(text, clientCodePrefix(opts));
@@ -681,15 +849,22 @@ export function readTypedTotals(
     },
     { figure: LONE_SCALED_FIGURE, when: (at, factor) => weightLabelled(at) || (factor > 1 && opts.totalsAnswer === true) },
   ];
-  const plain = readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || nettoLabelled(text, a, b), tonnes);
+  const plain = readNumber(
+    text,
+    scan,
+    KG_FIGURE,
+    KG_LABELLED,
+    (a, b) => notTotal(a) || nettoLabelled(text, a, b) || otherField(text, a, b, 'weight'),
+    tonnes,
+  );
   // Customs-only: the netto stands for the total when nothing else is stated.
   const nettoStands = section !== undefined && !sectionHasFreight(section);
   const netto =
     nettoStands && plain.value === null && !plain.ambiguous
-      ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b), tonnes)
+      ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b) || otherField(text, a, b, 'weight'), tonnes)
       : { value: null, ambiguous: null, taken: [] };
   const weight = netto.value !== null || netto.ambiguous ? netto : plain;
-  const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a) => notTotal(a));
+  const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a, b) => notTotal(a, 'm3') || otherField(text, a, b, 'volume'));
   const ambiguous: AmbiguousTotal[] = [];
   if (weight.ambiguous) ambiguous.push({ field: 'weightKg', ...weight.ambiguous });
   if (volume.ambiguous) ambiguous.push({ field: 'volumeM3', ...volume.ambiguous });
@@ -1155,11 +1330,19 @@ const UNIT_FREE_EXACT = {
  * one. Group 1: the label; 2: the «:» / «=» between, if any.
  */
 const FIELD_BEFORE_FIGURE = new RegExp(
-  String.raw`(?<!\d)(?<!(?!\p{Script=Han})\p{L})(${labelPattern(FIELD_KIND_LABELS.flatMap(([, l]) => l))})${GAP}[.)]?${GAP}([:：=])?${GAP}(?=\d)`,
+  String.raw`(?<!\d)(?<!(?!\p{Script=Han})\p{L})(${labelPattern(FIELD_KIND_LABELS.flatMap(([, l]) => l))})(?:${GAP}[.)])?(?:${GAP}([:：=]))?${GAP}(?=\d)`,
   'giu',
 );
-/** The figure after a label: its number, and the word after it. */
-const FIGURE_AT = new RegExp(String.raw`^(${AMOUNT_NUMBER})(?!\d)(?:${GAP}([\p{L}²³][\p{L}\d²³.]*))?`, 'iu');
+/**
+ * The figure after a label: its number, and the word after it. The word is
+ * BOUNDED (review load-3): on Chinese written with no spaces the run of
+ * letters is the rest of the line, read again at every label of it — O(L²) a
+ * line. No unit word is longer than 40 characters, and a longer run is no
+ * unit either way.
+ */
+const FIGURE_AT = new RegExp(String.raw`^(${AMOUNT_NUMBER})(?!\d)(?:${GAP}([\p{L}²³][\p{L}\d²³.]{0,40}))?`, 'iu');
+/** A unit word written as a field's label at a line's start — «Karobka: 20», «Коробки = 20». Group 1: the word. */
+const UNIT_WORD_FIELD = new RegExp(String.raw`^(\p{L}[\p{L}.]{0,20})${GAP}[:：=]${GAP}(?=\d)`, 'u');
 /** `FIELD_BEFORE_FIGURE` at one place: the next field of a spec line, its label and its own figure. */
 const FIELD_HERE = new RegExp(String.raw`${GAP}(?:${FIELD_BEFORE_FIGURE.source})`, 'iuy');
 
@@ -1170,8 +1353,27 @@ const FIELD_HERE = new RegExp(String.raw`${GAP}(?:${FIELD_BEFORE_FIGURE.source})
  */
 function fieldAt(text: string, at: number): boolean {
   FIELD_HERE.lastIndex = at;
-  return FIELD_HERE.test(text);
+  if (FIELD_HERE.test(text)) return true;
+  // …or ONE package's measure under its own label — «Мест: 20 Вес одного места: 15 кг» — or a unit
+  // word written as the next field's label, «Soni: 200 Karobka: 20» (review crit-5).
+  const next = text.slice(at, at + 64).replace(/^[ \t\u00a0\u202f]+/u, '');
+  // A label that is a unit word right after a figure is that figure's unit: «0.12 cbm/ctn 300 kg» (doors-1).
+  const perOne = perOneLabelLine(next);
+  if (perOne !== null && unitOf(perOne.label) === null && perOneHeads(perOne, next)) return true;
+  const unitLabel = UNIT_WORD_FIELD.exec(next);
+  return unitLabel !== null && unitOf(unitLabel[1]) !== null;
 }
+/**
+ * Does one package's measure label head the figure after it? Only a figure of
+ * its own measure — a cube's label never heads kilos (check R3: «0.12
+ * meas/ctn 300 kgs» — «meas/ctn» is the 0.12's, the 300 kgs the line's own).
+ */
+function perOneHeads(perOne: { unit: 'kg' | 'm3' | 'dona'; figureAt: number }, next: string): boolean {
+  const read = FIGURE_AT.exec(next.slice(perOne.figureAt));
+  const unit = read?.[2] !== undefined ? unitOrScaled(read[2]) : null;
+  return unit === null || (perOne.unit === 'dona' ? unit === 'dona' || unit === 'karobka' : unit === perOne.unit);
+}
+
 /** A figure followed by a slash and a word, or by «per …»: ONE package's or ONE piece's — the kernel's mark to read. */
 const PER_ONE_AFTER = /^\s*\/\s*\p{L}|^\s+(?:per|pr)\s/iu;
 
@@ -1233,12 +1435,37 @@ function readFieldLabels(text: string, fields: readonly number[] = []): LineFiel
   // was («Kurtka umumiy vazni 150 kg», «Qop soni 20 ta» — a places count) —
   // unless it is written as a field, with its «:» or «=» («Qty: 200 pcs»).
   const head = firstFigure(text);
+  // A spec block's field line opening with a UNIT word as its label — «Karobka:
+  // 20», «Коробки: 20», «Quti: 20», «Dona: 200» (review crit-5) — names its
+  // figure as «Cartons: 20» does; no field-label list holds these words, and
+  // right under the name the kernel took the word for the NAME's («stul
+  // Karobka» × 20).
+  for (const at of fields) {
+    FIELD_HERE.lastIndex = at;
+    if (FIELD_HERE.test(text)) continue;
+    const hit = UNIT_WORD_FIELD.exec(text.slice(at));
+    const own = hit ? unitOf(hit[1]) : null;
+    if (!hit || own === null) continue;
+    const figureStart = at + hit[0].length;
+    const read = FIGURE_AT.exec(text.slice(figureStart));
+    if (!read) continue;
+    const numberEnd = figureStart + read[1]!.length;
+    const word = read[2] !== undefined && !fieldAt(text, numberEnd) ? read[2] : undefined;
+    // «Karobka: 20 ta» — a bare counter after the figure says no unit of its own: the label's stands.
+    const counter = word !== undefined && /^(?:ta|та)$/iu.test(word);
+    if (word !== undefined && !counter && unitOf(word) !== own) continue;
+    edits.push({ start: at, end: figureStart });
+    if (counter) edits.push({ start: figureStart + read[0].length - word!.length, end: figureStart + read[0].length, with: hit[1] });
+    else if (word === undefined) edits.push({ start: numberEnd, end: numberEnd, with: ` ${hit[1]}` });
+  }
   for (const hit of text.matchAll(FIELD_BEFORE_FIGURE)) {
     const label = hit[1]!;
     const labelStart = hit.index;
     const figureStart = labelStart + hit[0].length;
     const colon = hit[2] !== undefined;
     if (figureStart <= head && !colon && !fields.includes(labelStart)) continue;
+    // «Вес 1 места: 33.8 кг» — the label opens ONE package's measure: the kernel's mark reads it whole (owner-3, crit-5).
+    if (perOneLabelLine(text.slice(labelStart, labelStart + 64)) !== null) continue;
     const read = FIGURE_AT.exec(text.slice(figureStart));
     if (!read) continue;
     const numberEnd = figureStart + read[1]!.length;
@@ -1252,7 +1479,14 @@ function readFieldLabels(text: string, fields: readonly number[] = []): LineFiel
     // A label that is a unit word of its own — «CBM: 5.92», «Cartons: 20», «Мест: 20».
     const own = unitOf(label);
     if (own !== null) {
-      if (word !== undefined) continue;
+      // «Cartons: 15 ctns», «Packages: 15 CTNS», «CBM: 5.92 cbm»: the figure
+      // names its unit itself, the label the same one — the label goes, or the
+      // kernel reads the unit twice («repeated») and the block it stands in
+      // dies (review owner-3, seams-7).
+      if (word !== undefined) {
+        if (unitOf(word) === own) edits.push(labelEdit);
+        continue;
+      }
       // Written after its figure — «5.92 CBM», «20 Cartons» — the way the
       // kernel reads every unit: as a field before it, «200 pcs Cartons: 20»
       // was read as 200 cartons by the counter-then-unit rule («120 ta juft»).
@@ -1332,18 +1566,34 @@ function setAsidePairs(text: string): { text: string; aside: string[] } {
   const spans = amountsIn(text);
   const first = spans.findIndex((s) => unitOrScaled(s.word ?? undefined) !== null);
   if (first < 0) return { text, aside: [] };
-  // «Kofe 250 gr, 1000 pachka»: the pack count says whose the gram is — it
-  // stays for the readers, who then keep the gram in the name (`unitFigures`).
-  const gramFirst = (scaledKg(spans[first]!.word)?.factor ?? 1) < 1;
+  // A per-one MARK is the kernel's, never a pair of the line: «20 karobka, 1
+  // karobkada 24 dona» — set aside, «1 karobkada» left «24 dona» standing as
+  // the row's own count, 24 pieces for 480 under ✅ (review owner-2). What
+  // `packingRead` reads as a mark stays for it (`figureTail`).
+  const marked = packingRead(text, { scaled: true }).consumed;
+  // «Kofe 250 gr, 1000 pachka», «Shokolad 100 gr 500 blok», «Ip 500 gr 100
+  // g'altak»: beside a gram a number and its word are a COUNT of the goods
+  // (units.ts `parseGoodsLine`'s `countStated`), and the count says whose the
+  // gram is — one pack's, one block's, one spool's. It stays for the kernel,
+  // which then keeps the gram in the name; set aside, the gram was the row's
+  // own 0.1 kg (review figures-gram-beside-measure-count). Only where no UNIT
+  // of the line counts the goods already: «Krossovka 300 juft 800 gr 5 xil»
+  // keeps its «5 xil» on the note.
+  const gram = spans.some((s) => {
+    const scale = scaledKg(s.word);
+    return scale !== null && !scale.lone && scale.factor < 1;
+  });
+  const countKept = gram && !spans.some((s) => countUnitWord(s.word));
   const edits: Edit[] = [];
   const aside: string[] = [];
   for (const s of spans.slice(first + 1)) {
     if (s.word === null || unitOrScaled(s.word) !== null || !pairWord(s.word)) continue;
-    if (gramFirst && packWord(s.word)) continue;
+    if (countKept) continue;
     // «Мест: 20 Вес брутто: 15 кг/место» — the word is the next field's label.
     if (fieldAt(text, s.start + s.number.length)) continue;
     // «1/2 dyuym» — the number is a fraction's, and the pair no pair at all.
     if (/\d[ \t]*\/[ \t]*$/u.test(text.slice(Math.max(0, s.start - 8), s.start))) continue;
+    if (marked.some(([a, b]) => s.start < b && a < s.end)) continue;
     edits.push({ start: s.start, end: s.end });
     aside.push(text.slice(s.start, s.end).replace(/\s+/gu, ' ').trim());
   }
@@ -1362,7 +1612,9 @@ function lineFields(body: string, fields: readonly number[] = []): LineFields {
 /**
  * The note a typed row carries for what it states per one and nobody can
  * place — «har biri 2 kg» beside a piece AND a carton count with neither
- * nearest, «20 x 15 kg» with no carton word: off every column, never lost.
+ * nearest, «20 x 15 kg» with no carton word (its product is the row's own
+ * figure, units.ts `timesFigures`; the phrase says where it came from): off
+ * every packing, never lost.
  */
 const asideNote = (aside: readonly string[] | undefined): string | null =>
   aside && aside.length > 0 ? `sotuvchi: ${aside.join(', ')}` : null;
@@ -1388,6 +1640,8 @@ function typedRow(name: string, parsed: GoodsLine, fields?: Pick<LineFields, 'as
     note: asideNote([...(fields?.aside ?? []), ...(parsed.aside ?? [])]),
     // «G.W. 300 kgs»: the label said which weight the row's own is (customs wants netto).
     ...(fields?.weightKind && parsed.weightKg !== null ? { weightKind: fields.weightKind } : {}),
+    // A bare «20 x 15 kg» is the row's 300 kg — computed, and marked so (JN-8 (c), check crit-2).
+    ...(parsed.products ? { derived: { product: parsed.products } } : {}),
   };
   return parsed.packing ? applyPacking({ ...row, packing: parsed.packing }).line : row;
 }
@@ -1400,9 +1654,15 @@ const SCALED_IN_NAME = new RegExp(String.raw`(?<![\p{L}\d.,])\d[\d.,]*${GAP}(?:$
 /** A tail's tokens: split on spaces, separators and what `figureTail` set aside. */
 const TAIL_SPLIT = new RegExp(`[\\s,;/+${BLANK}]+`, 'u');
 
-/** The size words a typed size stands beside — «o‘lchami», «razmeri», «carton size» (units.ts `FIELD_LABELS`). */
+/**
+ * The size words a typed size stands beside — «o‘lchami», «razmeri», «carton
+ * size» (units.ts `FIELD_LABELS`) — and a package's noun right before it
+ * («Divan 5 dona, упаковка 200x90x80 см»: whose size it is, no unknown word
+ * of the tail — check crit-1's neighbour: the line vanished, T8). Never a
+ * carton count's own word («10 karobka 120x80x75 sm»).
+ */
 const SIZE_WORDS_BEFORE = new RegExp(
-  String.raw`(?<![\p{L}])(?:${labelPattern([...FIELD_LABELS.packageSize, ...FIELD_LABELS.size])})\s*[.:：=]?\s*(?=${BLANK})`,
+  String.raw`(?<![\p{L}])(?:${labelPattern([...FIELD_LABELS.packageSize, ...FIELD_LABELS.size])}|(?<!\d[ \t]*)${PACKAGE_NOUN})\s*[.:：=]?\s*(?=${BLANK})`,
   'giu',
 );
 
@@ -1794,7 +2054,7 @@ const FIELD_LINE = new RegExp(
     ...FIELD_KIND_LABELS.flatMap(([, l]) => l),
     ...FIELD_LABELS.size,
     ...FIELD_LABELS.packageSize,
-  ])})${GAP}[.)]?${GAP}[:：=]?${GAP}(?=\p{L}?\d)`,
+  ])})(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}(?=\p{L}?\d)`,
   'iu',
 );
 
@@ -1810,13 +2070,45 @@ function nameLineOf(line: string, prefix: string | null): string | null {
   return name;
 }
 
-/** Is a text line one of a spec block's fields — «Qty: 200 pcs», «毛重 15kg/箱», «20箱», «Carton size: 60*40*50cm»? */
+/**
+ * Is a text line one of a spec block's fields — «Qty: 200 pcs», «毛重 15kg/箱»,
+ * «20箱», «Carton size: 60*40*50cm», and ONE package's measure under its own
+ * label: «单箱毛重: 33.8kg», «G.W./CTN: 33.8 kg», «CBM/CTN: 0.395», «Вес 1
+ * места: 33.8 кг» (units.ts `perOneLabelLine`; review owner-3 — the block ended
+ * there, and the lines below it became products named «单箱»)?
+ */
 function specFieldLine(line: string, prefix: string | null): boolean {
   const text = line.trim().replace(LIST_MARKER, '');
   if (!text || nameLineOf(text, prefix) !== null) return false;
-  if (FIELD_LINE.test(text)) return true;
+  if (FIELD_LINE.test(text) || perOneLabelLine(text) !== null) return true;
+  // «Karobka: 20», «Коробки: 20» — a unit word as the field's label (review crit-5).
+  const unitLabel = UNIT_WORD_FIELD.exec(text);
+  if (unitLabel && unitOf(unitLabel[1]) !== null) return true;
   // A line of nothing but figures — «20箱», «200 pcs», «20 ctns 300 kg».
   return firstFigure(text) === 0 && unitFigures(text, { measured: false });
+}
+
+/** The unit a per-one label's bare figure takes — «单箱体积: 0.395» is 0.395 m³ of one carton. */
+const PER_ONE_UNIT_WORD = { kg: 'kg', m3: 'm3', dona: 'dona' } as const;
+const NUMBER_AT = new RegExp(String.raw`^(?:${AMOUNT_NUMBER})(?![\d.,]*\d)`, 'u');
+const UNIT_WORD_NEXT = new RegExp(
+  String.raw`^${GAP}(?:${(['kg', 'm3', 'dona', 'karobka', 'm2', 'juft', 'litr', 'sm3'] as const).map(unitPattern).join('|')}|${scaledPattern('words')})(?![\p{L}\d])`,
+  'iu',
+);
+/**
+ * A per-one label line with its unit written after a BARE figure — the
+ * label is what names the measure («CBM/CTN: 0.395» → «CBM/CTN: 0.395 cbm»),
+ * and the kernel then reads the figure as the package's own, the way it reads
+ * «G.W./CTN: 33.8 kg». Any other line as it is.
+ */
+function perOneUnitWritten(line: string): string {
+  const label = perOneLabelLine(line);
+  if (!label) return line;
+  const number = NUMBER_AT.exec(line.slice(label.figureAt));
+  if (!number) return line;
+  const end = label.figureAt + number[0].length;
+  if (UNIT_WORD_NEXT.test(line.slice(end))) return line;
+  return `${line.slice(0, end)} ${PER_ONE_UNIT_WORD[label.unit]}${line.slice(end)}`;
 }
 
 /**
@@ -1837,7 +2129,7 @@ function specEntries(rawLines: readonly string[], prefix: string | null): TypedE
     }
     let text = name;
     const fields: number[] = [];
-    for (const field of rawLines.slice(at + 1, end).map((l) => l.trim().replace(LIST_MARKER, ''))) {
+    for (const field of rawLines.slice(at + 1, end).map((l) => perOneUnitWritten(l.trim().replace(LIST_MARKER, '')))) {
       text += ' ';
       fields.push(text.length);
       text += field;

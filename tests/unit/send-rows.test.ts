@@ -4,6 +4,7 @@ import {
   blankRow,
   codeLooksRight,
   dropBareNumbers,
+  groupedShortRow,
   isBlankRow,
   itemOfRow,
   keepPair,
@@ -77,19 +78,60 @@ describe('only three things stop a send, each with one-tap answers (UX3)', () =>
     expect(itemOfRow(one(answerAmbiguous(r.raw!, '1,200', 1.2)))).toMatchObject({ weightKg: 1.2 });
   });
 
-  it('a grouped number asked both ways (JN-6): the short reading keeps the first group as a fact of its own (review typed-break-8)', () => {
-    // «Stul 20 300 kg»: 300 kg of twenty chairs, or 20 300 kg. Choosing 300
-    // deleted the 20 from the row's text — the chairs' count gone.
+  it('a grouped number asked both ways (JN-6): the short reading keeps the first group in the NAME and invents no count (typed-break-8, figures-chip-invents-count)', () => {
+    // «Stul 20 300 kg»: 300 kg of something called «Stul 20», or 20 300 kg.
+    // Choosing 300 once deleted the 20 (typed-break-8); written back as «Stul
+    // 20, 300 kg» the kernel then read the 20 as the row's COUNT — «iPhone 15
+    // 128 kg» landed fifteen phones with nothing left open. Read back through
+    // itemOfRow / rowIssues, never only the text.
     const r = one('Stul 20 300 kg');
     expect(rowIssues(r).blocking).toHaveLength(1);
-    const short = answerAmbiguous(r.raw!, '20 300', 300);
-    expect(short).toBe('Stul 20, 300 kg');
-    // Re-read: the 20 is the count it was, the 300 the kilos.
-    expect(itemOfRow(one(short))).toMatchObject({ name: 'Stul', quantity: 20, weightKg: 300 });
+    const short = groupedShortRow(r, '20 300', 300)!;
+    expect(itemOfRow(short)).toMatchObject({ name: 'Stul 20', quantity: null, weightKg: 300 });
+    expect(rowIssues(short).blocking).toEqual([]);
+    for (const [text, problem, value, name, cell] of [
+      ['iPhone 15 128 kg', '15 128', 128, 'iPhone 15', { weightKg: 128 }],
+      ['Monitor 27 500 kg', '27 500', 500, 'Monitor 27', { weightKg: 500 }],
+      ['Stanok 1 500 kg', '1 500', 500, 'Stanok 1', { weightKg: 500 }],
+      // A model's number stays in the landed name, and the count is the 200 he chose.
+      ['Redmi 13 200 dona', '13 200', 200, 'Redmi 13', { quantity: 200 }],
+    ] as const) {
+      const row = groupedShortRow(one(text), problem, value)!;
+      expect(itemOfRow(row), text).toMatchObject({ name, quantity: null, ...cell });
+      expect(rowIssues(row).blocking, text).toEqual([]);
+    }
     // The long reading is the whole number, as before: 20 300 kg.
     expect(itemOfRow(one(answerAmbiguous(r.raw!, '20 300', 20300)))).toMatchObject({ weightKg: 20300 });
-    // A model's number stays in the TEXT the seller sees, never deleted from it.
-    expect(answerAmbiguous('iPhone 15 128 dona', '15 128', 128)).toBe('iPhone 15, 128 dona');
+    // The short reading is no text answer: asked for one, the text is left as it is.
+    expect(answerAmbiguous('iPhone 15 128 dona', '15 128', 128)).toBe('iPhone 15 128 dona');
+  });
+
+  it('the short reading as a row waits while another question stands on the line', () => {
+    // «1,200» reads two ways too: the row is not written until it is answered.
+    const r = one('Stul 20 300 kg, 1,200 kub');
+    expect(rowIssues(r).blocking).toHaveLength(2);
+    expect(groupedShortRow(r, '20 300', 300)).toBeNull();
+  });
+
+  // Review doors-4: «00 120» reads 120 either way, and a question offering
+  // «120 mi yoki 120 mi?» blocked the seller's send while the VED's paste
+  // landed no count — the spaced code «6907 21 00 00» before a bare count is
+  // corpus c1548-c1551's shape.
+  it('a grouped number whose first group is zeros has ONE reading: no question, the count lands (doors-4)', () => {
+    for (const [text, qty] of [
+      ['Kafel 6907 21 00 00 120', 120],
+      ['Kurtka 6201 93 00 00 300', 300],
+      ['Moy 2710 19 820 0 200', 200],
+      ['Kurtka 0 300 dona', 300],
+    ] as const) {
+      const r = one(text);
+      expect(rowIssues(r).blocking, text).toEqual([]);
+      expect(itemOfRow(r), text).toMatchObject({ quantity: qty, tnvedCode: null });
+      expect(pasteItems(text)[0], text).toMatchObject({ quantity: qty, note: null });
+    }
+    // «007 300» still reads two ways: 300, or 7 300.
+    expect(rowIssues(one('Kurtka 007 300 dona')).blocking).toHaveLength(1);
+    expect(parseGoodsLine('Kurtka 007 300 dona').problems).toContainEqual(expect.objectContaining({ decimal: 300, thousands: 7300 }));
   });
 
   it('two pairs on one line: keep one and the other leaves the text', () => {
@@ -247,5 +289,36 @@ describe('a read line keeps its text only while a question stands on it', () => 
   it('a clean line lets go of its text; a blocked one holds it for the answer', () => {
     expect(rowOfLine(parseGoodsLine('monitor, 10'), 1, 'monitor, 10').raw).toBeNull();
     expect(rowOfLine(parseGoodsLine('Kabel, 1,200, kg'), 1, 'Kabel, 1,200, kg').raw).toBe('Kabel, 1,200, kg');
+  });
+});
+
+// Check crit-2: the card form and the VED's paste read no packing (T4 is the
+// bot's), so «Stul 20 x 15 kg» landed «Stul 20 x» with ONE chair's 15 kg as
+// the row's weight and «Kurtka 20*24 dona» 24 pieces. A bare «A x B unit» is
+// A × B at every door (JN-8 (c), binding), the phrase on the note.
+describe('a bare «A x B unit» is the row’s product on the card form and the paste (crit-2)', () => {
+  it('the card form’s row: «Stul» 300 kg (20 × 15), «Kurtka» 480 dona (20 × 24) — never B as the row’s figure', () => {
+    // 20 × 15 = 300 kg; 20 × 24 = 480; 20 × 12 = 240 juft.
+    expect(itemOfRow(textRows('Stul 20 x 15 kg', 0)[0]!)).toMatchObject({ name: 'Stul', weightKg: 300, note: 'sotuvchi: 20 x 15 kg' });
+    expect(itemOfRow(textRows('Kurtka 20 x 24 dona', 0)[0]!)).toMatchObject({ name: 'Kurtka', quantity: 480 });
+    expect(itemOfRow(textRows('Kurtka 20*24 dona', 0)[0]!)).toMatchObject({ name: 'Kurtka', quantity: 480 });
+    expect(itemOfRow(textRows('Стул 20 х 15 кг', 0)[0]!)).toMatchObject({ weightKg: 300 });
+    expect(itemOfRow(textRows('Krossovka 20 x 12 juft', 0)[0]!)).toMatchObject({ measureUnit: 'juft', measureQty: 240 });
+    expect(rowIssues(textRows('Stul 20 x 15 kg', 0)[0]!).blocking).toEqual([]);
+  });
+
+  it('the VED’s paste: the same products, the phrase on the note', () => {
+    expect(pasteItems('Stul 20 x 15 kg\nKurtka 20*24 dona')).toMatchObject([
+      { name: 'Stul', weightKg: 300, note: 'sotuvchi: 20 x 15 kg' },
+      { name: 'Kurtka', quantity: 480, note: 'sotuvchi: 20*24 dona' },
+    ]);
+  });
+
+  it('a space-grouped B is still asked both ways, and a sheet is still a sheet', () => {
+    const grouped = parseGoodsLine('Stanok 2 x 1 500 kg');
+    expect(grouped.weightKg).toBeNull();
+    expect(grouped.problems).toContainEqual(expect.objectContaining({ kind: 'ambiguous', text: '1 500' }));
+    expect(parseGoodsLine('Kafel 600x600 500 dona')).toMatchObject({ name: 'Kafel 600x600', quantity: 500 });
+    expect(parseGoodsLine('Gilam 2x3 100 dona')).toMatchObject({ name: 'Gilam 2x3', quantity: 100 });
   });
 });

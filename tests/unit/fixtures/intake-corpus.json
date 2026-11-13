@@ -15581,6 +15581,1817 @@
    "why": "typed-spec-2: JN-8 (e)'s second spelling.",
    "source": "ai-soraydi typed-A review",
    "weight": "defect"
+  },
+  {
+   "id": "c4206",
+   "input": "Stul 40 pcs, 20 ctns, 1 ctn = 0.12 cbm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 40,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "Stul 40 pcs, 20 × 0.12 = 2.4 m³",
+   "why": "owner-1: the English «1 ctn = 0.12 cbm».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4207",
+   "input": "Kurtka 300 dona, 20 ta quti, 1 ta quti 15 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "owner-1: «1 ta quti» — the same mark with the other package noun.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4208",
+   "input": "折叠椅 200个 20箱 1箱 15kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "折叠椅",
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "owner-1: «1箱» welded — the Chinese spelling of the mark.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4209",
+   "input": "Ruchka 20 karobka, 1 karobkada 24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ruchka",
+      "quantity": 480,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona = 20 × 24",
+   "why": "owner-2: «1 karobkada» was set aside as a pair, leaving «24 dona» the row's own count (24 for 480 under ✅).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4210",
+   "input": "Ruchka 20 karobka 1 karobkada 24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ruchka",
+      "quantity": 480,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona = 20 × 24",
+   "why": "owner-2, the same line without the comma.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4211",
+   "input": "Ручка 20 коробок, в каждой коробке 24 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ручка",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 = 20 × 24",
+   "why": "owner-2 / crit-3: «в» left out of EACH_LEAD stood alone and the line vanished.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4212",
+   "input": "Ручка 20 коробок в каждой коробке 24 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ручка",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 = 20 × 24",
+   "why": "owner-2, without the comma.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4213",
+   "input": "Кукла 20 мест, в каждой коробке 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-3 / crit-4: JN-8 (b)'s «в каждой коробке» form, pinned with its product.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4214",
+   "input": "Кукла 20 мест, в 1 коробке 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-3 / crit-4: JN-8 (b)'s «в 1 коробке» form (the «1 коробке» pair was set aside).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4215",
+   "input": "Кукла 20 мест, в каждом месте 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-3: «в каждом месте».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4216",
+   "input": "Кукла 20 мест, в коробке по 25 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-4: JN-8 (b)'s «в коробке по N» form, pinned.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4217",
+   "input": "Кукла 20 мест, 25 шт в каждой коробке",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 = 20 × 25",
+   "why": "crit-4: «N шт в каждой коробке», pinned.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4218",
+   "input": "Stul 20 мест, в каждой коробке 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg = 20 × 15",
+   "why": "crit-3: one carton's weight in the «в каждой коробке» form.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4220",
+   "input": "Kurtka 20 karobka 0.12 cbm/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg the line's; 20 × 0.12 = 2.4 m³",
+   "why": "doors-1: «cbm/ctn» — 0.12's own unit and tail — was a «CBM/CTN:» label heading the 300 kg: 20 × 300 = 6 000 kg.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4221",
+   "input": "Stul 20 ctns 0.12 cbm/ctn 300 kgs",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4222",
+   "input": "Stul 20 ctn, 0.12 cbm/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4223",
+   "input": "Kurtka 20 karobka 0.12 kub/karobka 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1, the Uzbek tail.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4224",
+   "input": "Kurtka 20 karobka 0.12 куб/кор 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg; 2.4 m³",
+   "why": "doors-1, the Russian tail.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4225",
+   "input": "Stol 10 ctn 1.2 cbm/ctn 150 kg 12 cbm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stol",
+      "weightKg": 150,
+      "volumeM3": 12,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "150 kg; 12 m³ (agrees with 10 × 1.2)",
+   "why": "doors-1: was 1 500 kg with the volume empty.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4226",
+   "input": "Stul 20 ctns, Weight per carton: 15 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "LABEL_LEAD's own example: «weight» with its per-carton tail was no label, and 15 kg the shipment's.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4227",
+   "input": "Stul 20 мест, вес брутто на 1 место 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "«на 1 место»'s «1» was a second carton count (20 ≠ 1 → no count, nothing computed).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4242",
+   "input": "Мешок 500 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Мешок",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "the product «Мешок», 500 pieces",
+   "why": "crit-1's guard: a package noun that IS the product keeps its reading.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4243",
+   "input": "Ткань 20 рулонов, 600 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ткань 20 рулонов",
+      "weightKg": 600
+     }
+    ],
+    "count": 1
+   },
+   "said": "600 kg; the roll count stays in the name",
+   "why": "crit-1's guard: a package count nothing multiplies stays where it stood.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4244",
+   "input": "Stul 20 мест, вес 1 коробки 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "«1 коробки» inside the mark was a second carton count (20 ≠ 1).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4245",
+   "input": "Кукла 20 мест, 25 шт в 1 коробке",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 25 = 500",
+   "why": "«1 коробке» inside the trailing mark is the mark's own.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4246",
+   "input": "Kurtka 300 dona, 20 karobka, karobka 60x40x50 sm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Kurtka», 20 × 60×40×50 sm = 2.4 m³",
+   "why": "owner-4: the noun opening its clause before the size is the package's (JS-2 «a package word next to the size»); was «Kurtka karobka», of null, the cube asked.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4247",
+   "input": "Куртка 300 шт, 20 коробок по 15 кг, коробка 60х40х50 см",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "owner-4, Russian.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4248",
+   "input": "Stul 40 pcs, 20 cartons, carton 60x40x50 cm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 40,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³",
+   "why": "owner-4, English.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4249",
+   "input": "Stul 40 dona, 20 ctns, ctn 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 40,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³",
+   "why": "owner-4, «ctn».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4250",
+   "input": "Куртка 300 дона, 20 қути, қути 60х40х50 см",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³",
+   "why": "owner-4, Uzbek Cyrillic: «қути» is a package of the reader now.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4251",
+   "input": "Куртка 300 дона, 20 та қути, 1 та қути 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg; 300 pieces",
+   "why": "owner-1's neighbour: «20 та қути» read as 20 pieces — «қути» was no carton word of WORDS (only «кути»).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4252",
+   "input": "Корзина 60x40x50 см, 20 коробок",
+   "expected": {
+    "rows": [
+     {
+      "name": "Корзина",
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "no cube — a size after the NAME is nobody's (JS-2), asked",
+   "why": "owner-4's guard: the clause anchor keeps the goods' own noun at of null.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4253",
+   "input": "Karobka 60x40x50 sm, 20 karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "Karobka",
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "no cube",
+   "why": "owner-4's guard: a product called «Karobka».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4254",
+   "input": "Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nSize: 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner: «ctn Size» across the joined block was read as a «carton size» label — 2.4 m³ «hisoblangan», nobody asked (JN-11: «Size» is owner unknown).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4255",
+   "input": "Наименование: стул складной\nКоличество: 200 шт\nМест: 20\nВес: 15 кг/кор\nРазмер: 60x40x50 см",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, Russian.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4256",
+   "input": "品名 折叠椅\n数量 200\n箱数 20\n毛重 15kg/箱\n尺寸 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, Chinese.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4257",
+   "input": "Nomi: stul\nSoni: 200 dona\nKarobka soni: 20\nVazni: 15 kg/karobka\nO‘lchami: 60x40x50 sm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, Uzbek: «karobka O‘lchami» matched the packageSize label itself.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4258",
+   "input": "folding chair 200 pcs 20 ctns 15 kg/ctn size 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, one line.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4259",
+   "input": "Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nCarton size: 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": 2.4,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³ — «Carton size» says the package",
+   "why": "the guard: a label that says the carton keeps its reading after the tail.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4263",
+   "input": "Kurtka 20 x 1 200 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": null,
+      "note": "sotuvchi: 20 x 1 200 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "no 200 pieces; the phrase on the note",
+   "why": "figures-pair-steals-thousands: was «Kurtka 20 x 1» × 200 dona.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4264",
+   "input": "Oyna 2x3 500 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Oyna 2x3",
+      "quantity": 500,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 dona of a 2×3 sheet — the size in the name",
+   "why": "RE-ANCHORED (check R1-pair-guard-eats-metre-sizes): a side glued to its joiner is no thousands head (JN-6's mask), so a glued unitless pair is a sheet and the count after it is read plainly (JS-24). Was pinned as the pair guard's trade-off (no count, the phrase on the note).",
+   "source": "ai-soraydi 1a review (Ta, re-anchored by the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4267",
+   "input": "Kurtka 20*24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 480,
+      "note": "sotuvchi: 20*24 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona = 20 × 24; the phrase on the note",
+   "why": "crit-2: JN-8 (c), binding — the bare multiplier gives the product; was no count, asked.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4268",
+   "input": "Kurtka 20x24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona",
+   "why": "crit-2, the «x» spelling.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4269",
+   "input": "Stanok 2 x 1500 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stanok",
+      "weightKg": 3000
+     }
+    ],
+    "count": 1
+   },
+   "said": "3 000 kg = 2 × 1 500",
+   "why": "crit-2 with figures-pair-steals-thousands: the unspaced B is one number, so the product stands; the spaced «2 x 1 500 kg» has two readings and lands none (c4260).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4270",
+   "input": "Krossovka 20 x 12 juft",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka",
+      "quantity": null,
+      "measureUnit": "juft",
+      "measureQty": 240
+     }
+    ],
+    "count": 1
+   },
+   "said": "240 juft in the measure",
+   "why": "crit-2: a pair unit's product goes to the row's measure (JN-10's unit rule).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4271",
+   "input": "Stul 20 x 15 kg, 10 x 5 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "two bare products of one unit write neither",
+   "why": "crit-2's guard.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4300",
+   "input": "Product: folding chair\nQty .  :  200 pcs\nCartons: 20\nG.W.) = 15 kg/ctn",
+   "expected": {
+    "rows": [
+     {
+      "name": "folding chair",
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good, 200 pcs, 20 × 15 kg = 300 kg — a dot, a bracket, spaces and «=» between a label and its figure",
+   "why": "load-1: the field labels were rewritten so each optional mark carries its own gap (no cubic backtracking); the language they read is the same.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4301",
+   "input": "Product: folding chair\nQty\t\t: 200 pcs\nCartons: 20\nG.W.\t\t: 15 kg/ctn",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "tabs before the colon read the figures as before (200 pcs, 20 × 15 = 300 kg)",
+   "why": "load-1's rewrite, the tab spelling. Not pinned: the name keeps «G.W» there — as at 50eb41d, a tab before a tail-marked label's colon (open, stated).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4304",
+   "input": "Krossovka 300 juft 800 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka 800 gr",
+      "weightKg": null,
+      "measureUnit": "juft",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 juft, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4305",
+   "input": "Gazlama 500 m2 180 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gazlama 180 gr",
+      "weightKg": null,
+      "measureUnit": "m2",
+      "measureQty": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 m2, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4306",
+   "input": "Kraska 5 litr 900 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kraska 900 gr",
+      "weightKg": null,
+      "measureUnit": "litr",
+      "measureQty": 5
+     }
+    ],
+    "count": 1
+   },
+   "said": "5 litr, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4307",
+   "input": "Gilam 300 m2 1500 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam 1500 gr",
+      "weightKg": null,
+      "measureUnit": "m2",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 m2, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4308",
+   "input": "Krossovka 300 пар 800 гр",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka 800 гр",
+      "weightKg": null,
+      "measureUnit": "juft",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 juft, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4309",
+   "input": "Ковер 300 м2 1500 гр",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ковер 1500 гр",
+      "weightKg": null,
+      "measureUnit": "m2",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 m2, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4310",
+   "input": "Shokolad 100 gr 500 blok",
+   "expected": {
+    "rows": [
+     {
+      "name": "Shokolad 100 gr 500 blok",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4311",
+   "input": "Ip 500 gr 100 g'altak",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ip 500 gr 100 g'altak",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4312",
+   "input": "Gazlama 50 rulon 180 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gazlama 50 rulon 180 gr",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4313",
+   "input": "Gazlama 5000 metr 180 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gazlama 5000 metr 180 gr",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4314",
+   "input": "Shokolad 500 blok 100 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Shokolad 500 blok 100 gr",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4315",
+   "input": "Krossovka 300 juft 800 gr 5 xil",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka 800 gr",
+      "weightKg": null,
+      "measureQty": 300,
+      "note": "sotuvchi: 5 xil"
+     }
+    ],
+    "count": 1
+   },
+   "said": "a count with a unit: the pair after it still goes on the note",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4353",
+   "input": "Stul 200 dona 20 pkgs 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Stul», 200 dona, 300 kg",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4354",
+   "input": "Stul 20 packages 15 kg/pkg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Stul», 20 × 15 kg = 300 kg",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4355",
+   "input": "Stul 20 pkgs, har biri 15 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Stul», 20 × 15 kg = 300 kg",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4356",
+   "input": "Gift packages 200 dona 30 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gift packages",
+      "quantity": 200,
+      "weightKg": 30
+     }
+    ],
+    "count": 1
+   },
+   "said": "a brand's word keeps its name",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4358",
+   "input": "品名: LED灯\n数量: 3000个\n箱数: 15箱\n单箱体积: 0.395\n单箱毛重: 33.8kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "LED灯",
+      "quantity": 3000,
+      "weightKg": 507,
+      "volumeM3": 5.925
+     }
+    ],
+    "count": 1
+   },
+   "said": "ONE good: 3000 dona, 15 × 33.8 = 507 kg, 15 × 0.395 = 5.925 m³; no «单箱» rows",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4359",
+   "input": "Product: LED lamp\nQty: 3000 pcs\nCartons: 15 ctns\nG.W./CTN: 33.8 kg\nCBM/CTN: 0.395",
+   "expected": {
+    "rows": [
+     {
+      "name": "LED lamp",
+      "quantity": 3000,
+      "weightKg": 507,
+      "volumeM3": 5.925
+     }
+    ],
+    "count": 1
+   },
+   "said": "ONE good, every figure kept",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4360",
+   "input": "Наименование: LED лампа\nКоличество: 3000 шт\nМест: 15\nВес 1 места: 33.8 кг\nОбъем 1 места: 0.395",
+   "expected": {
+    "rows": [
+     {
+      "name": "LED лампа",
+      "quantity": 3000,
+      "weightKg": 507,
+      "volumeM3": 5.925
+     }
+    ],
+    "count": 1
+   },
+   "said": "ONE good, the Russian per-place labels",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4362",
+   "input": "单箱毛重: 33.8kg",
+   "expected": {
+    "count": 0
+   },
+   "said": "no product «单箱»",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4364",
+   "input": "Nomi: stul\nSoni: 200 dona\nKarobka: 20\nOg‘irligi: 15 kg/karobka",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4365",
+   "input": "Наименование: стул\nКоличество: 200 шт\nКоличество мест: 20\nВес брутто 15 кг/место",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4366",
+   "input": "Наименование: стул\nКоличество: 200 шт\nКол-во мест: 20\nВес брутто 15 кг/место",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4367",
+   "input": "Наименование: стул\nКоличество: 200 шт\nКоробок: 20\nВес одного места: 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 200,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good: 200 pieces, 20 × 15 kg = 300 kg",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4368",
+   "input": "Nomi: stul\nKarobka: 20\nOg‘irligi: 15 kg/karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "stul",
+      "quantity": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "«stul», 20 × 15 = 300 kg; no «stul Karobka» × 20",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4370",
+   "input": "Kurtka 5 kubov 200 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka 5 kubov",
+      "quantity": 200,
+      "volumeM3": null,
+      "note": "sotuvchi: 5 kubov"
+     }
+    ],
+    "count": 1
+   },
+   "said": "in the name, unread, and named on the note",
+   "why": "crit-6 (completeness critic, reproduced at e8a7758): JN-22 — a counted cube («kubov», «кубов», «куба») inside a goods line that states pieces stays in the name AND is asked; 1a's row-level ask is the note (the grouped-number precedent): «sotuvchi: 5 kubov», the cube unread and asked where owed.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4371",
+   "input": "Набор 4 кубов 20 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Набор 4 кубов",
+      "quantity": 20,
+      "volumeM3": null,
+      "note": "sotuvchi: 4 кубов"
+     }
+    ],
+    "count": 1
+   },
+   "said": "the toy's cubes stay its name, and the note names them",
+   "why": "crit-6 (completeness critic, reproduced at e8a7758): JN-22 — a counted cube («kubov», «кубов», «куба») inside a goods line that states pieces stays in the name AND is asked; 1a's row-level ask is the note (the grouped-number precedent): «sotuvchi: 5 kubov», the cube unread and asked where owed.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4400",
+   "input": "Gilam 2x3 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam 2x3",
+      "quantity": 100,
+      "note": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "a 2×3 carpet, 100 pieces",
+   "why": "check R1-pair-guard-eats-metre-sizes: the pair guard took a metre-sized carpet for the head of «3 100» — no count, no size in the name, the count asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4401",
+   "input": "Kafel 2x2 500 m2",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kafel 2x2",
+      "measureUnit": "m2",
+      "measureQty": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 m² of a 2×2 tile",
+   "why": "check R1: a glued pair is a sheet.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4402",
+   "input": "Ковер 2х3 150 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ковер 2х3",
+      "quantity": 150
+     }
+    ],
+    "count": 1
+   },
+   "said": "150 pieces, the size in the name",
+   "why": "check R1: the Cyrillic joiner glued, as the Latin one.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4403",
+   "input": "Gilam 2*3 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam 2*3",
+      "quantity": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 pieces, the size in the name",
+   "why": "check R1: the asterisk glued, as «x».",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4404",
+   "input": "Shurup 4x40 500 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Shurup 4x40",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 screws of 4×40",
+   "why": "check R1: a glued pair is a size, whatever its sides.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4405",
+   "input": "Matras 1.6x2 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Matras 1.6x2",
+      "quantity": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 mattresses of 1.6×2 — the row never vanishes",
+   "why": "check R1: a decimal side is a length — never a count to multiply nor a thousands head; the guard dropped the whole row (T8).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4406",
+   "input": "Matras 2x1.6 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Matras 2x1.6",
+      "quantity": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 mattresses",
+   "why": "check R1: a decimal side, the other way round.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4407",
+   "input": "Ковер 1,5х2 300 шт",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 carpets — the row kept",
+   "why": "check R1: a decimal comma side.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4408",
+   "input": "Samorez 4,2x16 100 kg",
+   "expected": {
+    "rows": [
+     {
+      "weightKg": 100
+     }
+    ],
+    "count": 1
+   },
+   "said": "100 kg of 4.2×16 screws — the row kept",
+   "why": "check R1: a decimal side; only the 100 kg total survived.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4409",
+   "input": "Gilam 2 x 3 100 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam",
+      "quantity": null,
+      "note": "sotuvchi: 2 x 3 100 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "spaced, the doubt stands: a 2×3 carpet of 100 or 2 × 3 100 — the phrase on the note, the count asked",
+   "why": "check R1, stated: a SPACED joiner of whole numbers is the shape of «Stanok 2 x 1 500 kg» (figures-pair-steals-thousands, c4260) — nothing tells the two apart, so neither lands (the row kernel asks both readings).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4411",
+   "input": "Stul 20 karobka 0.12 hajm/karobka 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg the line's own, 20 × 0.12 = 2.4 m³ — never 20 × 300 = 6 000 kg, never 0.12 pieces",
+   "why": "check R3a (blocker): crit-5 narrowed markOf's doors-1 guard to a label that IS a unit word, and «hajm» is a cube label and no unit word — it headed the 300 kg again.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4412",
+   "input": "Stul 20 ctns 0.12 meas/ctn 300 kgs",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 cartons, never 20 pieces; 300 kg; 2.4 m³",
+   "why": "check R3b: «ctns» after 20 was taken for the label of the 0.12, so 0.12 became the cartons and 20 a piece count; «meas/ctn» headed the kilos.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4413",
+   "input": "Stul 20 ctns 0.12 vol/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "check R3b: «vol».",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4414",
+   "input": "Stul 20 ctns 0.12 volume/ctn 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "check R3b: «volume».",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4415",
+   "input": "Стул 20 коробок 0.12 объем/кор 300 кг",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 кг, 2.4 м³",
+   "why": "check R3, the Russian neighbour.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4416",
+   "input": "椅子 20箱 0.12体积/箱 300kg",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg, 2.4 m³",
+   "why": "check R3, the Chinese neighbour.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4439",
+   "input": "Kurtka 300 dona. Karobka 60x40x50 sm, 20 ta",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4440",
+   "input": "Kurtka 300 dona, karobka 60x40x50 sm, 20 ta",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4441",
+   "input": "Куртка 300 шт. Коробка 60х40х50 см, 20 та",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4442",
+   "input": "Kurtka 300 dona. Karobka 60x40x50 sm, 20 karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4443",
+   "input": "Stul 20 ctns, G.W./CTN 15 kg, CBM/CTN 0.12",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 kg = 300 kg*, 20 × 0.12 = 2.4 m³*, no count",
+   "why": "check owner-3 (one-line form): «CBM/CTN 0.12» made 0.12 the row's pieces and «CBM/CTN» a word of its name; a bare figure under one package's own label opening its clause is that label's measure, as on a block's line.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4444",
+   "input": "Стул 20 мест, вес 1 места 15 кг, объем 1 места 0.12",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 kg = 300 kg*, 20 × 0.12 = 2.4 m³*, no count",
+   "why": "check owner-3 (one-line form): «CBM/CTN 0.12» made 0.12 the row's pieces and «CBM/CTN» a word of its name; a bare figure under one package's own label opening its clause is that label's measure, as on a block's line.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4445",
+   "input": "椅子 20箱, 单箱毛重 15kg, 单箱体积 0.12",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 kg = 300 kg*, 20 × 0.12 = 2.4 m³*, no count",
+   "why": "check owner-3 (one-line form): «CBM/CTN 0.12» made 0.12 the row's pieces and «CBM/CTN» a word of its name; a bare figure under one package's own label opening its clause is that label's measure, as on a block's line.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4446",
+   "input": "Ручка 20 коробок, в каждой по 24 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ручка",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 = 20 × 24",
+   "why": "check crit-3 / owner-2 neighbours: the line vanished (no row, no note) — «в каждой по», «karobkada», «ichida» were words the figure test did not know.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4447",
+   "input": "Ruchka 20 karobka, karobkada 24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ruchka",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 = 20 × 24",
+   "why": "check crit-3 / owner-2 neighbours: the line vanished (no row, no note) — «в каждой по», «karobkada», «ichida» were words the figure test did not know.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4448",
+   "input": "Ruchka 20 karobka ichida 24 dona dan",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ruchka",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 = 20 × 24",
+   "why": "check crit-3 / owner-2 neighbours: the line vanished (no row, no note) — «в каждой по», «karobkada», «ichida» were words the figure test did not know.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4449",
+   "input": "Divan 5 dona, упаковка 200x90x80 см",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 5
+     }
+    ],
+    "count": 1
+   },
+   "said": "a row of 5, the package's size kept",
+   "why": "check crit-1's neighbour: a package noun before the size was an unknown word of the tail and the whole row vanished (T8).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4450",
+   "input": "Divan 5 dona, upakovka 200x90x80 sm",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 5
+     }
+    ],
+    "count": 1
+   },
+   "said": "a row of 5, the package's size kept",
+   "why": "check crit-1's neighbour: a package noun before the size was an unknown word of the tail and the whole row vanished (T8).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -56136,6 +57947,203 @@
    "why": "DIM-3: «1: 60×40×50 15 kg» wrote 50 dona.",
    "source": "ai-soraydi typed-A T6",
    "weight": "blocker"
+  },
+  {
+   "id": "c4265",
+   "input": "Kafel 600x600 500 dona",
+   "expected": {
+    "name": "Kafel 600x600",
+    "quantity": 500,
+    "problemCount": 0
+   },
+   "said": "500 dona — a carton-sized sheet stays a sheet",
+   "why": "the guard of the pair fix: sides ≥ 5.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4266",
+   "input": "Kafel 60x60 1 200 m2",
+   "expected": {
+    "measureUnit": "m2",
+    "measureQty": 1200
+   },
+   "said": "1 200 m²",
+   "why": "the guard of the pair fix (the refuter's counter-case).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4345",
+   "input": "Kafel 6907 21 00 00 120",
+   "expected": {
+    "quantity": 120,
+    "tnvedCode": null,
+    "problemCount": 0
+   },
+   "said": "120, no code, no question",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4346",
+   "input": "Kurtka 6201 93 00 00 300",
+   "expected": {
+    "quantity": 300,
+    "tnvedCode": null,
+    "problemCount": 0
+   },
+   "said": "300, no code, no question",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4347",
+   "input": "Moy 2710 19 820 0 200",
+   "expected": {
+    "quantity": 200,
+    "problemCount": 0
+   },
+   "said": "200, no question (c1548's line)",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4348",
+   "input": "Kurtka 0 300 dona",
+   "expected": {
+    "quantity": 300,
+    "problemCount": 0
+   },
+   "said": "300 pieces",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4349",
+   "input": "Kurtka 007 300 dona",
+   "expected": {
+    "quantity": null,
+    "twoReadings": [
+     {
+      "text": "007 300",
+      "short": 300,
+      "long": 7300
+     }
+    ]
+   },
+   "said": "still asked: 300 or 7 300",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4351",
+   "input": "Monitor 27 500 kg",
+   "expected": {
+    "quantity": null,
+    "weightKg": null,
+    "twoReadings": [
+     {
+      "text": "27 500",
+      "short": 500,
+      "long": 27500
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "asked 500 or 27 500 — no count",
+   "why": "figures-chip-invents-count: the kernel asks the two readings of the welded number; the card form's SHORT answer is a row (send-rows.ts groupedShortRow) that keeps the first group in the name and writes no count.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4352",
+   "input": "Redmi 13 200 dona",
+   "expected": {
+    "quantity": null,
+    "twoReadings": [
+     {
+      "text": "13 200",
+      "short": 200,
+      "long": 13200
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "asked 200 or 13 200",
+   "why": "figures-chip-invents-count: the kernel asks the two readings of the welded number; the card form's SHORT answer is a row (send-rows.ts groupedShortRow) that keeps the first group in the name and writes no count.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4434",
+   "input": "Stul 20 x 15 kg",
+   "expected": {
+    "name": "Stul",
+    "weightKg": 300,
+    "quantity": null,
+    "cartons": null,
+    "problemCount": 0
+   },
+   "said": "300 kg = 20 × 15 — never the 15 kg of one",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4435",
+   "input": "Kurtka 20 x 24 dona",
+   "expected": {
+    "name": "Kurtka",
+    "quantity": 480,
+    "problemCount": 0
+   },
+   "said": "480 = 20 × 24 — never 24 pieces",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4436",
+   "input": "Kurtka 20*24 dona",
+   "expected": {
+    "name": "Kurtka",
+    "quantity": 480
+   },
+   "said": "480; the name never «Kurtka *»",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4437",
+   "input": "Стул 20 х 15 кг",
+   "expected": {
+    "name": "Стул",
+    "weightKg": 300
+   },
+   "said": "300 кг",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count. The Cyrillic joiner.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4438",
+   "input": "Krossovka 20 x 12 juft",
+   "expected": {
+    "measureUnit": "juft",
+    "measureQty": 240,
+    "quantity": null
+   },
+   "said": "240 juft",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count. A pair unit goes to the measure.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
   }
  ],
  "parseManualFactsCases": [
@@ -58635,7 +60643,7 @@
       {
        "name": "Stul",
        "quantity": null,
-       "weightKg": null
+       "weightKg": 300
       }
      ],
      "count": 1
@@ -58647,8 +60655,8 @@
      }
     ]
    },
-   "said": "no total; one row «Stul» with no weight (asked) — 15 kg is one package’s, the bare 20 counts nothing; the phrase is kept on the row’s note",
-   "why": "JN-8 (c): a bare «A x B unit» sets no carton count without a carton word — A may be pieces. Was the row’s and the shipment’s 15 kg.",
+   "said": "no total; one row «Stul», 20 × 15 = 300 kg — the bare 20 counts no carton; the phrase is kept on the row’s note",
+   "why": "JN-8 (c), binding: a bare «A x B unit» GIVES THE PRODUCT and sets no carton count without a carton word. MOVED by crit-2 (review of 1a as built): the row was pinned at «no weight» (typed-spec-4's package-internal narrowing, never a lead ruling), which asked the seller for a weight he typed. Was the row’s and the shipment’s 15 kg at base.",
    "source": "ai-soraydi typed-A T4",
    "weight": "defect"
   },
@@ -59064,6 +61072,1215 @@
    "said": "asked — 200 kg or 1 200 kg",
    "why": "Guard for typed-break-4: after a product's NAME word a grouped number is still asked with both readings (JN-6); only a place, a greeting, the cargo or an approximator opens it.",
    "source": "ai-soraydi typed-A review",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4200",
+   "input": "Kurtka 300 dona, 300 kg, 20 ta karobka, 1 ta karobka 0.12 kub\njami 320 kg",
+   "expected": {
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 0.12 m³ total; the row 20 × 0.12 = 2.4 m³",
+   "why": "owner-1: «1 ta karobka» (the Uzbek counter) is the per-package mark T4 names as «1 karobka»; was the shipment's 0.12 m³ under ✅.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4201",
+   "input": "Kurtka 300 dona, 20 karobka, 1 karobka = 15 kg, karobka o‘lchami 60x40x50 sm",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 20 × 15 = 300 kg, 20 × 60×40×50 sm = 2.4 m³",
+   "why": "owner-1: «=» between the mark and its figure (MARK_GAP); was the request's weight_kg 15.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4202",
+   "input": "Куртка 300 шт, 20 коробок, 1 коробка = 15 кг, размер коробки 60х40х50 см",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 300 kg and 2.4 m³ on the row",
+   "why": "owner-1: the Russian «1 коробка = 15 кг».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4203",
+   "input": "Kurtka 300 dona, 20 ctns, 1ctn=15kg",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 20 × 15 = 300 kg",
+   "why": "owner-1: the «1» welded to its noun, «=» and the figure welded too.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4204",
+   "input": "Kurtka 300 dona, 20 karobka, 1 ta karobka 15 kg",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 300,
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 15 kg total; 300 kg on the row",
+   "why": "owner-1: «1 ta karobka 15 kg».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4205",
+   "input": "Stul 1 ta karobka 15 kg",
+   "expected": {
+    "weightKg": 15
+   },
+   "said": "15 kg — one carton alone is the line's own count",
+   "why": "owner-1's guard (ONE_LEAD group 1): with no other carton count the «1 ta karobka» is the count, as «1 karobka» always was.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4219",
+   "input": "Stul 20 мест, в каждой коробке 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    },
+    "missing": {
+     "section": "rastamojka",
+     "excludes": [
+      "goods"
+     ]
+    }
+   },
+   "said": "no total; the row 300 kg; the goods are no longer asked",
+   "why": "crit-3: missingFields named «goods» for a line the seller typed whole.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4228",
+   "input": "Kurtka 20 karobka 0.12 cbm/ctn 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "the shipment's weight 300 kg (the one line's), no 0.12 total",
+   "why": "doors-1: parseManualFacts had dropped the 300 kg as one carton's.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4229",
+   "input": "Stul 20 ctns, Weight per carton: 15 kg",
+   "expected": {
+    "weightKg": null
+   },
+   "said": "no 15 kg total",
+   "why": "the per-carton weight is no shipment total (T4).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4230",
+   "input": "Цемент 20 мешков по 50 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Цемент",
+       "weightKg": 1000
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 1000 kg",
+   "why": "crit-1: one sack's 50 kg was the shipment's brutto (typed wins over the model).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4231",
+   "input": "Стул 20 ящиков по 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стул",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 300 kg",
+   "why": "crit-1: a crate is a package.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4232",
+   "input": "Стул 20 упаковок по 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стул",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 300 kg",
+   "why": "crit-1: «упаковок» — the stem «упаковк» never matched its genitive plural.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4233",
+   "input": "Ткань 20 рулонов по 30 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ткань",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1: a roll is a package.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4234",
+   "input": "Стул 20 тюков по 30 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стул",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1: a bale is a package.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4235",
+   "input": "Mato 20 rulon 30 kg dan",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Mato",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1: the Uzbek «rulon» with «dan».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4236",
+   "input": "Olma 20 yashik 30 kg dan",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Olma",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1 neighbour: the Uzbek «yashik» (crate).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4237",
+   "input": "Sement 20 bags, 50 kg/bag",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Sement",
+       "weightKg": 1000
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 1000 kg",
+   "why": "crit-1: «bags» counted beside the «/bag» tail the tail list already knew.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4238",
+   "input": "Куртка 300 дона, 20 қути, 1 қути 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 300 kg",
+   "why": "crit-1 / owner-1 neighbour: the Cyrillic Uzbek «қути» no WORDS list holds.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4239",
+   "input": "Ткань 20 штабелей по 30 кг",
+   "expected": {
+    "weightKg": null
+   },
+   "said": "no 30 kg total",
+   "why": "crit-1: «по» after a count of something no list names is still «each» — nobody's, on the note.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4240",
+   "input": "Mato 20 tugun 30 kg dan",
+   "expected": {
+    "weightKg": null
+   },
+   "said": "no 30 kg total",
+   "why": "crit-1: «dan» right after such a count — nobody's, on the note.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4241",
+   "input": "Stul 20 pkgs, 15 kg each",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; 20 × 15 = 300 kg",
+   "why": "crit-1 (seams-7): «pkgs» counts packages.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4260",
+   "input": "Stanok 2 x 1 500 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 500/200/400 — neither a total nor the row's weight",
+   "why": "figures-pair-steals-thousands: parseSize's PAIR took «A x 1» as a sheet and «500 kg» was read plainly — a figure neither reading gives (base: 1500).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4261",
+   "input": "Generator 3 x 1 200 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 500/200/400 — neither a total nor the row's weight",
+   "why": "figures-pair-steals-thousands: parseSize's PAIR took «A x 1» as a sheet and «500 kg» was read plainly — a figure neither reading gives (base: 1500).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4262",
+   "input": "Mebel 10 x 2 400 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no 500/200/400 — neither a total nor the row's weight",
+   "why": "figures-pair-steals-thousands: parseSize's PAIR took «A x 1» as a sheet and «500 kg» was read plainly — a figure neither reading gives (base: 1500).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4272",
+   "input": "Kurtka 20*24 dona",
+   "expected": {
+    "landing": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 480
+      }
+     ],
+     "count": 1
+    },
+    "landingNoteIncludes": [
+     {
+      "index": 0,
+      "text": "sotuvchi: 20*24 dona"
+     }
+    ]
+   },
+   "said": "lands 480 pieces with the phrase on the note",
+   "why": "crit-2: the landed item carried no count.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4302",
+   "input": "G.W. (kg): 507",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "a label-first total with its unit in brackets: 507 kg",
+   "why": "load-1: the label-first totals' unit-written gaps were rewritten the same way.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4303",
+   "input": "CBM , m3 : 5.92",
+   "expected": {
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "a comma before the unit and spaces before the colon: 5.92 m³",
+   "why": "load-1's rewrite of the label-first cube.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4316",
+   "input": "Krossovka 300 juft 800 gr",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "no shipment weight from one pair's or one block's grams",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4317",
+   "input": "Shokolad 100 gr 500 blok",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "no shipment weight from one pair's or one block's grams",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4318",
+   "input": "Assalomu alaykum, 1 cbm necha pul bo'ladi?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4319",
+   "input": "1 cbm = 150$",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4320",
+   "input": "Narxi 1 cbm uchun 150 dollar",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4321",
+   "input": "price 150 usd per 1 cbm",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4322",
+   "input": "1 куба 150$",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4323",
+   "input": "1 kub narxi qancha?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4324",
+   "input": "сколько стоит 1 куб?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4325",
+   "input": "1立方多少钱?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4326",
+   "input": "1 kgs = 3 usd",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "no weight: a rate's base",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4327",
+   "input": "10 cbm dan ko'p bo'lsa chegirma",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a discount's condition",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4328",
+   "input": "от 10 кубов скидка",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a discount's condition",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4329",
+   "input": "Stul 200 dona 300 kg\n1 cbm narxi qancha?",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "300 kg, the cube asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4330",
+   "input": "Kurtka 500 dona 1200 kg 2500$",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "a price line keeps its kilos",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4331",
+   "input": "Jami 5 cbm, 150$/cbm",
+   "expected": {
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "5 m³ beside its rate",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4332",
+   "input": "12 kub narxi qancha?",
+   "expected": {
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "a request for twelve cubes names its cube",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4333",
+   "input": "Yuk 12 kub, 3000 kg, narxi qancha?",
+   "expected": {
+    "weightKg": 3000,
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "the cargo's figures beside its price question",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4334",
+   "input": "G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4335",
+   "input": "TOTAL: 60 CTNS G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4336",
+   "input": "TOTAL QTY 980 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4337",
+   "input": "TOTAL G.W. 507 CBM 5.92",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4338",
+   "input": "gw 710 cbm 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4339",
+   "input": "Брутто 710 куб 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube of the weight's figure; both asked",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4340",
+   "input": "brutto kg 710 kub 3.8",
+   "expected": {
+    "weightKg": 710,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "710 kg; no cube of 710",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4341",
+   "input": "Brutto: 710 CBM 3.8",
+   "expected": {
+    "weightKg": 710,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "710 kg, not counted again as the cube",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4342",
+   "input": "CBM 3.8 KGS 710",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no weight of the cube's figure",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4343",
+   "input": "5 kub 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "a unit after its own figure is no label",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4344",
+   "input": "Qty: 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "a count's label alone keeps a weight",
+   "why": "seams-1: a figure right after ANOTHER measure's label is that label's (a weight's figure no cube, a cube's no weight), and after a count's label it is no measure when its unit word opens the next field — «G.W. 710 CBM 3.8» was a cube of 710 m³ (intake-manual.ts otherField). JN-21 reads no label-first figure without its «:»: both are asked.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4350",
+   "input": "Kurtka 0 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "300 kg, nothing asked",
+   "why": "doors-4: a grouped number whose first group is zeros reads ONE way (units.ts withoutFirstGroup) — no «120 mi yoki 120 mi?», the count lands on the card form and the paste.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4357",
+   "input": "TOTAL: 20 PKGS, G.W. 300 KGS, 5.9 CBM",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": 5.9,
+    "ambiguous": [],
+    "goods": {
+     "count": 0
+    }
+   },
+   "said": "a totals line, no row",
+   "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4361",
+   "input": "品名: LED灯\n数量: 3000个\n箱数: 15箱\n单箱体积: 0.395\n单箱毛重: 33.8kg",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "count": 1
+    }
+   },
+   "said": "one carton's figures are no shipment totals",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4363",
+   "input": "单箱体积: 0.395",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "count": 0
+    }
+   },
+   "said": "one carton's cube is no shipment's, and no row",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4369",
+   "input": "стул Мест: 20 Вес одного места: 15 кг",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "one place's 15 kg is no shipment total",
+   "why": "crit-5 (completeness critic, reproduced at 5e97abf): §2.4's cartons labels in the sellers' languages — a unit word as a block line's label («Karobka: 20»), «Количество мест» / «Кол-во мест» before the count's «количество», «Вес одного места» as one place's weight — are the block's packing; nothing vanishes.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4410",
+   "input": "Gilam 2x3 100 dona 500 kg",
+   "expected": {
+    "weightKg": 500,
+    "goods": {
+     "rows": [
+      {
+       "name": "Gilam 2x3",
+       "quantity": 100,
+       "weightKg": 500
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "100 carpets, 500 kg",
+   "why": "check R1: the count beside the size kept.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4417",
+   "input": "Stul 20 ctns 0.12 meas/ctn 300 kgs",
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "quantity": null,
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "the AI door with the model silent: 300 kg, 2.4 m³ — the 20 cartons are never «20 dona»",
+   "why": "check R3b: «ℹ️ 1. Stul — 20 dona», the 300 kg gone and the brutto asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4418",
+   "input": "N.W. 650 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4419",
+   "input": "QTY 980 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4420",
+   "input": "CTNS 60 GW 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4421",
+   "input": "PCS 980 CTNS 60 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4422",
+   "input": "N/W 650 G/W 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4423",
+   "input": "TOTAL: 60 CTNS N.W. 650 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4424",
+   "input": "Мест 60 брутто 710 куб 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4425",
+   "input": "N.W. 650 G.W. 710 CBM 3.8\nStul 200 dona",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4426",
+   "input": "Yukim 1 kub, narxi qancha?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": null
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4427",
+   "input": "1 kub yuk bor, qancha bo'ladi?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": null
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4428",
+   "input": "Mening yukim 1 kub 150 kg, narxi qancha?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 150
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4429",
+   "input": "Kurtka 300 dona, 1 kub. Narx qancha bo'ladi",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": null
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4430",
+   "input": "У меня груз 1 куб 200 кг, сколько стоит?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 200
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4431",
+   "input": "I have 1 cbm, 150 kg, how much to Tashkent?",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 150
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4432",
+   "input": "Stanok 1 dona 1 kub 1200 kg 5000$",
+   "expected": {
+    "volumeM3": 1,
+    "weightKg": 1200
+   },
+   "said": "the seller's own 1 m³ stands — a price question about his cargo is no rate",
+   "why": "check R2: rateOrCondition read the figure 1 as a rate's base whenever a price word or a currency stood anywhere on its line; now only a price in the figure's own clause, and not when that clause states the cargo.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4433",
+   "input": "1 kub narxi qancha, yukim 300 kg",
+   "expected": {
+    "volumeM3": null,
+    "weightKg": 300
+   },
+   "said": "«1 kub narxi qancha» is a rate's base; the cargo is the 300 kg",
+   "why": "check R2's other side: the price is in the figure's own clause, the cargo stated in another.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4451",
+   "input": "Kurtka 300 dona, 300 kg, 20 ta karobka, 1 ta karobka 0.12 kub\njami 320 kg",
+   "expected": {
+    "weightKg": 320
+   },
+   "said": "the brutto is 320 kg",
+   "why": "check owner-1 (a): beside one goods line, «jami 320 kg» and the line's own 300 kg cancelled each other and the brutto was asked; a line that speaks of the whole shipment says that field.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4452",
+   "input": "Kurtka 300 dona, 300 kg\njami 320 kg",
+   "expected": {
+    "weightKg": 320
+   },
+   "said": "the brutto is 320 kg",
+   "why": "check owner-1 (a): beside one goods line, «jami 320 kg» and the line's own 300 kg cancelled each other and the brutto was asked; a line that speaks of the whole shipment says that field.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4453",
+   "input": "Kurtka 300 dona, 300 kg, 2 kub\njami 320 kg",
+   "expected": {
+    "weightKg": 320,
+    "volumeM3": 2
+   },
+   "said": "320 kg; the line's 2 m³ still the cube",
+   "why": "check owner-1 (a): beside one goods line, «jami 320 kg» and the line's own 300 kg cancelled each other and the brutto was asked; a line that speaks of the whole shipment says that field. Per field.",
+   "source": "ai-soraydi 1a check (T)",
    "weight": "pinned"
   }
  ],

@@ -20,7 +20,7 @@
  * guessed (his B4 a — `readNumberCell`).
  */
 import { addressWord } from './address-words';
-import { emptyPacking, parseSize, wholeCartons, type BareSize, type Packing, type PerCartonUnit, type SizeOwner } from './carton-math';
+import { emptyPacking, parseSize, timesProduct, wholeCartons, type BareSize, type Packing, type PerCartonUnit, type SizeOwner } from './carton-math';
 import { readNumberCell } from './number-cell';
 import type { MeasureUnit } from './pricing';
 
@@ -59,6 +59,11 @@ const WORDS: Record<SellerUnit, readonly string[]> = {
   karobka: [
     'karobka', 'karopka', 'korobka', 'коробка', 'коробки', 'коробок', 'кор', 'qop', 'ctn', 'ctns',
     'carton', 'cartons', 'box', 'boxes', 'кути', 'quti', '箱', 'место', 'мест', 'места', 'joy',
+    // The Uzbek Cyrillic spellings of «quti», «qop», «joy» (review owner-1/owner-4's neighbours).
+    'қути', 'қоп', 'жой',
+    // A forwarder's packages — the word of a «PKGS» column, NOT_GOODS_WORDS' too (T3): «Stul 20 pkgs»
+    // kept «20 pkgs» in the NAME while «20 ctns» was its carton count (review seams-7).
+    'pkg', 'pkgs', 'package', 'packages',
   ],
 };
 
@@ -274,7 +279,13 @@ export const FIELD_LABELS = {
     'название', 'nomi', 'tovar', 'mahsulot',
   ],
   count: ['数量', 'qty', 'quantity', 'кол-во', 'количество', 'soni', 'miqdori'],
-  cartons: ['箱数', 'ctns', 'cartons', 'packages', 'pkgs', 'мест', 'коробок', 'karobka soni', 'joy soni'],
+  // The standard Russian packing-list labels stand before «количество» (longest first — review crit-5:
+  // «Количество мест: 20» was eaten by the count label, the cartons lost); «件数», §2.4's, is the
+  // count of packages as a LABEL, never «件» as a unit.
+  cartons: [
+    '箱数', '件数', 'ctns', 'cartons', 'packages', 'pkgs', 'мест', 'коробок', 'количество мест', 'кол-во мест',
+    'количество коробок', 'кол-во коробок', 'karobka soni', 'joy soni',
+  ],
   // WHOSE size a label names decides the arithmetic (review JN-11, PR-12):
   // only a PACKAGE's size is multiplied by the packages. A label that says
   // «carton» is the package's; a bare «size» says nobody's — the size is kept
@@ -300,7 +311,7 @@ export const PER_PACKAGE_TAIL: readonly string[] = [
   // «/件» is NOT here (review JN-8): «件» is a piece as often as a package,
   // and a tail that may be either marks nothing.
   '/箱', '/ctn', '/ctns', '/carton', '/box', '/кор', '/коробка', '/коробку', '/место', '/karobka',
-  '/quti', '/joy',
+  '/quti', '/joy', '/pkg', '/pkgs', '/package',
   // A sack is a package of its own trade — cement, flour, granules: «50 kg/qop» (T4).
   '/qop', '/bag', '/мешок',
 ];
@@ -617,6 +628,8 @@ export interface GoodsLine {
   aside?: string[];
   /** Every per-one figure of the line as written, placed or not — an ANSWER holding one is refused. */
   perOne?: string[];
+  /** The columns the line wrote as a bare «A x B» product — the arithmetic, «20 × 15 kg» (`timesFigures`). */
+  products?: Partial<Record<'quantity' | 'weightKg' | 'volumeM3' | 'measureQty', { value: number; how: string }>>;
 }
 
 export type GoodsLineProblem =
@@ -694,13 +707,19 @@ const GROUPED_NUMBER = new RegExp(String.raw`^\d{1,3}${GROUP_GAP}(\d{3}.*)$`, 'u
 /**
  * The second reading of a space-grouped number — what is left when its first
  * group is something else's: «20 300» → 300, «1 200 000,5» → 200000.5. Null
- * for a number written in one piece (it has one reading).
+ * for a number written in one piece (it has one reading) — and for one whose
+ * first group is zeros: «00 120» is 120 either way, and two equal readings are
+ * no choice (review doors-4: the spaced code «6907 21 00 00» before a bare
+ * count drew «120 mi yoki 120 mi?», and the VED's paste landed no count).
+ * «007 300» still has two (300, 7300).
  */
 export function withoutFirstGroup(number: string): number | null {
   const tail = GROUPED_NUMBER.exec(number.trim())?.[1];
   if (tail === undefined) return null;
   const read = readAmountText(tail);
-  return read.state === 'ok' ? read.value : null;
+  if (read.state !== 'ok') return null;
+  const whole = readAmountText(number.trim());
+  return whole.state === 'ok' && whole.value === read.value ? null : read.value;
 }
 
 /**
@@ -894,6 +913,14 @@ const AMOUNT = new RegExp(
 /** A counter word directly before a unit: «120 ta juft», «40 шт пар» — the
  * second word is the unit. */
 const COUNTER_THEN_UNIT = /^\s+([\p{L}²³][\p{L}\d²³.]*)/u;
+/**
+ * A counter written with a stop — «300 dona. Karobka 60x40x50 sm» — ends its
+ * sentence: the next word opens another, never this figure's unit (check
+ * owner-4: «300 dona. Karobka» was 300 CARTONS, and the size multiplied by
+ * them a computed 36 m³). An abbreviation's dot («шт.») before a unit is the
+ * same stop to this rule — «40 шт. пар» is no way a seller writes pairs.
+ */
+const endsSentence = (word: string): boolean => /\.$/u.test(word);
 
 /** One amount of a line and the word that names it, where they stand. */
 export interface AmountSpan {
@@ -919,7 +946,7 @@ export function amountsIn(line: string): AmountSpan[] {
   for (const hit of blankNonAmounts(line).matchAll(AMOUNT)) {
     let word = hit[2] ?? null;
     let end = hit.index + hit[0].length;
-    if (word && unitOf(word) === 'dona') {
+    if (word && unitOf(word) === 'dona' && !endsSentence(word)) {
       const next = COUNTER_THEN_UNIT.exec(line.slice(end));
       const nextUnit = next ? unitOf(next[1]!) : null;
       if (next && nextUnit !== null && nextUnit !== 'dona') {
@@ -971,14 +998,42 @@ const PACK_WORD = /^(?:pachk|пачк|пачек|paket|пакет|упаковк
 /** Is `word` a pack's count word (`PACK_WORD`) — for the typed readers that judge a gram beside it. */
 export const packWord = (word: string | null | undefined): boolean => PACK_WORD.test(word ?? '');
 
-/** A package's noun in its cases — «karobka», «karobkada», «karobkasi», «коробке», «мест», «ctn», «箱». */
-const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаковк|ctn|carton|box|кор|箱)\p{L}*`;
+/** The units a count of the goods is written in that are no pieces: pairs, square metres, litres, cubic centimetres. */
+const MEASURE_UNITS: ReadonlySet<SellerUnit> = new Set(['juft', 'm2', 'litr', 'sm3']);
+
+/** Is `word` a UNIT that counts the goods — pieces, packages, a measure (`MEASURE_UNITS`) — never a kilo or a cube? */
+export function countUnitWord(word: string | null | undefined): boolean {
+  const unit = unitOf(word);
+  return unit === 'dona' || unit === 'karobka' || (unit !== null && MEASURE_UNITS.has(unit));
+}
+
+/**
+ * Does the word after a number say the number COUNTS the goods — a counting
+ * unit (`countUnitWord`), a pack word (`PACK_WORD`), or a word no list here
+ * knows («blok», «rulon», «g'altak», «metr»)? Beside such a count a gram is
+ * what one of them weighs. Never a kilo, a cube or another scaled weight.
+ */
+function countsGoods(word: string | undefined): boolean {
+  if (!word) return false;
+  return countUnitWord(word) || PACK_WORD.test(word) || (unitOf(word) === null && scaledKg(word) === null);
+}
+
+/**
+ * A package's noun in its cases — «karobka», «karobkada», «karobkasi»,
+ * «коробке», «мест», «ctn», «箱» — and the packages of the other trades: a
+ * sack («мешок», «мешков», «meshok», «bag», «sack»), a crate («ящик», «yashik»), a roll
+ * («рулон», «rulon»), a bale («тюк»), «pkgs» (review crit-1: «Цемент 20
+ * мешков по 50 кг» was the shipment's 50 kg, one sack's weight as the
+ * brutto). The per-package reader's own list: a package COUNTED here is
+ * never a unit of `WORDS` (a sheet's «мешок» cell, a row's cartons column).
+ */
+export const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|upakov(?:k|ok)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package)\p{L}*`;
 /** A piece's noun — «dona», «donasi», «шт», «штука», «pcs», «piece». */
 const PIECE_NOUN = String.raw`(?:dona|дона)\p{L}*|шт\p{L}*|pcs?|pieces?|units?|единиц\p{L}*`;
 const COUNT_NOUN = `${PACKAGE_NOUN}|${PIECE_NOUN}`;
 const PACKAGE_NOUN_WORD = new RegExp(`^(?:${PACKAGE_NOUN})$`, 'iu');
 /** A package noun's stem anywhere in a lower-cased window — what `ONE_LEAD` needs before it is run. */
-const PACKAGE_STEM = /karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаковк|ctn|carton|box|кор|箱/u;
+const PACKAGE_STEM = /karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|upakov(?:k|ok)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package/u;
 const PIECE_NOUN_WORD = new RegExp(`^(?:${PIECE_NOUN})$`, 'iu');
 
 /** Whose one a noun names — null: it names neither. */
@@ -990,16 +1045,18 @@ function nounOwner(word: string | undefined): PerOneOwner | null {
 
 /** A measure's word after the noun — «har bir karobka og‘irligi 15 kg», «каждое место вес 15 кг». */
 const MEASURE_AFTER_NOUN = String.raw`(?:\s+(?:og[‘'’ʻ]?irlig?i|vazni|hajmi|soni|вес|объ[её]м))?`;
-/** What may stand between a mark and its figure. */
-const MARK_GAP = String.raw`[\s,:：–-]*$`;
+/** What may stand between a mark and its figure — «1 karobka = 15 kg», «1ctn=15kg» included (review owner-1). */
+const MARK_GAP = String.raw`[\s,:：=＝–-]*$`;
 
 /**
  * «har biri», «har birida», «har bir karobka(da)», «har karobkada», «har bir
- * dona», «each», «each carton», «каждая», «каждое место» — closing the text
- * before a figure. Groups 1-4: the noun, when one stands after the mark.
+ * dona», «each», «each carton», «каждая», «каждое место», «в каждой коробке»
+ * — closing the text before a figure. Groups 1-4: the noun, when one stands
+ * after the mark. The Russian «в» belongs to the mark: left out, it stood
+ * alone in the tail and the whole goods line vanished (review owner-2, crit-3).
  */
 const EACH_LEAD = new RegExp(
-  String.raw`(?<![\p{L}])(?:(?:har|ҳар|хар)\s+(?:(?:bir|бир)(?:ining|ida|iga|i|ининг|ида|ига|и)?|(?:bitta|битта)(?:sida|siga|si|сида|сига|си)?)(?:\s+(${COUNT_NOUN}))?|(?:har|ҳар|хар)\s+(${COUNT_NOUN})|(?:each|every)(?:\s+(${COUNT_NOUN}))?|кажд(?:ая|ый|ое|ую|ого|ой|ом)(?:\s+(${COUNT_NOUN}))?)${MEASURE_AFTER_NOUN}${MARK_GAP}`,
+  String.raw`(?<![\p{L}])(?:(?:har|ҳар|хар)\s+(?:(?:bir|бир)(?:ining|ida|iga|i|ининг|ида|ига|и)?|(?:bitta|битта)(?:sida|siga|si|сида|сига|си)?)(?:\s+(${COUNT_NOUN}))?|(?:har|ҳар|хар)\s+(${COUNT_NOUN})|(?:each|every)(?:\s+(${COUNT_NOUN}))?|(?:в\s+)?кажд(?:ая|ый|ое|ую|ого|ой|ом)(?:\s+(${COUNT_NOUN}))?)${MEASURE_AFTER_NOUN}(?:\s+по)?${MARK_GAP}`,
   'iu',
 );
 /**
@@ -1008,15 +1065,37 @@ const EACH_LEAD = new RegExp(
  * alone, «Stul 1 karobka 15 kg» is one carton of 15 kg, read as it always
  * was), or «в каждой коробке», «в одной коробке», «в 1 коробке» (group 2:
  * always one package's). Group 3: the noun.
+ *
+ * The «1» takes the Uzbek counter — «1 ta karobka», «1 та қути», the
+ * commonest way a seller writes it — and may touch its noun: «1ctn=15kg»,
+ * «1箱 15kg» (review owner-1: each was the shipment's 15 kg under ✅). A
+ * word numeral still needs its space — «biroz», «onex» are no marks.
  */
 const ONE_LEAD = new RegExp(
-  String.raw`(?<![\p{L}\d.,])(?:(1|bitta|bir|one|одн(?:ого|ой|ом|а|о|у))|(в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))))\s+(${PACKAGE_NOUN})${MEASURE_AFTER_NOUN}${MARK_GAP}`,
+  String.raw`(?<![\p{L}\d.,])(?:(1(?:\s*(?:ta|та)(?=\s))?\s*|(?:bitta|битта|bir|бир|one|одн(?:ого|ой|ом|а|о|у))\s+)|(в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))\s+))(${PACKAGE_NOUN})${MEASURE_AFTER_NOUN}${MARK_GAP}`,
   'iu',
 );
+/**
+ * «20 karobka, karobkada 24 dona», «…, qutida 24 dona» — the Uzbek «in the
+ * box» OPENING its clause, beside another carton count: what one box holds
+ * (check crit-3 / owner-2's neighbours: the line vanished). Only there — a
+ * locative inside the name («Qo‘g‘irchoq karobkada 500 dona») describes the
+ * product, as JN-8 (b) rules for «в коробке», which stays out.
+ */
+const LOCATIVE_CLAUSE_LEAD = new RegExp(String.raw`(?<=[,;]\s*)(?:karobk|karopk|korobk|qut|қут|кут)\p{L}*(?:da|да)${MARK_GAP}`, 'iu');
+/** «20 karobka ichida 24 dona dan» — «inside» after a carton count: no word of the name, nor a mark (the «dan» says each). */
+const INSIDE_AFTER_CARTONS = /^\s+(?:ichida|ичида|ichidagi|ичидаги|ichiga|ичига)(?![\p{L}])/iu;
 /** «в коробке по 24 шт» — what one box holds (review JN-8 (b): a bare «в коробке» describes the product, «Кукла в коробке»). */
 const IN_BOX_PO = new RegExp(String.raw`(?<![\p{L}])в\s+(?:${PACKAGE_NOUN})\s+по\s*$`, 'iu');
 /** «20 коробок по 15 кг», «300 шт по 0.2 кг» — a Russian «по» right after a count (group 2: that count's word). */
 const PO_LEAD = /(?<![\p{L}\d.,])(\d[\d.,]*)\s*(\p{L}+)\s+по\s*$/iu;
+/**
+ * A weight's bare word, a label ONLY with its per-package tail — «Weight per
+ * carton: 15 kg» (the comment below names it, and it was the shipment's 15
+ * kg). Never a label-first total on its own (review JN-21: «weight» alone
+ * needs its unit), so it is in no list of `WEIGHT_LABELS`.
+ */
+const PER_LABEL_ONLY: readonly string[] = ['weight', 'wt.', 'wt'];
 /**
  * A measure's LABEL with its per-package tail before a figure — «G.W./CTN:
  * 15 kg», «N.W./ctn 14 kg», «毛重/箱 15kg», «Weight per carton: 15 kg», «Вес
@@ -1024,11 +1103,12 @@ const PO_LEAD = /(?<![\p{L}\d.,])(\d[\d.,]*)\s*(\p{L}+)\s+по\s*$/iu;
  * 2: the slash word; 3: the «per» noun; 4, 5: the package noun.
  */
 const LABEL_LEAD = new RegExp(
-  String.raw`(?<![\p{L}])(${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS, ...FIELD_LABELS.count])})\s*(?:\/\s*(\p{L}+)|(?:per|pr)\s+(${COUNT_NOUN})|(?:на|за)\s+(?:1\s+|одн\p{L}*\s+)?(${PACKAGE_NOUN})|одного\s+(${PACKAGE_NOUN}))\s*[.)]?\s*[:：=]?\s*$`,
+  String.raw`(?<![\p{L}])(${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS, ...FIELD_LABELS.count, ...PER_LABEL_ONLY])})\s*(?:\/\s*(\p{L}+)|(?:per|pr)\s+(${COUNT_NOUN})|(?:на|за)\s+(?:1\s+|одн\p{L}*\s+)?(${PACKAGE_NOUN})|одного\s+(${PACKAGE_NOUN}))\s*[.)]?\s*[:：=]?\s*$`,
   'iu',
 );
 /** A label that says WHICH weight — a netto's, or a brutto's. */
 const NET_LABEL_WORD = new RegExp(`^(?:${labelPattern(NET_LABELS)})$`, 'iu');
+
 const GROSS_LABEL_WORD = /^(?:g\.?\s?w\.?|gross(?:\s*weight)?|brutto|брутто|вес\s*брутто|毛重|总毛重)$/iu;
 
 /** WHICH weight a weight label names — a netto's, a brutto's, or it does not say («вес», «og‘irlik»). */
@@ -1097,6 +1177,37 @@ const PACKAGE_LABEL_WORDS = [
   String.raw`(?:箱重|单箱(?:毛重|净重|重量|体积)|每箱(?:毛重|净重|重量|体积))`,
 ];
 const PACKAGE_LABEL_LEAD = new RegExp(String.raw`(${PACKAGE_LABEL_WORDS.join('|')})\s*[.)]?\s*[:：=]?\s*$`, 'iu');
+
+/**
+ * A line OPENING with ONE package's (or one piece's) measure label before its
+ * figure — «单箱毛重: 33.8kg», «单箱体积: 0.395», «箱重 15kg», «G.W./CTN:
+ * 33.8 kg», «CBM/CTN: 0.395», «毛重/箱 15kg», «Weight per carton: 15 kg»,
+ * «Вес 1 места: 33.8 кг», «Объем 1 места: 0.395» (review owner-3). Group 1 /
+ * 2: the label. The kernel reads such a figure as ONE package's when its unit
+ * is written (`LABEL_LEAD`, `PACKAGE_LABEL_LEAD`); written bare, the label is
+ * the only thing that says what it measures. Every optional mark carries its
+ * own gap (load-1).
+ */
+const PER_ONE_LABEL_OPENING = new RegExp(
+  String.raw`^\s*(?:(${PACKAGE_LABEL_WORDS.join('|')})|(?<![\p{L}])(${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS, ...FIELD_LABELS.count, ...PER_LABEL_ONLY])})\s*(?:\/\s*(?:${COUNT_NOUN})|(?:per|pr)\s+(?:${COUNT_NOUN})|(?:на|за)\s+(?:1\s+|одн\p{L}*\s+)?(?:${PACKAGE_NOUN})|одного\s+(?:${PACKAGE_NOUN})))(?:\s*[.)])?(?:\s*[:：=])?\s*(?=\d)`,
+  'iu',
+);
+const VOLUME_LABEL_WORD = /体积|方数|cbm|meas|volume|(?<![\p{L}])vol(?![\p{L}])|cube|hajm|объ[её]м|куб/iu;
+const WEIGHT_LABEL_WORD = /重|weight|(?<![\p{L}])wt|g\.?\s?w|n\.?\s?w|gross|brutto|netto|брутто|нетто|вес|масс|og[‘'’ʻ`]?irlig|vazn/iu;
+
+/**
+ * Does `line` open with ONE package's or piece's measure label (above)? What
+ * the label measures — a bare figure after it is that unit — and where the
+ * figure starts. A block line of this shape is the block's packing, never a
+ * row of its own, and outside a block it is no goods line.
+ */
+export function perOneLabelLine(line: string): { unit: 'kg' | 'm3' | 'dona'; figureAt: number; label: string } | null {
+  const hit = PER_ONE_LABEL_OPENING.exec(line);
+  if (!hit) return null;
+  const label = hit[1] ?? hit[2] ?? '';
+  const unit = VOLUME_LABEL_WORD.test(label) ? 'm3' : WEIGHT_LABEL_WORD.test(label) ? 'kg' : hit[2] !== undefined ? 'dona' : null;
+  return unit === null ? null : { unit, figureAt: hit[0].length, label };
+}
 /** A package-possessed label's own words, looked for before the pattern is run (`markOf`). */
 const PACKAGE_LABEL_STEM = /karobk|karopk|korobk|qut|кут|қут|qop|қоп|joy|жой|коробк|мест|упаковк|ящик|мешк|carton|ctn|box|package|pkg|bag|箱/u;
 /** Which weight a package-possessed label names, when it says. */
@@ -1116,7 +1227,10 @@ const PACKAGE_NOUN_CLOSING = new RegExp(
  * («karobka og‘irligi 22.5 kg» — one carton's weight)? Then the label is the
  * kernel's MARK, not the row's field: a field reader leaves it standing.
  */
-export const packagePossessesLabel = (before: string): boolean => PACKAGE_NOUN_CLOSING.test(before.slice(-40));
+export const packagePossessesLabel = (before: string): boolean =>
+  PACKAGE_NOUN_CLOSING.test(before.slice(-40)) || HAN_PACKAGE_CLOSING.test(before.slice(-8));
+/** «单箱» / «每箱» right before a Han label — «单箱毛重», «每箱体积»: one carton's (review owner-3). */
+const HAN_PACKAGE_CLOSING = /(?:单|每)箱\s*$/u;
 
 /** «15 kg per ctn», «0.2 kg per pc» — the noun after «per» says whose. */
 const PER_TRAIL = new RegExp(String.raw`^\s+(?:per|pr)\s+(${COUNT_NOUN})(?![\p{L}])`, 'iu');
@@ -1124,6 +1238,8 @@ const PER_TRAIL = new RegExp(String.raw`^\s+(?:per|pr)\s+(${COUNT_NOUN})(?![\p{L
 const IN_EACH_TRAIL = new RegExp(String.raw`^\s+в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))\s+(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
 /** «15 kg dan» — «each» in Uzbek, beside a count (review JN-8 (a)). */
 const DAN_TRAIL = /^\s*[-–]?\s*(?:dan|дан)(?![\p{L}\d])/iu;
+/** A whole count and its word right before a figure — «20 tugun » of «20 tugun 30 kg dan». */
+const UNKNOWN_COUNT_BEFORE = /(?<![\p{L}\d.,])\d+\s+(\p{L}+)\s*$/u;
 /**
  * …and never before what makes it «from», «than» or «of»: «500 kg dan
  * ortiq», «100 kg dan boshlab», «20 kg dan 30 kg gacha» (a range's own
@@ -1157,11 +1273,35 @@ const TIMES_JOINER = /(?<=\d)\s*[xх×*]\s*(?=\d)/gu;
 
 /** The size words of a typed line — «o‘lchami», «razmeri», «размер», «size» (units.ts `FIELD_LABELS`). */
 const SIZE_LABEL_BEFORE = new RegExp(String.raw`(?<![\p{L}])(?:${labelPattern(FIELD_LABELS.size)})\s*[.:：=]?\s*$`, 'iu');
+/**
+ * A size the label says is the PACKAGE's — «karobka o‘lchami», «carton size»,
+ * «20 karobka razmeri». Never a noun that is the denominator of a per-package
+ * tail: «G.W.: 15 kg/ctn Size: 60*40*50cm» (a spec block, joined by spaces),
+ * «15 кг/кор Размер», «15kg/箱 尺寸», «15 kg/karobka O‘lchami» — the «ctn» is
+ * the weight's, and «Size» names nobody's size (JN-11: asked, never
+ * multiplied — review figures-size-owner-after-per-carton-tail).
+ */
 const PACKAGE_SIZE_BEFORE = new RegExp(
-  String.raw`(?<![\p{L}])(?:${labelPattern(FIELD_LABELS.packageSize)}|(?:${PACKAGE_NOUN})\s+(?:${labelPattern(FIELD_LABELS.size)}))\s*[.:：=]?\s*$`,
+  String.raw`(?<![\p{L}/／])(?:${labelPattern(FIELD_LABELS.packageSize)}|(?:${PACKAGE_NOUN})\s+(?:${labelPattern(FIELD_LABELS.size)}))\s*[.:：=]?\s*$`,
   'iu',
 );
 const PACKAGE_NOUN_AFTER = new RegExp(String.raw`^\s*(?:${PACKAGE_NOUN})(?![\p{L}\d])`, 'iu');
+/**
+ * A package's noun OPENING its own clause right before the size — «20
+ * karobka, karobka 60x40x50 sm», «…, коробка 60х40х50 см», «…, ctn
+ * 60*40*50cm» (review owner-4: the noun was welded into the name, «Kurtka
+ * karobka», and the cube asked of a seller who had said whose the size is).
+ * Anchored on the clause's comma: a noun at the head of the LINE is the
+ * goods' name («Корзина 60x40x50 см, 20 коробок», JS-2's size after the name).
+ */
+const PACKAGE_NOUN_CLAUSE_BEFORE = new RegExp(String.raw`(?<=[,;]\s*|[.!?]\s+)(?:${PACKAGE_NOUN})\s*[.:：=]?\s*$`, 'iu');
+/**
+ * A bare counter right after such a clause's size — «…, karobka 60x40x50 sm,
+ * 20 ta», «Karobka 60x40x50 sm 20 ta» — counts those packages (check owner-4:
+ * read as 20 PIECES beside the line's own 300, the row was dropped as two
+ * welded lines). Read off the scan, where the size is blanked.
+ */
+const PACKAGE_SIZE_CLAUSE_BEFORE = new RegExp(String.raw`(?:^|[,;]\s*|[.!?]\s+)(?:${PACKAGE_NOUN})\s*[.:：=]?\s*\uE000+\s*[,;]?\s*$`, 'iu');
 
 /** One figure of a line that is ONE package's or ONE piece's. */
 export interface PerOneFigure {
@@ -1192,6 +1332,13 @@ export interface PerOneFigure {
    * say it.
    */
   noted?: true;
+  /**
+   * The A of such a bare «A x B» — the typed reader writes A × B into the
+   * row's own column (JN-8 (c): «gives the product», `timesProduct`) and A
+   * stays no carton count. Absent when B is a space-grouped number: «2 x 1
+   * 500 kg» is 2 × 1 500 or a 2×1 thing of 500, and neither lands.
+   */
+  times?: number;
 }
 
 /** What a typed line states per package — `packingRead`. */
@@ -1251,8 +1398,9 @@ interface Mark {
   cartonHit?: number;
   /** A mark that opens a clause the next figures continue («har biri 15 kg 0.12 kub»). */
   clause: boolean;
-  /** «20 x 15 kg» — a bare multiplier (`PerOneFigure.noted`). */
+  /** «20 x 15 kg» — a bare multiplier (`PerOneFigure.noted`), and its A when the product is one figure. */
   noted?: true;
+  times?: number;
 }
 
 const TRACKED: ReadonlySet<string> = new Set(['dona', 'kg', 'm3', 'juft', 'm2', 'litr', 'karobka']);
@@ -1266,8 +1414,18 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
   for (const hit of scan.matchAll(AMOUNT)) {
     let word = hit[2] ?? null;
     let end = hit.index + hit[0].length;
-    if (!word) continue;
-    if (unitOf(word) === 'dona') {
+    if (!word) {
+      // «Stul 20 ctns, G.W./CTN 15 kg, CBM/CTN 0.12» — a bare figure under one
+      // package's own label opening its clause is that label's measure, as on
+      // a spec block's line («CBM/CTN: 0.395», owner-3) — the label is the only
+      // thing that says what it measures (check owner-3: the one-line form
+      // made 0.12 the row's PIECES and «CBM/CTN» a word of its name).
+      const labelled = perOneLabelBefore(text, hit.index);
+      const read = labelled ? readAmountText(hit[1]!) : null;
+      if (labelled && read?.state === 'ok') out.push({ start: hit.index, end, unit: labelled, value: read.value, word: LABEL_UNIT_WORD[labelled] });
+      continue;
+    }
+    if (unitOf(word) === 'dona' && !endsSentence(word)) {
       const next = COUNTER_THEN_UNIT.exec(text.slice(end, end + 24));
       const nextUnit = next ? unitOf(next[1]!) : null;
       if (next && nextUnit !== null && nextUnit !== 'dona') {
@@ -1276,7 +1434,12 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
       }
     }
     const scale = scaled ? scaledKg(word) : null;
-    const unit = unitOf(word) ?? (scale && !scale.lone ? 'kg' : null);
+    // A count of packages of another trade — «20 мешков», «20 ящиков», «20 rulon» — is a carton count here.
+    const unit =
+      (/^(?:ta|та)$/iu.test(word) && PACKAGE_SIZE_CLAUSE_BEFORE.test(scan.slice(Math.max(0, hit.index - 96), hit.index)) ? 'karobka' : null) ??
+      unitOf(word) ??
+      (scale && !scale.lone ? 'kg' : PACKAGE_NOUN_WORD.test(word) ? 'karobka' : null) ??
+      labelledCube(word, text.slice(end, end + 48));
     if (unit === null || !TRACKED.has(unit)) continue;
     const read = readAmountText(hit[1]!);
     if (read.state === 'bad') continue;
@@ -1287,11 +1450,61 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
   return out;
 }
 
+/**
+ * «0.12 meas/ctn», «0.12 hajm/karobka», «0.12 volume per ctn» — a cube's
+ * LABEL right after a bare number, with ONE package's tail and no colon: the
+ * number's own measure, as «0.12 cbm/ctn»'s unit word is (check R3: read as
+ * nobody's, «0.12» became the row's 0.12 PIECES). Before a colon the label
+ * heads the next figure («20 CBM/CTN: 0.12»).
+ */
+function labelledCube(word: string, after: string): 'm3' | null {
+  if (!LABEL_MEASURE[0]![0].test(word.trim())) return null;
+  const tail = tailAt(after, 0, PER_PACKAGE_TAIL);
+  const per = tail > 0 ? null : PER_TRAIL.exec(after);
+  const end = tail > 0 ? tail : per && nounOwner(per[1]) === 'package' ? per[0].length : 0;
+  return end > 0 && !/^\s*[.)]?\s*[:：=]/u.test(after.slice(end)) ? 'm3' : null;
+}
+
+/**
+ * The measure of ONE package's label opening the clause that ends at `at` —
+ * «, CBM/CTN 0.12», «G.W./CTN: 15», «单箱体积 0.395» — or null. The clause opens
+ * the line or follows a comma, a semicolon or a sentence's stop.
+ */
+function perOneLabelBefore(text: string, at: number): 'kg' | 'm3' | 'dona' | null {
+  const from = Math.max(0, at - 64);
+  const window = text.slice(from, at);
+  const breaks = [...window.matchAll(/[,;\n]|[.!?](?=\s)/gu)];
+  const last = breaks.at(-1);
+  const start = last ? from + last.index + last[0].length : from;
+  if (!last && from > 0) return null;
+  const label = perOneLabelLine(text.slice(start, at + 1));
+  return label !== null && start + label.figureAt === at ? label.unit : null;
+}
+/** The unit word a labelled bare figure is given — what the readers after the scan take it for. */
+const LABEL_UNIT_WORD: Record<'kg' | 'm3' | 'dona', string> = { kg: 'kg', m3: 'm3', dona: 'dona' };
+
 /** The slash word's owner — a known package tail, a known piece tail, or neither. */
 function tailWordOwner(word: string): PerOneOwner | null {
   const tail = `/${word.toLowerCase()}`;
   if (PER_PACKAGE_TAIL.includes(tail)) return 'package';
   return PER_PIECE_TAIL.includes(tail) ? 'piece' : null;
+}
+
+/** `LABEL_LEAD`'s label lists, each as a whole word: what a label measures is the list it is a word of. */
+const LABEL_MEASURE: readonly [RegExp, 'kg' | 'm3'][] = [
+  [new RegExp(String.raw`^(?:${labelPattern(VOLUME_LABELS)})$`, 'iu'), 'm3'],
+  [new RegExp(String.raw`^(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...PER_LABEL_ONLY])})$`, 'iu'), 'kg'],
+];
+
+/**
+ * Can a measure's label (`LABEL_LEAD`'s group 1) head a figure of this unit?
+ * A cube's label heads a cube, a weight's a kilo, a count's a count — never
+ * across: what a label measures is the one thing it says.
+ */
+function labelMeasures(label: string, unit: FigureHit['unit']): boolean {
+  const word = label.trim();
+  const measure = LABEL_MEASURE.find(([re]) => re.test(word))?.[1] ?? null;
+  return measure !== null ? unit === measure : unit !== 'kg' && unit !== 'm3';
 }
 
 function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly FigureHit[]): Mark | null {
@@ -1338,7 +1551,25 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   // figures have none, and a pattern anchored at the window's end is tried
   // from every position of it.
   const lower = before.toLowerCase();
-  const label = /[/]|per|pr|на|за|одного/u.test(lower) ? LABEL_LEAD.exec(before) : null;
+  const labelHit = /[/]|per|pr|на|за|одного/u.test(lower) ? LABEL_LEAD.exec(before) : null;
+  // A label word right after a number is that number's UNIT, and its tail
+  // that number's — «0.12 cbm/ctn 300 kg» is one carton's cube and the line's
+  // own 300 kg, never a «CBM/CTN:» heading the kilos (review doors-1: the row
+  // weighed 20 × 300 = 6 000 kg, a 20× weight on a per-kg customs price).
+  // Only a label that IS a unit word can be the number's unit: «20 Вес одного
+  // места: 15 кг», «20 G.W./CTN: 15 kg» — the carton count, then the label of
+  // the next figure (review crit-5: the 15 kg was the shipment's).
+  // And a label measures ONE thing: a cube's label never heads a kilo, a
+  // weight's never a cube — «0.12 hajm/karobka 300 kg», «0.12 meas/ctn 300
+  // kgs» are one carton's cube and the line's own 300 kg (check R3: with
+  // «hajm», «meas», «vol» no unit word, the kilos were one carton's again and
+  // the row weighed 20 × 300 = 6 000 kg — doors-1's own 20×).
+  const label =
+    labelHit &&
+    labelMeasures(labelHit[1]!, hit.unit) &&
+    !(unitOf(labelHit[1]) !== null && /\d\s*$/u.test(before.slice(0, labelHit.index)))
+      ? labelHit
+      : null;
   if (label) {
     const owner = label[2] !== undefined ? tailWordOwner(label[2]) : label[3] !== undefined ? nounOwner(label[3]) : 'package';
     const word = label[1]!.replace(/\s+/gu, ' ').trim();
@@ -1362,9 +1593,14 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
     // count of anything (JN-8 (c)) — and so B is nobody's one: «Stul 20 x 24
     // dona» may be 20 cartons of 24 or 20 of something else, and B kept as one
     // CARTON's figure was a claim the line never made (review typed-spec-4).
-    // Kept on the note as written, multiplied by nothing.
+    // Kept on the note as written; the product A × B is the line's own figure
+    // whichever A counts (`timesFigures`), and nothing else is multiplied by A.
     const spans: [number, number][] = [[times[2] !== undefined ? joiner : at, joiner + 1]];
-    return fixed(times[2] !== undefined ? (noun ?? 'package') : null, spans, times[2] === undefined ? { noted: true } : {});
+    if (times[2] !== undefined) return fixed(noun ?? 'package', spans);
+    // Bare, the line states A × B of the unit (JN-8 (c)): the product is its own
+    // figure — unless B is space-grouped, and so read two ways.
+    const grouped = /\d[ \u00a0]\d/u.test(text.slice(hit.start, hit.end));
+    return fixed(null, spans, { noted: true, ...(grouped ? {} : { times: Number(times[1]) }) });
   }
   const each = /har|ҳар|хар|each|every|кажд/u.test(lower) ? EACH_LEAD.exec(before) : null;
   if (each) {
@@ -1379,6 +1615,8 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
       ...(container ? { container: true as const } : {}),
     };
   }
+  const inside = PACKAGE_STEM.test(lower) ? LOCATIVE_CLAUSE_LEAD.exec(before) : null;
+  if (inside) return fixed('package', [markSpan(inside[0], from + inside.index)], { clause: true, cond: 'another_carton' });
   const one = PACKAGE_STEM.test(lower) ? ONE_LEAD.exec(before) : null;
   if (one) {
     const at = from + one.index;
@@ -1392,15 +1630,22 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   if (box) return fixed('package', [markSpan(box[0], from + box.index)], { clause: true });
   const po = lower.includes('по') ? PO_LEAD.exec(before) : null;
   if (po) {
-    const unit = unitOf(po[2]);
+    const unit = unitOf(po[2]) ?? (PACKAGE_NOUN_WORD.test(po[2]!) ? 'karobka' : null);
     const owner = unit === 'karobka' ? 'package' : unit === 'dona' ? 'piece' : null;
-    if (owner !== null) {
-      const at = from + po.index + po[0].lastIndexOf('по');
-      return fixed(owner, [[at, at + 2]], { clause: owner === 'package' });
-    }
+    const at = from + po.index + po[0].lastIndexOf('по');
+    if (owner !== null) return fixed(owner, [[at, at + 2]], { clause: owner === 'package' });
+    // «20 штабелей по 30 кг» — each of something no list names: one of them,
+    // never the shipment's (review crit-1). Nobody's: kept on the note.
+    if (unit === null && /^\p{L}+$/u.test(po[2]!)) return fixed(null, [[at, at + 2]]);
   }
   const dan = DAN_TRAIL.exec(after);
   if (dan && !DAN_NOT.test(after.slice(dan[0].length)) && !TOTAL_IN_CLAUSE.test(before)) {
+    // «20 tugun 30 kg dan» — «dan» right after a count of something no list
+    // names: each one's, never a total, and nobody's to multiply (crit-1).
+    const counted = UNKNOWN_COUNT_BEFORE.exec(before);
+    if (counted && unitOf(counted[1]) === null && !PACKAGE_NOUN_WORD.test(counted[1]!)) {
+      return fixed(null, [[hit.end, hit.end + dan[0].length]]);
+    }
     return { ...fixed(null, [[hit.end, hit.end + dan[0].length]]), bind: true, cond: 'dan' };
   }
   return null;
@@ -1439,7 +1684,19 @@ export function packingRead(
     const opensLine = opts.cartonsElsewhere === true && text.slice(0, Math.min(...m.spans.map(([a]) => a))).trim() === '';
     if (others === 0 && !opensLine) marks[i] = null;
   });
-  const oneHits = new Set(marks.flatMap((m) => (m?.cartonHit !== undefined ? [m.cartonHit] : [])));
+  // A carton figure INSIDE a standing mark is the mark's own «1» — «вес брутто
+  // на 1 место», «в 1 коробке», «24 шт в 1 коробке» — never a carton count of
+  // the line: 20 and 1 differ, and the line lost its count (review owner-1's
+  // neighbours, crit-1).
+  const oneHits = new Set<number>();
+  marks.forEach((m) => {
+    if (!m) return;
+    if (m.cartonHit !== undefined) oneHits.add(m.cartonHit);
+    for (const c of cartonHits) {
+      const h = hits[c]!;
+      if (m.spans.some(([a, b]) => h.start >= a && h.end <= b)) oneHits.add(c);
+    }
+  });
   const cartonCounts = cartonHits.filter((c) => !oneHits.has(c));
   const unmarkedPieces = hits.flatMap((h, i) => (h.unit === 'dona' && (marks[i] === null || marks[i]!.cond === 'dan') ? [i] : []));
   // «dan» marks only beside a count of the line — another than the figure itself.
@@ -1495,7 +1752,7 @@ export function packingRead(
       inName: mark.inName,
       text: text.slice(from, to).replace(/\s+/gu, ' ').trim(),
       word: hit.word,
-      ...(mark.noted ? { noted: true as const } : {}),
+      ...(mark.noted ? { noted: true as const, ...(mark.times !== undefined ? { times: mark.times } : {}) } : {}),
       // A clause nobody's owner could be said for goes on as nobody's: «…, har
       // biri 2 kg 0.05 kub» beside both counts states neither for the line.
       clause: mark.clause && (owner === 'package' || (mark.bind && owner === null && kinds.size === 2)),
@@ -1541,8 +1798,20 @@ export function packingRead(
   const consumed: [number, number][] = figures
     .filter((f) => !f.inName)
     .flatMap((f) => [[f.start, f.end] as [number, number], ...f.mark.spans]);
+
+  for (const i of cartonCounts) {
+    const inside = INSIDE_AFTER_CARTONS.exec(text.slice(hits[i]!.end, hits[i]!.end + 16));
+    if (inside) consumed.push([hits[i]!.end, hits[i]!.end + inside[0].length]);
+  }
   const size = cartons !== null ? packageSize(text, hits, cartonCounts, figures, boundOwner) : null;
   if (size) consumed.push(...size.spans);
+  // A count of another trade's packages — «Цемент 20 мешков по 50 кг» — is
+  // no unit of the row's columns, so only the packing carries it: it leaves
+  // the name when a package's figure or size is multiplied by it, and stays
+  // there («Ткань 20 рулонов, 600 кг») when nothing is.
+  if (cartons !== null && (figures.some((f) => !f.inName && f.owner === 'package') || size?.size.of === 'package')) {
+    for (const i of cartonCounts) if (unitOf(hits[i]!.word) !== 'karobka') consumed.push([hits[i]!.start, hits[i]!.end]);
+  }
   return {
     figures: figures.map(({ clause: _clause, mark: _mark, at: _at, ...f }) => f),
     cartons,
@@ -1594,6 +1863,11 @@ function packageSize(
   // block's «尺寸 60*40*50cm 20箱» may be the folding chair's own, and is asked.
   const sizeLabel = SIZE_LABEL_BEFORE.exec(before);
   if (sizeLabel) return taken(null, [labelSpan(sizeLabel[0], from + sizeLabel.index)]);
+  // A package's noun opening the size's clause — its word leaves the name
+  // even when the count stands right after the size («…, karobka 60x40x50 sm
+  // 20 ta»: it was «Kurtka karobka»).
+  const nounBefore = PACKAGE_NOUN_CLAUSE_BEFORE.exec(before);
+  if (nounBefore) return taken('package', [labelSpan(nounBefore[0], from + nounBefore.index)]);
   // Right beside the carton count, with nothing but spaces between («20
   // karobka 60x40x50», «60x40x50 sm 20 ta karobka»).
   const beside = cartonCounts.some((i) => {
@@ -1644,8 +1918,8 @@ export function perOneIn(text: string, opts: { scaled?: boolean } = {}): PerOneF
   return out;
 }
 
-/** A carton COUNT on a line — «20 karobka», «20 ta karobka», «20 ctns» — but not «1 karobka» (the mark itself). */
-const CARTON_COUNT = new RegExp(String.raw`(?<![\p{L}\d.,])(?!1\s)\d+\s*(?:(?:ta|та)\s+)?(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
+/** A carton COUNT on a line — «20 karobka», «20 ta karobka», «20 ctns» — but not «1 karobka», «1ctn» (the mark itself). */
+const CARTON_COUNT = new RegExp(String.raw`(?<![\p{L}\d.,])(?!1(?![\d.,]))\d+\s*(?:(?:ta|та)\s+)?(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
 
 /** `[start, end)` of every per-one figure of a text (`perOneIn`). */
 export const perOneSpans = (text: string, opts: { scaled?: boolean } = {}): [number, number][] =>
@@ -1962,8 +2236,13 @@ export function parseGoodsLine(
     }
     return out;
   };
-  const consumedOf = packed ? byCell(packed.consumed) : null;
-  const unreadOf = packed ? byCell(packed.unread) : null;
+  // The card form and the VED's paste read no packing (T4 is the bot's), but a
+  // bare «A x B unit» is A × B at every door (JN-8 (c), binding — check crit-2:
+  // «Stul 20 x 15 kg» there was «Stul 20 x» with ONE chair's 15 kg as the row's
+  // weight, «Kurtka 20*24 dona» 24 pieces).
+  const timesOnly = packed ? null : bareTimes(kept.join(CELL_JOIN), opts.scaled === true);
+  const consumedOf = packed ? byCell(packed.consumed) : timesOnly ? byCell(timesOnly.spans) : null;
+  const unreadOf = packed ? byCell(packed.unread) : timesOnly ? kept.map(() => []) : null;
 
   // «Набор 4 кубов 20 шт» — a toy's own cubes, on a line that states its
   // pieces (review JN-22): the «N кубов» stays in the name, see below. A count
@@ -1974,10 +2253,14 @@ export function parseGoodsLine(
   // A GRAM beside any count — pieces, cartons, packs — is what one pack or one
   // piece weighs: «Choy 500 gr 200 karobka», «Kofe 250 gr, 1000 pachka» are
   // tea in half-kilo packs, never a 0.5 kg row (review typed-break-3). The
-  // figure stays in the name, where the coder reads it.
+  // figure stays in the name, where the coder reads it. A count of PAIRS, of
+  // square metres, of litres, or of anything this file has no unit for —
+  // «300 juft», «500 m2», «5 litr», «500 blok», «50 rulon», «100 g'altak» —
+  // is a count all the same: one pair's 800 gr, the fabric's 180 gr (its gsm),
+  // one can's 900 gr were the whole line's netto, a carpet of 300 m² priced
+  // per kg on 1.5 kg (review figures-gram-beside-measure-count).
   const countStated =
-    piecesStated ||
-    kept.some((cell) => [...blankNonAmounts(cell).matchAll(AMOUNT)].some((h) => unitOf(h[2]) === 'karobka' || PACK_WORD.test(h[2] ?? '')));
+    piecesStated || kept.some((cell) => [...blankNonAmounts(cell).matchAll(AMOUNT)].some((h) => countsGoods(h[2])));
 
   kept.forEach((cellText, cellIndex) => {
     const consumed: [number, number][] = [];
@@ -1985,7 +2268,7 @@ export function parseGoodsLine(
     // A size and a code's digits are no amounts (T0): read from the blanked
     // text, cut the name from the cell as written — the offsets are the same.
     let scan = blankNonAmounts(cellText);
-    if (packed) {
+    if (consumedOf) {
       // A per-one figure, its mark, a times multiplier, a packed size and its
       // label: read by no column below, and out of the name; a rate («180
       // gr/m2») is read by nothing and stays in the name.
@@ -2012,7 +2295,7 @@ export function parseGoodsLine(
         start = field.index;
       }
       // «120 ta juft» — a counter word followed by a unit word: the unit wins.
-      if (word && unitOf(word) === 'dona') {
+      if (word && unitOf(word) === 'dona' && !endsSentence(word)) {
         const next = COUNTER_THEN_UNIT.exec(cellText.slice(end));
         const nextUnit = next ? unitOf(next[1]!) : null;
         if (next && nextUnit !== null && nextUnit !== 'dona') {
@@ -2043,7 +2326,13 @@ export function parseGoodsLine(
       // «Kurtka 300 dona 450 kg 5 kubov» is the trade's own way of writing the
       // cube beside the count, and folded into the name it was dropped with no
       // word (review typed-break-5, JN-22's «inside a goods line»).
-      if (unit === 'm3' && piecesStated && !figureSeen && COUNTED_CUBES.has(normalizeWord(word!))) continue;
+      if (unit === 'm3' && piecesStated && !figureSeen && COUNTED_CUBES.has(normalizeWord(word!))) {
+        // …and is ASKED (JN-22): the row's note names it — «sotuvchi: 4 кубов» — so the VED
+        // sees a figure that may be the cargo's cube was typed, never only a word of the
+        // name (review crit-6). The cube stays unread; the table asks it where it is owed.
+        groupedAside.push(cellText.slice(start, end).replace(/\s+/gu, ' ').trim());
+        continue;
+      }
       const amount = readAmountText(number);
       if (amount.state === 'bad') continue;
       // Both readings of a doubted figure are in KILOS when its word scales it («1,200 тн»).
@@ -2141,9 +2430,14 @@ export function parseGoodsLine(
     const { packing, aside } = typedPacking(packed);
     line.packing = packing;
     line.aside = aside;
+    timesFigures(line, packed.figures);
     line.perOne = packed.figures.map((f) => f.text);
     // The unit is stated, whosever the figure: the line still states goods.
     line.unitWords.push(...packed.figures.filter((f) => !f.inName).map((f) => f.word));
+  }
+  if (timesOnly) {
+    timesFigures(line, timesOnly.figures);
+    line.aside = timesOnly.figures.map((f) => f.text);
   }
   if (groupedAside.length > 0) line.aside = [...(line.aside ?? []), ...groupedAside];
   if (line.cartons !== null && line.quantity === null && line.weightKg === null && line.measureQty === null) {
@@ -2151,6 +2445,52 @@ export function parseGoodsLine(
   }
   return line;
 }
+
+/**
+ * The bare «A x B unit» figures of a line — no carton word beside A, B not
+ * space-grouped — with the spans they take out of the name (A, the joiner, B
+ * and its unit), for the doors that read no packing (above). Null when the
+ * line has none, or states anything else per one (that is the bot's reading).
+ */
+function bareTimes(text: string, scaled: boolean): { figures: PerOneFigure[]; spans: [number, number][] } | null {
+  if (!/\d\s*[xх×*]\s*\d/iu.test(text)) return null;
+  const read = packingRead(text, { scaled });
+  const figures = read.figures.filter((f) => f.noted && f.times !== undefined && !f.inName);
+  if (figures.length === 0 || figures.length !== read.figures.length) return null;
+  const spans = figures.map((f): [number, number] => {
+    const from = Math.max(0, f.start - PER_ONE_WINDOW);
+    const lead = TIMES_LEAD.exec(text.slice(from, f.start));
+    return [lead ? from + lead.index : f.start, f.end];
+  });
+  return { figures, spans };
+}
+
+/**
+ * A bare «A x B unit» is the line's own figure, A × B (review JN-8 (c),
+ * binding — crit-2: «Stul 20 x 15 kg» was no weight at all and the table
+ * asked the seller for what he typed). The kernel multiplies
+ * (`timesProduct`); a column the line already fills keeps its figure, and
+ * two bare products of one unit write neither. The phrase stays on the note
+ * as written, so the VED reads where 300 came from — and A is no carton
+ * count: nothing else is ever multiplied by it.
+ */
+function timesFigures(line: GoodsLine, figures: readonly PerOneFigure[]): void {
+  const bare = figures.filter((f) => f.noted && f.times !== undefined && f.value !== null && !f.inName);
+  for (const f of bare) {
+    if (bare.filter((g) => g.unit === f.unit).length > 1) continue;
+    const product = timesProduct(f.times!, f.value!);
+    if (product === null) continue;
+    const field = f.unit === 'kg' ? 'weightKg' : f.unit === 'm3' ? 'volumeM3' : f.unit === 'dona' ? 'quantity' : 'measureQty';
+    if (field === 'measureQty') {
+      if (line.measureUnit !== null) continue;
+      line.measureUnit = f.unit as MeasureUnit;
+    } else if (line[field] !== null) continue;
+    line[field] = product;
+    // The arithmetic in the seller's units — «20 × 15 kg», «20 × 24 dona» — the «*» and the note say it (crit-2).
+    line.products = { ...line.products, [field]: { value: product, how: `${f.times} × ${String(f.value)} ${PRODUCT_UNIT[f.unit]}` } };
+  }
+}
+const PRODUCT_UNIT: Record<PerOneFigure['unit'], string> = { kg: 'kg', m3: 'm³', dona: 'dona', juft: 'juft', m2: 'm²', litr: 'litr' };
 
 /**
  * ONE rule for «this row's number is in the wrong column» — the door

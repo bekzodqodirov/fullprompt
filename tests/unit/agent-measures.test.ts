@@ -145,6 +145,29 @@ describe('T16 — the review’s own finds reach the agent the same way (typed-b
     expect(of('Jacket 300 pcs, 20 ctns, carton weight 22.5 kg')).toEqual([]);
   });
 
+  // Review figures-cbm-rate-as-total: the customer's own price question
+  // handed the agent a reference of 1 m³ — beside «300 kg» the pair the
+  // yo'lkira tool prices (300 kg / 1 m³ is a rate's base, not his cargo).
+  it('a rate’s base and a condition are no reference: «1 cbm narxi qancha?», «10 cbm dan ko‘p bo‘lsa chegirma»', () => {
+    expect(of('1 cbm narxi qancha?')).toEqual([]);
+    expect(of('Mening yukim 300 kg, 1 kub narxi qancha?')).toEqual([w(300)]);
+    expect(of("10 cbm dan ko'p bo'lsa chegirma bormi?")).toEqual([]);
+    expect(of('сколько стоит 1 куб?')).toEqual([]);
+    // A request for twelve cubes names its cube.
+    expect(of('12 kub narxi qancha?')).toEqual([v(12)]);
+  });
+
+  // Review seams-1: the footer's weight was the agent's cube reference.
+  it('a weight’s figure in a footer is no cube reference: «G.W. 710 CBM 3.8»', () => {
+    expect(of('G.W. 710 CBM 3.8')).toEqual([]);
+    expect(of('G.W.: 710 CBM 3.8')).toEqual([w(710)]);
+    expect(of('TOTAL QTY 980 CBM 3.8')).toEqual([]);
+    // Check seams-1: after another field's figure too — no 710 cube reference.
+    expect(of('N.W. 650 G.W. 710 CBM 3.8')).toEqual([]);
+    expect(of('QTY 980 G.W. 710 CBM 3.8')).toEqual([]);
+    expect(of('Мест 60 брутто 710 куб 3.8')).toEqual([]);
+  });
+
   it('…and the yo’lkira tool, handed the chat, finds no weight to price: the checklist asks it', async () => {
     const out = await runTool(
       'calc_checklist',

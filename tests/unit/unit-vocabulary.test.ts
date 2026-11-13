@@ -41,7 +41,15 @@ describe('the words of a unit', () => {
   });
 
   it('a word that is no unit stays none: «件» is absent on purpose, and a label is not a unit', () => {
-    for (const word of ['件', 'meas', 'gw', 'brutto', 'pkgs', 'volume']) expect(unitOf(word), word).toBeNull();
+    for (const word of ['件', 'meas', 'gw', 'brutto', 'volume']) expect(unitOf(word), word).toBeNull();
+  });
+
+  // Review seams-7: «pkgs» was a package to the Excel reader (a «PKGS» column)
+  // and to T3's not-goods words, and no unit here — «Stul 200 dona 20 pkgs 300
+  // kg» landed a product «Stul 20 pkgs» where «20 ctns» was a carton count. A
+  // label AND a unit, like «ctns» and «cartons» (both in FIELD_LABELS.cartons).
+  it('a forwarder’s packages are a package count: pkg, pkgs, package, packages', () => {
+    for (const word of ['pkg', 'pkgs', 'PKGS', 'package', 'packages']) expect(unitOf(word), word).toBe('karobka');
   });
 
   it('unitPattern is longest-first, so «kgs» is never «kg» + a stray «s» and «кубов» never «куб» + «ов»', () => {
