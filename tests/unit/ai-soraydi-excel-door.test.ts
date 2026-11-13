@@ -548,7 +548,7 @@ describe('X5 — a line column nothing settles is ASKED once, by the rows it is 
   });
 
   it('…and an ask stored before the place was kept is judged over EVERY row of its name — never the first alone', () => {
-    const files = [{ label: '«pl.xlsx»', shape: 'packing' as const, weightKind: 'gross' as const, grossKg: null, grossColumn: true, volumeM3: null, rows: 3,
+    const files = [{ label: '«pl.xlsx»', shape: 'packing' as const, weightKind: 'gross' as const, grossKg: null, grossColumn: true, volumeM3: null, rows: 3, text: null,
       asks: [{ field: 'weightKg' as const, title: 'G.W.(KGS)', rows: [{ name: 'Office chair', value: 12 }, { name: 'Office chair', value: 13 }, { name: 'Desk', value: 11 }] }] }];
     const person = { person: ['weightKg' as const] };
     const goods = [
