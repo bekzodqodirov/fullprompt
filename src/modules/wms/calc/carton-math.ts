@@ -210,14 +210,19 @@ const FOURTH = new RegExp(String.raw`^${JOIN}${NUM}`, 'u');
  * The unit written AFTER the whole size — bare or bracketed, any case, and
  * the Chinese forms («60*40*50(CM)», «60*40*50厘米», «60х40х50 СМ»). A Han
  * unit needs no boundary after it; a Latin or Cyrillic one must end there.
+ *
+ * The bracket and the spaces after it are ONE optional group: written as
+ * `\s*[(]?\s*` the two runs could split one stretch of spaces n ways when no
+ * bracket stood there, and a size cell padded with spaces cost seconds a row
+ * on the one app process (review load-2 — 12 s for 500 such Excel rows).
  */
 const UNIT_AFTER = new RegExp(
-  String.raw`^\s*[(（\[]?\s*(?:(厘米|公分|毫米|米)|(sm|cm|см|сантиметр\p{L}*|santimetr\p{L}*|mm|мм|миллиметр\p{L}*|millimetr\p{L}*|metr\p{L}*|метр\p{L}*|m|м)(?![\p{L}\d]))\s*[)）\]]?`,
+  String.raw`^\s*(?:[(（\[]\s*)?(?:(厘米|公分|毫米|米)|(sm|cm|см|сантиметр\p{L}*|santimetr\p{L}*|mm|мм|миллиметр\p{L}*|millimetr\p{L}*|metr\p{L}*|метр\p{L}*|m|м)(?![\p{L}\d]))\s*[)）\]]?`,
   'iu',
 );
 /** A length unit this file does not convert — the size is real, its cube is asked. */
 const FOREIGN_UNIT_AFTER = new RegExp(
-  String.raw`^\s*[(（\[]?\s*(?:inch(?:es)?|in|дюйм\p{L}*|dyuym\p{L}*|ft|feet|foot|фут\p{L}*|dm|дм|英寸|寸|英尺)(?![\p{L}\d])\s*[)）\]]?|^\s*[″"]`,
+  String.raw`^\s*(?:[(（\[]\s*)?(?:inch(?:es)?|in|дюйм\p{L}*|dyuym\p{L}*|ft|feet|foot|фут\p{L}*|dm|дм|英寸|寸|英尺)(?![\p{L}\d])\s*[)）\]]?|^\s*[″"]`,
   'iu',
 );
 
