@@ -81,6 +81,14 @@ const num = (n: number | null) => (n === null ? '' : String(n));
 /** The carton / unknown-unit words a line states, as the door's own note. */
 function lineNotes(line: GoodsLine): string[] {
   const notes: string[] = [];
+  // What the line states and no column holds as written — a bare «20 x 15 kg»
+  // whose product is the row's (JN-8 (c), check crit-2), «4 кубов» beside a
+  // count (JN-22) — goes on the note in the seller's words, so the VED sees
+  // where the figure came from. A figure that reads two ways is the line's
+  // question instead (its raw text is kept, or the paste says «aniq emas»).
+  if (line.aside && line.aside.length > 0 && !line.problems.some(isBlockingProblem)) {
+    notes.push(`sotuvchi: ${line.aside.join(', ')}`);
+  }
   if (line.cartons !== null) {
     const word = line.unitWords.find((w) => unitOf(w) === 'karobka') ?? 'karobka';
     const moved = normalizeRowUnit({

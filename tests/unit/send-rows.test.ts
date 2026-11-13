@@ -291,3 +291,34 @@ describe('a read line keeps its text only while a question stands on it', () => 
     expect(rowOfLine(parseGoodsLine('Kabel, 1,200, kg'), 1, 'Kabel, 1,200, kg').raw).toBe('Kabel, 1,200, kg');
   });
 });
+
+// Check crit-2: the card form and the VED's paste read no packing (T4 is the
+// bot's), so «Stul 20 x 15 kg» landed «Stul 20 x» with ONE chair's 15 kg as
+// the row's weight and «Kurtka 20*24 dona» 24 pieces. A bare «A x B unit» is
+// A × B at every door (JN-8 (c), binding), the phrase on the note.
+describe('a bare «A x B unit» is the row’s product on the card form and the paste (crit-2)', () => {
+  it('the card form’s row: «Stul» 300 kg (20 × 15), «Kurtka» 480 dona (20 × 24) — never B as the row’s figure', () => {
+    // 20 × 15 = 300 kg; 20 × 24 = 480; 20 × 12 = 240 juft.
+    expect(itemOfRow(textRows('Stul 20 x 15 kg', 0)[0]!)).toMatchObject({ name: 'Stul', weightKg: 300, note: 'sotuvchi: 20 x 15 kg' });
+    expect(itemOfRow(textRows('Kurtka 20 x 24 dona', 0)[0]!)).toMatchObject({ name: 'Kurtka', quantity: 480 });
+    expect(itemOfRow(textRows('Kurtka 20*24 dona', 0)[0]!)).toMatchObject({ name: 'Kurtka', quantity: 480 });
+    expect(itemOfRow(textRows('Стул 20 х 15 кг', 0)[0]!)).toMatchObject({ weightKg: 300 });
+    expect(itemOfRow(textRows('Krossovka 20 x 12 juft', 0)[0]!)).toMatchObject({ measureUnit: 'juft', measureQty: 240 });
+    expect(rowIssues(textRows('Stul 20 x 15 kg', 0)[0]!).blocking).toEqual([]);
+  });
+
+  it('the VED’s paste: the same products, the phrase on the note', () => {
+    expect(pasteItems('Stul 20 x 15 kg\nKurtka 20*24 dona')).toMatchObject([
+      { name: 'Stul', weightKg: 300, note: 'sotuvchi: 20 x 15 kg' },
+      { name: 'Kurtka', quantity: 480, note: 'sotuvchi: 20*24 dona' },
+    ]);
+  });
+
+  it('a space-grouped B is still asked both ways, and a sheet is still a sheet', () => {
+    const grouped = parseGoodsLine('Stanok 2 x 1 500 kg');
+    expect(grouped.weightKg).toBeNull();
+    expect(grouped.problems).toContainEqual(expect.objectContaining({ kind: 'ambiguous', text: '1 500' }));
+    expect(parseGoodsLine('Kafel 600x600 500 dona')).toMatchObject({ name: 'Kafel 600x600', quantity: 500 });
+    expect(parseGoodsLine('Gilam 2x3 100 dona')).toMatchObject({ name: 'Gilam 2x3', quantity: 100 });
+  });
+});

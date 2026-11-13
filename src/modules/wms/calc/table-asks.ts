@@ -1,4 +1,4 @@
-import { applyPacking, fmtFigure, sizeText, type CartonDoubt, type PackedField } from './carton-math';
+import { applyPacking, fmtFigure, productFields, sizeText, type CartonDoubt, type PackedField } from './carton-math';
 import { needShortUz, type NeedUnit } from './needs';
 import type { AskedQuestion, CalcGoodsFact, TableAsk } from './intake';
 
@@ -156,6 +156,10 @@ export function aiQuestionAsks(questions: readonly AskedQuestion[]): TableAsk[] 
 export interface PackingLegend {
   /** Some figure is the bot's product: the «*» is explained. */
   computed: boolean;
+  /** Some «*» is a product the line wrote («20 x 15 kg») — no carton count's, said so (check crit-2). */
+  written: boolean;
+  /** Some «*» is cartons × one carton's. */
+  fromCartons: boolean;
   /** A stated figure REPLACED by the product — one line each, capped by the draw. */
   replaced: { no: number; field: PackedField; was: number; now: number; how: string; unit: NeedUnit; perPiece: boolean }[];
   /** Rows whose size carried no unit and was taken as centimetres. */
@@ -174,11 +178,12 @@ const FIELDS: readonly PackedField[] = ['quantity', 'weightKg', 'measureQty', 'v
 /** Which of a row's figures the bot computed — the fields that carry the «*». */
 export function computedFields(row: CalcGoodsFact | undefined): ReadonlySet<PackedField> {
   const d = row?.derived;
-  return new Set(d ? FIELDS.filter((f) => d[f] !== undefined) : []);
+  // …and a product the line itself wrote («20 x 15 kg», review JN-8 (c)) while its field holds it.
+  return new Set(d ? [...FIELDS.filter((f) => d[f] !== undefined), ...productFields(row!)] : []);
 }
 
 export function packingLegend(rows: readonly AskRow[], goods: readonly CalcGoodsFact[]): PackingLegend {
-  const out: PackingLegend = { computed: false, replaced: [], assumedCm: [], weightKindUnsaid: [], photo: [] };
+  const out: PackingLegend = { computed: false, written: false, fromCartons: false, replaced: [], assumedCm: [], weightKindUnsaid: [], photo: [] };
   for (const r of rows) {
     const row = goods[r.index];
     if (!row) continue;
@@ -187,6 +192,8 @@ export function packingLegend(rows: readonly AskRow[], goods: readonly CalcGoods
     if (!d) continue;
     const made = computedFields(row);
     if (made.size > 0) out.computed = true;
+    if (productFields(row).length > 0) out.written = true;
+    if (FIELDS.some((f) => d[f] !== undefined)) out.fromCartons = true;
     for (const field of made) {
       const was = d.replaced?.[field];
       const now = row[field];
@@ -210,7 +217,10 @@ export const REPLACED_LINES_MAX = 5;
 /** The legend as lines — `ranges` is the table's own «1, 3, 5–7». */
 export function legendLines(legend: PackingLegend, ranges: (nos: readonly number[]) => string): string[] {
   const lines: string[] = [];
-  if (legend.computed) lines.push(`${COMPUTED_MARK} — bot hisoblagan (karobka soni × bittasiniki).`);
+  if (legend.computed) {
+    const how = legend.written && !legend.fromCartons ? 'yozilgan ko‘paytmadan' : legend.written ? 'karobka soni × bittasiniki, yoki yozilgan ko‘paytmadan' : 'karobka soni × bittasiniki';
+    lines.push(`${COMPUTED_MARK} — bot hisoblagan (${how}).`);
+  }
   for (const r of legend.replaced.slice(0, REPLACED_LINES_MAX)) {
     lines.push(
       `♻️ ${r.no}-qator: ${FIELD_WORD[r.field]} ${label(r.was, r.unit)} bitta ${r.perPiece ? 'donaniki' : 'karobkaniki'} ekan — ${r.how} = ${label(r.now, r.unit)} deb olindi. Noto‘g‘ri bo‘lsa yozing: «${r.no}: ${label(r.was, r.unit)}».`,

@@ -609,6 +609,13 @@ export interface LineDerived {
   cubeIsLine?: boolean;
   /** This call set the row's `measureUnit` with a computed measure — taken back with it. */
   measureUnitSet?: boolean;
+  /**
+   * A figure the LINE wrote as a product — a bare «20 x 15 kg» (units.ts
+   * `timesFigures`, review JN-8 (c)): computed, but by no packing, so no pass
+   * of this file makes or takes it back; it carries the «*» while its field
+   * still holds it (check crit-2: the table drew it as if typed).
+   */
+  product?: Partial<Record<PackedField, Derived>>;
 }
 
 /**
@@ -858,6 +865,12 @@ export function applyPacking<T extends PackedLine>(input: T): PackingOutcome<T> 
   }
 
   if (person.size > 0) derived.person = FIELDS.filter((f) => person.has(f));
+  // The line's own product goes on while its field holds it and no packing wrote it.
+  const product = FIELDS.filter((f) => {
+    const made = before.product?.[f];
+    return made !== undefined && derived[f] === undefined && !person.has(f) && line[f] === made.value;
+  });
+  if (product.length > 0) derived.product = Object.fromEntries(product.map((f) => [f, before.product![f]!]));
   if (Object.keys(derived).length > 0) line.derived = derived;
   else delete line.derived;
   return { line, doubts };
@@ -889,6 +902,12 @@ export function setStated<T extends PackedLine>(line: T, field: PackedField, val
     delete derived.cubeIsLine;
   }
   if (field === 'measureQty') delete derived.measureUnitSet;
+  if (derived.product?.[field] !== undefined) {
+    const kept = { ...derived.product };
+    delete kept[field];
+    if (Object.keys(kept).length > 0) derived.product = kept;
+    else delete derived.product;
+  }
   const others = (before.person ?? []).filter((f) => f !== field);
   const person = positive(value) ? [...others, field] : others;
   if (person.length > 0) derived.person = FIELDS.filter((f) => person.includes(f));
@@ -952,7 +971,17 @@ export function derivedNotes(line: PackedLine): string[] {
     }
   }
   if (d.weightIsGross) out.push('og‘irlik brutto (karobka og‘irligidan)');
+  for (const field of productFields(line)) {
+    const unit = UNIT_OF(field, line);
+    out.push(`${WORD_OF[field]} hisoblangan: ${d.product![field]!.how} = ${fmtFigure(line[field] as number)}${unit ? ` ${unit}` : ''}`);
+  }
   return out;
+}
+
+/** The fields a line wrote as a product («20 x 15 kg») that still hold it — `LineDerived.product`. */
+export function productFields(line: PackedLine): PackedField[] {
+  const made = line.derived?.product;
+  return made ? FIELDS.filter((f) => made[f] !== undefined && line[f] === made[f]!.value) : [];
 }
 
 /**
@@ -967,9 +996,12 @@ export function derivedBrief(line: PackedLine): string | null {
     const was = d.replaced?.[f];
     return was !== undefined ? `${WORD_OF[f]} (asli ${fmtFigure(was)})` : WORD_OF[f];
   });
-  if (made.length === 0) return d.weightIsGross ? 'og‘irlik brutto' : null;
+  const product = productFields(line).map((f) => WORD_OF[f]);
+  const multiplied = product.length > 0 ? `ko‘paytmadan hisoblangan: ${product.join(', ')}` : null;
+  if (made.length === 0) return [d.weightIsGross ? 'og‘irlik brutto' : null, multiplied].filter(Boolean).join('; ') || null;
   const marks = [d.assumedCm ? 'sm deb olindi' : null, d.weightIsGross ? 'og‘irlik brutto' : null].filter(Boolean);
-  return `karobkadan hisoblangan: ${made.join(', ')}${marks.length > 0 ? ` — ${marks.join(', ')}` : ''}`;
+  const cartons = `karobkadan hisoblangan: ${made.join(', ')}${marks.length > 0 ? ` — ${marks.join(', ')}` : ''}`;
+  return multiplied ? `${cartons}; ${multiplied}` : cartons;
 }
 
 /**

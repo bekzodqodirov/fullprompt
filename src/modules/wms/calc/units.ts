@@ -628,6 +628,8 @@ export interface GoodsLine {
   aside?: string[];
   /** Every per-one figure of the line as written, placed or not — an ANSWER holding one is refused. */
   perOne?: string[];
+  /** The columns the line wrote as a bare «A x B» product — the arithmetic, «20 × 15 kg» (`timesFigures`). */
+  products?: Partial<Record<'quantity' | 'weightKg' | 'volumeM3' | 'measureQty', { value: number; how: string }>>;
 }
 
 export type GoodsLineProblem =
@@ -2171,8 +2173,13 @@ export function parseGoodsLine(
     }
     return out;
   };
-  const consumedOf = packed ? byCell(packed.consumed) : null;
-  const unreadOf = packed ? byCell(packed.unread) : null;
+  // The card form and the VED's paste read no packing (T4 is the bot's), but a
+  // bare «A x B unit» is A × B at every door (JN-8 (c), binding — check crit-2:
+  // «Stul 20 x 15 kg» there was «Stul 20 x» with ONE chair's 15 kg as the row's
+  // weight, «Kurtka 20*24 dona» 24 pieces).
+  const timesOnly = packed ? null : bareTimes(kept.join(CELL_JOIN), opts.scaled === true);
+  const consumedOf = packed ? byCell(packed.consumed) : timesOnly ? byCell(timesOnly.spans) : null;
+  const unreadOf = packed ? byCell(packed.unread) : timesOnly ? kept.map(() => []) : null;
 
   // «Набор 4 кубов 20 шт» — a toy's own cubes, on a line that states its
   // pieces (review JN-22): the «N кубов» stays in the name, see below. A count
@@ -2198,7 +2205,7 @@ export function parseGoodsLine(
     // A size and a code's digits are no amounts (T0): read from the blanked
     // text, cut the name from the cell as written — the offsets are the same.
     let scan = blankNonAmounts(cellText);
-    if (packed) {
+    if (consumedOf) {
       // A per-one figure, its mark, a times multiplier, a packed size and its
       // label: read by no column below, and out of the name; a rate («180
       // gr/m2») is read by nothing and stays in the name.
@@ -2365,11 +2372,34 @@ export function parseGoodsLine(
     // The unit is stated, whosever the figure: the line still states goods.
     line.unitWords.push(...packed.figures.filter((f) => !f.inName).map((f) => f.word));
   }
+  if (timesOnly) {
+    timesFigures(line, timesOnly.figures);
+    line.aside = timesOnly.figures.map((f) => f.text);
+  }
   if (groupedAside.length > 0) line.aside = [...(line.aside ?? []), ...groupedAside];
   if (line.cartons !== null && line.quantity === null && line.weightKg === null && line.measureQty === null) {
     line.problems.push({ kind: 'cartons_only', cartons: line.cartons });
   }
   return line;
+}
+
+/**
+ * The bare «A x B unit» figures of a line — no carton word beside A, B not
+ * space-grouped — with the spans they take out of the name (A, the joiner, B
+ * and its unit), for the doors that read no packing (above). Null when the
+ * line has none, or states anything else per one (that is the bot's reading).
+ */
+function bareTimes(text: string, scaled: boolean): { figures: PerOneFigure[]; spans: [number, number][] } | null {
+  if (!/\d\s*[xх×*]\s*\d/iu.test(text)) return null;
+  const read = packingRead(text, { scaled });
+  const figures = read.figures.filter((f) => f.noted && f.times !== undefined && !f.inName);
+  if (figures.length === 0 || figures.length !== read.figures.length) return null;
+  const spans = figures.map((f): [number, number] => {
+    const from = Math.max(0, f.start - PER_ONE_WINDOW);
+    const lead = TIMES_LEAD.exec(text.slice(from, f.start));
+    return [lead ? from + lead.index : f.start, f.end];
+  });
+  return { figures, spans };
 }
 
 /**
@@ -2387,15 +2417,17 @@ function timesFigures(line: GoodsLine, figures: readonly PerOneFigure[]): void {
     if (bare.filter((g) => g.unit === f.unit).length > 1) continue;
     const product = timesProduct(f.times!, f.value!);
     if (product === null) continue;
-    if (f.unit === 'kg') line.weightKg ??= product;
-    else if (f.unit === 'm3') line.volumeM3 ??= product;
-    else if (f.unit === 'dona') line.quantity ??= product;
-    else if (line.measureUnit === null) {
-      line.measureUnit = f.unit;
-      line.measureQty = product;
-    }
+    const field = f.unit === 'kg' ? 'weightKg' : f.unit === 'm3' ? 'volumeM3' : f.unit === 'dona' ? 'quantity' : 'measureQty';
+    if (field === 'measureQty') {
+      if (line.measureUnit !== null) continue;
+      line.measureUnit = f.unit as MeasureUnit;
+    } else if (line[field] !== null) continue;
+    line[field] = product;
+    // The arithmetic in the seller's units — «20 × 15 kg», «20 × 24 dona» — the «*» and the note say it (crit-2).
+    line.products = { ...line.products, [field]: { value: product, how: `${f.times} × ${String(f.value)} ${PRODUCT_UNIT[f.unit]}` } };
   }
 }
+const PRODUCT_UNIT: Record<PerOneFigure['unit'], string> = { kg: 'kg', m3: 'm³', dona: 'dona', juft: 'juft', m2: 'm²', litr: 'litr' };
 
 /**
  * ONE rule for «this row's number is in the wrong column» — the door

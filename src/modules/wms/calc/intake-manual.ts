@@ -1626,6 +1626,8 @@ function typedRow(name: string, parsed: GoodsLine, fields?: Pick<LineFields, 'as
     note: asideNote([...(fields?.aside ?? []), ...(parsed.aside ?? [])]),
     // «G.W. 300 kgs»: the label said which weight the row's own is (customs wants netto).
     ...(fields?.weightKind && parsed.weightKg !== null ? { weightKind: fields.weightKind } : {}),
+    // A bare «20 x 15 kg» is the row's 300 kg — computed, and marked so (JN-8 (c), check crit-2).
+    ...(parsed.products ? { derived: { product: parsed.products } } : {}),
   };
   return parsed.packing ? applyPacking({ ...row, packing: parsed.packing }).line : row;
 }

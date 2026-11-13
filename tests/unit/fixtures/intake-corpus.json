@@ -57870,6 +57870,71 @@
    "why": "figures-chip-invents-count: the kernel asks the two readings of the welded number; the card form's SHORT answer is a row (send-rows.ts groupedShortRow) that keeps the first group in the name and writes no count.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4434",
+   "input": "Stul 20 x 15 kg",
+   "expected": {
+    "name": "Stul",
+    "weightKg": 300,
+    "quantity": null,
+    "cartons": null,
+    "problemCount": 0
+   },
+   "said": "300 kg = 20 × 15 — never the 15 kg of one",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4435",
+   "input": "Kurtka 20 x 24 dona",
+   "expected": {
+    "name": "Kurtka",
+    "quantity": 480,
+    "problemCount": 0
+   },
+   "said": "480 = 20 × 24 — never 24 pieces",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4436",
+   "input": "Kurtka 20*24 dona",
+   "expected": {
+    "name": "Kurtka",
+    "quantity": 480
+   },
+   "said": "480; the name never «Kurtka *»",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4437",
+   "input": "Стул 20 х 15 кг",
+   "expected": {
+    "name": "Стул",
+    "weightKg": 300
+   },
+   "said": "300 кг",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count. The Cyrillic joiner.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4438",
+   "input": "Krossovka 20 x 12 juft",
+   "expected": {
+    "measureUnit": "juft",
+    "measureQty": 240,
+    "quantity": null
+   },
+   "said": "240 juft",
+   "why": "check crit-2: the card form and the VED's paste (no packing) read «Stul 20 x 15 kg» as «Stul 20 x» with one chair's 15 kg as the row's weight; JN-8 (c), binding: a bare «A x B unit» gives the product at every door, A no carton count. A pair unit goes to the measure.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
   }
  ],
  "parseManualFactsCases": [
