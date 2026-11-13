@@ -1184,8 +1184,16 @@ const TIMES_JOINER = /(?<=\d)\s*[xх×*]\s*(?=\d)/gu;
 
 /** The size words of a typed line — «o‘lchami», «razmeri», «размер», «size» (units.ts `FIELD_LABELS`). */
 const SIZE_LABEL_BEFORE = new RegExp(String.raw`(?<![\p{L}])(?:${labelPattern(FIELD_LABELS.size)})\s*[.:：=]?\s*$`, 'iu');
+/**
+ * A size the label says is the PACKAGE's — «karobka o‘lchami», «carton size»,
+ * «20 karobka razmeri». Never a noun that is the denominator of a per-package
+ * tail: «G.W.: 15 kg/ctn Size: 60*40*50cm» (a spec block, joined by spaces),
+ * «15 кг/кор Размер», «15kg/箱 尺寸», «15 kg/karobka O‘lchami» — the «ctn» is
+ * the weight's, and «Size» names nobody's size (JN-11: asked, never
+ * multiplied — review figures-size-owner-after-per-carton-tail).
+ */
 const PACKAGE_SIZE_BEFORE = new RegExp(
-  String.raw`(?<![\p{L}])(?:${labelPattern(FIELD_LABELS.packageSize)}|(?:${PACKAGE_NOUN})\s+(?:${labelPattern(FIELD_LABELS.size)}))\s*[.:：=]?\s*$`,
+  String.raw`(?<![\p{L}/／])(?:${labelPattern(FIELD_LABELS.packageSize)}|(?:${PACKAGE_NOUN})\s+(?:${labelPattern(FIELD_LABELS.size)}))\s*[.:：=]?\s*$`,
   'iu',
 );
 const PACKAGE_NOUN_AFTER = new RegExp(String.raw`^\s*(?:${PACKAGE_NOUN})(?![\p{L}\d])`, 'iu');

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { measureCandidates, type ChatMessage } from '@/modules/wms/agent/context';
+import { sizeOwnerUnknown } from '@/modules/wms/calc/carton-math';
 import { parseManualFacts, readGoodsLines } from '@/modules/wms/calc/intake-manual';
 import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 
@@ -277,6 +278,40 @@ describe('owner-4 — a package noun opening its clause right before the size sa
       const r = row(text);
       expect(r.packing?.size?.of, text).toBeNull();
       expect(r.volumeM3, text).toBeNull();
+    }
+  });
+});
+
+describe('figures-size-owner-after-per-carton-tail — a per-carton tail’s noun is no «carton size» label (JN-11)', () => {
+  it('a spec block’s «G.W.: 15 kg/ctn» then «Size:» — the size is nobody’s said: kept, asked, never 20 × it', () => {
+    // Was of: 'package' and 2.4 m³ «hisoblangan» with no question — and if it is the chair's own size it is 24 m³.
+    for (const text of [
+      'Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nSize: 60*40*50cm',
+      'Наименование: стул складной\nКоличество: 200 шт\nМест: 20\nВес: 15 кг/кор\nРазмер: 60x40x50 см',
+      '品名 折叠椅\n数量 200\n箱数 20\n毛重 15kg/箱\n尺寸 60*40*50cm',
+      'Nomi: stul\nSoni: 200 dona\nKarobka soni: 20\nVazni: 15 kg/karobka\nO‘lchami: 60x40x50 sm',
+      'Stul 200 dona 20 karobka 15 kg/karobka razmeri 60x40x50 sm',
+      'folding chair 200 pcs 20 ctns 15 kg/ctn size 60*40*50cm',
+    ]) {
+      const r = row(text);
+      expect(r.volumeM3, text).toBeNull();
+      expect(r.packing?.size, text).toMatchObject({ l: 60, w: 40, h: 50, of: null });
+      // The owner is asked: 20 cartons, a size, nobody's said.
+      expect(sizeOwnerUnknown(r.packing), text).toBe(true);
+      // The carton's weight still multiplies: 20 × 15 = 300 kg.
+      expect(r.weightKg, text).toBe(300);
+    }
+  });
+
+  it('a label that SAYS the carton still says so after the tail — «Carton size:», «外箱尺寸», «, karobka o‘lchami»', () => {
+    for (const text of [
+      'Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nCarton size: 60*40*50cm',
+      '品名 折叠椅\n数量 200\n箱数 20\n毛重 15kg/箱\n外箱尺寸 60*40*50cm',
+      'Stul 200 dona 20 karobka 15 kg/karobka, karobka o‘lchami 60x40x50 sm',
+      'Stul 20 karobka razmeri 60x40x50 sm',
+    ]) {
+      // 20 × 0.6 × 0.4 × 0.5 = 2.4 m³.
+      expect(row(text), text).toMatchObject({ volumeM3: 2.4 });
     }
   });
 });

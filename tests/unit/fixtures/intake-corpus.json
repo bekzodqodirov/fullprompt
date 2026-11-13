@@ -16161,6 +16161,108 @@
    "why": "owner-4's guard: a product called «Karobka».",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4254",
+   "input": "Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nSize: 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner: «ctn Size» across the joined block was read as a «carton size» label — 2.4 m³ «hisoblangan», nobody asked (JN-11: «Size» is owner unknown).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4255",
+   "input": "Наименование: стул складной\nКоличество: 200 шт\nМест: 20\nВес: 15 кг/кор\nРазмер: 60x40x50 см",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, Russian.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4256",
+   "input": "品名 折叠椅\n数量 200\n箱数 20\n毛重 15kg/箱\n尺寸 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, Chinese.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4257",
+   "input": "Nomi: stul\nSoni: 200 dona\nKarobka soni: 20\nVazni: 15 kg/karobka\nO‘lchami: 60x40x50 sm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, Uzbek: «karobka O‘lchami» matched the packageSize label itself.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4258",
+   "input": "folding chair 200 pcs 20 ctns 15 kg/ctn size 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 kg (20 × 15); no cube — the size's owner is asked",
+   "why": "figures-size-owner, one line.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4259",
+   "input": "Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nCarton size: 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "volumeM3": 2.4,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "2.4 m³ — «Carton size» says the package",
+   "why": "the guard: a label that says the carton keeps its reading after the tail.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
