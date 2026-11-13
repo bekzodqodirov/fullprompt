@@ -89,7 +89,7 @@ import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { threadAiAdvice } from '@/modules/wms/calc/from-thread';
 import { PASS_FAILED, STOOD_DOWN, attemptStanding, registerCalcPrefillWorker, standDownWords } from '@/modules/wms/calc/jobs';
 import { SHEET_TEXT_BUDGET, csvRows, readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
-import { isArticleNumber, parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
+import { isArticleNumber, parseGoods, type Cell, type GoodsRow } from '@/modules/wms/deals/goods-import';
 import { MAX_ROWS, MAX_SHEETS, htmlTableSheets, readXls, spreadsheetMlSheets } from '@/modules/wms/deals/xls';
 import {
   activeIntake,
@@ -2458,7 +2458,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const read = await readGoodsFile(built.body, built.contentType);
     expect(read?.kind).toBe('goods');
     if (read?.kind !== 'goods') return;
-    const packs = (goods: readonly { packing?: { cartons: number | null; kgPerCarton: number | null; m3PerCarton: number | null } }[]) =>
+    const packs = (goods: readonly GoodsRow[]) =>
       goods.map((g) => [g.packing?.cartons ?? null, g.packing?.kgPerCarton ?? null, g.packing?.m3PerCarton ?? null]);
     expect(packs(read.goods)).toEqual([[null, 15, 0.12], [null, 15, 0.12], [null, 30, 0.5]]);
     expect(read.moreSheets.map((m) => packs(m.goods))).toEqual([[[null, 8, 0.05], [null, 8, 0.05], [null, 30, 0.5]]]);
@@ -2547,6 +2547,58 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
         expect(steps[0]!.table, `${JSON.stringify(summary)} ai=${ai}`).toContain('✅ Hajm: 3.8 kub');
       }
     }
+  },
+  c4529: async () => {
+    // review seams-3's check: the same lone invoice with the model reading the shipment's cube off it —
+    // 3.8, the Σ of its CBM column, the ordinary production answer. That reading is the lines' Σ, never a
+    // stated cube: 1.2 + 1.1 + 1.5 = 3.8 «qatorlardan», and after «2: 2.1 m3» 1.2 + 2.1 + 1.5 = 4.8.
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)', 'CBM'];
+    const rows: Cell[][] = [head, [1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'ci.xlsx']], ['2: 2.1 m3'], { model: { volumeM3: 3.8 } });
+    const [before, after] = steps as [(typeof steps)[number], (typeof steps)[number]];
+    expect(before.state.facts.volumeM3 ?? null).toBeNull();
+    expect(before.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
+  },
+  c4562: async () => {
+    // review seams-3's check, the refuter's caveat: a lone PACKING list of one carton a line, every line its
+    // G.W. and CBM, TOTAL 710 / 3.8 — the TOTAL's cube is the lines' Σ, so «2: 2.1 m3» moves it: 4.8 m³.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 1, 120, 1.2],
+      [2, 'Kids toy plastic', 480, 1, 260, 1.1],
+      [3, 'LED lamp 50W', 300, 1, 330, 1.5],
+      ['TOTAL', null, 980, 3, 710, 3.8],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['2: 2.1 m3']);
+    const [before, after] = steps as [(typeof steps)[number], (typeof steps)[number]];
+    expect(before.cube).toBe(3.8);
+    expect(before.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+    expect(after.cube).toBe(4.8);
+    expect(after.table).toContain('✅ Hajm: 4.8 m³ (qatorlardan)');
+  },
+  c4563: async () => {
+    // review seams-3's check, its edge: a cube the model reads that is NOT the lines' Σ (3.9 against
+    // 1.2 + 1.1 + 1.5 = 3.8) is a statement and stands — the rule drops only the lines' own Σ.
+    const head = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)', 'CBM'];
+    const rows: Cell[][] = [head, [1, 'Ladies jacket', 200, 6.5, 1300, 1.2], [2, 'Kids toy plastic', 480, 1.5, 720, 1.1], [3, 'LED lamp 50W', 300, 3, 900, 1.5]];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'ci.xlsx']], [], { model: { volumeM3: 3.9 } });
+    expect(steps[0]!.state.facts.volumeM3).toBe(3.9);
+    expect(steps[0]!.table).toContain('✅ Hajm: 3.9 kub');
+  },
+  c4564: async () => {
+    // review seams-3's check, the plain door untouched (frozen): the same one-carton packing list keeps the
+    // file's stated 3.8 there, as before the fix.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 1, 120, 1.2],
+      [2, 'Kids toy plastic', 480, 1, 260, 1.1],
+      [3, 'LED lamp 50W', 300, 1, 330, 1.5],
+      ['TOTAL', null, 980, 3, 710, 3.8],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], { ai: false });
+    expect(steps[0]!.state.facts.volumeM3).toBe(3.8);
   },
   c4523: async () => {
     // review seams-5: two rows of one name are two rows — answering rows 1 and 3 leaves row 2's

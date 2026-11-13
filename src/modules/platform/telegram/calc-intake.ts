@@ -1916,11 +1916,23 @@ export async function analyzeCollected(
       : null;
   const modelVolume = asked('volumeM3') || clashed('volumeM3') || doubtedByFile('volumeM3') ? null : (modelTotals?.volumeM3 ?? null);
   const fileVolume = asked('volumeM3') ? null : (fileTotals?.volumeM3 ?? null);
+  // …and when every held line states its cube, a file's or the model's cube
+  // that IS those lines' Σ is no stated cube (review seams-3's check): taken as
+  // stated it froze at the reading — a row the seller corrected at the table
+  // («2: 2.1 m3») left the shipment's 3.8 m³ standing where the rows said 4.8,
+  // the «qatorlardan» label lost. The cube is then the CURRENT lines' Σ, which
+  // the INSERT sums the same way; a figure that differs from them is still a
+  // statement and stands. On a door that asks only — the plain door is frozen.
+  const { factsVolumeM3 } = await import('../../wms/calc/intake');
+  const { roundM3 } = await import('../../wms/calc/line-totals');
+  const linesCube = collectionDoor(state) === 'plain' ? null : factsVolumeM3({ goods: placed.goods } as CalcFacts);
+  const fileOrModelVolume = fileVolume ?? modelVolume;
+  const statedVolume = fileOrModelVolume !== null && linesCube !== null && roundM3(fileOrModelVolume) === linesCube ? null : fileOrModelVolume;
   const reading: IntakeState['facts'] = {
     fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: route.toCity ?? manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     ...(fromFile && fromFile.weightKg != null ? fromFile : fromModel),
-    volumeM3: manual.volumeM3 ?? fileVolume ?? modelVolume,
+    volumeM3: manual.volumeM3 ?? statedVolume,
     // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not
     // which one — the totals question asks it, and the INSERT sums nothing.
     ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
@@ -1947,8 +1959,9 @@ export async function analyzeCollected(
   const doubts = totalsDoubts(state.totalsAnswer, {
     now: { material: state.material.length, files: state.fileCount },
     since,
+    // (the figure as read, a Σ of the lines included: what doubts an answer is unchanged)
     reading: fileAfterAnswer
-      ? reading
+      ? { ...reading, volumeM3: manual.volumeM3 ?? fileOrModelVolume }
       : { weightKg: fromModel.weightKg ?? null, volumeM3: manual.volumeM3 ?? modelVolume },
   });
   const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);

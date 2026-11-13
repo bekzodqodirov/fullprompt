@@ -99882,6 +99882,68 @@
    "why": "the check of seams-1's fix: both regressions changed the plain door's summary too. Base: 3.8 on both.",
    "source": "ai-soraydi 1a review (seams-1's fix, the check)",
    "weight": "defect"
+  },
+  {
+   "id": "c4529",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer (a lone invoice, the model reading its cube)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) | CBM — 1.2/1.1/1.5, no TOTAL row"
+    },
+    "model": "reads volumeM3 3.8",
+    "answers": [
+     "2: 2.1 m3"
+    ]
+   },
+   "said": "the model's 3.8 is the lines' Σ, no stated cube: «✅ Hajm: 3.8 m³ (qatorlardan)», then 4.8 after the correction",
+   "why": "review seams-3's check: every seams-3 test used a silent model; the model reading the same Σ froze the cube at 3.8.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4562",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer (a lone packing list of one carton a line)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 1 carton each, 120/1.2, 260/1.1, 330/1.5, TOTAL 3/710/3.8"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "2: 2.1 m3"
+    ]
+   },
+   "said": "the TOTAL row's 3.8 is the lines' Σ: «✅ Hajm: 3.8 m³ (qatorlardan)», then 4.8",
+   "why": "review seams-3's check, the refuter's pre-existing caveat: packingTotals passed the per-line CBM Σ through as a stated cube.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4563",
+   "call": "readIntakeFile + analyzeCollected (a lone invoice, the model reading a cube that differs from its lines)",
+   "input": {
+    "files": {
+     "ci.xlsx": "No. | Description | QTY(PCS) | Unit price (USD) | Amount (USD) | CBM — 1.2/1.1/1.5, no TOTAL row"
+    },
+    "model": "reads volumeM3 3.9"
+   },
+   "said": "3.9 is not the lines' 3.8 — a statement: «✅ Hajm: 3.9 kub» stands",
+   "why": "review seams-3's check: the rule drops the lines' own Σ only.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4564",
+   "call": "readIntakeFile + analyzeCollected on the PLAIN door (the one-carton packing list)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 1 carton each, 120/1.2, 260/1.1, 330/1.5, TOTAL 3/710/3.8"
+    },
+    "model": "answers nothing"
+   },
+   "said": "the plain door keeps the file's stated 3.8 (frozen)",
+   "why": "review seams-3's check: the plain door's behaviour does not change.",
+   "source": "ai-soraydi 1a review (seams-3, the check)",
+   "weight": "pinned"
   }
  ],
  "sameGoodsLineCases": [
