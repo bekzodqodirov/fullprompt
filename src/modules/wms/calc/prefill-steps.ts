@@ -181,6 +181,13 @@ export async function pickBazas(
   timedOut: number;
   /** Rows left unread because the pass's deadline had passed. */
   pastDeadline: number;
+  /**
+   * Rows the model was ASKED about and did not answer: its call was cut at
+   * the size, refused, unreadable, or never came back (`PickOutcome.failed`,
+   * docs/AI-SORAYDI.md §3.4 A12). Counted so the reply says so — a cut answer
+   * used to leave these rows reading «baza yo‘q», as if the file had none.
+   */
+  unanswered: number;
   /** Rows the BOOK filled in the pick's own save (every save fills since
    * round 2) — counted, or the pass under-reports the book (review P2-9). */
   dictionaryFilled: number;
@@ -195,6 +202,7 @@ export async function pickBazas(
     overtaken: 0,
     timedOut: 0,
     pastDeadline: 0,
+    unanswered: 0,
     dictionaryFilled: 0,
     memoryFilled: 0,
     rev: expectRev,
@@ -214,6 +222,9 @@ export async function pickBazas(
       groupId: calcRequestItems.groupId,
       measureUnit: calcRequestItems.measureUnit,
       measureQty: calcRequestItems.measureQty,
+      // What the good is made of and for — the pick reads it as the grouping
+      // did (A12); never part of a candidate read's shape.
+      note: calcRequestItems.note,
     })
     .from(calcRequestItems)
     .where(eq(calcRequestItems.requestId, requestId));
@@ -305,7 +316,7 @@ export async function pickBazas(
       continue;
     }
     if (candidates.length === 0) continue;
-    asking.push({ seq: r.seq, name: r.name, tnvedCode: code, candidates });
+    asking.push({ seq: r.seq, name: r.name, tnvedCode: code, note: r.note, candidates });
     judgeBy.set(r.seq, { facts, code, law });
   }
   if (empty.length > MAX_PICK_ROWS) {
@@ -357,7 +368,9 @@ export async function pickBazas(
     });
   }
   const answers = outcome.answers;
-  if (!answers) return { ...none, capped, timedOut, pastDeadline };
+  // A call that was made and gave nothing leaves every row it was asked
+  // about unanswered — said in the reply (A12), never «baza yo‘q» alone.
+  if (!answers) return { ...none, capped, timedOut, pastDeadline, unanswered: outcome.failed ? asking.length : 0 };
 
   const bySeq = new Map(rows.map((r) => [r.seq, r]));
   const askedBySeq = new Map(asking.map((a) => [a.seq, a]));
@@ -470,6 +483,8 @@ export async function pickBazas(
       overtaken,
       timedOut,
       pastDeadline,
+      // The call answered: nothing it was asked went without an answer.
+      unanswered: 0,
       dictionaryFilled: saved.dictionaryFilled.length,
       memoryFilled: saved.memoryFilled.length,
       rev: saved.rev,

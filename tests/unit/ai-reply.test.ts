@@ -747,7 +747,7 @@ describe('R2 late pass — the reply says what it is', () => {
   });
 
   it('the pick’s confessions are said under the totals, in one line (review regression-10)', () => {
-    const left = { capped: 12, refused: 2, overtaken: 0, timedOut: 1, skipped: false };
+    const left = { capped: 12, refused: 2, overtaken: 0, timedOut: 1, unanswered: 0, skipped: false };
     const text = aiVedReplyText({ ...base, pickLeft: left });
     expect(text).toContain(
       '⚠️ AI bazasini qo‘ymadi: 12 ta qator ko‘rilmadi (juda ko‘p), 2 tasida tanlangan deklaratsiya o‘lchovi mos kelmadi, 1 tasini bojxona faylidan o‘qib ulgurilmadi — VED to‘ldiradi',
@@ -761,13 +761,27 @@ describe('R2 late pass — the reply says what it is', () => {
   });
 
   it('a row the deadline left unread mid-pick is said with the reads that ran out of time (the merge’s seam)', () => {
-    const left = pickLeftOf({ capped: 0, refused: 0, overtaken: 0, timedOut: 1, pastDeadline: 2 });
+    const left = pickLeftOf({ capped: 0, refused: 0, overtaken: 0, timedOut: 1, pastDeadline: 2, unanswered: 0 });
     expect(aiVedReplyText({ ...base, pickLeft: left })).toContain(
       '⚠️ AI bazasini qo‘ymadi: 3 tasini bojxona faylidan o‘qib ulgurilmadi — VED to‘ldiradi',
     );
     // The pick DID run: the «vaqt yetmadi — tanlamadi» words are the
     // skipped pick's alone.
     expect(left.skipped).toBe(false);
+  });
+
+  it('a pick call that gave no answer says so in A6’s words — never «baza yo‘q» alone (docs/AI-SORAYDI.md §3.4 A12, PR-9)', () => {
+    // Four rows were asked and the call was cut at max_tokens: the four rows
+    // had declarations to choose from, and the model never chose.
+    const left = pickLeftOf({ capped: 0, refused: 0, overtaken: 0, timedOut: 0, pastDeadline: 0, unanswered: 4 });
+    expect(left.unanswered).toBe(4);
+    expect(aiVedReplyText({ ...base, pickLeft: left })).toContain('⚠️ AI bazasini qo‘ymadi: 4 tasiga javob bermadi — VED to‘ldiradi');
+    // …beside the other confessions, after the skipped pick's words and
+    // before the capped rows', in the line's one order.
+    const both = pickLeftOf({ capped: 2, refused: 0, overtaken: 0, timedOut: 0, pastDeadline: 0, unanswered: 4 });
+    expect(aiVedReplyText({ ...base, pickLeft: both })).toContain(
+      '⚠️ AI bazasini qo‘ymadi: 4 tasiga javob bermadi, 2 ta qator ko‘rilmadi (juda ko‘p) — VED to‘ldiradi',
+    );
   });
 
   it('a VED zone refusal still names the seller’s own missing kilos, on its own line (review PF-5)', () => {

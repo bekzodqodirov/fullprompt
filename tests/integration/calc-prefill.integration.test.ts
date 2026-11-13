@@ -38,6 +38,7 @@ import { AI_NOTE_HEAD, AI_REPLY_HEAD } from '@/modules/wms/calc/reply-heads';
 import { CODING_FAILED_LINE, SELLER_ASKS_HEAD } from '@/modules/wms/calc/ai-reply';
 import { askedSeqsOf, lawAsksInputOfStored, sellerAsksOf } from '@/modules/wms/calc/law-asks';
 import type { IntakeDoor } from '@/modules/wms/calc/intake';
+import type { PickRequest } from '@/modules/wms/calc/prefill-ai';
 
 /**
  * The AI VED hodimi, end to end, with the MODEL INJECTED.
@@ -1457,5 +1458,62 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     });
     expect(calls).toBe(1);
     expect(out.text).toContain(CODING_FAILED_LINE);
+  });
+});
+
+/**
+ * The pass's PICK call as the pass reads it (docs/AI-SORAYDI.md §3.4 A12,
+ * PR-9): the row's note reaches the model the way it reaches the grouping,
+ * and a call that came back with nothing — cut at max_tokens above all, the
+ * 4096 trap — is SAID, in A6's words, where it used to leave «baza yo‘q» for
+ * rows that had declarations to choose from. The model is injected at its
+ * boundary; the candidate read, the sweep and the reply are the real ones.
+ */
+describe('the pick: the note it reads and the answer it did not give (A12)', () => {
+  it('the row’s note is in what the pick is asked; a cut call is «javob bermadi», on the chat and the card alike', async () => {
+    const kg = (await db.select().from(customsImportRows).where(eq(customsImportRows.batchId, batchId))).find((r) => r.unit === 'kg')!;
+    // A name nothing like the declarations', so the auto-fill leaves the baza
+    // empty and the pick is asked (the «VED types meanwhile» case's trick).
+    const note = 'rasmda: qora ofis stuli, metall oyoq';
+    const r = await openCalcRequest(
+      {
+        intakeDoor: null,
+        entityType: 'deal',
+        entityId: dealId,
+        section: 'rastamojka',
+        fromCity: 'Yiwu',
+        toCity: 'Toshkent',
+        weightKg: 500,
+        volumeM3: 10,
+        items: [{ name: `Boshqa nom A12 ${SUFFIX}`, tnvedCode: kg.tnvedCode, weightKg: 100, note }],
+        source: 'card',
+      },
+      ctx(),
+    );
+    madeRequests.push(r.id);
+    let asked: PickRequest[] = [];
+    const out = await aiPrefill(r.id, ctx(), {
+      configured: true,
+      propose: idle,
+      pick: async (rows) => {
+        asked = rows;
+        // What `pickImportRows` hands back for an answer cut at max_tokens.
+        return { answers: null, usage: { model: 'scripted', inputTokens: 900, outputTokens: 16_000 }, failed: 'cut' };
+      },
+    });
+    expect(asked, 'the premise: the row had declarations and the pick was asked').toHaveLength(1);
+    expect(asked[0]!.note).toBe(note);
+    expect(out.picked).toBe(0);
+    // One row asked, no answer: A6's words, under the totals — on both copies.
+    for (const text of [out.text, out.lentaText]) {
+      expect(text).toContain('⚠️ AI bazasini qo‘ymadi: 1 tasiga javob bermadi — VED to‘ldiradi');
+    }
+  });
+
+  it('a stand-in that names no failure (no key behind it, nothing asked) is said as before — nothing', async () => {
+    const kg = (await db.select().from(customsImportRows).where(eq(customsImportRows.batchId, batchId))).find((r) => r.unit === 'kg')!;
+    const id = await open([{ name: `Boshqa nom A12 jim ${SUFFIX}`, tnvedCode: kg.tnvedCode, weightKg: 100 }]);
+    const out = await aiPrefill(id, ctx(), { configured: true, propose: idle, pick: async () => ({ answers: null, usage: null }) });
+    expect(out.text).not.toContain('javob bermadi');
   });
 });

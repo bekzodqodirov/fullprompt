@@ -424,6 +424,20 @@ export interface GroupingGood {
 /** How much of a note the listing carries — a hint, not the whole page. */
 const GROUPING_NOTE_CAP = 120;
 
+/**
+ * A row's note as a model listing carries it — «прим.: 100% полиэстер», one
+ * line, at most GROUPING_NOTE_CAP characters and «…» — or null when there is
+ * none. ONE rendering for the two calls of the pass (docs/AI-SORAYDI.md §3.4
+ * A12): the grouping that codes the row and the pick that chooses its
+ * declaration read the same hint about what the good is made of and for —
+ * what the reading saw on the picture lands there (`provenanceNote`).
+ */
+export function listingNote(note: string | null): string | null {
+  const flat = (note ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  return `прим.: ${flat.length > GROUPING_NOTE_CAP ? `${flat.slice(0, GROUPING_NOTE_CAP)}…` : flat}`;
+}
+
 const groupingNumber = (n: number) => String(Number(n.toFixed(3)));
 
 /**
@@ -445,13 +459,56 @@ export function groupingListing(goods: readonly GroupingGood[]): string {
       if (g.weightKg !== null && g.weightKg > 0) parts.push(`${groupingNumber(g.weightKg)} кг`);
       if (g.volumeM3 !== null && g.volumeM3 > 0) parts.push(`${groupingNumber(g.volumeM3)} м³`);
       if (g.measure) parts.push(g.measure);
-      const note = (g.note ?? '').replace(/\s+/g, ' ').trim();
-      if (note) {
-        parts.push(`прим.: ${note.length > GROUPING_NOTE_CAP ? `${note.slice(0, GROUPING_NOTE_CAP)}…` : note}`);
-      }
+      const note = listingNote(g.note);
+      if (note) parts.push(note);
       return `${i}. ${g.name}${parts.length > 0 ? ` — ${parts.join(' · ')}` : ''}`;
     })
     .join('\n');
+}
+
+/**
+ * The room the grouping's answer gets — and the thinking before it, which the
+ * analyst model counts INSIDE `max_tokens` (docs/AI-SORAYDI.md §3.4 A12, PR-9).
+ * At 8192 a long invoice could be cut mid-JSON and read as «the model did not
+ * answer»; the reading met the same trap at 4096 and names it
+ * (`INTAKE_MAX_TOKENS`). Not streamed: the call's own 60 s deadline bounds the
+ * whole answer, and 16 000 is the most a non-streamed call is given here
+ * (`SUGGEST_MAX_TOKENS`).
+ */
+export const GROUPING_MAX_TOKENS = 16_000;
+
+/**
+ * How hard the grouping thinks — SET, never the model's default (A12): the
+ * default moves with the model, and at «high» the thinking is what spent the
+ * reading's leash (docs/FAYL-OQISH.md §3.1). A code here is a PROPOSAL the VED
+ * confirms before anything is sealed, and the reading already proposed one at
+ * the same level (`INTAKE_EFFORT`). The deal card's import asks this same
+ * call, and so thinks at the same level.
+ */
+export const GROUPING_EFFORT = 'medium' as const;
+
+/**
+ * What one answer says about itself, as the log line carries it (A12): the
+ * tokens, the thinking among them, why the model stopped, and the refusal's
+ * category when it refused (`stop_details` is filled for a refusal alone). A
+ * response stood in by a test may lack the newer fields — each is read with a
+ * null behind it. Exported for the pass's other call, the pick.
+ */
+export function answerFacts(response: Anthropic.Message): {
+  in: number | null;
+  out: number | null;
+  thinking: number | null;
+  stop: string | null;
+  details: { category: string | null; explanation: string | null } | null;
+} {
+  const details = response.stop_details ?? null;
+  return {
+    in: response.usage?.input_tokens ?? null,
+    out: response.usage?.output_tokens ?? null,
+    thinking: response.usage?.output_tokens_details?.thinking_tokens ?? null,
+    stop: response.stop_reason ?? null,
+    details: details ? { category: details.category ?? null, explanation: details.explanation ?? null } : null,
+  };
 }
 
 /**
@@ -479,9 +536,10 @@ export async function proposeGoodsGrouping(
   try {
     const response = await client.messages.create({
       model: ANALYST_MODEL,
-      max_tokens: 8192,
+      max_tokens: GROUPING_MAX_TOKENS,
       system: GROUPING_SYSTEM,
       output_config: {
+        effort: GROUPING_EFFORT,
         format: {
           type: 'json_schema',
           schema: {
@@ -523,11 +581,25 @@ export async function proposeGoodsGrouping(
       inputTokens: response.usage?.input_tokens ?? 0,
       outputTokens: response.usage?.output_tokens ?? 0,
     };
-    if (response.stop_reason === 'refusal') throw new TnvedError('ai_failed', usage);
+    // Every answer leaves its line (A12): the tokens, the thinking among
+    // them, why it stopped — what a person greps when a pass said «AI kod
+    // qo‘ya olmadi» about goods that should have coded.
+    const facts = { ...answerFacts(response), goods: goods.length };
+    logger.info(facts, '[tnved] grouping');
+    // A refusal says WHICH policy category refused (`stop_details`): a
+    // `reasoning` field in the answer's schema is the documented example of
+    // what draws `reasoning_extraction`, and without the category that
+    // cannot be told from any other refusal.
+    if (response.stop_reason === 'refusal') {
+      logger.warn(facts, '[tnved] grouping refused');
+      throw new TnvedError('ai_failed', usage);
+    }
     // A cut-off answer is NAMED: half a JSON document reads as «unreadable»
-    // below too, but the cause belongs in the log in its own words.
-    if (response.stop_reason === 'max_tokens') {
-      logger.warn({ in: usage.inputTokens, out: usage.outputTokens }, '[tnved] grouping cut at max_tokens');
+    // below too, but the cause belongs in the log in its own words. The
+    // pass says it in A6's words — the call is asked once more, then
+    // «⚠️ AI kod qo‘ya olmadi (javob bermadi)» (docs/AI-SORAYDI.md §3.4).
+    if (response.stop_reason === 'max_tokens' || response.stop_reason === 'model_context_window_exceeded') {
+      logger.warn(facts, '[tnved] grouping cut at max_tokens');
       throw new TnvedError('ai_failed', usage);
     }
     const text = response.content.find((b) => b.type === 'text')?.text ?? '';

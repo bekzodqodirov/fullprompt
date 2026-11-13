@@ -295,6 +295,13 @@ export interface PickLeft {
   overtaken: number;
   /** Heading reads over their statement ceiling. */
   timedOut: number;
+  /**
+   * Rows the model was asked about and did not answer — its call was cut at
+   * the size, refused, unreadable or never came back (docs/AI-SORAYDI.md §3.4
+   * A12). Said in A6's words, «javob bermadi»: before, such a row read
+   * exactly like one the file has no declaration for.
+   */
+  unanswered: number;
   /** The pass's deadline had passed: the pick did not run. */
   skipped: boolean;
 }
@@ -313,12 +320,14 @@ export function pickLeftOf(out: {
   overtaken: number;
   timedOut: number;
   pastDeadline: number;
+  unanswered: number;
 }): PickLeft {
   return {
     capped: out.capped,
     refused: out.refused,
     overtaken: out.overtaken,
     timedOut: out.timedOut + out.pastDeadline,
+    unanswered: out.unanswered,
     skipped: false,
   };
 }
@@ -328,6 +337,8 @@ export function pickLeftLine(left: PickLeft | null): string | null {
   if (!left) return null;
   const parts = [
     ...(left.skipped ? ['vaqt yetmadi — AI deklaratsiya tanlamadi'] : []),
+    // The call itself gave nothing (A12) — A6's words, «javob bermadi».
+    ...(left.unanswered > 0 ? [`${left.unanswered} tasiga javob bermadi`] : []),
     ...(left.capped > 0 ? [`${left.capped} ta qator ko‘rilmadi (juda ko‘p)`] : []),
     ...(left.refused > 0 ? [`${left.refused} tasida tanlangan deklaratsiya o‘lchovi mos kelmadi`] : []),
     ...(left.timedOut > 0 ? [`${left.timedOut} tasini bojxona faylidan o‘qib ulgurilmadi`] : []),

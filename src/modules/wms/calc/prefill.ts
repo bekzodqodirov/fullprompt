@@ -576,7 +576,7 @@ export async function aiPrefill(
    * (review regression-10). Null: no pick ran. */
   let pickLeft: PickLeft | null = null;
   if (configured && standing() && late('step 3')) {
-    pickLeft = { capped: 0, refused: 0, overtaken: 0, timedOut: 0, skipped: true };
+    pickLeft = { capped: 0, refused: 0, overtaken: 0, timedOut: 0, unanswered: 0, skipped: true };
   } else if (configured && standing() && (await stillOurs('step 3'))) {
     try {
       const out = await pickBazas(requestId, ctx, pick, rev, { deadline });
@@ -587,9 +587,16 @@ export async function aiPrefill(
       if (out.picked > 0) wrote = true;
       rev = out.rev;
       if (out.pastDeadline > 0) pastDeadline = true;
-      if (out.capped || out.refused || out.overtaken || out.timedOut) {
+      if (out.capped || out.refused || out.overtaken || out.timedOut || out.unanswered) {
         logger.info(
-          { requestId, capped: out.capped, refused: out.refused, overtaken: out.overtaken, timedOut: out.timedOut },
+          {
+            requestId,
+            capped: out.capped,
+            refused: out.refused,
+            overtaken: out.overtaken,
+            timedOut: out.timedOut,
+            unanswered: out.unanswered,
+          },
           '[calc-prefill] the pick left rows for the VED',
         );
       }
