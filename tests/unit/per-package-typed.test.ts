@@ -186,13 +186,18 @@ describe('T4 — the typed goods row: the figure goes onto its packing, the cart
 
   it('JN-8 (c): a bare «20 x 15 kg» sets no carton count and no carton’s figure — the phrase is kept on the note', () => {
     const r = row('Stul 20 x 15 kg');
-    expect(r).toMatchObject({ name: 'Stul', quantity: null, weightKg: null, note: 'sotuvchi: 20 x 15 kg' });
+    // RE-ANCHORED (review crit-2 of 1a as built): weightKg null → 300. JN-8 (c)
+    // is binding — «a bare A x B unit GIVES THE PRODUCT and sets no carton
+    // count»; the null was typed-spec-4's narrowing, never a ruling, and it
+    // asked the seller for the weight he typed. 20 × 15 = 300 kg.
+    expect(r).toMatchObject({ name: 'Stul', quantity: null, weightKg: 300, note: 'sotuvchi: 20 x 15 kg' });
     // RE-ANCHORED (review typed-spec-4): this pinned kgPerCarton 15 — a claim
     // the line never made (its 20 may be pieces), and a later «nechta
     // karobka?» answer would have multiplied it. Nobody's: no packing at all.
     expect(r.packing ?? null).toBeNull();
     const pieces = row('Stul 20 x 24 dona');
-    expect(pieces).toMatchObject({ quantity: null, note: 'sotuvchi: 20 x 24 dona' });
+    // RE-ANCHORED (crit-2): quantity null → 480 = 20 × 24, still no packing.
+    expect(pieces).toMatchObject({ quantity: 480, note: 'sotuvchi: 20 x 24 dona' });
     expect(pieces.packing ?? null).toBeNull();
     // With a carton word beside A, A IS the carton count: 20 × 15 = 300 kg.
     expect(row('Stul 20 karobka x 15 kg')).toMatchObject({ weightKg: 300 });

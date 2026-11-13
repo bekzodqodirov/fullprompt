@@ -20,7 +20,7 @@
  * guessed (his B4 a — `readNumberCell`).
  */
 import { addressWord } from './address-words';
-import { emptyPacking, parseSize, wholeCartons, type BareSize, type Packing, type PerCartonUnit, type SizeOwner } from './carton-math';
+import { emptyPacking, parseSize, timesProduct, wholeCartons, type BareSize, type Packing, type PerCartonUnit, type SizeOwner } from './carton-math';
 import { readNumberCell } from './number-cell';
 import type { MeasureUnit } from './pricing';
 
@@ -1236,6 +1236,13 @@ export interface PerOneFigure {
    * say it.
    */
   noted?: true;
+  /**
+   * The A of such a bare «A x B» — the typed reader writes A × B into the
+   * row's own column (JN-8 (c): «gives the product», `timesProduct`) and A
+   * stays no carton count. Absent when B is a space-grouped number: «2 x 1
+   * 500 kg» is 2 × 1 500 or a 2×1 thing of 500, and neither lands.
+   */
+  times?: number;
 }
 
 /** What a typed line states per package — `packingRead`. */
@@ -1295,8 +1302,9 @@ interface Mark {
   cartonHit?: number;
   /** A mark that opens a clause the next figures continue («har biri 15 kg 0.12 kub»). */
   clause: boolean;
-  /** «20 x 15 kg» — a bare multiplier (`PerOneFigure.noted`). */
+  /** «20 x 15 kg» — a bare multiplier (`PerOneFigure.noted`), and its A when the product is one figure. */
   noted?: true;
+  times?: number;
 }
 
 const TRACKED: ReadonlySet<string> = new Set(['dona', 'kg', 'm3', 'juft', 'm2', 'litr', 'karobka']);
@@ -1412,9 +1420,14 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
     // count of anything (JN-8 (c)) — and so B is nobody's one: «Stul 20 x 24
     // dona» may be 20 cartons of 24 or 20 of something else, and B kept as one
     // CARTON's figure was a claim the line never made (review typed-spec-4).
-    // Kept on the note as written, multiplied by nothing.
+    // Kept on the note as written; the product A × B is the line's own figure
+    // whichever A counts (`timesFigures`), and nothing else is multiplied by A.
     const spans: [number, number][] = [[times[2] !== undefined ? joiner : at, joiner + 1]];
-    return fixed(times[2] !== undefined ? (noun ?? 'package') : null, spans, times[2] === undefined ? { noted: true } : {});
+    if (times[2] !== undefined) return fixed(noun ?? 'package', spans);
+    // Bare, the line states A × B of the unit (JN-8 (c)): the product is its own
+    // figure — unless B is space-grouped, and so read two ways.
+    const grouped = /\d[ \u00a0]\d/u.test(text.slice(hit.start, hit.end));
+    return fixed(null, spans, { noted: true, ...(grouped ? {} : { times: Number(times[1]) }) });
   }
   const each = /har|ҳар|хар|each|every|кажд/u.test(lower) ? EACH_LEAD.exec(before) : null;
   if (each) {
@@ -1564,7 +1577,7 @@ export function packingRead(
       inName: mark.inName,
       text: text.slice(from, to).replace(/\s+/gu, ' ').trim(),
       word: hit.word,
-      ...(mark.noted ? { noted: true as const } : {}),
+      ...(mark.noted ? { noted: true as const, ...(mark.times !== undefined ? { times: mark.times } : {}) } : {}),
       // A clause nobody's owner could be said for goes on as nobody's: «…, har
       // biri 2 kg 0.05 kub» beside both counts states neither for the line.
       clause: mark.clause && (owner === 'package' || (mark.bind && owner === null && kinds.size === 2)),
@@ -2220,6 +2233,7 @@ export function parseGoodsLine(
     const { packing, aside } = typedPacking(packed);
     line.packing = packing;
     line.aside = aside;
+    timesFigures(line, packed.figures);
     line.perOne = packed.figures.map((f) => f.text);
     // The unit is stated, whosever the figure: the line still states goods.
     line.unitWords.push(...packed.figures.filter((f) => !f.inName).map((f) => f.word));
@@ -2229,6 +2243,31 @@ export function parseGoodsLine(
     line.problems.push({ kind: 'cartons_only', cartons: line.cartons });
   }
   return line;
+}
+
+/**
+ * A bare «A x B unit» is the line's own figure, A × B (review JN-8 (c),
+ * binding — crit-2: «Stul 20 x 15 kg» was no weight at all and the table
+ * asked the seller for what he typed). The kernel multiplies
+ * (`timesProduct`); a column the line already fills keeps its figure, and
+ * two bare products of one unit write neither. The phrase stays on the note
+ * as written, so the VED reads where 300 came from — and A is no carton
+ * count: nothing else is ever multiplied by it.
+ */
+function timesFigures(line: GoodsLine, figures: readonly PerOneFigure[]): void {
+  const bare = figures.filter((f) => f.noted && f.times !== undefined && f.value !== null && !f.inName);
+  for (const f of bare) {
+    if (bare.filter((g) => g.unit === f.unit).length > 1) continue;
+    const product = timesProduct(f.times!, f.value!);
+    if (product === null) continue;
+    if (f.unit === 'kg') line.weightKg ??= product;
+    else if (f.unit === 'm3') line.volumeM3 ??= product;
+    else if (f.unit === 'dona') line.quantity ??= product;
+    else if (line.measureUnit === null) {
+      line.measureUnit = f.unit;
+      line.measureQty = product;
+    }
+  }
 }
 
 /**

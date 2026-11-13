@@ -179,6 +179,18 @@ export function wholeCartons(n: number | null | undefined): number | null {
  */
 export const round3 = roundM3;
 
+/**
+ * A bare «A x B unit» the seller wrote — «Stul 20 x 15 kg», «Kurtka 20*24
+ * dona» — is the PRODUCT for that unit (review JN-8 (c), binding: «gives the
+ * product and sets no carton count without a carton word»): 300 kg, 480
+ * pieces, whichever A counts. The kernel's multiplication and rounding, here
+ * and nowhere else; nothing else is multiplied by A — it is no carton count.
+ * Null when either side is no positive figure.
+ */
+export function timesProduct(times: number, per: number): number | null {
+  return positive(times) && positive(per) ? round3(times * per) : null;
+}
+
 /** A figure as a person writes it: at most four decimals, no trailing zeros. */
 export const fmtFigure = (n: number): string => String(Number(n.toFixed(4)));
 

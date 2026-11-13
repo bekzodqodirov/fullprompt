@@ -16299,6 +16299,94 @@
    "why": "the trade-off of the pair guard, stated: a unitless sheet under 5 before a three-digit group has two readings, so neither lands (it read 500 before).",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4267",
+   "input": "Kurtka 20*24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 480,
+      "note": "sotuvchi: 20*24 dona"
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona = 20 × 24; the phrase on the note",
+   "why": "crit-2: JN-8 (c), binding — the bare multiplier gives the product; was no count, asked.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4268",
+   "input": "Kurtka 20x24 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 480
+     }
+    ],
+    "count": 1
+   },
+   "said": "480 dona",
+   "why": "crit-2, the «x» spelling.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4269",
+   "input": "Stanok 2 x 1500 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stanok",
+      "weightKg": 3000
+     }
+    ],
+    "count": 1
+   },
+   "said": "3 000 kg = 2 × 1 500",
+   "why": "crit-2 with figures-pair-steals-thousands: the unspaced B is one number, so the product stands; the spaced «2 x 1 500 kg» has two readings and lands none (c4260).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4270",
+   "input": "Krossovka 20 x 12 juft",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka",
+      "quantity": null,
+      "measureUnit": "juft",
+      "measureQty": 240
+     }
+    ],
+    "count": 1
+   },
+   "said": "240 juft in the measure",
+   "why": "crit-2: a pair unit's product goes to the row's measure (JN-10's unit rule).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4271",
+   "input": "Stul 20 x 15 kg, 10 x 5 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "two bare products of one unit write neither",
+   "why": "crit-2's guard.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
@@ -59378,7 +59466,7 @@
       {
        "name": "Stul",
        "quantity": null,
-       "weightKg": null
+       "weightKg": 300
       }
      ],
      "count": 1
@@ -59390,8 +59478,8 @@
      }
     ]
    },
-   "said": "no total; one row «Stul» with no weight (asked) — 15 kg is one package’s, the bare 20 counts nothing; the phrase is kept on the row’s note",
-   "why": "JN-8 (c): a bare «A x B unit» sets no carton count without a carton word — A may be pieces. Was the row’s and the shipment’s 15 kg.",
+   "said": "no total; one row «Stul», 20 × 15 = 300 kg — the bare 20 counts no carton; the phrase is kept on the row’s note",
+   "why": "JN-8 (c), binding: a bare «A x B unit» GIVES THE PRODUCT and sets no carton count without a carton word. MOVED by crit-2 (review of 1a as built): the row was pinned at «no weight» (typed-spec-4's package-internal narrowing, never a lead ruling), which asked the seller for a weight he typed. Was the row’s and the shipment’s 15 kg at base.",
    "source": "ai-soraydi typed-A T4",
    "weight": "defect"
   },
@@ -60270,6 +60358,31 @@
    "why": "figures-pair-steals-thousands: parseSize's PAIR took «A x 1» as a sheet and «500 kg» was read plainly — a figure neither reading gives (base: 1500).",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "blocker"
+  },
+  {
+   "id": "c4272",
+   "input": "Kurtka 20*24 dona",
+   "expected": {
+    "landing": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 480
+      }
+     ],
+     "count": 1
+    },
+    "landingNoteIncludes": [
+     {
+      "index": 0,
+      "text": "sotuvchi: 20*24 dona"
+     }
+    ]
+   },
+   "said": "lands 480 pieces with the phrase on the note",
+   "why": "crit-2: the landed item carried no count.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
   }
  ],
  "intakeClientLabelCases": [

@@ -1368,7 +1368,9 @@ function lineFields(body: string, fields: readonly number[] = []): LineFields {
 /**
  * The note a typed row carries for what it states per one and nobody can
  * place — «har biri 2 kg» beside a piece AND a carton count with neither
- * nearest, «20 x 15 kg» with no carton word: off every column, never lost.
+ * nearest, «20 x 15 kg» with no carton word (its product is the row's own
+ * figure, units.ts `timesFigures`; the phrase says where it came from): off
+ * every packing, never lost.
  */
 const asideNote = (aside: readonly string[] | undefined): string | null =>
   aside && aside.length > 0 ? `sotuvchi: ${aside.join(', ')}` : null;

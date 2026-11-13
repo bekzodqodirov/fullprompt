@@ -356,3 +356,40 @@ describe('figures-pair-steals-thousands — a tiny «2 x 1» before a three-digi
     expect(row('Oyna 2x3 m 500 dona')).toMatchObject({ quantity: 500 });
   });
 });
+
+describe('crit-2 — JN-8 (c), binding: a bare «A x B unit» gives the product, and A is no carton count', () => {
+  it('«Stul 20 x 15 kg» weighs 20 × 15 = 300 kg; «Kurtka 20*24 dona» counts 20 × 24 = 480 — the phrase stays on the note', () => {
+    expect(row('Stul 20 x 15 kg')).toMatchObject({ name: 'Stul', weightKg: 300, note: 'sotuvchi: 20 x 15 kg' });
+    expect(row('Kurtka 20*24 dona')).toMatchObject({ name: 'Kurtka', quantity: 480, note: 'sotuvchi: 20*24 dona' });
+    expect(row('Kurtka 20x24 dona')).toMatchObject({ quantity: 480 });
+    // The other scripts' joiners: the Cyrillic «х», the sign «×», the asterisk.
+    expect(row('Stul 20 х 15 кг')).toMatchObject({ weightKg: 300 });
+    expect(row('Стул 20 × 15 кг')).toMatchObject({ weightKg: 300 });
+    expect(row('椅子 20*15kg')).toMatchObject({ weightKg: 300 });
+    // 20 × 0.12 = 2.4 m³; 2 × 1 500 = 3 000 kg.
+    expect(row('Stul 20 x 0.12 kub')).toMatchObject({ volumeM3: 2.4 });
+    expect(row('Stanok 2 x 1500 kg')).toMatchObject({ weightKg: 3000 });
+    // A pair unit goes to the measure: 20 × 12 = 240 juft; 10 × 12 = 120 m².
+    expect(row('Krossovka 20 x 12 juft')).toMatchObject({ quantity: null, measureUnit: 'juft', measureQty: 240 });
+    expect(row('Kafel 10 x 12 m2')).toMatchObject({ measureUnit: 'm2', measureQty: 120 });
+  });
+
+  it('A is no carton count: no packing is built, so nothing else is ever multiplied by it', () => {
+    expect(row('Stul 20 x 15 kg').packing ?? null).toBeNull();
+    expect(row('Kurtka 20*24 dona').packing ?? null).toBeNull();
+    // With a carton word A IS the count — the packing path, as before: 20 × 15 = 300 kg.
+    expect(row('Stul 20 karobka x 15 kg').packing).toMatchObject({ cartons: 20, kgPerCarton: 15 });
+  });
+
+  it('the product never overrules what the line states, and two of one unit write neither', () => {
+    expect(row('Stul 20 x 15 kg 200 kg')).toMatchObject({ weightKg: 200, note: 'sotuvchi: 20 x 15 kg' });
+    expect(row('Stul 20 x 15 kg, 10 x 5 kg')).toMatchObject({ weightKg: null });
+    // A space-grouped B has two readings (figures-pair-steals-thousands): no product.
+    expect(row('Stanok 2 x 1 500 kg')).toMatchObject({ weightKg: null });
+  });
+
+  it('the product is the row’s, never a shipment total; the table’s answer grammar is release 1b’s (refused, as before)', () => {
+    expect(totals('Stul 20 x 15 kg')).toEqual(none);
+    expect(references('Stul 20 x 15 kg')).toEqual([]);
+  });
+});
