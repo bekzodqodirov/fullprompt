@@ -499,11 +499,10 @@ fail and land a plain chat as legacy.
   - the bazas filled and where they came from;
   - each row's missing figure;
   - refusals, in words.
-  - **Amended** by docs/AI-SORAYDI.md §3.4 A3 and A6 (review JS-15): each group line opens with its
-    rows' own numbers («1, 3. …», the number the VED's screen and «Kodlar:» print), in row order;
-    the uncoded rows are named by number («⚠️ Kod topilmadi: 2-qator «…»»), and when the coding call
-    did not answer, even after its one retry inside the pass, the note says that instead: «⚠️ AI kod
-    qo‘ya olmadi (javob bermadi) — so‘rov VED navbatida, kodni VED xodimi qo‘yadi».
+  - **Not amended** by docs/AI-SORAYDI.md (review of P-ask-A, ask-break-5): the round leaves the
+    plain door exactly as it was — this note keeps its group index, its «⚠️ Kod topilmadi: …» by
+    name and its whole refusal sentences, and its pass asks the coding model once (no retry). A3/A6
+    reaching this note is the lead's call, not release 1a's.
 
   It carries no «Rastamojka jami», no Taxminiy/Aniq, no road and no JAMI. The VED reads the exact
   figure in his own workspace and the 📊 statistics in its 📥 dialog, so he loses nothing.
@@ -593,10 +592,11 @@ VED's, and the lenta note names them.
     «TNVED: AI taklifi (o‘qishda) — tekshiring», and the AI answer's line marks it the same way.
   - A row still uncoded, with the AI available: «↳ kod yo‘q — AI hisoblashda topadi (topolmasa VED
     qo‘yadi)».
-    - **Superseded in part** by docs/AI-SORAYDI.md §3.4 A1-A2 (his 4a of 2026-11-11, review JR-13): what the pass cannot code is ASKED of the seller
-      («bu nima — nimadan qilingan, nima uchun ishlatiladi?») before it is the VED's; the words
-      should read «(topolmasa sizdan so‘raydi)». The constant is the table's (`CODE_GAP_AI`,
-      intake.ts) and is reworded by its owner, not in release 1a's answer package.
+    - **Still true in release 1a** (docs/AI-SORAYDI.md §3.4 A2; review of P-ask-A, ask-break-1): the
+      AI's answer asks the seller what an uncoded row is, but no reply can carry words onto a stored
+      row before A5 (release 2) — the answer sends them to the card's lenta and the VED codes the
+      row, so «(topolmasa VED qo‘yadi)» stands. It is reworded with A5, by the table's owner
+      (`CODE_GAP_AI`, intake.ts).
   - A row still uncoded with no key, or with the day's budget spent: «↳ kod yo‘q — VED xodimi
     qo‘yadi».
   - Such a row is never ✅ and never a question.
@@ -692,8 +692,15 @@ VED's, and the lenta note names them.
     most 8 lines on the union, more than three uncoded rows folded into one) and the NULL door's
     seller tails («— mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring»), never «VED
     xodimi sizdan so‘raydi» about a figure only the seller has. Its lenta says «❓ Sotuvchidan
-    so‘raldi: …»; the card copy for a seller his copy never reached is the `noAsk` rendering below.
-    The certificate is not asked (review JR-8, JS-12): the answer states it.
+    so‘raldi: …»; the card copy for a seller his copy never reached is the `noAsk` rendering below
+    (the yo‘lkira answer's too). The certificate is not asked (review JR-8, JS-12): the answer
+    states it. As fixed after its review: the ✍️ example is always a FIGURE the add table takes —
+    words have no reply form before A5, so a block that asks words says where they go («📝 Nima
+    tovar ekanini … kartadagi lentaga yozing — kodni VED xodimi qo‘yadi.») and a block of words
+    alone opens «❓ AI so‘raydi:», promising no re-run; an uncoded row is asked nothing when no coder
+    could run (no key, the day's budget spent, a call that did not answer) — its line names the VED;
+    a row stating no figure is refused as that figure, the seller's, never «baza yo‘q — VED xodimi
+    qo‘yadi» under the question to him.
 - **ONE place decides who a tail is addressed to**: a `noAsk` flag on the renderer, applied to
   `CUSTOMS_TAIL_WORDS`, `FREIGHT_TAIL_WORDS` and estimate.ts's `refused_measure`.
   - On an 'ai' request, in the chat, a seller fact reads «— VED xodimi sizdan so‘raydi», and the
@@ -704,8 +711,10 @@ VED's, and the lenta note names them.
   - The lenta lists the same gaps under «⚠️ VED uchun: …».
   - The plain yo‘lkira reply (2.4) follows the same rule.
   - NULL keeps today's words.
-- **Amended on every door** by docs/AI-SORAYDI.md §3.4 A3, A6 and A9 (PA-3, PA-4, PA-11; review
-  JS-15) — what the answer says, not whom it asks, so NULL takes it too:
+- **Amended on the answer** — the AI door's and a NULL request's, never the plain door's note, which
+  this round leaves as it was — by docs/AI-SORAYDI.md §3.4 A3, A6 and A9 (PA-3, PA-4, PA-11; review
+  JS-15): what the answer says, not whom it asks, so NULL takes it too (PA-3's overwrite is the 2.8 b
+  block's own example; a deviation from «NULL today exactly» for the lead to confirm):
   - each line opens with its rows' own `seq` («3. Куртка…», «1-2. Посуда, Чашки»), never the
     group's index, and the lines are in row order; an uncoded row stands in its place («2.
     Zapchast XJ-200 — kod yo‘q», with «— VED xodimi qo‘yadi» unless the ❓ block asks it) — the
@@ -713,11 +722,13 @@ VED's, and the lenta note names them.
     by its number where the fit never cuts («⚠️ Kod yo‘q: 31-32-qator — …»);
   - a refusal under its line says the missing figure alone («⚠️ soni (dona) kiritilmagan — boj
     kamida $4/dona»): never the group's label, and the row only where the line holds others;
-  - a coding call that did not answer is retried ONCE inside the pass while its clock allows, and
-    if it still did not answer the answer says «⚠️ AI kod qo‘ya olmadi (javob bermadi) — so‘rov VED
-    navbatida, kodni VED xodimi qo‘yadi» — and asks the seller nothing about what those rows are;
+  - a coding call that did not answer is retried ONCE inside the pass while its clock allows (never
+    on the plain door), and if it still did not answer the answer says «⚠️ AI kod qo‘ya olmadi
+    (javob bermadi) — so‘rov VED navbatida, kodni VED xodimi qo‘yadi» — and asks the seller nothing
+    about what those rows are; a call that found no key asked nobody, and says «AI sozlanmagan»;
   - «Taxminiy: hisoblab bo‘lmadi» names the refusing row's own figure («⚠️ 3-qator: soni (dona)»),
-    the fixed «qatorda soni yoki og‘irligi yo‘q» only when no row names one.
+    the fixed «qatorda soni yoki og‘irligi yo‘q» only when no row names one; on the AI door, over
+    uncoded rows its ❓ block asks, «2-qator kodsiz — yuqoridagi ❓ (kodni VED xodimi qo‘yadi)».
 
 3.6 **The AI door's answer reaches him past the «✅ Mening vazifalarim» mute** (INT-5). He pressed
 the door for it.
