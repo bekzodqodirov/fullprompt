@@ -170,6 +170,64 @@ describe('what is NOT a total (review JN-21)', () => {
   });
 });
 
+// Review figures-cbm-rate-as-total: T1's trade words came with no rate
+// guard, so a customer's price question — «1 cbm narxi qancha?» — stated the
+// shipment's cube of 1 m³, and a typed total outranks the Excel's and the
+// model's: podklyuch freight priced on 1 m³, his real cube never asked. ONE
+// unit with a price on its line, or a rate's mark beside it, is a rate's base;
+// a comparison on a line that offers or supposes is a condition. Neither is
+// this cargo.
+describe('a rate’s base and a condition are no total (figures-cbm-rate-as-total)', () => {
+  it('ONE unit beside a price, a currency or a rate’s mark — in every language the sellers write', () => {
+    for (const text of [
+      '1 cbm narxi qancha?',
+      "Assalomu alaykum, 1 cbm necha pul bo'ladi?",
+      '1 cbm = 150$',
+      '1cbm=150$',
+      'Narxi 1 cbm uchun 150 dollar',
+      'price 150 usd per 1 cbm',
+      '1 куба 150$',
+      '1 kgs = 3 usd',
+      '1 kub narxi qancha?',
+      '1 куб нархи қанча?',
+      '1 кг учун 3$',
+      'сколько стоит 1 куб?',
+      'цена за 1 кг 3$',
+      'за 1 куб 150 долларов',
+      'how much for 1 cbm?',
+      '1 cbm costs 150$',
+      '1立方多少钱?',
+      '1立方=150元',
+      '每1立方150美元',
+      '1 tonna = 100$',
+    ]) {
+      expect(totals(text, 'podklyuch'), text).toEqual(none);
+      expect(totals(text, 'rastamojka'), text).toEqual(none);
+    }
+  });
+
+  it('a comparison said as a condition or an offer', () => {
+    for (const text of ["10 cbm dan ko'p bo'lsa chegirma", '10 kub dan oshsa chegirma bormi?', 'от 10 кубов скидка', 'больше 10 кубов будет скидка?', 'more than 10 cbm discount?', '10 cbm or more discount', '超过10立方有优惠吗?']) {
+      expect(totals(text, 'podklyuch'), text).toEqual(none);
+    }
+  });
+
+  it('the cargo’s own figures beside a price stand: a price line keeps its kilos, a request keeps its cube, a comparison that describes the cargo keeps its figure', () => {
+    // The first line's 300 kg is the cargo's; the second line asks a rate (1 m³ is no cube of it).
+    expect(totals('Stul 200 dona 300 kg\n1 cbm narxi qancha?', 'podklyuch')).toEqual({ ...none, kg: 300 });
+    expect(totals('Kurtka 500 dona 1200 kg 2500$', 'podklyuch')).toEqual({ ...none, kg: 1200 });
+    expect(totals('Jami 5 cbm, 150$/cbm', 'podklyuch')).toEqual({ ...none, m3: 5 });
+    expect(totals('12 kub narxi qancha?', 'podklyuch')).toEqual({ ...none, m3: 12 });
+    expect(totals('Yuk 12 kub, 3000 kg, narxi qancha?', 'podklyuch')).toEqual({ ...none, kg: 3000, m3: 12 });
+    expect(totals('Yuk 1 kub 150 kg', 'podklyuch')).toEqual({ ...none, kg: 150, m3: 1 });
+    // c3183, c3391: «over 500 kg», «does not exceed 300 kg» — what the cargo is.
+    expect(totals('jami 500 kg dan ortiq', 'podklyuch')).toEqual({ ...none, kg: 500 });
+    expect(totals('Stul 20 karobka 300 kg dan oshmaydi', 'podklyuch')).toEqual({ ...none, kg: 300 });
+    // A price labeller is a product, never a price word: its 1 kg stands.
+    expect(totals('Narxlagich 1 kg', 'podklyuch')).toEqual({ ...none, kg: 1 });
+  });
+});
+
 describe('the rules that stood, stand', () => {
   it('one distinct figure per field, in every spelling of the unit — two are no total', () => {
     // dg3-01: one carton's «34kg» was the only weight this reader saw, and

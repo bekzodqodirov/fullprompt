@@ -60684,6 +60684,200 @@
    "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4318",
+   "input": "Assalomu alaykum, 1 cbm necha pul bo'ladi?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4319",
+   "input": "1 cbm = 150$",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4320",
+   "input": "Narxi 1 cbm uchun 150 dollar",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4321",
+   "input": "price 150 usd per 1 cbm",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4322",
+   "input": "1 куба 150$",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4323",
+   "input": "1 kub narxi qancha?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4324",
+   "input": "сколько стоит 1 куб?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4325",
+   "input": "1立方多少钱?",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a rate's base — asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4326",
+   "input": "1 kgs = 3 usd",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "no weight: a rate's base",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4327",
+   "input": "10 cbm dan ko'p bo'lsa chegirma",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a discount's condition",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4328",
+   "input": "от 10 кубов скидка",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no cube: a discount's condition",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4329",
+   "input": "Stul 200 dona 300 kg\n1 cbm narxi qancha?",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "300 kg, the cube asked",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4330",
+   "input": "Kurtka 500 dona 1200 kg 2500$",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "a price line keeps its kilos",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4331",
+   "input": "Jami 5 cbm, 150$/cbm",
+   "expected": {
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "5 m³ beside its rate",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4332",
+   "input": "12 kub narxi qancha?",
+   "expected": {
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "a request for twelve cubes names its cube",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4333",
+   "input": "Yuk 12 kub, 3000 kg, narxi qancha?",
+   "expected": {
+    "weightKg": 3000,
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "the cargo's figures beside its price question",
+   "why": "figures-cbm-rate-as-total: ONE unit with a price on its line or a rate's mark beside it is a rate's base, and a comparison on a line that offers or supposes is a condition — neither is the shipment's total (intake-manual.ts rateOrCondition).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "intakeClientLabelCases": [

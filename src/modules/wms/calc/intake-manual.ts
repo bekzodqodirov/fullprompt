@@ -295,6 +295,56 @@ function blankForTotals(text: string, prefix: string | null): string {
 }
 
 /**
+ * A price on the line — a currency (`CURRENCY`, and the yuan's Han words) or a
+ * word that asks or states one: «narxi», «qancha», «necha pul», «цена»,
+ * «стоит», «сколько», «price», «how much», «多少钱». Word FORMS, never a stem:
+ * «Narxlagich 20 kg» is a price-labelling gun (c1416).
+ */
+const PRICE_ON_LINE =
+  /(?<![\p{L}])(?:narx(?:i|ni|ini|ga|iga|lar|lari)?|нарх(?:и|ни|ини|га|ига|лар|лари)?|qancha|қанча|nech[ae]?\s+pul\p{L}*|неча\s+пул\p{L}*|tarif(?:i|ga)?|тариф(?:и|а|у)?|цен(?:а|у|ы|е|ой)|стои(?:т|мость|мости|ят)|сколько|почём|почем|prices?|costs?|rate|how\s+much)(?![\p{L}])|多少钱|价格|价钱|单价|运费|美元|元|美金/iu;
+/** A rate's own mark right before its base — «per 1 cbm», «за 1 куб», «har 1 kub», «每1立方». */
+const RATE_MARK_BEFORE = /(?<![\p{L}])(?:per|за|har|хар|each|every)\s*$|每\s*$/iu;
+/** …or right after its unit — «1 kub uchun», «1 cbm = 150$». */
+const RATE_MARK_AFTER = /^\s*(?:(?:uchun|учун|для)(?![\p{L}])|[=＝]\s*\d)/iu;
+/** A comparison beside a figure — «10 cbm dan ko‘p», «больше 10 кубов», «от 10 кубов», «over 10 cbm», «10 cbm or more». */
+const COMPARE_AFTER =
+  /^\s*(?:(?:dan|дан)\s+(?:ko[‘'’ʻ`]?p|ortiq|osh|ziyod|yuqori|kam|кўп|ортиқ|ош|зиёд|юқори|кам)\p{L}*|(?:and|or)\s+(?:more|above|over|less)|(?:и|или)\s+(?:более|больше|выше|меньше|менее))(?![\p{L}])|^\s*(?:以上|以下)/iu;
+const COMPARE_BEFORE = /(?<![\p{L}])(?:больше|более|свыше|меньше|менее|от|over|above|more\s+than|less\s+than|under)\s*$|(?:超过|大于|少于)\s*$/iu;
+/** …said as a condition, an offer's: «bo‘lsa», «oshsa», «agar», «chegirma», «если», «скидка», «if», «discount», «优惠». */
+const CONDITION_ON_LINE =
+  /(?<![\p{L}])(?:bo[‘'’ʻ`]?lsa|бўлса|oshsa|ошса|agar|агар|chegirma\p{L}*|чегирма\p{L}*|если|при|скидк\p{L}*|if|discount\p{L}*|aksiya\p{L}*|акци\p{L}*)(?![\p{L}])|优惠|折扣|如果/iu;
+
+/**
+ * Is the unit-written figure at `[start, end)` no statement of THIS cargo
+ * (review figures-cbm-rate-as-total)? Two shapes, each its own:
+ *  - a RATE's base — ONE unit, with a price on its line or a rate's mark
+ *    beside it: «1 cbm narxi qancha?», «1 cbm = 150$», «Narxi 1 cbm uchun 150
+ *    dollar», «price 150 usd per 1 cbm», «1 куба 150$», «1 kgs = 3 usd». Read
+ *    as the shipment's they were a cube of 1 m³ — and the typed total outranks
+ *    the Excel's and the model's — so podklyuch freight was priced on 1 m³,
+ *    the seller's real cube never asked. Only the figure 1: «Kurtka 500 dona
+ *    1200 kg 2500$» is 1200 kg and its price, and «12 kub narxi qancha?» is a
+ *    request for 12 m³;
+ *  - a CONDITION — a comparison beside the figure on a line that offers or
+ *    supposes: «10 cbm dan ko‘p bo‘lsa chegirma», «от 10 кубов скидка».
+ *    Without the condition the comparison describes the cargo («jami 500 kg
+ *    dan ortiq», c3183; «300 kg dan oshmaydi», c3391) and stands.
+ * The labelled figures carry their own guard (a currency on the line, JN-21).
+ */
+function rateOrCondition(text: string, start: number, end: number, number: string): boolean {
+  const [from, to] = lineAround(text, start);
+  const before = text.slice(from, start);
+  const after = text.slice(end, to);
+  const line = text.slice(from, to);
+  const read = readAmountText(number);
+  if (read.state === 'ok' && read.value === 1) {
+    if (RATE_MARK_BEFORE.test(before) || RATE_MARK_AFTER.test(after)) return true;
+    if (CURRENCY.test(line) || PRICE_ON_LINE.test(line)) return true;
+  }
+  return (COMPARE_AFTER.test(after) || COMPARE_BEFORE.test(before)) && CONDITION_ON_LINE.test(line);
+}
+
+/**
  * A word that modifies the figure itself — «taxminan 1 200 kg», «около 1 200
  * кг», «hammasi bo‘lib 1 200 kg» — never a count before it, in the spellings a
  * phone writes («tahminan», «тахминий»; review typed-break-4).
@@ -378,6 +428,7 @@ function readNumber(
       const [from, to] = lineAround(scan, hit.index);
       if (PIECES_FIGURE.test(scan.slice(from, to)) && !ANY_FIGURE.test(scan.slice(from, hit.index))) continue;
     }
+    if (rateOrCondition(text, hit.index, end, hit[1]!)) continue;
     take(hit[1]!, hit.index, false, [hit.index, end]);
   }
   for (const reader of scaled) {
@@ -385,6 +436,7 @@ function readNumber(
       const end = hit.index + hit[0].length;
       const factor = scaledKg(hit[2])?.factor;
       if (factor === undefined || skip(hit.index, end) || !reader.when(hit.index, factor)) continue;
+      if (rateOrCondition(text, hit.index, end, hit[1]!)) continue;
       take(hit[1]!, hit.index, false, [hit.index, end], factor);
     }
   }
