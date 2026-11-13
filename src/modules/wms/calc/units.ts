@@ -1151,6 +1151,37 @@ const PACKAGE_LABEL_WORDS = [
   String.raw`(?:箱重|单箱(?:毛重|净重|重量|体积)|每箱(?:毛重|净重|重量|体积))`,
 ];
 const PACKAGE_LABEL_LEAD = new RegExp(String.raw`(${PACKAGE_LABEL_WORDS.join('|')})\s*[.)]?\s*[:：=]?\s*$`, 'iu');
+
+/**
+ * A line OPENING with ONE package's (or one piece's) measure label before its
+ * figure — «单箱毛重: 33.8kg», «单箱体积: 0.395», «箱重 15kg», «G.W./CTN:
+ * 33.8 kg», «CBM/CTN: 0.395», «毛重/箱 15kg», «Weight per carton: 15 kg»,
+ * «Вес 1 места: 33.8 кг», «Объем 1 места: 0.395» (review owner-3). Group 1 /
+ * 2: the label. The kernel reads such a figure as ONE package's when its unit
+ * is written (`LABEL_LEAD`, `PACKAGE_LABEL_LEAD`); written bare, the label is
+ * the only thing that says what it measures. Every optional mark carries its
+ * own gap (load-1).
+ */
+const PER_ONE_LABEL_OPENING = new RegExp(
+  String.raw`^\s*(?:(${PACKAGE_LABEL_WORDS.join('|')})|(?<![\p{L}])(${labelPattern([...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS, ...FIELD_LABELS.count, ...PER_LABEL_ONLY])})\s*(?:\/\s*(?:${COUNT_NOUN})|(?:per|pr)\s+(?:${COUNT_NOUN})|(?:на|за)\s+(?:1\s+|одн\p{L}*\s+)?(?:${PACKAGE_NOUN})|одного\s+(?:${PACKAGE_NOUN})))(?:\s*[.)])?(?:\s*[:：=])?\s*(?=\d)`,
+  'iu',
+);
+const VOLUME_LABEL_WORD = /体积|方数|cbm|meas|volume|(?<![\p{L}])vol(?![\p{L}])|cube|hajm|объ[её]м|куб/iu;
+const WEIGHT_LABEL_WORD = /重|weight|(?<![\p{L}])wt|g\.?\s?w|n\.?\s?w|gross|brutto|netto|брутто|нетто|вес|масс|og[‘'’ʻ`]?irlig|vazn/iu;
+
+/**
+ * Does `line` open with ONE package's or piece's measure label (above)? What
+ * the label measures — a bare figure after it is that unit — and where the
+ * figure starts. A block line of this shape is the block's packing, never a
+ * row of its own, and outside a block it is no goods line.
+ */
+export function perOneLabelLine(line: string): { unit: 'kg' | 'm3' | 'dona'; figureAt: number } | null {
+  const hit = PER_ONE_LABEL_OPENING.exec(line);
+  if (!hit) return null;
+  const label = hit[1] ?? hit[2] ?? '';
+  const unit = VOLUME_LABEL_WORD.test(label) ? 'm3' : WEIGHT_LABEL_WORD.test(label) ? 'kg' : hit[2] !== undefined ? 'dona' : null;
+  return unit === null ? null : { unit, figureAt: hit[0].length };
+}
 /** A package-possessed label's own words, looked for before the pattern is run (`markOf`). */
 const PACKAGE_LABEL_STEM = /karobk|karopk|korobk|qut|кут|қут|qop|қоп|joy|жой|коробк|мест|упаковк|ящик|мешк|carton|ctn|box|package|pkg|bag|箱/u;
 /** Which weight a package-possessed label names, when it says. */
@@ -1170,7 +1201,10 @@ const PACKAGE_NOUN_CLOSING = new RegExp(
  * («karobka og‘irligi 22.5 kg» — one carton's weight)? Then the label is the
  * kernel's MARK, not the row's field: a field reader leaves it standing.
  */
-export const packagePossessesLabel = (before: string): boolean => PACKAGE_NOUN_CLOSING.test(before.slice(-40));
+export const packagePossessesLabel = (before: string): boolean =>
+  PACKAGE_NOUN_CLOSING.test(before.slice(-40)) || HAN_PACKAGE_CLOSING.test(before.slice(-8));
+/** «单箱» / «每箱» right before a Han label — «单箱毛重», «每箱体积»: one carton's (review owner-3). */
+const HAN_PACKAGE_CLOSING = /(?:单|每)箱\s*$/u;
 
 /** «15 kg per ctn», «0.2 kg per pc» — the noun after «per» says whose. */
 const PER_TRAIL = new RegExp(String.raw`^\s+(?:per|pr)\s+(${COUNT_NOUN})(?![\p{L}])`, 'iu');

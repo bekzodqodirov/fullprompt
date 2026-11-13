@@ -16710,6 +16710,74 @@
    "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4358",
+   "input": "品名: LED灯\n数量: 3000个\n箱数: 15箱\n单箱体积: 0.395\n单箱毛重: 33.8kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "LED灯",
+      "quantity": 3000,
+      "weightKg": 507,
+      "volumeM3": 5.925
+     }
+    ],
+    "count": 1
+   },
+   "said": "ONE good: 3000 dona, 15 × 33.8 = 507 kg, 15 × 0.395 = 5.925 m³; no «单箱» rows",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4359",
+   "input": "Product: LED lamp\nQty: 3000 pcs\nCartons: 15 ctns\nG.W./CTN: 33.8 kg\nCBM/CTN: 0.395",
+   "expected": {
+    "rows": [
+     {
+      "name": "LED lamp",
+      "quantity": 3000,
+      "weightKg": 507,
+      "volumeM3": 5.925
+     }
+    ],
+    "count": 1
+   },
+   "said": "ONE good, every figure kept",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4360",
+   "input": "Наименование: LED лампа\nКоличество: 3000 шт\nМест: 15\nВес 1 места: 33.8 кг\nОбъем 1 места: 0.395",
+   "expected": {
+    "rows": [
+     {
+      "name": "LED лампа",
+      "quantity": 3000,
+      "weightKg": 507,
+      "volumeM3": 5.925
+     }
+    ],
+    "count": 1
+   },
+   "said": "ONE good, the Russian per-place labels",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4362",
+   "input": "单箱毛重: 33.8kg",
+   "expected": {
+    "count": 0
+   },
+   "said": "no product «单箱»",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -61225,6 +61293,37 @@
    "why": "seams-7: pkg / pkgs / package / packages are a package count in units.ts WORDS.karobka (one vocabulary with the PKGS column and T3's not-goods words), and «/pkg» a per-package tail.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4361",
+   "input": "品名: LED灯\n数量: 3000个\n箱数: 15箱\n单箱体积: 0.395\n单箱毛重: 33.8kg",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "count": 1
+    }
+   },
+   "said": "one carton's figures are no shipment totals",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4363",
+   "input": "单箱体积: 0.395",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": [],
+    "goods": {
+     "count": 0
+    }
+   },
+   "said": "one carton's cube is no shipment's, and no row",
+   "why": "owner-3: a line opening with ONE package's measure label («单箱毛重», «单箱体积», «G.W./CTN», «CBM/CTN», «Вес 1 места», «Объем 1 места») is a spec block's packing (intake-manual.ts specFieldLine + perOneUnitWritten, units.ts perOneLabelLine) — never a row of its own and never the shipment's total (T12, T4).",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
   }
  ],
  "intakeClientLabelCases": [

@@ -36,6 +36,7 @@ import {
   packingRead,
   packWord,
   parseGoodsLine,
+  perOneLabelLine,
   perOneSpans,
   readAmountText,
   scaledKg,
@@ -500,6 +501,8 @@ function readNumber(
     const at = end - hit[1]!.length;
     if (skip(at, end) || !standsAlone(text, end) || !labelStands(scan, hit.index)) continue;
     if (hasCurrency(at)) continue;
+    // «单箱体积: 0.395», «karobka hajmi: 0.12» — a package's own measure, never the shipment's (T4, review owner-3).
+    if (packagePossessesLabel(text.slice(lineAround(text, hit.index)[0], hit.index))) continue;
     take(hit[1]!, at, true, [hit.index, end]);
   }
   // A doubt covers the whole field: every figure of it is the question's.
@@ -1955,13 +1958,42 @@ function nameLineOf(line: string, prefix: string | null): string | null {
   return name;
 }
 
-/** Is a text line one of a spec block's fields — «Qty: 200 pcs», «毛重 15kg/箱», «20箱», «Carton size: 60*40*50cm»? */
+/**
+ * Is a text line one of a spec block's fields — «Qty: 200 pcs», «毛重 15kg/箱»,
+ * «20箱», «Carton size: 60*40*50cm», and ONE package's measure under its own
+ * label: «单箱毛重: 33.8kg», «G.W./CTN: 33.8 kg», «CBM/CTN: 0.395», «Вес 1
+ * места: 33.8 кг» (units.ts `perOneLabelLine`; review owner-3 — the block ended
+ * there, and the lines below it became products named «单箱»)?
+ */
 function specFieldLine(line: string, prefix: string | null): boolean {
   const text = line.trim().replace(LIST_MARKER, '');
   if (!text || nameLineOf(text, prefix) !== null) return false;
-  if (FIELD_LINE.test(text)) return true;
+  if (FIELD_LINE.test(text) || perOneLabelLine(text) !== null) return true;
   // A line of nothing but figures — «20箱», «200 pcs», «20 ctns 300 kg».
   return firstFigure(text) === 0 && unitFigures(text, { measured: false });
+}
+
+/** The unit a per-one label's bare figure takes — «单箱体积: 0.395» is 0.395 m³ of one carton. */
+const PER_ONE_UNIT_WORD = { kg: 'kg', m3: 'm3', dona: 'dona' } as const;
+const NUMBER_AT = new RegExp(String.raw`^(?:${AMOUNT_NUMBER})(?![\d.,]*\d)`, 'u');
+const UNIT_WORD_NEXT = new RegExp(
+  String.raw`^${GAP}(?:${(['kg', 'm3', 'dona', 'karobka', 'm2', 'juft', 'litr', 'sm3'] as const).map(unitPattern).join('|')}|${scaledPattern('words')})(?![\p{L}\d])`,
+  'iu',
+);
+/**
+ * A per-one label line with its unit written after a BARE figure — the
+ * label is what names the measure («CBM/CTN: 0.395» → «CBM/CTN: 0.395 cbm»),
+ * and the kernel then reads the figure as the package's own, the way it reads
+ * «G.W./CTN: 33.8 kg». Any other line as it is.
+ */
+function perOneUnitWritten(line: string): string {
+  const label = perOneLabelLine(line);
+  if (!label) return line;
+  const number = NUMBER_AT.exec(line.slice(label.figureAt));
+  if (!number) return line;
+  const end = label.figureAt + number[0].length;
+  if (UNIT_WORD_NEXT.test(line.slice(end))) return line;
+  return `${line.slice(0, end)} ${PER_ONE_UNIT_WORD[label.unit]}${line.slice(end)}`;
 }
 
 /**
@@ -1982,7 +2014,7 @@ function specEntries(rawLines: readonly string[], prefix: string | null): TypedE
     }
     let text = name;
     const fields: number[] = [];
-    for (const field of rawLines.slice(at + 1, end).map((l) => l.trim().replace(LIST_MARKER, ''))) {
+    for (const field of rawLines.slice(at + 1, end).map((l) => perOneUnitWritten(l.trim().replace(LIST_MARKER, '')))) {
       text += ' ';
       fields.push(text.length);
       text += field;

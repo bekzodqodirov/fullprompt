@@ -87,6 +87,38 @@ describe('T12 — the block is one good, its field lines its figures', () => {
   });
 });
 
+// Review owner-3: with the model silent a supplier's block of per-carton
+// fields broke — the Chinese one gave two products named «单箱» carrying one
+// carton's cube and weight, the English one lost every figure and asked the
+// count he typed. A line opening with ONE package's measure label («单箱毛重»,
+// «G.W./CTN», «CBM/CTN», «Вес 1 места») is the block's packing; a bare figure
+// takes its unit from the label.
+describe('T12 — one package’s field lines are the block’s packing (owner-3)', () => {
+  it('the Chinese, English and Russian blocks are ONE good: 3000 pieces, 15 × 33.8 = 507 kg, 15 × 0.395 = 5.925 m³', () => {
+    for (const text of [
+      '品名: LED灯\n数量: 3000个\n箱数: 15箱\n单箱体积: 0.395\n单箱毛重: 33.8kg',
+      'Product: LED lamp\nQty: 3000 pcs\nCartons: 15 ctns\nG.W./CTN: 33.8 kg\nCBM/CTN: 0.395',
+      'Наименование: LED лампа\nКоличество: 3000 шт\nМест: 15\nВес 1 места: 33.8 кг\nОбъем 1 места: 0.395',
+    ]) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ quantity: 3000, weightKg: 507, volumeM3: 5.925 });
+      expect(r.packing, text).toMatchObject({ cartons: 15, kgPerCarton: 33.8, m3PerCarton: 0.395 });
+      // One carton's figures are never the shipment's.
+      expect(parseManualFacts(text, 'podklyuch'), text).toMatchObject({ weightKg: null, volumeM3: null });
+    }
+  });
+
+  it('outside a block such a line is no goods line and no total — no product «单箱», no 0.395 m³ shipment', () => {
+    for (const line of ['单箱毛重: 33.8kg', '单箱体积: 0.395', '单箱毛重 33.8kg', '每箱体积: 0.12', 'CBM/CTN: 0.395', 'Вес 1 места: 33.8 кг']) {
+      expect(readGoodsLines(line), line).toEqual([]);
+      expect(parseManualFacts(line, 'podklyuch'), line).toMatchObject({ weightKg: null, volumeM3: null });
+    }
+    // The shipment's own label still states the shipment.
+    expect(parseManualFacts('体积: 5.92', 'podklyuch').volumeM3).toBe(5.92);
+    expect(parseManualFacts('毛重: 507', 'podklyuch').weightKg).toBe(507);
+  });
+});
+
 describe('T12 — where a block ends, and what is no block', () => {
   it('a blank line and the next name label end it: two blocks are two goods, each 300 kg (20 × 15, 10 × 30)', () => {
     const goods = readGoodsLines('品名 折叠椅\n20箱\n毛重 15kg/箱\n\n品名 桌子\n10箱\n毛重 30kg/箱');
