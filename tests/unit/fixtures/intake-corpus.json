@@ -17360,6 +17360,38 @@
    "why": "check crit-3 / owner-2 neighbours: the line vanished (no row, no note) — «в каждой по», «karobkada», «ichida» were words the figure test did not know.",
    "source": "ai-soraydi 1a check (T)",
    "weight": "defect"
+  },
+  {
+   "id": "c4449",
+   "input": "Divan 5 dona, упаковка 200x90x80 см",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 5
+     }
+    ],
+    "count": 1
+   },
+   "said": "a row of 5, the package's size kept",
+   "why": "check crit-1's neighbour: a package noun before the size was an unknown word of the tail and the whole row vanished (T8).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4450",
+   "input": "Divan 5 dona, upakovka 200x90x80 sm",
+   "expected": {
+    "rows": [
+     {
+      "quantity": 5
+     }
+    ],
+    "count": 1
+   },
+   "said": "a row of 5, the package's size kept",
+   "why": "check crit-1's neighbour: a package noun before the size was an unknown word of the tail and the whole row vanished (T8).",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [

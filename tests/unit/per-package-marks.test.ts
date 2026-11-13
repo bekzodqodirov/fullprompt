@@ -251,6 +251,18 @@ describe('doors-1 — a per-carton cube’s own unit and tail are no label of th
 });
 
 describe('crit-1 — a sack, a crate, a roll, a bale are packages: one of them is never the shipment’s brutto', () => {
+  // Check crit-1's neighbour: «упаковка» / «upakovka» before a size made the
+  // tail hold a word the figure test did not know — the whole row vanished.
+  it('«Divan 5 dona, упаковка 200x90x80 см» stays a row of 5, its package’s size kept', () => {
+    for (const text of ['Divan 5 dona, упаковка 200x90x80 см', 'Divan 5 dona, upakovka 200x90x80 sm']) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ quantity: 5, volumeM3: null });
+      expect(r.name, text).toMatch(/^Divan .*200x90x80/u);
+    }
+    // With the packages counted the size multiplies: 5 × 2 × 0.9 × 0.8 = 7.2 m³.
+    expect(row('Divan 5 dona, 5 upakovka, upakovka 200x90x80 sm')).toMatchObject({ name: 'Divan', quantity: 5, volumeM3: 7.2 });
+  });
+
   it('«N <package> по X кг» / «X kg dan» / «X kg/bag» — the row weighs N × X, and no total is stated', () => {
     for (const [text, name, kg] of [
       ['Цемент 20 мешков по 50 кг', 'Цемент', 1000], // 20 × 50

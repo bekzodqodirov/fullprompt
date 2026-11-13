@@ -1027,13 +1027,13 @@ function countsGoods(word: string | undefined): boolean {
  * brutto). The per-package reader's own list: a package COUNTED here is
  * never a unit of `WORDS` (a sheet's «мешок» cell, a row's cartons column).
  */
-const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package)\p{L}*`;
+export const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|upakov(?:k|ok)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package)\p{L}*`;
 /** A piece's noun — «dona», «donasi», «шт», «штука», «pcs», «piece». */
 const PIECE_NOUN = String.raw`(?:dona|дона)\p{L}*|шт\p{L}*|pcs?|pieces?|units?|единиц\p{L}*`;
 const COUNT_NOUN = `${PACKAGE_NOUN}|${PIECE_NOUN}`;
 const PACKAGE_NOUN_WORD = new RegExp(`^(?:${PACKAGE_NOUN})$`, 'iu');
 /** A package noun's stem anywhere in a lower-cased window — what `ONE_LEAD` needs before it is run. */
-const PACKAGE_STEM = /karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package/u;
+const PACKAGE_STEM = /karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|upakov(?:k|ok)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package/u;
 const PIECE_NOUN_WORD = new RegExp(`^(?:${PIECE_NOUN})$`, 'iu');
 
 /** Whose one a noun names — null: it names neither. */

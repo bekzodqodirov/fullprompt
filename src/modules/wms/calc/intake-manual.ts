@@ -17,6 +17,7 @@ import { addressWord } from './address-words';
 import { applyPacking } from './carton-math';
 import type { MeasureUnit } from './pricing';
 import {
+  PACKAGE_NOUN,
   AMOUNT_NUMBER,
   amountsIn,
   BLANK,
@@ -1640,9 +1641,15 @@ const SCALED_IN_NAME = new RegExp(String.raw`(?<![\p{L}\d.,])\d[\d.,]*${GAP}(?:$
 /** A tail's tokens: split on spaces, separators and what `figureTail` set aside. */
 const TAIL_SPLIT = new RegExp(`[\\s,;/+${BLANK}]+`, 'u');
 
-/** The size words a typed size stands beside — «o‘lchami», «razmeri», «carton size» (units.ts `FIELD_LABELS`). */
+/**
+ * The size words a typed size stands beside — «o‘lchami», «razmeri», «carton
+ * size» (units.ts `FIELD_LABELS`) — and a package's noun right before it
+ * («Divan 5 dona, упаковка 200x90x80 см»: whose size it is, no unknown word
+ * of the tail — check crit-1's neighbour: the line vanished, T8). Never a
+ * carton count's own word («10 karobka 120x80x75 sm»).
+ */
 const SIZE_WORDS_BEFORE = new RegExp(
-  String.raw`(?<![\p{L}])(?:${labelPattern([...FIELD_LABELS.packageSize, ...FIELD_LABELS.size])})\s*[.:：=]?\s*(?=${BLANK})`,
+  String.raw`(?<![\p{L}])(?:${labelPattern([...FIELD_LABELS.packageSize, ...FIELD_LABELS.size])}|(?<!\d[ \t]*)${PACKAGE_NOUN})\s*[.:：=]?\s*(?=${BLANK})`,
   'giu',
 );
 
