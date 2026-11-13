@@ -283,6 +283,28 @@ describe('crit-1 — a sack, a crate, a roll, a bale are packages: one of them i
 });
 
 describe('owner-4 — a package noun opening its clause right before the size says whose the size is (JS-2)', () => {
+  // Check owner-4: the count AFTER the size clause. «300 dona. Karobka» read
+  // «Karobka» as the unit of 300 (the counter-then-unit rule jumped the stop):
+  // 300 CARTONS, 20 pieces and a computed 20 × 0.6 × 0.4 × 0.5 × 15 = 36 m³;
+  // with a comma the row vanished (two piece counts, «welded»).
+  it('«Kurtka 300 dona. Karobka 60x40x50 sm, 20 ta» — 300 dona, 20 cartons, 20 × 0.12 = 2.4 m³; never 36', () => {
+    for (const [text, name] of [
+      ['Kurtka 300 dona. Karobka 60x40x50 sm, 20 ta', 'Kurtka'],
+      ['Kurtka 300 dona, karobka 60x40x50 sm, 20 ta', 'Kurtka'],
+      ['Kurtka 300 dona, karobka 60x40x50 sm 20 ta', 'Kurtka'],
+      ['Куртка 300 шт. Коробка 60х40х50 см, 20 та', 'Куртка'],
+      ['Kurtka 300 dona. Karobka 60x40x50 sm, 20 karobka', 'Kurtka'],
+    ] as const) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ name, quantity: 300, volumeM3: 2.4 });
+      expect(r.packing, text).toMatchObject({ cartons: 20, size: { l: 60, w: 40, h: 50, of: 'package' } });
+    }
+    // «120 ta juft» — a counter before a unit, no stop between — is still 120 pairs.
+    expect(parseGoodsLine('Krossovka 120 ta juft')).toMatchObject({ measureUnit: 'juft', measureQty: 120 });
+    // A size right after the NAME is nobody's said (JS-2): its «20 ta» stays a count.
+    expect(row('Korzina 60x40x50 sm, 20 ta')).toMatchObject({ quantity: 20, volumeM3: null });
+  });
+
   it('«…, 20 karobka, karobka 60x40x50 sm» — 20 × 0.6 × 0.4 × 0.5 = 2.4 m³, the noun out of the name', () => {
     // Was «Kurtka karobka», of: null, no cube — and the seller told to work the cube out himself.
     for (const [text, name] of [

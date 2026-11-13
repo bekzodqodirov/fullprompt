@@ -913,6 +913,14 @@ const AMOUNT = new RegExp(
 /** A counter word directly before a unit: «120 ta juft», «40 шт пар» — the
  * second word is the unit. */
 const COUNTER_THEN_UNIT = /^\s+([\p{L}²³][\p{L}\d²³.]*)/u;
+/**
+ * A counter written with a stop — «300 dona. Karobka 60x40x50 sm» — ends its
+ * sentence: the next word opens another, never this figure's unit (check
+ * owner-4: «300 dona. Karobka» was 300 CARTONS, and the size multiplied by
+ * them a computed 36 m³). An abbreviation's dot («шт.») before a unit is the
+ * same stop to this rule — «40 шт. пар» is no way a seller writes pairs.
+ */
+const endsSentence = (word: string): boolean => /\.$/u.test(word);
 
 /** One amount of a line and the word that names it, where they stand. */
 export interface AmountSpan {
@@ -938,7 +946,7 @@ export function amountsIn(line: string): AmountSpan[] {
   for (const hit of blankNonAmounts(line).matchAll(AMOUNT)) {
     let word = hit[2] ?? null;
     let end = hit.index + hit[0].length;
-    if (word && unitOf(word) === 'dona') {
+    if (word && unitOf(word) === 'dona' && !endsSentence(word)) {
       const next = COUNTER_THEN_UNIT.exec(line.slice(end));
       const nextUnit = next ? unitOf(next[1]!) : null;
       if (next && nextUnit !== null && nextUnit !== 'dona') {
@@ -1276,7 +1284,14 @@ const PACKAGE_NOUN_AFTER = new RegExp(String.raw`^\s*(?:${PACKAGE_NOUN})(?![\p{L
  * Anchored on the clause's comma: a noun at the head of the LINE is the
  * goods' name («Корзина 60x40x50 см, 20 коробок», JS-2's size after the name).
  */
-const PACKAGE_NOUN_CLAUSE_BEFORE = new RegExp(String.raw`(?<=[,;]\s*)(?:${PACKAGE_NOUN})\s*[.:：=]?\s*$`, 'iu');
+const PACKAGE_NOUN_CLAUSE_BEFORE = new RegExp(String.raw`(?<=[,;]\s*|[.!?]\s+)(?:${PACKAGE_NOUN})\s*[.:：=]?\s*$`, 'iu');
+/**
+ * A bare counter right after such a clause's size — «…, karobka 60x40x50 sm,
+ * 20 ta», «Karobka 60x40x50 sm 20 ta» — counts those packages (check owner-4:
+ * read as 20 PIECES beside the line's own 300, the row was dropped as two
+ * welded lines). Read off the scan, where the size is blanked.
+ */
+const PACKAGE_SIZE_CLAUSE_BEFORE = new RegExp(String.raw`(?:^|[,;]\s*|[.!?]\s+)(?:${PACKAGE_NOUN})\s*[.:：=]?\s*\uE000+\s*[,;]?\s*$`, 'iu');
 
 /** One figure of a line that is ONE package's or ONE piece's. */
 export interface PerOneFigure {
@@ -1390,7 +1405,7 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
     let word = hit[2] ?? null;
     let end = hit.index + hit[0].length;
     if (!word) continue;
-    if (unitOf(word) === 'dona') {
+    if (unitOf(word) === 'dona' && !endsSentence(word)) {
       const next = COUNTER_THEN_UNIT.exec(text.slice(end, end + 24));
       const nextUnit = next ? unitOf(next[1]!) : null;
       if (next && nextUnit !== null && nextUnit !== 'dona') {
@@ -1401,6 +1416,7 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
     const scale = scaled ? scaledKg(word) : null;
     // A count of packages of another trade — «20 мешков», «20 ящиков», «20 rulon» — is a carton count here.
     const unit =
+      (/^(?:ta|та)$/iu.test(word) && PACKAGE_SIZE_CLAUSE_BEFORE.test(scan.slice(Math.max(0, hit.index - 96), hit.index)) ? 'karobka' : null) ??
       unitOf(word) ??
       (scale && !scale.lone ? 'kg' : PACKAGE_NOUN_WORD.test(word) ? 'karobka' : null) ??
       labelledCube(word, text.slice(end, end + 48));
@@ -1803,6 +1819,11 @@ function packageSize(
   // block's «尺寸 60*40*50cm 20箱» may be the folding chair's own, and is asked.
   const sizeLabel = SIZE_LABEL_BEFORE.exec(before);
   if (sizeLabel) return taken(null, [labelSpan(sizeLabel[0], from + sizeLabel.index)]);
+  // A package's noun opening the size's clause — its word leaves the name
+  // even when the count stands right after the size («…, karobka 60x40x50 sm
+  // 20 ta»: it was «Kurtka karobka»).
+  const nounBefore = PACKAGE_NOUN_CLAUSE_BEFORE.exec(before);
+  if (nounBefore) return taken('package', [labelSpan(nounBefore[0], from + nounBefore.index)]);
   // Right beside the carton count, with nothing but spaces between («20
   // karobka 60x40x50», «60x40x50 sm 20 ta karobka»).
   const beside = cartonCounts.some((i) => {
@@ -1811,8 +1832,6 @@ function packageSize(
     return b - a <= 8 && /^\s*$/u.test(text.slice(a, b));
   });
   if (beside) return taken('package');
-  const nounBefore = PACKAGE_NOUN_CLAUSE_BEFORE.exec(before);
-  if (nounBefore) return taken('package', [labelSpan(nounBefore[0], from + nounBefore.index)]);
   const nounAfter = PACKAGE_NOUN_AFTER.exec(text.slice(token.end, token.end + 32));
   if (nounAfter) return taken('package', [[token.end, token.end + nounAfter[0].length]]);
   // Inside an each-clause: «har biri 60x40x50 sm 15 kg» — whose the clause is,
@@ -2232,7 +2251,7 @@ export function parseGoodsLine(
         start = field.index;
       }
       // «120 ta juft» — a counter word followed by a unit word: the unit wins.
-      if (word && unitOf(word) === 'dona') {
+      if (word && unitOf(word) === 'dona' && !endsSentence(word)) {
         const next = COUNTER_THEN_UNIT.exec(cellText.slice(end));
         const nextUnit = next ? unitOf(next[1]!) : null;
         if (next && nextUnit !== null && nextUnit !== 'dona') {

@@ -17183,6 +17183,78 @@
    "why": "check R3, the Chinese neighbour.",
    "source": "ai-soraydi 1a check (T)",
    "weight": "defect"
+  },
+  {
+   "id": "c4439",
+   "input": "Kurtka 300 dona. Karobka 60x40x50 sm, 20 ta",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4440",
+   "input": "Kurtka 300 dona, karobka 60x40x50 sm, 20 ta",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4441",
+   "input": "Куртка 300 шт. Коробка 60х40х50 см, 20 та",
+   "expected": {
+    "rows": [
+     {
+      "name": "Куртка",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4442",
+   "input": "Kurtka 300 dona. Karobka 60x40x50 sm, 20 karobka",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 dona, 20 cartons, 20 × 0.12 = 2.4 m³* — never 36",
+   "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
