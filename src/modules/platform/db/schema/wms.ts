@@ -372,7 +372,9 @@ export const batchSentCompositions = pgTable(
 /**
  * Yuk ma'lumoti tekshiruvi (0123, docs/YUK-TEKSHIRUV.md): a person confirmed
  * with the client that the lot is what the warehouse wrote. The row holds
- * WHAT was vouched for (the owner's 2b: name, count, client); every reader
+ * WHAT was vouched for (the owner's 2b: name, count, client — and since 0147
+ * the kilos and cubic metres, his «2 b» of 2026-11-12, in two SQL-only columns
+ * this table never declares: a server one migration behind); every reader
  * compares it with the lot through `wms/receipts/lot-check-sql.ts`, so no
  * writer of those facts ever has to clear it. `wms/receipts/lot-check.ts` is
  * its one writer.

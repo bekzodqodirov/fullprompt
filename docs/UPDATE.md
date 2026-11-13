@@ -369,6 +369,43 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## Prixod javoblari (2026-11-13, 0147) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0147** — deploydan keyin son **148** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). Agar serveringizda 0145 yoki 0146 hali yo‘q bo‘lsa, ular
+shu deployda birga o‘tadi — son baribir **148** (ularning o‘z bo‘limlari pastda; 0145 ning «tg-listen qayta
+quriladi» talabi o‘sha bo‘limda). Migratsiya faqat qo‘shadi: xodim qo‘ygan ✅ ga ikkita ustun (eslab qolingan kg va
+kub — **hozirgi qiymatlar bilan to‘ldiriladi**, shuning uchun deploy kuni hech bir ✅ o‘zgarmaydi) va mijozga borgan
+savolga ikkita ustun (nima so‘ralgani va qachon). Mavjud ma’lumot o‘zgarmaydi.
+
+**Deploydan OLDIN biling:** deploydan keyin biror lotning og‘irligi, hajmi yoki quti soni o‘zgartirilsa va mijozga
+shu prixod haqida tugmali savol borgan bo‘lsa (yoki lot ✅ bo‘lgan bo‘lsa) — **10 daqiqadan keyin mijozga yangi savol
+o‘zi boradi** («🔄 Yukingiz ma’lumoti yangilandi…»). Bu sizning «1 b» javobingiz. Sozlama (`client_reask_on_reweigh`)
+faqat deploydan keyin paydo bo‘ladi; xohlamasangiz — deploy tugagan zahoti Boshqaruv → Sozlamalar’da o‘chiring
+(birinchi savol eng tez birinchi tuzatishdan 10 daqiqa keyin ketadi — vaqt yetadi).
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+   (Bu raundning o‘zida **tg-listen** o‘zgarmagan; bu buyruq uni ham qayta quradi — zarari yo‘q.)
+3. Sonni o‘qing — **148**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+   (Son 147 bo‘lib qolsa — 0147 o‘tmagan — tizim ishlaydi, faqat avtomatik savol bormaydi va xodimning ✅ i kg/kubni
+   eslamaydi; migratsiya o‘tgach, **qayta ishga tushirmasdan** o‘zi yangisiga o‘tadi.)
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Sinov (bitta prixodda, 25 daqiqa):
+   - Telegrami ulangan mijozga Xitoy skladida prixod qiling. 10 daqiqadan keyin mijozga «Yukingiz qabul qilindi»
+     xabari ✅/❌ bilan boradi (avvalgidek). **Shu xabar borguncha kuting.**
+   - Endi shu lotni ✏️ bilan oching va og‘irligini o‘zgartiring (masalan 40 → 41 kg). Prixod kartasidagi
+     «Mijozdan so‘rash» blokida darhol: «Yuk ma’lumoti o‘zgardi — mijozdan HH:MM da o‘zi qayta so‘raladi».
+   - 10 daqiqadan keyin mijozga yangi savol boradi: tepasida «🔄 Yukingiz ma’lumoti yangilandi — iltimos, qayta
+     tekshirib tasdiqlang.», ostida 41 kg. Kartada: «Ma’lumot o‘zgargani uchun mijozdan o‘zi qayta so‘raldi: HH:MM»;
+     tarixda «Telegram · ma’lumot o‘zgargani uchun o‘zi qayta so‘raldi · 1 lot».
+   - Mijoz «✅» bossa — lot ✅; kartada «tizim yuborgan savoldagi tugma orqali».
+   - Boshqa lotda xodim «✅ To‘g‘ri» qo‘ysin, keyin ✏️ bilan og‘irligini o‘zgartiring — lot «o‘zgardi» bo‘lib ❓ ga
+     qaytadi («… og‘irlik yoki hajm»); eski og‘irlikni qaytarsangiz — yana ✅.
+   - Sotuvchi akkauntida prixod kartasini oching — «Fayllar»da 📎 qo‘shish bor; rasm yuklasa, u «Fayllar»da hujjat
+     bo‘lib turadi (karobka rasmlari orasida emas), tarixda fayl nomi bilan yozuv chiqadi.
+
 ## Prixod xabari (2026-11-11, 0146) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0146** — deploydan keyin son **147** bo‘ladi (repo’dagi fayllar soni:

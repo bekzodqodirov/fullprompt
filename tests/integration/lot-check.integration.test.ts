@@ -371,6 +371,8 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
         }[]
       )[0];
     expect(await remembered()).toEqual({ kg: '1000.00', m3: '2.500' });
+    // The card's view says the tick compares the measures — the ✏️ form's warning is drawn on it.
+    expect((await stateOf('K')).person?.measures).toBe(true);
     await db.update(receiptLots).set({ totalWeightKg: '1100.000' }).where(eq(receiptLots.id, lot.K));
     try {
       expect((await stateOf('K')).state).toBe('stale');
@@ -386,6 +388,8 @@ describe('the person\'s check (his 2b: name + count + client)', () => {
 
   it('5c. a tick written with NO measures (an old process, the minutes of a deploy) holds on its other three terms', async () => {
     await db.execute(sql`UPDATE lot_checks SET seen_kg = NULL, seen_m3 = NULL WHERE lot_id = ${lot.K}::uuid`);
+    // …and that it says nothing about them: no warning promised on the ✏️ form.
+    expect((await stateOf('K')).person?.measures).toBe(false);
     await db.update(receiptLots).set({ totalWeightKg: '1100.000' }).where(eq(receiptLots.id, lot.K));
     try {
       expect((await stateOf('K')).state).toBe('checked');

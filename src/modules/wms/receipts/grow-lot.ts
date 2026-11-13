@@ -69,18 +69,17 @@ export interface LotFigures {
  * base, exactly. Pure.
  */
 export function mixedTotalsFor(base: LotFigures, n: number): { totalWeightKg: number; totalVolumeM3: number } {
-  const totals =
-    n === base.boxCount
-      ? computeLotTotals({ dimsMode: 'mixed', boxCount: n, totalWeightKg: base.totalWeightKg, totalVolumeM3: base.totalVolumeM3 }, 0)
-      : computeLotTotals(
-          {
-            dimsMode: 'mixed',
-            boxCount: n,
-            totalWeightKg: (base.totalWeightKg * n) / base.boxCount,
-            totalVolumeM3: (base.totalVolumeM3 * n) / base.boxCount,
-          },
-          0,
-        );
+  // ONE scaling and one rounding — at the base's own count that is the base
+  // (a stored figure has no more places than the rounding keeps).
+  const totals = computeLotTotals(
+    {
+      dimsMode: 'mixed',
+      boxCount: n,
+      totalWeightKg: (base.totalWeightKg * n) / base.boxCount,
+      totalVolumeM3: (base.totalVolumeM3 * n) / base.boxCount,
+    },
+    0,
+  );
   return { totalWeightKg: totals.totalWeightKg, totalVolumeM3: totals.totalVolumeM3 };
 }
 

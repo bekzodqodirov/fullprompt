@@ -702,7 +702,9 @@ saw it and a document reading's spend was shown nowhere.
 So a ❌ ends **four** ways: the rejected goods are changed; a colleague ticks AFTER it; the client answers
 again; «E'tirozni yopish». A typo fixed in the Chinese name lifts nothing; a count corrected on a tarkib lot
 lifts nothing by itself (a person ticks or closes). kg and m³ are in no arm. 72 combinations are pinned
-against literal states (`client-confirm.integration`).
+against literal states (`client-confirm.integration`). (Since 2026-11-13 — his «2 b», `docs/PRIXOD-JAVOBLAR.md`
+§8 — arm 3's tick compares the kilos and cubic metres it remembered, while the ❌'s outrank stays on the tick's
+facts, so a re-weigh never brings an answered ❌ back; 168 combinations.)
 
 - **A tick and an answer on one lot are ordered** (`lockLotAnswersTx`, an advisory lock of its own): the
   answer's clock is `clock_timestamp()`, the tick posts the answer it SAW (`seenClientAt`) and is refused

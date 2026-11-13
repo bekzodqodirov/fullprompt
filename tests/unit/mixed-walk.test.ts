@@ -49,7 +49,7 @@ describe('a mixed lot walked from its base', () => {
     expect(mixedTotalsFor(BASE, 10).totalWeightKg).toBe(58.163);
   });
 
-  it('the base’s own count is the base — no division, no rounding', () => {
+  it('the base’s own count is the base — the one rounding gives back what was stored', () => {
     const odd: LotFigures = { boxCount: 3, totalWeightKg: 12.963, totalVolumeM3: 0.1235 };
     expect(mixedTotalsFor(odd, 3)).toEqual({ totalWeightKg: 12.963, totalVolumeM3: 0.1235 });
   });

@@ -27,6 +27,10 @@ describe('the three answers that changed something', () => {
   it('1 b — «yuk qayta tortilganda mijozga savol o‘zi qayta borsin»: on by default, said why to the customer, armed by every re-weigh', () => {
     expect(SETTING_DEFAULTS.client_reask_on_reweigh).toBe(true);
     for (const locale of ['uz', 'ru', 'en']) expect(clientLabels(locale).confirmAskUpdated.startsWith('🔄')).toBe(true);
+    // «Again» is on the CHECK, never on the confirmation: the client asked may never have answered (O11).
+    expect(clientLabels('uz').confirmAskUpdated).toContain('qayta tekshirib tasdiqlang');
+    expect(clientLabels('ru').confirmAskUpdated).toContain('проверьте ещё раз и подтвердите');
+    expect(clientLabels('en').confirmAskUpdated).toContain('check again and confirm');
     expect(hasTest('tests/integration/client-reask.integration.test.ts', 'armed after the commit, due ten minutes after the LAST correction')).toBe(true);
     expect(hasTest('tests/integration/client-reask.integration.test.ts', 'the sweep sends the question with its «updated» line and the NEW tag')).toBe(true);
     expect(hasTest('tests/unit/client-reask-wire.test.ts', 'only two modules write `total_weight_kg` / `total_volume_m3` of an existing lot')).toBe(true);
@@ -42,6 +46,21 @@ describe('the three answers that changed something', () => {
     // «yoki yozilgan tarkib»: already true before this answer, and pinned where it was.
     expect(hasTest('tests/integration/lot-check.integration.test.ts', '12. a composition the lot has outgrown reads «stale»')).toBe(true);
     expect(sentence).toMatch(/AND \$\{LOT_TARKIB\}\.kg = \$\{lot\}\.total_weight_kg\s*AND \$\{LOT_TARKIB\}\.m3 = \$\{lot\}\.total_volume_m3/);
+  });
+
+  it('2 b on the ✏️ form: the warning is drawn where a ✅ that COMPARES the measures holds, and promises only what happens (the owner lens, O5)', () => {
+    const page = code('src/app/(protected)/receipts/[id]/page.tsx');
+    expect(page).toContain('(view?.person?.holds === true && view.person.measures) ||');
+    expect(page).toContain("(view?.client?.verdict === 'yes' && view.client.ofOwner && view.client.holds && view.client.measures)");
+    const form = code('src/app/(protected)/receipts/[id]/lot-edit-form.tsx');
+    expect(form).toMatch(/\{vouched && \(\s*<p [^>]*data-testid="lot-edit-measure-warning">\s*⚠ \{tk\('measureOnLotForm'\)\}/);
+    // No bundle promises the client will be asked: that depends on a delivered question, a chat, the
+    // switch and the cargo standing in China — none of which the form knows.
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const words = (JSON.parse(read(`messages/${locale}.json`)) as { tarkib: Record<string, string> }).tarkib.measureOnLotForm!;
+      expect(words, locale).toContain('✅');
+      expect(words, locale).not.toMatch(/mijoz|клиент|client|客户/i);
+    }
   });
 
   it('4 b — «sotuvchi prixod kartasida (saytda) ham fayl qo‘sha olsin»: the bot’s rule, one predicate for both doors', () => {
