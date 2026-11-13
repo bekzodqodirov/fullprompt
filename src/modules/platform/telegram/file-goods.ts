@@ -408,6 +408,7 @@ export function columnAsks(files: readonly GoodsFileMeta[] | undefined, goods: G
         id: `col:${i}:${ask.field}`,
         row: null,
         holds: true,
+        doubts: ask.field,
         text: `«${ask.title}» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy ${what} yozing: «1: …».`,
       });
     }

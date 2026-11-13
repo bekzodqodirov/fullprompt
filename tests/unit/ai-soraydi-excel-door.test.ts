@@ -355,7 +355,10 @@ describe('X5 — a column the sheet’s own TOTAL row shows to be ONE carton’s
     // volumeM3 2.1 in the lone totals).
     expect(got.totals).toMatchObject({ weightKg: null, volumeM3: null, doubted: ['weightKg', 'volumeM3'] });
     expect(got.cube).toBe(2.1);
-    expect(got.table).toContain('✅ Hajm: 2.1 m³ (qatorlardan)');
+    // …and while «CBM» is asked, its Σ is drawn with the question's mark, never ✅ (review seams-2/seams-5's
+    // check — re-anchored from «✅ Hajm: 2.1 m³ (qatorlardan)»).
+    expect(got.table).toContain('❓ Hajm: 2.1 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
+    expect(got.table).not.toContain('✅ Hajm');
     expect(got.said[0]).toContain('⚠️ «pl.xlsx» — «G.W.(kg)» ustuni: jami qatorida 300 kg, qatorlar yig‘indisi 266 kg — umumiy brutto fayldan olinmadi.');
   });
 });
@@ -432,7 +435,9 @@ describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end t
     expect(got.totals).toMatchObject({ weightKg: 266, volumeM3: null, doubted: ['volumeM3'] });
     expect(got.table).toContain('✅ Og‘irlik (brutto): 266 kg');
     expect(got.cube).toBe(2.1);
-    expect(got.table).toContain('✅ Hajm: 2.1 m³ (qatorlardan)');
+    // While «CBM» is asked its Σ carries the question's mark (review seams-2/seams-5's check — re-anchored from
+    // «✅ Hajm: 2.1 m³ (qatorlardan)»).
+    expect(got.table).toContain('❓ Hajm: 2.1 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
   });
 });
 
@@ -457,8 +462,21 @@ describe('X5 — a line column nothing settles is ASKED once, by the rows it is 
     ]);
     const asks = columnAsks(got.state.goodsFiles, got.goods);
     expect(asks).toEqual([
-      { id: 'col:0:weightKg', row: null, holds: true, text: '«G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy og‘irligini (kg) yozing: «1: …».' },
-      { id: 'col:0:volumeM3', row: null, holds: true, text: '«CBM» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy hajmini (m³) yozing: «1: …».' },
+      // Each names the shipment total it doubts (`doubts`, review seams-2/seams-5's check).
+      {
+        id: 'col:0:weightKg',
+        row: null,
+        holds: true,
+        doubts: 'weightKg',
+        text: '«G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy og‘irligini (kg) yozing: «1: …».',
+      },
+      {
+        id: 'col:0:volumeM3',
+        row: null,
+        holds: true,
+        doubts: 'volumeM3',
+        text: '«CBM» ustuni — bitta karobkanikimi yoki qatornikimi? Har qatorning umumiy hajmini (m³) yozing: «1: …».',
+      },
     ]);
     // …and handed to the table's ONE list of asks, they are drawn with the table's own.
     const all = tableAsksOf({ section: got.state.section, facts: got.state.facts, laws: new Map(), amend: null, plain: false, aiQuestions: [], asks });

@@ -99944,6 +99944,58 @@
    "why": "review seams-3's check: the plain door's behaviour does not change.",
    "source": "ai-soraydi 1a review (seams-3, the check)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4565",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (a lone packing list on the AI door, its CBM column asked)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, TOTAL 60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "2: 260 kg 1.2 m3",
+     "3: 330 kg 2.1 m3"
+    ]
+   },
+   "said": "before the answers «❓ Hajm: 0.18 m³ (qatorlardan) — ustun savoli javobsiz (pastda)», never «✅ Hajm: 0.18»; after them «✅ Hajm: 3.8 m³ (qatorlardan)»",
+   "why": "review seams-2/seams-5's check: the asked column's Σ stood under ✅, now labelled «qatorlardan», directly above the question that doubts it.",
+   "source": "ai-soraydi 1a review (seams-2 / seams-5, the check)",
+   "weight": "nit"
+  },
+  {
+   "id": "c4566",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (two rows of one name, answered 1, 3, then 2)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — Office chair 10/12/0.05, Office chair 20/13/0.06, Desk 30/11/0.07, TOTAL 60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "3: 330 kg 2.1 m3",
+     "2: 260 kg 1.2 m3"
+    ]
+   },
+   "said": "after rows 1 and 3 «❓ Hajm: 2.66 m³ (qatorlardan) …», after row 2 «✅ Hajm: 3.8 m³ (qatorlardan)»",
+   "why": "review seams-5's check: «✅ Hajm: 2.66 m³ (qatorlardan)» stood above the CBM question still open for row 2.",
+   "source": "ai-soraydi 1a review (seams-2 / seams-5, the check)",
+   "weight": "nit"
+  },
+  {
+   "id": "c4567",
+   "call": "readIntakeFile + analyzeCollected on the PLAIN door (the same packing list)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — 10/12/0.05, 20/13/0.06, 30/11/0.07, TOTAL 60/36/0.18"
+    },
+    "model": "answers nothing"
+   },
+   "said": "the plain summary carries no ❓ — the plain door asks nothing (frozen)",
+   "why": "review seams-2/seams-5's check: the mark is the asking door's alone.",
+   "source": "ai-soraydi 1a review (seams-2 / seams-5, the check)",
+   "weight": "pinned"
   }
  ],
  "sameGoodsLineCases": [

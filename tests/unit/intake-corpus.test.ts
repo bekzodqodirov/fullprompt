@@ -2600,6 +2600,49 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], { ai: false });
     expect(steps[0]!.state.facts.volumeM3).toBe(3.8);
   },
+  c4565: async () => {
+    // review seams-2/seams-5's check, before the answers: the cube summed from the very «CBM» rows the table
+    // asks about is never ✅ — 0.05 + 0.06 + 0.07 = 0.18 under the question's mark; once every row is answered
+    // (0.5 + 1.2 + 2.1 = 3.8, by hand) the question closes and the cube is ✅ «qatorlardan».
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '2: 260 kg 1.2 m3', '3: 330 kg 2.1 m3']);
+    expect(steps[0]!.table).toContain('❓ Hajm: 0.18 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
+    expect(steps[0]!.table).not.toContain('✅ Hajm');
+    expect(steps.at(-1)!.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+  },
+  c4566: async () => {
+    // review seams-5's check: rows 1 and 3 answered, row 2 still the file's — 0.5 + 0.06 + 2.1 = 2.66 is drawn
+    // under the question's mark, never «✅ Hajm: 2.66 m³ (qatorlardan)»; row 2 answered, 0.5 + 1.2 + 2.1 = 3.8 ✅.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Office chair', 200, 10, 12, 0.05],
+      [2, 'Office chair', 480, 20, 13, 0.06],
+      [3, 'Desk', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('rastamojka', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '3: 330 kg 2.1 m3', '2: 260 kg 1.2 m3']);
+    expect(steps[2]!.table).toContain('❓ Hajm: 2.66 m³ (qatorlardan) — ustun savoli javobsiz (pastda)');
+    expect(steps[2]!.table).not.toContain('✅ Hajm');
+    expect(steps[3]!.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
+  },
+  c4567: async () => {
+    // review seams-2/seams-5's check: the plain door asks nothing and is frozen — no ❓ on its summary.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Ladies jacket', 200, 10, 12, 0.05],
+      [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+      [3, 'LED lamp 50W', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('podklyuch', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], [], { ai: false });
+    expect(steps[0]!.table).not.toContain('❓');
+  },
   c4523: async () => {
     // review seams-5: two rows of one name are two rows — answering rows 1 and 3 leaves row 2's
     // file figure asked, and the table never says «to‘liq» over it.

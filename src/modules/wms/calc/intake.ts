@@ -975,6 +975,12 @@ export interface TableAsk {
   example?: string;
   /** Release 1b: one pair of buttons, by position (`ask_N_a` / `ask_N_b`). */
   buttons?: [string, string];
+  /**
+   * The shipment total this question doubts (a file's column ask, review
+   * seams-2/seams-5's check): while it holds, that total summed from the very
+   * rows it asks about is never drawn ✅. Absent = none.
+   */
+  doubts?: 'weightKg' | 'volumeM3';
 }
 
 export interface TableInput {
@@ -1872,6 +1878,15 @@ export function intakeTableText(input: TableInput): string {
     if (doubted.has(f)) return `⚠️ ${FIELD_LABEL[f]} — ikki xil yozilgan (pastda)`;
     if (missing.includes(f)) return `⚠️ ${FIELD_LABEL[f]} — yozilmagan`;
     if (stale.has(f)) return staleWords;
+    // A cube SUMMED from the rows a standing question still asks about (review
+    // seams-2/seams-5's check: «✅ Hajm: 0.18 m³ (qatorlardan)» stood right
+    // above «❓ «CBM» ustuni — bitta karobkanikimi yoki qatornikimi?») is no
+    // ✅: it is drawn with the question's mark and changes as the rows are
+    // answered. Not a gap — the question already holds «to‘liq», and the
+    // seller answers the rows, never a «jami … kub».
+    if (f === 'volumeM3' && volumeFromLines(input.facts) && held.some((a) => a.doubts === 'volumeM3')) {
+      return `❓ Hajm: ${volumeText(input.facts)} — ustun savoli javobsiz (pastda)`;
+    }
     return ok;
   };
   totalsRows.push(
