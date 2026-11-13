@@ -104,6 +104,12 @@ export const ANSWER_STATUS_LINE = '✍️ Javobingizni shu botga yozing — AI m
 /** His answer is in and the AI is writing the customer's words (the queued redraft, §2.2). */
 export const ANSWER_TAKEN_LINE = '✍️ Javobingiz olindi — AI javob yozmoqda.';
 
+/**
+ * On the reply the AI wrote FROM his answer (`policy.fromAnswer`, §2.2), while it is still the machine's words: the
+ * acknowledgement points him at «AI yozgan karta», and this is how that card is told from any other.
+ */
+export const FROM_ANSWER_LINE = '✍️ Sizning javobingiz asosida yozildi.';
+
 /** The draft waits for his ✍️ answer (`policy.answering`, §2.2). */
 export function answeringOf(d: Pick<DraftRow, 'status' | 'policy'>): { since: string; until: string } | null {
   if (d.status !== 'editing') return null;
@@ -229,7 +235,9 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       // A ✅ whose calculation the queue refused (K26): the draft waits, and says why, for as long as it stands.
       // A press landing it right now (decide `claimLanding`) says so, never «did not reach the queue».
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
-      return d.actionStatus === 'failed' ? `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.` : null;
+      if (d.actionStatus === 'failed') return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.`;
+      // The AI's reply to his ✍️ answer says where it came from — until his own words replace it (✏️).
+      return ((d.policy ?? {}) as Partial<DraftPolicyJson>).fromAnswer && d.finalBody === null ? FROM_ANSWER_LINE : null;
     case 'editing':
       // «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2): he types the FACT, the AI writes the customer's words — the ✏️
       // line would tell him to type the customer's text. Once his answer is in, the AI is writing.

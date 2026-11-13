@@ -13,8 +13,8 @@ import { armWait, dropWait, flushWaitWrites, nowSec, readWait, waitVerdict, type
  * The AI sotuvchi in the staff bot — the grammY shell only. Every decision is
  * the wms side's (`wms/agent/bot-door.ts`, reached by dynamic import:
  * platform never imports wms statically, the startBoss crossing); this file
- * answers the press, arms and drops the three one-text waits, and sits in the
- * text ladder's ONE agent slot (review regression-6).
+ * answers the press, arms and drops the agent's one-text waits (`AGENT_WAITS`),
+ * and sits in the text ladder's ONE agent slot (review regression-6).
  */
 
 const AGENT_WAITS = ['agent_edit', 'agent_price', 'agent_code', 'agent_answer'] as const satisfies readonly WaitKind[];
@@ -63,7 +63,7 @@ const WAIT_NAMES: Record<AgentWait, string> = {
 
 /**
  * A one-text wait this chat's next text answers — a task's (a «Bajarildi»
- * result, «💬 Javob yozish», a ⏰ date) or one of the agent's three — in the
+ * result, «💬 Javob yozish», a ⏰ date) or one of the agent's own — in the
  * words naming it; null when none. The collector asks it before a press makes
  * a PARKED collection hold the chat again (calc-intake-sweep.ts
  * `otherCollectorLive`, review REG-2 / COMP-5): a holding collection is asked

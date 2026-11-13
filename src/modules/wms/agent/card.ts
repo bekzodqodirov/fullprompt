@@ -337,13 +337,15 @@ export function cardExtra(draft: {
 
 
 /**
- * Does the card offer «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2)? A live question the model raised itself — never one a
- * forcing rule put to him (rail's price, the flight's address: `policy.forcedQuestion`), whose answer is his ✏️ text
- * verbatim. ONE rule for `createDraft`, `refreshAgentCard` and the press that answers it (bot-door `answerPress`).
+ * Does the card offer «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2)? A live question the model raised itself on a REPLY —
+ * never one a forcing rule put to him (rail's price, the flight's address: `policy.forcedQuestion`), whose answer is
+ * his ✏️ text verbatim; and never on a hand-back or a price draft: the redraft is written from his answer and the
+ * chat alone, and would lose the VED's reason (or his own figure) the draft it supersedes was made of. ONE rule for
+ * `createDraft`, `refreshAgentCard` and the press that answers it (decide `answerQuestion`).
  */
-export function cardAsks(d: { status: string; needsOwner: boolean; policy: unknown }): boolean {
+export function cardAsks(d: { status: string; kind: string; needsOwner: boolean; policy: unknown }): boolean {
   const forced = ((d.policy ?? {}) as { forcedQuestion?: unknown }).forcedQuestion;
-  return (d.status === 'pending' || d.status === 'editing') && d.needsOwner && (forced === undefined || forced === null);
+  return (d.status === 'pending' || d.status === 'editing') && d.kind === 'reply' && d.needsOwner && (forced === undefined || forced === null);
 }
 
 /** A card written later than this after the customer's message says how long he has waited. */

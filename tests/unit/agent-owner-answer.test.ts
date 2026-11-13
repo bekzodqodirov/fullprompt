@@ -2,13 +2,13 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { cardAsks, cardExtra } from '@/modules/wms/agent/card';
-import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, answeredNow, renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
+import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, FROM_ANSWER_LINE, answeredNow, renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
 import { numberLedger, ownerAnswerSources, type NumberSource } from '@/modules/wms/agent/numbers';
 import { ANSWER_CONTACT_WORDS, answerTextRefusal, ownerAnswerInstruction } from '@/modules/wms/agent/owner-answer';
 import { answerNoDraftWhy } from '@/modules/wms/agent/owner-answer-job';
 import { stableHead } from '@/modules/wms/agent/prompt';
-import { withRailRule, type ComposeReply, type RunResult } from '@/modules/wms/agent/run';
-import type { ChatMessage } from '@/modules/wms/agent/context';
+import { memoryFor, withAviaGuard, withRailRule, type ComposeReply, type RunResult } from '@/modules/wms/agent/run';
+import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 
 /**
  * «Bilmayman» → he answers the FACT → the AI writes the customer's words (spec SPEC-P1-v2 §2) — the pure rules: his
@@ -82,6 +82,27 @@ function draft(over: Partial<DraftRow> = {}): DraftRow {
   } as DraftRow;
 }
 
+function ctxWith(body: string): AgentContext {
+  const m = msg(body);
+  return {
+    managerUserId: 'u',
+    peerId: 1n,
+    messages: [m],
+    history: [m],
+    anchor: m,
+    burst: [m],
+    lastOut: null,
+    identity: { clientId: null, leadId: 'l', strength: 'lead', codes: [], customerName: null, managerName: null, cargoAllowed: false },
+    storedLocale: null,
+    customerScript: 'latin',
+    measures: [],
+    openCalcs: [],
+    lastQuote: null,
+    ruleDecision: null,
+  };
+}
+const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
 describe('his answer is a source, read as a fact is — for one redraft (spec §2.2)', () => {
   const ledger = (reply: string, answer: string) => numberLedger(reply, ownerAnswerSources(answer));
 
@@ -111,6 +132,39 @@ describe('his answer is a source, read as a fact is — for one redraft (spec §
   });
 });
 
+describe('the redraft’s memory carries his answer as SOURCES and nothing else (§2.2)', () => {
+  const loop = { compose: compose(), tools: [], outcomes: [], usage };
+
+  it('his figures are in the stored sources, origin «owner» — so his ✅ and the press re-run the policy on them', () => {
+    const memory = memoryFor(ctxWith('Atir olib kelasizmi?'), loop, [], 'gsr-t', 'VED 1200 $ hisobladi, 3 kunda tayyor');
+    const mine = memory.sources.filter((s) => s.origin === 'owner');
+    expect(mine.map((s) => [s.kind, s.value])).toEqual([
+      ['money', 1200],
+      ['duration', 3],
+    ]);
+    // …and a run with no answer carries none.
+    expect(memoryFor(ctxWith('Atir olib kelasizmi?'), loop, [], 'gsr-t').sources.some((s) => s.origin === 'owner')).toBe(false);
+  });
+
+  it('it adds no phone, no link, no name and no Chinese text a reply may carry — an address is his ✏️ text', () => {
+    const plain = memoryFor(ctxWith('Ombor qayerda?'), loop, [], 'gsr-t');
+    const withAnswer = memoryFor(ctxWith('Ombor qayerda?'), loop, [], 'gsr-t', 'Tel +998 90 123 45 67, https://example.com/x, 义乌市 稠州北路, Shahzod aka biladi');
+    expect(withAnswer.allowedPhones).toEqual(plain.allowedPhones);
+    expect(withAnswer.allowedUrls).toEqual(plain.allowedUrls);
+    expect(withAnswer.mapUrls).toEqual(plain.mapUrls);
+    expect(withAnswer.quotableHan).toEqual(plain.quotableHan);
+    expect(withAnswer.factNameWords).toEqual(plain.factNameWords);
+  });
+
+  it('in a rail chat his money is no source — rail’s price is his ✏️ text — while his day count still is', () => {
+    const memory = memoryFor(ctxWith("Temir yo'l bilan qancha bo'ladi?"), loop, [], 'gsr-t', 'Temir yo‘l 900 $, 25 kunda');
+    const mine = memory.sources.filter((s) => s.origin === 'owner');
+    expect(memory.rail).toBe(true);
+    expect(mine.some((s) => s.kind === 'money')).toBe(false);
+    expect(mine.some((s) => s.kind === 'duration' && s.value === 25)).toBe(true);
+  });
+});
+
 describe('what the bot refuses to take as an answer (§2.2 — an address or a phone is his ✏️ text)', () => {
   it('a phone, a link, Chinese text: refused in words', () => {
     for (const text of ['Telefoni +998 90 123 45 67', 'https://example.com/manzil', '义乌市 稠州北路 2255号']) {
@@ -131,6 +185,19 @@ describe('the redraft’s instruction (§2.2, judge learn)', () => {
     const i = ownerAnswerInstruction(`  ${text}  `);
     expect(i).toContain(`«${text}»`);
     expect(i).toMatch(/^Bekzodning javobi \(manba/u);
+  });
+
+  it('the AI’s own question rides beside it — his «Ha» answers THAT sentence — after his words, named as no source, clipped', () => {
+    const i = ownerAnswerInstruction('Ha, olamiz', 'Mijoz shisha idish yubormoqchi —\n mo‘rt yuk olamizmi?');
+    expect(i).toMatch(/^Bekzodning javobi \(manba — undagi raqamni o'zgartirmay ishlat\): «Ha, olamiz»\./u);
+    expect(i).toContain('(savol manba emas, undagi sonni ishlatma): «Mijoz shisha idish yubormoqchi — mo‘rt yuk olamizmi?»');
+    expect(i.indexOf('«Ha, olamiz»')).toBeLessThan(i.indexOf('savol manba emas'));
+    // No question (a draft from before the round, an empty one): the answer alone, as before.
+    expect(ownerAnswerInstruction('Ha, olamiz', '  ')).toBe(ownerAnswerInstruction('Ha, olamiz'));
+    expect(ownerAnswerInstruction('Ha, olamiz')).not.toContain('savol manba emas');
+    const long = ownerAnswerInstruction('Ha', 'x'.repeat(2000));
+    expect(long.length).toBeLessThan(800);
+    expect(long).toContain('…»');
   });
 
   it('prompt rule 1 says the task’s answer is a source too — in the cached head, once', () => {
@@ -158,6 +225,25 @@ describe('«✍️ Savolga javob» on the card (§2.2)', () => {
     expect(cardAsks(draft({ policy: { ...(draft().policy as object), forcedQuestion: 'avia' } }))).toBe(false);
   });
 
+  it('…and only on a REPLY: a hand-back’s or a price draft’s question is his ✏️ (the redraft would lose what it was made of)', () => {
+    expect(cardAsks(draft({ kind: 'hand_back' }))).toBe(false);
+    expect(cardAsks(draft({ kind: 'price' }))).toBe(false);
+    expect(cardAsks(draft({ status: 'editing' }))).toBe(true);
+  });
+
+  it('the avia guard records that it forced the question — and a rail question forced first keeps its name', () => {
+    const blocked = { blocks: [{ rule: 'G4', code: 'avia_address' }] } as Parameters<typeof withAviaGuard>[1];
+    const ctx = { burst: [msg('Avia bilan 40 kg yubormoqchiman')], messages: [msg('Avia bilan 40 kg yubormoqchiman')], measures: [], lastQuote: null };
+    const loop = { tools: [], outcomes: [] };
+    const forced = withAviaGuard(compose({ replyText: 'Manzil: …' }), blocked, loop, ctx);
+    expect(forced).toMatchObject({ needsOwner: true, forcedQuestion: 'avia' });
+    const railFirst = withAviaGuard(compose({ needsOwner: true, forcedQuestion: 'rail', ownerQuestion: 'Temir yo‘l narxi?' }), blocked, loop, ctx);
+    expect(railFirst.forcedQuestion).toBe('rail');
+    // No avia block: nothing forced, the model's own question stays the model's.
+    const own = withAviaGuard(compose({ needsOwner: true, ownerQuestion: 'Suyuqlik olamizmi?' }), { blocks: [] }, loop, ctx);
+    expect(own.forcedQuestion).toBeUndefined();
+  });
+
   it('the rail rule records that it FORCED the question; the model’s own question carries no mark', () => {
     const forced = withRailRule(compose(), { burst: [msg("Temir yo'l bilan qancha bo'ladi?")] });
     expect(forced).toMatchObject({ needsOwner: true, forcedQuestion: 'rail' });
@@ -177,6 +263,14 @@ describe('«✍️ Savolga javob» on the card (§2.2)', () => {
     // An answer from an EARLIER press is no answer to this one.
     const old = draft({ status: 'editing', policy: { ...(draft().policy as object), answering, ownerAnswer: { text: 'Ha', at: '2026-11-12T09:00:00.000Z', messageId: 7 } } });
     expect(answeredNow(old)).toBe(false);
+  });
+
+  it('the reply the AI wrote from his answer says so on its card — until his own words replace it', () => {
+    const fromAnswer = { questionDraftId: ID, questionAnchor: '1', personal: [] };
+    const redraft = draft({ needsOwner: false, ownerQuestion: null, proposedBody: 'Afsuski, suyuq yuk olmaymiz.', policy: { ...(draft().policy as object), fromAnswer } as never });
+    expect(renderDraftCard(redraft, null)).toContain(FROM_ANSWER_LINE);
+    expect(renderDraftCard({ ...redraft, finalBody: 'O‘zim yozdim.' }, null)).not.toContain(FROM_ANSWER_LINE);
+    expect(renderDraftCard(draft({ needsOwner: false, ownerQuestion: null }), null)).not.toContain(FROM_ANSWER_LINE);
   });
 
   it('the question his answer superseded says so — never «↪️ Mijoz yana yozdi»', () => {

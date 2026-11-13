@@ -181,6 +181,67 @@ describe('the ag: grammar', () => {
     // The old approval grammar is untouched.
     expect(parseCallback(`a:1:${id}`)).toMatchObject({ kind: 'approval' });
   });
+
+  it('the wms door’s press letters are the parser’s own — derived, never restated (spec SPEC-P1-v2 §6)', () => {
+    const door = strip(readFileSync('src/modules/wms/agent/bot-door.ts', 'utf8'));
+    expect(door).toMatch(/import type \{ AgentOp as BotAgentOp \} from '\.\.\/\.\.\/platform\/telegram\/staff-bot'/u);
+    expect(door).toMatch(/export type AgentOp = BotAgentOp;/u);
+    // No second list of letters anywhere in the door: a union of one-letter strings is the restatement.
+    expect(door).not.toMatch(/export type AgentOp\s*=\s*'[a-z]'/u);
+  });
+});
+
+describe('every button an agent card DRAWS is one the parser takes (spec SPEC-P1-v2 §6, #939)', () => {
+  // The grammar test above walks AGENT_OPS — the letters the parser knows. This one walks the KEYBOARDS: an
+  // unparsed callback is answered by nobody and spins for fifteen seconds, and a button drawn with a letter the
+  // parser never learned (or an id it refuses) is found only here. Every payload SHAPE is built — each key the
+  // cards write, on and off — so a key added next month is one more line in `FLAGS`, not a new test.
+  const id = '0f1e2d3c-4b5a-4968-8776-655443322110';
+  const FLAGS = ['live', 'blocked', 'kbAsk', 'ask', 'teach', 'autoSent', 'autoBad', 'autoCancel'] as const;
+  const drawn = new Set<string>();
+  const check = (type: string, payload: Record<string, unknown>) => {
+    for (const b of (buttonsFor(type, payload) ?? []).flat()) {
+      if (!('callback_data' in b)) continue;
+      const parsed = parseCallback(b.callback_data);
+      expect(parsed, `${type} ${JSON.stringify(payload)} draws «${b.text}» → ${b.callback_data}`).toMatchObject({ kind: 'agent' });
+      expect(AGENT_OPS as readonly string[]).toContain((parsed as { op: string }).op);
+      expect(Buffer.byteLength(b.callback_data), b.callback_data).toBeLessThanOrEqual(64);
+      drawn.add((parsed as { op: string }).op);
+    }
+  };
+
+  it('the draft card, in every shape its payload can take', () => {
+    for (let mask = 0; mask < 2 ** FLAGS.length; mask++) {
+      const flags = Object.fromEntries(FLAGS.map((f, i) => [f, (mask & (1 << i)) !== 0]));
+      for (const digest of ['a1b2c3d4', undefined]) {
+        for (const autoAt of [null, '2026-11-13T10:00:00.000Z']) {
+          check('AgentDraft', { draftId: id, kind: 'reply', text: 'x', ...flags, ...(digest ? { digest } : {}), autoAt });
+        }
+      }
+    }
+    // …and it really drew them: ✅ ✏️ ❌ 🙋, the countdown's ⏸, the sent card's 👎, the remember row, and ✍️.
+    for (const op of ['s', 'e', 'r', 'h', 'a', 'f', 'g', 'u', 'z', 'j']) expect([...drawn], op).toContain(op);
+  });
+
+  it('the other agent cards, and the rows the door itself draws under a press', async () => {
+    check('AgentTariffNotice', { holderId: id, fingerprint: 'a1b2c3d4', text: 'x' });
+    check('AgentCalcAnswered', { requestId: id, priceable: true, text: 'x' });
+    check('AgentStranger', { ruleId: id, text: 'x' });
+    check('AgentCodeEcho', { ruleId: id, clientId: '019a2b3c-4d5e-7f00-8a1b-2c3d4e5f6071', text: 'x' });
+    for (const op of ['t', 'p', 'n', 'k', 'x', 'c', 'b']) expect([...drawn], op).toContain(op);
+    // The «📌/👤/✖» row under his ✍️ answer's acknowledgement (§2.3) is drawn by the door, not by a card.
+    const { answerKbRow } = await import('@/modules/wms/agent/bot-door');
+    const row = answerKbRow(id).flat();
+    expect(row.map((b) => b.callback_data)).toEqual([`ag:g:${id}`, `ag:u:${id}`, `ag:z:${id}`]);
+    for (const b of row) expect(parseCallback(b.callback_data), b.callback_data).toMatchObject({ kind: 'agent' });
+  });
+
+  it('…and every `ag:` callback the door’s source writes names a letter the parser knows', () => {
+    const door = strip(readFileSync('src/modules/wms/agent/bot-door.ts', 'utf8'));
+    const letters = [...door.matchAll(/callback_data: `ag:([a-z]):/gu)].map((m) => m[1]!);
+    expect(letters.length, 're-anchor: the door’s own buttons').toBeGreaterThan(3);
+    for (const op of letters) expect(AGENT_OPS as readonly string[], op).toContain(op);
+  });
 });
 
 describe('the stranger and echo cards (review I1)', () => {

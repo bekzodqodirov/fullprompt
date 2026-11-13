@@ -22,6 +22,25 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   }),
 }));
 
+/**
+ * `writeKbFact` with a moment BEFORE the write a test may fill — the «remember» press racing the redraft's own
+ * transaction is a race no clock reproduces; the hook puts the supersede exactly between the press's read and its
+ * save. Every other call passes straight through.
+ */
+const kbHook = vi.hoisted(() => ({ beforeWrite: null as null | (() => Promise<void>) }));
+vi.mock('@/modules/wms/agent/kb', async (original) => {
+  const real = await original<typeof import('@/modules/wms/agent/kb')>();
+  return {
+    ...real,
+    writeKbFact: vi.fn(async (...args: Parameters<typeof real.writeKbFact>) => {
+      const hook = kbHook.beforeWrite;
+      kbHook.beforeWrite = null;
+      if (hook) await hook();
+      return real.writeKbFact(...args);
+    }),
+  };
+});
+
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -44,20 +63,25 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
-import { ANSWER_TAKEN, ANSWER_WORDS, agentPress, agentText } from '@/modules/wms/agent/bot-door';
+import { ANSWER_NOT_LIVE, ANSWER_TAKEN, ANSWER_WORDS, agentPress, agentText } from '@/modules/wms/agent/bot-door';
+import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, FROM_ANSWER_LINE } from '@/modules/wms/agent/card-io';
 import { pressDueAutos, readAutoConfig, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
-import { decideDraft } from '@/modules/wms/agent/decide';
-import { releaseForgottenAnswers } from '@/modules/wms/agent/jobs';
-import { ANSWER_CONTACT_WORDS } from '@/modules/wms/agent/owner-answer';
+import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
+import { agentSweep, releaseForgottenAnswers } from '@/modules/wms/agent/jobs';
+import { ANSWER_CONTACT_WORDS, ownerPersonalOf } from '@/modules/wms/agent/owner-answer';
 import { QUESTION_DECIDED_WORDS, handleOwnerAnswer } from '@/modules/wms/agent/owner-answer-job';
-import { JOB_AGENT_OWNER_ANSWER, type AgentOwnerAnswerJob } from '@/modules/wms/agent/queues';
-import { handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
+import { JOB_AGENT_INBOUND, JOB_AGENT_OWNER_ANSWER, type AgentOwnerAnswerJob } from '@/modules/wms/agent/queues';
+import { ANSWER_STILL_HIS, handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
+import { webDrafts } from '@/modules/wms/agent/web-page';
+import { HAND_BACK_RETRY_S } from '@/modules/wms/agent/calc-loop';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
 const SUFFIX = String(Date.now()).slice(-6);
 const PEER = BigInt(`81${SUFFIX}`);
 let ownerId = '';
+/** A colleague — a super_admin too, and neither the question's account nor the agent's owner. */
+let colleagueId = '';
 let accountId = '';
 let clientId = '';
 let otherClientCode = '';
@@ -222,6 +246,20 @@ async function clearChat() {
   await db.delete(tgMessages).where(eq(tgMessages.peerId, PEER));
   await db.delete(notifications).where(and(eq(notifications.userId, ownerId), like(notifications.type, 'Agent%')));
   await db.delete(kbFacts).where(eq(kbFacts.clientId, clientId));
+  // A GENERAL fact is in every chat's prompt — configuration (#183): found by the run's own letters.
+  await db.delete(kbFacts).where(like(kbFacts.answer, `%${TAG}%`));
+}
+
+/** With a model key for the length of `fn`: a line is asked again only where a model would draft it (decide `redraftNewest`). */
+async function withModelKey<T>(fn: () => Promise<T>): Promise<T> {
+  const saved = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test-key-not-used';
+  try {
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = saved;
+  }
 }
 
 beforeAll(async () => {
@@ -229,6 +267,7 @@ beforeAll(async () => {
   autoSnapshot = await readAutoConfig();
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
   ownerId = await makeUser(`Javob egasi ${SUFFIX}`, 'super_admin', '01');
+  colleagueId = await makeUser(`Javob hamkasbi ${SUFFIX}`, 'super_admin', '03');
   const [acc] = await db
     .insert(tgAccounts)
     .values({ managerUserId: ownerId, tgPhone: `+99894${SUFFIX}02`, sessionEnc: 'v1.x.y.z', status: 'active', lastSeenAt: new Date(), workAccount: true })
@@ -246,6 +285,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   queued.jobs.length = 0;
+  kbHook.beforeWrite = null;
   await clearChat();
   await db
     .update(agentConfig)
@@ -285,7 +325,7 @@ afterAll(async () => {
   await __restoreAgentConfig(agentSnapshot);
   await __restoreAutoConfig(autoSnapshot);
   await setSetting('tg_sending_enabled', sendingBefore, ownerId);
-  await db.update(users).set({ active: false }).where(eq(users.id, ownerId));
+  await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, colleagueId]));
 });
 
 describe('the question, the ✍️ press, his answer (spec §2.2)', () => {
@@ -314,6 +354,142 @@ describe('the question, the ✍️ press, his answer (spec §2.2)', () => {
     expect(press.toast).toBe(ANSWER_WORDS.not_question.slice(0, 190));
     expect(press.arm).toBeUndefined();
     expect((await draftOf(q.id)).status).toBe('pending');
+  });
+
+  it('the question’s card follows the press: where to write while he answers, «AI is writing» once the answer is in — and no second ✍️ then', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    const [waiting] = await cardRows(q.id);
+    expect((waiting!.payload as { text: string }).text).toContain(ANSWER_STATUS_LINE);
+    expect((waiting!.payload as { ask?: unknown }).ask).toBe(true);
+    await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    const [taken] = await cardRows(q.id);
+    expect((taken!.payload as { text: string }).text).toContain(ANSWER_TAKEN_LINE);
+    expect(taken!.payload).toMatchObject({ ask: false, live: true });
+  });
+
+  it('only the holder: a colleague’s forged press, and the account’s own once it is no longer the agent’s, hear «Topilmadi»', async () => {
+    const q = await question();
+    const forged = await agentPress(colleagueId, 'j', q.id, undefined);
+    expect(forged.toast).toBe('Topilmadi');
+    expect(forged.arm).toBeUndefined();
+    // The draft's own account, after the agent moved to another person: a question is the holder's to answer.
+    await db.update(agentConfig).set({ ownerUserId: colleagueId }).where(eq(agentConfig.id, 1));
+    const moved = await agentPress(ownerId, 'j', q.id, undefined);
+    expect(moved.toast).toBe('Topilmadi');
+    expect(moved.arm).toBeUndefined();
+    // …and the agent's NEW owner on a question that is another account's: his own drafts only.
+    const foreign = await agentPress(colleagueId, 'j', q.id, undefined);
+    expect(foreign.toast).toBe('Topilmadi');
+    expect(foreign.arm).toBeUndefined();
+    const d = await draftOf(q.id);
+    expect(d.status).toBe('pending');
+    expect(d.policy).not.toHaveProperty('answering');
+  });
+
+  it('with the agent switched off the press is refused in words; on a question already decided it says so', async () => {
+    const q = await question();
+    await db.update(agentConfig).set({ mode: 'off' }).where(eq(agentConfig.id, 1));
+    const off = await agentPress(ownerId, 'j', q.id, undefined);
+    expect(off.toast).toBe(ANSWER_WORDS.agent_off);
+    expect(off.arm).toBeUndefined();
+    expect((await draftOf(q.id)).status).toBe('pending');
+    await db.update(agentConfig).set({ mode: 'shadow' }).where(eq(agentConfig.id, 1));
+    expect(await decideDraft(actorOf(ownerId), q.id, 'reject', {}, { actorId: ownerId })).toMatchObject({ ok: true });
+    const gone = await agentPress(ownerId, 'j', q.id, undefined);
+    expect(gone.toast).toBe(ANSWER_WORDS.not_live);
+    expect(gone.arm).toBeUndefined();
+    expect((await draftOf(q.id)).status).toBe('rejected');
+  });
+
+  it('the press stops the question’s waiting «o‘zi yuborish» first — a reply he is answering never goes by itself', async () => {
+    const q = await question();
+    // A question never counts down today (the gate refuses `needs_owner`); the stop is the press's first act all the same.
+    await db
+      .update(agentAutoVerdicts)
+      .set({ eligible: true, reasons: [], state: 'waiting', dueAt: new Date(Date.now() + 60_000) })
+      .where(eq(agentAutoVerdicts.draftId, q.id));
+    expect((await verdictOf(q.id))!.state).toBe('waiting');
+    await agentPress(ownerId, 'j', q.id, undefined);
+    expect(await verdictOf(q.id)).toMatchObject({ state: 'stopped', outcome: 'owner_answer', stoppedBy: ownerId });
+  });
+
+  it('a text for a question he never pressed ✍️ on is no answer: nothing stored, nothing queued', async () => {
+    const q = await question();
+    const reply = await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, 'Ha, suyuqlik olmaymiz', 5);
+    expect(reply?.text).toBe(ANSWER_NOT_LIVE);
+    expect((await draftOf(q.id)).policy).not.toHaveProperty('ownerAnswer');
+    expect(queued.jobs.filter((j) => j.name === JOB_AGENT_OWNER_ANSWER)).toHaveLength(0);
+  });
+
+  it('…nor for a question he decided after the press (❌ on the page): the wait’s mark alone is no question', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    expect(await decideDraft(actorOf(ownerId), q.id, 'reject', {}, { actorId: ownerId })).toMatchObject({ ok: true });
+    queued.jobs.length = 0;
+    const reply = await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, 'Ha, suyuqlik olmaymiz', 7);
+    expect(reply?.text).toBe(ANSWER_NOT_LIVE);
+    expect((await draftOf(q.id)).policy).not.toHaveProperty('ownerAnswer');
+    expect(queued.jobs.filter((j) => j.name === JOB_AGENT_OWNER_ANSWER)).toHaveLength(0);
+  });
+
+  it('…nor once the wait’s half hour has run out', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    await db
+      .update(agentDrafts)
+      .set({ policy: sql`jsonb_set(${agentDrafts.policy}, '{answering,until}', to_jsonb(${new Date(Date.now() - 1000).toISOString()}::text))` })
+      .where(eq(agentDrafts.id, q.id));
+    queued.jobs.length = 0;
+    const reply = await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, 'Ha, suyuqlik olmaymiz', 6);
+    expect(reply?.text).toBe(ANSWER_NOT_LIVE);
+    expect((await draftOf(q.id)).policy).not.toHaveProperty('ownerAnswer');
+    expect(queued.jobs.filter((j) => j.name === JOB_AGENT_OWNER_ANSWER)).toHaveLength(0);
+  });
+
+  it('while he answers, the customer’s next line stands down for the card he is answering — it does not supersede it', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    const next = await inbound(`Va qachon jo'natasiz ${TAG}?`);
+    const out = await handleInbound(
+      { managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(next), origin: 'live' },
+      { callModel: scripted([compose(`Tez orada ${TAG}.`)]), now: () => T0 },
+    );
+    expect(out).toMatchObject({ outcome: 'stood_down', reason: 'editing' });
+    expect((await draftOf(q.id)).status).toBe('editing');
+    expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(1);
+  });
+
+  it('a question on a hand-back draft offers no ✍️ — the redraft would lose the VED’s reason', async () => {
+    await inbound(`Kiyim ${TAG}, 5 kub`);
+    const out = await runOwnerTriggered(
+      { trigger: 'hand_back', managerUserId: ownerId, peerId: PEER, sourceKey: `hbq-${SUFFIX}`, instruction: 'VED qaytardi' },
+      { callModel: scripted([compose(`Aniqlab aytaman ${TAG}.`, { needs_owner: true, owner_question: 'VED nima so‘radi?', category: 'other' })]), now: () => T1 },
+    );
+    const d = await draftOf((out as { draftId: string }).draftId);
+    expect(d).toMatchObject({ kind: 'hand_back', needsOwner: true });
+    const [card] = await cardRows(d.id);
+    expect((card!.payload as { ask?: unknown }).ask).toBe(false);
+    const press = await agentPress(ownerId, 'j', d.id, undefined);
+    expect(press.arm).toBeUndefined();
+    expect((await draftOf(d.id)).status).toBe('pending');
+  });
+
+  it('a newer draft riding the question’s card takes its ✍️ away — the key is written every time', async () => {
+    const q = await question();
+    const [asked] = await cardRows(q.id);
+    expect((asked!.payload as { ask?: unknown }).ask).toBe(true);
+    const next = await inbound(`Yaxshi, tushunarli ${TAG}`);
+    // `other`: the layer refuses it, so the new reply rides the old card (no countdown, no card of its own).
+    const out = await handleInbound(
+      { managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(next), origin: 'live' },
+      { callModel: scripted([compose(`Rahmat ${TAG}.`, { category: 'other' })]), now: () => T0 },
+    );
+    const d = await draftOf((out as { draftId: string }).draftId);
+    expect(d.needsOwner).toBe(false);
+    const [card] = await cardRows(d.id);
+    expect(card!.id, 'the old card’s row, re-pointed').toBe(asked!.id);
+    expect((card!.payload as { ask?: unknown }).ask).toBe(false);
   });
 
   it('a phone in his answer is refused in words — nothing stored, nothing queued', async () => {
@@ -356,6 +532,29 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect(o!.body).toBe(reply);
   });
 
+  it('the redraft’s card says where it came from, and the AI’s own question rode with his answer into the run', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    let opening = '';
+    const reading = (async (req: ModelRequest) => {
+      opening = JSON.stringify(req.messages[0]);
+      return {
+        stopReason: 'tool_use',
+        content: [{ type: 'tool_use', id: 't1', name: 'compose_reply', input: compose(`Afsuski, suyuq yuk olmaymiz ${TAG}.`).input }],
+        usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      } as ModelResponse;
+    }) as CallModel;
+    const out = await handleOwnerAnswer(job, { callModel: reading, now: () => T1 });
+    expect(opening).toContain('VAZIFA: Bekzodning javobi (manba');
+    expect(opening).toContain('«Ha, suyuqlik olmaymiz»');
+    expect(opening).toContain('«Suyuqlik olamizmi?»');
+    const [card] = await cardRows((out as { draftId: string }).draftId);
+    expect((card!.payload as { text: string }).text).toContain(FROM_ANSWER_LINE);
+    // The run is his answer's own: trigger and key no other run shares.
+    const [run] = await db.select().from(agentRuns).where(and(eq(agentRuns.peerId, PEER), eq(agentRuns.trigger, 'owner_edit')));
+    expect(run).toMatchObject({ sourceKey: `answer:${q.id}:${job.messageId}`, outcome: 'draft' });
+  });
+
   it('an answer with money: the reply carries his figure, sourced to HIM — a card with ✅, never pressed (`owner_figure`)', async () => {
     const q = await question();
     const job = await answered(q.id, 'VED 1200$ hisobladi, shuni ayting');
@@ -366,6 +565,13 @@ describe('the redraft from his answer (spec §2.2)', () => {
     const v = await verdictOf(r.id);
     expect(v!.eligible).toBe(false);
     expect(v!.reasons).toContain('owner_figure');
+    // A reply that does not count down would RIDE the chat's old card as a silent edit — his answer's never does:
+    // the question's card stays the question's (closed, with its own line) and the reply is a push of its own.
+    const [old] = await cardRows(q.id);
+    const [fresh] = await cardRows(r.id);
+    expect(old!.id).not.toBe(fresh!.id);
+    expect((old!.payload as { text: string }).text).toContain('✍️ Javobingiz olindi — AI qayta yozdi');
+    expect((old!.payload as { live?: unknown }).live).toBe(false);
   });
 
   it('an answer with a day count: a card, never pressed', async () => {
@@ -396,6 +602,57 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect((await verdictOf(r.id))!.reasons).toContain('owner_personal');
   });
 
+  it('his answer naming THIS chat’s own customer is no «other customer» — it may still go by itself', async () => {
+    const q = await question();
+    const job = await answered(q.id, `Javob Mijoz ${SUFFIX} ga ayting: suyuqlik olmaymiz`);
+    const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    const r = await draftOf((out as { draftId: string }).draftId);
+    expect((r.policy as { fromAnswer: { personal: string[] } }).fromAnswer.personal).toEqual([]);
+    expect(await verdictOf(r.id)).toMatchObject({ eligible: true, state: 'waiting' });
+  });
+
+  it('`ownerPersonalOf`: another customer’s name or code always; this chat’s own code only to a chat that has not proved it', async () => {
+    const own = { ownCodes: [`OA${SUFFIX}`], ownNames: [`Javob Mijoz ${SUFFIX}`] };
+    expect(await ownerPersonalOf({ text: `OA${SUFFIX} ning yuki Toshkentda`, ...own, cargoAllowed: true })).toEqual([]);
+    expect(await ownerPersonalOf({ text: `OA${SUFFIX} ning yuki Toshkentda`, ...own, cargoAllowed: false })).toEqual([`OA${SUFFIX}`]);
+    expect(await ownerPersonalOf({ text: `Javob Mijoz ${SUFFIX} so'ragan edi`, ...own, cargoAllowed: false })).toEqual([]);
+    const other = await ownerPersonalOf({ text: `Boshqa Mijoz ${SUFFIX} ham shunday so'ragan`, ...own, cargoAllowed: true });
+    expect(other).toContain(`Boshqa Mijoz ${SUFFIX}`);
+    expect(await ownerPersonalOf({ text: `${otherClientCode} da ham shunday`, ...own, cargoAllowed: true })).toEqual([otherClientCode]);
+    expect(await ownerPersonalOf({ text: 'Ha, suyuqlik olmaymiz', ...own, cargoAllowed: false })).toEqual([]);
+  });
+
+  it('a redraft whose answer mark cannot be read never goes by itself — the press fails closed', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    const id = (out as { draftId: string }).draftId;
+    expect(await verdictOf(id)).toMatchObject({ eligible: true, state: 'waiting' });
+    await db
+      .update(agentDrafts)
+      .set({ policy: sql`jsonb_set(${agentDrafts.policy}, '{fromAnswer}', ${JSON.stringify({ questionDraftId: q.id, questionAnchor: String(q.anchorTgMessageId) })}::jsonb)` })
+      .where(eq(agentDrafts.id, id));
+    await shownAt(id, T1);
+    expect(await pressDueAutos(DUE)).toBe(0);
+    const v = await verdictOf(id);
+    expect(v).toMatchObject({ state: 'refused' });
+    expect(v!.reasons).toContain('owner_personal');
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, id))).toHaveLength(0);
+  });
+
+  it('a nudge after the question («?») is no new question: the redraft is not stale', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    await inbound('?');
+    botMsgSeq += 1;
+    queued.jobs.length = 0;
+    await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, 'Ha, suyuqlik olmaymiz', botMsgSeq);
+    const job = queued.jobs.find((j) => j.name === JOB_AGENT_OWNER_ANSWER)!.data as AgentOwnerAnswerJob;
+    const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    const v = await verdictOf((out as { draftId: string }).draftId);
+    expect(v!.reasons).not.toContain('answer_stale');
+  });
+
   it('the customer wrote again between the question and his answer: `answer_stale`', async () => {
     const q = await question();
     await agentPress(ownerId, 'j', q.id, undefined);
@@ -424,6 +681,155 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect(said.some((n) => n.text.includes('AI xato qildi') && n.text.includes('«Ha, suyuqlik olmaymiz»') && n.peer === String(PEER))).toBe(true);
   });
 
+  it('a refused run (the chat muted since): the question back to pending, the refusal said in words', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    await db
+      .insert(agentConversations)
+      .values({ managerUserId: ownerId, peerId: PEER, mutedAt: new Date() })
+      .onConflictDoUpdate({ target: [agentConversations.managerUserId, agentConversations.peerId], set: { mutedAt: new Date() } });
+    const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    expect(out).toEqual({ outcome: 'refused', reason: 'muted' });
+    const back = await draftOf(q.id);
+    expect(back.status).toBe('pending');
+    expect(back.policy).not.toHaveProperty('answering');
+    expect((await notices()).some((n) => n.text.includes("bu chatda AI o'chirilgan") && n.text.includes('«Ha, suyuqlik olmaymiz»'))).toBe(true);
+    expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(1);
+  });
+
+  it('during a tg-listen rebuild: queued once more with nothing said — the retry drafts, and a second refusal is said', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    await db.update(tgAccountGuard).set({ agentPumpAt: new Date(T1.getTime() - 10 * 60_000) }).where(eq(tgAccountGuard.accountId, accountId));
+    const requeued: { job: AgentOwnerAnswerJob; after: number }[] = [];
+    const deps = {
+      callModel: scripted([compose(`Afsuski, suyuq yuk olmaymiz ${TAG}.`)]),
+      now: () => T1,
+      requeue: async (next: AgentOwnerAnswerJob, after: number) => {
+        requeued.push({ job: next, after });
+      },
+    };
+    expect(await handleOwnerAnswer(job, deps)).toEqual({ outcome: 'refused', reason: 'listener_behind' });
+    expect(requeued).toEqual([{ job: { ...job, attempt: 1 }, after: HAND_BACK_RETRY_S }]);
+    // Still his answer's to make: the question waits, and nothing was said yet.
+    expect((await draftOf(q.id)).status).toBe('editing');
+    expect(await notices()).toHaveLength(0);
+    // The retry meets the same refusal: now it is said and the question is his again — never a third try.
+    expect(await handleOwnerAnswer(requeued[0]!.job, deps)).toEqual({ outcome: 'refused', reason: 'listener_behind' });
+    expect(requeued).toHaveLength(1);
+    expect((await draftOf(q.id)).status).toBe('pending');
+    expect((await notices()).some((n) => n.text.includes('tg-listen'))).toBe(true);
+  });
+
+  it('…and with the listener back the retry drafts the reply', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    await db.update(tgAccountGuard).set({ agentPumpAt: new Date(T1.getTime() - 10 * 60_000) }).where(eq(tgAccountGuard.accountId, accountId));
+    const requeued: AgentOwnerAnswerJob[] = [];
+    const deps = {
+      callModel: scripted([compose(`Afsuski, suyuq yuk olmaymiz ${TAG}.`)]),
+      now: () => T1,
+      requeue: async (next: AgentOwnerAnswerJob) => {
+        requeued.push(next);
+      },
+    };
+    await handleOwnerAnswer(job, deps);
+    await stampAgentPump(accountId, true);
+    expect(await handleOwnerAnswer(requeued[0]!, deps)).toMatchObject({ outcome: 'draft' });
+    expect((await draftOf(q.id)).status).toBe('superseded');
+  });
+
+  it('the same job delivered twice writes one reply and says nothing false about it', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    expect(await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`)).toMatchObject({ outcome: 'draft' });
+    expect(await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`)).toBeNull();
+    expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(2);
+    expect(await notices()).toHaveLength(0);
+  });
+
+  it('the answer’s key already taken by a run still drafting it: this delivery stands down in silence and takes nothing from under it', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    await db.insert(agentRuns).values({
+      managerUserId: ownerId,
+      peerId: PEER,
+      trigger: 'owner_edit',
+      anchorTgMessageId: q.anchorTgMessageId,
+      sourceKey: `answer:${q.id}:${job.messageId}`,
+    });
+    expect(await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`)).toEqual({ outcome: 'stood_down', reason: 'duplicate' });
+    expect((await draftOf(q.id)).status).toBe('editing');
+    expect(await notices()).toHaveLength(0);
+  });
+
+  it('a run that throws before it has a row of its own is said at once — never left for the sweep’s quarter of an hour', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    const out = await handleOwnerAnswer(job, {
+      callModel: scripted([compose(`Afsuski, suyuq yuk olmaymiz ${TAG}.`)]),
+      now: () => {
+        throw new Error('clock');
+      },
+    });
+    expect(out).toMatchObject({ outcome: 'error' });
+    expect((await draftOf(q.id)).status).toBe('pending');
+    expect((await notices()).some((n) => n.text.includes('AI xato qildi') && n.text.includes('«Ha, suyuqlik olmaymiz»'))).toBe(true);
+  });
+
+  it('a second answer replaces the first: the first’s job stands down in silence, the second’s drafts from ITS words', async () => {
+    const q = await question();
+    const first = await answered(q.id, 'Ha, suyuqlik olamiz');
+    // ✍️ pressed again before the worker came (a button still on his screen), and a corrected answer typed.
+    const second = await answered(q.id, 'Yo‘q, suyuqlik olmaymiz');
+    expect(second.messageId).not.toBe(first.messageId);
+    expect(await redraft(first, `Ha, suyuq yuk ham olamiz ${TAG}.`)).toBeNull();
+    expect(await notices()).toHaveLength(0);
+    expect((await draftOf(q.id)).status).toBe('editing');
+    const out = await redraft(second, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    expect(out).toMatchObject({ outcome: 'draft' });
+    expect((await draftOf((out as { draftId: string }).draftId)).proposedBody).toBe(`Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+  });
+
+  it('a second answer landing WHILE the first’s reply is written: the first writes nothing, the second’s job drafts', async () => {
+    const q = await question();
+    const first = await answered(q.id, 'Ha, suyuqlik olamiz');
+    let second: AgentOwnerAnswerJob | null = null;
+    const during = (async () => {
+      second = await answered(q.id, 'Yo‘q, suyuqlik olmaymiz');
+      return {
+        stopReason: 'tool_use',
+        content: [{ type: 'tool_use', id: 't1', name: 'compose_reply', input: compose(`Ha, suyuq yuk ham olamiz ${TAG}.`).input }],
+        usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      } as ModelResponse;
+    }) as CallModel;
+    expect(await handleOwnerAnswer(first, { callModel: during, now: () => T1 })).toMatchObject({ outcome: 'stood_down', reason: 'question_gone' });
+    expect((await draftOf(q.id)).status).toBe('editing');
+    expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(1);
+    const out = await redraft(second!, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    expect(out).toMatchObject({ outcome: 'draft' });
+  });
+
+  it('a redraft a forcing rule turns back into a question (the customer asked for rail meanwhile): ✏️ only, and said — never a loop', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    await inbound(`Temir yo'l bilan qancha bo'ladi ${TAG}?`);
+    botMsgSeq += 1;
+    queued.jobs.length = 0;
+    await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, 'Ha, suyuqlik olmaymiz', botMsgSeq);
+    const job = queued.jobs.find((j) => j.name === JOB_AGENT_OWNER_ANSWER)!.data as AgentOwnerAnswerJob;
+    const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    const r = await draftOf((out as { draftId: string }).draftId);
+    expect(r.needsOwner).toBe(true);
+    expect(r.policy).toMatchObject({ forcedQuestion: 'rail' });
+    expect((r.policy as { notes: string[] }).notes).toContain(ANSWER_STILL_HIS);
+    const [card] = await cardRows(r.id);
+    expect((card!.payload as { ask?: unknown }).ask).toBe(false);
+    expect((await verdictOf(r.id))!.eligible).toBe(false);
+    const press = await agentPress(ownerId, 'j', r.id, undefined);
+    expect(press.arm).toBeUndefined();
+  });
+
   it('a ✅ on the answered card sends the card’s words, never his answer — and the worker then writes nothing', async () => {
     const q = await question();
     const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
@@ -447,6 +853,19 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect(await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`)).toBeNull();
     expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(1);
     expect((await notices()).some((n) => n.text.includes(QUESTION_DECIDED_WORDS))).toBe(true);
+  });
+
+  it('his own words typed on the page (no ✏️ press) end it the same way', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    const typed = await submitOwnText(actorOf(ownerId), q.id, `Kechirasiz, suyuq yuk olmaymiz ${TAG}`, { actorId: ownerId });
+    expect(typed).toMatchObject({ ok: true });
+    const d = await draftOf(q.id);
+    expect(d).toMatchObject({ status: 'pending', finalBody: `Kechirasiz, suyuq yuk olmaymiz ${TAG}` });
+    expect(d.policy).not.toHaveProperty('answering');
+    expect(await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`)).toBeNull();
+    expect((await draftOf(q.id)).finalBody).toBe(`Kechirasiz, suyuq yuk olmaymiz ${TAG}`);
+    expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(1);
   });
 
   it('his ✏️ landing WHILE the redraft is written: the redraft’s own transaction writes nothing (`question_gone`)', async () => {
@@ -516,6 +935,41 @@ describe('the sweep hands back a ✍️ nothing will come of (spec §2.2)', () =
     expect(back.policy).not.toHaveProperty('answering');
   });
 
+  it('…and the customer line that stood down while he was answering is asked again', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    const next = await inbound(`Va qachon jo'natasiz ${TAG}?`);
+    await handleInbound(
+      { managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(next), origin: 'live' },
+      { callModel: scripted([compose(`Tez orada ${TAG}.`)]), now: () => T0 },
+    );
+    queued.jobs.length = 0;
+    expect(await withModelKey(() => releaseForgottenAnswers(new Date(Date.now() + 31 * 60_000)))).toBe(1);
+    const again = queued.jobs.filter((j) => j.name === JOB_AGENT_INBOUND);
+    expect(again).toHaveLength(1);
+    expect(again[0]!.data).toMatchObject({ peerId: String(PEER), anchorTgMessageId: String(next), origin: 'redraft' });
+  });
+
+  it('the minute sweep itself hands it back (its step 2c) — the function is no orphan', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    await db
+      .update(agentDrafts)
+      .set({ policy: sql`jsonb_set(${agentDrafts.policy}, '{answering,until}', to_jsonb(${new Date(Date.now() - 1000).toISOString()}::text))` })
+      .where(eq(agentDrafts.id, q.id));
+    await agentSweep(new Date());
+    const back = await draftOf(q.id);
+    expect(back.status).toBe('pending');
+    expect(back.policy).not.toHaveProperty('answering');
+  });
+
+  it('a ✍️ still inside its half hour is left alone', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    expect(await releaseForgottenAnswers(new Date(Date.now() + 29 * 60_000))).toBe(0);
+    expect((await draftOf(q.id)).status).toBe('editing');
+  });
+
   it('answered and the worker died with it: back to pending, and said', async () => {
     const q = await question();
     await answered(q.id, 'Ha, suyuqlik olmaymiz');
@@ -537,6 +991,63 @@ describe('the «📌/👤» offer under his acknowledgement (spec §2.3)', () =>
     expect(press.toast).toBe('👤 Shu mijoz uchun saqlandi');
     const facts = await db.select().from(kbFacts).where(eq(kbFacts.clientId, clientId));
     expect(facts).toEqual([expect.objectContaining({ scope: 'client', answer: 'Ha, suyuqlik olmaymiz', source: 'owner' })]);
+  });
+
+  it('«📌 Hammaga» asks first and saves his answer on the yes — the general fact’s two presses, as on any card', async () => {
+    const q = await question();
+    const fact = `Suyuq yuk olmaymiz ${TAG}`;
+    await answered(q.id, fact);
+    const ask = await agentPress(ownerId, 'g', q.id, undefined);
+    expect(ask.toast).toBe('📌 Tasdiqlang');
+    const token = /^ag:g:[0-9a-f-]{36}:([0-9a-f]{8})$/u.exec(ask.buttons![0]![0]!.callback_data)![1]!;
+    expect(await db.select().from(kbFacts).where(like(kbFacts.answer, `%${TAG}%`))).toHaveLength(0);
+    const yes = await agentPress(ownerId, 'g', q.id, token);
+    expect(yes.toast).toBe('📌 Umumiy qoida saqlandi');
+    const facts = await db.select().from(kbFacts).where(like(kbFacts.answer, `%${TAG}%`));
+    expect(facts).toEqual([expect.objectContaining({ scope: 'general', answer: fact, clientId: null })]);
+  });
+
+  it('a «remember» press racing the redraft: the save lands after the question was superseded and takes nothing from it', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    // Between the press's read of the draft and its save, the worker's redraft supersedes the question — seconds
+    // after the acknowledgement these buttons sit under, the moment he is most likely to press one.
+    kbHook.beforeWrite = async () => {
+      expect(await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`)).toMatchObject({ outcome: 'draft' });
+    };
+    const press = await agentPress(ownerId, 'u', q.id, undefined);
+    expect(press.toast).toBe('👤 Shu mijoz uchun saqlandi');
+    const closed = await draftOf(q.id);
+    expect(closed.status).toBe('superseded');
+    expect(closed.policy).toMatchObject({ kb: 'saved', stale: 'owner_answered' });
+    expect(closed.policy).not.toHaveProperty('answering');
+  });
+
+  it('the page offers the same three for an answered question, with his answer shown — and no more once it is decided', async () => {
+    const viewer = actorOf(ownerId);
+    const q = await question();
+    expect((await webDrafts(viewer)).remember.map((d) => d.id)).not.toContain(q.id);
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    const offered = (await webDrafts(viewer)).remember.find((d) => d.id === q.id);
+    expect(offered, 'the answered question is on the page’s «remember» list').toBeDefined();
+    expect(offered!.kbAsk).toBe(true);
+    expect(offered!.cardText).toContain('✍️ Javobingiz: «Ha, suyuqlik olmaymiz»');
+    await agentPress(ownerId, 'z', q.id, undefined);
+    expect((await webDrafts(viewer)).remember.map((d) => d.id)).not.toContain(q.id);
+  });
+
+  it('«✖ Saqlamaslik» closes the offer; a press after it is told so', async () => {
+    const q = await question();
+    await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    expect((await agentPress(ownerId, 'z', q.id, undefined)).toast).toBe('✖ Saqlanmadi');
+    expect((await agentPress(ownerId, 'u', q.id, undefined)).toast).toBe('Allaqachon hal qilingan');
+    expect(await db.select().from(kbFacts).where(eq(kbFacts.clientId, clientId))).toHaveLength(0);
+  });
+
+  it('a question he never answered offers nothing to save — a forged press is «Topilmadi»', async () => {
+    const q = await question();
+    expect((await agentPress(ownerId, 'u', q.id, undefined)).toast).toBe('Topilmadi');
   });
 
   it('his money is used once and never saved', async () => {

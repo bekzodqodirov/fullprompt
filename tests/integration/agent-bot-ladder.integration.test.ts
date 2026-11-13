@@ -388,6 +388,10 @@ describe('«✍️ Savolga javob» — his answer to the AI’s question, never 
     expect(await answerOf(draftId)).toBe(`Ha, suyuqlik olmaymiz ${STAMP}`);
     expect((await draftOf(draftId)).finalBody).toBeNull();
     expect(answerJobs()).toHaveLength(1);
+    // The job names the very bot message his answer was — the run's key, so a second answer is a second run.
+    const stored = ((await draftOf(draftId)).policy as { ownerAnswer: { messageId: number } }).ownerAnswer.messageId;
+    expect(stored).toBeGreaterThan(0);
+    expect(answerJobs()[0]![1]).toMatchObject({ draftId, messageId: stored });
   });
 
   it('✍️ armed + a swipe-reply to the CARD is the answer', async () => {
@@ -444,6 +448,21 @@ describe('«✍️ Savolga javob» — his answer to the AI’s question, never 
     expect(readWait(BigInt(me.chat), 'agent_answer')).toBeNull();
   });
 
+  it('…and so does a ✍️ whose half hour ran out on the question while the bot still held the wait', async () => {
+    const { me, draftId } = await owner();
+    await askOn(draftId);
+    await pressAnswer(me, draftId);
+    await db
+      .update(agentDrafts)
+      .set({ policy: sql`jsonb_set(${agentDrafts.policy}, '{answering,until}', to_jsonb(${new Date(Date.now() - 1000).toISOString()}::text))` })
+      .where(eq(agentDrafts.id, draftId));
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, `ZP${STAMP.slice(-5)}`));
+    expect(h.textsTo(me.chat, m).some((t) => t.includes(`Zinapoya mijoz ${STAMP}`))).toBe(true);
+    expect(await answerOf(draftId)).toBeNull();
+    expect(readWait(BigInt(me.chat), 'agent_answer')).toBeNull();
+  });
+
   it('…and a swipe-reply to its prompt is told the answer was not taken', async () => {
     const { me, draftId } = await owner();
     await askOn(draftId);
@@ -467,6 +486,123 @@ describe('«✍️ Savolga javob» — his answer to the AI’s question, never 
     expect(h.textsTo(me.chat, m).some((t) => t.startsWith('↩️ Oldingi kutish yopildi (✏️ javob matni)'))).toBe(true);
     expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
     expect(readWait(BigInt(me.chat), 'agent_answer')).not.toBeNull();
+  });
+});
+
+describe('«✍️ Savolga javob» beside the other waits and presses (spec SPEC-P1-v2 §2.2)', () => {
+  beforeEach(() => vi.mocked(enqueue).mockClear());
+
+  it('✍️ while a task’s answer is awaited is refused in words like ✏️ — nothing armed, the question untouched', async () => {
+    const { me, draftId } = await owner();
+    await askOn(draftId);
+    const giver = await person('sales_manager');
+    const T = await handTask(me, giver);
+    await h.handle(tg.callback(me.chat, nextMsg(), `t:${T}`));
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:j:${draftId}`));
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith("Avval topshiriq bo'yicha so'ralgan javobni yozing"))).toBe(true);
+    expect(readWait(BigInt(me.chat), 'agent_answer')).toBeNull();
+    const d = await draftOf(draftId);
+    expect(d.status).toBe('pending');
+    expect(d.policy ?? {}).not.toHaveProperty('answering');
+  });
+
+  it('…and by a «Hisoblatish» collection that holds the chat', async () => {
+    const { me, draftId } = await owner();
+    await askOn(draftId);
+    const c = BigInt(me.chat);
+    startIntake(c, 'rastamojka', { staffId: me.id });
+    updateIntake(c, { stage: 'material', material: ['Kurtka 300 dona'] }, { quiet: true });
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:j:${draftId}`));
+    expect(h.textsTo(me.chat, m)).toContain('Avval boshlangan ishni tugating (hisoblatish, zametka yoki topshiriq).');
+    expect(readWait(c, 'agent_answer')).toBeNull();
+    expect((await draftOf(draftId)).status).toBe('pending');
+    endIntake(c);
+  });
+
+  it('❌ on the question ends the ✍️ armed for it: his next plain text is no answer — it goes on down the ladder', async () => {
+    const { me, draftId } = await owner();
+    await askOn(draftId);
+    await pressAnswer(me, draftId);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${draftId}`));
+    expect((await draftOf(draftId)).status).toBe('rejected');
+    expect(readWait(BigInt(me.chat), 'agent_answer')).toBeNull();
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, `ZP${STAMP.slice(-5)}`));
+    expect(h.textsTo(me.chat, m).some((t) => t.includes(`Zinapoya mijoz ${STAMP}`))).toBe(true);
+    expect(await answerOf(draftId)).toBeNull();
+    expect(answerJobs()).toHaveLength(0);
+  });
+
+  it('🙋 on the question ends it too', async () => {
+    const { me, draftId } = await owner();
+    await askOn(draftId);
+    await pressAnswer(me, draftId);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:h:${draftId}`));
+    expect((await draftOf(draftId)).status).toBe('taken_over');
+    expect(readWait(BigInt(me.chat), 'agent_answer')).toBeNull();
+  });
+
+  it('✏️ on the SAME question after ✍️: the wait changes hands in words, and his next text is his verbatim reply', async () => {
+    const { me, draftId } = await owner();
+    await askOn(draftId);
+    await pressAnswer(me, draftId);
+    expect((await draftOf(draftId)).policy).toHaveProperty('answering');
+    const m = h.mark();
+    await pressEdit(me, draftId);
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith('↩️ Oldingi kutish yopildi (✍️ savolga javob)'))).toBe(true);
+    expect((await draftOf(draftId)).policy).not.toHaveProperty('answering');
+    expect(readWait(BigInt(me.chat), 'agent_answer')).toBeNull();
+    await h.handle(tg.text(me.chat, `Kechirasiz, olmaymiz ${STAMP}`));
+    expect((await draftOf(draftId)).finalBody).toBe(`Kechirasiz, olmaymiz ${STAMP}`);
+    expect(await answerOf(draftId)).toBeNull();
+    expect(answerJobs()).toHaveLength(0);
+  });
+
+  it('✏️ on ANOTHER draft while ✍️ waits: that question is handed back to him (pending), in words', async () => {
+    const { me, draftId: asked } = await owner();
+    await askOn(asked);
+    const [other] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: me.id, peerId: BigInt(`${PREFIX}6${(peerSeq += 1)}`), clientId, anchorTgMessageId: 1n, proposedBody: 'Tekshirib aytaman.', status: 'pending' })
+      .returning({ id: agentDrafts.id });
+    await pressAnswer(me, asked);
+    expect((await draftOf(asked)).status).toBe('editing');
+    const m = h.mark();
+    await pressEdit(me, other!.id);
+    const back = await draftOf(asked);
+    expect(back.status).toBe('pending');
+    expect(back.policy).not.toHaveProperty('answering');
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith('↩️ Oldingi kutish yopildi (✍️ savolga javob)'))).toBe(true);
+    expect(readWait(BigInt(me.chat), 'agent_answer')).toBeNull();
+  });
+
+  it('a swipe-reply to ANOTHER draft’s card while ✍️ waits is that draft’s verbatim text — never this question’s answer', async () => {
+    const { me, draftId: asked } = await owner();
+    await askOn(asked);
+    const [other] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: me.id, peerId: BigInt(`${PREFIX}5${(peerSeq += 1)}`), clientId, anchorTgMessageId: 1n, proposedBody: 'Tekshirib aytaman.', status: 'pending' })
+      .returning({ id: agentDrafts.id });
+    await pressAnswer(me, asked);
+    const card = await sentCopy(me, 'AgentDraft', { draftId: other!.id });
+    await h.handle(tg.text(me.chat, `Yuk yo‘lda ${STAMP}`, { replyTo: card }));
+    expect((await draftOf(other!.id)).finalBody).toBe(`Yuk yo‘lda ${STAMP}`);
+    expect(await answerOf(asked)).toBeNull();
+    // …and the ✍️ still waits for its own answer.
+    expect(readWait(BigInt(me.chat), 'agent_answer')).not.toBeNull();
+  });
+
+  it('a press from a chat that is not the question’s account answers «Topilmadi» — a callback can be forged', async () => {
+    const { draftId } = await owner();
+    await askOn(draftId);
+    const stranger = await person('super_admin');
+    const m = h.mark();
+    await h.handle(tg.callback(stranger.chat, nextMsg(), `ag:j:${draftId}`));
+    expect(h.since(m).api.some((c) => c.method === 'answerCallbackQuery' && String(c.payload.text) === 'Topilmadi')).toBe(true);
+    expect(readWait(BigInt(stranger.chat), 'agent_answer')).toBeNull();
+    expect((await draftOf(draftId)).status).toBe('pending');
   });
 });
 

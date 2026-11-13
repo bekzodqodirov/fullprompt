@@ -81,21 +81,33 @@ export async function handleOwnerAnswer(job: AgentOwnerAnswerJob, deps: OwnerAns
   const answer = p.ownerAnswer;
   // A job for an answer since replaced by a newer one (whose own job speaks), or a chat since purged: nothing to say.
   if (!q || q.managerUserId !== job.managerUserId || !answer || answer.messageId !== job.messageId) return null;
+  // This very answer already made its reply (the job delivered twice): the question says so on its own card, and
+  // «AI javob yozmadi» beside the reply it wrote would be false.
+  if (q.status === 'superseded' && (p as { stale?: unknown }).stale === 'owner_answered') return null;
   if (q.status !== 'editing' || !p.answering) {
     await tellNoAnswerDraft(q, answer, QUESTION_DECIDED_WORDS);
     return null;
   }
-  const out = await runOwnerTriggered(
+  // A throw before the run has a row of its own (the chat's context not read, the database blinking) is an outcome
+  // like any other: said now and the question handed back, never left for the sweep's quarter of an hour.
+  const out: RunResult = await runOwnerTriggered(
     {
       trigger: 'owner_edit',
       managerUserId: job.managerUserId,
       peerId: q.peerId,
       sourceKey: `answer:${q.id}:${job.messageId}`,
-      instruction: ownerAnswerInstruction(answer.text),
+      instruction: ownerAnswerInstruction(answer.text, q.ownerQuestion),
       answer: { questionDraftId: q.id, questionAnchor: q.anchorTgMessageId, messageId: job.messageId, text: answer.text },
     },
     deps,
-  );
+  ).catch((err: unknown): RunResult => {
+    logger.error({ err, draftId: q.id }, '[agent] owner answer run threw');
+    return { outcome: 'error', reason: err instanceof Error ? err.message.slice(0, 300) : 'error' };
+  });
+  // The source key is taken: another delivery of this job is drafting it right now, or died with it — that one
+  // speaks (or the sweep does, `ANSWER_RUN_STALE_MS`). Handing the question back here would take it from under the
+  // run that is writing its reply.
+  if (out.outcome === 'stood_down' && out.reason === 'duplicate') return out;
   if (out.outcome === 'refused' && passesByItself(out.reason) && (job.attempt ?? 0) < 1) {
     const next: AgentOwnerAnswerJob = { ...job, attempt: (job.attempt ?? 0) + 1 };
     const send =

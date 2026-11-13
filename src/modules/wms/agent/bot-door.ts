@@ -5,6 +5,7 @@ import { agentConversations, agentDrafts, clients, notifications, tgChatRules, t
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
+import type { AgentOp as BotAgentOp } from '../../platform/telegram/staff-bot';
 import { phoneSiblingClients } from '../client-cabinet/service';
 import { digestBody, hitWords } from './card';
 import { actionLines } from './card-io';
@@ -45,7 +46,12 @@ import type { ComposedAction, DraftPolicyJson } from './types';
  * nothing».
  */
 
-export type AgentOp = 's' | 'e' | 'r' | 'h' | 'p' | 'n' | 'k' | 'x' | 'c' | 'b' | 'g' | 'u' | 'z' | 'a' | 'f' | 't' | 'j';
+/**
+ * The press letters, DERIVED from the parser's own list (staff-bot `AGENT_OPS`, spec SPEC-P1-v2 §6) — a type only,
+ * erased at compile time: restated by hand here, a letter the parser took and this door's `switch` did not know
+ * compiled, and its press answered nothing.
+ */
+export type AgentOp = BotAgentOp;
 export type AgentWaitKind = 'agent_edit' | 'agent_price' | 'agent_code' | 'agent_answer';
 
 export interface PressAnswer {
@@ -338,8 +344,8 @@ export const ANSWER_WORDS: Record<AnswerRefusal, string> = {
   contact: ANSWER_CONTACT_WORDS,
 };
 
-/** The «📌/👤/✖» row under his taken answer — `kbPress`'s own ops (§2.3). */
-function answerKbRow(draftId: string): { text: string; callback_data: string }[][] {
+/** The «📌/👤/✖» row under his taken answer — `kbPress`'s own ops (§2.3). Exported for the callback fence (#939). */
+export function answerKbRow(draftId: string): { text: string; callback_data: string }[][] {
   return [
     [
       { text: '📌 Hammaga', callback_data: `ag:g:${draftId}` },
@@ -570,8 +576,14 @@ async function kbPress(staffId: string, op: 'g' | 'u' | 'z', draftId: string, di
   const factText = ownWords ?? answered;
   if (factText === null) return { toast: 'Topilmadi' };
   if (p.kb === 'saved' || p.kb === 'skipped') return { toast: 'Allaqachon hal qilingan' };
+  // MERGED into the stored policy, never written over it from the read above: the question his ✍️ answer was for is
+  // superseded by the redraft's own transaction seconds after the acknowledgement these buttons sit under (drafts
+  // `createDraft`), and a whole-object write landing after it put `answering` back and took its `stale` line away.
   const setKb = async (kb: string, extra: Record<string, string> = {}) => {
-    await db.update(agentDrafts).set({ policy: { ...p, kb, ...extra } }).where(eq(agentDrafts.id, draftId));
+    await db
+      .update(agentDrafts)
+      .set({ policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ kb, ...extra })}::jsonb` })
+      .where(eq(agentDrafts.id, draftId));
     const { refreshAgentCard } = await import('./card-io');
     await refreshAgentCard(draftId);
   };
