@@ -473,7 +473,10 @@ describe('(9) the pass deadline', () => {
     expect(out.pastDeadline).toBe(true);
     expect(out.text).toContain('  Aniq: $92.80 (2 tadan 1 qator, yig‘imsiz)');
     expect(out.text).toContain('  Taxminiy: hisoblab bo‘lmadi — vaqt yetmadi, statistika o‘qilmadi');
-    expect(out.text).toContain('📊 taxmin yo‘q: 2-qator — vaqt yetmadi — statistika o‘qilmadi');
+    // Re-anchored for docs/AI-SORAYDI.md §3.4 A3: row 2 is its group's only
+    // row, so its line opens «2.» and the miss under it names no row again.
+    expect(out.text).toMatch(new RegExp(`^2\\. Idish ${SUFFIX} c · ${CODE_B}.*\\n   ⚠️ .*\\n   📊 taxmin yo‘q: vaqt yetmadi — statistika o‘qilmadi$`, 'm'));
+    expect(out.text).not.toContain('2-qator — vaqt yetmadi');
   });
 });
 
@@ -541,6 +544,39 @@ describe('(10) «(og‘irlik bruttodan)» wherever the measure is printed (⭐ o
     expect(refusal).not.toContain('VED xodimi');
     const lentaRefusal = out.lentaText.split('\n').find((l) => l.startsWith('   ⚠️ '));
     expect(lentaRefusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
+  });
+});
+
+/**
+ * The Taxminiy block names the missing FIGURE of the row that blocks it
+ * (docs/AI-SORAYDI.md §3.4 A9 — PA-11's H2 case): the jacket HAS its kilos
+ * and lacks its count, and «qatorda soni yoki og‘irligi yo‘q» sent the seller
+ * for a figure he had already given. And the refusal under the row's own
+ * line names neither the group nor the row a second time.
+ */
+describe('(10b) «Taxminiy: hisoblab bo‘lmadi» names the refusing row’s figure (A9)', () => {
+  it('a priced row beside a row the $3/dona floor refuses: «2-qator: soni (dona)», on the chat and the lenta', async () => {
+    const [profil, kurtka] = [`Profil ${SUFFIX} a9`, `Charm kurtka ${SUFFIX} a9`];
+    const id = await open('rastamojka', [
+      { name: profil, tnvedCode: CODE_A, weightKg: 100 },
+      { name: kurtka, tnvedCode: CODE_FLOOR, weightKg: 300 },
+    ]);
+    await typeBaza(id, profil, 4);
+    await typeBaza(id, kurtka, 4);
+    const out = await aiPrefill(id, { actorId: null }, { configured: false });
+    // Row 1: 100 kg × $4 = 400; duty 10 % = 40; VAT 12 % of 440 = 52.80 → 92.80.
+    expect(out.text).toContain('  Aniq: $92.80 (2 tadan 1 qator, yig‘imsiz)');
+    expect(out.text).toContain(
+      '  Taxminiy: hisoblab bo‘lmadi — ⚠️ 2-qator: soni (dona) — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    );
+    expect(out.lentaText).toContain('  Taxminiy: hisoblab bo‘lmadi — ⚠️ 2-qator: soni (dona) — mijozdan so‘rab, kartadagi lentaga yozing');
+    expect(out.text).not.toContain('qatorda soni yoki og‘irligi yo‘q');
+    // Row 2's own line, and under it the figure and why — no group label, no
+    // «2-qator «Charm kurtka …»» again (the line opens «2.» and names it).
+    expect(out.text).toContain(
+      `2. ${kurtka} · ${CODE_FLOOR} · 300 kg × $4/kg\n` +
+        '   ⚠️ soni (dona) kiritilmagan — boj kamida $3/dona — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    );
   });
 });
 

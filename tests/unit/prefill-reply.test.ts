@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { blockerText, tariffReplyText } from '@/modules/wms/calc/prefill-reply';
+import { blockerText, refusalUnder, tariffReplyText, type CustomsBlocker } from '@/modules/wms/calc/prefill-reply';
 import type { SealBlocker } from '@/modules/wms/calc/workspace';
 import type { AiVedFreight } from '@/modules/wms/calc/ai-reply';
 import { ROAD_STALE_LINE } from '@/modules/wms/calc/ai-reply';
@@ -307,5 +307,52 @@ describe('the plain door’s yo‘lkira answer asks nothing (§2.4, §3.5)', () 
     const band = tariffReplyText({ ...door, link: null, audience: 'lenta', freight: { ok: false, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' } });
     expect(band).toContain('Yo‘lkira: ⚠️ bu zichlikka tarif yo‘q — VED xodimi hisoblaydi');
     expect(band).not.toContain('VED uchun');
+  });
+});
+
+/**
+ * A refusal UNDER its own line (docs/AI-SORAYDI.md §3.4 A3, A9 — PA-11): the
+ * line already opens with its rows' numbers and names them, so the refusal
+ * says the missing figure — never the group's label, never the line's own
+ * row a second (and third) time. The diagnosis's words, typed from its
+ * transcript: «2. Куртка мужская зимняя · … / ⚠️ Куртка мужская зимняя:
+ * 2-qator «Куртка мужская зимняя»: soni (dona) kiritilmagan».
+ */
+describe('refusalUnder — the refusal as its line reads it (A3, A9)', () => {
+  const jacket: CustomsBlocker = {
+    kind: 'customs',
+    groupSeq: 1,
+    groupLabel: 'Куртка мужская зимняя',
+    reason: 'measure_missing',
+    itemLabel: 'Куртка мужская зимняя',
+    itemSeq: 2,
+    unit: 'dona',
+    half: 'duty',
+    rate: 4,
+  };
+
+  it('a one-row line: the figure and why, nothing else', () => {
+    expect(refusalUnder(jacket, { seqs: [2] })).toBe('soni (dona) kiritilmagan — boj kamida $4/dona');
+    // The full sentence stands where no line names the row (`blockerText`).
+    expect(blockerText(jacket)).toBe('Куртка мужская зимняя: 2-qator «Куртка мужская зимняя»: soni (dona) kiritilmagan — boj kamida $4/dona');
+  });
+
+  it('a swept group labelled by its code: «6403:» is the line’s code a second time (PA-11)', () => {
+    const shoes: CustomsBlocker = { kind: 'customs', groupSeq: 1, groupLabel: '6403', reason: 'baza_missing', itemLabel: 'Krossovka erkaklar', itemSeq: 1 };
+    expect(refusalUnder(shoes, { seqs: [1] })).toBe('baza yo‘q');
+    expect(blockerText(shoes)).toBe('6403: baza yo‘q — Krossovka erkaklar');
+  });
+
+  it('a line of several rows names the row the engine stopped on — by its number, as the line’s head numbers it', () => {
+    const cups: CustomsBlocker = { ...jacket, groupLabel: 'Посуда', itemLabel: 'Чашки', itemSeq: 2 };
+    expect(refusalUnder(cups, { seqs: [1, 2] })).toBe('2-qator «Чашки»: soni (dona) kiritilmagan — boj kamida $4/dona');
+    const baza: CustomsBlocker = { kind: 'customs', groupSeq: 1, groupLabel: 'Посуда', reason: 'baza_missing', itemLabel: 'Чашки', itemSeq: 2 };
+    expect(refusalUnder(baza, { seqs: [1, 2] })).toBe('baza yo‘q — 2-qator «Чашки»');
+  });
+
+  it('a refusal about no row (the group’s rates) says the reason alone', () => {
+    const rates: CustomsBlocker = { kind: 'customs', groupSeq: 1, groupLabel: 'Kurtka', reason: 'rates_missing' };
+    expect(refusalUnder(rates, { seqs: [1] })).toBe('bu kodga stavka topilmadi');
+    expect(refusalUnder(rates, { seqs: [1, 3] })).toBe('bu kodga stavka topilmadi');
   });
 });

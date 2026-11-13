@@ -20,7 +20,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { runCustomsImport } from '@/modules/wms/customs/import-service';
-import { CalcError, openCalcRequest, returnCalcRequest } from '@/modules/wms/calc/service';
+import { CalcError, openCalcRequest, returnCalcRequest, storedRequestFacts } from '@/modules/wms/calc/service';
 import { pickBazas } from '@/modules/wms/calc/prefill-steps';
 import {
   applyProposal,
@@ -35,7 +35,8 @@ import { sawRevOfGroup } from '../fixtures/calc-saw-rev';
 import { AI_CODE_NOTE } from '@/modules/wms/calc/code-source';
 import { CODE_SOURCE_WORDS } from '@/modules/wms/calc/ai-note';
 import { AI_NOTE_HEAD, AI_REPLY_HEAD } from '@/modules/wms/calc/reply-heads';
-import { SELLER_ASKS_HEAD } from '@/modules/wms/calc/ai-reply';
+import { CODING_FAILED_LINE, SELLER_ASKS_HEAD } from '@/modules/wms/calc/ai-reply';
+import { askedSeqsOf, lawAsksInputOfStored, sellerAsksOf } from '@/modules/wms/calc/law-asks';
 import type { IntakeDoor } from '@/modules/wms/calc/intake';
 
 /**
@@ -617,7 +618,8 @@ describe('the machine carries a job as far as it honestly can', () => {
     // TRUE; audit A17 moved the refusal INTO `requestCustomsFor`, so the
     // screen, the seal gate and this reply now refuse in one place. This
     // assertion follows the engine — the premise it states is the point.
-    const id = await open([{ name: `nomsiz mol ${Date.now()}` }]);
+    const name = `nomsiz mol ${Date.now()}`;
+    const id = await open([{ name }]);
     const out = await aiPrefill(id, ctx(), { configured: false });
 
     const ws = await loadWorkspace(id);
@@ -628,8 +630,12 @@ describe('the machine carries a job as far as it honestly can', () => {
     expect(out.text).not.toContain('$0');
     expect(out.text).toContain('Rastamojka jami: hozircha hisoblab bo‘lmadi.');
     // …and the row is NAMED rather than counted, so the seller can supply
-    // what is missing without opening the card.
-    expect(out.text).toContain('Kod topilmadi');
+    // what is missing without opening the card. Re-anchored for
+    // docs/AI-SORAYDI.md §3.4 A3 (PA-3): named IN ITS PLACE by its own
+    // number — the old «⚠️ Kod topilmadi: …» list under the lines is gone,
+    // and with no key nothing failed, so the VED codes it as before.
+    expect(out.text.split('\n')).toContain(`1. ${name} — kod yo‘q — VED xodimi qo‘yadi`);
+    expect(out.text).not.toContain('Kod topilmadi');
   });
 
   it('a model that fails costs a sentence, never the job', async () => {
@@ -881,10 +887,12 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
     // Re-anchored for round 3 (§10.2.3): the worker's ticket, not a fresh read.
     const ticket = (await prefillTicket(id))!;
     let picks = 0;
+    let calls = 0;
     let afterPerson: number | null = null;
     const out = await aiPrefill(id, ctx(), {
       configured: true,
       propose: async (requestId) => {
+        calls += 1;
         // A person's save lands while the machine's call is failing.
         await saveTable(requestId, { items: [], adds: [] }, ctx());
         afterPerson = await prefillTicket(requestId);
@@ -896,7 +904,13 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
       },
     }, { expectRev: ticket });
     expect(afterPerson).not.toBeNull();
-    expect(out.overtaken).toBe('step 2');
+    // Re-anchored for docs/AI-SORAYDI.md §3.4 A6: a failed grouping is asked
+    // once more — and the retry asks the clock first, against the revision the
+    // chain KEPT, so the person's save stops the machine one step sooner than
+    // the sweep did: the same rule (never adopt), met at the first check after
+    // the failure. The retry itself never ran over the person.
+    expect(out.overtaken).toBe('step 1 retry');
+    expect(calls, 'no second call over a person’s save').toBe(1);
     // Nothing the machine wrote before the person: the stand-down sentence (CONC-5).
     expect(out.stood).toBe('touched');
     expect(picks).toBe(0);
@@ -1220,5 +1234,168 @@ describe('the pass by the door the request came in through', () => {
     expect(out.lentaText).toContain('❓ Sotuvchidan so‘raldi: umumiy brutto.');
     expect(out.lentaUnasked).toContain('⚠️ VED uchun: umumiy brutto og‘irlik (kg) yo‘q.');
     expect(out.lentaUnasked).toContain('umumiy brutto og‘irlik (kg) yo‘q — VED xodimi so‘raydi');
+  });
+});
+
+/**
+ * The right ADDRESS and true words, through the REAL pass (docs/AI-SORAYDI.md
+ * §3.4 A3, A6 and the add door's asked rows; reviews JR-13, JS-15). The model
+ * is injected at its one boundary; the sweep, the book's laws and the engine
+ * are the real ones.
+ */
+describe('one numbering, a failed coding call, and the add door’s asked rows (A3, A6)', () => {
+  // Its own requester: one person holds at most MAX_OPEN_PER_REQUESTER open jobs.
+  let numActor = '';
+  beforeAll(async () => {
+    const [u] = await db
+      .insert(users)
+      .values({ phone: `+99890${String(Date.now()).slice(-7)}`, fullName: `Prefill numbering ${SUFFIX}`, passwordHash: 'x' })
+      .returning();
+    numActor = u!.id;
+  });
+  afterAll(async () => {
+    await db.update(users).set({ active: false }).where(eq(users.id, numActor));
+  });
+  async function openAs(
+    door: IntakeDoor | null,
+    items: { name: string; tnvedCode?: string | null; weightKg?: number | null }[],
+  ): Promise<string> {
+    const r = await openCalcRequest(
+      {
+        intakeDoor: door,
+        entityType: 'deal',
+        entityId: dealId,
+        section: 'rastamojka',
+        fromCity: 'Yiwu',
+        toCity: 'Toshkent',
+        weightKg: 500,
+        volumeM3: 10,
+        items,
+        source: 'card',
+      },
+      { actorId: numActor },
+    );
+    madeRequests.push(r.id);
+    return r.id;
+  }
+  const noPick = async () => ({ answers: [], usage: null });
+  /** A grouping call the model never answers — every batch failed (`proposeGroups`' own word). */
+  const neverAnswers = (calls: { n: number }) => async () => {
+    calls.n += 1;
+    throw new CalcError('ai_failed');
+  };
+
+  it('PA-3: the jacket is NOT line «2.» — every line opens with its rows’ numbers, the uncoded row in its place, the ❓ block and the add door the same rows', async () => {
+    // Rows 1 and 3 share a code the seeded book prices «20 %, kamida $1/dona»
+    // (the sweater of calc-pass-settle); row 2 is a part nobody can code.
+    const [a, part, b] = [`Sviter A ${SUFFIX}`, `Zapchast XJ-200 ${SUFFIX}`, `Sviter B ${SUFFIX}`];
+    const id = await openAs('ai', [
+      { name: a, tnvedCode: '6110200000', weightKg: 150 },
+      { name: part, weightKg: 5 },
+      { name: b, tnvedCode: '6110200000', weightKg: 100 },
+    ]);
+    const out = await aiPrefill(id, ctx(), { propose: idle, pick: noPick, configured: true }, { expectRev: (await prefillTicket(id))! });
+    const lines = out.text.split('\n');
+    const heads = lines.filter((l) => /^[\d, -]+\. /.test(l));
+    // The group of rows 1 and 3 is ONE line, opened by both numbers; row 2 after it.
+    expect(heads.map((l) => l.slice(0, l.indexOf('. ') + 1))).toEqual(['1, 3.', '2.']);
+    expect(heads[0]!.startsWith(`1, 3. ${a}, ${b} · 6110200000`)).toBe(true);
+    // Asked what it is in the block below — so no «VED xodimi qo‘yadi» on its line.
+    expect(heads[1]).toBe(`2. ${part} — kod yo‘q`);
+    expect(out.text).not.toContain('Kod topilmadi');
+    // The refusal under the line names the row the engine stopped on by ITS
+    // number — never the group's label first (A9).
+    const under = lines[lines.indexOf(heads[0]!) + 1]!;
+    expect(under).toMatch(new RegExp(`^   ⚠️ (baza yo‘q — )?1-qator «${a}»`));
+    // The block asks by the same numbers, and its example is row 1's.
+    expect(lines).toContain(`· 1-qator «${a}»: soni (dona) — boj kamida $1/dona`);
+    expect(lines).toContain(`· 3-qator «${b}»: soni (dona) — boj kamida $1/dona`);
+    expect(lines).toContain(`· 2-qator «${part}»: bu nima — nimadan qilingan, nima uchun ishlatiladi?`);
+    expect(out.text).toContain('✍️ Shu xabarga reply qilib yozing: «1: 300 dona; 3: 300 dona»');
+    // The add table opened from this answer prefers exactly the rows it asked a
+    // figure for (review JR-13: ONE list per door), read the way the add door
+    // reads it — off the stored request.
+    const stored = (await storedRequestFacts(id))!;
+    expect(stored.door).toBe('ai');
+    expect(askedSeqsOf(sellerAsksOf(lawAsksInputOfStored(stored)))).toEqual([1, 3]);
+  });
+
+  it('A6: a grouping call that fails is asked once more inside the pass — and when it answers, nothing says it failed', async () => {
+    const row = await importRow();
+    const id = await openAs('ai', [{ name: `${row.name} retry`, weightKg: 100 }]);
+    let calls = 0;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      pick: noPick,
+      propose: async (requestId, c, o) => {
+        calls += 1;
+        if (calls === 1) throw new CalcError('ai_failed');
+        return proposeAs(row.tnvedCode)(requestId, c, o);
+      },
+    });
+    expect(calls).toBe(2);
+    expect((await loadWorkspace(id))!.groups[0]!.tnvedCode).toBe(row.tnvedCode);
+    expect(out.text).not.toContain(CODING_FAILED_LINE);
+    expect(out.text).not.toContain('kod yo‘q');
+  });
+
+  it('A6: a call that never answers says what is TRUE, once — never «Kod topilmadi» about a jacket, never «🔄», and «bu nima?» is not asked', async () => {
+    const jacket = `Куртка мужская зимняя ${SUFFIX}`;
+    const id = await openAs('ai', [{ name: jacket, weightKg: 120 }]);
+    const calls = { n: 0 };
+    const out = await aiPrefill(
+      id,
+      ctx(),
+      { configured: true, pick: noPick, propose: neverAnswers(calls) },
+      { expectRev: (await prefillTicket(id))! },
+    );
+    expect(calls.n, 'the call and its one retry').toBe(2);
+    for (const text of [out.text, out.lentaText]) {
+      const lines = text.split('\n');
+      expect(lines.filter((l) => l === CODING_FAILED_LINE)).toHaveLength(1);
+      expect(lines).toContain(`1. ${jacket} — kod yo‘q`);
+      for (const w of ['Kod topilmadi', '🔄', 'qayta urinib', 'bu nima']) expect(text, w).not.toContain(w);
+    }
+    // Nothing else is owed — the row has its weight — so no block at all.
+    expect(out.text).not.toContain(SELLER_ASKS_HEAD);
+    // The plain door's note says the same about the same failure (A6).
+    const plainId = await openAs('plain', [{ name: `${jacket} plain`, weightKg: 120 }]);
+    const note = await aiPrefill(plainId, ctx(), { configured: true, pick: noPick, propose: neverAnswers({ n: 0 }) });
+    expect(note.text).toContain(CODING_FAILED_LINE);
+    expect(note.text).not.toContain('Kod topilmadi');
+  });
+
+  it('A6: the retry waits on the clock — a first call that ran past the deadline is not asked again', async () => {
+    const id = await openAs('ai', [{ name: `Kepka sekin ${SUFFIX}`, weightKg: 20 }]);
+    let calls = 0;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      pick: noPick,
+      deadline: Date.now() + 300,
+      propose: async () => {
+        calls += 1;
+        // The model hangs past the pass's deadline, then fails.
+        await new Promise((r) => setTimeout(r, 600));
+        throw new CalcError('ai_failed');
+      },
+    });
+    expect(calls).toBe(1);
+    expect(out.pastDeadline).toBe(true);
+    expect(out.text).toContain(CODING_FAILED_LINE);
+  });
+
+  it('A6: no key behind the model is a fact about the server — said, and not asked twice', async () => {
+    const id = await openAs('ai', [{ name: `Shapka kalitsiz ${SUFFIX}`, weightKg: 20 }]);
+    let calls = 0;
+    const out = await aiPrefill(id, ctx(), {
+      configured: true,
+      pick: noPick,
+      propose: async () => {
+        calls += 1;
+        throw new CalcError('ai_not_configured');
+      },
+    });
+    expect(calls).toBe(1);
+    expect(out.text).toContain(CODING_FAILED_LINE);
   });
 });
