@@ -164,14 +164,31 @@ describe('what a tonne or a gram is NOT (review JN-9)', () => {
     }
   });
 
-  it('a lone letter is no weight in free material — not even after a weight’s label: the weight is asked', () => {
-    // Read there, «Sement 1.5 t» is fine and «Model X 5 t» is five tonnes of
-    // a five-tonne jack. Narrower than the ruling allows, on purpose (c3275).
-    for (const text of ['Sement 1.5 t', 'jami 2 t', 'vazni 2 t', 'G.W. 2.5 MT', 'G.W.: 2.5 MT', 'og‘irligi 500 g']) {
+  it('a lone letter is no weight in free material — except right after a weight’s own label (JN-9)', () => {
+    // Read anywhere, «Model X 5 t» is five tonnes of a five-tonne jack: with
+    // no label the weight is asked.
+    for (const text of ['Sement 1.5 t', 'jami 2 t']) {
       expect(totals(text), text).toEqual({ kg: null, m3: null, asked: [] });
       expect(rows(text), text).toEqual([]);
     }
     expect(typed('Sement 1.5 t').problems).toEqual([{ kind: 'unknown_unit', word: 't', value: 1.5 }]);
+    // RE-ANCHORED (review typed-spec-5, ruling JN-9's «after a weight label of
+    // §2.4»): this test pinned these four unread too, narrower than the
+    // ruling — a forwarder's «G.W.: 2.5 MT» left the brutto asked. After a
+    // weight's label the letter can be nothing but its unit:
+    // 2 t × 1000 = 2000 kg; 2.5 MT × 1000 = 2500 kg; 500 g × 0.001 = 0.5 kg.
+    for (const [text, kg] of [
+      ['vazni 2 t', 2000],
+      ['G.W. 2.5 MT', 2500],
+      ['G.W.: 2.5 MT', 2500],
+      ['brutto 2 t', 2000],
+      ['og‘irligi 500 g', 0.5],
+    ] as const) {
+      expect(totals(text), text).toEqual({ kg, m3: null, asked: [] });
+      expect(rows(text), text).toEqual([]);
+    }
+    // …the line's own label: a NAME's word possessing it makes it the product's («a jack weighs 5 t»).
+    expect(totals('Domkrat og‘irligi 5 t').kg).toBeNull();
   });
 
   it('beside a piece count the figure is what ONE piece is — a jack’s tonnes, a pack’s grams: it stays in the name', () => {
@@ -226,9 +243,17 @@ describe('the answer to the bot’s own question', () => {
       ['og‘irligi 500 g', 0.5],
       ['G.W. 2.5 MT', 2500],
       ['2 t', 2000],
-      ['500 g', 0.5],
     ] as const) {
       expect(kilos(text, table(WEIGHT)), text).toBe(kg);
+    }
+    // RE-ANCHORED (review typed-break-9): an un-addressed gram was read as the
+    // truck's brutto here — «500 g» answered 0.5 kg. No shipment is weighed
+    // in grams: with no weight's label before it the figure is named back,
+    // never written.
+    for (const text of ['500 g', '500 gr', '128 g']) {
+      const seg = one(text, table(WEIGHT));
+      expect(seg.totals, text).toBeNull();
+      expect(seg.refused?.left?.[0], text).toMatchObject({ why: 'weight', text });
     }
     expect(one('jami 2 tonna 12 kub', table(BOTH)).totals).toEqual({ weightKg: 2000, volumeM3: 12, ambiguous: [] });
   });

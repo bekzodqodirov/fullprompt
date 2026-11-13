@@ -31,6 +31,7 @@ import {
   labelPattern,
   NET_LABELS,
   normalizeTnved,
+  packagePossessesLabel,
   packingRead,
   packWord,
   parseGoodsLine,
@@ -1266,8 +1267,12 @@ function readFieldLabels(text: string, fields: readonly number[] = []): LineFiel
     }
     const kind = FIELD_KIND_EXACT.find(([, exact]) => exact.test(label.replace(/\s+/gu, ' ').trim()))?.[0];
     if (kind === undefined) continue;
-    // A figure the kernel marks one package's or one piece's keeps its label: the mark reads it.
+    // A figure the kernel marks one package's or one piece's keeps its label: the mark reads it —
+    // a tail after it («15 kg/ctn»), or a package's noun before the label («karobka og‘irligi 22.5 kg»).
     if (unit !== null && PER_ONE_AFTER.test(text.slice(figureEnd, figureEnd + 32))) continue;
+    if (kind === 'weight' || kind === 'volume') {
+      if (packagePossessesLabel(text.slice(0, labelStart))) continue;
+    }
     if (unit !== null && !FIELD_FITS[kind](unit)) continue;
     if (unit === null && word !== undefined) continue;
     if (unit === null) {

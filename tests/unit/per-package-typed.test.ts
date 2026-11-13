@@ -204,16 +204,34 @@ describe('JN-7 / JS-1 — an «each» figure binds to the count it stands with',
     expect(row('Stul 20 karobka har biri 15 kg')).toMatchObject({ name: 'Stul', weightKg: 300 });
   });
 
-  it('both counts → the nearest count BEFORE the mark: «20 karobka, har biri 15 kg» is a carton’s (300 kg, not 300 × 15 = 4500)', () => {
-    const r = row('Kurtka 300 dona, 20 karobka, har biri 15 kg');
-    expect(r).toMatchObject({ quantity: 300, weightKg: 300 });
-    expect(r.packing).toMatchObject({ kgPerCarton: 15 });
+  // RE-ANCHORED (review typed-spec-1, ruling JN-7 = JS-1: «both and no noun →
+  // nothing multiplied, asked»). These two pinned JS-1's PROPOSED rule — the
+  // nearest count before the mark — which the ruling did not adopt: JN-7's own
+  // example «Stul 100 dona 20 karobka, har biri 2 kg» (each CHAIR 2 kg, truly
+  // 100 × 2 = 200 kg) has the shape of conversation C (each CARTON 15 kg,
+  // truly 20 × 15 = 300 kg), and the positional rule landed the chairs 20 × 2
+  // = 40 kg «hisoblangan» with no question. One shape, two truths: only the
+  // seller can say, so neither is multiplied and the weight is asked.
+  it('both counts and no noun after the mark → nobody’s: nothing multiplied, the figure on the note, the weight asked', () => {
+    for (const [text, q, mark] of [
+      ['Stul 100 dona 20 karobka, har biri 2 kg', 100, 'har biri 2 kg'],
+      ['Kurtka 300 dona, 20 karobka, har biri 15 kg', 300, 'har biri 15 kg'],
+      ['Telefon 300 dona har biri 0.2 kg 20 karobka', 300, 'har biri 0.2 kg'],
+    ] as const) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ quantity: q, weightKg: null, note: `sotuvchi: ${mark}` });
+      expect(r.packing?.kgPerCarton ?? null, text).toBeNull();
+      expect(r.packing?.kgPerPiece ?? null, text).toBeNull();
+    }
   });
 
-  it('…and «300 dona har biri 0.2 kg 20 karobka» is a piece’s: 300 × 0.2 = 60 kg (the cartons after it say nothing of it)', () => {
-    const r = row('Telefon 300 dona har biri 0.2 kg 20 karobka');
-    expect(r).toMatchObject({ quantity: 300, weightKg: 60 });
-    expect(r.packing).toMatchObject({ cartons: 20, kgPerPiece: 0.2, kgPerCarton: null });
+  it('…and the clause it opens goes on as nobody’s: «har biri 2 kg 0.05 kub» beside both counts states neither', () => {
+    const r = row('Stul 100 dona 20 karobka, har biri 2 kg 0.05 kub');
+    expect(r).toMatchObject({ quantity: 100, weightKg: null, volumeM3: null, note: 'sotuvchi: har biri 2 kg, 0.05 kub' });
+  });
+
+  it('a package noun after the mark decides even beside both counts: «har bir karobka 15 kg» — 20 × 15 = 300 kg', () => {
+    expect(row('Stul 100 dona 20 karobka, har bir karobka 15 kg')).toMatchObject({ quantity: 100, weightKg: 300 });
   });
 
   it('a noun after the mark decides: «har bir dona 2 kg» beside 20 cartons is a piece’s — 100 × 2 = 200 kg', () => {

@@ -129,8 +129,10 @@ describe('what is NOT a total (review JN-21)', () => {
   it('a currency on the line, or a unit of its own after the figure', () => {
     expect(totals('Brutto: 12 500 $')).toEqual(none);
     expect(totals('Invoice total: 12 500 USD, G.W.: 507')).toEqual(none);
-    // 2.5 tonnes are not 2.5 kg; 507 lbs are not 507 kg.
-    expect(totals('G.W.: 2.5 MT')).toEqual(none);
+    // 2.5 tonnes are not 2.5 kg; 507 lbs are not 507 kg. RE-ANCHORED (review
+    // typed-spec-5): «G.W.: 2.5 MT» was pinned unread — after a weight's label
+    // the lone «MT» can be nothing but tonnes (JN-9): 2.5 × 1000 = 2500 kg.
+    expect(totals('G.W.: 2.5 MT')).toEqual({ ...none, kg: 2500 });
     expect(totals('G.W.: 507 lbs')).toEqual(none);
     // Two numbers after one label: which is it? (A second group of THREE
     // digits is the same number — «G.W.: 507 480» is 507 480 kg.)
