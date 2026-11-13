@@ -41,7 +41,9 @@ describe('the three answers that changed something', () => {
     expect(sentence).toContain('measures: tickMeasuresHoldSql(refs),');
     expect(sentence).toContain('const ticked = sql`(${tickedFacts} AND ${terms.measures})`;');
     // …and the ❌ an answering tick settled is decided on its FACTS, so a re-weigh never brings it back (K3).
-    expect(sentence).toContain('WHEN ${dispute} AND NOT (${tickedFacts} AND ${refs.check}.checked_at > ${LOT_CLIENT}.answered_at) THEN \'none\'');
+    expect(sentence).toContain('AND NOT (${tickedFacts} AND ${refs.check}.checked_at > ${LOT_CLIENT}.answered_at)');
+    // …and so does a tarkib listing other goods than the ones rejected, past a re-weigh (TICK-3).
+    expect(sentence).toContain('AND NOT (${LOT_TARKIB}.lot_id IS NOT NULL AND ${LOT_CLIENT}.shown_goods_key IS DISTINCT FROM ${LOT_TARKIB}.goods_key) THEN \'none\'');
     expect(hasTest('tests/integration/lot-check.integration.test.ts', '5. a re-weigh a list would show (kg alone, m³ alone) makes it «stale» naming the weight')).toBe(true);
     // «yoki yozilgan tarkib»: already true before this answer, and pinned where it was.
     expect(hasTest('tests/integration/lot-check.integration.test.ts', '12. a composition the lot has outgrown reads «stale»')).toBe(true);
@@ -66,7 +68,7 @@ describe('the three answers that changed something', () => {
   it('4 b — «sotuvchi prixod kartasida (saytda) ham fayl qo‘sha olsin»: the bot’s rule, one predicate for both doors', () => {
     const door = code('src/modules/wms/receipts/files-door.ts');
     expect(door).toContain('if (!mayAttachReceiptFile(row)) return { ok: false, error: \'not_found\' };');
-    expect(door).toContain("if (!mayAddReceiptFiles(actor)) return { ok: false, error: 'forbidden' };");
+    expect(door).toContain("if (!mayAddReceiptFiles(actor)) return { ok: false, error: 'not_worker' };");
     expect(code('src/app/(protected)/receipts/[id]/page.tsx')).toContain('const mayAttach = mayAttachReceiptFile(receipt) && mayAddReceiptFiles(actor);');
     expect(code('src/app/api/files/upload/route.ts')).toContain("if (receipt && receipt.status === 'confirmed' && !mayAddReceiptFiles(actor)) {");
     expect(hasTest('tests/integration/receipt-files-site.integration.test.ts', 'a seller’s picture is stored as a PAPER')).toBe(true);

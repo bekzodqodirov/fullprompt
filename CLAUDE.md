@@ -3764,8 +3764,8 @@ the seven ⭐ questions in the CHANGELOG entry (re-ask after a re-weigh · the s
 cargo left China · seller uploads on the site · a notice on a file · folding `DealDeviation` / `ArrivalDiff` ·
 admins on a claim for a seller-less client).
 
-**Round — Prixod javoblari (2026-11-12 → 11-13; DECISIONS #1744-#1753; migration 0147 `prixod_javoblar`, `when`
-…126 — ledger must reach 148; spec `docs/PRIXOD-JAVOBLAR.md`, **§8 binding**).** His answers to that round's seven ⭐
+**Round — Prixod javoblari (2026-11-12 → 11-13; DECISIONS #1744-#1754; migration 0147 `prixod_javoblar`, `when`
+…126 — ledger must reach 148; spec `docs/PRIXOD-JAVOBLAR.md`, **§8 and §8.1 binding**).** His answers to that round's seven ⭐
 questions: «1 b / 2 b / 4 b / 7 …». 3a, 5a, 6a stand (pinned in `prixod-javoblar-answers.test.ts` with the
 answer's number); 7 was neither option and is asked again (7.1 who hears a claim, 7.2 whose KPI a seller-less
 client's cargo joins) — NOTHING of 7 is built. Spec judged by four lenses (delivery, regression, owner, kernel)
@@ -3773,31 +3773,39 @@ WHILE the build ran in a worktree, every finding re-checked against the built tr
 (`receipts/client-reask.ts`): due when the newest question with buttons DELIVERED to this owner about this prixod
 (`received_cn` with buttons, `lot_ask`, `lot_reask`) carries a tag (`askTag`, remembered by the sweep in 0147's
 SQL-only `client_notices.asked_tag/asked_at`) that is not today's (`reaskDue`); with none remembered, a confirmation
-the correction broke — this owner's full answer, or a colleague's tick about this owner; never when every askable
-lot reads ✅ (a correction taken back after the system asked). Kind `lot_reask`, one row per (client, prixod), due
+the correction broke — this owner's full answer, or a colleague's tick about this owner broken on kilos, cubic
+metres or count — counted only on lots still on the ❓ list; never when every askable lot reads ✅ (a correction taken
+back after the system asked). Kind `lot_reask`, one row per (client, prixod), due
 10 min after the LAST correction (sliding), armed after commit by `editLot`'s `.then` (totals or count) and
 `afterLotGrown` (both count doors) — `armClientReask` never throws (U41) and asks the person's door's own refusals;
-a question `sending` at the arm counts as due; every delivery's tag is remembered whatever the settle wrote; only
+a question `sending` at the arm counts as due, and so does our own re-armed row claimed within `RECLAIM_MINUTES`
+(the re-arm keeps its `claimed_at`); every delivery's tag is remembered whatever the settle wrote; only
 `lot_reask`'s settle/defer compare-and-set the CLAIM (`heldClaim`/`claimOf` — `rearmArrivalNotice` re-arms
-mid-send, every other kind settles by id as before); a person's press stands it down (`superseded`), the person's
-door answers `already_queued`/`too_soon` around it, and `lastAsk` keeps a person who asked earlier and was never
-answered as the asker (`answeredSince`). Quiet skips are the closed `REASK_QUIET`. Setting
+mid-send, every other kind settles by id as before); the person's press is ONE transaction holding the system's row
+`FOR UPDATE` (stands it down `superseded`, answers `already_queued`/`too_soon` around it); `assignReceiptClient`
+re-decides it after a client correction; `lastAsk` keeps a person who asked earlier and was never answered as the
+asker (`answeredSince`); the card draws the system's line by `reaskLineDrawn` against the person's
+`lastDeliveredAt` = `coalesce(sent_at, asked_at)`. Quiet skips are the closed `REASK_QUIET`. Setting
 `client_reask_on_reweigh` (default ON). **2b** — `lot_checks.seen_kg numeric(12,2)` / `seen_m3 numeric(12,3)`
 (display precision; the backfill writes today's figures only where the tick's COUNT still holds); the tick's fourth
 term `tickMeasuresHoldSql`; `checkLot` CASes the STORED figures the card posts (`lot_changed`) and remembers the
-database's display rounding; **arm 5 keeps the ❌'s outrank on the tick's FACTS** (`tickedFacts`), so a re-weigh
-never brings an answered ❌ back — the literal matrix is 168 combinations. **The mixed count walk is exact**
-(`mixedTotalsFor` from the walk's BASE, derived by `walkBaseInTx` from the lot's lotGrown/lotShrunk audit rows —
-never stored). **4b** — `mayAttachReceiptFile` (confirmed, not voided) AND `mayAddReceiptFiles` (`receipts.edit` ∨
+database's display rounding; **arm 5 keeps an answered ❌ answered past a re-weigh** — on the tick's FACTS
+(`tickedFacts`) and on a tarkib listing other goods than the ones rejected — the literal matrix is 168 combinations.
+**The mixed count walk is exact** (`mixedTotalsFor` from the walk's BASE, derived by `walkBaseInTx` from the lot's
+lotGrown/lotShrunk audit rows — never stored — and kept only if it gives back the lot as it stands: a chain the old
+arithmetic drifted starts afresh from the lot's figures). **4b** — `mayAttachReceiptFile` (confirmed, not voided) AND `mayAddReceiptFiles` (`receipts.edit` ∨
 `plans.manage` ∨ `ved.docs` ∨ `crm.leads` — never the accountant or a report-only viewer) on the bot door, the card's
 tile and the upload route; `AttachmentsPanel attachable` split from `editable`; a picture from an uploader without
 `receipts.edit` is a PAPER (`asPaper`, `DOCUMENT_PHOTO` from import-free `components/photo-grades.ts`); a voided
-prixod is refused at the route; every upload onto a confirmed prixod writes `fileAdded:<id>`. **The probe has FIVE
+prixod is refused at the route; every upload onto a confirmed prixod writes `fileAdded:<id>`; the bot tells a reader
+who opens a prixod but works none `not_worker`. **The probe has FIVE
 answers** (`ok client measures tick asked`): writers ask it themselves (L1-1); the sync `lotTickMeasuresReady()` is
 read only by the sentence and the card's view. ONE kilos spelling for History lines: `measuresLine`
 (lot-check-sql.ts). Fences: `client-reask-wire.test.ts`, `prixod-javoblar-answers.test.ts`; the backfill is run as
-written in a rolled-back transaction (`prixod-javoblar-backfill.integration.test.ts`). TRAP: two unit files reach
-postgres and fall back to `gsr_dev` without `DATABASE_URL` — set it for any local vitest run. @@ROUNDVERIFY@@
+written in a rolled-back transaction (`prixod-javoblar-backfill.integration.test.ts`); the bot harness's
+`duringNext(method, fn)` lands a change WHILE a message is on its way. Reviewed as built (§8.1): 21 findings, all
+fixed — T1 and T2 were tests green under the very defects they were written for. TRAP: two unit files reach postgres
+and fall back to `gsr_dev` without `DATABASE_URL` — set it for any local vitest run. @@ROUNDVERIFY@@
 
 **Latest migration: 0147** (`prixod_javoblar`, `when` …126; ledger must reach **148**). Before
 it: 0146 (`prixod_xabari`, `when` …125). Before

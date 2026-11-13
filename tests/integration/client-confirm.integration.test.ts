@@ -1174,7 +1174,9 @@ describe('the sentence, combination by combination — against literal states', 
   const EXPECTED: Record<Tarkib, Record<Tick, string>> = {
     none: { none: 'ncsnnncs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs', measured: 'cccccccc', reweighedOld: 'scsnnscs', reweighedNew: 'scsssscs' },
     stands: { none: 'cccncccc', old: 'cccncccc', new: 'cccccccc', stale: 'cccncccc', measured: 'cccccccc', reweighedOld: 'cccncccc', reweighedNew: 'cccscccc' },
-    stale: { none: 'scsnnscs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs', measured: 'cccccccc', reweighedOld: 'scsnnscs', reweighedNew: 'scsssscs' },
+    // A STALE tarkib listing goods other than the ones a ❌ rejected has settled that ❌ («the rejected goods are
+    // changed»): a re-weigh that made the paper stale reads «o'zgardi», never the ❌ in red (TICK-3).
+    stale: { none: 'scsnsscs', old: 'cccnsccc', new: 'cccccccc', stale: 'scsnsscs', measured: 'cccccccc', reweighedOld: 'scsnsscs', reweighedNew: 'scsssscs' },
   };
   const LETTER = { checked: 'c', none: 'n', stale: 's', unclaimed: 'u' } as const;
 

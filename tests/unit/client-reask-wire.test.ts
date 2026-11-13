@@ -56,6 +56,17 @@ describe('every writer of a lot’s stored totals reaches the arm', () => {
     expect(accept.indexOf('if (grew) await afterLotGrown(input.lotId);')).toBeGreaterThan(accept.indexOf('} finally {'));
   });
 
+  it('a client correction re-decides it too — after the commit, never failing the correction (DLV-2)', () => {
+    const edit = code('src/modules/wms/receipts/edit.ts');
+    const assign = edit.slice(edit.indexOf('export async function assignReceiptClient('), edit.indexOf('async function directCostsAfterClientChange('));
+    expect(assign).toMatch(/try \{\s*const \{ armClientReask \} = await import\('\.\/client-reask'\);\s*await armClientReask\(lotIds\[0\]!\);\s*\} catch/);
+    expect(assign.indexOf('await armClientReask(')).toBeGreaterThan(assign.indexOf('await claimReceivedNotice(tx, clientId, receiptId);'));
+  });
+
+  it('the card draws the system’s question by ONE rule (DLV-1)', () => {
+    expect(code('src/app/(protected)/receipts/[id]/page.tsx')).toContain('const autoDrawn = reaskLineDrawn(auto, askCard?.status?.lastDeliveredAt ?? null);');
+  });
+
   it('the arm never throws at a committed correction (U41): its body is one try', () => {
     const reask = code('src/modules/wms/receipts/client-reask.ts');
     const arm = reask.slice(reask.indexOf('export async function armClientReask('), reask.indexOf('export async function reaskSendable('));

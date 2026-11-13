@@ -373,14 +373,16 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 
 Bitta migratsiya bor: **0147** — deploydan keyin son **148** bo‘ladi (repo’dagi fayllar soni:
 `ls src/modules/platform/db/migrations/*.sql | wc -l`). Agar serveringizda 0145 yoki 0146 hali yo‘q bo‘lsa, ular
-shu deployda birga o‘tadi — son baribir **148** (ularning o‘z bo‘limlari pastda; 0145 ning «tg-listen qayta
-quriladi» talabi o‘sha bo‘limda). Migratsiya faqat qo‘shadi: xodim qo‘ygan ✅ ga ikkita ustun (eslab qolingan kg va
+shu deployda birga o‘tadi — son baribir **148** (0146 ning bo‘limi pastda; 0145 niki va uning «tg-listen qayta
+quriladi» talabi — CHANGELOG’da). Migratsiya faqat qo‘shadi: xodim qo‘ygan ✅ ga ikkita ustun (eslab qolingan kg va
 kub — **hozirgi qiymatlar bilan to‘ldiriladi**, shuning uchun deploy kuni hech bir ✅ o‘zgarmaydi) va mijozga borgan
 savolga ikkita ustun (nima so‘ralgani va qachon). Mavjud ma’lumot o‘zgarmaydi.
 
 **Deploydan OLDIN biling:** deploydan keyin biror lotning og‘irligi, hajmi yoki quti soni o‘zgartirilsa va mijozga
-shu prixod haqida tugmali savol borgan bo‘lsa (yoki lot ✅ bo‘lgan bo‘lsa) — **10 daqiqadan keyin mijozga yangi savol
-o‘zi boradi** («🔄 Yukingiz ma’lumoti yangilandi…»). Bu sizning «1 b» javobingiz. Sozlama (`client_reask_on_reweigh`)
+shu prixod haqida **deploydan keyin** tugmali savol borgan bo‘lsa (yoki xodimning «✅ To‘g‘ri»si shu tuzatishdan
+buzilsa) — **10 daqiqadan keyin mijozga yangi savol o‘zi boradi** («🔄 Yukingiz ma’lumoti yangilandi…»). Bu sizning
+«1 b» javobingiz. Deploydan OLDIN borgan savollarni tizim eslamaydi — ular uchun savol o‘zi bormaydi (xodimning ✅ i
+buzilmagan bo‘lsa), lot avvalgidek «Mijozdan so‘rash» bilan so‘raladi. Sozlama (`client_reask_on_reweigh`)
 faqat deploydan keyin paydo bo‘ladi; xohlamasangiz — deploy tugagan zahoti Boshqaruv → Sozlamalar’da o‘chiring
 (birinchi savol eng tez birinchi tuzatishdan 10 daqiqa keyin ketadi — vaqt yetadi).
 

@@ -39,8 +39,9 @@ six follow-ups). Its findings are cited here by `file:line` at that commit.
 - **(2b)** Xodim qo'ygan «✅ To'g'ri» endi og'irlik va hajmni ham eslab qoladi: kg yoki kub o'zgarsa (ro'yxatda
   ko'rinadigan aniqlikda — kg yuzdan bir, m³ mingdan bir), lot «o'zgardi» bo'ladi. Tarkib uchun bu **hozir ham
   shunday** (tarkib aniq solishtiriladi) — tekshirildi, test bilan mahkamlanadi.
-- **(4b)** Prixod kartasidagi «Fayllar»da 📎 tugmasi prixodni ochib ko'ra oladigan har kimga (botdagi «📎 Fayl
-  qo'shish» kimga ochiq bo'lsa, o'shalarga) chiqadi. Sotuvchi yuborgan rasm hujjat sifatida saqlanadi (karobka rasmi
+- **(4b)** Prixod kartasidagi «Fayllar»da 📎 tugmasi botdagi «📎 Fayl qo'shish» qoidasi bilan chiqadi: prixod bilan
+  ishlaydigan xodimlarga — sotuvchi, logist, VED, skladchi, admin (buxgalter va faqat hisobot ko'radigan xodim kartani
+  ochadi, lekin fayl qo'sha olmaydi — §8, O7). Sotuvchi yuborgan rasm hujjat sifatida saqlanadi (karobka rasmi
   o'rnida chiqmaydi), har bir fayl tarixda yoziladi, hech kimga xabar bormaydi (5a).
 
 ---
@@ -482,3 +483,54 @@ the count arm, the stuck line).**
   reads ✅ again), a walk of two growth presses, 12d names the measures it moved.
 - **The History's spelling** (K7): `measuresLine` in `lot-check-sql.ts` is the one ` · 200 kg · 1.5 m³` for the
   client's answer and the tick, which cannot import each other.
+
+### §8.1 Reviewed as built (binding — overrides §8 where it differs)
+
+Four lenses read the BUILT diff `584cf0b..3a94836` (delivery, the sentence, what the owner is told, regression and
+the tests' honesty), read-only while the CI order ran green on it; 21 findings, every one checked against the code by
+hand and fixed, each pinned by a test proven red without its fix.
+
+**Delivery.**
+- **DLV-1** — a FAILED automatic question stayed on the card for good, after the person had pressed again and the
+  client answered: a failure is dated by when it was due (`send_after`), and ONE pure rule decides the line
+  (`receipts/reask-line.ts` `reaskLineDrawn`): held — always; sent or failed — only while newer than the person's
+  last delivery.
+- **C1** — that last delivery is `coalesce(sent_at, asked_at)` (`ClientAskStatus.lastDeliveredAt`): a later quiet skip
+  of the person's re-press nulls `sent_at`, and the card then drew an older automatic line over a newer question.
+- **DLV-2** — A → B → A inside the window skipped A's question `client_changed` for good: `assignReceiptClient`
+  re-decides it after its commit (`armClientReask`, never throwing), as the receipt push's own row is re-armed.
+- **DLV-3** — the person's 📨 read the system's row unlocked, then wrote: a claim between them sent both. The check,
+  the person's row and the stand-down are ONE transaction holding the system's row `FOR UPDATE`.
+- **DLV-4** — re-arming our own question while it was out erased the evidence it was out, so a second correction
+  inside the same send stood it down against a tag not yet remembered: the re-arm keeps a sending row's `claimed_at`,
+  and a held `lot_reask` claimed within `RECLAIM_MINUTES` counts as in flight.
+
+**The sentence and the walk.**
+- **TICK-1** — the O6 fallback counted ANY broken tick on ANY lot: now only on a lot still on the ❓ list (a lot ✅ by a
+  tarkib or the client's ✅ needs nobody asked), and for a tick only where the kilos, the cubic metres or the count
+  moved — a rename or a tarkib's label alone asks nothing (§7, §8 «a rename alone»).
+- **TICK-2** — a chain the OLD arithmetic drifted was walked back to its true start, so the first count step after the
+  deploy restored the weighed figure (40.714) on a lot every ✅ remembered at its drifted one (40.716 → 40.72): the
+  tick never healed and the client was asked about a weight nobody changed. A walked base is kept only when it gives
+  back the lot as it stands; otherwise the walk starts from the lot as it is. This REVERSES §8 K4's «the drift
+  disappears on the next press»: a drifted lot keeps its figures until somebody weighs it.
+- **TICK-3** — the other way a ❌ ends, «the rejected goods are changed» (a tarkib listing other goods), lasted only
+  while the tarkib STOOD: a re-weigh made the paper stale and the ❌ came back red. Arm 5 now also refuses to veto when
+  a tarkib exists and lists goods other than the ones rejected — the lot reads «o'zgardi». The literal matrix's stale
+  tarkib × ❌-on-other-goods cells move from n to s.
+
+**What he is told.** F1 — outside China a re-weigh takes the tick's ✅ off every list with no ❓ and no button there
+(3a's twin): said in the CHANGELOG. F2 — the questions delivered BEFORE the deploy are not remembered, so UPDATE.md
+no longer promises a re-ask for them, and the «test it» sentence names a prixod asked after the deploy. F3 — «an
+invisible difference asks nothing» only when nothing else (name, tarkib) changed since the last question. F5 —
+0145's section lives in the CHANGELOG. F6 — §0's 4b bullet names who adds a file.
+
+**Regression and the tests.** T1 — the «remembered anyway» test never reached a settle that lost its claim: the bot
+harness grows `duringNext(method, fn)` (a correction lands WHILE the message is on its way), and the test now proves
+the settle writes nothing, the delivery is remembered and the next sweep sends nothing. T2 — the walk tests ran on a
+lot whose per-carton figures never round (the old rule gave the same numbers): moved to the drifting lot with literal
+intermediates (12 cartons = 69.795, the old rule's 69.796). T3 — the count-load door now has a behavioural test that
+it arms the re-ask. T4 — a unit «walk» that was no walk is gone. T5 — the e2e's comment claims only what it asserts.
+R1 — an old process's re-tick in the deploy minute keeps the backfilled kilos beside its new count (stated in the
+migration; a lot re-ticked in that minute may need one press again). R2 — a reader who may open a prixod but works
+none is told «Bu prixodga fayl qo'shish huquqingiz yo'q», never «you may not open it» (`not_worker`).

@@ -25,7 +25,8 @@ ustun (savolda nima yozilgani va qachon borgani). Mavjud ma'lumot o'zgarmaydi.
 - **Savol bormaydigan holatlar:**
   - tuzatish eski qiymatga qaytarilsa va mijozning ✅ i yana to'g'ri kelsa (savol ketib bo'lgan bo'lsa ham — mijoz
     allaqachon tasdiqlagan narsani uchinchi marta so'ramaydi);
-  - farq ro'yxatda ko'rinmasa (kg — yuzdan bir, m³ — mingdan bir aniqlikda);
+  - farq ro'yxatda ko'rinmasa (kg — yuzdan bir, m³ — mingdan bir aniqlikda) va oxirgi savoldan beri boshqa hech
+    narsa (nomi, tarkibi) o'zgarmagan bo'lsa — aks holda savol o'sha o'zgargan narsalar haqida ham boradi;
   - prixodning hamma lotlari ✅ bo'lsa;
   - mijozning Telegrami ulanmagan bo'lsa; yuk Xitoydan chiqib, tushirib bo'lingan bo'lsa (3a ⭐);
   - prixodda 30 tadan ko'p lot bo'lsa yoki savol Telegramga sig'masa (xodimning «Mijozdan so'rash»i bilan bir xil
@@ -50,16 +51,19 @@ ustun (savolda nima yozilgani va qachon borgani). Mavjud ma'lumot o'zgarmaydi.
 
 ### 2. Xodim qo'ygan «✅ To'g'ri» ham kg va kubni eslaydi («2 b»)
 - Xodim lotga «✅ To'g'ri» bosganda endi **og'irlik va hajm ham** eslab qolinadi. Keyin kg yoki kub o'zgarsa
-  (ro'yxatda ko'rinadigan aniqlikda) — lot «o'zgardi» bo'lib ❓ ro'yxatiga qaytadi, kartada nima o'zgargani yoziladi:
-  «… og'irlik yoki hajm». Eski qiymatga qaytarilsa — o'zi yana ✅.
+  (ro'yxatda ko'rinadigan aniqlikda) — yuk Xitoyda bo'lsa, lot «o'zgardi» bo'lib ❓ ro'yxatiga qaytadi, kartada nima
+  o'zgargani yoziladi: «… og'irlik yoki hajm». Eski qiymatga qaytarilsa — o'zi yana ✅.
+- **Yuk Xitoydan chiqib, tushirib bo'lingandan keyin** qayta tortilsa — xodimning ✅ i ham ro'yxatlardan olib
+  tashlanadi (mijozning ✅ i bilan bir xil — 3a ⭐), lekin ❓ ro'yxatiga tushmaydi va uni u yerda qayta qo'yib
+  bo'lmaydi («✅ To'g'ri» tugmasi faqat Xitoydagi yuk uchun). Eski qiymat qaytarilsa — o'zi tiklanadi.
 - **Deploy kuni hech narsa o'zgarmaydi:** avval qo'yilgan ✅ lar uchun «eslab qolingan» kg/kub — deploy paytidagi
   qiymatlar. Faqat bitta istisno: ✅ qo'yilgandan keyin quti soni o'zgargan lot (masalan, yuklashda «son» bilan
   ko'paytirilgan va hali qaytarilmagan) uchun kg/kub eslab qolinmaydi — son qaytarilganda ✅ o'zi tiklanishi uchun.
 - **Yozilgan tarkib uchun bu allaqachon shunday edi** (tarkibning jami kg va kubi lotnikiga aniq teng bo'lishi
   kerak) — tekshirdim, test bilan mahkamladim.
-- **Mijozning eski ❌ i qaytib chiqmaydi.** Mijoz ❌ bosgan, keyin xodim mijoz bilan gaplashib ✅ qo'ygan lotda yuk
-  qayta tortilsa — lot «o'zgardi» bo'ladi (sklad tuzatishi), mijozning hal qilingan ❌ i qizil bo'lib qaytib
-  chiqmaydi. Va 1-band mijozdan o'zi so'raydi.
+- **Mijozning eski ❌ i qaytib chiqmaydi.** Mijoz ❌ bosgan, keyin xodim mijoz bilan gaplashib ✅ qo'ygan (yoki ofis
+  to'g'ri tovarlar bilan tarkib yozgan) lotda yuk qayta tortilsa — lot «o'zgardi» bo'ladi (sklad tuzatishi), mijozning
+  hal qilingan ❌ i qizil bo'lib qaytib chiqmaydi. Va 1-band mijozdan o'zi so'raydi.
 - Lot ✏️ formasida, lotda kg/kubni solishtiradigan ✅ turgan bo'lsa (xodimniki yoki mijozning og'irlik va hajm bilan
   bergan tasdig'i), ogohlantirish chiqadi: «Og'irlik yoki hajm o'zgarsa — lotdagi ✅ o'z kuchini yo'qotadi».
 
@@ -88,8 +92,10 @@ boradi, tizim uni hech kimga o'zi biriktirmaydi — bugun ham shunday ishlaydi.
 @@VERIFY@@
 
 ### Bu yerda tekshirib bo'lmagani
-Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy avtomatik savol (lot ✏️ bilan qayta tortilganidan 10 daqiqa
-keyin) — haqiqiy sinov: kartada «… o'zi qayta so'raladi» qatori chiqadi, 10 daqiqadan keyin «… so'raldi» bo'ladi.
+Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy avtomatik savol — haqiqiy sinov. Uni **deploydan keyin**
+qabul qilingan va mijozga «Yukingiz qabul qilindi» savoli borib bo'lgan prixodda sinab ko'ring (deploydan oldin
+borgan savollarni tizim eslamaydi): lotni ✏️ bilan qayta torting — kartada «… o'zi qayta so'raladi» qatori chiqadi,
+10 daqiqadan keyin «… so'raldi» bo'ladi.
 
 ### Savollar (javob bermasangiz ⭐ ishlaydi)
 7.1. Egasiz yuk mijozga biriktirilganda xabar kimga borsin? ⭐ a) hozirgidek (mijozning sotuvchisiga; sotuvchisi yo'q

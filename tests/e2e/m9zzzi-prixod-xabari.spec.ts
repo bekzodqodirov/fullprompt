@@ -114,8 +114,8 @@ test('a seller takes back the file THEY put on the prixod — and nobody else’
   await expect(mine.locator('xpath=..').getByRole('button', { name: '✕' })).toHaveCount(1);
   await expect(office.locator('xpath=..').getByRole('button', { name: '✕' })).toHaveCount(0);
   // …but the 📎 tile IS there (the owner's «4 b» of 2026-11-12: «sotuvchi prixod
-  // kartasida ham fayl qo‘sha olsin» — the bot's own rule), and with it none of
-  // the editor's controls: no ✏️ lot form, no ✕ on a lot's photographs.
+  // kartasida ham fayl qo‘sha olsin» — the bot's own rule), and with it not the
+  // editor's ✏️ lot form.
   await expect(page.getByTestId('receipt-files').locator('input[type="file"]')).toHaveCount(1);
   await expect(page.getByTestId('lot-actions').getByRole('button', { name: /✏️/ })).toHaveCount(0);
   await mine.locator('xpath=..').getByRole('button', { name: '✕' }).click();

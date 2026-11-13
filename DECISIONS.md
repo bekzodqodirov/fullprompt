@@ -9380,7 +9380,9 @@ rows, which are the RECEIPT's rows filtered by the lot named inside them, newest
 is locked), stepping to a row's `before` while its `after` is the lot as it stood next; the first mismatch (a ✏️
 correction between) ends it. A whole earlier chain that ended where it began is walked through to the same base. A
 pre-0147 chain the old arithmetic drifted is walked back to its true start, so its next step re-derives from the
-weighed figures and the thousandths of drift go (stated). Uniform lots were already exact.
+weighed figures and the thousandths of drift go (stated) — REVERSED by #1754 (TICK-2): a walked base is kept only when
+it gives back the lot as it stands, so a drifted lot keeps its figures until somebody weighs it. Uniform lots were
+already exact.
 
 **#1750 — 4b: one rule for both doors, and only the people who work prixods add to them.** `mayAttachReceiptFile`
 (confirmed and not voided) and `mayAddReceiptFiles` (any of `receipts.edit`, `plans.manage`, `ved.docs`,
@@ -9420,3 +9422,24 @@ NULL arm and the new term was invisible to it — a new column needs new rows in
 not have: a unit run without the variable shows two «failures» that are the environment. (4) A python edit that
 replaced a string and never wrote the file back left an import half-done; typecheck caught it — run typecheck
 after every scripted edit, not only before a push.
+
+**#1754 — Reviewed AS BUILT: 21 findings, all fixed, the fixes red-proven** (spec §8.1). Four lenses read the built
+diff while the CI order ran green on it (3a94836: 16,320 unit/integration, 526 e2e). Delivery: a failed automatic
+question is dated by when it was due and drawn by one pure rule (`reaskLineDrawn`) only while newer than the person's
+last delivery, read as `coalesce(sent_at, asked_at)` (`lastDeliveredAt`) — a later quiet skip nulls `sent_at`
+(DLV-1, C1); `assignReceiptClient` re-decides the question after its commit, so A → B → A no longer loses it
+(DLV-2); the person's 📨 is one transaction holding the system's row `FOR UPDATE` — an unlocked read and a later
+write let a claim between them send both (DLV-3); a re-arm keeps a sending row's `claimed_at` and a held row claimed
+within `RECLAIM_MINUTES` counts as in flight (DLV-4). The sentence: the no-question fallback counts only lots still
+on the ❓ list, and a tick only when kilos, cubic metres or count moved (TICK-1); a walked base must give back the
+lot as it stands, or the walk starts from the lot — the first count step after the deploy had restored 40.714 on a
+lot every ✅ remembered at 40.716 (TICK-2, reversing #1749's last sentence); arm 5 keeps a ❌ settled by a tarkib of
+other goods settled past a re-weigh — 0144's own «the rejected goods are changed», which had held only while the
+paper stood (TICK-3). Words: outside China the tick's ✅ goes with no ❓ and no button; questions delivered before the
+deploy are not remembered; «an invisible difference asks nothing» only when nothing else changed; `not_worker`
+for a reader who opens a prixod and works none (F1-F6, R2). Tests: the bot harness's `duringNext` lands a correction
+WHILE a message is on its way, which the «remembered anyway» test had never reached (T1); the walk tests moved to a
+lot whose figures round — the old rule had given the same numbers (T2); the count-load door arms the re-ask in a
+behavioural test (T3). PROCESS: a lens that reads the SPEC finds design defects, a lens that reads the BUILT diff
+finds the tests that cannot fail — T1 and T2 were both green under the defects they were written for.
+

@@ -305,11 +305,15 @@ export function clientDisputeSql(refs: Pick<LotCheckRefs, 'receipt'>): SQL {
  * they are compared in TWO places, each against the figures its own ✅
  * remembered: arm 3, a colleague's tick (0147, his «2 b»), and arm 4, a ✅
  * given to a question that asked about them (0146) — either stops vouching
- * once they move. And a re-weigh never brings an ANSWERED ❌ back: a tick
- * pressed after the ❌ whose facts still hold has settled it (arm 5's
- * second clause), so when only its kilos moved the lot reads «o'zgardi» —
- * the warehouse's correction, not the client's complaint (the kernel lens,
- * K3; the arms are today's for every holding or measure-less tick).
+ * once they move — and the tarkib's own Σ (arm 1) a third. And a re-weigh
+ * never brings an ANSWERED ❌ back: a tick pressed after the ❌ whose facts
+ * still hold has settled it, and so has a tarkib listing goods other than
+ * the ones the client rejected (arm 5's two NOT clauses) — so when only the
+ * kilos moved the lot reads «o'zgardi», the warehouse's correction, never
+ * the client's complaint in red (the kernel lens K3; the as-built review
+ * TICK-3 — the tarkib half is 0144's own «the rejected goods are changed»,
+ * kept true past a re-weigh). The arms are today's for every holding or
+ * measure-less tick and every standing tarkib.
  *
  * On a server whose 0144 has not landed (`lotClientConfirmsReady()`, #472)
  * this is the two-source sentence that shipped with 0123, word for word.
@@ -337,7 +341,9 @@ export function lotCheckStateSql(refs: LotCheckRefs): SQL {
     WHEN ${ticked}
       AND NOT (${dispute} AND ${refs.check}.checked_at <= ${LOT_CLIENT}.answered_at) THEN 'checked'
     WHEN ${LOT_CLIENT}.verdict = 'yes' AND ${clientHoldsSql(refs)} THEN 'checked'
-    WHEN ${dispute} AND NOT (${tickedFacts} AND ${refs.check}.checked_at > ${LOT_CLIENT}.answered_at) THEN 'none'
+    WHEN ${dispute}
+      AND NOT (${tickedFacts} AND ${refs.check}.checked_at > ${LOT_CLIENT}.answered_at)
+      AND NOT (${LOT_TARKIB}.lot_id IS NOT NULL AND ${LOT_CLIENT}.shown_goods_key IS DISTINCT FROM ${LOT_TARKIB}.goods_key) THEN 'none'
     WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL
       OR ${LOT_CLIENT}.verdict = 'yes' THEN 'stale'
     ELSE 'none'

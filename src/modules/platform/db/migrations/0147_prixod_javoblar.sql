@@ -12,8 +12,9 @@
 -- precision a customer and a list read them — kilos to two places, cubic metres to three — rounded by
 -- the DATABASE in the statement that writes them and compared against the same two expressions
 -- (`lotShownKgSql` / `lotShownM3Sql`), the client's full ✅'s own rule (0146). NULL = a tick that said
--- nothing about the measures: a row an OLD process writes in the minutes between this migration and its
--- own restart.
+-- nothing about the measures: a row an OLD process INSERTS in the minutes between this migration and its
+-- own restart. (An old process's re-press is an UPDATE that never names these columns, so it keeps what
+-- the backfill wrote beside its new count — a lot re-ticked in that minute may need one press again.)
 ALTER TABLE "lot_checks" ADD COLUMN "seen_kg" numeric(12,2);
 --> statement-breakpoint
 ALTER TABLE "lot_checks" ADD COLUMN "seen_m3" numeric(12,3);

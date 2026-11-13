@@ -113,9 +113,9 @@ function figuresOf(value: unknown): LotFigures | null {
  * The first row that does not match — a ✏️ correction or anything else that
  * moved the figures in between — ends it. The base is where it ends: the lot
  * before the first growth of the unbroken walk, or the lot as it stands when
- * no walk leads to it. Rows written by the old arithmetic carry the figures
- * the lot really had, so they lead back to the true start too, and the next
- * step from there is exact. On the caller's transaction (#714).
+ * no walk leads to it — and the lot as it stands, too, when the base found
+ * does not give it back (a chain the old arithmetic drifted: no printed
+ * figure moves without a weighing). On the caller's transaction (#714).
  */
 async function walkBaseInTx(
   tx: Tx,
@@ -147,6 +147,17 @@ async function walkBaseInTx(
       break;
     }
     base = before;
+  }
+  // A base is kept only if it gives back the lot as it stands. A chain the OLD
+  // arithmetic walked drifted (40.714 kg ended at 40.716): its true start
+  // would restore the weighed figure, a move nobody weighed, while every ✅
+  // taken since remembers the drifted one — the tick would never heal, and
+  // the client would be asked about a weight nobody changed. Such a lot starts
+  // a fresh walk from its figures as they are (the as-built review, TICK-2).
+  // Every chain written since 0147 passes: each step was measured from it.
+  const now = mixedTotalsFor(base, lot.boxCount);
+  if (now.totalWeightKg !== Number(lot.totalWeightKg) || now.totalVolumeM3 !== Number(lot.totalVolumeM3)) {
+    return { boxCount: lot.boxCount, totalWeightKg: Number(lot.totalWeightKg), totalVolumeM3: Number(lot.totalVolumeM3) };
   }
   return base;
 }

@@ -8,6 +8,7 @@ import { logger } from '../../platform/logger';
 import { linkedChats } from '../notices/client-push';
 import { NOTICE_RECEIVED, SKIP_CLIENT_CHANGED } from '../notices/client-claims';
 import { PUSH_LOT_LINES } from '../notices/client-text';
+import { RECLAIM_MINUTES } from '../notices/arrival';
 import {
   ASK_MAX_LOTS,
   clientAskFacts,
@@ -99,13 +100,17 @@ export async function reaskDue(facts: ClientAskFacts, views: Map<string, LotChec
   //    because the lot was ticked. His «2 b» breaks such a tick on a re-weigh,
   //    and his «1 b» asks the client rather than leave it to a person (the
   //    owner lens, O6). A tick about a PREVIOUS owner vouched for nobody here.
+  //  Only on a lot still on the ❓ list — one that reads ✅ (a standing tarkib,
+  //  the client's own ✅) needs nobody asked — and, for the tick, only where
+  //  the kilos, the cubic metres or the count moved: a rename or a tarkib's
+  //  label alone asks nothing by itself (the as-built review, TICK-1).
   return facts.lots.some((lot) => {
     const view = views.get(lot.lotId);
-    if (view?.askable !== true) return false;
+    if (view?.askable !== true || view.state === 'checked') return false;
     const client = view.client;
     if (client && client.ofOwner && client.measures && !client.holds) return true;
     const person = view.person;
-    return person !== null && !person.holds && !person.moved.client;
+    return person !== null && !person.holds && !person.moved.client && (person.moved.measures || person.moved.count);
   });
 }
 
@@ -125,15 +130,24 @@ async function receivedPushAsks(facts: Pick<ClientAskFacts, 'lots'>): Promise<bo
  * The asking rows of this owner and prixod and where each stands: the
  * receipt push, a person's question, the system's own.
  */
-async function askingRows(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId'>): Promise<{ kind: string; status: string }[]> {
+async function askingRows(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId'>): Promise<AskingRow[]> {
   return (await db.execute(sql`
-    SELECT kind, status FROM client_notices
+    SELECT kind, status,
+           (claimed_at IS NOT NULL AND claimed_at > now() - make_interval(mins => ${RECLAIM_MINUTES})) AS claimed_recently
+      FROM client_notices
      WHERE client_id = ${facts.clientId}::uuid AND ref_type = 'receipt' AND ref_id = ${facts.receiptId}::uuid
        AND kind IN (${sql.join(
          ASKING_KINDS.map((kind) => sql`${kind}`),
          sql`, `,
        )})
-  `)) as unknown as { kind: string; status: string }[];
+  `)) as unknown as AskingRow[];
+}
+
+interface AskingRow {
+  kind: string;
+  status: string;
+  /** Claimed by a sweep within the reclaim window — it may be sending right now. */
+  claimed_recently: boolean | null;
 }
 
 /**
@@ -143,7 +157,7 @@ async function askingRows(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId'>)
  * the facts at SEND time, carries the new figures itself, and — being due
  * first — is delivered (and its tag remembered) before ours is looked at.
  */
-async function questionWaiting(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId' | 'lots'>, rows: { kind: string; status: string }[]): Promise<boolean> {
+async function questionWaiting(facts: Pick<ClientAskFacts, 'clientId' | 'receiptId' | 'lots'>, rows: AskingRow[]): Promise<boolean> {
   if (rows.some((row) => row.kind === NOTICE_LOT_ASK && row.status === 'pending')) return true;
   return rows.some((row) => row.kind === NOTICE_RECEIVED && row.status === 'pending') && (await receivedPushAsks(facts));
 }
@@ -181,8 +195,14 @@ export async function armClientReask(lotId: string): Promise<void> {
     // A question ON ITS WAY right now (claimed, being sent): what it carries is
     // unknown — it may have read the facts before this correction committed.
     // So it counts as «due», and the send-time check compares the facts with
-    // the tag that delivery remembers (the design judge's first blocker).
-    const inFlight = rows.some((row) => row.status === 'sending');
+    // the tag that delivery remembers (the design judge's first blocker). Our
+    // OWN question re-armed while it was out is still on its way: the re-arm
+    // keeps its claim time, and a second correction inside the same send must
+    // not stand it down against a tag that delivery has not yet remembered
+    // (the as-built review, DLV-4).
+    const inFlight = rows.some(
+      (row) => row.status === 'sending' || (row.kind === NOTICE_LOT_REASK && row.status === 'pending' && row.claimed_recently === true),
+    );
     if (!inFlight && !(await reaskDue(facts, views))) {
       // Not due — and a question held from an earlier correction that this one
       // took back is stood down now, so the card stops promising it. What it
@@ -199,7 +219,8 @@ export async function armClientReask(lotId: string): Promise<void> {
       VALUES (${facts.clientId}::uuid, ${NOTICE_LOT_REASK}, 'receipt', ${facts.receiptId}::uuid,
               now() + make_interval(mins => ${REASK_SETTLE_MINUTES}), now())
       ON CONFLICT (client_id, kind, ref_type, ref_id) DO UPDATE
-         SET status = 'pending', send_after = EXCLUDED.send_after, attempts = 0, last_error = NULL, claimed_at = NULL
+         SET status = 'pending', send_after = EXCLUDED.send_after, attempts = 0, last_error = NULL,
+             claimed_at = CASE WHEN client_notices.status = 'sending' THEN client_notices.claimed_at END
     `);
   } catch (err) {
     logger.warn({ err, lotId }, '[client-reask] the automatic question was not armed');

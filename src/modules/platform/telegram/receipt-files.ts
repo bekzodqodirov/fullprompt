@@ -269,10 +269,11 @@ export const RECEIPT_FILES_SAY = {
 } as const;
 
 /** Why the prixod takes no file from this person — the door's three answers (wms/receipts/files-door.ts). */
-export const RECEIPT_FILES_REFUSED: Record<'not_found' | 'voided' | 'forbidden', string> = {
+export const RECEIPT_FILES_REFUSED: Record<'not_found' | 'voided' | 'forbidden' | 'not_worker', string> = {
   not_found: 'Bu prixod topilmadi.',
   voided: 'Bu prixod bekor qilingan — fayl qo‘shib bo‘lmaydi.',
   forbidden: 'Bu prixodni ochishga huquqingiz yo‘q.',
+  not_worker: 'Bu prixodga fayl qo‘shish huquqingiz yo‘q.',
 };
 
 /** Why ONE file was not stored — said under that file, never «try again» about a file that will fail the same way. */

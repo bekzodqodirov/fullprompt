@@ -30,11 +30,12 @@ import {
   answerClientAsk,
   askClientAboutReceipt,
   clientAskFacts,
+  clientAskStatusFor,
   clientReaskStatusFor,
 } from '@/modules/wms/receipts/client-confirm';
 import { askFits } from '@/modules/wms/receipts/client-confirm-text';
 import { armClientReask, REASK_SETTLE_MINUTES } from '@/modules/wms/receipts/client-reask';
-import { editLot } from '@/modules/wms/receipts/edit';
+import { assignReceiptClient, editLot } from '@/modules/wms/receipts/edit';
 import { afterLotGrown, growLotInTx, shrinkGrownInTx } from '@/modules/wms/receipts/grow-lot';
 import { checkLot, lotCheckViewsFor, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
 import { botHarness, type BotHarness } from '../fixtures/bot-harness';
@@ -64,7 +65,7 @@ const wh = { cn: '', uz: '' };
 let clientId = '';
 let silentClientId = '';
 const receipt = { main: '', quiet: '' };
-const lot = { K: '', L: '', Q: '', D: '' };
+const lot = { K: '', L: '', Q: '', D: '', E: '' };
 const madeBoxes: string[] = [];
 const saved = { reask: undefined as unknown, app: process.env.APP_URL };
 
@@ -140,7 +141,7 @@ const reweigh = async (key: keyof typeof lot, kg: number, m3 = 1) => {
   );
 };
 /** A colleague's «✅ To'g'ri» on a lot, through the real door, posting what the card printed. */
-async function tick(key: keyof typeof lot) {
+async function tick(key: keyof typeof lot, owner = clientId) {
   const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot[key]));
   const token = (
     (await db.execute(sql`SELECT checked_at::text AS at FROM lot_checks WHERE lot_id = ${lot[key]}::uuid`)) as unknown as { at: string }[]
@@ -148,7 +149,7 @@ async function tick(key: keyof typeof lot) {
   return checkLot(
     {
       lotId: lot[key],
-      seen: { nameZh: row!.productNameZh, nameRu: row!.productNameRu ?? '', boxCount: row!.boxCount, clientId, kg: row!.totalWeightKg, m3: row!.totalVolumeM3 },
+      seen: { nameZh: row!.productNameZh, nameRu: row!.productNameRu ?? '', boxCount: row!.boxCount, clientId: owner, kg: row!.totalWeightKg, m3: row!.totalVolumeM3 },
       seenCheckedAt: token ?? null,
     },
     logist(),
@@ -218,7 +219,37 @@ beforeAll(async () => {
   await mintLot('Q', receipt.quiet, 1, 'A', 2, '50.000', '0.5000');
   // A lot the old arithmetic DRIFTED on (tests/unit/mixed-walk.test.ts): on the quiet prixod, which asks nobody.
   await mintLot('D', receipt.quiet, 2, 'B', 7, '40.714', '0.3140');
+  // …and one that ALREADY drifted before 0147: grown 7 → 13 and taken back one a press by the old arithmetic,
+  // its History holding that chain, its figures the drifted end (TICK-2).
+  const chain = oldChain({ boxCount: 7, totalWeightKg: 40.714, totalVolumeM3: 0.314 }, [13, 12, 11, 10, 9, 8, 7]);
+  const end = chain[chain.length - 1]!.after;
+  await mintLot('E', receipt.quiet, 3, 'C', 7, end.totalWeightKg.toFixed(3), end.totalVolumeM3.toFixed(4));
+  for (const [i, step] of chain.entries()) {
+    const key = i === 0 ? 'lotGrown' : 'lotShrunk';
+    await db.insert(auditLog).values({
+      actorId: staffId,
+      entityType: 'receipt',
+      entityId: receipt.quiet,
+      action: 'update',
+      before: step.before,
+      after: { ...step.after, [key]: { lotId: lot.E, letter: 'C', reason: 'sinov' } },
+    });
+  }
 });
+
+/** The arithmetic the count doors used before 0147 — scale what is stored now — as a chain of History rows. */
+function oldChain(start: { boxCount: number; totalWeightKg: number; totalVolumeM3: number }, path: number[]) {
+  const r3 = (n: number) => Math.round(n * 1000) / 1000;
+  const r4 = (n: number) => Math.round(n * 10000) / 10000;
+  const rows: { before: typeof start; after: typeof start }[] = [];
+  let at = start;
+  for (const n of path) {
+    const next = { boxCount: n, totalWeightKg: r3((at.totalWeightKg * n) / at.boxCount), totalVolumeM3: r4((at.totalVolumeM3 * n) / at.boxCount) };
+    rows.push({ before: at, after: next });
+    at = next;
+  }
+  return rows;
+}
 
 beforeEach(async () => {
   // Every test starts from «the client holds nothing»: no question, no answer.
@@ -466,6 +497,41 @@ describe('the person’s question and the system’s never both go', () => {
     }
   });
 
+  it('a person’s press while a sweep holds the system’s question waits for it — and, finding it on its way, sends nothing (DLV-3)', async () => {
+    await deliverPersonQuestion();
+    await db.execute(sql`UPDATE client_notices SET sent_at = now() - interval '1 hour' WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
+    await reweigh('K', 110);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((resolve) => (locked = resolve));
+    // A sweep claiming the system's question: the row held, then marked on its way.
+    const sweep = pgClient.begin(async (tx) => {
+      await tx`SELECT id FROM client_notices WHERE kind = ${NOTICE_LOT_REASK} AND ref_id = ${receipt.main} FOR UPDATE`;
+      locked();
+      await held;
+      await tx`UPDATE client_notices SET status = 'sending', claimed_at = now() WHERE kind = ${NOTICE_LOT_REASK} AND ref_id = ${receipt.main}`;
+    });
+    await isLocked;
+    const press = askClientAboutReceipt(receipt.main, logist(), ctx(), askFits).then(
+      () => 'asked',
+      (err: { code?: string }) => err.code ?? 'error',
+    );
+    // The press is waiting on the row (observed through the POOL — a snapshot inside a transaction freezes).
+    for (let i = 0; i < 200; i += 1) {
+      const [waiting] = (await db.execute(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()
+      `)) as unknown as { n: number }[];
+      if (waiting!.n > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    release();
+    await sweep;
+    expect(await press).toBe('already_queued');
+    expect((await rowOf(NOTICE_LOT_ASK))?.status).toBe('sent');
+  });
+
   it('a person’s press stands a held automatic question down', async () => {
     await deliverPersonQuestion();
     // Out of the person door's ten-minute cooldown: the delivery is an hour old.
@@ -516,6 +582,29 @@ describe('a question ON ITS WAY when the correction lands (the design judge’s 
     await sendDueArrivalNotices(SWEEP_AT);
     expect(sentSince(mark).filter((m) => m.chatId === CHAT)).toHaveLength(0);
     expect((await rowOf(NOTICE_LOT_REASK))?.last_error).toBe('not_needed');
+  });
+
+  it('a correction landing WHILE our question is being sent: the settle writes nothing, the delivery is remembered all the same, and the same question never goes twice (#1746 b)', async () => {
+    await deliverPersonQuestion();
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    // Mid-send, a correction no list can see: the arm re-arms the row (it is on its way), the figures stay 110.00.
+    h.duringNext('sendMessage', async () => {
+      await reweigh('K', 110.004);
+    });
+    const mark = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect(sentSince(mark).filter((m) => m.chatId === CHAT)).toHaveLength(1);
+    const row = await rowOf(NOTICE_LOT_REASK);
+    // The settle lost its claim to the re-arm — and the client's question was remembered anyway.
+    expect(row?.status).toBe('pending');
+    expect(row?.asked_tag).toBe(await tagNow());
+    await dueNow(NOTICE_LOT_REASK);
+    const again = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    expect(sentSince(again).filter((m) => m.chatId === CHAT)).toHaveLength(0);
+    const after = await rowOf(NOTICE_LOT_REASK);
+    expect([after?.status, after?.last_error]).toEqual(['skipped', 'not_needed']);
   });
 
   it('a re-armed question that went anyway is REMEMBERED — the same question never goes twice', async () => {
@@ -572,6 +661,36 @@ describe('the person’s door after the system asked', () => {
   });
 });
 
+describe('the person’s last delivery, a later quiet skip notwithstanding (the as-built review, C1)', () => {
+  it('a re-press skipped later nulls `sent_at`; the card still knows when the client was last asked', async () => {
+    await deliverPersonQuestion();
+    const delivered = await rowOf(NOTICE_LOT_ASK);
+    await db.execute(sql`
+      UPDATE client_notices SET status = 'skipped', last_error = 'no_linked_chat', sent_at = NULL
+       WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid
+    `);
+    const status = await clientAskStatusFor(receipt.main);
+    expect(status?.deliveredAt).toBeNull();
+    expect(status?.lastDeliveredAt?.getTime()).toBe(new Date(delivered!.asked_at!).getTime());
+  });
+});
+
+describe('a failed question on the card (the as-built review, DLV-1)', () => {
+  it('carries the time it was due, so a person’s later question can overtake it', async () => {
+    await deliverPersonQuestion();
+    await db.execute(sql`UPDATE client_notices SET sent_at = now() - interval '1 hour' WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
+    await reweigh('K', 110);
+    await db.execute(sql`
+      UPDATE client_notices SET status = 'failed', last_error = '403: Forbidden: bot was blocked by the user'
+       WHERE kind = ${NOTICE_LOT_REASK} AND ref_id = ${receipt.main}::uuid
+    `);
+    const row = await rowOf(NOTICE_LOT_REASK);
+    const status = await clientReaskStatusFor(receipt.main);
+    expect(status?.state).toBe('failed');
+    expect(status?.at?.getTime()).toBe(new Date(row!.send_after).getTime());
+  });
+});
+
 describe('a re-arm while the question is on its way survives the settle', () => {
   it('the sweep’s settle of a claim no longer held writes nothing', async () => {
     await deliverPersonQuestion();
@@ -583,6 +702,21 @@ describe('a re-arm while the question is on its way survives the settle', () => 
     await reweigh('K', 120);
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
     expect(await settleArrivalNotice(claimed[0]!.id, 'sent', undefined, claimed[0]!.claimedAt)).toBe(false);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+  });
+
+  it('a second correction inside the same send — back to what the client last held — never stands our in-flight question down (DLV-4)', async () => {
+    await deliverPersonQuestion();
+    await reweigh('K', 110);
+    await dueNow(NOTICE_LOT_REASK);
+    const claimed = (await claimNoticesForSending(50, SWEEP_AT, [NOTICE_LOT_REASK])).filter((row) => row.refId === receipt.main);
+    expect(claimed).toHaveLength(1);
+    // A real sweep stamps its claim with the real clock (this file sweeps two days back so no stranger is due).
+    await db.execute(sql`UPDATE client_notices SET claimed_at = now() WHERE id = ${claimed[0]!.id}::uuid`);
+    // While it is out (rendered at 110): a correction re-arms it, and the next one takes the lot back to 100.
+    await reweigh('K', 120);
+    await reweigh('K', 100);
+    // The client is about to hold 110 — the question must go again, not be stood down against the old tag.
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
   });
 });
@@ -619,6 +753,30 @@ describe('the answer to the system’s question', () => {
     expect((await answer('no')).outcome).toBe('recorded');
     const rows = await db.select({ askedBy: lotClientConfirms.askedBy }).from(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.K));
     expect(rows.map((r) => r.askedBy)).toEqual([staffId]);
+  });
+});
+
+describe('the owner corrected and corrected back (the as-built review, DLV-2)', () => {
+  it('A → B → A inside the window: A’s question, skipped as «owner changed», is asked again', async () => {
+    // A holds the receipt push's question (delivered two hours ago).
+    await db.execute(sql`
+      INSERT INTO client_notices (client_id, kind, ref_type, ref_id, send_after, staff_notified_at, status, sent_at, asked_tag, asked_at)
+      VALUES (${clientId}::uuid, 'received_cn', 'receipt', ${receipt.main}::uuid, now() - interval '2 hours', now(), 'sent',
+              now() - interval '2 hours', ${await tagNow()}, now() - interval '2 hours')
+    `);
+    await reweigh('K', 110);
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    const audit = { actorId: staffId, ip: null, userAgent: 'client-reask.integration' };
+    try {
+      await assignReceiptClient(receipt.main, silentClientId, audit);
+      await dueNow(NOTICE_LOT_REASK);
+      await sendDueArrivalNotices(SWEEP_AT);
+      const skipped = await rowOf(NOTICE_LOT_REASK);
+      expect([skipped?.status, skipped?.last_error]).toEqual(['skipped', 'client_changed']);
+    } finally {
+      await assignReceiptClient(receipt.main, clientId, audit);
+    }
+    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
   });
 });
 
@@ -675,6 +833,44 @@ describe('what is on the ❓ list decides (the owner lens, O6 and O9)', () => {
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
   });
 
+  it('a tick broken by a RENAME alone asks nothing when another lot is re-weighed (TICK-1)', async () => {
+    await tick('K');
+    const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.K));
+    try {
+      // ✏️ renames K (the same count and kilos): its tick no longer holds on the name.
+      await editLot(
+        { lotId: lot.K, productNameZh: row!.productNameZh, productNameRu: `Boshqa nom ${RUN}`, boxCount: row!.boxCount, totalWeightKg: 100, totalVolumeM3: 1, note: null } as Parameters<typeof editLot>[0],
+        manager(),
+        ctx(),
+      );
+      expect((await stateOf('K')).person?.moved).toMatchObject({ name: true, measures: false, count: false });
+      await reweigh('L', 41);
+      expect(await rowOf(NOTICE_LOT_REASK)).toBeUndefined();
+    } finally {
+      await db.update(receiptLots).set({ productNameRu: row!.productNameRu, totalWeightKg: '40.714' }).where(inArray(receiptLots.id, [lot.K, lot.L].slice(0, 1)));
+      await db.update(receiptLots).set({ totalWeightKg: '40.714', totalVolumeM3: '0.3140' }).where(eq(receiptLots.id, lot.L));
+      await db.update(receiptLots).set({ totalWeightKg: '100.000' }).where(eq(receiptLots.id, lot.K));
+    }
+  });
+
+  it('a tick the re-weigh broke on a lot that reads ✅ by its tarkib asks nothing when another lot is re-weighed (TICK-1)', async () => {
+    await tick('K');
+    await reweigh('K', 110);
+    // The office states the lot's goods at the new figures: ✅ by document.
+    await db.insert(lotCompositions).values({ lotId: lot.K, seenBoxCount: 3, savedBy: staffId });
+    await db.insert(lotCompositionLines).values([{ lotId: lot.K, seq: 1, name: `Tarozi ${RUN}`, pieces: 3, weightKg: '110.000', volumeM3: '1.0000' }]);
+    try {
+      expect((await stateOf('K')).state).toBe('checked');
+      await db.delete(clientNotices).where(eq(clientNotices.refId, receipt.main));
+      await reweigh('L', 41);
+      expect(await rowOf(NOTICE_LOT_REASK)).toBeUndefined();
+    } finally {
+      await db.delete(lotCompositionLines).where(eq(lotCompositionLines.lotId, lot.K));
+      await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.K));
+      await db.update(receiptLots).set({ totalWeightKg: '40.714', totalVolumeM3: '0.3140' }).where(eq(receiptLots.id, lot.L));
+    }
+  });
+
   it('…and a re-weigh no list would show leaves the tick standing and asks nothing', async () => {
     await tick('K');
     await reweigh('K', 100.004);
@@ -693,18 +889,6 @@ describe('the count doors reach it through their shared hook', () => {
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
   });
 
-  it('a mixed lot grown in one press and taken back one carton a press lands EXACTLY where it began', async () => {
-    const batchId = crypto.randomUUID();
-    const grown = await db.transaction((tx) =>
-      growLotInTx(tx, { lotId: lot.L, add: 6, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
-    );
-    for (const box of grown.boxes) {
-      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.L, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
-    }
-    const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.L));
-    expect([row!.boxCount, row!.totalWeightKg, row!.totalVolumeM3]).toEqual([2, '40.714', '0.3140']);
-  });
-
   it('…and on a lot the old arithmetic DRIFTED: 7 cartons of 40.714 kg grown by 6 and taken back one a press ends on 40.714, not 40.716', async () => {
     const batchId = crypto.randomUUID();
     const grown = await db.transaction((tx) =>
@@ -720,34 +904,49 @@ describe('the count doors reach it through their shared hook', () => {
   it('grown in two presses and taken back one carton a press: every step measured from the same base, and the end is the start', async () => {
     const batchId = crypto.randomUUID();
     const first = await db.transaction((tx) =>
-      growLotInTx(tx, { lotId: lot.L, add: 2, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+      growLotInTx(tx, { lotId: lot.D, add: 2, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
     );
     const second = await db.transaction((tx) =>
-      growLotInTx(tx, { lotId: lot.L, add: 3, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+      growLotInTx(tx, { lotId: lot.D, add: 3, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
     );
-    const [grown] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.L));
-    // 7 cartons of a 2-carton 40.714 kg lot, from the base — not 4 cartons' rounding scaled again.
-    expect([grown!.boxCount, grown!.totalWeightKg, grown!.totalVolumeM3]).toEqual([7, '142.499', '1.0990']);
+    const [grown] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.D));
+    // 12 cartons of a 7-carton 40.714 kg lot, from the base — the old rule scaled 9 cartons' rounding again (69.796).
+    expect([grown!.boxCount, grown!.totalWeightKg, grown!.totalVolumeM3]).toEqual([12, '69.795', '0.5383']);
     for (const box of [...second.boxes, ...first.boxes]) {
-      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.L, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
+      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.D, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
     }
-    const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.L));
-    expect([row!.boxCount, row!.totalWeightKg, row!.totalVolumeM3]).toEqual([2, '40.714', '0.3140']);
+    const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.D));
+    expect([row!.boxCount, row!.totalWeightKg, row!.totalVolumeM3]).toEqual([7, '40.714', '0.3140']);
   });
 
   it('a colleague’s tick on a mixed lot: grown — «o’zgardi» on the count and the weight; taken back carton by carton — ✅ again by itself (YUK-TEKSHIRUV §7 under his «2 b»)', async () => {
-    await tick('L');
-    expect((await stateOf('L')).state).toBe('checked');
+    // On the lot the old arithmetic drifted on: back at 7 cartons it ended at 40.715 kg — 40.72 on every list.
+    await tick('D', silentClientId);
+    expect((await stateOf('D')).state).toBe('checked');
     const batchId = crypto.randomUUID();
     const grown = await db.transaction((tx) =>
-      growLotInTx(tx, { lotId: lot.L, add: 3, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+      growLotInTx(tx, { lotId: lot.D, add: 3, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
     );
-    const stale = await stateOf('L');
+    const stale = await stateOf('D');
     expect(stale.state).toBe('stale');
     expect(stale.person?.moved).toMatchObject({ count: true, measures: true });
     for (const box of grown.boxes) {
-      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.L, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
+      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.D, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
     }
-    expect((await stateOf('L')).state).toBe('checked');
+    expect((await stateOf('D')).state).toBe('checked');
+    await db.delete(lotChecks).where(eq(lotChecks.lotId, lot.D));
+  });
+
+  it('a lot the OLD arithmetic already drifted keeps its figures: a count there and back lands on them, never on a weight nobody weighed (TICK-2)', async () => {
+    const [before] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.E));
+    const batchId = crypto.randomUUID();
+    const grown = await db.transaction((tx) =>
+      growLotInTx(tx, { lotId: lot.E, add: 1, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+    );
+    await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.E, boxIds: grown.boxes.map((b) => b.id), actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
+    const [after] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.E));
+    expect([after!.boxCount, after!.totalWeightKg, after!.totalVolumeM3]).toEqual([before!.boxCount, before!.totalWeightKg, before!.totalVolumeM3]);
+    // …and the drift is the one the old arithmetic made (the fixture's own oracle): 40.716, not the weighed 40.714.
+    expect(before!.totalWeightKg).toBe('40.716');
   });
 });

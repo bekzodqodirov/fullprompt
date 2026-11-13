@@ -33,12 +33,6 @@ describe('a mixed lot walked from its base', () => {
     expect(oldWalk(BASE, TAKE_BACK).totalWeightKg).toBe(40.716);
   });
 
-  it('a growth taken back one carton a press lands on the lot it started from, exactly', () => {
-    let figures: { totalWeightKg: number; totalVolumeM3: number } = BASE;
-    for (const n of TAKE_BACK) figures = mixedTotalsFor(BASE, n);
-    expect(figures).toEqual({ totalWeightKg: 40.714, totalVolumeM3: 0.314 });
-  });
-
   it('an intermediate count is the base scaled once — never a chain of roundings', () => {
     // 7 → 13 → 12 → 11 → 10 by the old rule is a chain of four roundings and
     // ends at 58.164 kg; 7 → 8 → 9 → 10 ends at 58.162 — two routes, two

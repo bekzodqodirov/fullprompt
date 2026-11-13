@@ -54,6 +54,7 @@ import { PrintLabels } from '@/components/print-labels';
 import { TasksPanel } from '@/components/tasks-panel';
 import { mayReadReceipt } from '@/modules/wms/receipts/read-door';
 import { mayAddReceiptFiles, mayAttachReceiptFile } from '@/modules/wms/receipts/files-door';
+import { reaskLineDrawn } from '@/modules/wms/receipts/reask-line';
 import { DOCUMENT_PHOTO } from '@/components/photo-grades';
 import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney, payerView } from '@/modules/wms/partners/staff';
@@ -251,15 +252,12 @@ export default async function ReceiptDetailPage({
   const askWait = askCard?.status?.wait ?? 'soon';
   // The block is mounted wherever the client's side exists; `askShow` says
   // whether it has anything to draw (it keeps its own «✅ yopildi» otherwise).
-  // The system's own question (his «1 b»): drawn while held or failed, and
-  // once sent only while it is the newest question the client was sent — an
-  // older one under a person's later «Mijozdan so'rash» is history.
+  // The system's own question (his «1 b»): drawn while held, and once sent
+  // or failed only while it is the newest thing the client was asked — an
+  // older one under a person's later «Mijozdan so'rash» is history
+  // (`reaskLineDrawn`).
   const auto = askCard?.auto ?? null;
-  const autoDrawn =
-    auto !== null &&
-    (auto.state !== 'sent' ||
-      !askCard?.status?.deliveredAt ||
-      (auto.at !== null && auto.at.getTime() > askCard.status.deliveredAt.getTime()));
+  const autoDrawn = reaskLineDrawn(auto, askCard?.status?.lastDeliveredAt ?? null);
   const askShow = Boolean(askCard) && (anyAskable || askCard!.status !== null || askDisputes.length > 1 || autoDrawn);
   const askFace = askCard
     ? {

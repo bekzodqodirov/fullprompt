@@ -974,6 +974,19 @@ export async function assignReceiptClient(
         );
       }
     }
+    // The question a client holds is per OWNER (his «1 b»): a correction back
+    // to the owner the system was about to ask — A → B → A inside its window —
+    // finds that owner's question skipped `client_changed`, and nothing else
+    // would ever ask again. Re-decided here by the remembered tag, as the
+    // receipt push's own row is re-armed by `claimReceivedNotice` (the
+    // as-built review, DLV-2). A new owner holds no question and is asked by
+    // the push. Never throws (U41): `armClientReask` logs and returns.
+    try {
+      const { armClientReask } = await import('./client-reask');
+      await armClientReask(lotIds[0]!);
+    } catch (error) {
+      console.error('[receipt-client] the automatic re-ask could not be re-decided', receiptId, error);
+    }
   }
 }
 

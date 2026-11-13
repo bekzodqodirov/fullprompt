@@ -26,7 +26,7 @@ import { mayReadReceipt } from './read-door';
  * Pooled reads only — never inside a transaction (tx-pool).
  */
 
-export type ReceiptFilesRefusal = 'not_found' | 'voided' | 'forbidden';
+export type ReceiptFilesRefusal = 'not_found' | 'voided' | 'forbidden' | 'not_worker';
 
 /**
  * May a reader who has OPENED this prixod add a file to it? The ONE rule for
@@ -94,7 +94,8 @@ export async function receiptFilesDoor(
   // …and the card's own rule, so the two doors cannot drift (any other status
   // a prixod may grow is no prixod to add papers to, on either).
   if (!mayAttachReceiptFile(row)) return { ok: false, error: 'not_found' };
-  if (!mayAddReceiptFiles(actor)) return { ok: false, error: 'forbidden' };
+  // May open it, works no prixod: said as what it is, never «you may not open it» (the as-built review, R2).
+  if (!mayAddReceiptFiles(actor)) return { ok: false, error: 'not_worker' };
   return {
     ok: true,
     receipt: { id: row.id, number: row.number ?? '', warehouseId: row.warehouseId, clientCode: row.clientCode },
