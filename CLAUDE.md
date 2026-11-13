@@ -3764,7 +3764,7 @@ the seven ⭐ questions in the CHANGELOG entry (re-ask after a re-weigh · the s
 cargo left China · seller uploads on the site · a notice on a file · folding `DealDeviation` / `ArrivalDiff` ·
 admins on a claim for a seller-less client).
 
-**Round — Prixod javoblari (2026-11-12 → 11-13; DECISIONS #1744-#1754; migration 0147 `prixod_javoblar`, `when`
+**Round — Prixod javoblari (2026-11-12 → 11-13; DECISIONS #1754-#1764 — numbered past the other session's open PR #148, which holds #1744-#1753, the THIRTY-NINTH collision; migration 0147 `prixod_javoblar`, `when`
 …126 — ledger must reach 148; spec `docs/PRIXOD-JAVOBLAR.md`, **§8 and §8.1 binding**).** His answers to that round's seven ⭐
 questions: «1 b / 2 b / 4 b / 7 …». 3a, 5a, 6a stand (pinned in `prixod-javoblar-answers.test.ts` with the
 answer's number); 7 was neither option and is asked again (7.1 who hears a claim, 7.2 whose KPI a seller-less

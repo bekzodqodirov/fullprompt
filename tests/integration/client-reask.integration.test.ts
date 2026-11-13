@@ -584,7 +584,7 @@ describe('a question ON ITS WAY when the correction lands (the design judge’s 
     expect((await rowOf(NOTICE_LOT_REASK))?.last_error).toBe('not_needed');
   });
 
-  it('a correction landing WHILE our question is being sent: the settle writes nothing, the delivery is remembered all the same, and the same question never goes twice (#1746 b)', async () => {
+  it('a correction landing WHILE our question is being sent: the settle writes nothing, the delivery is remembered all the same, and the same question never goes twice (#1756 b)', async () => {
     await deliverPersonQuestion();
     await reweigh('K', 110);
     await dueNow(NOTICE_LOT_REASK);
