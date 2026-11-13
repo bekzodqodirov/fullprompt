@@ -15950,6 +15950,74 @@
    "why": "«на 1 место»'s «1» was a second carton count (20 ≠ 1 → no count, nothing computed).",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "defect"
+  },
+  {
+   "id": "c4242",
+   "input": "Мешок 500 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Мешок",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "the product «Мешок», 500 pieces",
+   "why": "crit-1's guard: a package noun that IS the product keeps its reading.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4243",
+   "input": "Ткань 20 рулонов, 600 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ткань 20 рулонов",
+      "weightKg": 600
+     }
+    ],
+    "count": 1
+   },
+   "said": "600 kg; the roll count stays in the name",
+   "why": "crit-1's guard: a package count nothing multiplies stays where it stood.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4244",
+   "input": "Stul 20 мест, вес 1 коробки 15 кг",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 = 300 kg",
+   "why": "«1 коробки» inside the mark was a second carton count (20 ≠ 1).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4245",
+   "input": "Кукла 20 мест, 25 шт в 1 коробке",
+   "expected": {
+    "rows": [
+     {
+      "name": "Кукла",
+      "quantity": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 25 = 500",
+   "why": "«1 коробке» inside the trailing mark is the mark's own.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -59612,6 +59680,228 @@
    },
    "said": "no 15 kg total",
    "why": "the per-carton weight is no shipment total (T4).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4230",
+   "input": "Цемент 20 мешков по 50 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Цемент",
+       "weightKg": 1000
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 1000 kg",
+   "why": "crit-1: one sack's 50 kg was the shipment's brutto (typed wins over the model).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4231",
+   "input": "Стул 20 ящиков по 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стул",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 300 kg",
+   "why": "crit-1: a crate is a package.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4232",
+   "input": "Стул 20 упаковок по 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стул",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 300 kg",
+   "why": "crit-1: «упаковок» — the stem «упаковк» never matched its genitive plural.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4233",
+   "input": "Ткань 20 рулонов по 30 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ткань",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1: a roll is a package.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4234",
+   "input": "Стул 20 тюков по 30 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стул",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1: a bale is a package.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4235",
+   "input": "Mato 20 rulon 30 kg dan",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Mato",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1: the Uzbek «rulon» with «dan».",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4236",
+   "input": "Olma 20 yashik 30 kg dan",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Olma",
+       "weightKg": 600
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 600 kg",
+   "why": "crit-1 neighbour: the Uzbek «yashik» (crate).",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4237",
+   "input": "Sement 20 bags, 50 kg/bag",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Sement",
+       "weightKg": 1000
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 1000 kg",
+   "why": "crit-1: «bags» counted beside the «/bag» tail the tail list already knew.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4238",
+   "input": "Куртка 300 дона, 20 қути, 1 қути 15 кг",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; the row 300 kg",
+   "why": "crit-1 / owner-1 neighbour: the Cyrillic Uzbek «қути» no WORDS list holds.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4239",
+   "input": "Ткань 20 штабелей по 30 кг",
+   "expected": {
+    "weightKg": null
+   },
+   "said": "no 30 kg total",
+   "why": "crit-1: «по» after a count of something no list names is still «each» — nobody's, on the note.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4240",
+   "input": "Mato 20 tugun 30 kg dan",
+   "expected": {
+    "weightKg": null
+   },
+   "said": "no 30 kg total",
+   "why": "crit-1: «dan» right after such a count — nobody's, on the note.",
+   "source": "ai-soraydi 1a review (Ta)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4241",
+   "input": "Stul 20 pkgs, 15 kg each",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Stul",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total; 20 × 15 = 300 kg",
+   "why": "crit-1 (seams-7): «pkgs» counts packages.",
    "source": "ai-soraydi 1a review (Ta)",
    "weight": "defect"
   }

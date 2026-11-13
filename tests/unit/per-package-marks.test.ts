@@ -195,3 +195,56 @@ describe('doors-1 — a per-carton cube’s own unit and tail are no label of th
     expect(totals('Weight: 300')).toEqual(none);
   });
 });
+
+describe('crit-1 — a sack, a crate, a roll, a bale are packages: one of them is never the shipment’s brutto', () => {
+  it('«N <package> по X кг» / «X kg dan» / «X kg/bag» — the row weighs N × X, and no total is stated', () => {
+    for (const [text, name, kg] of [
+      ['Цемент 20 мешков по 50 кг', 'Цемент', 1000], // 20 × 50
+      ['Стул 20 ящиков по 15 кг', 'Стул', 300], // 20 × 15
+      ['Стул 20 упаковок по 15 кг', 'Стул', 300],
+      ['Ткань 20 рулонов по 30 кг', 'Ткань', 600], // 20 × 30
+      ['Стул 20 тюков по 30 кг', 'Стул', 600],
+      ['Mato 20 rulon 30 kg dan', 'Mato', 600],
+      ['Sement 20 meshok 50 kg dan', 'Sement', 1000],
+      ['Olma 20 yashik 30 kg dan', 'Olma', 600],
+      ['Sement 20 bags, 50 kg/bag', 'Sement', 1000],
+      ['Cement 20 sacks, each 50 kg', 'Cement', 1000],
+      ['Куртка 300 дона, 20 қути, 1 қути 15 кг', 'Куртка', 300],
+    ] as const) {
+      expect(totals(text), text).toEqual(none);
+      expect(row(text), text).toMatchObject({ name, weightKg: kg });
+    }
+    // The controls of the finding, as before.
+    expect(row('Стул 20 коробок по 15 кг')).toMatchObject({ name: 'Стул', weightKg: 300 });
+    expect(row('Sement 20 qop 50 kg dan')).toMatchObject({ name: 'Sement', weightKg: 1000 });
+  });
+
+  it('…and the AI sotuvchi gets no 50 kg reference from one sack', () => {
+    expect(references('Цемент 20 мешков по 50 кг')).toEqual([]);
+    expect(references('Mato 20 rulon 30 kg dan')).toEqual([]);
+  });
+
+  it('beside a count of something no list names, «по» / «dan» still say «each» — no total, the words on the note', () => {
+    expect(totals('Ткань 20 штабелей по 30 кг')).toEqual(none);
+    expect(row('Ткань 20 штабелей по 30 кг')).toMatchObject({ weightKg: null, note: 'sotuvchi: по 30 кг' });
+    expect(totals('Mato 20 tugun 30 kg dan')).toEqual(none);
+    expect(row('Mato 20 tugun 30 kg dan')).toMatchObject({ weightKg: null, note: 'sotuvchi: 30 kg dan' });
+    // JN-8 (a) stands: «dan» before «ortiq» is «more than», and alone it marks nothing.
+    expect(totals('jami 500 kg dan ortiq')).toEqual({ ...none, kg: 500 });
+    expect(totals('500 kg dan')).toEqual({ ...none, kg: 500 });
+  });
+
+  it('a package noun that IS the product, or a package count nothing multiplies, keeps its old reading', () => {
+    expect(row('Мешок 500 шт')).toMatchObject({ name: 'Мешок', quantity: 500 });
+    expect(row('Ящик 20 шт 5 кг')).toMatchObject({ name: 'Ящик', quantity: 20, weightKg: 5 });
+    // No package's figure: the count stays where it always stood — in the name, or on the note.
+    expect(row('Ткань 20 рулонов, 600 кг')).toMatchObject({ name: 'Ткань 20 рулонов', weightKg: 600 });
+    expect(row('Kurtka 300 dona 150 kg 5 meshok')).toMatchObject({ name: 'Kurtka', weightKg: 150, note: 'sotuvchi: 5 meshok' });
+  });
+
+  it('a carton figure INSIDE a mark is the mark’s own «1» — the line keeps its 20', () => {
+    // 20 × 15 = 300 kg each time; 20 × 25 = 500 pieces.
+    expect(row('Stul 20 мест, вес 1 коробки 15 кг')).toMatchObject({ weightKg: 300 });
+    expect(row('Кукла 20 мест, 25 шт в 1 коробке')).toMatchObject({ quantity: 500 });
+  });
+});

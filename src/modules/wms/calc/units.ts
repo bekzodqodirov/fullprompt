@@ -971,14 +971,22 @@ const PACK_WORD = /^(?:pachk|пачк|пачек|paket|пакет|упаковк
 /** Is `word` a pack's count word (`PACK_WORD`) — for the typed readers that judge a gram beside it. */
 export const packWord = (word: string | null | undefined): boolean => PACK_WORD.test(word ?? '');
 
-/** A package's noun in its cases — «karobka», «karobkada», «karobkasi», «коробке», «мест», «ctn», «箱». */
-const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаковк|ctn|carton|box|кор|箱)\p{L}*`;
+/**
+ * A package's noun in its cases — «karobka», «karobkada», «karobkasi»,
+ * «коробке», «мест», «ctn», «箱» — and the packages of the other trades: a
+ * sack («мешок», «мешков», «meshok», «bag», «sack»), a crate («ящик», «yashik»), a roll
+ * («рулон», «rulon»), a bale («тюк»), «pkgs» (review crit-1: «Цемент 20
+ * мешков по 50 кг» was the shipment's 50 kg, one sack's weight as the
+ * brutto). The per-package reader's own list: a package COUNTED here is
+ * never a unit of `WORDS` (a sheet's «мешок» cell, a row's cartons column).
+ */
+const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package)\p{L}*`;
 /** A piece's noun — «dona», «donasi», «шт», «штука», «pcs», «piece». */
 const PIECE_NOUN = String.raw`(?:dona|дона)\p{L}*|шт\p{L}*|pcs?|pieces?|units?|единиц\p{L}*`;
 const COUNT_NOUN = `${PACKAGE_NOUN}|${PIECE_NOUN}`;
 const PACKAGE_NOUN_WORD = new RegExp(`^(?:${PACKAGE_NOUN})$`, 'iu');
 /** A package noun's stem anywhere in a lower-cased window — what `ONE_LEAD` needs before it is run. */
-const PACKAGE_STEM = /karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаковк|ctn|carton|box|кор|箱/u;
+const PACKAGE_STEM = /karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаков(?:к|ок)|ctn|carton|box|кор|箱|меш(?:ок|к)|meshok|ящик|yashik|яшик|рулон|rulon|тюк|bag|sack|pkg|package/u;
 const PIECE_NOUN_WORD = new RegExp(`^(?:${PIECE_NOUN})$`, 'iu');
 
 /** Whose one a noun names — null: it names neither. */
@@ -1139,6 +1147,8 @@ const PER_TRAIL = new RegExp(String.raw`^\s+(?:per|pr)\s+(${COUNT_NOUN})(?![\p{L
 const IN_EACH_TRAIL = new RegExp(String.raw`^\s+в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))\s+(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
 /** «15 kg dan» — «each» in Uzbek, beside a count (review JN-8 (a)). */
 const DAN_TRAIL = /^\s*[-–]?\s*(?:dan|дан)(?![\p{L}\d])/iu;
+/** A whole count and its word right before a figure — «20 tugun » of «20 tugun 30 kg dan». */
+const UNKNOWN_COUNT_BEFORE = /(?<![\p{L}\d.,])\d+\s+(\p{L}+)\s*$/u;
 /**
  * …and never before what makes it «from», «than» or «of»: «500 kg dan
  * ortiq», «100 kg dan boshlab», «20 kg dan 30 kg gacha» (a range's own
@@ -1291,7 +1301,8 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
       }
     }
     const scale = scaled ? scaledKg(word) : null;
-    const unit = unitOf(word) ?? (scale && !scale.lone ? 'kg' : null);
+    // A count of packages of another trade — «20 мешков», «20 ящиков», «20 rulon» — is a carton count here.
+    const unit = unitOf(word) ?? (scale && !scale.lone ? 'kg' : PACKAGE_NOUN_WORD.test(word) ? 'karobka' : null);
     if (unit === null || !TRACKED.has(unit)) continue;
     const read = readAmountText(hit[1]!);
     if (read.state === 'bad') continue;
@@ -1365,10 +1376,7 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
     const kind = NET_LABEL_WORD.test(word) ? 'net' : GROSS_LABEL_WORD.test(word) ? 'gross' : null;
     // An unknown slash word — «Вес/мешок» — marks the figure as nobody's total and nobody's column.
     if (owner === null && label[2] !== undefined) return fixed(null, [], { inName: true });
-    // «на 1 место» inside the label is the mark's own «1», no carton count of the line.
-    const at = from + label.index;
-    const cartonHit = hits.findIndex((h) => h.unit === 'karobka' && h.start >= at && h.end <= at + label[0].length);
-    return fixed(owner, [markSpan(label[0], at)], { kind, clause: owner === 'package', ...(cartonHit >= 0 ? { cartonHit } : {}) });
+    return fixed(owner, [markSpan(label[0], from + label.index)], { kind, clause: owner === 'package' });
   }
   const pkgLabel = PACKAGE_LABEL_STEM.test(lower) ? PACKAGE_LABEL_LEAD.exec(before) : null;
   if (pkgLabel) {
@@ -1415,15 +1423,22 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   if (box) return fixed('package', [markSpan(box[0], from + box.index)], { clause: true });
   const po = lower.includes('по') ? PO_LEAD.exec(before) : null;
   if (po) {
-    const unit = unitOf(po[2]);
+    const unit = unitOf(po[2]) ?? (PACKAGE_NOUN_WORD.test(po[2]!) ? 'karobka' : null);
     const owner = unit === 'karobka' ? 'package' : unit === 'dona' ? 'piece' : null;
-    if (owner !== null) {
-      const at = from + po.index + po[0].lastIndexOf('по');
-      return fixed(owner, [[at, at + 2]], { clause: owner === 'package' });
-    }
+    const at = from + po.index + po[0].lastIndexOf('по');
+    if (owner !== null) return fixed(owner, [[at, at + 2]], { clause: owner === 'package' });
+    // «20 штабелей по 30 кг» — each of something no list names: one of them,
+    // never the shipment's (review crit-1). Nobody's: kept on the note.
+    if (unit === null && /^\p{L}+$/u.test(po[2]!)) return fixed(null, [[at, at + 2]]);
   }
   const dan = DAN_TRAIL.exec(after);
   if (dan && !DAN_NOT.test(after.slice(dan[0].length)) && !TOTAL_IN_CLAUSE.test(before)) {
+    // «20 tugun 30 kg dan» — «dan» right after a count of something no list
+    // names: each one's, never a total, and nobody's to multiply (crit-1).
+    const counted = UNKNOWN_COUNT_BEFORE.exec(before);
+    if (counted && unitOf(counted[1]) === null && !PACKAGE_NOUN_WORD.test(counted[1]!)) {
+      return fixed(null, [[hit.end, hit.end + dan[0].length]]);
+    }
     return { ...fixed(null, [[hit.end, hit.end + dan[0].length]]), bind: true, cond: 'dan' };
   }
   return null;
@@ -1462,7 +1477,19 @@ export function packingRead(
     const opensLine = opts.cartonsElsewhere === true && text.slice(0, Math.min(...m.spans.map(([a]) => a))).trim() === '';
     if (others === 0 && !opensLine) marks[i] = null;
   });
-  const oneHits = new Set(marks.flatMap((m) => (m?.cartonHit !== undefined ? [m.cartonHit] : [])));
+  // A carton figure INSIDE a standing mark is the mark's own «1» — «вес брутто
+  // на 1 место», «в 1 коробке», «24 шт в 1 коробке» — never a carton count of
+  // the line: 20 and 1 differ, and the line lost its count (review owner-1's
+  // neighbours, crit-1).
+  const oneHits = new Set<number>();
+  marks.forEach((m) => {
+    if (!m) return;
+    if (m.cartonHit !== undefined) oneHits.add(m.cartonHit);
+    for (const c of cartonHits) {
+      const h = hits[c]!;
+      if (m.spans.some(([a, b]) => h.start >= a && h.end <= b)) oneHits.add(c);
+    }
+  });
   const cartonCounts = cartonHits.filter((c) => !oneHits.has(c));
   const unmarkedPieces = hits.flatMap((h, i) => (h.unit === 'dona' && (marks[i] === null || marks[i]!.cond === 'dan') ? [i] : []));
   // «dan» marks only beside a count of the line — another than the figure itself.
@@ -1564,6 +1591,13 @@ export function packingRead(
   const consumed: [number, number][] = figures
     .filter((f) => !f.inName)
     .flatMap((f) => [[f.start, f.end] as [number, number], ...f.mark.spans]);
+  // A count of another trade's packages — «Цемент 20 мешков по 50 кг» — is
+  // no unit of the row's columns, so only the packing carries it: it leaves
+  // the name when a package's figure is multiplied by it, and stays there
+  // («Ткань 20 рулонов, 600 кг») when nothing is.
+  if (cartons !== null && figures.some((f) => !f.inName && f.owner === 'package')) {
+    for (const i of cartonCounts) if (unitOf(hits[i]!.word) !== 'karobka') consumed.push([hits[i]!.start, hits[i]!.end]);
+  }
   const size = cartons !== null ? packageSize(text, hits, cartonCounts, figures, boundOwner) : null;
   if (size) consumed.push(...size.spans);
   return {
