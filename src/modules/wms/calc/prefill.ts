@@ -27,13 +27,14 @@ import {
 } from './ai-reply';
 import { calcJobHrefFor } from './card-door';
 import { dutyText } from './duty-text';
-import { feeRefusalText, refusalUnder, tariffReplyText } from './prefill-reply';
+import { blockerText, feeRefusalText, refusalUnder, tariffReplyText, type CustomsBlocker } from './prefill-reply';
 import { pickImportRows, type PickOutcome, type PickRequest } from './prefill-ai';
 import { freightAnswerFor } from './freight-answer';
 import { applyMemory, pickBazas } from './prefill-steps';
 import {
   TAXMINIY_BLOCK_WORDS,
   measureMissesOf,
+  ungroupedAskedWords,
   refusedMeasureWords,
   declarationCounts,
   estimateCustoms,
@@ -51,6 +52,7 @@ import { weightFromTotalNote, type IntakeDoor } from './intake';
 import { intakeDoorSql, parseIntakeDoor } from './intake-door';
 import { CalcError } from './service';
 import { lawAsksInputOf, lawAsksOf, sellerAsksOf, type LawAsk, type SellerAsk } from './law-asks';
+import { needWhatUz, type NeedUnit } from './needs';
 import { aiNoteText } from './ai-note';
 import { carriesAiCode, codesOf, noteGroups, noteRows } from './note-facts';
 
@@ -346,7 +348,7 @@ export async function aiPrefill(
     return { ...NOTHING_DONE, text: '', lentaText: '', stood: 'touched' };
   }
   const amend = amendmentOf(opts.pass);
-  if (!parts.customs) return tariffOnly(requestId, deps, amend, noAsk);
+  if (!parts.customs) return tariffOnly(requestId, deps, amend, noAsk, aiDoor);
 
   /**
    * Configured AND within the day's budget — one flag, because to everything
@@ -525,20 +527,36 @@ export async function aiPrefill(
    * says so (`CODING_FAILED_LINE`) instead of «Kod topilmadi» about a jacket
    * the model never looked at, and asks the seller nothing about what the
    * rows are: the request is the VED's to code.
+   *
+   * ONLY a model that was asked and did not answer (review ask-spec-5): no
+   * key behind the call (`unconfigured`) asked nobody, and «javob bermadi»
+   * would be untrue — the reply says «AI sozlanmagan» instead (`keyMissing`).
    */
   let proposeFailed = false;
+  /** The grouping call found no key on the server although the budget read one. */
+  let keyMissing = false;
   if (configured && standing() && !late('step 1') && (await stillOurs('step 1'))) {
     let called = await groupOnce('step 1');
     // ONE retry, inside the pass, and only while its clock allows: past the
     // deadline, or once a person or a close has spoken, the first failure
     // stands — a pass that outlives its pg-boss expiry is re-delivered
-    // beside itself (perf-3).
-    if (called === 'failed' && standing() && !late('step 1 retry') && (await stillOurs('step 1 retry'))) {
+    // beside itself (perf-3). Never on the plain door: this round leaves its
+    // pass exactly as it was (one call), and a second call is a second bill.
+    if (called === 'failed' && !plain && standing() && !late('step 1 retry') && (await stillOurs('step 1 retry'))) {
       logger.info({ requestId }, '[calc-prefill] the grouping call failed — asked once more');
       called = await groupOnce('step 1 retry');
     }
-    proposeFailed = called === 'failed' || called === 'unconfigured';
+    proposeFailed = called === 'failed';
+    keyMissing = called === 'unconfigured';
   }
+  /**
+   * Nothing coded these rows and nothing will on a re-run (review
+   * ask-break-2): no key, today's budget spent, a key the call could not find,
+   * or a call that did not answer. The AI door then does not ask the seller
+   * «bu nima?» under «❓ AI so‘raydi»: an uncoded row is the VED's to code,
+   * and its line says so.
+   */
+  const coderDown = !configured || keyMissing || proposeFailed;
 
   // 2. …and with or without a model: the SWEEP. Intake prefills codes from
   //    the TNVED memory, so the commonest request arrives already coded, and
@@ -674,7 +692,6 @@ export async function aiPrefill(
   // Who the answer is ABOUT — the card's own code, and the customer's, so a
   // seller with three open jobs can tell which one this is.
   const about = await requestAbout(requestId, deps.replyTo ?? null);
-  const lines = replyLines(ws, estimate);
   /**
    * His 2.8 b: the figures the LAW pins that the rows still lack, asked of
    * the seller — the add table's own rule (`lawAsksOf`), read off THIS
@@ -692,14 +709,21 @@ export async function aiPrefill(
    * stored request (calc-amend.ts), so the table prefers the rows this answer
    * asked. Null on every other door, which keeps `asks`.
    */
-  // A coding call that did not answer leaves its rows the VED's to code (A6):
-  // the seller is not asked «bu nima?» about a jacket the model never looked
-  // at. The add door's asked rows are the FIGURE asks (`askedSeqsOf`), which
-  // a words-only ask never was, so both still read one list.
+  // A coding call that did not answer — or none that could run — leaves its
+  // rows the VED's to code (A6, `coderDown`): the seller is not asked «bu
+  // nima?» about a row no machine will code. The add door's asked rows are
+  // the FIGURE asks (`askedSeqsOf`), which a words-only ask never was, so
+  // both still read one list.
   const sellerAsks: SellerAsk[] | null =
-    aiDoor && asksInput
-      ? sellerAsksOf(asksInput).filter((a) => !(proposeFailed && a.kind === 'what'))
-      : null;
+    aiDoor && asksInput ? sellerAsksOf(asksInput).filter((a) => !(coderDown && a.kind === 'what')) : null;
+  // The rows the AI door asks a figure because they state NONE (review
+  // ask-break-8): their group's refusal is the engine's «baza yo‘q» (no baza
+  // can be chosen for a row with no figure), and the line then blamed the VED
+  // under the very ❓ that asks the seller. Said as the missing figure, with
+  // the seller's tail — on the card's copy for a seller nobody reached that
+  // tail reads «VED xodimi so‘raydi» (`noAsk`). Every other door: none.
+  const noFigure = new Map((sellerAsks ?? []).filter((a) => a.kind === 'measure' && a.seq !== null).map((a) => [a.seq!, a.needs]));
+  const lines = replyLines(ws, estimate, 'answer', noFigure);
   const pickShown =
     pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft;
   const outcome = {
@@ -734,9 +758,12 @@ export async function aiPrefill(
         overtaken: overtaken !== null,
         amend: amend !== null,
       }),
-      groups: noteGroups(ws, lines),
-      ungrouped: ws.ungrouped.map((i) => ({ seq: i.seq, name: i.label })),
-      proposeFailed,
+      // The note's own lines (review ask-break-5): the plain door is FROZEN
+      // by this round — its groups keep the index they always opened with,
+      // so each refusal names its row and group whole, and an uncoded row is
+      // named as before.
+      groups: noteGroups(ws, replyLines(ws, estimate, 'note')),
+      ungrouped: ws.ungrouped.map((i) => i.label),
       // His 2.7: the plain door never asks a law unit — the rows the law
       // still wants a figure for are named for the VED.
       asks: asks ?? [],
@@ -759,6 +786,8 @@ export async function aiPrefill(
    * «⚠️ VED uchun:», «— VED xodimi so‘raydi» (A1: «lentaUnasked keeps saying
    * it»).
    */
+  /** The uncoded rows this answer asks the seller about (A2's `what`). */
+  const askedUncoded = (sellerAsks ?? []).filter((a) => a.kind === 'what' && a.seq !== null).map((a) => a.seq!);
   const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) => {
     const quiet = aiDoor && !asked;
     return aiVedReplyText({
@@ -773,15 +802,17 @@ export async function aiPrefill(
       hasCertificate: ws.hasCertificate,
       freight: road,
       link,
-      aiConfigured: hasKey,
+      // A call that found no key says «AI sozlanmagan», never «javob bermadi».
+      aiConfigured: hasKey && !keyMissing,
       budgetSpent: hasKey && budgetLeft <= 0,
-      estimate: estimate ? totalsWords(estimate, audience, quiet) : null,
+      estimate: estimate ? totalsWords(estimate, audience, quiet, asked ? askedUncoded : []) : null,
       // A pick skipped past the deadline is news only while a row still
       // waits for a baza; with none, there was nothing it could have chosen.
       pickLeft: pickShown,
       // The AI door's unasked copy names the law's rows for the VED (`noAsk`'s gaps line).
       asks: aiDoor ? (asked ? null : asks) : asked ? asks : null,
-      sellerAsks: asked ? sellerAsks : null,
+      // Asked in the chat; on the unasked card copy only named for the VED.
+      sellerAsks,
       pass: amend === null ? 'landing' : 'amend',
       audience,
       noAsk: quiet,
@@ -808,6 +839,7 @@ async function tariffOnly(
   deps: PrefillDeps,
   amend: string | null,
   noAsk: boolean,
+  aiDoor: boolean,
 ): Promise<PrefillOutcome> {
   const ws = await loadWorkspace(requestId);
   if (!ws) throw new Error(`calc request ${requestId} vanished during the pass`);
@@ -825,7 +857,7 @@ async function tariffOnly(
         tail: 'ved',
       });
   const about = await requestAbout(requestId, deps.replyTo ?? null);
-  const said = (link: string | null, audience: 'chat' | 'lenta') =>
+  const said = (link: string | null, audience: 'chat' | 'lenta', quiet = noAsk) =>
     tariffReplyText({
       clientLabel: about?.clientCode ?? null,
       cardLabel: about?.cardLabel ?? null,
@@ -836,12 +868,19 @@ async function tariffOnly(
       // The plain door keeps this answer in the chat (his 2.5 b) and asks
       // nothing in it (§2.4, §3.5); the AI door's road gap is the seller's
       // to send, in the NULL door's words (docs/AI-SORAYDI.md §3.4 A1).
-      noAsk,
+      noAsk: quiet,
     });
+  // The AI door asks the seller for the road's gap — so, as the customs
+  // answer does (A1: «lentaUnasked keeps saying it»), the card carries the
+  // rendering where nobody asked him whenever his own copy reached nobody:
+  // «— VED xodimi so‘raydi» and the gap under «⚠️ VED uchun:» (review
+  // ask-break-3). Only where a gap is the seller's; the NULL door, as before.
+  const sellersGap = !road.ok && !road.stale && (road.tail === 'seller' || road.also !== undefined);
   return {
     ...NOTHING_DONE,
     text: said(about?.link ?? null, 'chat'),
     lentaText: said(null, 'lenta'),
+    ...(aiDoor && sellersGap ? { lentaUnasked: said(null, 'lenta', true) } : {}),
     freightUsd: !stale && ws.freight && ws.freight.ok ? ws.freight.listUsd : null,
   };
 }
@@ -926,9 +965,17 @@ async function roadOf(ws: Workspace): Promise<AiVedFreight | null> {
  * the reader's words where they differ: a missing count is the seller's to
  * send with «➕» in the chat, and the lenta's reader writes it on the card.
  */
-function blockWords(e: CustomsEstimate, audience: 'chat' | 'lenta', noAsk: boolean): string | null {
+function blockWords(
+  e: CustomsEstimate,
+  audience: 'chat' | 'lenta',
+  noAsk: boolean,
+  askedUncoded: readonly number[],
+): string | null {
   const block = e.taxminiyBlock;
   if (block === null) return null;
+  // The uncoded rows this answer asks the seller about (A2): named, and
+  // pointed at the question — the same VED codes them (ask-break-4).
+  if (block === 'ungrouped' && askedUncoded.length > 0) return ungroupedAskedWords(askedUncoded);
   // The seller's fact, addressed by the one tail rule (a door request: the VED
   // asks him, §3.5) — and named by the refusing rows' own figure (A9).
   if (block === 'refused_measure') return refusedMeasureWords(audience, noAsk, measureMissesOf(e));
@@ -940,7 +987,12 @@ function blockWords(e: CustomsEstimate, audience: 'chat' | 'lenta', noAsk: boole
 }
 
 /** The estimate's two totals, in the reply's vocabulary. */
-function totalsWords(e: CustomsEstimate, audience: 'chat' | 'lenta', noAsk: boolean): AiVedEstimate {
+function totalsWords(
+  e: CustomsEstimate,
+  audience: 'chat' | 'lenta',
+  noAsk: boolean,
+  askedUncoded: readonly number[] = [],
+): AiVedEstimate {
   return {
     rows: e.rows,
     exactRows: e.exactRows,
@@ -949,7 +1001,7 @@ function totalsWords(e: CustomsEstimate, audience: 'chat' | 'lenta', noAsk: bool
     taxminiyFee: e.taxminiy
       ? { bhm: e.taxminiy.fee.overridden ? null : e.taxminiy.fee.bhmCoefficient, usd: e.taxminiy.fee.feeUsd }
       : null,
-    taxminiyBlock: blockWords(e, audience, noAsk),
+    taxminiyBlock: blockWords(e, audience, noAsk, askedUncoded),
   };
 }
 
@@ -1020,7 +1072,12 @@ async function requestAbout(
  * group the agreement is asked of the rows that HAVE a baza; the rest wear
  * the 📊 beside it.
  */
-function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[] {
+function replyLines(
+  ws: Workspace,
+  estimate: CustomsEstimate | null,
+  words: 'answer' | 'note' = 'answer',
+  noFigure: ReadonlyMap<number, readonly NeedUnit[]> = new Map(),
+): AiVedLine[] {
   return ws.groups.map((g) => {
     const ge = estimate?.groups.get(g.id) ?? null;
     const sourceRows = ge?.kind === 'estimated' ? g.items.filter((i) => i.bazaUsd !== null) : g.items;
@@ -1032,6 +1089,30 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
     // The rows' own numbers — what the line opens with and what every answer
     // to it is addressed by (A3).
     const seqs = [...new Set(g.items.map((i) => i.seq))].sort((a, b) => a - b);
+    const blocker: CustomsBlocker | null = refused
+      ? {
+          kind: 'customs',
+          groupSeq: g.seq,
+          groupLabel: g.label,
+          reason: refused.reason,
+          itemLabel: refused.itemLabel,
+          itemSeq: refused.itemSeq,
+          unit: refused.unit,
+          half: refused.half,
+          rate: refused.rate,
+        }
+      : null;
+    // The engine stopped on a row the AI door asks a figure because it states
+    // NONE (`noFigure`, review ask-break-8): its «baza yo‘q» is no baza
+    // anybody could choose — the figure is what is missing, and the seller's.
+    const bareNeeds = refused?.reason === 'baza_missing' && refused.itemSeq !== undefined ? noFigure.get(refused.itemSeq) : undefined;
+    const bare = bareNeeds
+      ? {
+          words:
+            (seqs.length === 1 ? '' : `${refused!.itemSeq}-qator «${refused!.itemLabel ?? ''}»: `) +
+            `${bareNeeds.map(needWhatUz).join(' yoki ')} kiritilmagan`,
+        }
+      : null;
     return {
       seqs,
       label: g.items.map((i) => i.label).join(', ') || g.label,
@@ -1052,26 +1133,14 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
       // rides along (P2.9): the row, the unit and the half — said as the
       // line it stands under reads it, the line's own rows and name not
       // a second time (A3, A9).
-      refusal: refused
-        ? refusalUnder(
-            {
-              kind: 'customs',
-              groupSeq: g.seq,
-              groupLabel: g.label,
-              reason: refused.reason,
-              itemLabel: refused.itemLabel,
-              itemSeq: refused.itemSeq,
-              unit: refused.unit,
-              half: refused.half,
-              rate: refused.rate,
-            },
-            { seqs },
-          )
-        : null,
+      // The plain door's note (`words: 'note'`) keeps the whole sentence:
+      // its group lines open with their index, so the row and the group are
+      // named in the refusal itself, as before this round (ask-break-5).
+      refusal: bare ? bare.words : blocker ? (words === 'note' ? blockerText(blocker) : refusalUnder(blocker, { seqs })) : null,
       // Who can fix the refusal (§0.1(7)): a missing count or weight is a
       // fact only the customer has — the same split the Taxminiy block makes
       // (`refused_measure`), or one reply names two fixers for one fact.
-      refusalTail: refused?.reason === 'measure_missing' ? 'seller' : 'ved',
+      refusalTail: refused?.reason === 'measure_missing' || bare ? 'seller' : 'ved',
       estimated: estimateLine(ge, seqs),
       // ⭐ of his Question 4: a weight copied from the shipment's BRUTTO
       // total is said beside the measure, on every row whose measure is

@@ -7,6 +7,9 @@ import {
   LAW_ASKS_NAMED,
   ROAD_STALE_LINE,
   SELLER_ASKS_HEAD,
+  SELLER_WORDS_HEAD,
+  WHAT_ANSWER_LINE,
+  AI_QUESTION_ANSWER_LINE,
   sellerAsksBlock,
   sellerAsksLentaLine,
   lineNumber,
@@ -18,6 +21,7 @@ import {
 } from '@/modules/wms/calc/ai-reply';
 import { AI_REPLY_HEAD, MACHINE_REPLY_HEADS, RERUN_WORD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
 import type { LawAsk, SellerAsk } from '@/modules/wms/calc/law-asks';
+import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 
 /**
  * What the seller reads in Telegram — the whole of the round's promise, and
@@ -1052,6 +1056,9 @@ describe('the AI door asks again (A1, A2)', () => {
       '· umumiy brutto og‘irligi (kg, qadoq bilan) — yo‘lkira shunga bog‘liq',
       // The first two FIGURE asks in that order: row 2's count, row 1's count.
       `✍️ Shu xabarga reply qilib yozing: «2: 300 dona; 1: 300 dona» ${PLUS}`,
+      // Re-anchored (review ask-break-1): row 3's words have no reply form in
+      // this release — they go to the card's lenta, and the VED codes it.
+      '📝 Nima tovar ekanini (nimadan, nima uchun) kartadagi lentaga yozing — kodni VED xodimi qo‘yadi.',
     ]);
   });
 
@@ -1093,10 +1100,13 @@ describe('the AI door asks again (A1, A2)', () => {
     // Rows 2, 5, 6, 7, 9 → «2, 5-7, 9».
     const block = sellerAsksBlock([2, 5, 6, 7, 9].map(what));
     expect(block).toEqual([
-      SELLER_ASKS_HEAD,
+      // Re-anchored (review ask-break-1, ask-spec-1): words only — no «javob
+      // yozsangiz qayta hisoblaydi» (nothing re-runs on words in this
+      // release), no words example (the add table refuses it «name_mismatch»),
+      // and where the words do go.
+      '❓ AI so‘raydi:',
       '· 2, 5-7, 9-qator: nima tovar ekanini yozing (nimadan, nima uchun)',
-      // Words only: the example is words.
-      `✍️ Shu xabarga reply qilib yozing: «2: metall, tormoz kolodkasi» ${PLUS}`,
+      '📝 Nima tovar ekanini (nimadan, nima uchun) kartadagi lentaga yozing — kodni VED xodimi qo‘yadi.',
     ]);
     // Three stay three lines.
     expect(sellerAsksBlock([2, 5, 6].map(what)).filter((l) => l.startsWith('· '))).toHaveLength(3);
@@ -1108,7 +1118,8 @@ describe('the AI door asks again (A1, A2)', () => {
     // 2 measures + 2 whats + the brutto = 5 counted.
     const block = sellerAsksBlock([...measures, what(11), what(12), BRUTTO]);
     expect(block.filter((l) => /^· \d+-qator/.test(l))).toHaveLength(LAW_ASKS_NAMED);
-    expect(block.at(-2)).toBe('· … yana 5 ta — «➕» jadvalida');
+    // The count ends the asks; the ✍️ line and the words' line follow it.
+    expect(block.at(-3)).toBe('· … yana 5 ta — «➕» jadvalida');
     // With five whats the fold is ONE entry standing for five: 7 + 1 = 8, none counted.
     const folded = sellerAsksBlock([...measures.slice(0, 7), ...[11, 12, 13, 14, 15].map(what)]);
     expect(folded).toContain('· 11-15-qator: nima tovar ekanini yozing (nimadan, nima uchun)');
@@ -1117,6 +1128,60 @@ describe('the AI door asks again (A1, A2)', () => {
 
   it('a total’s example is the add table’s own «jami …»', () => {
     expect(sellerAsksBlock([BRUTTO]).at(-1)).toBe(`✍️ Shu xabarga reply qilib yozing: «jami 3500 kg» ${PLUS}`);
+  });
+
+  /**
+   * Review ask-break-1 / ask-spec-1: the block told the seller to reply
+   * «2: metall, tormoz kolodkasi», and the add table that reply opens (stage
+   * `review`, calc-amend.ts `openAdd`) refused it «name_mismatch» — words on a
+   * stored row are A5, release 2. So every example the block teaches is fed
+   * to the table's own reader over the rows it names, and none may be
+   * refused; and a block that asks only words teaches no reply at all.
+   */
+  it('every ✍️ example the block teaches is an answer the add table takes — and words get none', () => {
+    // The table the reply opens: rows 1-3 as the asks name them — row 1 owes
+    // the law's count, row 2 a count or a weight, row 3 words only (no figure
+    // owed) — plus the brutto the road needs.
+    const table: TableRef = {
+      rows: [
+        { no: 1, index: 0, seq: 1, name: 'Kurtka', needs: ['dona'] },
+        { no: 2, index: 1, seq: 2, name: 'Ryukzak', needs: ['dona', 'kg'] },
+        { no: 3, index: 2, seq: 3, name: 'Zapchast 3', needs: [] },
+      ],
+      open: [{ line: 1 }, { line: 2 }, { totals: 'weightKg' }],
+      preferred: [{ line: 1 }, { line: 2 }],
+      stage: 'review',
+    };
+    const blocks = [
+      sellerAsksBlock([LAW, MEASURE, what(3), BRUTTO]),
+      sellerAsksBlock([what(3)]),
+      sellerAsksBlock([BRUTTO]),
+      sellerAsksBlock([MEASURE, AI]),
+    ];
+    const examples = blocks
+      .flat()
+      .filter((l) => l.startsWith('✍️'))
+      .flatMap((l) => /«([^»]*)»/.exec(l)![1]!.split('; '));
+    // Typed from the asks, in ASK_RANK's order and at most two a block: the
+    // first block's row 2 (no figure ranks first) and row 1 — its brutto is
+    // the third figure ask and not shown; the words-only block none; the
+    // brutto's own «jami 3500 kg»; row 2's «300 dona» beside the AI's
+    // question. Never row 3's words.
+    expect(examples).toEqual(['2: 300 dona', '1: 300 dona', 'jami 3500 kg', '2: 300 dona']);
+    for (const e of examples) {
+      const { segments } = parseTableAnswer(e, table);
+      expect(segments.length, e).toBeGreaterThan(0);
+      for (const seg of segments) expect(seg.refused, e).toBeNull();
+    }
+    // A words-only block: no reply form, no promise of a re-run, and where the
+    // words go instead — the reading's own question likewise.
+    const words = sellerAsksBlock([what(3)]);
+    expect(words[0]).toBe(SELLER_WORDS_HEAD);
+    expect(words.some((l) => l.includes('reply qilib'))).toBe(false);
+    expect(words.at(-1)).toBe(WHAT_ANSWER_LINE);
+    expect(sellerAsksBlock([AI])).toEqual([SELLER_WORDS_HEAD, `· ${AI.text}`, AI_QUESTION_ANSWER_LINE]);
+    // A block that asks a figure keeps the judge's head (JS-25).
+    expect(sellerAsksBlock([LAW, what(3)])[0]).toBe(SELLER_ASKS_HEAD);
   });
 
   it('the lenta line: the rows by run, then the totals', () => {

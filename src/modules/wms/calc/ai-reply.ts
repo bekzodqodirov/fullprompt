@@ -261,8 +261,9 @@ export interface AiVedReplyInput {
    * (`sellerAsksOf`). Non-null REPLACES `asks` as what the answer asks: the
    * chat's «❓ AI so‘raydi» block and the lenta's «❓ Sotuvchidan so‘raldi»
    * line are built from it alone. REQUIRED-nullable (#790): null on every
-   * other door, and on the AI door's rendering for a seller whose copy
-   * reached nobody (`noAsk`).
+   * other door. On the AI door's rendering for a seller whose copy reached
+   * nobody (`noAsk`) nothing is asked, and the list only names, for the VED,
+   * the gaps no line of the answer names (an uncoded row with no figure).
    */
   sellerAsks: SellerAsk[] | null;
   /** The landing's pass, or the re-run after a seller's addition — whose
@@ -445,11 +446,20 @@ export function roadRefusalLine(
  * with its tail — the refusal names the row — not here, where it would name a
  * law-pinned row a second time.
  */
-export function vedGapsLine(asks: readonly LawAsk[], freight: AiVedFreight | null): string | null {
-  const parts = asks
-    .slice(0, LAW_ASKS_NAMED)
-    .map((a) => `${a.seq}-qator «${shortName(a.name)}»: ${a.needs.map((n) => needWhatUz(n.unit)).join(', ')}`);
-  if (asks.length > LAW_ASKS_NAMED) parts.push(`yana ${asks.length - LAW_ASKS_NAMED} ta qator`);
+export function vedGapsLine(
+  asks: readonly LawAsk[],
+  freight: AiVedFreight | null,
+  also: readonly string[] = [],
+): string | null {
+  // `also`: gaps already in words that no line of the answer carries — the
+  // AI door's figureless UNCODED rows (review ask-break-8: their line says
+  // only «kod yo‘q»), capped with the law's on the one never-cut line.
+  const named = [
+    ...asks.map((a) => `${a.seq}-qator «${shortName(a.name)}»: ${a.needs.map((n) => needWhatUz(n.unit)).join(', ')}`),
+    ...also,
+  ];
+  const parts = named.slice(0, LAW_ASKS_NAMED);
+  if (named.length > LAW_ASKS_NAMED) parts.push(`yana ${named.length - LAW_ASKS_NAMED} ta qator`);
   if (freight && !freight.ok && !freight.stale) {
     if (freight.tail === 'seller') parts.push(freight.refusal);
     if (freight.also) parts.push(freight.also.refusal);
@@ -697,7 +707,14 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     // asked goes there, in one line (§2.5) — or, where nobody asks him
     // (docs/IKKI-ESHIK.md §3.5), the same gaps as the VED's to get.
     if (input.noAsk) {
-      const gaps = vedGapsLine(asks, f);
+      // The AI door's card copy for a seller nobody reached: an uncoded row
+      // with no figure is named for the VED here — its own line says only
+      // «kod yo‘q» (review ask-break-8). A grouped one's line says its figure.
+      const uncodedSeqs = new Set(input.ungrouped.map((r) => r.seq));
+      const bare = (input.sellerAsks ?? [])
+        .filter((a) => a.kind === 'measure' && a.seq !== null && uncodedSeqs.has(a.seq))
+        .map((a) => a.text);
+      const gaps = vedGapsLine(asks, f, bare);
       if (gaps) head.push(gaps);
     } else if (seller !== null) {
       if (seller.length > 0) head.push(sellerAsksLentaLine(seller));
@@ -917,15 +934,39 @@ function seqRanges(seqs: readonly number[]): string {
 /** The totals' examples are the add table's own (`answerHow`): what «jami …» it reads. */
 const TOTAL_EXAMPLE: Partial<Record<NeedUnit, string>> = { kg: 'jami 3500 kg', m3: 'jami 12 kub' };
 
-/** One ask as the ✍️ line's example: a figure for a figure, words for words. */
+/**
+ * One FIGURE ask as the ✍️ line's example. Never words (review ask-break-1,
+ * ask-spec-1): the add table a reply opens writes a figure into the row it
+ * names and refuses a row's words as «name_mismatch» — words on a stored row
+ * are A5, release 2. An example the door refuses is an instruction nobody
+ * can follow (JS-12's shape).
+ */
 function askExample(a: SellerAsk): string | null {
   const unit = a.needs[0];
-  if (a.kind === 'total') return unit ? (TOTAL_EXAMPLE[unit] ?? null) : null;
+  if (!unit) return null;
+  if (a.kind === 'total') return TOTAL_EXAMPLE[unit] ?? null;
   if (a.seq === null) return null;
   // A 1000-dona floor is answered in pieces: the law divides.
-  if (unit) return `${a.seq}: ${figureLabel(EXAMPLE_FIGURE[unit === '1000_dona' ? 'dona' : unit], unit === '1000_dona' ? 'dona' : unit)}`;
-  return a.kind === 'what' ? `${a.seq}: metall, tormoz kolodkasi` : null;
+  const shown = unit === '1000_dona' ? 'dona' : unit;
+  return `${a.seq}: ${figureLabel(EXAMPLE_FIGURE[shown], shown)}`;
 }
+
+/**
+ * The block's head when it asks only WORDS — what a row is, the reading's
+ * own question (review ask-break-1): «javob yozsangiz qayta hisoblaydi» is
+ * true of a figure the add table writes, and of nothing a seller can write in
+ * words in this release.
+ */
+export const SELLER_WORDS_HEAD = '❓ AI so‘raydi:';
+
+/**
+ * Where a WORDS answer goes in this release, said as it is: onto the card's
+ * lenta, where the VED reads it — the VED codes the row (A10). No reply form:
+ * the add table refuses a row's words (A5 is release 2's).
+ */
+export const WHAT_ANSWER_LINE = '📝 Nima tovar ekanini (nimadan, nima uchun) kartadagi lentaga yozing — kodni VED xodimi qo‘yadi.';
+/** …and for the reading's own questions about a row, when no «what» is asked. */
+export const AI_QUESTION_ANSWER_LINE = '📝 Bu savollarga javobni kartadagi lentaga yozing — VED xodimi ko‘radi.';
 
 /**
  * The AI door's block in the CHAT rendering (docs/AI-SORAYDI.md §3.4 A2;
@@ -936,8 +977,9 @@ function askExample(a: SellerAsk): string | null {
  * one line each pushed «Rastamojka jami», the caveat and this very ✍️ line
  * off the end of the message.
  *
- * The example is a FIGURE where one is asked — the add table writes a
- * figure into the row it names — and words only when nothing but words is.
+ * The example is always a FIGURE — the add table writes a figure into the
+ * row it names and refuses a row's words — and a block that asks words says
+ * where words go instead (`WHAT_ANSWER_LINE`).
  */
 export function sellerAsksBlock(asks: readonly SellerAsk[]): string[] {
   const ranked = ASK_RANK.flatMap((kind) => asks.filter((a) => a.kind === kind));
@@ -954,10 +996,20 @@ export function sellerAsksBlock(asks: readonly SellerAsk[]): string[] {
   const shown = entries.slice(0, LAW_ASKS_NAMED).map((e) => `· ${e.line}`);
   const hidden = entries.slice(LAW_ASKS_NAMED).reduce((n, e) => n + e.count, 0);
   if (hidden > 0) shown.push(`· … yana ${hidden} ta — «➕» jadvalida`);
-  const figures = ranked.filter((a) => a.needs.length > 0).map(askExample).filter((e): e is string => e !== null);
-  const examples = figures.length > 0 ? figures.slice(0, 2) : ranked.map(askExample).filter((e): e is string => e !== null).slice(0, 1);
-  const how = examples.length > 0 ? `yozing: «${examples.join('; ')}»` : 'javobni yozing';
-  return [SELLER_ASKS_HEAD, ...shown, `✍️ Shu xabarga reply qilib ${how} — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.`];
+  // A FIGURE is what a reply can carry in this release (the add table writes
+  // it into the row it names); WORDS go to the card's lenta and the VED
+  // (review ask-break-1). The head promises a re-run only where a figure is
+  // asked, and each kind of answer is told where it goes.
+  const figureAsks = ranked.filter((a) => a.needs.length > 0);
+  const examples = figureAsks.map(askExample).filter((e): e is string => e !== null).slice(0, 2);
+  const out = [figureAsks.length > 0 ? SELLER_ASKS_HEAD : SELLER_WORDS_HEAD, ...shown];
+  if (figureAsks.length > 0) {
+    const how = examples.length > 0 ? `yozing: «${examples.join('; ')}»` : 'javobni yozing';
+    out.push(`✍️ Shu xabarga reply qilib ${how} — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.`);
+  }
+  if (ranked.some((a) => a.kind === 'what')) out.push(WHAT_ANSWER_LINE);
+  else if (ranked.some((a) => a.kind === 'ai')) out.push(AI_QUESTION_ANSWER_LINE);
+  return out;
 }
 
 /**

@@ -323,6 +323,18 @@ export function refusedMeasureWords(audience: ReplyAudience, noAsk: boolean, mis
   return `${what} ${tailWords(CUSTOMS_TAIL_WORDS, 'seller', audience, noAsk)}`;
 }
 
+/**
+ * `ungrouped` when the AI door's answer ASKS the seller what those rows are
+ * (review ask-break-4): the rows by their own number (A3), pointing at that
+ * question — and still the VED who codes them (A10), as the ❓ block's own
+ * line says, so one message names one fixer for one fact. Any other answer
+ * keeps `TAXMINIY_BLOCK_WORDS.ungrouped`.
+ */
+export function ungroupedAskedWords(seqs: readonly number[]): string {
+  const shown = seqs.slice(0, MISSES_NAMED).join(', ');
+  return `${shown}${seqs.length > MISSES_NAMED ? ' …' : ''}-qator kodsiz — yuqoridagi ❓ (kodni VED xodimi qo‘yadi)`;
+}
+
 /** The sentence after «Taxminiy: hisoblab bo‘lmadi — » (§2.2), naming whose job it is. */
 export const TAXMINIY_BLOCK_WORDS: Record<
   Exclude<CustomsEstimate['taxminiyBlock'], FeeRefusal | null | 'refused_measure'>,

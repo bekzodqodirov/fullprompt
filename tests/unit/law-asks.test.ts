@@ -295,7 +295,6 @@ describe('where nobody asks the seller: the same rows, the VED’s to get', () =
       rows: [],
       groups: [],
       ungrouped: [],
-      proposeFailed: false,
       asks,
       freight: null,
       feeRefusal: null,

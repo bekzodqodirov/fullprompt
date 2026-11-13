@@ -703,7 +703,6 @@ describe('a landing with no goods owes no customs pass (§1.3 c, door-zero-pass)
       rows: [],
       groups: [],
       ungrouped: [],
-      proposeFailed: false,
       asks: [],
       freight: null,
       feeRefusal: null,
