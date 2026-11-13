@@ -32,9 +32,11 @@ ustun (savolda nima yozilgani va qachon borgani). Mavjud ma'lumot o'zgarmaydi.
   - prixodda 30 tadan ko'p lot bo'lsa yoki savol Telegramga sig'masa (xodimning «Mijozdan so'rash»i bilan bir xil
     chegara);
   - faqat yozilgan tarkib «o'zgardi» bo'lgan bo'lsa (tarkibni ofis qayta yozadi — mijozdan so'ralmaydi).
-- **Ikki savol ketmaydi.** Tizim savolini kutib turgan paytda kimdir «📨 Mijozdan so'rash»ni bossa — xodimning savoli
-  boradi, tizimniki to'xtaydi. Tizim savol yuborayotganda yoki yuborganidan keyin 10 daqiqa ichida «Mijozdan so'rash»
-  bosilsa — «hozirgina so'raldi» deb javob beradi.
+- **Bir xil savol ikki marta ketmaydi.** Tizim savolini kutib turgan paytda kimdir «📨 Mijozdan so'rash»ni bossa —
+  xodimning savoli darhol boradi, tizimniki to'xtaydi. Tizim savolni aynan yuborayotgan paytda bosilsa — «So'rov
+  allaqachon navbatda», yuborganidan keyin 10 daqiqa ichida — «So'rov hozirgina yuborilgan — 10 daqiqadan keyin qayta
+  so'rash mumkin» deb javob beradi. Bitta istisno: tizim savoli yo'lda ekan lot yana tuzatilgan bo'lsa, «Mijozdan
+  so'rash» yangi raqamlar bilan savolni darhol yuboradi — yo'ldagi savolda eski raqamlar bor, uni to'xtatib bo'lmaydi.
 - **Javobni kim eshitadi:** mijozning tizim savoliga bergan oddiy «✅» i hech kimga xabar bo'lib bormaydi (lot ❓
   ro'yxatidan chiqadi — shu xabar); «❌» — avvalgidek sotuvchi va logistlarga. Lekin kimdir ilgari «Mijozdan so'rash»ni
   bosgan va javob olmagan bo'lsa — mijozning javobi (✅ ham, ❌ ham) **o'sha odamga boradi** va kartada «so'ragan: …» deb

@@ -522,7 +522,8 @@ hand and fixed, each pinned by a test proven red without its fix.
 **What he is told.** F1 — outside China a re-weigh takes the tick's ✅ off every list with no ❓ and no button there
 (3a's twin): said in the CHANGELOG. F2 — the questions delivered BEFORE the deploy are not remembered, so UPDATE.md
 no longer promises a re-ask for them, and the «test it» sentence names a prixod asked after the deploy. F3 — «an
-invisible difference asks nothing» only when nothing else (name, tarkib) changed since the last question. F5 —
+invisible difference asks nothing» only when nothing else (name, tarkib) changed since the last question. F4 — a
+failed automatic line standing on the card for good after a person's later question went is DLV-1's, fixed there. F5 —
 0145's section lives in the CHANGELOG. F6 — §0's 4b bullet names who adds a file.
 
 **Regression and the tests.** T1 — the «remembered anyway» test never reached a settle that lost its claim: the bot
@@ -534,3 +535,50 @@ it arms the re-ask. T4 — a unit «walk» that was no walk is gone. T5 — the 
 R1 — an old process's re-tick in the deploy minute keeps the backfilled kilos beside its new count (stated in the
 migration; a lot re-ticked in that minute may need one press again). R2 — a reader who may open a prixod but works
 none is told «Bu prixodga fayl qo'shish huquqingiz yo'q», never «you may not open it» (`not_worker`).
+
+### §8.2 The fixes reviewed (binding — overrides §8.1 where it differs)
+
+Three lenses read the FIXES `3a94836..e9b6ab4` (concurrency, the rules, the tests and what he is told), each finding
+given a refuter: fifteen candidates, eleven once the duplicates are merged, one refuted (CONC-2's main half). Each
+fixed one was reproduced by a test first and red-proven by string edit.
+
+- **CONC-1** (also DLV4-THIRD, FX-T2 a) — DLV-4 held for ONE correction: the re-arm kept the claim only from a
+  `sending` row, so the second re-arm inside the same send erased it and a third correction stood the question down
+  against a tag not yet remembered. «On its way» is now ONE sentence, `reaskInFlightSql` (`client-reask.ts`):
+  `sending`, or `pending` with a kept claim from within `RECLAIM_MINUTES`, no delivery remembered since that claim
+  (`asked_at < claimed_at`) and no retry's error — asked by the arm's check, by its stand-down (as a WHERE: a row
+  that went on its way after the read is not stood down) and by the re-arm's CASE, which keeps the claim of any row
+  still on its way.
+- **CONC-3** — «claimed lately» was a clock: after the delivery landed (or a transient failure settled the row back to
+  `pending`) it read «in flight» for ten more minutes, so a correction taken back re-armed instead of standing down.
+  The last two clauses of the sentence make it a fact.
+- **CONC-2 — refuted; the door keeps §1.9.** A 📨 after a mid-send re-arm sends a second question — but two go in every
+  design once a correction lands mid-send (the message in flight predates it), and refusing only holds the fresh one
+  ten minutes behind a stale one. So the door refuses `already_queued` for `sending` alone (no correction since its
+  claim, so the same question), and a press over a re-armed row sends the corrected figures now and stands it down.
+  Kept from the finding: «just went» is `greatest(asked_at, sent_at)` — between the settle and the remembered
+  delivery the row reads `sent` with the previous `asked_at`.
+- **CONC-4** (also FX-T4) — A → B → A with nothing owed when A came back left A's `skipped / client_changed` row drawn
+  as a failure for good. `clientReaskStatusFor` reads the current owner's row alone, so «owner changed» there is about
+  an owner who went and came back, whose question the correction back re-decided: it is quiet.
+- **CONC-5** — the DLV-3 test held the row across the press, so it could not tell one transaction from three
+  autocommits: a source fence pins the check, the person's row and the stand-down inside ONE `db.transaction`, on `tx`.
+- **CONC-6** — a save of the SAME client (the picker offers the current one) slid a held question's «ten minutes after
+  the last correction»: `assignReceiptClient` arms only when the owner moved.
+- **WALK-1** (also FX-T1) — TICK-2 tested only the walk's far end, and a walk written since 0147 ON TOP of a drifted
+  chain joins it unbroken (its first row's `before` is the old chain's last `after`): from the second press on the
+  far end failed and the step scaled the lot as it stood — the drift's own arithmetic — or, where the weighed start
+  happened to give back one step, put the weighed figure back (10.714 kg on a lot every ✅ remembers at 10.715). The
+  base is now the FARTHEST point of the unbroken walk that gives back EVERY figure set printed after it; in the
+  reviewers' simulations no lot, drifted or fresh, ends away from its start. Pinned on two lots with an old chain.
+- **TICK3-CARD** — TICK-3 let an older tick fall past its ❌ to «stale» unvetoed, and the card drew it as the green
+  «✅ Mijoz tasdiqladi» beside a lot every list calls ⚠. The view now says when a holding tick is outranked by this
+  owner's ❌ (`person.outranked`), and ONE pure rule, `heldTickFace` (`lot-check-face.ts`), draws it as history; the
+  literal matrix asks it of all 168 combinations — green only where the lot reads ✅.
+- **FX-T3** — UPDATE.md's «questions delivered before the deploy are not re-asked» left out the client's own full ✅
+  that a correction breaks (which does ask): it says the CHANGELOG's rule now.
+- **FX-T5** — `not_worker`'s sentence had no test: the bot test presses «📎» as an accountant.
+- **FX-T6** — §8.1 counted 21 findings and named 20: F4 is named there now.
+- And the CHANGELOG's door sentence quoted words the screen never prints («hozirgina so'raldi»): it quotes the two
+  refusals as the card shows them and says when a press goes at once.
+

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { eq, sql, type SQL } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, lotClientConfirms, receipts, warehouses } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
@@ -11,7 +11,6 @@ import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
 import { clientsForChat } from '../client-cabinet/service';
 import { linkedChats } from '../notices/client-push';
-import { RECLAIM_MINUTES } from '../notices/arrival';
 import { SKIP_CLIENT_CHANGED } from '../notices/client-claims';
 import { PUSH_LOT_LINES } from '../notices/client-text';
 import { isBusyError, isServerBehind } from '../../platform/db/errors';
@@ -83,29 +82,6 @@ export const NOTICE_LOT_ASK = 'lot_ask';
  * question from the card.
  */
 export const NOTICE_LOT_REASK = 'lot_reask';
-
-/**
- * The system's own question about a prixod is ON ITS WAY — a FACT about the
- * row, not a clock (docs/PRIXOD-JAVOBLAR.md §1.6, §8.2): claimed and being
- * sent (`sending`; a dead run's too — the sweep sends it again on reclaim),
- * or RE-ARMED while it was out: `pending` with the claim the re-arm kept, no
- * delivery remembered since that claim (`asked_at`, written the moment a
- * delivery lands), and no retry's error (a transient failure settles
- * `pending` with its error and the claim of the attempt that did not go —
- * nothing of that is still on its way). Bounded by the reclaim window: a run
- * that died mid-send remembers nothing, and `RECLAIM_MINUTES` later its claim
- * is nobody's. ONE sentence for the arm's «due», the re-arm's kept claim and
- * the person's door (the fixes' review, CONC-1/2/3) — written for the row as
- * `row` names it, which is the bare table inside an UPSERT's SET. 0147's
- * `asked_at`: the caller has asked `askedTagReady()`.
- */
-export function reaskInFlightSql(row: SQL = sql`client_notices`): SQL {
-  return sql`(${row}.status = 'sending'
-    OR (${row}.status = 'pending' AND ${row}.claimed_at IS NOT NULL
-        AND ${row}.claimed_at > now() - make_interval(mins => ${RECLAIM_MINUTES})
-        AND ${row}.last_error IS NULL
-        AND (${row}.asked_at IS NULL OR ${row}.asked_at < ${row}.claimed_at)))`;
-}
 
 /** «Mijozdan so'rash» is not offered again for this long after a question went out. */
 export const ASK_COOLDOWN_MINUTES = 10;
@@ -816,19 +792,23 @@ export async function askClientAboutReceipt(
   const withAuto = await askedTagReady();
   const armed = await db.transaction(async (tx) => {
     if (withAuto) {
-      // On its way by the arm's own sentence — `sending`, or re-armed while it
-      // was out (the fixes' review, CONC-2). «Just went» by the later of the
-      // settle and the remembered delivery: between the two the row reads
-      // `sent` with the previous `asked_at`.
+      // On its way = `sending`: no correction has landed since its claim (one
+      // would have re-armed it), so it carries what this press would — the
+      // same question twice. A row RE-ARMED while it was out is not refused:
+      // its message was rendered before that correction, and the press sends
+      // the corrected figures now and stands the re-armed row down — §1.9; a
+      // refusal would only hold the fresh question back ten minutes behind a
+      // stale one (the fixes' review: CONC-2 refuted). «Just went» by the later
+      // of the settle and the remembered delivery: between the two the row
+      // reads `sent` with the previous `asked_at`.
       const [auto] = (await tx.execute(sql`
-        SELECT ${reaskInFlightSql()} AS in_flight,
-               greatest(asked_at, sent_at) > now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}) AS recent
+        SELECT status, greatest(asked_at, sent_at) > now() - make_interval(mins => ${ASK_COOLDOWN_MINUTES}) AS recent
           FROM client_notices
          WHERE client_id = ${facts.clientId}::uuid AND kind = ${NOTICE_LOT_REASK}
            AND ref_type = 'receipt' AND ref_id = ${receiptId}::uuid
            FOR UPDATE
-      `)) as unknown as { in_flight: boolean | null; recent: boolean | null }[];
-      if (auto?.in_flight === true) throw new ClientAskError('already_queued');
+      `)) as unknown as { status: string; recent: boolean | null }[];
+      if (auto?.status === 'sending') throw new ClientAskError('already_queued');
       if (auto?.recent === true) throw new ClientAskError('too_soon');
     }
     // ONE row per (client, kind, prixod) — `client_notices_once`. A question

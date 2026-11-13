@@ -53,9 +53,11 @@ const STAMP = String(Date.now()).slice(-6);
 const PREFIX = `93${STAMP}`;
 const sellerChat = Number(`${PREFIX}1`);
 const operatorChat = Number(`${PREFIX}2`);
+const accountantChat = Number(`${PREFIX}3`);
 let h: BotHarness;
 let sellerId = '';
 let operatorId = '';
+let accountantId = '';
 let warehouseId = '';
 let otherWarehouseId = '';
 const madeReceipts: string[] = [];
@@ -132,6 +134,8 @@ beforeAll(async () => {
   // A warehouse operator of ANOTHER warehouse: scoped, and this cargo is not theirs.
   operatorId = await mint('2', 'warehouse_operator', operatorChat);
   await db.insert(userWarehouses).values({ userId: operatorId, warehouseId: otherWarehouseId });
+  // The accountant opens every prixod and works none (his «4 b»).
+  accountantId = await mint('3', 'accountant', accountantChat);
   h = botHarness();
 });
 
@@ -161,7 +165,7 @@ afterAll(async () => {
     await db.delete(attachments).where(inArray(attachments.entityId, madeReceipts));
     await db.delete(receipts).where(inArray(receipts.id, madeReceipts));
   }
-  const people = [sellerId, operatorId].filter(Boolean);
+  const people = [sellerId, operatorId, accountantId].filter(Boolean);
   await db.update(telegramLinks).set({ status: 'revoked' }).where(inArray(telegramLinks.userId, people));
   await db.delete(userWarehouses).where(inArray(userWarehouses.userId, people));
   await db.delete(userRoles).where(inArray(userRoles.userId, people));
@@ -444,6 +448,14 @@ describe('the door, asked at the press and at every file', () => {
     await h.handle(tg.callback(operatorChat, 41_600, `pf:${receipt.id}`));
     expect(saidSince(m)).toEqual(['Bu prixodni ochishga huquqingiz yo‘q.']);
     expect(standingReceiptFiles(BigInt(operatorChat))).toBeNull();
+  });
+
+  it('a person who OPENS the prixod but works none (the accountant) is told so — never «you may not open it» (his «4 b»; the fixes’ review, FX-T5)', async () => {
+    const receipt = await mintReceipt('w');
+    const m = h.mark();
+    await h.handle(tg.callback(accountantChat, 41_650, `pf:${receipt.id}`));
+    expect(saidSince(m)).toEqual(['Bu prixodga fayl qo‘shish huquqingiz yo‘q.']);
+    expect(standingReceiptFiles(BigInt(accountantChat))).toBeNull();
   });
 
   it('refused in words beside a HOLDING «Hisoblatish» and beside a task draft too — each in its own sentence', async () => {

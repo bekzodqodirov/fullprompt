@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { receiptLots } from '../../platform/db/schema';
 import { writeAudit } from '../../platform/audit/service';
@@ -8,13 +8,13 @@ import { logger } from '../../platform/logger';
 import { linkedChats } from '../notices/client-push';
 import { NOTICE_RECEIVED, SKIP_CLIENT_CHANGED } from '../notices/client-claims';
 import { PUSH_LOT_LINES } from '../notices/client-text';
+import { RECLAIM_MINUTES } from '../notices/arrival';
 import {
   ASK_MAX_LOTS,
   clientAskFacts,
   NOTICE_LOT_ASK,
   NOTICE_LOT_REASK,
   REASK_SUPERSEDED,
-  reaskInFlightSql,
   type ClientAskFacts,
 } from './client-confirm';
 import { askFits } from './client-confirm-text';
@@ -127,6 +127,31 @@ async function receivedPushAsks(facts: Pick<ClientAskFacts, 'lots'>): Promise<bo
 }
 
 /**
+ * The system's own question about a prixod is ON ITS WAY — a FACT about the
+ * row, not a clock (docs/PRIXOD-JAVOBLAR.md §1.6, §8.2): claimed and being
+ * sent (`sending`; a dead run's too — the sweep sends it again on reclaim),
+ * or RE-ARMED while it was out: `pending` with the claim the re-arm kept, no
+ * delivery remembered since that claim (`asked_at`, written the moment a
+ * delivery lands), and no retry's error (a transient failure settles
+ * `pending` with its error and the claim of the attempt that did not go —
+ * nothing of that is still on its way). Bounded by the reclaim window: a run
+ * that died mid-send remembers nothing, and `RECLAIM_MINUTES` later its claim
+ * is nobody's. ONE sentence for the arm's «due», its stand-down and the
+ * re-arm's kept claim (the fixes' review, CONC-1/3) — written for the row as
+ * `row` names it, which is the bare table inside an UPSERT's SET. The
+ * person's door does NOT ask it (`askClientAboutReceipt`: a re-armed row's
+ * message predates a correction, so a press sends the fresh figures now).
+ * 0147's `asked_at`: the caller has asked `askedTagReady()`.
+ */
+function reaskInFlightSql(row: SQL = sql`client_notices`): SQL {
+  return sql`(${row}.status = 'sending'
+    OR (${row}.status = 'pending' AND ${row}.claimed_at IS NOT NULL
+        AND ${row}.claimed_at > now() - make_interval(mins => ${RECLAIM_MINUTES})
+        AND ${row}.last_error IS NULL
+        AND (${row}.asked_at IS NULL OR ${row}.asked_at < ${row}.claimed_at)))`;
+}
+
+/**
  * The asking rows of this owner and prixod and where each stands: the
  * receipt push, a person's question, the system's own.
  */
@@ -199,7 +224,7 @@ export async function armClientReask(lotId: string): Promise<void> {
     // correction inside the same send, not only the first (the fixes' review,
     // CONC-1): no correction may stand it down against a tag that delivery has
     // not yet remembered (the as-built review, DLV-4). One sentence,
-    // `reaskInFlightSql`, which the person's door asks too.
+    // `reaskInFlightSql`, for this check, the stand-down and the re-arm.
     const inFlight = rows.some((row) => row.in_flight === true);
     if (!inFlight && !(await reaskDue(facts, views))) {
       // Not due — and a question held from an earlier correction that this one

@@ -144,21 +144,23 @@ describe('0147’s columns stay SQL-only and are named where they are probed', (
     expect(after).toContain('await delivery.afterSent().catch(');
   });
 
-  it('«on its way» is ONE sentence: the arm, its stand-down, its re-arm and the person’s door all ask `reaskInFlightSql` (the fixes’ review, CONC-1/2/3)', () => {
+  it('«on its way» is ONE sentence for the arm — its check, its stand-down and its re-arm ask `reaskInFlightSql` (the fixes’ review, CONC-1/3)', () => {
     const reask = code('src/modules/wms/receipts/client-reask.ts');
-    const confirm = code('src/modules/wms/receipts/client-confirm.ts');
     expect(reask).toContain('SELECT kind, status, ${reaskInFlightSql()} AS in_flight');
     expect(reask).toMatch(/AND status = 'pending'\s+AND NOT \$\{reaskInFlightSql\(\)\}/);
     expect(reask).toContain('claimed_at = CASE WHEN ${reaskInFlightSql()} THEN client_notices.claimed_at END');
     expect(reask).toContain('const inFlight = rows.some((row) => row.in_flight === true);');
-    const door = confirm.slice(confirm.indexOf('export async function askClientAboutReceipt('), confirm.indexOf('export const REASK_SUPERSEDED'));
-    expect(door).toContain('SELECT ${reaskInFlightSql()} AS in_flight');
-    expect(door).toContain("if (auto?.in_flight === true) throw new ClientAskError('already_queued');");
-    // «Just went» by the later of the settle and the remembered delivery.
-    expect(door).toContain('greatest(asked_at, sent_at) > now()');
     // No second spelling of «claimed lately» anywhere: the clock lives in the sentence alone.
     const clocks = SRC.filter((file) => /claimed_at\s*>\s*now\(\)\s*-\s*make_interval|claimed_recently/.test(code(file)));
-    expect(clocks).toEqual(['src/modules/wms/receipts/client-confirm.ts']);
+    expect(clocks).toEqual(['src/modules/wms/receipts/client-reask.ts']);
+  });
+
+  it('…and the person’s door refuses only an IDENTICAL question: `sending` (no correction since its claim), or one that just went by the later of its settle and its remembered delivery (CONC-2)', () => {
+    const confirm = code('src/modules/wms/receipts/client-confirm.ts');
+    const door = confirm.slice(confirm.indexOf('export async function askClientAboutReceipt('), confirm.indexOf('export const REASK_SUPERSEDED'));
+    expect(door).toContain("if (auto?.status === 'sending') throw new ClientAskError('already_queued');");
+    expect(door).toContain('greatest(asked_at, sent_at) > now()');
+    expect(door).not.toContain('reaskInFlightSql');
   });
 
   it('the person’s door checks, arms and stands down inside ONE transaction that holds the system’s row (DLV-3; the fixes’ review, CONC-5)', () => {
@@ -177,7 +179,7 @@ describe('0147’s columns stay SQL-only and are named where they are probed', (
       }
     }
     const body = door.slice(open, end + 1);
-    expect(body).toMatch(/tx\.execute\(sql`\s*SELECT \$\{reaskInFlightSql\(\)\} AS in_flight[\s\S]*?FOR UPDATE\s*`\)/);
+    expect(body).toMatch(/tx\.execute\(sql`\s*SELECT status, greatest\(asked_at, sent_at\)[\s\S]*?FOR UPDATE\s*`\)/);
     expect(body).toMatch(/tx\s*\.execute\(sql`\s*INSERT INTO client_notices[\s\S]*?\$\{NOTICE_LOT_ASK\}/);
     expect(body).toMatch(/tx\.execute\(sql`\s*UPDATE client_notices SET status = 'skipped', last_error = \$\{REASK_SUPERSEDED\}/);
     // …and none of the three runs on the pool.

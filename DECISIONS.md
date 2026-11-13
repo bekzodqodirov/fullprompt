@@ -9443,3 +9443,26 @@ lot whose figures round — the old rule had given the same numbers (T2); the co
 behavioural test (T3). PROCESS: a lens that reads the SPEC finds design defects, a lens that reads the BUILT diff
 finds the tests that cannot fail — T1 and T2 were both green under the defects they were written for.
 
+**#1765 — The fixes reviewed: «on its way» is a fact, the walk's base gives back every step, a tick the ❌ outranks
+is history** (spec §8.2). Three lenses read `3a94836..e9b6ab4`, each finding given a refuter: fifteen candidates,
+eleven distinct, one refuted. (1) DLV-4 held for ONE correction — the re-arm kept a claim only from a `sending` row,
+so the second re-arm in one send erased it and a third correction stood the question down (CONC-1); and «claimed in
+the last ten minutes» was a clock that outlived the delivery and a retry's failure (CONC-3). One sentence,
+`reaskInFlightSql` (client-reask.ts): `sending`, or `pending` with a kept claim, no delivery remembered since it
+(`asked_at < claimed_at`), no retry error, within `RECLAIM_MINUTES` — the arm's check, its stand-down (as a WHERE) and
+the re-arm's CASE all ask it. (2) CONC-2 was REFUTED and the door keeps §1.9: once a correction lands mid-send the
+message in flight predates it and two questions go in every design, so refusing a press over a re-armed row only
+holds the fresh figures ten minutes behind stale ones — `already_queued` stays `sending` alone (the same question);
+kept from it, «just went» is `greatest(asked_at, sent_at)`, covering the settle-to-remember gap. (3) A walk written
+since 0147 on top of a drifted chain joins it unbroken, and testing only the far end refused it at every press after
+the first — scaling the lot as it stood again, or restoring the weighed 10.714 where that start happened to give back
+one step (WALK-1, FX-T1): the base is the FARTHEST point of the unbroken walk that gives back EVERY figure set printed
+after it. (4) TICK-3 let an older tick fall past its ❌ to «stale» unvetoed and the card drew it green beside ⚠: the
+view says `person.outranked`, `heldTickFace` draws it as history, and the matrix asks the face of all 168
+combinations (TICK3-CARD). (5) Smaller: the came-back owner's `client_changed` skip is quiet on the card (CONC-4);
+a same-client save arms nothing (CONC-6); the door's one transaction is fenced, not only waited on (CONC-5);
+`not_worker` is tested from an accountant's chat (FX-T5); the CHANGELOG quotes the refusals the screen prints and
+UPDATE.md the CHANGELOG's own pre-deploy rule (FX-T2, FX-T3). PROCESS: killing the red-proof harness mid-proof
+leaves the edit in place (SIGTERM runs no `finally`) — the worktree was restored by the reverse string edit, read
+from its diff; and a refuter's «the fix only reorders the two messages» is a verdict about the BUSINESS, which no
+test of the code could have given.

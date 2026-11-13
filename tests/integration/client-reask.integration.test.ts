@@ -65,7 +65,7 @@ const wh = { cn: '', uz: '' };
 let clientId = '';
 let silentClientId = '';
 const receipt = { main: '', quiet: '' };
-const lot = { K: '', L: '', Q: '', D: '', E: '', F: '' };
+const lot = { K: '', L: '', Q: '', D: '', E: '', F: '', G: '' };
 const madeBoxes: string[] = [];
 const saved = { reask: undefined as unknown, app: process.env.APP_URL };
 
@@ -234,6 +234,12 @@ beforeAll(async () => {
   const endF = chainF[chainF.length - 1]!.after;
   await mintLot('F', receipt.quiet, 4, 'D', 6, endF.totalWeightKg.toFixed(3), endF.totalVolumeM3.toFixed(4));
   await oldHistory('F', 'D', chainF);
+  // …and one where the WEIGHED start happens to give back a step of the new walk (the fixes' review, FX-T1):
+  // 3 cartons weighed at 10.714 kg, grown to 8 and taken back one a press by the old arithmetic, ending at 10.715.
+  const chainG = oldChain({ boxCount: 3, totalWeightKg: 10.714, totalVolumeM3: 0.3 }, [8, 7, 6, 5, 4, 3]);
+  const endG = chainG[chainG.length - 1]!.after;
+  await mintLot('G', receipt.quiet, 5, 'E', 3, endG.totalWeightKg.toFixed(3), endG.totalVolumeM3.toFixed(4));
+  await oldHistory('G', 'E', chainG);
 });
 
 /** A lot's growth-and-take-back History as the old count doors wrote it. */
@@ -546,19 +552,21 @@ describe('the person’s question and the system’s never both go', () => {
     expect((await rowOf(NOTICE_LOT_ASK))?.status).toBe('sent');
   });
 
-  it('a person’s press while our question is on its way RE-ARMED is refused too — both would go minutes apart (the fixes’ review, CONC-2)', async () => {
+  it('a person’s press while our question is on its way RE-ARMED sends the corrected figures NOW and stands the re-armed row down — the one in flight predates the correction (§1.9; the fixes’ review, CONC-2 refuted)', async () => {
     await deliverPersonQuestion();
     await db.execute(sql`UPDATE client_notices SET sent_at = now() - interval '1 hour' WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
     await reweigh('K', 110);
     await dueNow(NOTICE_LOT_REASK);
     const [claimed] = (await claimNoticesForSending(50, SWEEP_AT, [NOTICE_LOT_REASK])).filter((row) => row.refId === receipt.main);
     await db.execute(sql`UPDATE client_notices SET claimed_at = now() - interval '1 minute' WHERE id = ${claimed!.id}::uuid`);
-    // A correction while it is out re-arms it: `pending`, the claim kept — still on its way.
+    // A correction while it is out re-arms it: `pending`, the claim kept — still on its way, rendered at 110.
     await reweigh('K', 120);
     expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
-    await expect(askClientAboutReceipt(receipt.main, logist(), ctx(), askFits)).rejects.toMatchObject({ code: 'already_queued' });
-    expect((await rowOf(NOTICE_LOT_ASK))?.status).toBe('sent');
-    expect((await rowOf(NOTICE_LOT_REASK))?.status).toBe('pending');
+    // Refused, the fresh question would wait ten minutes behind the stale one; pressed, it goes now.
+    expect(await askClientAboutReceipt(receipt.main, logist(), ctx(), askFits)).toEqual({ lots: 2 });
+    expect((await rowOf(NOTICE_LOT_ASK))?.status).toBe('pending');
+    const reask = await rowOf(NOTICE_LOT_REASK);
+    expect([reask?.status, reask?.last_error]).toEqual(['skipped', 'superseded']);
   });
 
   it('…and between the settle and the remembered delivery the question «just went»: the press is too soon (CONC-2)', async () => {
@@ -1081,6 +1089,21 @@ describe('the count doors reach it through their shared hook', () => {
       await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.F, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
     }
     const [after] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.F));
+    expect([after!.boxCount, after!.totalWeightKg, after!.totalVolumeM3]).toEqual([before!.boxCount, before!.totalWeightKg, before!.totalVolumeM3]);
+  });
+
+  it('…and never back to the WEIGHED figure where that start happens to give back one step: grown by five, taken back one a press, 10.715 stays 10.715 (FX-T1)', async () => {
+    const [before] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.G));
+    expect([before!.boxCount, before!.totalWeightKg]).toEqual([3, '10.715']);
+    const batchId = crypto.randomUUID();
+    const grown = await db.transaction((tx) =>
+      growLotInTx(tx, { lotId: lot.G, add: 5, warehouseId: wh.cn, actorId: staffId, reason: 'sinov', batchId, side: 'load' }),
+    );
+    for (const box of grown.boxes) {
+      await db.transaction((tx) => shrinkGrownInTx(tx, { lotId: lot.G, boxIds: [box.id], actorId: staffId, reason: 'sinov', batchId, side: 'load' }));
+    }
+    const [after] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.G));
+    // Testing the far end alone kept the weighed 10.714 once it gave back 5 cartons' 17.857 — a weight nobody weighed.
     expect([after!.boxCount, after!.totalWeightKg, after!.totalVolumeM3]).toEqual([before!.boxCount, before!.totalWeightKg, before!.totalVolumeM3]);
   });
 });

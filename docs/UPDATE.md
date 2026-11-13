@@ -382,7 +382,8 @@ savolga ikkita ustun (nima so‘ralgani va qachon). Mavjud ma’lumot o‘zgarma
 shu prixod haqida **deploydan keyin** tugmali savol borgan bo‘lsa (yoki xodimning «✅ To‘g‘ri»si shu tuzatishdan
 buzilsa) — **10 daqiqadan keyin mijozga yangi savol o‘zi boradi** («🔄 Yukingiz ma’lumoti yangilandi…»). Bu sizning
 «1 b» javobingiz. Deploydan OLDIN borgan savollarni tizim eslamaydi — ular uchun savol o‘zi bormaydi (xodimning ✅ i
-buzilmagan bo‘lsa), lot avvalgidek «Mijozdan so‘rash» bilan so‘raladi. Sozlama (`client_reask_on_reweigh`)
+yoki mijozning og‘irlik va hajm bilan bergan ✅ i shu tuzatishdan buzilmagan bo‘lsa), lot avvalgidek «Mijozdan
+so‘rash» bilan so‘raladi. Sozlama (`client_reask_on_reweigh`)
 faqat deploydan keyin paydo bo‘ladi; xohlamasangiz — deploy tugagan zahoti Boshqaruv → Sozlamalar’da o‘chiring
 (birinchi savol eng tez birinchi tuzatishdan 10 daqiqa keyin ketadi — vaqt yetadi).
 
