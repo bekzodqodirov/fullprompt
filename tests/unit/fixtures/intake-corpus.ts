@@ -115,6 +115,11 @@ export interface ParseGoodsExpect {
    * §3.2 X5): each string is contained in one of them, rendered «⚠️ …» when it warns.
    */
   notesInclude?: string[];
+  /**
+   * The line columns the sheet asks «one carton's or the line's?» (`ParsedGoods.asks`,
+   * docs/AI-SORAYDI.md §3.2 X5, review JN-12): the asked columns' headers, in order; [] = none.
+   */
+  asks?: string[];
 }
 
 /** A spreadsheet the test builds, then hands to `readGoodsFile`. */

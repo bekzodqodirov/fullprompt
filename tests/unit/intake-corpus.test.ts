@@ -317,6 +317,7 @@ describe('parseGoods', () => {
       if (c.expected[key] !== undefined) expect(parsed[key], key).toBe(c.expected[key]);
     }
     if (c.expected.dropped !== undefined) expect(parsed.dropped, 'dropped').toEqual(c.expected.dropped);
+    if (c.expected.asks !== undefined) expect((parsed.asks ?? []).map((a) => a.title), 'asks').toEqual(c.expected.asks);
     const notes = parsed.notes.map((n) => `${n.warn ? '⚠️ ' : ''}${n.text}`);
     for (const said of c.expected.notesInclude ?? []) expect(notes.some((n) => n.includes(said)), `notes ${JSON.stringify(notes)}`).toBe(true);
   });
@@ -2431,6 +2432,25 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(said.join('\n')).toContain(
       '«G.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi',
     );
+  },
+  c4524: async () => {
+    // the check of review figures-ctn-running-number: a two-sheet packing list whose numbering goes
+    // on counting (PL-1 «1, 2, 3», PL-2 «4, 5, 6») — both sheets' «CTN» is the cartons' NUMBER, so
+    // no sheet carries a carton count, and the per-carton figures are the file's own, never × 4, 5, 6.
+    const head = ['CTN', 'Description', 'QTY', 'G.W./CTN', 'CBM/CTN'];
+    const built = await buildFile(
+      xlsx(
+        { name: 'PL-1', rows: [head, [1, 'Office chair', 10, 15, 0.12], [2, 'Office chair', 10, 15, 0.12], [3, 'Table', 1, 30, 0.5]] },
+        { name: 'PL-2', rows: [head, [4, 'Lamp', 10, 8, 0.05], [5, 'Lamp', 10, 8, 0.05], [6, 'Desk', 1, 30, 0.5]] },
+      ),
+    );
+    const read = await readGoodsFile(built.body, built.contentType);
+    expect(read?.kind).toBe('goods');
+    if (read?.kind !== 'goods') return;
+    const packs = (goods: readonly { packing?: { cartons: number | null; kgPerCarton: number | null; m3PerCarton: number | null } }[]) =>
+      goods.map((g) => [g.packing?.cartons ?? null, g.packing?.kgPerCarton ?? null, g.packing?.m3PerCarton ?? null]);
+    expect(packs(read.goods)).toEqual([[null, 15, 0.12], [null, 15, 0.12], [null, 30, 0.5]]);
+    expect(read.moreSheets.map((m) => packs(m.goods))).toEqual([[[null, 8, 0.05], [null, 8, 0.05], [null, 30, 0.5]]]);
   },
   c4523: async () => {
     // review seams-5: two rows of one name are two rows — answering rows 1 and 3 leaves row 2's

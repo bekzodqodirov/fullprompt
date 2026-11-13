@@ -55563,6 +55563,1155 @@
    "why": "review seams-1 (the Chinese spelling).",
    "source": "ai-soraydi 1a review (seams-1)",
    "weight": "blocker"
+  },
+  {
+   "id": "c4530",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     11,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     12,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     13,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    },
+    "asks": []
+   },
+   "said": "a «CTN» of 11, 12, 13 climbs by one from 11: the cartons' NUMBERS, never 11 × 15 = 165 kg, 12 × 0.12 = 1.44 m³, 13 × 30 = 390 kg — the per-carton 15 kg / 0.12 m³ stay on the packing and the row's weight and cube are asked",
+   "why": "the check of review figures-ctn-running-number: the guard demanded a run from exactly 1, so a numbering that started anywhere else was a count again (Σ 9.26 m³ for 1.34). A numbering is told by its steps, wherever it starts.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4531",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     4,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     5,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     6,
+     "Desk",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "the second sheet of a two-sheet packing list goes on counting — 4, 5, 6: still the cartons' numbers, never 4 × 8 = 32 kg or 6 × 0.5 = 3 m³",
+   "why": "the check of figures-ctn-running-number: PL-1 (1, 2, 3) was fixed and PL-2 of the same workbook (4, 5, 6) read cartons 4, 5, 6 (the scenario c4524 drives the workbook).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4532",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     "PO-001"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     "SUBTOTAL",
+     null,
+     21,
+     null,
+     null
+    ],
+    [
+     "PO-002"
+    ],
+    [
+     1,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     2,
+     "Lamp",
+     10,
+     8,
+     0.05
+    ],
+    [
+     3,
+     "Desk",
+     1,
+     30,
+     0.5
+    ],
+    [
+     "TOTAL",
+     null,
+     42,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 6,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Lamp",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 8,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 6,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "a sectioned list numbers its cartons afresh in each section (1, 2, 3 | SUBTOTAL | 1, 2, 3) under its «PO-…» headings: no row is ×2 or ×3 — not Table 90 kg / 1.5 m³, not Σ 3.51 m³ for 1.34",
+   "why": "the check of figures-ctn-running-number: the second «1» broke the run from one, so the column was a count again.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4533",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     1,
+     "Cushion",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     3,
+     "Desk",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Cushion",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 4,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "two goods packed in carton 1 (1, 1, 2, 3): the carton's number repeats, still a numbering — never Table 2 × 30 = 60 kg, Desk 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number: the mixed carton broke the run from one (rows 3 and 4 landed ×2 and ×3, Σ 1.98 m³).",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4534",
+   "input": [
+    [
+     "Ctns",
+     "Description",
+     "QTY",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     1,
+     "A",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "B",
+     20,
+     30,
+     0.24
+    ],
+    [
+     3,
+     "C",
+     30,
+     90,
+     1.5
+    ],
+    [
+     4,
+     "D",
+     40,
+     120,
+     2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "every": {
+      "packing": null
+     }
+    },
+    "facts": {
+     "count": 4,
+     "rows": [
+      {
+       "weightKg": 15,
+       "volumeM3": 0.12,
+       "note": null
+      },
+      {
+       "weightKg": 30,
+       "volumeM3": 0.24,
+       "note": null
+      },
+      {
+       "weightKg": 90,
+       "volumeM3": 1.5,
+       "note": null
+      },
+      {
+       "weightKg": 120,
+       "volumeM3": 2
+      }
+     ]
+    },
+    "grossKg": 255,
+    "volumeM3": 3.86,
+    "asks": [
+     "G.W.(KG)",
+     "CBM"
+    ]
+   },
+   "said": "«Ctns» 1, 2, 3, 4 beside LINE columns: a real count climbs by one as often as a numbering does — the line figures stay (15 + 30 + 90 + 120 = 255 kg, 0.12 + 0.24 + 1.5 + 2 = 3.86 m³) and «G.W.(KG)» and «CBM» are ASKED «one carton's or the line's?», never assumed the lines'",
+   "why": "the check of figures-ctn-running-number (genuine-count-loses-ask): refusing the count had taken the X5 column questions with it — the refuter's own caution («the guard should ask, not assume one carton per row»). Base asked [G.W.(KG), CBM].",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4535",
+   "input": [
+    [
+     "Место",
+     "Наименование",
+     "Кол-во",
+     "Вес 1 места",
+     "Объем 1 места"
+    ],
+    [
+     21,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     22,
+     "Стул",
+     10,
+     15,
+     0.12
+    ],
+    [
+     23,
+     "Стол",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Стул",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Стул",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Стол",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Место» 21, 22, 23 (Russian): the places' numbers — never 22 × 15 = 330 kg",
+   "why": "the check of figures-ctn-running-number, a neighbour in Russian: a numbering from any start.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4536",
+   "input": [
+    [
+     "Karobka",
+     "Tovar nomi",
+     "Soni",
+     "1 karobka hajmi"
+    ],
+    [
+     7,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     8,
+     "Stul",
+     10,
+     0.12
+    ],
+    [
+     9,
+     "Stol",
+     1,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "Stul",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Stul",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Stol",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "every": {
+      "volumeM3": null
+     }
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Karobka» 7, 8, 9 (Uzbek): the boxes' numbers — never 9 × 0.5 = 4.5 m³",
+   "why": "the check of figures-ctn-running-number, a neighbour in Uzbek Latin.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4537",
+   "input": [
+    [
+     "箱数",
+     "品名",
+     "数量",
+     "单箱毛重",
+     "单箱体积"
+    ],
+    [
+     4,
+     "办公椅",
+     10,
+     15,
+     0.12
+    ],
+    [
+     5,
+     "办公椅",
+     10,
+     15,
+     0.12
+    ],
+    [
+     6,
+     "桌子",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 3,
+     "rows": [
+      {
+       "name": "办公椅",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "办公椅",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "桌子",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 3,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«箱数» 4, 5, 6 (Chinese): the cartons' numbers — never 6 × 30 = 180 kg",
+   "why": "the check of figures-ctn-running-number, a neighbour in Chinese.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4538",
+   "input": [
+    [
+     "Қути",
+     "Товар номи",
+     "Сони",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Стул",
+     10,
+     0.12
+    ],
+    [
+     2,
+     "Ёстиқ",
+     10,
+     0.12
+    ],
+    [
+     2,
+     "Стол",
+     1,
+     0.5
+    ],
+    [
+     3,
+     "Шкаф",
+     1,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "rows": [
+      {
+       "name": "Стул",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Ёстиқ",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Стол",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Шкаф",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 4,
+     "every": {
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "«Қути» 1, 2, 2, 3 (Uzbek Cyrillic, two goods in box 2): numbers — never 2 × 0.5 = 1 m³ or 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number, a neighbour in Uzbek Cyrillic.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4539",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     5,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     5,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     5,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 75,
+       "volumeM3": 0.6
+      },
+      {
+       "weightKg": 75,
+       "volumeM3": 0.6
+      },
+      {
+       "weightKg": 150,
+       "volumeM3": 2.5
+      }
+     ]
+    }
+   },
+   "said": "«CTNS» 5, 5, 5 never climbs: a COUNT — 5 × 15 = 75 kg, 5 × 0.12 = 0.6 m³, 5 × 30 = 150 kg, 5 × 0.5 = 2.5 m³",
+   "why": "the check of figures-ctn-running-number: a numbering climbs at least twice; the same count on every row is a count.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4540",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     3,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 3,
+     "rows": [
+      {
+       "weightKg": 30,
+       "volumeM3": 0.24
+      },
+      {
+       "weightKg": 30,
+       "volumeM3": 0.24
+      },
+      {
+       "weightKg": 90,
+       "volumeM3": 1.5
+      }
+     ]
+    }
+   },
+   "said": "«CTNS» 2, 2, 3 climbs once: a COUNT — 2 × 15 = 30 kg, 2 × 0.12 = 0.24 m³, 3 × 30 = 90 kg, 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number: one climb is no numbering.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4541",
+   "input": [
+    [
+     "CTNS",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     7,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     8,
+     "Table",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "facts": {
+     "count": 2,
+     "rows": [
+      {
+       "weightKg": 105,
+       "volumeM3": 0.84
+      },
+      {
+       "weightKg": 240,
+       "volumeM3": 4
+      }
+     ]
+    }
+   },
+   "said": "two rows of «CTNS» 7, 8: a COUNT — 7 × 15 = 105 kg, 7 × 0.12 = 0.84 m³, 8 × 30 = 240 kg, 8 × 0.5 = 4 m³",
+   "why": "the check of figures-ctn-running-number: two rows climb once.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4542",
+   "input": [
+    [
+     "CTN",
+     "Description",
+     "QTY",
+     "G.W./CTN",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Office chair",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Cushion",
+     10,
+     15,
+     0.12
+    ],
+    [
+     2,
+     "Table",
+     1,
+     30,
+     0.5
+    ],
+    [
+     3,
+     "Desk",
+     1,
+     30,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 4,
+     "rows": [
+      {
+       "name": "Office chair",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Cushion",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 15,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Table",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Desk",
+       "packing": {
+        "cartons": null,
+        "pcsPerCarton": null,
+        "kgPerCarton": 30,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.5,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ]
+    },
+    "facts": {
+     "count": 4,
+     "every": {
+      "weightKg": null,
+      "volumeM3": null
+     }
+    }
+   },
+   "said": "two goods packed in carton 2 (1, 2, 2, 3): the number repeats mid-list — still a numbering, never Cushion 2 × 15 = 30 kg, Table 2 × 30 = 60 kg, Desk 3 × 0.5 = 1.5 m³",
+   "why": "the check of figures-ctn-running-number (mixed carton): a repeated carton number is no count; a repeat of 1 alone would read as a section restarting, so the repeat is pinned away from 1.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [
@@ -97530,6 +98679,19 @@
    "why": "review seams-5 (defect): columnAsks found an asked row by NAME, first match only, so the first «Office chair» answered the second. The ask now carries the row's place (`at`) and, where the place does not hold, judges every row of the name.",
    "source": "ai-soraydi 1a review (seams-5)",
    "weight": "defect"
+  },
+  {
+   "id": "c4524",
+   "call": "readGoodsFile (a two-sheet packing list whose carton numbering continues)",
+   "input": {
+    "files": {
+     "pl.xlsx": "PL-1: CTN | Description | QTY | G.W./CTN | CBM/CTN — 1/2/3 Office chair, Office chair, Table; PL-2: the same header — 4/5/6 Lamp, Lamp, Desk"
+    }
+   },
+   "said": "both sheets' «CTN» is the cartons' number (1, 2, 3 then 4, 5, 6): no sheet carries a carton count, and Lamp stays 8 kg / 0.05 m³ a carton — never 4 × 8, 6 × 0.5",
+   "why": "the check of review figures-ctn-running-number: PL-1 was fixed and PL-2 of the same workbook read cartons 4, 5, 6 — the guard demanded a run from exactly 1.",
+   "source": "ai-soraydi 1a review (figures-ctn-running-number, the check)",
+   "weight": "blocker"
   }
  ],
  "sameGoodsLineCases": [

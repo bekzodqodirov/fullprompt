@@ -145,6 +145,14 @@ interface PackColumns {
   /** The carton COUNT: a package column, whichever way it was found. */
   cartons: number | null;
   /**
+   * A package column refused as the count because its cells NUMBER the
+   * cartons (`numbersCartons`, review figures-ctn-running-number): no figure
+   * is multiplied by it, but a short real count reads the same way, so the
+   * line columns beside it are asked as beside a count (X5) — its cells read
+   * as cartons for that question only. Null = none.
+   */
+  numbered: number | null;
+  /**
    * What one carton holds, and in which unit (review JR-1): «PCS/CTN»,
    * «пар/кор», «m²/ctn». `unit: null` — the header names none («Qty per
    * carton», «装箱数»): the row's own count unit, else pieces.
@@ -2406,38 +2414,53 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     !WEIGHT_ABBREV.test(text) &&
     !cubic(text) &&
     !namesSize(text);
-  // …and never a column whose cells RUN 1, 2, 3 … down the rows (review
-  // figures-ctn-running-number): a packing list of one carton a row numbers
-  // its cartons under a bare «CTN», «Ctn», «Karobka», «Место» — the carton's
-  // NUMBER, which `NUMBER_LABEL` refuses only when the header says «No.».
-  // Read as a count, every carton's weight and cube was multiplied by its
-  // place in the list (row 10 «10 × 10 kg = 100 kg», Σ 5.5 m³ for 1.0). The
-  // spec's own unsafe case (§2.3, DIM-11 — a carton RANGE «C/NO 1-20») says
-  // the same: no count, the per-carton figures stay on the note and the
-  // row's weight and cube are asked — never «one carton a row» assumed,
-  // because a short real count can run 1, 2, 3 too. From three rows up,
-  // judged over the data cells (a TOTAL row and the split under a two-row
-  // header are no cell of the run): «10, 20, 30» are counts and stay.
-  const runsFromOne = (i: number) => {
-    let at = 0;
+  // …and never a column whose cells NUMBER the cartons (review
+  // figures-ctn-running-number, and its check): a packing list of one carton
+  // a row numbers its cartons under a bare «CTN», «Ctn», «Karobka», «Место»
+  // — the carton's NUMBER, which `NUMBER_LABEL` refuses only when the header
+  // says «No.». Read as a count, every carton's weight and cube was
+  // multiplied by its place in the list (row 10 «10 × 10 kg = 100 kg», Σ
+  // 5.5 m³ for 1.0). A numbering is told by its STEPS, wherever it starts:
+  // each cell is the one above it plus one («11, 12, 13», or «4, 5, 6» on a
+  // second sheet that goes on counting), the same number again (two goods
+  // packed in one carton — «1, 1, 2, 3»), or 1 again (a section that numbers
+  // its cartons afresh — «1, 2, 3 | SUBTOTAL | 1, 2, 3»), and it climbs at
+  // least twice. «10, 20, 30», «5, 5, 5» are counts. The spec's own unsafe
+  // case (§2.3, DIM-11 — a carton RANGE «C/NO 1-20») says the same: no count,
+  // the per-carton figures stay on the note and the row's weight and cube are
+  // asked — never «one carton a row» assumed, because a short real count can
+  // climb by one too (`numbered`: the line columns beside it are asked as
+  // beside a count). Judged over the data cells: a TOTAL row and the split
+  // under a two-row header are no cell of the run, nor a section's heading.
+  const numbersCartons = (i: number) => {
+    let last: number | null = null;
+    let climbs = 0;
     for (let d = r + 1; d < Math.min(rows.length, r + 1 + SAMPLE_ROWS); d++) {
       if (skip.has(d) || d === split) continue;
       const row = rows[d]!;
       const text = cellText(row[i] ?? null);
       if (text === '' || isHeaderText(row[i] ?? null, cellText(header[i] ?? null).toLowerCase())) continue;
-      if (row.some((cell) => typeof cell === 'string' && totalRowOf({ name: cell, figures: true }) === 'total')) continue;
-      if (!/^\d+\.?$/.test(text) || Number.parseInt(text, 10) !== at + 1) return false;
-      at += 1;
+      if (row.some((cell) => typeof cell === 'string' && totalRowOf({ name: cell, figures: true }) !== null)) continue;
+      // A section's heading standing alone in this column («PO-001») opens a
+      // section, never breaks its numbering.
+      if (!/^\d+\.?$/.test(text)) {
+        if (row.every((cell, c) => c === i || cellText(cell ?? null) === '')) continue;
+        return false;
+      }
+      const n = Number.parseInt(text, 10);
+      if (n < 1) return false;
+      if (last !== null && n !== last && n !== last + 1 && n !== 1) return false;
+      if (last !== null && n === last + 1) climbs += 1;
+      last = n;
     }
-    return at >= 3;
+    return climbs >= 2;
   };
-  const cartonsAt =
-    (packCol && (packCol.index === quantity || !taken.has(packCol.index)) && !runsFromOne(packCol.index) ? packCol.index : null) ??
-    findWhere(
-      header,
-      taken,
-      (text, i) => text.length <= PACK_HEADER_MAX && bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null) && !runsFromOne(i),
-    );
+  const countAt = (i: number) => !numbersCartons(i);
+  const packAt = packCol && (packCol.index === quantity || !taken.has(packCol.index)) ? packCol.index : null;
+  const bareAt = (also: (i: number) => boolean) =>
+    findWhere(header, taken, (text, i) => text.length <= PACK_HEADER_MAX && bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null) && also(i));
+  const cartonsAt = (packAt !== null && countAt(packAt) ? packAt : null) ?? bareAt(countAt);
+  const numbered = cartonsAt !== null ? null : packAt !== null ? packAt : bareAt(() => true);
   return {
     name,
     tnved,
@@ -2475,7 +2498,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     // of its kind: a netto the next file's rows may be compared with and take,
     // a brutto they may not (`file-goods.ts`).
     weightKind: weight === null && cartonWeight && cartonsAt !== null ? (cartonWeight.kind ?? 'plain') : weightKind,
-    pack: { cartons: cartonsAt, pieces: cartonPieces, weight: cartonWeight, volume: cartonCube, size },
+    pack: { cartons: cartonsAt, numbered, pieces: cartonPieces, weight: cartonWeight, volume: cartonCube, size },
   };
 }
 
@@ -3760,6 +3783,16 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     // kernel compares those, X4), nor one the belt concluded one carton's
     // (its figure is the packing's now), nor a list stopped short.
     const asks: ColumnAsk[] = [];
+    // …and a column that NUMBERS the cartons (`PackColumns.numbered`): read as
+    // cartons for this question alone — a short real count climbs by one too,
+    // so the line columns beside it are asked as beside a count, while no
+    // figure is ever multiplied by it (review figures-ctn-running-number's
+    // check: refusing the count had taken the question away with it).
+    const numberedOf = keptLanded.map((l) => {
+      if (pack.numbered === null) return null;
+      const text = cellText(rows[l.d]![pack.numbered] ?? null);
+      return /^\d+\.?$/.test(text) ? Number.parseInt(text, 10) : null;
+    });
     if (!stoppedShort) {
       const askOf = (
         field: ColumnAsk['field'],
@@ -3770,7 +3803,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         if (TOTAL_HINT.test(titleOf(col))) return;
         const asked = keptLanded.flatMap((l, k) => {
           const value = pick(l);
-          const c = cartonsOf[k] ?? null;
+          const c = cartonsOf[k] ?? numberedOf[k] ?? null;
           const g = kept[k]!;
           return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value, at: k }] : [];
         });
