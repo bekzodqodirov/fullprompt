@@ -3178,8 +3178,13 @@ export interface ColumnAsk {
   field: 'weightKg' | 'volumeM3';
   /** The column's header as the file writes it, clipped. */
   title: string;
-  /** Each asked row's name and the figure the file gives it (in m³ for a cube). */
-  rows: { name: string; value: number }[];
+  /**
+   * Each asked row's name, the figure the file gives it (in m³ for a cube) and
+   * its place among the sheet's goods (`at`, review seams-5): two rows of one
+   * model in two colours are two rows, and found by name alone the second was
+   * answered by the first. Absent on an ask written before it.
+   */
+  rows: { name: string; value: number; at?: number }[];
 }
 
 /** What the FILE says about its figures beyond its cells (§5.9): the comma a CSV's delimiter implies. */
@@ -3733,7 +3738,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           const value = pick(l);
           const c = cartonsOf[k] ?? null;
           const g = kept[k]!;
-          return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value }] : [];
+          return typeof value === 'number' && value > 0 && c !== null && c > 1 && !perCarton(g) ? [{ name: g.description, value, at: k }] : [];
         });
         if (asked.length >= 2) asks.push({ field, title: titleOf(col), rows: asked });
       };

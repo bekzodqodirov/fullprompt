@@ -2432,6 +2432,23 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       '«G.W.(KGS)» va «CBM» ustunlaridagi sonlar bitta karobkanikimi yoki qatornikimi — aniq emas, shuning uchun umumiy brutto va kub fayldan olinmadi',
     );
   },
+  c4523: async () => {
+    // review seams-5: two rows of one name are two rows — answering rows 1 and 3 leaves row 2's
+    // file figure asked, and the table never says «to‘liq» over it.
+    const rows: Cell[][] = [
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [1, 'Office chair', 200, 10, 12, 0.05],
+      [2, 'Office chair', 480, 20, 13, 0.06],
+      [3, 'Desk', 300, 30, 11, 0.07],
+      ['TOTAL', null, 980, 60, 36, 0.18],
+    ];
+    const { steps } = await aiDoorWalk('rastamojka', [[xlsx({ name: 'Sheet1', rows }), 'pl.xlsx']], ['1: 120 kg 0.5 m3', '3: 330 kg 2.1 m3', '2: 260 kg 1.2 m3']);
+    const [, afterThree, afterTwo] = [steps[0]!, steps[2]!, steps[3]!];
+    expect(afterThree.table).toContain('«G.W.(KGS)» ustuni — bitta karobkanikimi yoki qatornikimi?');
+    expect(afterThree.table).toContain('«CBM» ustuni — bitta karobkanikimi yoki qatornikimi?');
+    expect(afterThree.table).not.toContain('Ma’lumot to‘liq');
+    expect(afterTwo.table).not.toContain('ustuni — bitta karobkanikimi yoki qatornikimi?');
+  },
 };
 
 /** Forty one-cell sheets — the fixture's own BIFF builders (c0428). */

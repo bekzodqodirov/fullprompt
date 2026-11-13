@@ -117,9 +117,11 @@ describe('X5 — the belt concludes ONE carton’s figure only when the arithmet
   });
 
   /** What a sheet asks of its columns (`ParsedGoods.asks`, review JN-12). */
+  // Each asked row carries its place among the sheet's goods (`at`, review seams-5 — re-anchored: the rows
+  // were {name, value} alone, and two rows of one name were one).
   const ASKED = [
-    { field: 'weightKg', title: 'G.W.(KGS)', rows: [{ name: 'Jacket', value: 12 }, { name: 'Toy', value: 13 }] },
-    { field: 'volumeM3', title: 'CBM', rows: [{ name: 'Jacket', value: 0.05 }, { name: 'Toy', value: 0.06 }] },
+    { field: 'weightKg', title: 'G.W.(KGS)', rows: [{ name: 'Jacket', value: 12, at: 0 }, { name: 'Toy', value: 13, at: 1 }] },
+    { field: 'volumeM3', title: 'CBM', rows: [{ name: 'Jacket', value: 0.05, at: 0 }, { name: 'Toy', value: 0.06, at: 1 }] },
   ];
 
   it('a TOTAL that IS the column’s Σ proves nothing: the lines stand, and each COLUMN is asked once (review JN-12 (a))', () => {
@@ -156,7 +158,7 @@ describe('X5 — the belt concludes ONE carton’s figure only when the arithmet
   it('…and a column the TOTAL contradicts (a pallet) keeps its lines and is asked as well (review JR-11)', () => {
     const read = sheet(['Description', 'CTN', 'G.W.(kg)'], ['Kurtka', 10, 100], ['Shim', 5, 166], ['TOTAL', 15, 300]);
     expect(read.goods.map((g) => g.weightKg)).toEqual([100, 166]);
-    expect(read.asks).toEqual([{ field: 'weightKg', title: 'G.W.(kg)', rows: [{ name: 'Kurtka', value: 100 }, { name: 'Shim', value: 166 }] }]);
+    expect(read.asks).toEqual([{ field: 'weightKg', title: 'G.W.(kg)', rows: [{ name: 'Kurtka', value: 100, at: 0 }, { name: 'Shim', value: 166, at: 1 }] }]);
   });
 
   it('nothing explains the gap — a pallet in the TOTAL: the LINES stand, the Σ is refused, both sums are said', () => {

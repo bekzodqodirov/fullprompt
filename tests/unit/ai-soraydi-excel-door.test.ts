@@ -509,6 +509,48 @@ describe('X5 — a line column nothing settles is ASKED once, by the rows it is 
     expect(after.table).toContain('✅ Hajm: 3.8 m³ (qatorlardan)');
   });
 
+  it('review seams-5: two rows of one name are two rows — answering the first does not close the second', async () => {
+    const got = await collect('rastamojka', [
+      [await book([...HEAD, 'G.W.(KGS)', 'CBM'], [[1, 'Office chair', 200, 10, 12, 0.05], [2, 'Office chair', 480, 20, 13, 0.06], [3, 'Desk', 300, 30, 11, 0.07], [...TOTAL, 36, 0.18]]), 'pl.xlsx'],
+    ]);
+    expect(columnAsks(got.state.goodsFiles, got.goods).map((a) => a.id)).toEqual(['col:0:weightKg', 'col:0:volumeM3']);
+    await answer(got.chatId, '1: 120 kg 0.5 m3');
+    let after = await answer(got.chatId, '3: 330 kg 2.1 m3');
+    // Row 2 still carries the file's 13 kg / 0.06 m³: both questions stand, and nothing reads «to‘liq».
+    expect(after.goods[1]).toMatchObject({ name: 'Office chair', weightKg: 13, volumeM3: 0.06 });
+    expect(columnAsks(after.state.goodsFiles, after.goods).map((a) => a.id)).toEqual(['col:0:weightKg', 'col:0:volumeM3']);
+    expect(after.table).not.toContain('Ma’lumot to‘liq');
+    after = await answer(got.chatId, '2: 260 kg 1.2 m3');
+    expect(columnAsks(after.state.goodsFiles, after.goods)).toEqual([]);
+  });
+
+  it('…by its PLACE: a same-named row the question never asked (one carton) does not hold the column open', async () => {
+    const got = await collect('rastamojka', [
+      [await book([...HEAD, 'G.W.(KGS)'], [[1, 'Office chair', 200, 10, 12], [2, 'Office chair', 20, 1, 12], [3, 'Desk', 300, 30, 11], [...TOTAL, 35]]), 'pl.xlsx'],
+    ]);
+    // Rows 1 and 3 are asked (10 and 30 cartons); row 2 is one carton, never asked, and states the same 12 kg.
+    expect(got.state.goodsFiles?.[0]?.asks?.[0]?.rows.map((r) => [r.name, r.value, r.at])).toEqual([
+      ['Office chair', 12, 0],
+      ['Desk', 11, 2],
+    ]);
+    await answer(got.chatId, '1: 120 kg');
+    const after = await answer(got.chatId, '3: 330 kg');
+    expect(columnAsks(after.state.goodsFiles, after.goods)).toEqual([]);
+  });
+
+  it('…and an ask stored before the place was kept is judged over EVERY row of its name — never the first alone', () => {
+    const files = [{ label: '«pl.xlsx»', shape: 'packing' as const, weightKind: 'gross' as const, grossKg: null, grossColumn: true, volumeM3: null, rows: 3,
+      asks: [{ field: 'weightKg' as const, title: 'G.W.(KGS)', rows: [{ name: 'Office chair', value: 12 }, { name: 'Office chair', value: 13 }, { name: 'Desk', value: 11 }] }] }];
+    const person = { person: ['weightKg' as const] };
+    const goods = [
+      { name: 'Office chair', weightKg: 120, derived: person },
+      { name: 'Office chair', weightKg: 13 },
+      { name: 'Desk', weightKg: 330, derived: person },
+    ];
+    expect(columnAsks(files, goods).map((a) => a.id)).toEqual(['col:0:weightKg']);
+    expect(columnAsks(files, goods.map((g) => ({ ...g, derived: person })))).toEqual([]);
+  });
+
   it('a row a person answered — or whose figure is no longer the file’s — is answered; the column stands while one row is not', async () => {
     const got = await collect('rastamojka', [[await SHEET(), 'pl.xlsx']]);
     const answer = (field: 'weightKg' | 'volumeM3', upTo: number, how: 'person' | 'changed') =>

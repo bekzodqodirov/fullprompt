@@ -376,13 +376,31 @@ export interface GoodsFileMeta {
  */
 export function columnAsks(files: readonly GoodsFileMeta[] | undefined, goods: GoodsList): TableAsk[] {
   const out: TableAsk[] = [];
-  (files ?? []).forEach((file, i) => {
+  const list = files ?? [];
+  // Where each file's rows stand in the list — while the blocks still add up
+  // to it (`rowKindsOf`'s rule): an asked row is found by its PLACE when the
+  // row there bears its name (review seams-5 — by name alone, two rows of one
+  // model were one, and answering the first closed the second); else by its
+  // name over EVERY row of that name, the safe side: the ask stands while any
+  // of them still has the file's figure, or none.
+  const offsets: number[] = [];
+  let total = 0;
+  for (const file of list) {
+    offsets.push(total);
+    total += file.rows;
+  }
+  const placed = total === goods.length;
+  list.forEach((file, i) => {
     for (const ask of file.asks ?? []) {
-      const open = ask.rows.some(({ name, value }) => {
-        const row = goods.find((g) => g.name === name);
-        if (!row || (row.derived?.person ?? []).includes(ask.field)) return false;
+      const unanswered = (row: GoodsList[number], value: number) => {
+        if ((row.derived?.person ?? []).includes(ask.field)) return false;
         const now = row[ask.field] ?? null;
         return now === null || now === value;
+      };
+      const open = ask.rows.some(({ name, value, at }) => {
+        const there = placed && at !== undefined ? goods[offsets[i]! + at] : undefined;
+        const rows = there && there.name === name ? [there] : goods.filter((g) => g.name === name);
+        return rows.some((row) => unanswered(row, value));
       });
       if (!open) continue;
       const what = ask.field === 'weightKg' ? 'og‘irligini (kg)' : 'hajmini (m³)';

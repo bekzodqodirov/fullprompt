@@ -97151,6 +97151,25 @@
    "why": "review seams-4 (defect): the list's asks were dropped silently in all three orders and its Σ stood as «✅ brutto 36 kg / kub 0.18» with «bundan faqat umumiy brutto va kub olindi». The further sheet of one workbook now carries its asks too.",
    "source": "ai-soraydi 1a review (seams-4)",
    "weight": "defect"
+  },
+  {
+   "id": "c4523",
+   "call": "readIntakeFile + analyzeCollected + applyTableAnswer ×3 (two «Office chair» rows and a «Desk», both columns asked)",
+   "input": {
+    "files": {
+     "pl.xlsx": "No. | Description | QTY(PCS) | CTNS | G.W.(KGS) | CBM — Office chair 200/10/12/0.05, Office chair 480/20/13/0.06, Desk 300/30/11/0.07, TOTAL 980/60/36/0.18"
+    },
+    "model": "answers nothing",
+    "answers": [
+     "1: 120 kg 0.5 m3",
+     "3: 330 kg 2.1 m3",
+     "2: 260 kg 1.2 m3"
+    ]
+   },
+   "said": "after rows 1 and 3 are answered both column questions still stand — row 2 («Office chair», 13 kg / 0.06 m³) is the file's figure — and «Ma’lumot to‘liq» is not said; after row 2 they close",
+   "why": "review seams-5 (defect): columnAsks found an asked row by NAME, first match only, so the first «Office chair» answered the second. The ask now carries the row's place (`at`) and, where the place does not hold, judges every row of the name.",
+   "source": "ai-soraydi 1a review (seams-5)",
+   "weight": "defect"
   }
  ],
  "sameGoodsLineCases": [
