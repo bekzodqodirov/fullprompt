@@ -162,6 +162,10 @@ describe('T16 — the review’s own finds reach the agent the same way (typed-b
     expect(of('G.W. 710 CBM 3.8')).toEqual([]);
     expect(of('G.W.: 710 CBM 3.8')).toEqual([w(710)]);
     expect(of('TOTAL QTY 980 CBM 3.8')).toEqual([]);
+    // Check seams-1: after another field's figure too — no 710 cube reference.
+    expect(of('N.W. 650 G.W. 710 CBM 3.8')).toEqual([]);
+    expect(of('QTY 980 G.W. 710 CBM 3.8')).toEqual([]);
+    expect(of('Мест 60 брутто 710 куб 3.8')).toEqual([]);
   });
 
   it('…and the yo’lkira tool, handed the chat, finds no weight to price: the checklist asks it', async () => {

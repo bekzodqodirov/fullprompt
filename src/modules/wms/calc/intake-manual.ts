@@ -302,7 +302,7 @@ function blankForTotals(text: string, prefix: string | null): string {
  */
 const fieldLabelBefore = (labels: readonly string[]) =>
   new RegExp(
-    String.raw`(?<![\p{L}])(?:${labelPattern(labels)})(?:${GAP}(?:[,(（\[]${GAP})?(?:${(['kg', 'm3'] as const).map(unitPattern).join('|')})(?![\p{L}\d])(?:${GAP}[)）\]])?)?(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}$`,
+    String.raw`(?<![\p{L}])(${labelPattern(labels)})(?:${GAP}(?:[,(（\[]${GAP})?(?:${(['kg', 'm3'] as const).map(unitPattern).join('|')})(?![\p{L}\d])(?:${GAP}[)）\]])?)?(?:${GAP}[.)])?(?:${GAP}[:：=])?${GAP}$`,
     'iu',
   );
 const WEIGHT_FIELD_BEFORE = fieldLabelBefore([...WEIGHT_LABELS, ...NET_LABELS]);
@@ -328,16 +328,20 @@ const BARE_FIGURE_NEXT = new RegExp(
  *    3.8») is no measure when its unit word is followed by a bare figure — the
  *    next field's label, not this figure's unit. «Qty: 300 kg» alone is still
  *    a weight.
- * A label is a label only where no figure stands right before it: «5 kub 300
- * kg» is 5 m³ and 300 kg. What neither reading can place is asked (JN-21 reads
- * no «G.W. 710» without its «:»).
+ * A label that is a UNIT word is a label only where no figure stands right
+ * before it: «5 kub 300 kg» is 5 m³ and 300 kg, «20 ctns 300 kg» 300 kg. A
+ * label that is no unit word heads its figure whatever stands before it —
+ * «N.W. 650 G.W. 710 CBM 3.8», «QTY 980 G.W. 710», «Мест 60 брутто 710 куб
+ * 3.8»: the figure before it is the previous field's (check seams-1: the 710
+ * was a cube again whenever any figure stood before «G.W.»). What neither
+ * reading can place is asked (JN-21 reads no «G.W. 710» without its «:»).
  */
 function otherField(text: string, start: number, end: number, field: 'weight' | 'volume'): boolean {
   const [from] = lineAround(text, start);
   const before = text.slice(Math.max(from, start - 40), start);
   const labelled = (re: RegExp) => {
     const hit = re.exec(before);
-    return hit !== null && !/\d[.,]?\s*$/u.test(before.slice(0, hit.index));
+    return hit !== null && !(unitOf(hit[1]) !== null && /\d[.,]?\s*$/u.test(before.slice(0, hit.index)));
   };
   if (labelled(field === 'volume' ? WEIGHT_FIELD_BEFORE : VOLUME_FIELD_BEFORE)) return true;
   return labelled(COUNT_FIELD_BEFORE) && BARE_FIGURE_NEXT.test(text.slice(end, end + 40));

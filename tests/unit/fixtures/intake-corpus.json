@@ -61782,6 +61782,102 @@
    "why": "check R3b: «ℹ️ 1. Stul — 20 dona», the 300 kg gone and the brutto asked.",
    "source": "ai-soraydi 1a check (T)",
    "weight": "defect"
+  },
+  {
+   "id": "c4418",
+   "input": "N.W. 650 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4419",
+   "input": "QTY 980 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4420",
+   "input": "CTNS 60 GW 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4421",
+   "input": "PCS 980 CTNS 60 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4422",
+   "input": "N/W 650 G/W 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4423",
+   "input": "TOTAL: 60 CTNS N.W. 650 G.W. 710 CBM 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4424",
+   "input": "Мест 60 брутто 710 куб 3.8",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c4425",
+   "input": "N.W. 650 G.W. 710 CBM 3.8\nStul 200 dona",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null
+   },
+   "said": "710 kg and 3.8 m³, or both asked — never a cube of 710 m³",
+   "why": "check seams-1: otherField refused every label with a figure before it (the «5 kub 300 kg» guard), so after the previous field's figure «G.W.» was no label and «710 CBM» a cube of 710 again; only a unit-word label is a figure's unit. With no «:» JN-21 reads neither, so both are asked.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "blocker"
   }
  ],
  "intakeClientLabelCases": [

@@ -226,6 +226,7 @@ describe('a rate’s base and a condition are no total (figures-cbm-rate-as-tota
     // A price labeller is a product, never a price word: its 1 kg stands.
     expect(totals('Narxlagich 1 kg', 'podklyuch')).toEqual({ ...none, kg: 1 });
   });
+
 });
 
 // Review seams-1: a forwarder's footer writes each field as label, figure —
@@ -259,6 +260,31 @@ describe('a figure after another field’s label is that field’s (seams-1)', (
     expect(totals('TOTAL QTY 980 CBM 3.8', 'podklyuch')).toEqual(none);
     // «Qty: 300 kg» alone is the goods measured in kilos.
     expect(totals('Qty: 300 kg', 'podklyuch')).toEqual({ ...none, kg: 300 });
+  });
+
+  // Check seams-1: the guard below («a label is a label only where no figure
+  // stands right before it») held for EVERY label — so whenever the previous
+  // field's figure stood before «G.W.», «G.W.» stopped being a label and «710
+  // CBM» was a cube of 710 m³ again (187 × the cargo's 3.8). Only a label
+  // that IS a unit word («kub», «ctns») is the unit of a figure before it.
+  it('the same footer after ANOTHER field’s figure: «N.W. 650 G.W. 710 CBM 3.8» — never 710 m³', () => {
+    for (const text of [
+      'N.W. 650 G.W. 710 CBM 3.8',
+      'QTY 980 G.W. 710 CBM 3.8',
+      'CTNS 60 GW 710 CBM 3.8',
+      'PCS 980 CTNS 60 G.W. 710 CBM 3.8',
+      'N/W 650 G/W 710 CBM 3.8',
+      'TOTAL: 60 CTNS N.W. 650 G.W. 710 CBM 3.8',
+      'Мест 60 брутто 710 куб 3.8',
+      'Кол-во 980 Вес брутто 710 Объем 3.8',
+      '数量 980 毛重 710 体积 3.8',
+    ]) {
+      // JN-21: no «:», so neither total is read label-first — both asked; 710 is never a cube.
+      expect(totals(text, 'podklyuch'), text).toEqual(none);
+    }
+    // With their «:» both stand: 710 kg and 3.8 m³.
+    expect(totals('N.W.: 650 G.W.: 710 CBM: 3.8', 'podklyuch')).toEqual({ ...none, kg: 710, m3: 3.8 });
+    expect(totals('QTY 980 G.W.: 710 CBM: 3.8', 'podklyuch')).toEqual({ ...none, kg: 710, m3: 3.8 });
   });
 
   it('a unit after its own figure is no label: «5 kub 300 kg», «507 kg 5.9 cbm», «20 ctns 300 kg» read as before', () => {
