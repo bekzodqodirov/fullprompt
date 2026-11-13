@@ -973,6 +973,26 @@ const PACK_WORD = /^(?:pachk|пачк|пачек|paket|пакет|упаковк
 /** Is `word` a pack's count word (`PACK_WORD`) — for the typed readers that judge a gram beside it. */
 export const packWord = (word: string | null | undefined): boolean => PACK_WORD.test(word ?? '');
 
+/** The units a count of the goods is written in that are no pieces: pairs, square metres, litres, cubic centimetres. */
+const MEASURE_UNITS: ReadonlySet<SellerUnit> = new Set(['juft', 'm2', 'litr', 'sm3']);
+
+/** Is `word` a UNIT that counts the goods — pieces, packages, a measure (`MEASURE_UNITS`) — never a kilo or a cube? */
+export function countUnitWord(word: string | null | undefined): boolean {
+  const unit = unitOf(word);
+  return unit === 'dona' || unit === 'karobka' || (unit !== null && MEASURE_UNITS.has(unit));
+}
+
+/**
+ * Does the word after a number say the number COUNTS the goods — a counting
+ * unit (`countUnitWord`), a pack word (`PACK_WORD`), or a word no list here
+ * knows («blok», «rulon», «g'altak», «metr»)? Beside such a count a gram is
+ * what one of them weighs. Never a kilo, a cube or another scaled weight.
+ */
+function countsGoods(word: string | undefined): boolean {
+  if (!word) return false;
+  return countUnitWord(word) || PACK_WORD.test(word) || (unitOf(word) === null && scaledKg(word) === null);
+}
+
 /**
  * A package's noun in its cases — «karobka», «karobkada», «karobkasi»,
  * «коробке», «мест», «ctn», «箱» — and the packages of the other trades: a
@@ -2066,10 +2086,14 @@ export function parseGoodsLine(
   // A GRAM beside any count — pieces, cartons, packs — is what one pack or one
   // piece weighs: «Choy 500 gr 200 karobka», «Kofe 250 gr, 1000 pachka» are
   // tea in half-kilo packs, never a 0.5 kg row (review typed-break-3). The
-  // figure stays in the name, where the coder reads it.
+  // figure stays in the name, where the coder reads it. A count of PAIRS, of
+  // square metres, of litres, or of anything this file has no unit for —
+  // «300 juft», «500 m2», «5 litr», «500 blok», «50 rulon», «100 g'altak» —
+  // is a count all the same: one pair's 800 gr, the fabric's 180 gr (its gsm),
+  // one can's 900 gr were the whole line's netto, a carpet of 300 m² priced
+  // per kg on 1.5 kg (review figures-gram-beside-measure-count).
   const countStated =
-    piecesStated ||
-    kept.some((cell) => [...blankNonAmounts(cell).matchAll(AMOUNT)].some((h) => unitOf(h[2]) === 'karobka' || PACK_WORD.test(h[2] ?? '')));
+    piecesStated || kept.some((cell) => [...blankNonAmounts(cell).matchAll(AMOUNT)].some((h) => countsGoods(h[2])));
 
   kept.forEach((cellText, cellIndex) => {
     const consumed: [number, number][] = [];

@@ -26,6 +26,7 @@ import {
   blankSpans,
   codeIn,
   COUNTED_CUBES,
+  countUnitWord,
   FIELD_LABELS,
   groupedReading,
   labelPattern,
@@ -1349,14 +1350,24 @@ function setAsidePairs(text: string): { text: string; aside: string[] } {
   // the row's own count, 24 pieces for 480 under ✅ (review owner-2). What
   // `packingRead` reads as a mark stays for it (`figureTail`).
   const marked = packingRead(text, { scaled: true }).consumed;
-  // «Kofe 250 gr, 1000 pachka»: the pack count says whose the gram is — it
-  // stays for the readers, who then keep the gram in the name (`unitFigures`).
-  const gramFirst = (scaledKg(spans[first]!.word)?.factor ?? 1) < 1;
+  // «Kofe 250 gr, 1000 pachka», «Shokolad 100 gr 500 blok», «Ip 500 gr 100
+  // g'altak»: beside a gram a number and its word are a COUNT of the goods
+  // (units.ts `parseGoodsLine`'s `countStated`), and the count says whose the
+  // gram is — one pack's, one block's, one spool's. It stays for the kernel,
+  // which then keeps the gram in the name; set aside, the gram was the row's
+  // own 0.1 kg (review figures-gram-beside-measure-count). Only where no UNIT
+  // of the line counts the goods already: «Krossovka 300 juft 800 gr 5 xil»
+  // keeps its «5 xil» on the note.
+  const gram = spans.some((s) => {
+    const scale = scaledKg(s.word);
+    return scale !== null && !scale.lone && scale.factor < 1;
+  });
+  const countKept = gram && !spans.some((s) => countUnitWord(s.word));
   const edits: Edit[] = [];
   const aside: string[] = [];
   for (const s of spans.slice(first + 1)) {
     if (s.word === null || unitOrScaled(s.word) !== null || !pairWord(s.word)) continue;
-    if (gramFirst && packWord(s.word)) continue;
+    if (countKept) continue;
     // «Мест: 20 Вес брутто: 15 кг/место» — the word is the next field's label.
     if (fieldAt(text, s.start + s.number.length)) continue;
     // «1/2 dyuym» — the number is a fraction's, and the pair no pair at all.

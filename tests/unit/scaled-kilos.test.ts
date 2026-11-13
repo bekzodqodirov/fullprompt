@@ -200,6 +200,37 @@ describe('what a tonne or a gram is NOT (review JN-9)', () => {
     expect(totals('ruchka 5000 dona har biri 20 gr').kg).toBeNull();
   });
 
+  // Review figures-gram-beside-measure-count: the kernel's «a count stands»
+  // knew pieces, cartons and pack words alone, so one pair's 800 gr, the
+  // fabric's 180 gr (its gsm), one can's 900 gr were the whole row's netto —
+  // a carpet of 300 m² on a per-kg law priced on 1.5 kg under ✅. A count in
+  // pairs, square metres, litres, or a word nobody lists is a count.
+  it('beside a count in pairs, m², litres or an unlisted word the gram is ONE of them: it stays in the name, the weight is asked', () => {
+    for (const [text, name, unit, qty] of [
+      ['Krossovka 300 juft 800 gr', 'Krossovka 800 gr', 'juft', 300],
+      ['Krossovka 300 пар 800 гр', 'Krossovka 800 гр', 'juft', 300],
+      ['Кроссовки 300 пар 800 грамм', 'Кроссовки 800 грамм', 'juft', 300],
+      ['Sneakers 300 pairs 800 gr', 'Sneakers 800 gr', 'juft', 300],
+      ['运动鞋 300双 800克', '运动鞋 800克', 'juft', 300],
+      ['Gazlama 500 m2 180 gr', 'Gazlama 180 gr', 'm2', 500],
+      ['Gilam 300 m2 1500 gr', 'Gilam 1500 gr', 'm2', 300],
+      ['Ковер 300 м2 1500 гр', 'Ковер 1500 гр', 'm2', 300],
+      ['Kraska 5 litr 900 gr', 'Kraska 900 gr', 'litr', 5],
+    ] as const) {
+      const [row] = readGoodsLines(text);
+      expect(row, text).toMatchObject({ name, weightKg: null, measureUnit: unit, measureQty: qty });
+      expect(totals(text).kg, text).toBeNull();
+    }
+    // A count in a word no list knows: the gram, before or after it, is one block's, one roll's, one spool's.
+    for (const text of ['Shokolad 100 gr 500 blok', 'Shokolad 500 blok 100 gr', 'Sigaret 500 blok 200 gr', 'Ip 500 gr 100 g\'altak', 'Gazlama 50 rulon 180 gr', 'Gazlama 5000 metr 180 gr']) {
+      expect(rows(text), text).toEqual([{ name: text, q: null, kg: null, m3: null }]);
+      expect(totals(text).kg, text).toBeNull();
+    }
+    // The row's own gram stands where nothing counts (c3353), and a count with a unit keeps a pair on the note.
+    expect(rows('Choy 500 gr')).toEqual([{ name: 'Choy', q: null, kg: 0.5, m3: null }]);
+    expect(readGoodsLines('Krossovka 300 juft 800 gr 5 xil')[0]).toMatchObject({ name: 'Krossovka 800 gr', note: 'sotuvchi: 5 xil' });
+  });
+
   it('…unless the line speaks of the whole shipment: «jami 2 tonna 300 dona» is 2000 kg — and no product called «jami 2 tonna»', () => {
     expect(totals('jami 2 tonna 300 dona')).toEqual({ kg: 2000, m3: null, asked: [] });
     expect(rows('jami 2 tonna 300 dona')).toEqual([]);
@@ -341,6 +372,27 @@ describe('the answer to the bot’s own question', () => {
       ['weight', '2 tonna'],
       ['weight', '1500 kg'],
     ]);
+  });
+
+  it('a row answered with a count in pairs or m² and a gram: the count is written, never the gram as the row’s weight (figures-gram-beside-measure-count)', () => {
+    const KG: TableRef = {
+      rows: [
+        { no: 1, index: 0, seq: null, name: 'Krossovka', needs: [] },
+        { no: 2, index: 1, seq: null, name: 'Gazlama', needs: [] },
+      ],
+      open: [{ line: 1 }, { line: 2 }],
+      preferred: [{ line: 1 }, { line: 2 }],
+      stage: 'review',
+    };
+    for (const [text, line, figures] of [
+      ['1: 300 juft 800 gr', 1, { measureUnit: 'juft', measureQty: 300 }],
+      ['2: 500 m2 180 gr', 2, { measureUnit: 'm2', measureQty: 500 }],
+      ['1: 300 m2 1500 gr', 1, { measureUnit: 'm2', measureQty: 300 }],
+    ] as const) {
+      const seg = one(text, KG);
+      expect(seg.at, text).toEqual({ line });
+      expect(seg.answer, text).toMatchObject({ kind: 'figures', figures: { ...figures, weightKg: null } });
+    }
   });
 
   it('a brutto and a netto in lone letters: the brutto is written, the netto named — with ITS figure for the row', () => {

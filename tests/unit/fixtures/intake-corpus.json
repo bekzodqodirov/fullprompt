@@ -16422,6 +16422,224 @@
    "why": "load-1's rewrite, the tab spelling. Not pinned: the name keeps «G.W» there — as at 50eb41d, a tab before a tail-marked label's colon (open, stated).",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
+  },
+  {
+   "id": "c4304",
+   "input": "Krossovka 300 juft 800 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka 800 gr",
+      "weightKg": null,
+      "measureUnit": "juft",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 juft, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4305",
+   "input": "Gazlama 500 m2 180 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gazlama 180 gr",
+      "weightKg": null,
+      "measureUnit": "m2",
+      "measureQty": 500
+     }
+    ],
+    "count": 1
+   },
+   "said": "500 m2, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4306",
+   "input": "Kraska 5 litr 900 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kraska 900 gr",
+      "weightKg": null,
+      "measureUnit": "litr",
+      "measureQty": 5
+     }
+    ],
+    "count": 1
+   },
+   "said": "5 litr, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4307",
+   "input": "Gilam 300 m2 1500 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gilam 1500 gr",
+      "weightKg": null,
+      "measureUnit": "m2",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 m2, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4308",
+   "input": "Krossovka 300 пар 800 гр",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka 800 гр",
+      "weightKg": null,
+      "measureUnit": "juft",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 juft, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4309",
+   "input": "Ковер 300 м2 1500 гр",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ковер 1500 гр",
+      "weightKg": null,
+      "measureUnit": "m2",
+      "measureQty": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "300 m2, the gram in the name, no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4310",
+   "input": "Shokolad 100 gr 500 blok",
+   "expected": {
+    "rows": [
+     {
+      "name": "Shokolad 100 gr 500 blok",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4311",
+   "input": "Ip 500 gr 100 g'altak",
+   "expected": {
+    "rows": [
+     {
+      "name": "Ip 500 gr 100 g'altak",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4312",
+   "input": "Gazlama 50 rulon 180 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gazlama 50 rulon 180 gr",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4313",
+   "input": "Gazlama 5000 metr 180 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Gazlama 5000 metr 180 gr",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4314",
+   "input": "Shokolad 500 blok 100 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Shokolad 500 blok 100 gr",
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "the gram stays in the name beside the unlisted count; no weight",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4315",
+   "input": "Krossovka 300 juft 800 gr 5 xil",
+   "expected": {
+    "rows": [
+     {
+      "name": "Krossovka 800 gr",
+      "weightKg": null,
+      "measureQty": 300,
+      "note": "sotuvchi: 5 xil"
+     }
+    ],
+    "count": 1
+   },
+   "said": "a count with a unit: the pair after it still goes on the note",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsCases": [
@@ -60440,6 +60658,30 @@
    },
    "said": "a comma before the unit and spaces before the colon: 5.92 m³",
    "why": "load-1's rewrite of the label-first cube.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4316",
+   "input": "Krossovka 300 juft 800 gr",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "no shipment weight from one pair's or one block's grams",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
+   "source": "ai-soraydi 1a review (Tb)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c4317",
+   "input": "Shokolad 100 gr 500 blok",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "no shipment weight from one pair's or one block's grams",
+   "why": "figures-gram-beside-measure-count: a gram beside a count of pairs, m², litres or an unlisted count word is ONE of them (units.ts countStated) — it stays in the name and the weight is asked, never the row's netto.",
    "source": "ai-soraydi 1a review (Tb)",
    "weight": "pinned"
   }
