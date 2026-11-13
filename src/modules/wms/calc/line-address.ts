@@ -21,17 +21,20 @@ import {
   parseLineAnswer,
   parseManualFacts,
   readTypedTotals,
+  slashedFigures,
   type LineAnswer,
 } from './intake-manual';
 import type { NeedUnit } from './needs';
 import {
   amountsIn,
   blankSpan,
+  blankSpans,
   codeIn,
   joinUnitPhrases,
   labelPattern,
   nearUnit,
   NET_LABELS,
+  packingRead,
   perOneIn,
   scaledKg,
   scaledPattern,
@@ -334,6 +337,9 @@ const LABEL_WORD = new RegExp(
 const NETTO_LABEL_BEFORE = new RegExp(`(?<![\\p{L}])((?:${labelPattern(NET_LABELS)}|sof))[\\s.:：=–—-]*$`, 'iu');
 const NETTO_LABEL_AFTER = new RegExp(`^\\s*[(\\[]?\\s*((?:${labelPattern(NET_LABELS)}))(?![\\p{L}])(?![\\s.:：=–—-]*\\d)`, 'iu');
 
+/** A unit word right before a figure, itself after no number (the «kg» of «507 kg 5.9» is the 507's). */
+const UNIT_BEFORE = /(?<!\d[\d.,]*\s*)(?<![\p{L}])([\p{L}][\p{L}\d²³.]*)\s*$/u;
+
 /**
  * The figures of a text whose word is no unit and no label — «5.9 kubik»,
  * «300 banka», «15 Pro» — as the kernel's own grammar finds them (T3).
@@ -365,6 +371,8 @@ function totalsLeft(rest: string, taken: readonly [number, number][]): TotalsLef
   // that, in the seller's own words — told «jami 15 kg» it would be one
   // carton's figure written as the shipment's.
   const perOne = perOneIn(rest, { scaled: true });
+  // A bare number with a slash and a word — «G.W.: 15/ctn» — is one too (review typed-break-1).
+  const slashed = slashedFigures(rest);
   for (const amount of amountsIn(remainder)) {
     const unit = amount.word ? unitOf(amount.word) : null;
     if (unit === 'karobka') continue;
@@ -374,7 +382,22 @@ function totalsLeft(rest: string, taken: readonly [number, number][]): TotalsLef
       out.push({ why: 'per_one', text: one.text, figure: rest.slice(one.start, one.end).trim(), number });
       continue;
     }
+    const cut = slashed.find(([a, b]) => amount.start < b && amount.end > a);
+    if (cut) {
+      out.push({ why: 'per_one', text: rest.slice(cut[0], cut[1]), figure: number, number });
+      continue;
+    }
     if (amount.word === null || (unit === null && LABEL_WORD.test(amount.word))) {
+      // «CBM 7.19», «KG 507» — a cube's or a kilo's word written BEFORE the
+      // figure and owned by no other figure: asked as that unit («“CBM” —
+      // kubmi?»), never «birligi yozilmagan» about a unit he wrote (review
+      // typed-spec-7). Not read: JN-21 wants a «:», a «=» or the unit after.
+      const before = UNIT_BEFORE.exec(remainder.slice(Math.max(0, amount.start - 24), amount.start));
+      const near = before ? unitOf(before[1]) : null;
+      if (before && (near === 'm3' || near === 'kg')) {
+        out.push({ why: 'unit', text: `${before[1]} ${number}`, figure: number, number, word: before[1]!, near });
+        continue;
+      }
       out.push({ why: 'bare', text: number, figure: number, number });
       continue;
     }
@@ -777,6 +800,18 @@ function totalsSegment(raw: string, reading: TotalsReading, flags: { explicit: b
 type NameOf = (row: TableRow) => RowName;
 const foldEach: NameOf = (row) => rowName(row.name);
 
+/**
+ * An answer the row kernel refused as ONE package's or ONE piece's (T4) with
+ * nothing left of a name once its per-one figures and their marks are taken
+ * out — «1: 15 kg/ctn», «1: har biri 15 kg», «15 kg/ctn». Its words were read
+ * as a NAME and the answer refused «kg/ctn — yangi tovarmi?» / «jadvalda
+ * bunday qator yo‘q», the wording T3/T4 exist to remove (review typed-spec-3).
+ */
+function perOneOnly(text: string, answer: LineAnswer): boolean {
+  if (answer.kind !== 'refused' || answer.reason !== 'per_one') return false;
+  return !hasName(nameParts(blankSpans(text, [...packingRead(text, { scaled: true }).consumed, ...slashedFigures(text)])));
+}
+
 function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment {
   const plain = { explicit: false, namedNone: false };
   const address = addressOf(raw, table.stage);
@@ -784,6 +819,10 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
     const row = table.rows.find((r) => r.no === address.n);
     if (!row) return { ...refused(raw, 'no_line', String(address.n)), explicit: true, namedNone: false };
     const answer = parseLineAnswer(figureText(address.rest));
+    // One carton's figure to a row: the line answer's own refusal speaks («bittasiniki»), never a name question.
+    if (perOneOnly(address.rest, answer)) {
+      return { raw, at: { line: row.no }, refused: null, answer, totals: null, route: null, explicit: true, namedNone: false };
+    }
     const parts = nameParts(address.rest);
     // The words after the number must not name ANOTHER row (regression-3):
     // «1. Kurtka 300 dona» on row 1 Krossovka is a list of other goods, asked.
@@ -822,6 +861,9 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
   }
 
   const answer = parseLineAnswer(figureText(raw));
+  // Un-addressed, one carton's figure is named as that by the totals reading —
+  // «⚠️ «15 kg/ctn» — bittasiniki, umumiy emas» — and written nowhere.
+  if (perOneOnly(raw, answer)) return totalsSegment(raw, readTotals(raw, null, table.open), plain);
   const parts = nameParts(raw);
   if (parts.carton) return { ...refused(raw, 'no_address', raw), ...plain };
   // No goods word left over: an ANSWER, to the target its unit fits.

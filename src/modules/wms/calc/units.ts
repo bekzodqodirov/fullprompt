@@ -881,11 +881,13 @@ export function groupedReading(line: string, at: number, isLabel: (word: string)
  * threes («1 200», «12 500 000»); a decimal part follows a dot or a comma.
  * The word is a unit PHRASE («cubic meters» — review JN-22: the phrase stood
  * in the list as one glued word nothing a person types could reach), else
- * letters (any script), ², ³ or a dotted abbreviation like «кв.м». A number
+ * letters (any script), ², ³ or a dotted abbreviation like «кв.м» — an
+ * apostrophe between letters inside it («og‘irligi», «so‘m»): cut there, «5.9
+ * og‘irligi 507» was a figure in a unit «og» (review typed-break-9). A number
  * glued to letters on its left («A54», «iPhone15») is never an amount.
  */
 const AMOUNT = new RegExp(
-  String.raw`(?<![\p{L}\d.,])(${AMOUNT_NUMBER})(?![\d])(?:\s*(${PHRASES}|[\p{L}²³][\p{L}\d²³.]*))?`,
+  String.raw`(?<![\p{L}\d.,])(${AMOUNT_NUMBER})(?![\d])(?:\s*(${PHRASES}|[\p{L}²³](?:[\p{L}\d²³.]|['’ʻʼ‘\x60´](?=\p{L}))*))?`,
   'giu',
 );
 

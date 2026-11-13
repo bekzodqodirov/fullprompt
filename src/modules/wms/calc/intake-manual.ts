@@ -2046,6 +2046,13 @@ export type LineAnswer =
   | { kind: 'refused'; reason: LineAnswerRefusal; detail?: string };
 
 /** numeric(12,3) holds nine integer digits; measure_qty numeric(14,4), ten. */
+/** A bare number, a slash and a word — «15/ctn», «0.12 /箱», «15/kor»: one of something, never a whole (`standsAlone`). */
+const BARE_SLASHED = /(?<![\p{L}\d.,])\d[\d.,]*[ \t]*\/[ \t]*\p{L}[\p{L}\d]*/gu;
+/** `[start, end)` of every `BARE_SLASHED` figure of a text. */
+export function slashedFigures(text: string): [number, number][] {
+  return [...text.matchAll(BARE_SLASHED)].map((m) => [m.index, m.index + m[0].length]);
+}
+
 export const ROW_AMOUNT_CAP = 1e9;
 export const PAIR_AMOUNT_CAP = 1e10;
 
@@ -2108,6 +2115,10 @@ export function parseLineAnswer(raw: string): LineAnswer {
   // seller's own words; what such an answer MEANS is the table's to read
   // (T7, release 1b), never this guess.
   if ((line.perOne ?? []).length > 0) return { kind: 'refused', reason: 'per_one', detail: line.perOne![0] };
+  // …and a bare number with a slash and a word — «15/ctn», «0.12/箱» — the
+  // same figure with its unit left to a label (review typed-break-1).
+  const slashed = slashedFigures(text)[0];
+  if (slashed) return { kind: 'refused', reason: 'per_one', detail: text.slice(slashed[0], slashed[1]) };
   // Ten digits with a unit word after them are an AMOUNT no column can
   // hold, not a code: the kernel takes ten bare digits for a TNVED code
   // wherever they stand, so «2000000000 kg» would have answered the line
