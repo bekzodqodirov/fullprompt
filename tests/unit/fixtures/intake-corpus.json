@@ -17255,6 +17255,60 @@
    "why": "check owner-4 (the count after the size clause): «300 dona. Karobka» made «Karobka» the unit of 300 across the stop — 300 cartons, 20 pieces, a computed 36 m³; with a comma the row vanished.",
    "source": "ai-soraydi 1a check (T)",
    "weight": "defect"
+  },
+  {
+   "id": "c4443",
+   "input": "Stul 20 ctns, G.W./CTN 15 kg, CBM/CTN 0.12",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 kg = 300 kg*, 20 × 0.12 = 2.4 m³*, no count",
+   "why": "check owner-3 (one-line form): «CBM/CTN 0.12» made 0.12 the row's pieces and «CBM/CTN» a word of its name; a bare figure under one package's own label opening its clause is that label's measure, as on a block's line.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4444",
+   "input": "Стул 20 мест, вес 1 места 15 кг, объем 1 места 0.12",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 kg = 300 kg*, 20 × 0.12 = 2.4 m³*, no count",
+   "why": "check owner-3 (one-line form): «CBM/CTN 0.12» made 0.12 the row's pieces and «CBM/CTN» a word of its name; a bare figure under one package's own label opening its clause is that label's measure, as on a block's line.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
+  },
+  {
+   "id": "c4445",
+   "input": "椅子 20箱, 单箱毛重 15kg, 单箱体积 0.12",
+   "expected": {
+    "rows": [
+     {
+      "quantity": null,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "20 × 15 kg = 300 kg*, 20 × 0.12 = 2.4 m³*, no count",
+   "why": "check owner-3 (one-line form): «CBM/CTN 0.12» made 0.12 the row's pieces and «CBM/CTN» a word of its name; a bare figure under one package's own label opening its clause is that label's measure, as on a block's line.",
+   "source": "ai-soraydi 1a check (T)",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [

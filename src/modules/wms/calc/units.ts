@@ -1404,7 +1404,17 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
   for (const hit of scan.matchAll(AMOUNT)) {
     let word = hit[2] ?? null;
     let end = hit.index + hit[0].length;
-    if (!word) continue;
+    if (!word) {
+      // «Stul 20 ctns, G.W./CTN 15 kg, CBM/CTN 0.12» — a bare figure under one
+      // package's own label opening its clause is that label's measure, as on
+      // a spec block's line («CBM/CTN: 0.395», owner-3) — the label is the only
+      // thing that says what it measures (check owner-3: the one-line form
+      // made 0.12 the row's PIECES and «CBM/CTN» a word of its name).
+      const labelled = perOneLabelBefore(text, hit.index);
+      const read = labelled ? readAmountText(hit[1]!) : null;
+      if (labelled && read?.state === 'ok') out.push({ start: hit.index, end, unit: labelled, value: read.value, word: LABEL_UNIT_WORD[labelled] });
+      continue;
+    }
     if (unitOf(word) === 'dona' && !endsSentence(word)) {
       const next = COUNTER_THEN_UNIT.exec(text.slice(end, end + 24));
       const nextUnit = next ? unitOf(next[1]!) : null;
@@ -1444,6 +1454,24 @@ function labelledCube(word: string, after: string): 'm3' | null {
   const end = tail > 0 ? tail : per && nounOwner(per[1]) === 'package' ? per[0].length : 0;
   return end > 0 && !/^\s*[.)]?\s*[:：=]/u.test(after.slice(end)) ? 'm3' : null;
 }
+
+/**
+ * The measure of ONE package's label opening the clause that ends at `at` —
+ * «, CBM/CTN 0.12», «G.W./CTN: 15», «单箱体积 0.395» — or null. The clause opens
+ * the line or follows a comma, a semicolon or a sentence's stop.
+ */
+function perOneLabelBefore(text: string, at: number): 'kg' | 'm3' | 'dona' | null {
+  const from = Math.max(0, at - 64);
+  const window = text.slice(from, at);
+  const breaks = [...window.matchAll(/[,;\n]|[.!?](?=\s)/gu)];
+  const last = breaks.at(-1);
+  const start = last ? from + last.index + last[0].length : from;
+  if (!last && from > 0) return null;
+  const label = perOneLabelLine(text.slice(start, at + 1));
+  return label !== null && start + label.figureAt === at ? label.unit : null;
+}
+/** The unit word a labelled bare figure is given — what the readers after the scan take it for. */
+const LABEL_UNIT_WORD: Record<'kg' | 'm3' | 'dona', string> = { kg: 'kg', m3: 'm3', dona: 'dona' };
 
 /** The slash word's owner — a known package tail, a known piece tail, or neither. */
 function tailWordOwner(word: string): PerOneOwner | null {

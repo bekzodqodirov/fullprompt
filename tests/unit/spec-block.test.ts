@@ -117,6 +117,24 @@ describe('T12 — one package’s field lines are the block’s packing (owner-3
     expect(parseManualFacts('体积: 5.92', 'podklyuch').volumeM3).toBe(5.92);
     expect(parseManualFacts('毛重: 507', 'podklyuch').weightKg).toBe(507);
   });
+
+  // Check owner-3: the block form worked and the ONE-line form of the same
+  // labels did not — «CBM/CTN 0.12» made 0.12 the row's PIECES and «CBM/CTN»
+  // a word of its name («Stul CBM/CTN» × 0.12).
+  it('the same labels on ONE line: 20 cartons × 15 kg = 300 kg, 20 × 0.12 = 2.4 m³, no count', () => {
+    for (const text of [
+      'Stul 20 ctns, G.W./CTN 15 kg, CBM/CTN 0.12',
+      'Stul 20 ctns, G.W./CTN: 15, CBM/CTN: 0.12',
+      'Стул 20 мест, вес 1 места 15 кг, объем 1 места 0.12',
+      '椅子 20箱, 单箱毛重 15kg, 单箱体积 0.12',
+    ]) {
+      const r = row(text);
+      expect(r, text).toMatchObject({ quantity: null, weightKg: 300, volumeM3: 2.4 });
+      expect(r.name, text).not.toMatch(/CBM|CTN|单箱|объем/iu);
+      expect(r.packing, text).toMatchObject({ cartons: 20, kgPerCarton: 15, m3PerCarton: 0.12 });
+      expect(parseManualFacts(text, 'podklyuch'), text).toMatchObject({ weightKg: null, volumeM3: null });
+    }
+  });
 });
 
 // Review crit-5 (the completeness critic's; reproduced at 5e97abf): T12's
