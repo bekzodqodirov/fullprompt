@@ -276,7 +276,9 @@ describe('the fee’s blocker names whose job it is', () => {
  * copy names it for the VED under «⚠️ VED uchun:». Brutto is no longer asked
  * on that door, so this answer will mostly say it is missing — stated (§7).
  */
-describe('a bot-door yo‘lkira answer asks nothing (§2.4, §3.5)', () => {
+// The AI door's yo‘lkira answer keeps today's tails since docs/AI-SORAYDI.md
+// §3.4 A1 (calc-prefill.integration pins it through the real pass).
+describe('the plain door’s yo‘lkira answer asks nothing (§2.4, §3.5)', () => {
   const door = { ...tariff, noAsk: true };
   const cube = { ok: false as const, refusal: 'umumiy hajm (m³) yo‘q', tail: 'seller' as const };
 

@@ -612,7 +612,9 @@ describe('(12) a typed fee override: the Taxminiy carries ITS figure, never a BH
  * carries no money either: no 📊, no «Aniq», no «Taxminiy». The VED reads the
  * exact figure on his screen and the 📊 in its 📥 dialog. His 2.5 b: a plain
  * yo‘lkira still answers from the tariff in the chat, asking nothing. «🤖»
- * keeps the two totals — the answer he pressed for.
+ * keeps the two totals — the answer he pressed for — and since
+ * docs/AI-SORAYDI.md §3.4 A1 asks what the seller still owes (none here:
+ * the row is coded and weighed; calc-prefill.integration pins the asking).
  */
 describe('(14) the doors: the estimate is the AI door’s answer, and the plain door’s VED note has none', () => {
   it('«🧮»: no 📊 figure, no Aniq/Taxminiy, the row left baza-less — and named so for the VED', async () => {
@@ -637,7 +639,7 @@ describe('(14) the doors: the estimate is the AI door’s answer, and the plain 
     expect(row!.bazaUsd).toBeNull();
   });
 
-  it('«🤖»: the two totals stand — Aniq and the 📊 Taxminiy — and nothing is asked', async () => {
+  it('«🤖»: the two totals stand — Aniq and the 📊 Taxminiy — and nothing owed is asked', async () => {
     const id = await open('rastamojka', [{ name: `Idish ai ${SUFFIX}`, tnvedCode: CODE_B, weightKg: 50 }], { intakeDoor: 'ai' });
     const out = await aiPrefill(id, { actorId: null }, { configured: false, replyTo: actorId });
     // 50 kg × $2.40 = 120; duty 20 % = 24; VAT 12 % of 144 = 17.28 → 41.28; + 1 BHM 32.96 = 74.24.

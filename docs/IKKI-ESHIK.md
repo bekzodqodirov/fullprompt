@@ -588,6 +588,10 @@ VED's, and the lenta note names them.
     «TNVED: AI taklifi (o‘qishda) — tekshiring», and the AI answer's line marks it the same way.
   - A row still uncoded, with the AI available: «↳ kod yo‘q — AI hisoblashda topadi (topolmasa VED
     qo‘yadi)».
+    - **Superseded in part** by docs/AI-SORAYDI.md §3.4 A1-A2 (his 4a of 2026-11-11, review JR-13): what the pass cannot code is ASKED of the seller
+      («bu nima — nimadan qilingan, nima uchun ishlatiladi?») before it is the VED's; the words
+      should read «(topolmasa sizdan so‘raydi)». The constant is the table's (`CODE_GAP_AI`,
+      intake.ts) and is reworded by its owner, not in release 1a's answer package.
   - A row still uncoded with no key, or with the day's budget spent: «↳ kod yo‘q — VED xodimi
     qo‘yadi».
   - Such a row is never ✅ and never a question.
@@ -595,6 +599,9 @@ VED's, and the lenta note names them.
     the proposal alone, and a long table never folds it into «✅ yana N ta qator to‘liq». It makes
     the table no less complete: the code is not the seller's part.
 - **A law unit that only the landing pass's coding reveals goes to the VED** (5a).
+  - **Superseded for the AI door** by docs/AI-SORAYDI.md §3.4 A1-A2 (his 4a of 2026-11-11, review JR-13): the AI's answer asks it, with every other figure
+    the seller can give (`sellerAsksOf`). The plain door keeps 5a; a request from before the doors
+    (NULL) keeps the 2.8 b block.
 
 3.2 **The table** (P5).
 - Head: «🤖 AI rastamojka · 🛃 Rastamojka» (and 🔑).
@@ -675,10 +682,18 @@ VED's, and the lenta note names them.
     required argument).
 - **The pass replies with the figure and asks nothing.** The ❓ block goes, which takes the 2.8 b /
   1.14 a seller ask out of the landing pass. Every SELLER tail goes too.
+  - **Superseded for the AI door** by docs/AI-SORAYDI.md §3.4 A1-A2 (his 4a of 2026-11-11, review JR-13): `noAsk` is the door being `'plain'`. The AI
+    door's answer carries its own ❓ block («❓ AI so‘raydi — javob yozsangiz qayta hisoblaydi:», at
+    most 8 lines on the union, more than three uncoded rows folded into one) and the NULL door's
+    seller tails («— mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring»), never «VED
+    xodimi sizdan so‘raydi» about a figure only the seller has. Its lenta says «❓ Sotuvchidan
+    so‘raldi: …»; the card copy for a seller his copy never reached is the `noAsk` rendering below.
+    The certificate is not asked (review JR-8, JS-12): the answer states it.
 - **ONE place decides who a tail is addressed to**: a `noAsk` flag on the renderer, applied to
   `CUSTOMS_TAIL_WORDS`, `FREIGHT_TAIL_WORDS` and estimate.ts's `refused_measure`.
   - On an 'ai' request, in the chat, a seller fact reads «— VED xodimi sizdan so‘raydi», and the
-    VED's own gaps read «— VED xodimi qo‘yadi / hisoblaydi».
+    VED's own gaps read «— VED xodimi qo‘yadi / hisoblaydi». (Superseded: since AI-SORAYDI §3.4 A1
+    this is the plain door's, and the AI door's card copy for a seller nobody reached.)
   - The podklyuch JAMI line reads «JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.»
   - The ➕ button stays: it is an offer, not a question.
   - The lenta lists the same gaps under «⚠️ VED uchun: …».
@@ -694,6 +709,10 @@ the door for it.
 
 3.7 **The ➕ add collection on an AI request** asks the same way: one table, no echo, no ❓ after,
 and a conflict as a «VED hal qiladi» line (1.1).
+- **Superseded in part** by docs/AI-SORAYDI.md §3.4 A1-A2 (his 4a of 2026-11-11, review JR-13): the re-run after «✅ Qo‘shish» answers with the AI door's ❓
+  block like the landing pass, and the add table prefers, for an unaddressed figure, the rows THAT
+  answer asked a figure for (`askedSeqsOf(sellerAsksOf(…))`, calc-amend.ts) — not the law's rows
+  alone. Release 1a writes nothing new after the pass: a reply still opens the add table.
 
 ## §4 Outside a collection (his 6a)
 
@@ -870,6 +889,9 @@ the whole order is run.
   figure on it depends on the customs value (the memory or the quarterly import).
 - **Superseded agreements**, named (INT-12):
   - 2.8 b (asking after the AI answer) is superseded on both doors by 5a.
+    - **5a is superseded in turn for the AI door** by docs/AI-SORAYDI.md §3.4 A1-A2 (his 4a of 2026-11-11, review JR-13): the AI's answer asks again
+      after «Tasdiqlash» — everything the seller can give. The plain door keeps 5a; NULL keeps
+      2.8 b.
   - His explicit 1.14 a: the plain door asks no unit; the AI door asks it in the table, before
     «Tasdiqlash».
   - The 2026-09-05 rule that the plain 🔑 podklyuch still gets the AI answer in the chat ends (3a).

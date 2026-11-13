@@ -479,17 +479,19 @@ describe('R2 late pass — a miss says what the file has', () => {
 
 /**
  * `refused_measure` is the seller's fact, so its tail is the one tail rule's
- * (`tailWords`, docs/IKKI-ESHIK.md §3.5): on a bot-door request the VED asks
- * the seller, and a request from before the doors keeps today's words — which
- * ARE `TAXMINIY_BLOCK_WORDS.refused_measure`, the spec's own above.
+ * (`tailWords`, docs/IKKI-ESHIK.md §3.5): where nobody asks the seller
+ * (`noAsk` — the plain door; the AI door's copy for a seller nobody reached)
+ * the VED asks him, and everywhere else — the AI door's answer since
+ * docs/AI-SORAYDI.md §3.4 A1, a request from before the doors — today's
+ * words, which ARE `TAXMINIY_BLOCK_WORDS.refused_measure`, the spec's own above.
  */
 describe('refused_measure by door (§3.5)', () => {
-  it('a door request: «— VED xodimi sizdan so‘raydi» in the chat, «— VED xodimi so‘raydi» on the lenta', () => {
+  it('nobody asks the seller: «— VED xodimi sizdan so‘raydi» in the chat, «— VED xodimi so‘raydi» on the lenta', () => {
     expect(refusedMeasureWords('chat', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi sizdan so‘raydi');
     expect(refusedMeasureWords('lenta', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi so‘raydi');
   });
 
-  it('a request from before the doors: exactly today’s words', () => {
+  it('the AI door’s answer and a request from before the doors: exactly today’s words (A1)', () => {
     expect(refusedMeasureWords('chat', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.chat);
     expect(refusedMeasureWords('lenta', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.lenta);
   });
