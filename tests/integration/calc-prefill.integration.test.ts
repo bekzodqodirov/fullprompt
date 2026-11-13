@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -35,7 +35,9 @@ import { sawRevOfGroup } from '../fixtures/calc-saw-rev';
 import { AI_CODE_NOTE } from '@/modules/wms/calc/code-source';
 import { CODE_SOURCE_WORDS } from '@/modules/wms/calc/ai-note';
 import { AI_NOTE_HEAD, AI_REPLY_HEAD } from '@/modules/wms/calc/reply-heads';
-import { CODING_FAILED_LINE, SELLER_ASKS_HEAD } from '@/modules/wms/calc/ai-reply';
+import { CODING_FAILED_LINE, SELLER_ASKS_HEAD, WHAT_ANSWER_LINE } from '@/modules/wms/calc/ai-reply';
+import { recordAiPass } from '@/modules/wms/calc/ai-cost';
+import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { askedSeqsOf, lawAsksInputOfStored, sellerAsksOf } from '@/modules/wms/calc/law-asks';
 import type { IntakeDoor } from '@/modules/wms/calc/intake';
 import type { PickRequest } from '@/modules/wms/calc/prefill-ai';
@@ -1321,7 +1323,10 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     expect(askedSeqsOf(sellerAsksOf(lawAsksInputOfStored(stored)))).toEqual([1, 3]);
   });
 
-  it('…and the plain door’s note numbers its groups the same way, for the VED (A3)', async () => {
+  it('…while the plain door’s note is FROZEN: its group by its index, the uncoded row by its name (review ask-break-5)', async () => {
+    // Re-anchored: the round leaves the plain door exactly as it was (the
+    // task's hard limit, JR-13 «plain → unchanged»). Its note is the VED's —
+    // nobody addresses an answer by its numbers — so A3 does not reach it.
     const [a, part, b] = [`Sviter A plain ${SUFFIX}`, `Zapchast plain ${SUFFIX}`, `Sviter B plain ${SUFFIX}`];
     const id = await openAs('plain', [
       { name: a, tnvedCode: '6110200000', weightKg: 150 },
@@ -1330,10 +1335,13 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     ]);
     const note = await aiPrefill(id, ctx(), { propose: idle, pick: noPick, configured: true });
     const lines = note.text.split('\n');
-    expect(lines.some((l) => l.startsWith(`1, 3. ${a}, ${b} · 6110200000 · `))).toBe(true);
-    // The uncoded row by its own number, in «Kodlar:» and in the VED's line.
+    // ONE group (rows 1 and 3), the note's first: «1.», as before the round.
+    expect(lines.some((l) => l.startsWith(`1. ${a}, ${b} · 6110200000 · `))).toBe(true);
+    expect(lines.some((l) => l.startsWith('1, 3.'))).toBe(false);
+    // The «Kodlar:» list names each row by number (it always did), and the
+    // VED's line names the uncoded row by its name alone, as before.
     expect(lines).toContain(`· 2-qator «${part}» — kod yo‘q`);
-    expect(note.text).toContain(`⚠️ Kod topilmadi: 2-qator «${part}» — VED xodimi qo‘yadi`);
+    expect(note.text).toContain(`⚠️ Kod topilmadi: ${part} — VED xodimi qo‘yadi`);
   });
 
   it('A6: a grouping call that fails is asked once more inside the pass — and when it answers, nothing says it failed', async () => {
@@ -1374,11 +1382,15 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     }
     // Nothing else is owed — the row has its weight — so no block at all.
     expect(out.text).not.toContain(SELLER_ASKS_HEAD);
-    // The plain door's note says the same about the same failure (A6).
+    // Re-anchored (review ask-break-5): the plain door is FROZEN — its pass
+    // asks the model ONCE, as it always did (a retry is a second bill on the
+    // door this round leaves alone), and its note keeps its words.
     const plainId = await openAs('plain', [{ name: `${jacket} plain`, weightKg: 120 }]);
-    const note = await aiPrefill(plainId, ctx(), { configured: true, pick: noPick, propose: neverAnswers({ n: 0 }) });
-    expect(note.text).toContain(CODING_FAILED_LINE);
-    expect(note.text).not.toContain('Kod topilmadi');
+    const plainCalls = { n: 0 };
+    const note = await aiPrefill(plainId, ctx(), { configured: true, pick: noPick, propose: neverAnswers(plainCalls) });
+    expect(plainCalls.n, 'the plain door: one call, no retry').toBe(1);
+    expect(note.text).toContain(`⚠️ Kod topilmadi: ${jacket} plain — VED xodimi qo‘yadi`);
+    expect(note.text).not.toContain(CODING_FAILED_LINE);
   });
 
   it('A6: a call that answered for only SOME batches is a failure too — its unanswered rows are asked once more', async () => {
@@ -1445,19 +1457,83 @@ describe('one numbering, a failed coding call, and the add door’s asked rows (
     expect(out.text).not.toContain(CODING_FAILED_LINE);
   });
 
-  it('A6: no key behind the model is a fact about the server — said, and not asked twice', async () => {
-    const id = await openAs('ai', [{ name: `Shapka kalitsiz ${SUFFIX}`, weightKg: 20 }]);
+  it('A6: no key behind the model is a fact about the server — said as that, not asked twice, and the row is the VED’s', async () => {
+    // Re-anchored (review ask-spec-5): the call found no key, so no model was
+    // asked — «javob bermadi» (CODING_FAILED_LINE) would be untrue. The
+    // answer says «AI sozlanmagan», as a server with no key always has, and
+    // the uncoded row's line names who codes it; «bu nima?» is not asked of a
+    // row no machine will code (review ask-break-2).
+    const name = `Shapka kalitsiz ${SUFFIX}`;
+    const id = await openAs('ai', [{ name, weightKg: 20 }]);
     let calls = 0;
-    const out = await aiPrefill(id, ctx(), {
-      configured: true,
-      pick: noPick,
-      propose: async () => {
-        calls += 1;
-        throw new CalcError('ai_not_configured');
+    const out = await aiPrefill(
+      id,
+      ctx(),
+      {
+        configured: true,
+        pick: noPick,
+        propose: async () => {
+          calls += 1;
+          throw new CalcError('ai_not_configured');
+        },
       },
-    });
+      { expectRev: (await prefillTicket(id))! },
+    );
     expect(calls).toBe(1);
-    expect(out.text).toContain(CODING_FAILED_LINE);
+    expect(out.text).not.toContain(CODING_FAILED_LINE);
+    expect(out.text).toContain('AI sozlanmagan — faqat yozilganidan o‘qildi.');
+    expect(out.text.split('\n')).toContain(`1. ${name} — kod yo‘q — VED xodimi qo‘yadi`);
+    expect(out.text).not.toContain('bu nima');
+  });
+
+  /**
+   * Review ask-break-2: with no key on the server, or today's budget spent
+   * (`configured` false either way), no coder ran and none will on a re-run —
+   * yet the AI door asked «bu nima?» under «❓ AI so‘raydi» and the uncoded
+   * line dropped its «— VED xodimi qo‘yadi». The row is the VED's to code,
+   * said on its line; the figures the seller owes are still asked.
+   */
+  it('no coder at all — no key, or the day’s budget spent: an uncoded row is not asked «bu nima?», its line names the VED', async () => {
+    const part = `Zapchast koder yo‘q ${SUFFIX}`;
+    const jacket = `Sviter koder yo‘q ${SUFFIX}`;
+    const items = [
+      // The law (20 %, kamida $1/dona) pins a count this row lacks.
+      { name: jacket, tnvedCode: '6110200000', weightKg: 150 },
+      { name: part, weightKg: 5 },
+    ];
+    const check = (text: string, server: string) => {
+      const lines = text.split('\n');
+      expect(lines, server).toContain(`2. ${part} — kod yo‘q — VED xodimi qo‘yadi`);
+      expect(text, server).not.toContain('bu nima');
+      expect(text, server).not.toContain(WHAT_ANSWER_LINE);
+      // Row 1's count is the seller's still — asked, with the judge's head.
+      expect(lines, server).toContain(`· 1-qator «${jacket}»: soni (dona) — boj kamida $1/dona`);
+      expect(text, server).toContain(SELLER_ASKS_HEAD);
+    };
+    const noKey = await openAs('ai', items);
+    const a = await aiPrefill(noKey, ctx(), { configured: false, propose: idle, pick: noPick }, { expectRev: (await prefillTicket(noKey))! });
+    expect(a.text).toContain('AI sozlanmagan');
+    check(a.text, 'no key');
+
+    // Today's budget spent: the ledger holds one pass more than the limit
+    // allows (the ai-cost file's own way to reach zero), restored after.
+    const before = await getSetting('ai_calc_daily_limit');
+    const spent = await openAs('ai', items.map((i) => ({ ...i, name: `${i.name} limit` })));
+    await recordAiPass({ requestId: spent, staffId: numActor, kind: 'pick', model: 'scripted' });
+    const [used] = await db.execute<{ n: string }>(sql`
+      SELECT count(*)::text AS n FROM ai_calc_passes
+       WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
+         AND kind IN ('intake', 'grouping', 'pick', 'invoice')`);
+    await setSetting('ai_calc_daily_limit', Number(used!.n), numActor);
+    try {
+      const b = await aiPrefill(spent, ctx(), { configured: true, propose: idle, pick: noPick }, { expectRev: (await prefillTicket(spent))! });
+      expect(b.text).toContain('AI kunlik limiti tugadi');
+      const lines = b.text.split('\n');
+      expect(lines).toContain(`2. ${part} limit — kod yo‘q — VED xodimi qo‘yadi`);
+      expect(b.text).not.toContain('bu nima');
+    } finally {
+      await setSetting('ai_calc_daily_limit', before as never, numActor);
+    }
   });
 });
 

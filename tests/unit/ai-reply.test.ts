@@ -1162,17 +1162,17 @@ describe('the AI door asks again (A1, A2)', () => {
       .flat()
       .filter((l) => l.startsWith('✍️'))
       .flatMap((l) => /«([^»]*)»/.exec(l)![1]!.split('; '));
+    for (const e of examples) {
+      const { segments } = parseTableAnswer(e, table);
+      expect(segments.length, e).toBeGreaterThan(0);
+      for (const seg of segments) expect(seg.refused, e).toBeNull();
+    }
     // Typed from the asks, in ASK_RANK's order and at most two a block: the
     // first block's row 2 (no figure ranks first) and row 1 — its brutto is
     // the third figure ask and not shown; the words-only block none; the
     // brutto's own «jami 3500 kg»; row 2's «300 dona» beside the AI's
     // question. Never row 3's words.
     expect(examples).toEqual(['2: 300 dona', '1: 300 dona', 'jami 3500 kg', '2: 300 dona']);
-    for (const e of examples) {
-      const { segments } = parseTableAnswer(e, table);
-      expect(segments.length, e).toBeGreaterThan(0);
-      for (const seg of segments) expect(seg.refused, e).toBeNull();
-    }
     // A words-only block: no reply form, no promise of a re-run, and where the
     // words go instead — the reading's own question likewise.
     const words = sellerAsksBlock([what(3)]);
