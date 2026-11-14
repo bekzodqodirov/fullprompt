@@ -6611,6 +6611,7 @@
     "sessionLabel": "Session on the old server removed",
     "sessionNotYet": "not confirmed",
     "listenerBehind": "The Telegram listener is not updated — ✅ will not work. Rebuild tg-listen on the server.",
+    "ownerSignedOut": "The AI owner's Telegram account is disconnected — the AI writes no replies. Switch the AI off and choose a connected account under «Whose account», or reconnect this one.",
     "floodUntil": "Telegram asked to wait until {when}.",
     "onHolderOnly": "Only the account holder can switch it on — from their own login.",
     "modeOn": "Switch on (every reply through ✅)",

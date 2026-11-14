@@ -51,7 +51,8 @@ const PLACES: readonly Place[] = [
   {
     place: 'Yiwu',
     zone: 'cn',
-    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L}))|义乌|ییوو/iu,
+    // «ایوو» as well as «ییوو» (fix pass 6): the Persian customers write both, and the avia rule read only one.
+    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L}))|义乌|ییوو|ایوو/iu,
   },
   cn('Guangzhou', 'guangzhou|guanchjou|guanjou|гуанчжоу|广州|گوانگژو'),
   cn('Foshan', 'foshan|фошань|佛山|فوشان'),

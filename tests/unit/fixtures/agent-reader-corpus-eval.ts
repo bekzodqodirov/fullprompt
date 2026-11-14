@@ -134,7 +134,8 @@ function eligibleInput(): AutoGateInput {
       hasEstimate: false,
       estimatesStored: false,
       rail: false,
-      customerLocale: null,
+      // The customer's language, confidently the reply's (fix pass 6: an absent guess holds every reply now).
+      customerLocale: { locale: 'uz', confident: true },
       unreadNumeral: false,
     },
     tools: [],
@@ -241,9 +242,42 @@ function destination(lines: readonly string[]): Observed {
   return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
 }
 
+/**
+ * A later turn (fix pass 7, the check #1/#4): the customer's earlier lines in the chat's window, our reply after them,
+ * then this burst. With `remember`, the chat's stored language is what the earlier turn's run REMEMBERED
+ * (`localeToRemember`, run.ts — a commit without it counts the case «n/a»); without, the window alone. With `approved`
+ * (fix pass 8, the check #1), HE pressed ✅ on that earlier turn's reply in that language: what his ✅ teaches the chat
+ * (locale `approvedLocale`) is stored where nothing was — decide's own `coalesce` (a commit without it: «n/a»).
+ */
+function laterTurn(before: readonly string[], lines: readonly string[], stored: AgentLocale | null): AgentContext {
+  const earlier = before.map((b, i) => msg(b, i + 1));
+  const ours: ChatMessage = { ...msg('Rahmat!', before.length + 1), direction: 'out' };
+  const now = lines.map((b, i) => msg(b, before.length + 2 + i));
+  const messages = [...earlier, ours, ...now];
+  return { ...ctxOf(lines, stored), messages, history: messages, anchor: now.at(-1)!, burst: now };
+}
+
 /** The language clause on the memory a real run stores (`memoryFor`'s `customerLocale`). */
-function language(lines: readonly string[], stored: AgentLocale | null, reply: AgentLocale): Observed {
-  const mem = run.memoryFor(ctxOf(lines, stored), { compose: compose(reply, 'x'), tools: [], outcomes: [], usage }, [], 'gsr-t');
+function language(
+  lines: readonly string[],
+  stored: AgentLocale | null,
+  reply: AgentLocale,
+  before?: string,
+  remember?: boolean,
+  approved?: AgentLocale,
+): Observed {
+  let ctx = ctxOf(lines, stored);
+  if (before !== undefined) {
+    const prior = before.split('\n');
+    const earlier = ctxOf(prior, stored);
+    let kept = remember ? run.localeToRemember(earlier) : stored;
+    if (approved !== undefined) {
+      const taught = locale.approvedLocale({ reading: run.customerLocaleOf(earlier), language: approved, ownText: null });
+      kept = kept ?? taught;
+    }
+    ctx = laterTurn(prior, lines, kept);
+  }
+  const mem = run.memoryFor(ctx, { compose: compose(reply, 'x'), tools: [], outcomes: [], usage }, [], 'gsr-t');
   const input = eligibleInput();
   input.draft.language = reply;
   input.draft.body = 'x';
@@ -273,7 +307,14 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
     case 'destination':
       return destination(c.input.split('\n'));
     case 'language':
-      return language(c.input.split('\n'), (c.context?.stored ?? null) as AgentLocale | null, reply);
+      return language(
+        c.input.split('\n'),
+        (c.context?.stored ?? null) as AgentLocale | null,
+        reply,
+        c.context?.before,
+        c.context?.remember,
+        c.context?.approved as AgentLocale | undefined,
+      );
     case 'owner_figure':
       return ownerFigure(c.input);
     case 'money':

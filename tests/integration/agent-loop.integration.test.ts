@@ -42,7 +42,7 @@ import { chatIdentity, type AgentContext } from '@/modules/wms/agent/context';
 import { writeNotice } from '@/modules/wms/agent/drafts';
 import { strangerCards } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
-import { webDrafts } from '@/modules/wms/agent/web-page';
+import { ownerAccountState, webDrafts } from '@/modules/wms/agent/web-page';
 import { decideChat, openLeadForChat } from '@/modules/wms/crm/chat-rules';
 import { phoneFingerprint } from '@/modules/wms/crm/peer-index';
 
@@ -454,6 +454,24 @@ describe('«/agent» — the bot’s kill switch', () => {
     expect(await agentCommand(ownerId, '')).toContain("o'chiq");
     expect(await agentCommand(ownerId, 'on')).toContain('yoqildi');
     expect((await readAgentConfig())!.mode).toBe('shadow');
+  });
+
+  it('switched on over a SIGNED-OUT account it says so — the bot and the page — instead of «ishlayapti» (2026-11-14)', async () => {
+    // His server: the agent's owner was a person whose Telegram was signed out on 11-11, so the listener (which runs
+    // only on connected accounts) drafted nothing for two weeks while `/agent` said «ishlayapti» and the page said
+    // «tinglovchi yangilanmagan». Both now name the cause.
+    expect((await ownerAccountState(ownerId))!.connected).toBe(true);
+    expect(await agentCommand(ownerId, '')).toContain('ishlayapti');
+    await db.update(tgAccounts).set({ status: 'signed_out' }).where(eq(tgAccounts.id, accountId));
+    try {
+      expect((await ownerAccountState(ownerId))!.connected).toBe(false);
+      const said = await agentCommand(ownerId, '');
+      expect(said).toContain('akkaunti uzilgan');
+      expect(said).not.toContain('ishlayapti');
+    } finally {
+      await db.update(tgAccounts).set({ status: 'active' }).where(eq(tgAccounts.id, accountId));
+    }
+    expect((await ownerAccountState(ownerId))!.connected).toBe(true);
   });
 });
 

@@ -9715,3 +9715,73 @@ findings read that as «0 upheld» (#1662 again, the session moved to another mo
 journal); a running workflow does not see an edited spec, but an agent that has not started reads it — the owner's
 answers to part 2 were written into its spec as a binding §00 while part 1 was being checked; and the corpus should
 have been built at pass 1 — five passes and three checks paid for it.
+## To'liq AI sotuvchi, 1-qism b — the hunt, two checks and their costs, and the server's silent AI (2026-11-14; NO migration, ledger 149; numbered #1785-#1790)
+
+**#1785 — Part 1 as it shipped, and what was verified.** PR #151 (b213c959) merged after GitHub's CI was green on its head;
+the local CI-order run at b0f2559b (its code; the commit after it is docs only) on a fresh gsr_ci: migrate 149,
+typecheck 0, lint 0, vitest 940 files / 18,407 tests, build 0, e2e 527 passed + 1 skipped. He deployed it the same
+afternoon (count 149 confirmed). Part 1b is everything after it: three fix passes over the hunt and two checks, a test
+that was a calendar, and the server finding below.
+
+**#1786 — Fix pass 6, the hunt after the corpus (25f79d27).** The independent hunt over the corpus (a leak hunter and a
+held hunter, a refuter per finding) upheld thirteen items; pass 6 put each into the corpus first and made it hold. The
+armed avia rule became FAIL-CLOSED instead of one more verb list: a Chinese place in a statement directs in any case
+or preposition, a sending stem in ANY form directs unless its form reads as harmless (ours, denied, a participle,
+Tashkent's end, «yozib yuboring» — `sendsUnread`, `uzVerbForm`/`ruVerbForm`/`faVerbForm`), «to us» beside the cargo
+directs; the customer's own address and our Tashkent one are no direction (`addressDirects`); a clause that only passes
+information on is free (`sendsOnlyInfo`). His ✍️ answer's figures, spelled money and durations, the lesson's price
+without a money word (`priceNamingNoMoney`) and the destination list (separated endings, «Manzil: Osh», Iran, Turkey,
+the Persian Afghan cities) widened. And the language gate: a guess that leans on nothing, names no language or was
+never stored admitted NO reply by itself; only a confident guess was remembered. Corpus 708/0 · 421/7.
+
+**#1787 — The check of pass 6 measured what the corpus could not: its language gate stopped 142 of 308 ordinary
+replies.** A corpus of labelled cases says nothing about the shapes it lacks, and the corpus held almost no FIRST
+messages: the check wrote 314 ordinary customer-line + reply pairs (first contact, number-only, code-only, emoji,
+captions, unmarked Uzbek Latin and Russian, mixed, second turns, the seeded knowledge's own questions) and ran them
+through the real run and gate at b213c959 and 25f79d27 — 296 went by themselves before pass 6, 157 after, 125 of the
+losses refused `language`. Pass 6's new Russian words («понял», «ясно», «хотел») also let a Russian reply go to an
+Uzbek line and overwrite the chat's stored uz_cyrl. Fix pass 7 (f80e8ffc): the chat remembers what its whole burst
+decided (`localeToRemember` / `customerLocaleOf`, a confident guess or a lean), an unmarked burst leans on what the
+customer confidently said earlier in the window (`windowLocale`), «anything of Uzbek outweighs a Russian word»
+(`russianMarks`, RU_SOFT, the 'both' result), a Latin Uzbek ending lean, English loans vetoed by anything Uzbek; and
+the leaks the check found (Russian bare-unit durations, his ✍️ day words, loading/landing day promises, Mazar/Afg'on,
+every bare uncounted figure in a lesson, «bazamiz»/«на нашу базу») held. Corpus 866/0 · 533/22.
+
+**#1788 — The check of pass 7 measured, and pass 8 was the last: his own ✅ teaches the chat its language.** Measured on
+the same 314 pairs: 296 / 157 / 205 went at b213c959 / 25f79d27 / f80e8ffc; of the 94 still held, 71 are a FIRST message
+that says no language («GS777», «5 куб 800 кг», «👍», a caption, an unmarked Russian line, «Ok») — the stated trade —
+and two classes were common: a chat whose earlier lines said no language stayed held for ever, and colloquial Uzbek
+Latin («Narxlari qanaqa?»). Fix pass 8 (e5050040): his own ✅ on such a reply writes the approved reply's language to
+the chat (`approvedLocale`, inside the approval's transaction, only a person's press, only where nothing is stored and
+the reading said nothing) — so a new chat that says no language costs him ONE press and then flows; «qanaqa»,
+«vaqt…», «batafsil» and the plural possessive «-lari…» are Uzbek. Corpus at e5050040: **1,483 cases, 898 dangerous
+held / 0 let through, 563 ordinary go / 22 held on the ratchet** (b213c959 on the same corpus: 376 dangerous let
+through). STATED, rare, owed (the check's own words): an English line whose words END like Uzbek («dollar», «solar»,
+«Xiaomi», «Honda») now admits an Uzbek reply; a Russian sentence with one Uzbek interjection («яхши», «хозир») an
+Uzbek Cyrillic one; Russian typed in Latin with an Uzbek-looking ending leans Uzbek; a FORWARDED Uzbek message in the
+window counts as the customer's language; «Ха» is a greeting; an armed avia status saying the cargo WAS sent asks him.
+Present at b213c959 and not opened by 1b: «Yuk ertaga uchadi» (a day through the flight verb), time-of-day answers,
+spelled lesson prices with no price word, «Order berdim» read as English. The stopping rule held: eight passes, three
+checks, and each check found most of its defects in the previous pass's own fixes.
+
+**#1789 — On his server the AI had drafted nothing since 2026-10-29, and two screens said otherwise.** Diagnosed in chat
+after the deploy, from his queries: `agent_config.owner_user_id` was «Bekzod (Super admin)», whose own Telegram
+(+998901757800) had been signed out on 11-11, while the connected AI-seat number +998902405077 («BEKZOD AI
+sotuvchisi», `ish raqami`, 396 clients) was nobody's agent. The listener runs only on connected accounts and drafts
+only for the owner's (`agentHere`), so the last `agent_runs` row was of 10-29 (seven runs ever) — while `/agent` said
+«🤖 AI sotuvchi ishlayapti» (`agentRunning` reads the config only) and the page said «Telegram tinglovchisi
+yangilanmagan — serverda tg-listen'ni qayta quring» (the owner's guard row had not stamped since 11-11), which sent
+him to rebuild a container that was fine. Fixed: `agentOwnerConnected` (the existing `ownerConnected` rule) is asked
+by `ownerAccountState` (`connected`) and by `/agent`'s status line; both now say «AI egasining Telegram akkaunti
+uzilgan — AI xabarlarga javob yozmaydi …» (`agent-owner-signed-out`, four bundles); red-proven both ways. He was
+walked through moving the owner to the AI seat (off → owner → session confirm → `/hodim` + `/agent on` from 5077).
+CORRECTION to #1766: «on his server `agent_config.owner_user_id` is «BEKZOD AI sotuvchisi»» was written from his
+words, never read from his database — it was false. A claim about production is a query result or it is not written.
+
+**#1790 — Two tests that were not about the code.** (1) agent-lead-window and agent-decide-send set
+`agent_config.started_at` to the REAL clock minus 30 days and faked Date at fixed October/November moments; the send
+ramp gives a holder with no history ONE send a day for 14 days after the start, so as the calendar moved the start
+within 14 days of the probe moments the second ✅ read `budget_spent` — red from 2026-11-14 ~15:00 UTC, on main too, by
+the date alone. The start is a literal before every faked clock (722f2356). (2) m9zzzg's lesson carried the run id as
+digits, and pass 7 reads a bare uncounted figure in a lesson as a price; the tag is spelled in letters (7f1dfd1c).
+RULE (#1063's again): a test that fakes the clock fakes EVERY clock it compares against, or uses literals on both sides.

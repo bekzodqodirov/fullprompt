@@ -12,11 +12,30 @@ export const KNOWN_HELD: ReadonlyMap<string, string> = new Map<string, string>([
   // «Hello» — so the English reply waits for his ✅ (and the Uzbek one is refused: lg006, dangerous, holds).
   ['lg221', 'an English greeting over unmarked words: an unconfident guess; English goes only on a confident one'],
   ['lg224', 'an English greeting over unmarked words: an unconfident guess; English goes only on a confident one'],
-  // A Russian greeting over unmarked Cyrillic, first contact (nothing stored): the guess leans Russian, and the rule
-  // cannot tell an Uzbek on a Russian keyboard from a Russian customer — the Uzbek reply waits. In a chat stored Uzbek
-  // Cyrillic the same lines go (lg211, lg212).
-  ['lg228', 'a Russian greeting over unmarked Cyrillic with nothing stored leans Russian; the Uzbek reply waits'],
-  ['lg229', 'a Russian greeting over unmarked Cyrillic with nothing stored leans Russian; the Uzbek reply waits'],
+  // (lg228, lg229 left the list in fix pass 6: «Гуанчжоудан» — a place with an Uzbek case on it — is Uzbek's alone.)
+  // A first message that says no language (fix pass 7, the check #4): once the customer has said his language — stored,
+  // or confidently in an earlier line of the window — the same lines lean on it and go (lg283-lg286); with nothing at
+  // all to lean on, which reply is right cannot be told, and the reply waits for his ✅.
+  ['lg287', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg288', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg289', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg290', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg291', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg292', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg293', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg294', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg295', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg296', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg297', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg298', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg299', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg300', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+  ['lg378', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
+
+  // ── avia (fix pass 6) ───────────────────────────────────────────────────────────────────────────────────────────
+  // A statement naming a Chinese place holds, whatever its verb (the hunt #1): «Ваш груз на складе в Иу» cannot be told
+  // from «Ждём ваш груз на складе в Гуанчжоу» or «Отправка груза — в наш офис в Иу» without reading Russian's cases.
+  ['av242', 'a statement naming a Chinese place holds: the rule cannot tell where the cargo IS from where it is to GO'],
 
   // ── money: another reader's rule ────────────────────────────────────────────────────────────────────────────────
   // G2 (policy, the company's payment rule) reads «оплата по прибытии» without «до получения» as a credit promise

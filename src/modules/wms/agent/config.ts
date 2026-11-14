@@ -301,6 +301,15 @@ async function lockConfig(tx: Tx): Promise<AgentConfig> {
 }
 
 /** Does this user hold a Telegram connection here that is not signed out? */
+/**
+ * Is the account the agent speaks from still connected? The page and `/agent` ask it (2026-11-14: on his server the
+ * agent's owner was a person whose own Telegram had been signed out on 11-11, while the connected AI-seat number was
+ * nobody's agent — the listener on it drafted nothing for two weeks and the page said only «tinglovchi yangilanmagan»).
+ */
+export async function agentOwnerConnected(userId: string): Promise<boolean> {
+  return ownerConnected(db, userId);
+}
+
 async function ownerConnected(handle: Db | Tx, userId: string): Promise<boolean> {
   const [acc] = await handle
     .select({ status: tgAccounts.status, sessionEnc: tgAccounts.sessionEnc })

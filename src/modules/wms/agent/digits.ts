@@ -467,11 +467,13 @@ const DIGIT_HAN_MIX = /\d\s?[十百佰拾两]|\d\s?[千万亿仟]\s?[\d零〇一
  * («نهصدتا») and its plural («صدها», «هزاران»). The million and the milliard were no numeral in any language. An
  * ending is taken only from its own language's numerals — «столик» is a table, «uchun» is «for», «oltin» is gold.
  */
+// …and as people TYPE them (fix pass 6, the hunt #4-#6): «etti», «tokkiz», «yigrma», «ikkta» are the commonest spellings
+// of seven, nine, twenty and «two of», and a price or a day count in them went by itself.
 const UZ_NUMERALS =
-  "ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]?ttiz|qirq|ellik|oltmish|yetmish|sakson|to['‘’ʻ`]?qson|yuz|ming|million|milliard|mln|mlrd";
+  "ikki|ikkta|uch|to['‘’ʻ`]?rt|besh|olti|yetti|etti|sakkiz|to['‘’ʻ`]?qqiz|to['‘’ʻ`]?kkiz|o['‘’ʻ`]n|yigirma|yigrma|o['‘’ʻ`]?ttiz|qirq|ellik|oltmish|yetmish|sakson|to['‘’ʻ`]?qson|yuz|ming|million|milliard|mln|mlrd";
 /** As typed on a Russian keyboard too — «турт», «туккиз», «уттиз», «кирк», «туксон»; never «ун», which is flour. */
 const UZ_CYRL_NUMERALS =
-  'икки|уч|тўрт|турт|беш|олти|етти|саккиз|тўққиз|туккиз|ўн|йигирма|ўттиз|уттиз|қирқ|кирк|эллик|олтмиш|етмиш|саксон|тўқсон|туксон|юз|минг|миллион|миллиард|млн|млрд';
+  'икки|иккта|уч|тўрт|турт|беш|олти|етти|саккиз|тўққиз|туккиз|ўн|йигирма|йигрма|ўттиз|уттиз|қирқ|кирк|эллик|олтмиш|етмиш|саксон|тўқсон|туксон|юз|минг|миллион|миллиард|млн|млрд';
 /** «-ta», «-tacha», «-cha», «-lab», «-lar», the cases («ellikka», «qirqqa» double their consonant), «-lik». */
 const UZ_ENDING = '(?:ta(?:cha|dan|ga|si)?|cha|lab|lar(?:cha|ga|dan|ni)?|(?:ga|ka|qa)(?:cha)?|dan|da|ni|ning|lik)';
 const UZ_CYRL_ENDING = '(?:та(?:ча|дан|га|си)?|ча|лаб|лар(?:ча|га|дан|ни)?|(?:га|ка|қа)(?:ча)?|дан|да|ни|нинг|лик)';
@@ -482,15 +484,18 @@ const RU_TENS =
 const RU_HUNDREDS =
   'двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|(?:двух|тр[её]х|четыр[её]х|пяти|шести|семи|восьми|девяти)сот|(?:двум|тр[её]м|четыр[её]м|пяти|шести|семи|восьми|девяти)стам|(?:двумя|тремя|четырьмя|пятью|шестью|семью|восемью|девятью)стами';
 /** A hundred, a thousand, a million as words of their own — and the hundred as a noun («сотня», «пару сотен»). */
+// …«полтыщи», «пол-тысячи», the ten as a noun and the slang notes (fix pass 6, the hunt #4-#5): «Десяток коробок»,
+// «Десятка долларов за кило», «Пятёрка баксов», «Полтос баксов» are an amount nothing read.
 const RU_LONE =
-  'сто|ста|тысяч\\p{L}*|тыщ\\p{L}*|сотн\\p{L}*|сотен|сотк[аиу]|косар\\p{L}*|миллион\\p{L}*|миллиард\\p{L}*|млн|млрд|пол(?:миллиона|тысячи|сотни)';
+  'сто|ста|тысяч\\p{L}*|тыщ\\p{L}*|сотн\\p{L}*|сотен|сотк[аиу]|косар\\p{L}*|миллион\\p{L}*|миллиард\\p{L}*|млн|млрд|пол-?(?:миллион|тысяч|тыщ|сотн)\\p{L}*|десят(?:ок|ка|ки|ков|ку|кой)|дюжин\\p{L}*|двадцат(?:ка|ки|ку)|пят[её]р(?:ка|ки|ку)|полтос\\p{L}*|червон\\p{L}*';
 const EN_SMALL = 'two|three|four|five|six|seven|eight|nine|dozens?';
 const EN_TENS =
   'ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety';
-const EN_LONE = 'hundreds?|thousands?|millions?|billions?';
+const EN_LONE = 'hundreds?|thousands?|millions?|billions?|tenners?|fivers?';
 // The compound hundreds first (spec §4, probed at 0de07535: «هزینه حمل تقریباً نهصد دلار است» read as no numeral at
 // all — «صد» alone is not a word inside «نهصد»), so the alternation takes the whole word.
-const FA_HUNDREDS = 'دویست|سیصد|چهارصد|پانصد|ششصد|هفتصد|هشتصد|نهصد';
+// «پونصد» is how «پانصد» is said (fix pass 6, the hunt #4-#5).
+const FA_HUNDREDS = 'دویست|سیصد|چهارصد|پانصد|پونصد|ششصد|هفتصد|هشتصد|نهصد';
 const FA_SMALL = 'دو|سه|چهار|پنج|شش|هفت|هشت|ده';
 const FA_TENS = 'یازده|دوازده|سیزده|چهارده|پانزده|شانزده|هفده|هجده|نوزده|بیست|سی|چهل|پنجاه|شصت|هفتاد|هشتاد|نود';
 const FA_LONE = 'صد|هزار|هزاران|میلیون|میلیارد';
@@ -508,7 +513,7 @@ const NUMERAL_WORDS = [
   EN_SMALL,
   EN_TENS,
   EN_LONE,
-  `(?:${FA_NUMERALS})${FA_ENDING}?`,
+  `(?:${FA_NUMERALS})(?:و(?:${FA_NUMERALS}))*${FA_ENDING}?`,
 ].join('|');
 
 const UZ_INFLECTED = new RegExp(`^(${UZ_NUMERALS})${UZ_ENDING}$`, 'iu');
@@ -587,8 +592,8 @@ const MONEY_OR_MEASURE =
 // The half is a count of time too (0148 fix): «yarim oyda keladi», «ярим ойда», «نیم ماه» stated a fortnight no
 // reader saw — «半个月» always was one.
 const UZ_NUM_DEFINITE =
-  "bir|ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz|yarim";
-const UZ_CYRL_NUM_DEFINITE = 'бир|икки|уч|тўрт|беш|олти|етти|саккиз|тўққиз|ўн|йигирма|ўттиз|ярим';
+  "bir|ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|etti|sakkiz|to['‘’ʻ`]?qqiz|to['‘’ʻ`]?kkiz|o['‘’ʻ`]n|yigirma|yigrma|o['‘’ʻ`]ttiz|yarim";
+const UZ_CYRL_NUM_DEFINITE = 'бир|икки|уч|тўрт|турт|беш|олти|етти|саккиз|тўққиз|туккиз|ўн|йигирма|йигрма|ўттиз|ярим';
 const RU_NUM_DEFINITE =
   'од(?:ин|ну|ни|ного|ной)|два|две|двух|три|тр[её]х|четыре|четыр[её]х|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти';
 const RU_NUM_TENS = 'двадцать|тридцать';
@@ -596,7 +601,22 @@ const EN_NUM_DEFINITE = 'one|two|three|four|five|six|seven|eight|nine|ten|twenty
 const FA_NUM_DEFINITE = 'یک|دو|سه|چهار|پنج|شش|هفت|هشت|نه|ده|نیم';
 const HAN_DIGITS = '一二两俩三仨四五六七八九十半';
 const HAN_ANY = '一二两俩三仨四五六七八九十几半';
-const HAN_UNIT = '个?(?:工作日|天|日|周|星期|月|小时)';
+// «礼拜» and «旬» are a week and ten days as «周» is, and «多» sits between the count and its unit («一个多礼拜») — fix pass 6,
+// the hunt #6: «一个礼拜左右到», «一旬左右到» promised a transit time by themselves.
+const HAN_UNIT = '个?多?(?:工作日|天|日|周|星期|礼拜|旬|月|小时)';
+/** «个把月» (a month or so), «半拉月» (half a month) — a count with no numeral of its own. */
+const HAN_ROUGHLY = `(?:个把|半拉)\\s*${HAN_UNIT}`;
+/**
+ * The ORDINAL a promise is also made in (fix pass 6, the hunt #4, #6): «ikkinchi haftada», «uchinchi kuni», «на второй
+ * неделе», «на третий день», «within the second week», «on the third day» — a transit time all the same. From the
+ * second on: «birinchi», «первый», «first» are «first of all» as often.
+ */
+const ORDINAL_DURATIONS = [
+  "(?<![\\p{L}])(?:ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|etti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n)i?nchi\\s+(?:kun|hafta|oy)\\p{L}*",
+  '(?<![\\p{L}])(?:икки|уч|тўрт|турт|беш|олти|етти|саккиз|тўққиз|ўн)и?нчи\\s+(?:кун|ҳафта|хафта|ой)\\p{L}*',
+  '(?<![\\p{L}])(?:втор|трет|четв[её]рт|пят|шест|седьм|восьм|девят|десят)(?:ой|ий|ый|ья|ье|ая|ое|ую|ого|ом|ей)\\s+(?:день|дн\\p{L}*|недел\\p{L}*|месяц\\p{L}*|сут\\p{L}*)',
+  '(?<![\\p{L}])(?:second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\\s+(?:day|week|month)s?(?![\\p{L}])',
+];
 
 function spelledDurationSrc(vague: boolean): string {
   const uz = vague ? `${UZ_NUM_DEFINITE}|necha|bir\\s+necha` : UZ_NUM_DEFINITE;
@@ -608,15 +628,31 @@ function spelledDurationSrc(vague: boolean): string {
   const en = vague ? `${EN_NUM_DEFINITE}|a\\s+couple\\s+of|couple\\s+of|a\\s+few|few|several` : EN_NUM_DEFINITE;
   const fa = vague ? `${FA_NUM_DEFINITE}|چند` : FA_NUM_DEFINITE;
   // A run that holds a numeral of its own: «十几天» is ten-odd days, «几天» how many (or a few).
-  const han = vague ? `[${HAN_ANY}]+${HAN_UNIT}` : `[${HAN_ANY}]*[${HAN_DIGITS}][${HAN_ANY}]*${HAN_UNIT}`;
+  const han = vague ? `[${HAN_ANY}]+${HAN_UNIT}|${HAN_ROUGHLY}` : `[${HAN_ANY}]*[${HAN_DIGITS}][${HAN_ANY}]*${HAN_UNIT}|${HAN_ROUGHLY}`;
   return [
     `(?<![\\p{L}])(?:${uz})(?:[-–\\s]+(?:${uz}))*\\s+(?:ish\\s+)?(?:kun|hafta|oy|soat|daqiqa|sutka)(?:lar)?(?:i(?:da|ga|dan|ni|ning|gacha)?|da|ga|dan|ni|ning|gacha|lik|cha)?(?![\\p{L}])`,
     `(?<![\\p{L}])(?:${uzCyrl})(?:[-–\\s]+(?:${uzCyrl}))*\\s+(?:иш\\s+)?(?:кун|ҳафта|ой|соат|дақиқа)(?:лар)?(?:и(?:да|га|дан|ни|нинг|гача)?|да|га|дан|ни|нинг|гача|лик|ча)?(?![\\p{L}])`,
-    `(?<![\\p{L}])(?:${ru})(?:[-–\\s]+(?:${ru}))*\\s+(?:(?:рабоч|календарн)\\p{L}*\\s+)?(?:дн(?:я|ей)|день|сут(?:ки|ок)|недел[иьяю]|месяц(?:а|ев)?|час(?:а|ов)?)(?![\\p{L}])`,
-    '(?<![\\p{L}])(?:через|в\\s+течение|в\\s+пределах)\\s+(?:недел[юи]|месяц[а]?|сутки|суток|день|дня|час[а]?)(?![\\p{L}])',
+    `(?<![\\p{L}])(?:${ru})(?:[-–\\s]+(?:${ru}))*\\s+(?:(?:рабоч|календарн)\\p{L}*\\s+)?(?:дн(?:я|ей)|день|сут(?:ки|ок)|недел[иьяю]|недельк\\p{L}*|месяц(?:а|ев)?|час(?:а|ов)?)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:через|в\\s+течение|в\\s+пределах)\\s+(?:недел[юи]|недельк\\p{L}*|месяц[а]?|сутки|суток|день|дня|час[а]?)(?![\\p{L}])',
     '(?<![\\p{L}])пол[-\\s]?(?:месяца|года|недели|дня|часа)(?![\\p{L}])',
+    // A transit time said with its unit ALONE (fix pass 7, the check #7) — «около недели», «за неделю», «займёт неделю»,
+    // «до месяца», «неделя-две», «за сутки», «неделю с небольшим»: a time no numeral word states and every reader
+    // missed. Only with what makes it a span — never «всю неделю», «каждую неделю», «на этой неделе».
+    '(?<![\\p{L}])(?:за|около|примерно|приблизительно|где-?то|обычно|до|больше|более|меньше|менее|займ[её]т|занима(?:ет|ют)|ид[её]т|в\\s+пути)\\s+(?:всего\\s+)?(?:недел[юия]|недельк\\p{L}*|месяц[а]?|сутки|суток)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:недел[юя]|месяц)\\s*[-–]\\s*(?:две|два|три|полтор[аы])(?![\\p{L}])|(?<![\\p{L}])недел[юя]\\s+с\\s+небольшим(?![\\p{L}])',
+    '(?<![\\p{L}])(?:hafta|oy|ҳафта|хафта|ой)\\s+(?:ichida|ичида)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:haftada|oyda|ҳафтада|хафтада|ойда)\\s+(?:yetib\\s+|етиб\\s+)?(?:kel|bor|yetkaz|кел|бор|етказ)\\p{L}*',
+    // …and a vague count of WEEKS or MONTHS — «a couple of weeks», «пару недель», «bir necha hafta» — is a transit time
+    // and nothing else here (a calculation takes minutes, an answer hours): a count, as a definite one is.
+    '(?<![\\p{L}])(?:a\\s+couple\\s+of|couple\\s+of|a\\s+few|several)\\s+(?:weeks?|months?)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:пар[уыа]|нескольк\\p{L}*)\\s+(?:недел\\p{L}*|месяц\\p{L}*)',
+    '(?<![\\p{L}])(?:bir\\s+necha|бир\\s+неча)\\s+(?:hafta|oy|ҳафта|хафта|ой)\\p{L}*',
     `(?<![\\p{L}])(?:${en})(?:[-–\\s]+(?:or\\s+)?(?:${en}))*\\s+(?:(?:business|working|calendar)\\s+)?(?:days?|weeks?|months?|hours?)(?![\\p{L}])`,
-    '(?<![\\p{L}])(?:in|within)\\s+(?:a|an)\\s+(?:day|week|month|hour)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:in|within)\\s+(?:a|an)\\s+(?:day|week|month|hour|fortnight)(?![\\p{L}])',
+    // «It takes a week or so», «in a fortnight» (fix pass 6, the hunt #6) — never «once a week», «a week ago».
+    '(?<![\\p{L}])(?<!(?:once|twice|thrice|per|every|each|times|than)\\s+)a\\s+(?:week|month|fortnight)(?![\\p{L}])(?!\\s+ago)',
+    '(?<![\\p{L}])fortnights?(?![\\p{L}])',
+    ...ORDINAL_DURATIONS,
     '(?<![\\p{L}])half\\s+an?\\s+(?:day|week|month|hour|year)(?![\\p{L}])',
     `(?<![\\p{L}])(?:${fa})\\s+(?:روز|هفته|ماه|ساعت)`,
     han,
@@ -627,7 +663,7 @@ function spelledDurationSrc(vague: boolean): string {
 export const SPELLED_DURATION_SRC = spelledDurationSrc(true);
 /** …and the ones that state a count — what G1 refuses as a figure it cannot source. */
 const SPELLED_DURATION = new RegExp(spelledDurationSrc(false), 'iu');
-const HAN_SPELLED_DURATION = new RegExp(`[${HAN_ANY}]*[${HAN_DIGITS}][${HAN_ANY}]*${HAN_UNIT}`, 'u');
+const HAN_SPELLED_DURATION = new RegExp(`[${HAN_ANY}]*[${HAN_DIGITS}][${HAN_ANY}]*${HAN_UNIT}|${HAN_ROUGHLY}`, 'u');
 
 /**
  * A spelled duration whose count ASKS (P5): «necha kunda», «неча кун», «چند روز», «几天» — never «bir
@@ -674,9 +710,13 @@ function hanFigure(text: string): boolean {
 
 /** A text's words, as the word-numeral check reads its neighbours — a comma is a token, «m³» (folded «m3») one word. */
 const TOKEN = /[\p{L}\p{M}'‘’ʻ`.\-]+(?:[23](?!\d))?|[$€¥£₽₸₺؋]|[,，]/gu;
-const NUMERAL_TOKEN = new RegExp(`^(?:bir[-–])?(?:${NUMERAL_WORDS})(?:[-–](?:${NUMERAL_WORDS}))*[.,]?$`, 'iu');
+// A compound glued with no hyphen counts as written (fix pass 6, the hunt #4-#5): «beshyuz», «o'nbesh», «ikkiyuz»,
+// «yuzoltmish», «бешюз» — the whole token must be numerals, so «uchun» (uch + un) is none: «ун» is no numeral.
+const NUMERAL_WORD_G = new RegExp(`(?:${NUMERAL_WORDS})`, 'giu');
+const NUMERAL_WORD_WHOLE = new RegExp(`^(?:${NUMERAL_WORDS})$`, 'iu');
+const NUMERAL_TOKEN = new RegExp(`^(?:bir[-–]?)?(?:${NUMERAL_WORDS})(?:[-–]?(?:${NUMERAL_WORDS}))*[.,]?$`, 'iu');
 /** «besh yarim», «два с половиной» — the half that goes on a spelled figure. */
-const HALF_TOKEN = /^(?:yarim|ярим|половин\p{L}*|half|نیم)[.,]?$/iu;
+const HALF_TOKEN = /^(?:yarim|ярим|yarm\p{L}+|ярм\p{L}+|половин\p{L}*|half|نیم|نصف\p{L}*)[.,]?$/iu;
 /**
  * Words that stand between a price word and its figure without changing whose figure it is: «narxi esa besh
  * yuz», and a hedge — «Narxi taxminan uch yuz bo'ladi» is a price spelled out all the same.
@@ -964,8 +1004,10 @@ function numeralInPricedReply(normalized: string): boolean {
       // «Ming rahmat», and «Ming marta rahmat», «ming bor rahmat», «тысячу раз спасибо» — a thousand times thanks.
       const thanked = after !== undefined && (THANKS.test(after) || (TIMES.test(after) && THANKS.test(tokens[j + 2] ?? '')));
       if (thanked) continue;
+      // A glued compound is read as its numerals (fix pass 6): «beshyuz» is «besh» and «yuz», a hundred.
       const parts = run
         .flatMap((t) => t.replace(/[.,]$/u, '').split(/[-–]/u))
+        .flatMap((w) => (NUMERAL_WORD_WHOLE.test(w) ? [w] : (w.match(NUMERAL_WORD_G) ?? [w])))
         .filter((w) => w !== '' && !/^bir$/iu.test(w))
         .map(numeralStem);
       const large = parts.some((w) => SCALE_WORD.test(w) || TENS_WORD.test(w));
@@ -987,10 +1029,11 @@ function numeralInPricedReply(normalized: string): boolean {
  * language — beside a cube or a carton it is the article as often as a count, beside a dollar it is one dollar. And
  * the half the same: «yarim dollar», «полдоллара», «half a dollar», «نیم دلار».
  */
+// …«bitta», the quarter (fix pass 6, the hunt #5): «Kilosiga bitta dollar», «Kilosiga chorak dollar» named one count of it.
 const ONE_OR_HALF =
-  'bir|бир|один|одна|одну|одного|одной|одним|one|یک|یه|yarim|ярим|half(?:\\s+an?)?|نیم|bir\\s+yarim|бир\\s+ярим|полтор[аы]|one\\s+and\\s+a\\s+half';
+  'bir|бир|bitta|битта|один|одна|одну|одного|одной|одним|one|یک|یه|yarim|ярим|half(?:\\s+an?)?|نیم|bir\\s+yarim|бир\\s+ярим|полтор[аы]|one\\s+and\\s+a\\s+half|chorak|чорак|четверть|(?:a\\s+)?quarter(?:\\s+of\\s+a)?';
 const ONE_BESIDE_CURRENCY = new RegExp(
-  `(?<![\\p{L}])(?:${ONE_OR_HALF})\\s+(?:${alt(SIGNS)}|${alt(CURRENCY_NAMES)})|(?<![\\p{L}])пол[-\\s]?(?:доллара|евро|рубля|юаня)`,
+  `(?<![\\p{L}])(?:${ONE_OR_HALF})\\s+(?:${alt(SIGNS)}|${alt(CURRENCY_NAMES)})|(?<![\\p{L}])пол[-\\s]?(?:доллара|евро|рубля|юаня|бакса)`,
   'giu',
 );
 /**
@@ -1098,6 +1141,11 @@ const CURRENCY_AS_AMOUNT = new RegExp(
     `(?<![\\p{L}])(?:dollar|dollor|so['‘’ʻ\`]?m|sum|yuan|y?evro|доллар|долар|сўм|сум|юан|евро)дан|(?<![\\p{L}])(?:dollar|dollor|so['‘’ʻ\`]?m|sum|yuan|y?evro)dan(?![\\p{L}])`,
     `${CURRENCY_WORD}[-\\s]+(?:\\p{L}+[-\\s]+)?(?:yarim|ярим|с\\s+половиной|and\\s+a\\s+half|و\\s+نیم)`,
     `(?<![\\p{L}])(?:полтинник|стольник|пятихатк|пятисотк|косар|тысячн)\\p{L}*\\s+(?:\\p{L}+\\s+)?${CURRENCY_WORD}`,
+    // …«about a dollar» as Uzbek glues it («dollarcha»), «по доллару» (a dollar each), and the per-unit BEFORE the bare
+    // currency — «за кило доллар», «Кило — доллар» (fix pass 6, the hunt #5; the slang notes are numerals, `RU_LONE`).
+    `(?<![\\p{L}])(?:dollar|dollor|so['‘’ʻ\`]?m|sum|yuan|y?evro)cha(?![\\p{L}])|(?<![\\p{L}])(?:доллар|долар|сўм|сум|юан|евро)ча(?![\\p{L}])`,
+    `(?<![\\p{L}])по\\s+(?:доллар|долар|бакс|евро|юан|рубл)(?:у|ю)(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:за\\s+)?(?:кило|кг|куб|тонн)\\p{L}*\\s*(?:[—–-]+\\s*)?(?:доллар|долар|бакс|евро|юань|рубль|сум|сўм)(?![\\p{L}])`,
     // The per-unit right after the currency — only where the currency word IS the amount: its bare singular, never
     // after «в»/«in» («Цены указаны в долларах за куб», «Our rates are in dollars per kg» name the currency of a
     // price, and lost going by themselves to this branch — fix pass 4).
@@ -1166,8 +1214,85 @@ export function unreadNumeral(normalized: string): boolean {
  */
 // …never «the same» either (fix pass 4): «одно и то же», «один и тот же», «одна и та же» name no count.
 const ONE_COUNTS_ITSELF =
-  /(?<![\p{L}])(?:bittadan|биттадан|yarimta|яримта|од(?:ин|на|ну|но|ного|ной|ним|ном)(?!\s+из(?![\p{L}]))(?!\s+и\s+т(?:о|от|а|е|ого|ой|ем|у)(?![\p{L}])))(?![\p{L}])/iu;
-const HALF_GLUED = /(?<![\p{L}])пол(?:куб|тонн|кило|килограмм|метр|года|месяц|недел|дня|часа|доллар|евро|рубл|юан|сотни|тысяч|миллион)\p{L}*/iu;
+  /(?<![\p{L}])(?:bitta|битта|bittadan|биттадан|yarimta|яримта|од(?:ин|на|ну|но|ного|ной|ним|ном)(?!\s+из(?![\p{L}]))(?!\s+и\s+т(?:о|от|а|е|ого|ой|ем|у)(?![\p{L}])))(?![\p{L}])/iu;
+const HALF_GLUED =
+  /(?<![\p{L}])(?:пол(?:куб|тонн|кило|килограмм|метр|года|месяц|недел|дня|часа|доллар|евро|рубл|юан|сотни|тысяч|миллион|цен|ставк|суммы)\p{L}*|вполовину|наполовину|пополам|напополам)(?![\p{L}])/iu;
+/**
+ * In his ✍️ answer (fix pass 6, the hunt #4) — what the readers above took for no figure, each a number all the same:
+ *  - a bare MEASURE as the minimum, with no «one»: «Kubdan kam yukni olmaymiz», «Tonnadan kam…», «Меньше куба не берём»;
+ *  - an ORDINAL: «Ikkinchi haftada keladi», «Uchinchi kuni yuboramiz», «Отправим на третий день», «the second week»;
+ *  - a FRACTION: «Скидка треть», «chorak», «a quarter», «ربع»;
+ *  - a FREQUENCY: «Haftada bir marta jo'natamiz», «раз в неделю», «once a week».
+ * His promise is «javobingizda raqam bo'lsa — karta»: a form missed here relays his figure with no ✅.
+ */
+const ANSWER_FIGURE = new RegExp(
+  [
+    "(?<![\\p{L}])(?:kub|tonn|kilo|kg|metr|куб|тонн|кило|кг|метр)\\p{L}*\\s+(?:kam|ko['‘’ʻ`]?p|ortiq|oshiq|кам|кўп|куп|ортиқ|ортик)(?![\\p{L}])",
+    '(?<![\\p{L}])(?:меньше|больше|менее|более|свыше|минимум|максимум)\\s+(?:куб|тонн|кило|килограмм|кг|метр)\\p{L}*',
+    '(?<![\\p{L}])(?:less|more|fewer)\\s+than\\s+(?:a\\s+)?(?:cube|ton|tonne|kilo|cbm|meter|metre)s?(?![\\p{L}])',
+    "(?<![\\p{L}])(?:ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|etti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz)i?nchi\\p{L}*",
+    '(?<![\\p{L}])(?:икки|уч|тўрт|турт|беш|олти|етти|саккиз|тўққиз|ўн|йигирма)и?нчи\\p{L}*',
+    '(?<![\\p{L}])(?:втор|трет|четв[её]рт|пят|шест|седьм|восьм|девят|десят)(?:ой|ий|ый|ья|ье|ая|ое|ую|ого|ом|ей)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|fortnights?)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:треть\\p{L}*|трети|четверт\\p{L}*|chorak\\p{L}*|чорак\\p{L}*|quarters?)(?![\\p{L}])|ربع|ثلث',
+    "(?<![\\p{L}])(?:bir|бир)\\s+(?:marta|марта)(?![\\p{L}])|(?<![\\p{L}])раз\\s+в(?![\\p{L}])|(?<![\\p{L}])(?:once|twice)(?![\\p{L}])",
+    // …the 50/50 split typed with its hyphen (fix pass 7, the check #8): «To'lovni yarim-yarim qilamiz».
+    '(?<![\\p{L}])(?:yarim|ярим)\\s*[-–]\\s*(?:yarim|ярим)(?![\\p{L}])',
+  ].join('|'),
+  'iu',
+);
+/**
+ * A DAY in his answer (fix pass 7, the check #8) — a weekday, «ertaga», «indinga», «завтра», «tomorrow», «kelasi hafta»,
+ * «на следующей неделе», «oy oxiri», «next Monday», «明天», «فردا»: «Ertaga yuklanadi», «Dushanba kuni yuklanadi» were read
+ * as holding no figure, and the redraft «Yukingiz ertaga yuklanadi» went by itself. A date he gives is his figure as a
+ * digit date is (prompt rule 1 names «kun, sana»). «Juma» only as the day — «juma kuni», «jumada» — it is a name too.
+ */
+const ANSWER_DAY = new RegExp(
+  [
+    "(?<![\\p{L}])(?:ertaga|indinga|indin|ertasiga|dushanba|seshanba|chorshanba|payshanba|shanba|yakshanba)\\p{L}*",
+    "(?<![\\p{L}])juma(?:da|gacha|ga|\\s+kun\\p{L}*)(?![\\p{L}])",
+    "(?<![\\p{L}])(?:kelasi|keyingi|kelgusi)\\s+(?:hafta|oy)\\p{L}*|(?<![\\p{L}])(?:hafta|oy)\\s+(?:oxir|bosh)\\p{L}*",
+    '(?<![\\p{L}])(?:эртага|ертага|индинга|душанба|сешанба|чоршанба|пайшанба|шанба|якшанба)\\p{L}*',
+    '(?<![\\p{L}])жума(?:да|гача|га|\\s+кун\\p{L}*)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:келаси|кейинги|келгуси)\\s+(?:ҳафта|хафта|ой)\\p{L}*|(?<![\\p{L}])(?:ҳафта|хафта|ой)\\s+(?:охир|бош)\\p{L}*',
+    '(?<![\\p{L}])(?:(?:после)?завтра|понедельник\\p{L}*|вторник\\p{L}*|сред[уы]|четверг\\p{L}*|пятниц\\p{L}*|суббот\\p{L}*|воскресень\\p{L}*)',
+    '(?<![\\p{L}])(?:на\\s+)?следующ\\p{L}*\\s+(?:недел|месяц)\\p{L}*|(?<![\\p{L}])(?:в|к|до)\\s+конц[еау]\\s+(?:недел|месяц)\\p{L}*',
+    '(?<![\\p{L}])(?:tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\\s+(?:week|month)|end\\s+of\\s+(?:the\\s+)?(?:week|month))(?![\\p{L}])',
+    '明天|后天|下周|下星期|下礼拜|星期[一二三四五六日天]|礼拜[一二三四五六日天]|周[一二三四五六日]|月底',
+    'فردا|شنبه|جمعه|هفته[\\s\\u200c]*(?:ی\\s+)?(?:بعد|آینده)|آخر\\s+ماه',
+  ].join('|'),
+  'iu',
+);
+/** Every spelled duration, the vague ones included — «через пару дней» in his answer is a time he gave (fix pass 7). */
+const ANSWER_DURATION = new RegExp(SPELLED_DURATION_SRC, 'iu');
+
+/**
+ * The spelled numerals of a NORMALISED text, run by run — «o'n yetti», «bir yuz oltmish», «семнадцать» — each with
+ * where it starts (fix pass 7, the check #11: «Avia o'n yetti», «Kubi bir yuz oltmish» saved as lessons). «bir» belongs
+ * to a run only before another numeral: alone it is the article.
+ */
+export function spelledNumeralRuns(normalized: string): { raw: string; index: number }[] {
+  const out: { raw: string; index: number }[] = [];
+  let start = -1;
+  let end = -1;
+  let pendingBir = -1;
+  for (const m of normalized.matchAll(TOKEN)) {
+    const t = m[0];
+    if (NUMERAL_TOKEN.test(t)) {
+      if (start < 0) start = pendingBir >= 0 ? pendingBir : m.index;
+      end = m.index + t.length;
+      pendingBir = -1;
+      continue;
+    }
+    if (start >= 0) {
+      out.push({ raw: normalized.slice(start, end), index: start });
+      start = -1;
+    }
+    pendingBir = /^(?:bir|бир)$/iu.test(t) ? m.index : -1;
+  }
+  if (start >= 0) out.push({ raw: normalized.slice(start, end), index: start });
+  return out;
+}
 /**
  * «One» as the article it also is — a count only beside a measure, a classifier or a currency; «bitta» the same
  * («bitta karobka» is one carton, «bitta savol» one question). Never «bir necha», «a few»: a vague count is no figure.
@@ -1189,7 +1314,7 @@ export function holdsNumeral(text: string): boolean {
   if (/\p{N}/u.test(normalized) || unverifiableNumeral(normalized) !== null || unreadNumeral(normalized)) return true;
   // «Bir daqiqa, hozir aytaman», «Одну минуту, уточню» are «one moment» — G1's own exception (`ONE_MOMENT`).
   const said = normalized.replace(ONE_MOMENT, ' ');
-  if (ONE_COUNTS_ITSELF.test(said) || HALF_GLUED.test(said)) return true;
+  if (ONE_COUNTS_ITSELF.test(said) || HALF_GLUED.test(said) || ANSWER_FIGURE.test(said) || ANSWER_DAY.test(said) || ANSWER_DURATION.test(said)) return true;
   const tokens = said.match(TOKEN) ?? [];
   return tokens.some(
     (t, i) =>

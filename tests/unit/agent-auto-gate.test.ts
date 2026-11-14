@@ -657,12 +657,19 @@ describe('six languages (spec §4): the customer’s, never the model’s label'
     expect(lang('en', { locale: 'uz', confident: true })).toEqual(['language']);
   });
 
-  it('Uzbek and Russian keep today’s rule unless a confident guess says otherwise', () => {
-    // Today's rule: an unconfident (or absent) guess lets uz / uz_cyrl / ru through.
+  it('Uzbek and Russian go on a confident guess of that very language, or an unconfident one that LEANS on it', () => {
+    // Fix pass 6 (the hunt #3) — corrected expectation: «today's rule» let an unconfident (or absent) guess pass every
+    // uz / uz_cyrl / ru reply, and «Иудан Тошкентгача неча пул?» (an unconfident «ru») took a Russian reply by itself.
+    // Where the rule cannot tell, it holds; a lean admits its own language only.
     for (const l of ['uz', 'uz_cyrl', 'ru']) {
-      expect(lang(l, null), `${l} no guess`).toEqual([]);
-      expect(lang(l, { locale: 'en', confident: false }), `${l} unconfident`).toEqual([]);
+      expect(lang(l, null), `${l} no guess`).toEqual(['language']);
+      expect(lang(l, { locale: null, confident: false }), `${l} names no language`).toEqual(['language']);
+      expect(lang(l, { locale: 'en', confident: false }), `${l} unconfident, other`).toEqual(['language']);
+      expect(lang(l, { locale: l, confident: false }), `${l} unconfident, no lean`).toEqual(['language']);
+      expect(lang(l, { locale: l, confident: false, leans: true }), `${l} leans on it`).toEqual([]);
+      expect(lang(l, { locale: l, confident: true }), `${l} confident`).toEqual([]);
     }
+    expect(lang('ru', { locale: 'uz_cyrl', confident: false, leans: true })).toEqual(['language']);
     // An Uzbek Cyrillic customer and a Russian reply: one script, refused on the confident guess.
     expect(lang('ru', { locale: 'uz_cyrl', confident: true })).toEqual(['language']);
     expect(lang('uz', { locale: 'en', confident: true })).toEqual(['language']);

@@ -22,7 +22,7 @@ import { cardDigest, cardDrawsSend, cardTeaches, digestBody, lessonRewritingNow 
 import { answeredNow, renderDraftCardFull } from './card-io';
 import { autoCountingDown } from './auto-card';
 import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
-import { agentAutoReady, agentFullP1Ready, agentTablesReady, type AgentConfig } from './config';
+import { agentAutoReady, agentFullP1Ready, agentOwnerConnected, agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
 import { readSendCaps } from './send-caps';
@@ -461,13 +461,20 @@ export interface OwnerAccountState {
   /** The listener's agent pump has not stamped within `pumpFreshMs` — ✅ is refused (`listener_behind`). */
   listenerBehind: boolean;
   agentPumpAt: Date | null;
+  /**
+   * The owner's Telegram is connected (not signed out, a session stored). False: the agent drafts NOTHING — the
+   * listener runs only on connected accounts — and that, not a stale listener, is what the page says.
+   */
+  connected: boolean;
 }
 
 export async function ownerAccountState(ownerUserId: string | null, now = new Date()): Promise<OwnerAccountState | null> {
   if (!ownerUserId) return null;
   const g = await guardForUser(ownerUserId);
   if (!g) return null;
+  const connected = await agentOwnerConnected(ownerUserId);
   return {
+    connected,
     accountId: g.accountId,
     pausedAt: g.pausedAt,
     pausedKind: g.pausedKind,

@@ -6611,6 +6611,7 @@
     "sessionLabel": "旧服务器上的会话已删除",
     "sessionNotYet": "未确认",
     "listenerBehind": "Telegram 监听程序未更新 — ✅ 无效。请在服务器上重新构建 tg-listen。",
+    "ownerSignedOut": "AI 所属的 Telegram 账号已断开 — AI 不会回复任何消息。请先关闭 AI，再在「谁的账号」中选择已连接的账号，或重新连接此账号。",
     "floodUntil": "Telegram 要求等待至 {when}。",
     "onHolderOnly": "只有账号持有人本人登录后才能开启。",
     "modeOn": "开启（每条回复都需 ✅）",

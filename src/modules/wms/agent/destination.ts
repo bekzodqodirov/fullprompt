@@ -67,6 +67,10 @@ const STEMS: readonly string[] = [
   'nurafshon', 'нурафшон',
   'asaka', 'асака',
   'shahrixon', 'шаҳрихон', 'шахрихан',
+  // …the Andijan region's district towns, where the company has a warehouse of its own (fix pass 7, the check #10).
+  // «Marhamat» is «please» and «Baliqchi» a fisherman: those two only in a place's own form (`ENDED`).
+  'qorasuv', 'қорасув', 'корасув', 'xonobod', 'хонобод', 'ханабад', `oltinko${A}l`, 'олтинкўл', 'олтинкул', 'алтынкул',
+  `paytug${A}`, 'пайтуғ', 'пайтуг', 'izboskan', 'избоскан', `qo${A}rg${A}ontepa`, 'қўрғонтепа', 'кургантепа', 'кургонтепа',
   'quvasoy', 'қувасой', 'кувасай',
   'rishton', 'риштон', 'риштан',
   'kosonsoy', 'косонсой', 'касансай',
@@ -109,6 +113,8 @@ const STEMS: readonly string[] = [
   'jalol-?obod', 'жалол-?обод', 'джалал-?абад', 'jalal-?abad',
   'karakol', 'каракол',
   'batken', 'баткен', 'tokmok', 'токмок', `o${A}zgan`, 'ўзган', 'узген',
+  // …and Kara-Suu, Naryn (fix pass 7, the check #10; Talas below).
+  'kara-?\\s?suu', 'кара-?\\s?суу', 'карасуу', 'карасу', 'naryn', 'нарын', 'norin', 'норин',
   // Tajikistan.
   'tojikisto?n', 'тожикисто?н', 'таджикистан', 'tajikistan',
   'dushanbe', 'душанбе',
@@ -118,6 +124,9 @@ const STEMS: readonly string[] = [
   `afg${A}onisto?n`, 'афғонисто?н', 'афганистан', 'afghanistan',
   'kobul', 'кобул',
   `mozori${A}?\\s*sharif`, 'мазари-?\\s*шариф', 'mazar-?i-?\\s*sharif', 'mazari\\s*sharif',
+  // …and the Afghan hub as people write it (fix pass 7, the check #10): «Mazar-e Sharif», «Mazar», «Mozor», «Мазар»,
+  // and Afghanistan in short — «Afg'on», «Афган».
+  'mazar', 'мазар', 'mozor', 'мозор', `afg${A}on`, 'афғон', 'афгон', 'афган',
   'hirot', 'ҳирот', 'герат', 'herat',
   'qandahor', 'қандаҳор', 'кандагар', 'kandahar',
   'qunduz', 'қундуз', 'кундуз', 'kunduz',
@@ -137,6 +146,11 @@ const STEMS: readonly string[] = [
   // Baku («Боку» is the Uzbek, and only with its endings — «на боку» is «on its side»), Minsk, Moldova, Temirtau, Abu
   // Dhabi, Isfahan, Kazan (Russian «Казань» with its «ь» — «казан» is a cauldron, and goods).
   `ozarbayjon`, 'озарбайжон', 'азербайджан', 'azerbaijan', 'azerbayjan',
+  // …and the hunt over pass 5 (fix pass 6, #8): Iran and Turkey themselves beside their listed cities, Balkh, and the
+  // usual h-for-x and u-for-o spellings of listed places («Buhoroga», «Fergonaga», «Qashqadaryaga», «Kukonga», «Horazm»).
+  'eron', 'iran', 'иран', 'ерон', 'turkiy', 'turkey', 'турци', 'туркия',
+  'balkh', 'balx', 'балх',
+  'buhoro', 'bukhoro', 'buhara', 'fergon', 'qashqadar', 'kashkadar', 'қашқадар', 'кашкадар', 'ku[kq]on', 'horazm', 'hiva',
   'baku', 'баку',
   'minsk', 'минск', 'belarus', 'беларус',
   'moldov', 'молдов',
@@ -158,25 +172,36 @@ const TOWN_CYRL = '\\s+(?:ша[ҳх](?:ри|ар)|туман|вилоят)\\p{L}
  * Places whose bare word is something else too — counted only in a place's own form: with an Uzbek place ending
  * («Qarshiga», «Oshdan»), after a Russian preposition («в Ош», «до Карши»), or with «shahri»/«город».
  */
+/** The place's ending, glued — or after a space, an apostrophe or a hyphen (fix pass 6, the hunt #8: «Qarshi ga», «Osh-ga»). */
+const SEP = "[\\s'’ʻ`-]?";
 const ENDED: readonly string[] = [
   // «qarshi» is «against».
   // …or with its abbreviation, «uchun», «tomon», a preposition or «г.» before it (fix pass 3: «Qarshi uchun», «Qarshi
   // sh.ga», «в г. Карши», «to Qarshi» were no place).
-  `qarshi(?:ga|gacha|dan|da|ning|${TOWN}|\\s+sh\\.\\p{L}*|\\s+(?:uchun|tomon\\p{L}*))`, `қарши(?:га|гача|дан|да|нинг|${TOWN_CYRL}|\\s+(?:учун|томон\\p{L}*))`, `карши(?:га|гача|дан|да|${TOWN_CYRL})`,
+  `qarshi(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN}|\\s+sh\\.\\p{L}*|\\s+(?:uchun|tomon\\p{L}*))`, `қарши(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL}|\\s+(?:учун|томон\\p{L}*))`, `карши(?:${SEP}(?:га|гача|дан|да)|${TOWN_CYRL})`,
   `(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?карши`, '(?<![\\p{L}])г\\.\\s*карши', '(?:to|in|for)\\s+qarshi', 'karshi',
   // «osh» is the dish.
   // «O‘sh» is how Uzbek spells it — and «o‘sha» is «that», so only with the place's own endings; English and Russian
   // name it after a preposition («to Osh», «на Ош», «в г. Ош»), or after «г.» (fix pass 3).
-  `osh(?:ga|gacha|dan|da|ning|${TOWN})`, `o${A}sh(?:ga|gacha|dan|da|ning|${TOWN})`, `ўш(?:га|гача|дан|да|${TOWN_CYRL})?`, `ош(?:га|гача|дан|${TOWN_CYRL})`,
+  `osh(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `o${A}sh(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `ўш(?:${SEP}(?:га|гача|дан|да)|${TOWN_CYRL})?`, `ош(?:${SEP}(?:га|гача|дан)|${TOWN_CYRL})`,
   '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?ош[аеу]?', '(?<![\\p{L}])г\\.\\s*ош[аеу]?', '(?:to|in|for)\\s+osh',
   // «Chust» is a skullcap's and a knife's name too («Chust do'ppi») — the town only with its place endings or after a
   // preposition (fix pass 4: «Yiwudan Toshkentga emas, Chustga», «доставка в Чуст»).
-  `chust(?:ga|gacha|dan|da|ning|${TOWN})`, `чуст(?:га|гача|дан|да|нинг|${TOWN_CYRL})`, '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?чуст[аеу]?',
+  `chust(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `чуст(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?чуст[аеу]?',
+  // …the bare name after an address or city LABEL («Manzil: Qarshi», «Адрес: Ош», «Город: Ош», «Address: Osh»), and the
+  // adjective («Ошская область») — fix pass 6, the hunt #8.
+  `(?:manzil|shahar|shahri|address|city|адрес|город|манзил|шаҳар|шахар)\\p{L}*\\s*[:–—-]\\s*(?:qarshi|osh|o${A}sh|chust|қарши|карши|ош|ўш|чуст)`,
+  '(?:ошск|каршинск|чустск)\\p{L}*',
   // «Boku», «Боку» — Baku in Uzbek — only with an ending; «Kazan» only after «to»/«in» (a «qozon» is a cauldron).
   `boku(?:ga|gacha|dan|da)`, `боку(?:га|гача|дан|да)`, '(?:to|in)\\s+kazan',
   // «Navoiy ko'chasi» is a street in every town.
   `navoiy?(?:ga|gacha|dan|da|ning)?(?![\\p{L}])(?!\\s*(?:ko${A}ch|кўч|коч|ул|str|прос|shoh|шоҳ))`,
   `навои[йи]?(?:га|гача|дан|да|нинг)?(?![\\p{L}])(?!\\s*(?:кўч|коч|ул|прос|шоҳ))`,
+  // «Marhamat» is «please», «baliqchi» a fisherman — the Andijan towns only with a place's ending (fix pass 7).
+  `marhamat(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `марҳамат(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, `мархамат(?:${SEP}(?:га|гача|дан|да)|${TOWN_CYRL})`,
+  `baliqchi(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `балиқчи(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, '(?:в|до|из)\\s+балыкчи',
+  // «talash» is a quarrel: Talas only as itself or with its own ending.
+  `talas(?:${SEP}(?:ga|gacha|dan|da|ning))?`, 'талас(?:а|е|у|ом|га|гача|дан|да)?',
   // «kabul qilasizmi», «кабул киласизми» is «qabul» typed without its «q» — «accept».
   'kabul(?:ga|gacha|dan|da)?(?![\\p{L}])(?!\\s*(?:qil|kil|etil))', 'кабул(?:га|гача|дан|да|е|а)?(?![\\p{L}])(?!\\s*(?:қил|кил))',
 ];
@@ -188,7 +213,7 @@ const SCRIPT_ONLY: readonly string[] = [
   // Kazakhstan, Kyrgyzstan, Tajikistan, Afghanistan
   '哈萨克斯坦', '阿拉木图', '阿斯塔纳', '奇姆肯特', '吉尔吉斯', '比什凯克', '奥什', '塔吉克斯坦', '杜尚别', '苦盏', '阿富汗', '喀布尔', '马扎里沙里夫', '赫拉特', '坎大哈',
   '土库曼斯坦', '阿什哈巴德', '俄罗斯', '莫斯科',
-  '德黑兰', '马什哈德', '伊斯坦布尔', '迪拜', '巴库', '阿塞拜疆', '明斯克', '喀山', '阿布扎比',
+  '德黑兰', '马什哈德', '伊斯坦布尔', '迪拜', '巴库', '阿塞拜疆', '明斯克', '喀山', '阿布扎比', '伊朗', '土耳其',
 ];
 const PERSIAN: readonly string[] = [
   'اندیجان', 'نمنگان', 'فرغانه', 'سمرقند', 'بخارا', 'ترمذ', 'خوقند', 'خوارزم', 'جیزخ',
@@ -197,6 +222,13 @@ const PERSIAN: readonly string[] = [
   'خیوه', 'ترکمنستان', 'عشق\\s*آباد', 'روسیه', 'مسکو',
   'تهران', 'مشهد', 'استانبول', 'دبی',
   'اصفهان', 'باکو', 'آذربایجان', 'مینسک',
+  // fix pass 6, the hunt #8: Iran and Turkey, and the Afghan cities his Persian-writing customers name.
+  'ایران', 'ترکیه', 'بلخ', 'جلال\\s*آباد', 'کندز', 'شبرغان', 'پلخمری', 'غزنی',
+  // fix pass 7, the check #10: Iran's cities and Afghanistan's, in Persian — and «مزار» alone. «رشت», «قم», «یزد», «خوست»
+  // end their word: «رشته» is a noodle.
+  'شیراز', 'تبریز', 'کرج', 'بندر[\\s\\u200c]*عباس', 'اهواز', 'کرمانشاه', 'کرمان', 'همدان', 'ارومیه', 'زاهدان', 'سرخس',
+  'قم(?![\\p{L}])', 'یزد(?![\\p{L}])', 'رشت(?![\\p{L}])', 'مزار',
+  'فیض[\\s\\u200c]*آباد', 'تالقان', 'میمنه', 'بامیان', 'خوست(?![\\p{L}])', 'سمنگان', 'سر[\\s\\u200c]*پل', 'اندخوی', 'آقچه',
 ];
 
 const PLACE = new RegExp(

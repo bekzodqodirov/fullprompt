@@ -1745,6 +1745,27 @@ const NEGATED = /(?<![\p{L}])(?:не|not|never)(?![\p{L}])|won['’]t|can['’]t
 const ZH_DAY_ARRIVES =
   /(?:明天|后天|今天|今晚|(?:下|本|这)?(?:个)?周末|(?:下|本|这)?(?:个)?(?:周|星期|礼拜)[一二三四五六日天]?|下(?:个)?月|月底|月末)(?:货|就|会|能)?到(?![底达])/u;
 
+/**
+ * LOADING and LEAVING on a day (fix pass 7, the check #9) — «Yukingiz ertaga yuklanadi», «Ваш груз загрузят в
+ * понедельник», «Груз уходит завтра», «The truck leaves on Friday», «Loading is on Monday» — a day the cargo goes on,
+ * which neither verb list held: «Qachon yuklanadi?» is the week's commonest cargo question, and the model's own day
+ * went by itself. Never the past («yuklandi», «загрузили», «was loaded» — a fact), and never a timetable (`DAY_FREQUENCY`).
+ */
+const LOADING_VERB = new RegExp(
+  [
+    '(?<![\\p{L}])yukla(?:nadi|namiz|nishi\\p{L}*|ymiz|ydi|ydilar|sh\\p{L}*|nadigan\\p{L}*)(?![\\p{L}])',
+    '(?<![\\p{L}])юкла(?:нади|намиз|ниши\\p{L}*|ймиз|йди|ш\\p{L}*|надиган\\p{L}*)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:за|по)гру[зж](?:им|ят|ит|ится|ятся|аем|ают|ает|ается|аются|ка\\p{L}*|у)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:будет|будут)\\s+(?:за|по)гружен\\p{L}*',
+    '(?<![\\p{L}])(?:(?:у|вы|от)ход(?:ит|ят)|уйд[её]т|уйдут|выйд[её]т|выйдут)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:loads?|loading|leaves|departs?|departing|departure)(?![\\p{L}])|(?<![\\p{L}])(?:will\\s+be|be|gets?|getting)\\s+loaded(?![\\p{L}])',
+    '装车|装柜|发车',
+  ].join('|'),
+  'iu',
+);
+/** …and the cargo LANDING at our warehouse on a day — «omborga tushadi» — the cargo's own coming, said of the cargo. */
+const LANDING_VERB = /(?<![\p{L}])(?:tush(?:adi|ishi)|туш(?:ади|иши))(?![\p{L}])/iu;
+
 /** The clause is the day and nothing of its own besides — what may be carried to a verb before or after it. */
 function dayAlone(clause: string, days: readonly RegExpMatchArray[]): boolean {
   let rest = clause;
@@ -1776,8 +1797,8 @@ export function dayPromise(text: string): boolean {
           !PLURAL_DAY.test(m[0]) &&
           !frames.some(([a, b]) => at + m.index >= a && at + m.index < b),
       );
-      const sending = SENDING_VERB.some((re) => re.test(c));
-      const coming = (COMING_VERB.some((re) => re.test(c)) || ZH_DAY_ARRIVES.test(c)) && aboutCargo(c, s);
+      const sending = SENDING_VERB.some((re) => re.test(c)) || LOADING_VERB.test(c);
+      const coming = (COMING_VERB.some((re) => re.test(c)) || ZH_DAY_ARRIVES.test(c) || LANDING_VERB.test(c)) && aboutCargo(c, s);
       if (!sending && !coming) {
         const alone = dayAlone(c, days);
         if (days.length > 0 && alone && pendingVerb) return true;

@@ -392,17 +392,21 @@ function moneyVerdict(input: AutoGateInput): { present: boolean; refused: boolea
 
 /**
  * The reply's language against the customer's (spec §4): one of the six; English, Persian and Chinese only when
- * the customer's message confidently says that very language; Uzbek and Russian unless it confidently says
- * another — or an unconfident guess LEANS on another (fix pass 4: the conversation's stored language, or the one
- * language the greetings said — run `memoryFor`): «Здравствуйте! Груз из Гуанчжоу, 5 куб, 800 кг» answered in Uzbek
- * went by itself once a greeting was no mark, and where the rule cannot tell the customer's language it holds. A guess
- * not stored (a draft written before 0148) is no confident guess, and leans on nothing.
+ * the customer's message confidently says that very language; Uzbek and Russian on a confident guess of that very
+ * language, or an unconfident one that LEANS on it (fix pass 4: the conversation's stored language, the one language
+ * the greetings said, or Uzbek's word endings — run `memoryFor`). Where the rule cannot tell the customer's language
+ * it holds (fix pass 6): a guess that leans on nothing, a guess naming no language, and a guess not stored (a draft
+ * written before 0148) admit no reply by itself — each was «today's rule», which let the other language go.
  */
 function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale']): boolean {
   const lang = language ?? '';
   if (!(AUTO_LANGUAGES as readonly string[]).includes(lang)) return false;
-  const confident = guess !== null && guess.confident && guess.locale !== null;
-  if ((AUTO_STRICT_LANGUAGES as readonly string[]).includes(lang)) return confident && guess!.locale === lang;
-  if (!confident && guess !== null && guess.leans === true && guess.locale !== null) return guess.locale === lang;
-  return !confident || guess!.locale === lang;
+  // Nothing known of the customer's language — no guess stored, or one that names none — admits no reply by itself.
+  if (guess === null || guess.locale === null) return false;
+  if (guess.confident) return guess.locale === lang;
+  if ((AUTO_STRICT_LANGUAGES as readonly string[]).includes(lang)) return false;
+  // An unconfident guess admits only the language it LEANS on — and one that leans on nothing admits none (fix pass 6,
+  // the hunt #3): «Иудан Тошкентгача неча пул?» with no ў/қ/ғ/ҳ read as an unconfident «ru», and the Russian reply went
+  // by itself; «Почём доставка из Китая?» the same with an Uzbek one.
+  return guess.leans === true && guess.locale === lang;
 }
