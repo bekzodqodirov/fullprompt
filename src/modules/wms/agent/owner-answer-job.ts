@@ -97,7 +97,13 @@ export async function handleOwnerAnswer(job: AgentOwnerAnswerJob, deps: OwnerAns
       peerId: q.peerId,
       sourceKey: `answer:${q.id}:${job.messageId}`,
       instruction: ownerAnswerInstruction(answer.text, q.ownerQuestion),
-      answer: { questionDraftId: q.id, questionAnchor: q.anchorTgMessageId, messageId: job.messageId, text: answer.text },
+      answer: {
+        questionDraftId: q.id,
+        questionAnchor: q.anchorTgMessageId,
+        questionAnchorEditedAt: q.anchorEditedAt,
+        messageId: job.messageId,
+        text: answer.text,
+      },
     },
     deps,
   ).catch((err: unknown): RunResult => {

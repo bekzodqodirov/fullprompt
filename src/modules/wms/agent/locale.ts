@@ -60,6 +60,21 @@ const UZ_CYRL_LETTERS = /[ўқғҳЎҚҒҲ]/u;
 /** Everyday Uzbek Cyrillic words that are not Russian. */
 const UZ_CYRL_WORDS = /(?:^|[^\p{L}])(?:ва|учун|керак|канча|қанча|рахмат|раҳмат|салом|ассалому|борми|нима|қачон|качон|юк|нарх|йўқ|йук|ха|хоп|бўлади|булади)(?=$|[^\p{L}])/iu;
 
+/**
+ * What makes a Cyrillic line RUSSIAN by its own words (0148 fix): the everyday words Uzbek does not have, and the
+ * two letters its alphabet lacks. «Cyrillic with no Uzbek mark» is not Russian — it is how most Uzbek customers
+ * type, on a Russian keyboard with «у» for «ў», «к» for «қ», «г» for «ғ», «х» for «ҳ»: «Кийим-кечак, Гуанчжоудан
+ * жунатаман», «5 куб 800 кг», «Иву шахридан» carry no mark of either language. Loan words are no mark («груз»,
+ * «доставка», «склад» are Uzbek speech too), and neither are «у», «да», «от», «мой», «из», «не» — each an Uzbek
+ * word as well.
+ */
+const RU_LETTERS = /[ыщЫЩ]/u;
+const RU_WORDS =
+  /(?:^|[^\p{L}])(?:здравствуйте|привет|добрый|спасибо|пожалуйста|сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до)(?=$|[^\p{L}])/iu;
+
+/** A line of fewer letters than this cannot turn an Uzbek conversation into another language's. */
+const SHORT_LINE = 12;
+
 /** The Uzbek Latin apostrophe letters, in every spelling a phone keyboard produces. */
 const UZ_LATIN_LETTERS = /[og]['ʻʼ‘’`]/iu;
 /** Everyday Uzbek Latin words that are not English. */
@@ -83,16 +98,29 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
   if (script === 'arabic') return { locale: 'fa', confident: true, script };
   if (script === 'cyrillic') {
     if (UZ_CYRL_LETTERS.test(text) || UZ_CYRL_WORDS.test(text)) return { locale: 'uz_cyrl', confident: true, script };
-    // Cyrillic with no Uzbek mark: Russian, unless the conversation is Uzbek
-    // Cyrillic already and this line is too short to say otherwise.
-    if (previous === 'uz_cyrl' && count(text, CYRILLIC) < 12) return { locale: previous, confident: false, script };
-    return { locale: 'ru', confident: true, script };
+    if (RU_LETTERS.test(text) || RU_WORDS.test(text)) {
+      // Russian by its own words — unless the conversation is Uzbek Cyrillic
+      // already and this line is too short to say otherwise.
+      if (previous === 'uz_cyrl' && count(text, CYRILLIC) < SHORT_LINE) return { locale: previous, confident: false, script };
+      return { locale: 'ru', confident: true, script };
+    }
+    // No mark of either language (0148 fix): the conversation keeps its
+    // Cyrillic language; with none, Russian is the guess — and is SAID to be
+    // one. It was «ru, confident», and the auto layer's language clause then
+    // refused every correct Uzbek Cyrillic reply to such a line.
+    if (previous === 'uz_cyrl' || previous === 'ru') return { locale: previous, confident: false, script };
+    return { locale: 'ru', confident: false, script };
   }
   if (script === 'latin') {
     const uz = UZ_LATIN_LETTERS.test(text) || UZ_LATIN_WORDS.test(text);
     const en = EN_WORDS.test(text);
     if (uz && !en) return { locale: 'uz', confident: true, script };
-    if (en && !uz) return { locale: 'en', confident: true, script };
+    if (en && !uz) {
+      // «Hello», «ok price?» in an Uzbek conversation is an Uzbek customer's
+      // loan word, not a switch to English — the Cyrillic rule's twin.
+      if (previous === 'uz' && count(text, LATIN) < SHORT_LINE) return { locale: previous, confident: false, script };
+      return { locale: 'en', confident: true, script };
+    }
     // Both or neither: the conversation keeps its language — a Russian
     // customer's «ok» is still a Russian conversation; with no history,
     // Uzbek, the company's own language and the commoner customer.

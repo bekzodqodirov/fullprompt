@@ -1,5 +1,6 @@
-import { normalizeDigits } from './digits';
+import { normalizeDigits, unreadNumeral } from './digits';
 import { extractNumbers, placedLedger, type NumberSource, type TravelMode } from './numbers';
+import { QUOTED_MIN_FIGURE, withoutQuotedHan } from './policy';
 
 /**
  * The auto layer's MONEY facts that are read off the reply itself (spec
@@ -109,4 +110,14 @@ const TO_TASHKENT = [
 export function saysTashkent(body: string): boolean {
   const text = normalizeDigits(body);
   return TO_TASHKENT.some((re) => re.test(text));
+}
+
+/**
+ * Does the reply hold a numeral no reader here reads reliably — a Chinese numeral run (`numeral_unread`, the 0148
+ * fix)? Asked of the reply less the Chinese its facts hold verbatim, as G1 asks it (policy `withoutQuotedHan`):
+ * Horgos's «金亿» in a quoted address is the address's spelling. The gate's fact, read with this one function at
+ * the scheduling and at the press (`autoFactsFor`).
+ */
+export function numeralUnread(body: string, quotableHan: string): boolean {
+  return unreadNumeral(withoutQuotedHan(normalizeDigits(body), quotableHan, QUOTED_MIN_FIGURE));
 }

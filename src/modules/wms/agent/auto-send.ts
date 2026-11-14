@@ -23,7 +23,7 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
 import { AUTO_SEND_CATEGORIES } from './auto-categories';
-import { estimateUnnamed } from './auto-money';
+import { estimateUnnamed, numeralUnread } from './auto-money';
 import { estimatesStand } from './estimate-check';
 import { tariffUnconfirmed } from './tariff-watch';
 import { autoVerdict, type AutoGateInput, type AutoLedgerLine, type AutoRefusal, type AutoToolCall } from './auto-gate';
@@ -357,6 +357,9 @@ export async function autoFactsFor(
       estimatesStored: Array.isArray(memory?.estimates) && memory.estimates.length > 0,
       rail: memory?.rail === true,
       customerLocale: memory?.customerLocale ?? null,
+      // A Chinese numeral the readers cannot tell from a word (0148 fix) — over the reply less its facts' quoted
+      // Chinese, as G1 reads it; a memory that cannot be read holds one (fails closed).
+      unreadNumeral: unreadOf(digestBody(d), memory),
     },
     tools,
     money: {
@@ -373,6 +376,8 @@ export async function autoFactsFor(
       // run that wrote the redraft — and the customer writing again after the line his question answered, read NOW.
       ownerPersonal: (fromAnswer?.personal.length ?? 0) > 0,
       answerStale: fromAnswer ? await answerStaleOf(d, fromAnswer) : false,
+      // …and a figure in his answer, whoever the ledger says vouched for it in the reply (his Q2 a ⭐).
+      ownerFigure: fromAnswer?.figures === true,
     },
     burstMedia: await burstHadMedia(d),
     chat: {
@@ -393,7 +398,10 @@ export async function autoFactsFor(
   };
 }
 
-/** The stored `fromAnswer` as the gate reads it; a malformed one reads as personal (fails closed). */
+/**
+ * The stored `fromAnswer` as the gate reads it; a malformed one reads as personal, and one that does not say
+ * whether his answer held a figure reads as holding one (fails closed).
+ */
 function answerMarkOf(raw: unknown): AnswerMark | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const m = raw as Partial<AnswerMark>;
@@ -401,16 +409,29 @@ function answerMarkOf(raw: unknown): AnswerMark | null {
   return {
     questionDraftId: typeof m.questionDraftId === 'string' ? m.questionDraftId : '',
     questionAnchor: typeof m.questionAnchor === 'string' && /^\d+$/u.test(m.questionAnchor) ? m.questionAnchor : '0',
+    questionAnchorEditedAt: typeof m.questionAnchorEditedAt === 'string' ? m.questionAnchorEditedAt : null,
     personal,
+    figures: m.figures !== false,
   };
 }
 
 /** `answerStale` for a redraft — one that cannot be read is stale (fails closed): the redraft waits for his eye. */
 async function answerStaleOf(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId'>, mark: AnswerMark): Promise<boolean> {
   try {
-    return await answerStale(d.managerUserId, d.peerId, BigInt(mark.questionAnchor));
+    const edited = mark.questionAnchorEditedAt === null ? null : new Date(mark.questionAnchorEditedAt);
+    return await answerStale(d.managerUserId, d.peerId, BigInt(mark.questionAnchor), edited);
   } catch (err) {
     logger.warn({ err }, '[agent] auto: the answered question’s chat not read');
+    return true;
+  }
+}
+
+/** `numeralUnread` over a stored memory — a reply whose memory cannot be read holds one (fails closed). */
+function unreadOf(body: string, memory: Partial<DraftPolicyJson>['memory'] | undefined): boolean {
+  try {
+    return numeralUnread(body, typeof memory?.quotableHan === 'string' ? memory.quotableHan : '');
+  } catch (err) {
+    logger.warn({ err }, '[agent] auto: the reply’s numerals not read');
     return true;
   }
 }

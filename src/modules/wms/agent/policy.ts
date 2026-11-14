@@ -2476,7 +2476,7 @@ const HAN_RUN = /[\p{Script=Han}，。：；、！？（）「」『』【】《
  * quoted «义乌» cannot carry a number, and kept it weighs three letters a
  * character.
  */
-const QUOTED_MIN_FIGURE = 3;
+export const QUOTED_MIN_FIGURE = 3;
 const QUOTED_MIN_SCRIPT = 2;
 
 /**

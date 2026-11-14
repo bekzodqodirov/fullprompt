@@ -1,6 +1,6 @@
 import { AUTO_SEND_CATEGORIES } from './auto-categories';
 import { isEstimateTool, saysTashkent } from './auto-money';
-import { namesCurrency } from './digits';
+import { currencyBesideQuantity } from './digits';
 import { isTashkentNight } from './send-step';
 
 export { AUTO_SEND_CATEGORIES, type AutoCategory } from './auto-categories';
@@ -46,6 +46,8 @@ export const AUTO_REFUSALS = [
   'money',
   // The money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.8, §2.2): each its own refusal, its own words.
   'money_unread',
+  // A numeral in a system no reader here reads reliably (Chinese numerals) — the machine presses none (0148 fix).
+  'numeral_unread',
   'estimate_unnamed',
   'estimate_moved',
   'tariff_unconfirmed',
@@ -89,6 +91,7 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   actions: 'javob bilan birga amal bor (hisoblatish yoki AI o‘chirish)',
   money: 'javobda pul (narx, balans yoki taxminiy hisob) bor',
   money_unread: 'javobda pul so‘zi bor, lekin raqami o‘qilmadi',
+  numeral_unread: 'javobda ieroglif bilan yozilgan son bo‘lishi mumkin — uni o‘qib bo‘lmadi',
   estimate_unnamed: 'narx qaysi yuk uchunligi (kub, kg) aytilmagan',
   estimate_moved: 'narx jadvali o‘zgargan — narx qayta tekshirilmagan',
   tariff_unconfirmed: 'Xitoy tarifi o‘zgargan — birinchi narxni o‘zingiz tasdiqlang',
@@ -198,6 +201,11 @@ export interface AutoGateInput {
     rail: boolean;
     /** The customer's language as the run read the message the draft answers (`memory.customerLocale`); null = not stored. */
     customerLocale: { locale: string | null; confident: boolean } | null;
+    /**
+     * The reply holds a numeral in a system no reader here reads reliably — a Chinese numeral run (auto-money
+     * `numeralUnread`, over the reply less its facts' quoted Chinese). A character is a word as often as a number.
+     */
+    unreadNumeral: boolean;
   };
   /** The run's tool calls (`agent_runs.tool_calls`). */
   tools: readonly AutoToolCall[];
@@ -216,8 +224,14 @@ export interface AutoGateInput {
     foreignDestination: boolean;
     /** His ✍️ answer behind this redraft names another customer, or this chat's code to a chat not proven (§2.2). */
     ownerPersonal: boolean;
-    /** The customer wrote again after the question his answer was given to (§2.2). */
+    /** The customer wrote again after the question his answer was given to — or edited, or deleted, that very line (§2.2). */
     answerStale: boolean;
+    /**
+     * His ✍️ answer behind this redraft held a figure of any kind (`policy.fromAnswer.figures`, §2.2, his Q2 a ⭐):
+     * asked of the ANSWER, never of who the ledger says vouched — a figure the customer, a tool or a fact also
+     * carries is attributed to them, and the reply made of his figure went by itself.
+     */
+    ownerFigure: boolean;
   };
   /** The customer's burst carried a photo, a voice note or a file. */
   burstMedia: boolean;
@@ -286,8 +300,12 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (draft.actionTypes.some((a) => a !== 'set_followup')) hit.add('actions');
   const money = moneyVerdict(input);
   if (money.refused) hit.add('money');
-  // A currency named and no money line read: a price spelled in words no reader here can read (spec §1.1).
-  if (!money.lines && namesCurrency(draft.body)) hit.add('money_unread');
+  // A price nobody read (spec §1.1, narrowed and widened by the 0148 fix): a currency named beside a quantity no
+  // reader placed — never the currency word alone, «narx dollarda kelishiladi» states no price — or a priced run
+  // whose reply holds no figure of its estimate at all: it states no price, or one no reader could read.
+  if ((!money.lines && currencyBesideQuantity(draft.body)) || money.unquoted) hit.add('money_unread');
+  // …and a numeral no reader reads reliably, wherever it stands: the machine never presses a guess.
+  if (draft.unreadNumeral) hit.add('numeral_unread');
   // The quote's own facts — asked of a priced reply the money clause admitted (a refused one is `money` already).
   const quote = money.priced && !money.refused;
   if (quote && input.money.unnamed) hit.add('estimate_unnamed');
@@ -297,15 +315,22 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // The table is China → Tashkent (§1.8): a reply with an estimate says so, in addition to the city check.
   if (quote && !saysTashkent(draft.body)) hit.add('destination_unsaid');
   // A figure from HIS answer always comes back to him (§2.2, law 4): the AI never relays his number by itself.
-  if (draft.ledger.some((l) => l.origin === 'owner')) hit.add('owner_figure');
+  // Asked of his ANSWER as well as of the ledger: a figure of his that the customer, a tool or a fact also carries
+  // is vouched for by them, and a redraft may quote the tool's figure where he gave another.
+  if (draft.ledger.some((l) => l.origin === 'owner') || input.money.ownerFigure) hit.add('owner_figure');
   if (input.money.ownerPersonal) hit.add('owner_personal');
   if (input.money.answerStale) hit.add('answer_stale');
   // Money makes it price (§18.3): a draft whose money the clause admitted is judged as `price` — which it passes
-  // only because he ticked it. Refused, the label the model gave is judged as it always was.
-  const category = money.present && !money.refused ? 'price' : (draft.category ?? '');
+  // only because he ticked it. But only a label that is itself one of the kinds that ever go: a quote the model
+  // labelled «complaint» or «other» stays his whatever it prices (the arming words promise it: «shikoyat va
+  // savolli javoblar har doim sizga qoladi»). Refused, the label the model gave is judged as it always was.
+  const label = draft.category ?? '';
+  const goes = (AUTO_SEND_CATEGORIES as readonly string[]).includes(label);
+  const category = money.present && !money.refused && goes ? 'price' : label;
   if (!(AUTO_SEND_CATEGORIES as readonly string[]).includes(category) || !config.categories.includes(category)) hit.add('category');
-  // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess.
-  if (category === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
+  // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess —
+  // asked of the model's OWN label, so a status claim riding an admitted quote is still asked for its reading.
+  if (label === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
   if (!languageAdmits(draft.language, draft.customerLocale)) hit.add('language');
   if (input.burstMedia) hit.add('media');
   if (draft.body.length > config.maxChars) hit.add('too_long');
@@ -343,23 +368,26 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
  *  - the run's priced estimates are stored on the draft (what the press re-prices, §1.3);
  *  - the chat is not about rail (his price, §18.5).
  * `priced`: the money is an estimate's — the facts that concern only a quoted price (the tariff confirmed, the
- * destination) are asked of it alone.
+ * destination) are asked of it alone. `unquoted`: priced, and no line of the reply is an estimate's figure.
  */
-function moneyVerdict(input: AutoGateInput): { present: boolean; refused: boolean; priced: boolean; lines: boolean } {
+function moneyVerdict(input: AutoGateInput): { present: boolean; refused: boolean; priced: boolean; lines: boolean; unquoted: boolean } {
   const { draft, tools, config } = input;
   const calls = tools.filter((t) => (MONEY_TOOLS as readonly string[]).includes(t.name));
   const noPrice = (t: AutoToolCall) => isEstimateTool(t.name) && t.ok && !t.estimate;
   const lines = draft.ledger.filter((l) => l.kind === 'money');
   const priced = draft.hasEstimate || calls.some((t) => t.ok && t.estimate);
   const present = lines.length > 0 || priced || calls.some((t) => !noPrice(t));
-  if (!present) return { present, refused: false, priced: false, lines: false };
+  if (!present) return { present, refused: false, priced: false, lines: false, unquoted: false };
   const refused =
     !config.categories.includes('price') ||
     !calls.every((t) => isEstimateTool(t.name) && t.ok) ||
     !lines.every((l) => l.origin === 'tool' && isEstimateTool(l.tool) && (l.role === 'total' || l.role === 'rate')) ||
     (priced && !draft.estimatesStored) ||
     draft.rail;
-  return { present, refused, priced, lines: lines.length > 0 };
+  // A priced run whose reply carries no figure of an estimate (0148 fix): «到塔什干的运费大概六百左右» after a tool
+  // that said 800 $ holds no money line at all — every clause above passes on an empty list.
+  const unquoted = priced && !lines.some((l) => l.origin === 'tool' && isEstimateTool(l.tool));
+  return { present, refused, priced, lines: lines.length > 0, unquoted };
 }
 
 /**

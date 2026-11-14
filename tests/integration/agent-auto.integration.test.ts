@@ -76,6 +76,8 @@ import { CANCELLED_BY_HOLDER } from '@/modules/wms/agent/web-thread';
 import { DEFAULT_SEND_CAPS, __restoreSendCaps, readSendCaps, type SendCaps } from '@/modules/wms/agent/send-caps';
 import { TariffConfirmError, confirmTariff, currentTariffFingerprint, tariffExpiryNotice } from '@/modules/wms/agent/tariff-watch';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { EXCLUSION_SENTENCE } from '@/modules/wms/agent/policy';
+import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
 
 /**
  * A seam in the press (fix pass A): `sendWindowFor` is asked by the gate's facts AND by `decideDraft` before its
@@ -1662,7 +1664,13 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
     });
 
     it('money the STORED policy carries — a money figure in its ledger, an estimate in its memory: refused «money» at the press', async () => {
-      for (const policyPatch of [{ ledger: [{ kind: 'money', raw: '110 $' }] }, { memory: { hasEstimate: true } }]) {
+      // An estimate with no figure of it in the reply is `money_unread` besides (0148 fix): the price was not said, or
+      // nothing could read it.
+      const cases: [Record<string, unknown>, string[]][] = [
+        [{ ledger: [{ kind: 'money', raw: '110 $' }] }, ['money']],
+        [{ memory: { hasEstimate: true } }, ['money', 'money_unread']],
+      ];
+      for (const [policyPatch, reasons] of cases) {
         await clearChats();
         const d = await drafted();
         await db
@@ -1670,7 +1678,7 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
           .set({ policy: { ...(d.policy as Record<string, unknown>), ...policyPatch } })
           .where(eq(agentDrafts.id, d.id));
         expect(await pressDueAutos(DUE), JSON.stringify(policyPatch)).toBe(0);
-        expect(await verdictOf(d.id), JSON.stringify(policyPatch)).toMatchObject({ state: 'refused', reasons: ['money'] });
+        expect(await verdictOf(d.id), JSON.stringify(policyPatch)).toMatchObject({ state: 'refused', reasons });
       }
     });
 
@@ -2531,5 +2539,240 @@ describe('the price that goes by itself — the figure still stands (0148, spec 
     // The page's door is the same function: a stamp it did not draw is refused in words.
     await expect(confirmTariff(actorOf(ownerId), '00000000', { actorId: ownerId })).rejects.toBeInstanceOf(TariffConfirmError);
     await db.delete(notifications).where(and(eq(notifications.type, 'AgentTariffNotice'), eq(notifications.userId, ownerId)));
+  });
+});
+
+/**
+ * The review of 0148 as built — what goes by ITSELF, on real runs (the model scripted, everything else real: the
+ * tools, the policy, the plan `createDraft` writes, the sweep's press, the outbox). Each scenario is the review's own,
+ * reproduced as written and then closed; beside each, the ordinary reply that must keep going.
+ */
+describe('0148 fix — what goes by itself, on real runs', () => {
+  const PRICED = "5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.";
+  const FIVE = ['greeting', 'qualification', 'faq', 'status', 'price'];
+  /** A token of letters that makes each run's reply its own (never a figure, never the same text twice). */
+  const TAG = SUFFIX.split('').map((d) => 'abcdefghij'[Number(d)]).join('');
+  let caps: SendCaps = DEFAULT_SEND_CAPS;
+
+  /** One customer burst and the run that answers its last line; the card shown on the machine's clock. */
+  async function ran(lines: readonly string[], steps: { name: string; input: Record<string, unknown> }[], opts: { stored?: string } = {}) {
+    if (opts.stored) {
+      await db
+        .insert(agentConversations)
+        .values({ managerUserId: ownerId, peerId: PEER, locale: opts.stored })
+        .onConflictDoUpdate({ target: [agentConversations.managerUserId, agentConversations.peerId], set: { locale: opts.stored } });
+    }
+    let anchor = 0n;
+    for (const line of lines) anchor = await inbound(line);
+    const out = await handleInbound(job(anchor), { callModel: scripted(steps), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const draftId = (out as { draftId: string }).draftId;
+    await shownAt(draftId, T0);
+    const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+    return d!;
+  }
+  const truck = { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } };
+  const flight = { name: 'avia_estimate', input: { weight_ref: 'w1' } };
+  const tick = (categories: string[]) => db.update(agentAutoConfig).set({ categories }).where(eq(agentAutoConfig.id, 1));
+  /** Not pressed: the sweep finds nothing to press, no outbox row, the card still his. */
+  async function staysHis(d: { id: string }) {
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await outboxOf(d.id)).toBeNull();
+    expect(await draftStatus(d.id)).toBe('pending');
+  }
+  /** Pressed by the machine and queued. */
+  async function goes(d: { id: string }) {
+    const v = await verdictOf(d.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+    expect(await outboxOf(d.id)).toMatchObject({ status: 'agent' });
+  }
+
+  beforeAll(async () => {
+    __forgetAgentFullP1Ready();
+    caps = await readSendCaps();
+  });
+  beforeEach(async () => {
+    await db.update(agentSendCaps).set({ tariffConfirmedAt: new Date() }).where(eq(agentSendCaps.id, 1));
+  });
+  afterAll(async () => {
+    await __restoreSendCaps(caps);
+  });
+
+  describe('the blocker — a price in Chinese numerals', () => {
+    const ZH = { language: 'zh', gloss_uz: 'Toshkentgacha yo‘lkira taxminan to‘qqiz yuz, boj va QQS alohida.' };
+
+    it('(a) invented, no tool call, the four stored kinds: «到塔什干的运费大概九百左右» is blocked and never pressed', async () => {
+      const d = await ran(['你好，我有货从义乌发到塔什干，运费多少钱？'], [compose('到塔什干的运费大概九百左右，不含关税和增值税。', { ...ZH, category: 'faq' })]);
+      expect(d.blocked).toBe(true);
+      expect((d.policy as { blocks: { code: string; detail?: string }[] }).blocks).toContainEqual({ rule: 'G1', code: 'number_unverifiable', detail: 'han_numeral' });
+      const v = await verdictOf(d.id);
+      expect(v!.eligible).toBe(false);
+      expect(v!.reasons).toEqual(expect.arrayContaining(['blocked', 'numeral_unread']));
+      await staysHis(d);
+    });
+
+    it('(b) mis-copied, «Narx» ticked, the tool said 800 $: «…运费大概六百左右» is blocked, `money_unread`, never pressed', async () => {
+      await tick(FIVE);
+      const d = await ran(
+        ['你好，我有 5 m3 1000 kg 的货从义乌发到塔什干，运费多少钱？'],
+        [truck, compose('到塔什干的运费大概六百左右，不含关税和增值税。', { ...ZH, category: 'price' })],
+      );
+      // The tool priced it — and the reply holds no figure of that estimate.
+      expect((d.policy as { memory: { hasEstimate: boolean; estimates: { total: number }[] } }).memory).toMatchObject({ hasEstimate: true, estimates: [{ total: 800 }] });
+      expect((d.policy as { ledger: unknown[] }).ledger).toEqual([]);
+      const v = await verdictOf(d.id);
+      expect(v!.reasons).toEqual(expect.arrayContaining(['blocked', 'money_unread', 'numeral_unread']));
+      await staysHis(d);
+    });
+
+    it('…a Chinese numeral G1 has nothing to hold by keeps his ✅ and is still never the machine’s: `numeral_unread` alone', async () => {
+      const d = await ran(['你好，你们有工厂吗？'], [compose('您好！我们有三家合作工厂，可以帮您找货。', { language: 'zh', gloss_uz: 'Salom! Uchta hamkor zavodimiz bor, tovar topishda yordam beramiz.', category: 'faq' })]);
+      expect(d.blocked).toBe(false);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['numeral_unread']);
+      await staysHis(d);
+    });
+
+    it('…and an ordinary Chinese reply still goes by itself — the language is open, the numerals are not', async () => {
+      const d = await ran(
+        ['你好，从中国运货到塔什干可以吗？'],
+        [compose('您好！可以的。请告诉我货物的体积（立方米）和重量（公斤）。', { language: 'zh', gloss_uz: 'Salom! Ha, mumkin. Yukning hajmi (kub) va og‘irligini (kg) yozing.', category: 'qualification' })],
+      );
+      await goes(d);
+    });
+  });
+
+  describe('`money_unread` holds a price nobody read — never the currency word', () => {
+    const payment = SEED_FACTS.find((f) => f.key === 'payment@1')!.answer;
+
+    it('the seeded payment answer («…soʻmda qilinadi; narx dollarda kelishiladi») goes by itself, as at main', async () => {
+      expect(payment).toMatch(/dollarda/u);
+      const d = await ran(["To'lov qanday qilinadi?"], [compose(payment, { category: 'faq' })]);
+      expect((d.policy as { ledger: unknown[] }).ledger).toEqual([]);
+      await goes(d);
+    });
+
+    it('«Narxni dollarda aytaman. …» goes too — with «Narx» ticked as well as not', async () => {
+      await tick(FIVE);
+      const d = await ran(['Salom, narxlar qanday?'], [compose(`Narxni dollarda aytaman. Yukingiz necha kub va necha kg ${TAG}?`, { category: 'qualification' })]);
+      await goes(d);
+    });
+
+    it('a vague amount before its currency states a price no reader placed: the card is his', async () => {
+      const d = await ran(['Salom, narxlar qanday?'], [compose('Kilosiga bir necha dollar atrofida bo‘ladi.', { category: 'faq' })]);
+      const v = await verdictOf(d.id);
+      expect(v!.reasons).toContain('money_unread');
+      await staysHis(d);
+    });
+  });
+
+  describe('the language is the customer’s by his own WORDS, over his whole burst', () => {
+    const UZC = `Ассалому алайкум! Хитойдан юк олиб келишда ёрдам бераман. Юкингиз неча куб ва неча кг ${TAG}?`;
+
+    it('Uzbek typed on a Russian keyboard (no ў қ ғ ҳ) in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
+      const d = await ran(['Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false });
+      await goes(d);
+    });
+
+    it('a first-contact burst whose LAST line carries no mark — «5 куб 800 кг» — is read whole: Uzbek, and the reply goes', async () => {
+      const d = await ran(['Ассалому алайкум', 'Гуанчжоудан юк бор эди', '5 куб 800 кг'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })]);
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: true });
+      await goes(d);
+    });
+
+    it('«Hello» in an Uzbek chat is a loan word: the Uzbek reply goes', async () => {
+      const d = await ran(['Hello'], [compose(undefined, { category: 'greeting' })], { stored: 'uz' });
+      await goes(d);
+    });
+
+    it('…while a customer whose words ARE Uzbek never gets a Russian reply by itself, nor a Russian one an Uzbek reply', async () => {
+      const ru = await ran(['Ассалому алайкум, Хитойдан юк борми, нархи қанча?'], [compose(`Здравствуйте! Напишите объём и вес груза ${TAG}?`, { language: 'ru', category: 'qualification' })]);
+      expect((await verdictOf(ru.id))!.reasons).toEqual(['language']);
+      await staysHis(ru);
+      await clearChats();
+      const uzc = await ran(['Здравствуйте, сколько стоит доставка из Китая?'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })]);
+      expect((await verdictOf(uzc.id))!.reasons).toEqual(['language']);
+    });
+  });
+
+  describe('an admitted quote never launders the model’s label', () => {
+    beforeEach(() => tick(FIVE));
+    const ANGRY = "Yiwudan Toshkentga 5 kub 1000 kg yuk bor, juda qimmat olyapsizlar, norozi man! Yo'lkira qancha?";
+
+    it.each(['complaint', 'other'])('a quote labelled «%s» is his — `category`, never pressed', async (category) => {
+      const d = await ran([ANGRY], [truck, compose(PRICED, { category })]);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['category']);
+      await staysHis(d);
+    });
+
+    it('a status claim riding the quote, with the cargo never read: `status_unbacked`', async () => {
+      const d = await ran(["Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha? Oldingi yukim qayerda?"], [truck, compose(PRICED, { category: 'status' })]);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['status_unbacked']);
+      await staysHis(d);
+    });
+
+    it('…and the same quote labelled «price» goes', async () => {
+      const d = await ran(["Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?"], [truck, compose(PRICED, { category: 'price' })]);
+      await goes(d);
+    });
+  });
+
+  describe('the Tashkent price never goes to a customer who named another city', () => {
+    beforeEach(() => tick(FIVE));
+
+    it.each([
+      "Yiwudan Qarshi shahriga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+      "Yiwudan Olmaotaga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+      "Yiwudan Osh shahriga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+      "Yiwudan Xivaga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+    ])('«%s» → `foreign_destination`', async (question) => {
+      const d = await ran([question], [truck, compose(PRICED, { category: 'price' })]);
+      expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(true);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['foreign_destination']);
+      await staysHis(d);
+    });
+  });
+
+  describe('the flight’s PRICE goes by itself in every language — its address never (the armed avia rule, the reply’s own lists)', () => {
+    beforeEach(() => tick(FIVE));
+    const GLOSS = 'Toshkentgacha avia 30 kg uchun taxminan 510 $. Boj va QQS alohida hisoblanadi.';
+    const QUOTES: readonly (readonly [string, string, string, Record<string, unknown>])[] = [
+      ['uz', 'Guanchjoudan Toshkentga avia bilan 30 kg kiyim bor, narxi qancha?', `30 kg yukingiz uchun Toshkentgacha avia taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz}`, {}],
+      ['uz_cyrl', 'Гуанчжоудан Тошкентга авиа билан 30 кг кийим бор, нархи қанча?', `30 кг юкингиз учун Тошкентгача авиа тахминан 510 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`, {}],
+      ['ru', 'Из Гуанчжоу в Ташкент авиа 30 кг одежды, сколько стоит?', `30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru}`, {}],
+      ['en', 'Hello, how much is air freight for 30 kg of clothes from Guangzhou to Tashkent?', `Air freight for your 30 kg shipment to Tashkent is about $510. ${EXCLUSION_SENTENCE.en}`, {}],
+      ['zh', '你好，我有 30 kg 的衣服，从广州空运到塔什干多少钱？', `30公斤空运到塔什干大约510美元。${EXCLUSION_SENTENCE.zh}`, { gloss_uz: GLOSS }],
+      ['fa', 'سلام، هزینه ارسال هوایی 30 kg لباس از گوانجو تا تاشکند چقدر است؟', `هزینه ارسال هوایی ۳۰ کیلو تا تاشکند حدود ۵۱۰ دلار است. ${EXCLUSION_SENTENCE.fa}`, { gloss_uz: GLOSS }],
+    ];
+
+    it.each(QUOTES)('%s: the mandated price-only quote asks him nothing and goes', async (language, question, reply, extra) => {
+      const d = await ran([question], [flight, compose(reply, { language, category: 'price', ...extra })]);
+      const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.id, d.runId!));
+      expect(d.blocked, JSON.stringify([(d.policy as { blocks: unknown }).blocks, run?.toolCalls])).toBe(false);
+      expect(d.needsOwner).toBe(false);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBeUndefined();
+      await goes(d);
+    });
+
+    it.each([
+      ['ru', 'Из Гуанчжоу в Ташкент авиа 30 кг одежды, сколько стоит?', `30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru} Сдайте груз в наш пункт приёма.`],
+      ['uz', 'Guanchjoudan Toshkentga avia bilan 30 kg kiyim bor, narxi qancha?', `30 kg yukingiz uchun Toshkentgacha avia taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz} Yukni Guanchjoudagi qabul punktimizga olib boring.`],
+    ] as const)('%s: a quote that directs the cargo is HIS question — forced, ✏️ only, never pressed', async (language, question, reply) => {
+      const d = await ran([question], [flight, compose(reply, { language, category: 'price' })]);
+      expect(d.needsOwner).toBe(true);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBe('avia');
+      expect(d.ownerQuestion).toMatch(/^Avia: 30 kg, qayerdan: Guangzhou/u);
+      expect((await verdictOf(d.id))!.reasons).toContain('needs_owner');
+      await staysHis(d);
+    });
+
+    it('with «Narx» unticked every quoted flight asks him, as it always has — the Russian one too', async () => {
+      await tick(['greeting', 'qualification', 'faq', 'status']);
+      const d = await ran(['Из Гуанчжоу в Ташкент авиа 30 кг одежды, сколько стоит?'], [flight, compose(`30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru}`, { language: 'ru', category: 'price' })]);
+      expect(d.needsOwner).toBe(true);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBe('avia');
+    });
   });
 });

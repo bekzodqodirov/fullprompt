@@ -107,7 +107,17 @@ export interface AnswerMark {
   questionDraftId: string;
   /** The customer line the question answered (`agent_drafts.anchor_tg_message_id`), a bigint as text. */
   questionAnchor: string;
+  /**
+   * The edit of that line the QUESTION was drafted over (`agent_drafts.anchor_edited_at`, ISO; null = none): an
+   * edit later than it — made while he was answering — is a line he never answered (`answer_stale`).
+   */
+  questionAnchorEditedAt: string | null;
   /** What `ownerPersonalOf` found in his answer — another customer, or this chat's code to a chat not proven. */
   personal: string[];
+  /**
+   * His answer held a figure — a digit, a number in words, a Chinese numeral (`answerHoldsFigure`): the reply made of
+   * it always comes back to him as a card (`owner_figure`, his Q2 a ⭐), whoever vouched for the figure it states.
+   */
+  figures: boolean;
 }
 

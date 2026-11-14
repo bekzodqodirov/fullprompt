@@ -22,11 +22,11 @@ import { chatBlock, runTail, stableHead } from './prompt';
 import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
-import { namedOrigins } from './origin';
+import { namedOrigins, originMentions } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
 import { knownNamesFor } from './chat-names';
-import { ownerPersonalOf } from './owner-answer';
+import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
 import type { ForcedQuestion } from './types';
 import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, priceActArmed } from './auto-send';
 import { namesForeignPlace } from './destination';
@@ -603,7 +603,11 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // yo'l bilan taxminan 960 $» passed on the truck's figure.
   const rail = railChat(ctx, loop.compose);
   const road = chatRoadOf(ctx, loop);
-  const guess = detectLocale(ctx.anchor?.body ?? '', ctx.storedLocale);
+  // The customer's language over his whole BURST — every line since our last message, which is what the reply
+  // answers — never the last line alone (0148 fix): «Ассалому алайкум» / «Гуанчжоудан юк бор эди» / «5 куб 800 кг»
+  // says Uzbek in its first line and nothing in its last.
+  const said = ctx.burst.length > 0 ? ctx.burst.map((m) => m.body).join('\n') : (ctx.anchor?.body ?? '');
+  const guess = detectLocale(said, ctx.storedLocale);
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
@@ -848,9 +852,10 @@ export function withAviaRule(
   const road = chatRoadOf(ctx, loop);
   // The customer's own words asking where to send it — kept as it was (the burst, never the model's question).
   if (c.replyNeeded && road === 'air' && asksWhereToSend(ctx.burst)) return withAviaQuestion(c, aviaCargoOf(loop, ctx));
-  // …and, armed only, a REPLY in a flight's chat that names a warehouse, a sending verb or an address: «Ivu
-  // omborimizga yuboring» anchors on none of our phones, Han pieces or house numbers (`statesChinaAddress`), and
-  // would send a flight's cargo to a truck's warehouse. The address is his, always (§18.5).
+  // …and, armed only, a REPLY in a flight's chat that names a place of ours, an address or a hand-over asked of
+  // the customer (`talksDelivery`, the reply's own lists): «Ivu omborimizga yuboring» anchors on none of our
+  // phones, Han pieces or house numbers (`statesChinaAddress`), and would send a flight's cargo to a truck's
+  // warehouse. The address is his, always (§18.5).
   if (act.priceArmed && c.replyNeeded && (road === 'air' || road === 'both') && talksDelivery(c.replyText)) {
     return withAviaQuestion(c, aviaCargoOf(loop, ctx));
   }
@@ -858,9 +863,80 @@ export function withAviaRule(
   return c;
 }
 
-/** The reply names a warehouse, a sending verb or an address word — the rule's own lists, applied to OUR words (§1.2). */
-function talksDelivery(replyText: string): boolean {
-  return WAREHOUSE_WORD.test(replyText) || SEND_VERB.test(replyText) || ADDRESS_WORD.test(replyText);
+/**
+ * OUR words, read with lists of their own (0148 fix). The armed rule first read the reply with the lists built for
+ * what a CUSTOMER asks (`WAREHOUSE_WORD`, `SEND_VERB`, `ADDRESS_WORD` — untouched), and they are stems: «пошл» is
+ * inside «Пошлина», so the exclusion sentence the prompt DICTATES in Russian («Пошлина и НДС считаются отдельно.»)
+ * made every Russian flight quote his question, and the price act did nothing in Russian; «ship» is inside
+ * «shipment», «ارسال» is the noun in «هزینه ارسال هوایی». And they are the customer's forms, so the reply's own way
+ * of sending him somewhere — «qabul punktimizga olib boring», «сдайте на наш пункт», «drop it off at our branch»,
+ * «送到我们的收货点» — matched nothing, and the flight's reply went by itself telling him where to bring the cargo.
+ *
+ * Three things a reply says when it directs the cargo, each as whole words:
+ *  - a PLACE of ours that takes cargo — a warehouse, a reception point, a branch;
+ *  - an ADDRESS, by any of its names;
+ *  - the hand-over asked of HIM — an imperative or a second person: «yuboring», «yuborsangiz», «olib boring»,
+ *    «topshirishingiz mumkin», «отправьте», «можете привезти», «please send», «you can drop it off», «请寄到»,
+ *    «ارسال کنید». Never the noun («доставка», «shipment», «ارسال»), never OUR sending («yuboramiz», «отправим», «we
+ *    ship») — those send him nowhere — and never «送到塔什干», which is where WE take it.
+ */
+const AP_ = "['‘’ʻ`]";
+const REPLY_PLACE = new RegExp(
+  [
+    '(?<![\\p{L}])(?:ombor|sklad|punkt|filial)\\p{L}*',
+    '(?<![\\p{L}])(?:омбор|пункт|филиал)\\p{L}*',
+    // «Цена складывается из веса и объёма» is «adds up» and «складной стол» folds — the warehouse only in its own
+    // cases, Russian's and the endings Uzbek hangs on the loan word («складга», «складимизга»).
+    '(?<![\\p{L}])склад(?:а|у|ом|е|ы|ов|ам|ами|ах|ск(?:ой|ая|ое|ие|ого|их|ом|ую)|га|да|дан|ни|нинг|лар\\p{L}*|и(?:миз|нгиз)?(?:га|да|дан|ни|нинг)?)?(?![\\p{L}])',
+    `(?<![\\p{L}])qabul\\s+(?:joy|nuqta)\\p{L}*`,
+    '(?<![\\p{L}])қабул\\s+(?:жой|нуқта)\\p{L}*',
+    '(?<![\\p{L}])(?:warehouses?|depots?|branch(?:es)?|drop-?\\s?off\\s+points?|collection\\s+points?|receiving\\s+points?)(?![\\p{L}])',
+    '仓库|仓(?!储)|收货点|收货地|网点|站点',
+    'انبار|شعبه|نمایندگی',
+  ].join('|'),
+  'iu',
+);
+const REPLY_ADDRESS = /(?<![\p{L}])(?:manzil|манзил|adres|адрес|address|lokatsiya|локация|location)\p{L}*|地址|آدرس|نشانی/iu;
+/** The second person and the imperative a hand-over is asked in: «-ing», «-sangiz», «-ishingiz (mumkin)», «-asiz», «-avering». */
+const UZ_YOU = `(?:ing(?:lar|iz)?|sangiz(?:lar)?|ishingiz\\p{L}*|asiz(?:lar)?|avering)`;
+const UZ_CYRL_YOU = '(?:инг(?:лар|из)?|сангиз(?:лар)?|ишингиз\\p{L}*|асиз(?:лар)?|аверинг)';
+const REPLY_HANDOVER = new RegExp(
+  [
+    `(?<![\\p{L}])(?:yubor|jo${AP_}?nat|yetkaz|topshir|keltir)(?:${UZ_YOU}|ib\\s+(?:ber|qo${AP_}?y)${UZ_YOU})(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:olib\\s+(?:kel|bor)|eltib\\s+ber|tashlab\\s+ket)${UZ_YOU}(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:юбор|жўнат|жунат|етказ|топшир|келтир)(?:${UZ_CYRL_YOU}|иб\\s+(?:бер|қўй|куй)${UZ_CYRL_YOU})(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:олиб\\s+(?:кел|бор)|элтиб\\s+бер|ташлаб\\s+кет)${UZ_CYRL_YOU}(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:отправ(?:ьте|ляйте|ите|ляете)|вышлите|пришлите|привез(?:ите|[её]те)|привозите|принес(?:ите|[её]те)|сда(?:йте|дите|вайте)|достав(?:ьте|ляйте)|переда(?:йте|дите)|завез(?:ите|[её]те)|подвез(?:ите|[её]те))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:можете|сможете|можно|нужно|надо|необходимо|следует)\\s+(?:\\p{L}+\\s+){0,2}?(?:отправ(?:ить|лять)|привезти|привозить|сдать|сдавать|принести|доставить|передать|выслать|завезти)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:please|kindly|just|you\\s+(?:can|may|could|should|must|need\\s+to|have\\s+to|will\\s+need\\s+to)|if\\s+you|once\\s+you|when\\s+you)\\s+(?:\\p{L}+\\s+)?(?:send|ship|bring|deliver|drop|hand|take)(?![\\p{L}])',
+    '(?:^|[.!?\\n]\\s*)(?:send|ship|bring|deliver|drop|hand|take)\\s+(?:it|them|the|your)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:drop(?:\\s+(?:it|them))?\\s+off|hand(?:\\s+(?:it|them))?\\s+over)(?![\\p{L}])',
+    '请(?:您)?(?:把[^，。！？]{0,12})?(?:寄|发|送|交|拿|带)|(?:寄|发|送|交|拿|带)(?:到|去|往|来|过来)(?!塔什干|乌兹别克)|您(?:可以|需要|要)(?:把[^，。！？]{0,12})?(?:寄|发|送|交)',
+    'ارسال\\s+(?:کنید|نمایید|بفرمایید)|بفرستید|تحویل\\s+(?:دهید|بدهید)|بیاورید|ببرید|برسانید',
+  ].join('|'),
+  'iu',
+);
+
+/**
+ * …or it names a Chinese city as where the cargo GOES or STAYS, whatever the verb: «Tovarni Guanchjouda qoldirsangiz
+ * kifoya», «Yuk Ivuga yetib borsa bo'ldi», «Груз оставьте в Гуанчжоу», «Leave it in Guangzhou», «货放在广州就可以»,
+ * «بار را در گوانگژو بگذارید». Never where it STARTS — «Guanchjoudan Toshkentgacha», «из Гуанчжоу», «from
+ * Guangzhou», «从广州», «از گوانگژو» is every quote's own first words.
+ */
+const TO_ENDING = /^(?:ga|da(?!n)|dagi|га|да(?!н)|даги)(?![\p{L}])/iu;
+const TO_ENDING_OWN = /(?:га|да|даги)$/iu;
+const TO_BEFORE = /(?:(?<![\p{L}])(?:в|на|to|in|at|به|در)\s+(?:our\s+|наш\p{L}*\s+)?|[到在去往至])$/iu;
+function sendsToChina(replyText: string): boolean {
+  return originMentions(replyText).some(({ index, match }) => {
+    const after = replyText.slice(index + match.length, index + match.length + 8);
+    const before = replyText.slice(Math.max(0, index - 16), index);
+    return TO_ENDING.test(after) || TO_ENDING_OWN.test(match) || TO_BEFORE.test(before);
+  });
+}
+
+/** The reply directs the cargo: a place of ours, an address, or a hand-over asked of the customer (§1.2, armed only). */
+export function talksDelivery(replyText: string): boolean {
+  return REPLY_PLACE.test(replyText) || REPLY_ADDRESS.test(replyText) || REPLY_HANDOVER.test(replyText) || sendsToChina(replyText);
 }
 
 /**
@@ -1227,6 +1303,8 @@ export function passesByItself(reason: Ineligible): boolean {
 export interface OwnerAnswerInput {
   questionDraftId: string;
   questionAnchor: bigint;
+  /** The edit of that line the question was drafted over (`agent_drafts.anchor_edited_at`) — what `answer_stale` compares a later edit with. */
+  questionAnchorEditedAt: Date | null;
   messageId: number;
   text: string;
 }
@@ -1376,6 +1454,12 @@ export async function runOwnerTriggered(
       ? {
           questionDraftId: answer.questionDraftId,
           questionAnchor: String(answer.questionAnchor),
+          // The question's OWN edit stamp, never this redraft's: the redraft anchors on the line as it is NOW, so an
+          // edit made while he answered is its own stamp and no later check of the redraft could see it.
+          questionAnchorEditedAt: answer.questionAnchorEditedAt?.toISOString() ?? null,
+          // Asked of his words (his Q2 a ⭐) — a figure of his that the customer or a tool also carries is theirs
+          // in the ledger, and the reply made of it must still come back to him.
+          figures: answerHoldsFigure(answer.text),
           personal: await ownerPersonalOf({
             text: answer.text,
             ownCodes: ctx.identity.codes.map((x) => x.clientCode),

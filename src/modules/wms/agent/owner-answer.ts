@@ -1,6 +1,7 @@
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { tgMessageFlags, tgMessages } from '../../platform/db/schema';
+import { holdsNumeral } from './digits';
 import { personalBitsWithBook } from './kb';
 import { PHONE_RE, urlsIn } from './numbers';
 import { keptFileSql } from './outbox-store';
@@ -87,14 +88,40 @@ export async function ownerPersonalOf(input: {
 }
 
 /**
- * Did the customer write again — something that asks anew (`asksAnew`, the head's own rule: a photo, a file, any line
- * that is not a nudge) — after the line his question answered (§2.2 `answer_stale`)? Then the figure he gave may be
- * for a load the customer has since changed, and the redraft waits for his eye.
+ * Did his ✍️ answer hold a figure (§2.2 `owner_figure`, his Q2 a ⭐: «javobingizda raqam bo'lsa AI yozgan javob har
+ * doim sizga karta bo'lib keladi»)? Asked of HIS words, once, when the redraft is written — never of the ledger's
+ * attribution: `sourceFor` names the FIRST source that fits, and his answer's sources come last, so «300 kg dan kam
+ * yukni olmaymiz» answered to a customer who wrote «300 kg yukim bor» left a line vouched for by the customer, and
+ * «Ha, 300 kg yukingizni bemalol olib kelamiz» — his figure, its meaning turned round — went by itself; and a
+ * redraft that quotes the tool's 800 $ where he said 700 $ carries no line of his at all.
  */
-export async function answerStale(managerUserId: string, peerId: bigint, questionAnchor: bigint): Promise<boolean> {
+export function answerHoldsFigure(text: string): boolean {
+  return holdsNumeral(text);
+}
+
+/**
+ * Is his answer no longer an answer to what the customer is asking (§2.2 `answer_stale`)? Three ways:
+ *  - the customer wrote again — something that asks anew (`asksAnew`, the head's own rule: a photo, a file, any
+ *    line that is not a nudge) — after the line the question was asked about;
+ *  - he EDITED that very line after the question was drafted over it (`anchorEditedAt`, the ✅'s own
+ *    `editedSince`): an edit keeps the message id, the edit's own run stands down while the question is `editing`,
+ *    and the redraft anchors on the edited line with the edit as its OWN stamp — so «…suyuq atir va litiy batareya
+ *    ham…» was answered with his «Ha, olamiz» to the wording his card showed, and went by itself;
+ *  - he DELETED it: the redraft anchors on an older line, and answers a question that is no longer there.
+ * Then the redraft waits for his eye.
+ */
+export async function answerStale(
+  managerUserId: string,
+  peerId: bigint,
+  questionAnchor: bigint,
+  anchorEditedAt: Date | null = null,
+): Promise<boolean> {
   const rows = await db
     .select({
+      tgMessageId: tgMessages.tgMessageId,
       body: tgMessages.body,
+      editedAt: tgMessages.editedAt,
+      deletedAt: tgMessageFlags.deletedAt,
       kept: keptFileSql(sql`${tgMessages}.id`).mapWith(Boolean),
     })
     .from(tgMessages)
@@ -104,9 +131,12 @@ export async function answerStale(managerUserId: string, peerId: bigint, questio
         eq(tgMessages.managerUserId, managerUserId),
         eq(tgMessages.peerId, peerId),
         eq(tgMessages.direction, 'in'),
-        gt(tgMessages.tgMessageId, questionAnchor),
-        sql`${tgMessageFlags.deletedAt} IS NULL`,
+        gte(tgMessages.tgMessageId, questionAnchor),
       ),
     );
-  return rows.some((m) => asksAnew({ text: m.body ?? '', media: m.kept }, isNudge));
+  const anchor = rows.find((m) => m.tgMessageId === questionAnchor);
+  // The line the question was asked about is gone, or is no longer the line he saw.
+  if (!anchor || anchor.deletedAt !== null) return true;
+  if (anchor.editedAt !== null && (anchorEditedAt === null || anchor.editedAt.getTime() > anchorEditedAt.getTime())) return true;
+  return rows.some((m) => m.tgMessageId !== questionAnchor && m.deletedAt === null && asksAnew({ text: m.body ?? '', media: m.kept }, isNudge));
 }

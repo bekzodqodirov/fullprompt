@@ -52,6 +52,7 @@ import {
   agentDrafts,
   agentOutbox,
   agentRuns,
+  agentSendCaps,
   clients,
   kbFacts,
   notifications,
@@ -70,6 +71,9 @@ import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modul
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { agentSweep, releaseForgottenAnswers } from '@/modules/wms/agent/jobs';
 import { ANSWER_CONTACT_WORDS, ownerPersonalOf } from '@/modules/wms/agent/owner-answer';
+import { __restoreSendCaps, readSendCaps } from '@/modules/wms/agent/send-caps';
+import { markDeleted } from '@/modules/wms/crm/message-flags';
+import { applyEdit } from '@/modules/wms/crm/telegram-accounts';
 import { QUESTION_DECIDED_WORDS, handleOwnerAnswer } from '@/modules/wms/agent/owner-answer-job';
 import { JOB_AGENT_INBOUND, JOB_AGENT_OWNER_ANSWER, type AgentOwnerAnswerJob } from '@/modules/wms/agent/queues';
 import { ANSWER_STILL_HIS, handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
@@ -512,7 +516,13 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft', blocked: false });
     const r = await draftOf((out as { draftId: string }).draftId);
     expect(r.proposedBody).toBe(reply);
-    expect((r.policy as { fromAnswer?: unknown }).fromAnswer).toEqual({ questionDraftId: q.id, questionAnchor: String(q.anchorTgMessageId), personal: [] });
+    expect((r.policy as { fromAnswer?: unknown }).fromAnswer).toEqual({
+      questionDraftId: q.id,
+      questionAnchor: String(q.anchorTgMessageId),
+      questionAnchorEditedAt: null,
+      figures: false,
+      personal: [],
+    });
     // The question: superseded by HIS answer — decided by him, its own line, the wait's mark gone.
     const closed = await draftOf(q.id);
     expect(closed.status).toBe('superseded');
@@ -608,7 +618,24 @@ describe('the redraft from his answer (spec §2.2)', () => {
     const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
     const r = await draftOf((out as { draftId: string }).draftId);
     expect((r.policy as { fromAnswer: { personal: string[] } }).fromAnswer.personal).toEqual([]);
-    expect(await verdictOf(r.id)).toMatchObject({ eligible: true, state: 'waiting' });
+    // No `owner_personal`. This fixture's customer is NAMED with the run's own digits («Javob Mijoz 123456»), and a
+    // digit in his answer is a figure (0148 fix: asked of his words, failing closed) — that alone keeps it his here.
+    expect((await verdictOf(r.id))!.reasons).toEqual(['owner_figure']);
+  });
+
+  it('…and with no digit in his words such an answer goes by itself', async () => {
+    const [c] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, clientId));
+    await db.update(clients).set({ name: `Javob Mijoz ${TAG}` }).where(eq(clients.id, clientId));
+    try {
+      const q = await question();
+      const job = await answered(q.id, `Javob Mijoz ${TAG} ga ayting: suyuqlik olmaymiz`);
+      const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+      const r = await draftOf((out as { draftId: string }).draftId);
+      expect((r.policy as { fromAnswer: { personal: string[]; figures: boolean } }).fromAnswer).toMatchObject({ personal: [], figures: false });
+      expect(await verdictOf(r.id)).toMatchObject({ eligible: true, state: 'waiting' });
+    } finally {
+      await db.update(clients).set({ name: c!.name }).where(eq(clients.id, clientId));
+    }
   });
 
   it('`ownerPersonalOf`: another customer’s name or code always; this chat’s own code only to a chat that has not proved it', async () => {
@@ -664,6 +691,120 @@ describe('the redraft from his answer (spec §2.2)', () => {
     const out = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
     const r = await draftOf((out as { draftId: string }).draftId);
     expect((await verdictOf(r.id))!.reasons).toContain('answer_stale');
+  });
+
+  // ── the review of 0148 as built: what his answer's redraft may do by itself ────────────────────────────────────
+  /** The question, ✍️, an event while he answers, his answer, the worker — the redraft, its card shown. */
+  async function answeredWith(opts: { ask?: string; answer: string; reply: string; meanwhile?: (q: Awaited<ReturnType<typeof question>>) => Promise<void>; steps?: { name: string; input: Record<string, unknown> }[] }) {
+    const q = await question(opts.ask);
+    await agentPress(ownerId, 'j', q.id, undefined);
+    if (opts.meanwhile) await opts.meanwhile(q);
+    botMsgSeq += 1;
+    queued.jobs.length = 0;
+    await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, opts.answer, botMsgSeq);
+    const job = queued.jobs.find((j) => j.name === JOB_AGENT_OWNER_ANSWER)!.data as AgentOwnerAnswerJob;
+    const out = await handleOwnerAnswer(job, { callModel: scripted(opts.steps ?? [compose(opts.reply)]), now: () => T1 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const r = await draftOf((out as { draftId: string }).draftId);
+    await shownAt(r.id, T1);
+    return { q, r };
+  }
+  /** Never the machine's: refused with this reason, the sweep presses nothing, no outbox row. */
+  async function comesBack(r: { id: string }, reason: string) {
+    const v = await verdictOf(r.id);
+    expect(v!.eligible).toBe(false);
+    expect(v!.reasons).toContain(reason);
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, r.id))).toHaveLength(0);
+  }
+
+  it('his figure that the CUSTOMER also wrote: the reply’s 300 is the customer’s in the ledger — and still comes back to him (`owner_figure`)', async () => {
+    // The review's (1): «300 kg yukim bor» / «300 kg dan kam yukni olmaymiz» / «Ha, 300 kg yukingizni bemalol olib
+    // kelamiz» — his figure, its meaning turned round, vouched for by the customer's own line; it was pressed.
+    const { r } = await answeredWith({
+      ask: `Salom, 300 kg yukim bor, olasizlarmi ${TAG}?`,
+      answer: '300 kg dan kam yukni olmaymiz',
+      reply: `Ha, 300 kg yukingizni bemalol olib kelamiz ${TAG}.`,
+    });
+    expect(r.blocked).toBe(false);
+    expect((r.policy as { ledger: { origin?: string }[] }).ledger).toEqual([expect.objectContaining({ kind: 'measure', origin: 'customer' })]);
+    expect((r.policy as { fromAnswer: { figures: boolean } }).fromAnswer.figures).toBe(true);
+    await comesBack(r, 'owner_figure');
+  });
+
+  it('…and a redraft that quotes the TOOL’s price where he gave another: no line of his at all — still his card', async () => {
+    // The review's (2): «Narx» ticked, he said 700 $, the redraft's run priced 800 $ and wrote that.
+    await db.update(agentAutoConfig).set({ categories: ['greeting', 'qualification', 'faq', 'status', 'price'] }).where(eq(agentAutoConfig.id, 1));
+    const caps = await readSendCaps();
+    await db.update(agentSendCaps).set({ tariffConfirmedAt: new Date() }).where(eq(agentSendCaps.id, 1));
+    try {
+      const { r } = await answeredWith({
+        ask: `Yiwudan Toshkentga 5 kub 1000 kg yuk bor, chegirma qilasizmi ${TAG}?`,
+        answer: 'Ha, 700$ ga qilib beramiz',
+        reply: '',
+        steps: [
+          { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+          compose("5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.", { category: 'price' }),
+        ],
+      });
+      expect(r.blocked).toBe(false);
+      const ledger = (r.policy as { ledger: { kind: string; origin?: string }[] }).ledger;
+      expect(ledger.filter((l) => l.kind === 'money')).toEqual([expect.objectContaining({ origin: 'tool', tool: 'yolkira_estimate' })]);
+      expect(ledger.some((l) => l.origin === 'owner')).toBe(false);
+      await comesBack(r, 'owner_figure');
+    } finally {
+      await __restoreSendCaps(caps);
+    }
+  });
+
+  it('the customer EDITED the very line the question was asked about while he answered: `answer_stale`, never pressed', async () => {
+    // The review's scenario: «…suyuq atir ham…» → ✍️ → edited to «…suyuq atir va litiy batareya ham…» → his «Ha,
+    // olamiz» to the wording his card showed → «Ha, suyuq atir va litiy batareyani ham olib kelamiz» went by itself.
+    const { q, r } = await answeredWith({
+      answer: 'Ha, olamiz',
+      reply: `Ha, suyuq atir va litiy batareyani ham olib kelamiz ${TAG}.`,
+      meanwhile: async (asked) => {
+        expect(asked.anchorEditedAt).toBeNull();
+        expect(
+          await applyEdit({ managerUserId: ownerId, peerId: PEER, tgMessageId: asked.anchorTgMessageId, body: `Salom, suyuq atir va litiy batareya ham olib kelasizlarmi ${TAG}?` }),
+        ).toBe(true);
+      },
+    });
+    // The redraft anchors on the SAME line, as it is now — its own stamp is the edit, so no later check of it sees one.
+    expect(r.anchorTgMessageId).toBe(q.anchorTgMessageId);
+    expect(r.anchorEditedAt).not.toBeNull();
+    expect((r.policy as { fromAnswer: { questionAnchorEditedAt: string | null } }).fromAnswer.questionAnchorEditedAt).toBeNull();
+    await comesBack(r, 'answer_stale');
+  });
+
+  it('…he DELETED it: the redraft answers an older line — `answer_stale`', async () => {
+    await inbound(`Salom, kiyim ham olib kelasizlarmi ${TAG}?`);
+    const { q, r } = await answeredWith({
+      answer: 'Ha, olamiz',
+      reply: `Ha, kiyim olib kelamiz ${TAG}.`,
+      meanwhile: async (asked) => {
+        expect(await markDeleted(ownerId, [asked.anchorTgMessageId])).toBe(1);
+      },
+    });
+    expect(r.anchorTgMessageId).not.toBe(q.anchorTgMessageId);
+    await comesBack(r, 'answer_stale');
+  });
+
+  it('…while a line he edited BEFORE the question was asked is the line his card showed: not stale', async () => {
+    const anchor = await inbound(`Salom, suyuq atir olasizlarmi ${TAG}?`);
+    await applyEdit({ managerUserId: ownerId, peerId: PEER, tgMessageId: anchor, body: `Salom, suyuq atir ham olib kelasizlarmi ${TAG}?` });
+    const out = await handleInbound(
+      { managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(anchor), origin: 'live' },
+      { callModel: scripted([compose('Aniqlab aytaman.', { needs_owner: true, owner_question: 'Suyuqlik olamizmi?', category: 'other' })]), now: () => T0 },
+    );
+    const q = await draftOf((out as { draftId: string }).draftId);
+    expect(q.anchorEditedAt).not.toBeNull();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    const redrafted = await redraft(job, `Afsuski, suyuq yuk olmaymiz ${TAG}.`);
+    const r = await draftOf((redrafted as { draftId: string }).draftId);
+    expect((r.policy as { fromAnswer: { questionAnchorEditedAt: string | null } }).fromAnswer.questionAnchorEditedAt).toBe(q.anchorEditedAt!.toISOString());
+    const v = await verdictOf(r.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, reasons: [] });
   });
 
   it('a run that makes no reply: the question goes back to him (pending) and the notice quotes his answer', async () => {

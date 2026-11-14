@@ -44,9 +44,40 @@ const STEMS: readonly string[] = [
   'angren', 'ангрен',
   'olmaliq', 'олмалиқ', 'алмалык', 'almalyk',
   'shahrisabz', 'шаҳрисабз', 'шахрисабз',
+  // …and the district towns a customer names as easily as a region (0148 fix: «Xivaga», «Denovga», «Bekobodga»
+  // each read as no place at all). Left out, each a word or a Tashkent landmark too: Kitob («book»), Shirin
+  // («sweet»), Muborak («blessed»), Pop, Chust, Quva, Beruniy and Parkent (a street and a bazaar of Tashkent).
+  'xiva', 'хива', 'khiva',
+  'denov', 'денов', 'denau', 'денау',
+  'bekobod', 'бекобод', 'bekabad', 'бекабад',
+  `yangiyo${A}l`, 'янгийўл', 'янгиюл',
+  'ohangaron', 'оҳангарон', 'охангарон', 'ахангаран',
+  'nurafshon', 'нурафшон',
+  'asaka', 'асака',
+  'shahrixon', 'шаҳрихон', 'шахрихан',
+  'quvasoy', 'қувасой', 'кувасай',
+  'rishton', 'риштон', 'риштан',
+  'kosonsoy', 'косонсой', 'касансай',
+  `kattaqo${A}rg${A}on`, 'каттақўрғон', 'каттакурган',
+  'urgut', 'ургут',
+  `g${A}ijduvon`, 'ғиждувон', 'гиждуван',
+  'kogon', 'когон', 'каган',
+  'zarafshon', 'зарафшон', 'зарафшан',
+  'uchquduq', 'учқудуқ', 'учкудук',
+  `g${A}uzor`, 'ғузор', 'гузар',
+  'sherobod', 'шеробод', 'шерабад',
+  'boysun', 'бойсун', 'байсун',
+  'yangiyer', 'янгиер',
+  'hazorasp', 'ҳазорасп', 'хазарасп',
+  `qo${A}ng${A}irot`, 'қўнғирот', 'кунград',
+  `to${A}rtko${A}l`, 'тўрткўл', 'турткуль',
+  `mo${A}ynoq`, 'мўйноқ', 'муйнак',
+  `xo${A}jayli`, 'хўжайли', 'ходжейли',
   // Kazakhstan.
   `qozog${A}iston`, 'қозоғисто?н', 'казахстан', 'kazakhstan', 'qazaqstan',
-  'almat[yi]', 'алматы', 'олмаота', 'алма-ат', 'almaata',
+  // «Olmaota» is the Uzbek for Almaty — in Latin too (0148 fix: «Olmaotaga» read as no place), with or without its
+  // hyphen, and «Алмата» as often as «Алматы».
+  'alma-?a?t[ayi]', 'алма-?а?т[аыу]', 'олма-?ота', 'olma-?ota',
   'astana', 'астан',
   'shymkent', 'chimkent', 'шымкент', 'чимкент',
   'qarag(?:ʻ|\'|‘|’)?andi', 'караганд', 'karaganda',
@@ -54,15 +85,23 @@ const STEMS: readonly string[] = [
   'atyrau', 'атырау',
   'taraz', 'тараз',
   'turkisto?n', 'туркисто?н', 'туркестан', 'turkestan',
+  'aktau', 'актау', 'aqtau',
+  'kostanay', 'костанай', 'qostanay',
+  'pavlodar', 'павлодар',
+  'semey',
+  'kyzylorda', 'кызылорда', `qizil-?o${A}rda`,
+  'saryagash', 'сарыагаш', `sariog${A}och`,
   // Kyrgyzstan.
   `qirg${A}iziston`, 'қирғизисто?н', 'кыргызстан', 'киргизи', 'kyrgyzstan', 'kirgiz',
   'bishkek', 'бишкек',
   'jalol-?obod', 'жалол-?обод', 'джалал-?абад', 'jalal-?abad',
   'karakol', 'каракол',
+  'batken', 'баткен', 'tokmok', 'токмок', `o${A}zgan`, 'ўзган', 'узген',
   // Tajikistan.
   'tojikisto?n', 'тожикисто?н', 'таджикистан', 'tajikistan',
   'dushanbe', 'душанбе',
   `xo${A}jand`, 'хўжанд', 'худжанд', 'khujand', 'xujand',
+  'bokhtar', 'бохтар', 'kulob', 'кулоб', 'куляб', 'istaravshan', 'истаравшан', 'panjakent', 'панджакент', 'пенджикент',
   // Afghanistan.
   `afg${A}onisto?n`, 'афғонисто?н', 'афганистан', 'afghanistan',
   'kobul', 'кобул',
@@ -71,17 +110,30 @@ const STEMS: readonly string[] = [
   'qandahor', 'қандаҳор', 'кандагар', 'kandahar',
   'qunduz', 'қундуз', 'кундуз', 'kunduz',
   'hayraton', 'ҳайратон', 'хайратон', 'hairatan',
+  // Farther still — the table is no more theirs than Andijan's.
+  'turkmanisto?n', 'туркманисто?н', 'туркменистан', 'turkmenistan',
+  'ashxobod', 'ашхобод', 'ашхабад', 'ashgabat',
+  'rossiya', 'россия', 'россию', 'россии', 'russia',
+  'moskva', 'москв', 'moscow',
 ];
 
+/**
+ * «… shahri», «… shahriga», «… shahar», «… tumani», «… viloyati» after the bare word — the place's own form with ANY
+ * ending (0148 fix): the Qarshi line took «shahri» only GLUED to the stem and Osh's stopped at the bare word, so
+ * «Qarshi shahriga», «Қарши шаҳрига» and «Osh shahriga yuk bor» were no place and the Tashkent price went by itself.
+ * «x» for «h» and «шахри» as a Russian keyboard writes it.
+ */
+const TOWN = '\\s+(?:sha[hx](?:ri|ar)|tuman|viloyat)\\p{L}*';
+const TOWN_CYRL = '\\s+(?:ша[ҳх](?:ри|ар)|туман|вилоят)\\p{L}*';
 /**
  * Places whose bare word is something else too — counted only in a place's own form: with an Uzbek place ending
  * («Qarshiga», «Oshdan»), after a Russian preposition («в Ош», «до Карши»), or with «shahri»/«город».
  */
 const ENDED: readonly string[] = [
   // «qarshi» is «against».
-  `qarshi(?:ga|gacha|dan|da|ning|shahri)`, 'қарши(?:га|гача|дан|да|нинг|шаҳри)', '(?:в|до|из|город)\\s+карши', 'karshi',
+  `qarshi(?:ga|gacha|dan|da|ning|${TOWN})`, `қарши(?:га|гача|дан|да|нинг|${TOWN_CYRL})`, `карши(?:га|гача|дан|да|${TOWN_CYRL})`, '(?:в|до|из|город)\\s+карши', 'karshi',
   // «osh» is the dish.
-  'osh(?:ga|gacha|dan|da|ning|\\s+shahri)', 'ўш(?:га|гача|дан|да)?', 'ош(?:га|гача|дан)', '(?:в|до|из|город)\\s+ош[аеу]?',
+  `osh(?:ga|gacha|dan|da|ning|${TOWN})`, `ўш(?:га|гача|дан|да|${TOWN_CYRL})?`, `ош(?:га|гача|дан|${TOWN_CYRL})`, '(?:в|до|из|город)\\s+ош[аеу]?',
   // «Navoiy ko'chasi» is a street in every town.
   `navoiy?(?:ga|gacha|dan|da|ning)?(?![\\p{L}])(?!\\s*(?:ko${A}ch|кўч|коч|ул|str|прос|shoh|шоҳ))`,
   `навои[йи]?(?:га|гача|дан|да|нинг)?(?![\\p{L}])(?!\\s*(?:кўч|коч|ул|прос|шоҳ))`,
@@ -92,14 +144,16 @@ const ENDED: readonly string[] = [
 /** Han and Persian spellings — no word boundary in Han; Persian takes its own (Arabic letters are letters). */
 const SCRIPT_ONLY: readonly string[] = [
   // Uzbekistan
-  '安集延', '纳曼干', '费尔干纳', '撒马尔罕', '布哈拉', '纳沃伊', '卡尔希', '铁尔梅兹', '吉扎克', '乌尔根奇', '努库斯', '浩罕', '花剌子模',
+  '安集延', '纳曼干', '费尔干纳', '撒马尔罕', '布哈拉', '纳沃伊', '卡尔希', '铁尔梅兹', '吉扎克', '乌尔根奇', '努库斯', '浩罕', '花剌子模', '希瓦',
   // Kazakhstan, Kyrgyzstan, Tajikistan, Afghanistan
   '哈萨克斯坦', '阿拉木图', '阿斯塔纳', '奇姆肯特', '吉尔吉斯', '比什凯克', '奥什', '塔吉克斯坦', '杜尚别', '苦盏', '阿富汗', '喀布尔', '马扎里沙里夫', '赫拉特', '坎大哈',
+  '土库曼斯坦', '阿什哈巴德', '俄罗斯', '莫斯科',
 ];
 const PERSIAN: readonly string[] = [
   'اندیجان', 'نمنگان', 'فرغانه', 'سمرقند', 'بخارا', 'ترمذ', 'خوقند', 'خوارزم', 'جیزخ',
   'قزاقستان', 'آلماتی', 'الماتی', 'آستانه', 'شیمکنت', 'قرقیزستان', 'بیشکک', 'تاجیکستان', 'خجند',
   'افغانستان', 'کابل', 'مزار\\s*شریف', 'مزارشریف', 'هرات', 'قندهار', 'قندوز', 'حیرتان',
+  'خیوه', 'ترکمنستان', 'عشق\\s*آباد', 'روسیه', 'مسکو',
 ];
 
 const PLACE = new RegExp(

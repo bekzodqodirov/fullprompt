@@ -4,7 +4,7 @@ import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot
 import { cardAsks, cardExtra } from '@/modules/wms/agent/card';
 import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, FROM_ANSWER_LINE, answeredNow, renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
 import { numberLedger, ownerAnswerSources, type NumberSource } from '@/modules/wms/agent/numbers';
-import { ANSWER_CONTACT_WORDS, answerTextRefusal, ownerAnswerInstruction } from '@/modules/wms/agent/owner-answer';
+import { ANSWER_CONTACT_WORDS, answerHoldsFigure, answerTextRefusal, ownerAnswerInstruction } from '@/modules/wms/agent/owner-answer';
 import { answerNoDraftWhy } from '@/modules/wms/agent/owner-answer-job';
 import { stableHead } from '@/modules/wms/agent/prompt';
 import { memoryFor, withAviaGuard, withRailRule, type ComposeReply, type RunResult } from '@/modules/wms/agent/run';
@@ -165,6 +165,44 @@ describe('the redraft’s memory carries his answer as SOURCES and nothing else 
   });
 });
 
+describe('«javobingizda raqam bo‘lsa — karta» is asked of HIS words, never of who the ledger says vouched (0148 fix, his Q2 a ⭐)', () => {
+  it.each([
+    // The review's three: a figure the customer also wrote, a price the redraft may swap for the tool's, a day count.
+    '300 kg dan kam yukni olmaymiz',
+    'Ha, 700$ ga qilib beramiz',
+    'VED 3 kunda hisoblaydi',
+    // …and every other way a number is written: in words, with its ending, vague, in another script.
+    'Uch kunda hisoblaymiz',
+    'Besh yuz dollarga qilib beramiz',
+    'Mingga yaqin chiqadi',
+    'Ikkita omborimiz bor',
+    'Bir haftada keladi',
+    'Примерно двадцать дней',
+    'Около пятисот',
+    'About a grand',
+    'حدود بیست روز',
+    '۳ روز',
+    'Yarim narxiga',
+  ])('«%s» holds a figure', (text) => {
+    expect(answerHoldsFigure(text)).toBe(true);
+  });
+
+  it.each(['Ha, suyuqlik olmaymiz', 'Yo‘q, batareya olmaymiz', 'Ha, olamiz', 'Да, принимаем', 'Hozircha yo‘q, keyinroq aytaman'])(
+    '«%s» holds none — such an answer may go by itself',
+    (text) => {
+      expect(answerHoldsFigure(text)).toBe(false);
+    },
+  );
+
+  it('the redraft’s mark carries it and the question’s own edit stamp — written where the redraft is (run `fromAnswer`)', () => {
+    const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
+    expect(src).toMatch(/figures: answerHoldsFigure\(answer\.text\)/u);
+    expect(src).toMatch(/questionAnchorEditedAt: answer\.questionAnchorEditedAt\?\.toISOString\(\) \?\? null/u);
+    // …and the job hands the QUESTION draft's stamp, never the redraft's.
+    expect(readFileSync('src/modules/wms/agent/owner-answer-job.ts', 'utf8')).toMatch(/questionAnchorEditedAt: q\.anchorEditedAt/u);
+  });
+});
+
 describe('what the bot refuses to take as an answer (§2.2 — an address or a phone is his ✏️ text)', () => {
   it('a phone, a link, Chinese text: refused in words', () => {
     for (const text of ['Telefoni +998 90 123 45 67', 'https://example.com/manzil', '义乌市 稠州北路 2255号']) {
@@ -266,7 +304,7 @@ describe('«✍️ Savolga javob» on the card (§2.2)', () => {
   });
 
   it('the reply the AI wrote from his answer says so on its card — until his own words replace it', () => {
-    const fromAnswer = { questionDraftId: ID, questionAnchor: '1', personal: [] };
+    const fromAnswer = { questionDraftId: ID, questionAnchor: '1', questionAnchorEditedAt: null, personal: [], figures: false };
     const redraft = draft({ needsOwner: false, ownerQuestion: null, proposedBody: 'Afsuski, suyuq yuk olmaymiz.', policy: { ...(draft().policy as object), fromAnswer } as never });
     expect(renderDraftCard(redraft, null)).toContain(FROM_ANSWER_LINE);
     expect(renderDraftCard({ ...redraft, finalBody: 'O‘zim yozdim.' }, null)).not.toContain(FROM_ANSWER_LINE);

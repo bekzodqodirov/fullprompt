@@ -54,9 +54,10 @@ function eligible(): AutoGateInput {
       estimatesStored: false,
       rail: false,
       customerLocale: { locale: 'uz', confident: true },
+      unreadNumeral: false,
     },
     tools: [],
-    money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false },
+    money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
     burstMedia: false,
     chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
@@ -113,8 +114,10 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   notes: (i) => (i.draft.notes = 1),
   actions: (i) => (i.draft.actionTypes = ['calc_submit']),
   money: (i) => (i.tools = [{ name: 'own_balance', ok: true, estimate: false }]),
-  // A currency named and no money line read (a price spelled in words nothing here reads).
-  money_unread: (i) => (i.draft.body = 'Narxni dollarda aytaman.'),
+  // A currency beside a quantity no reader placed («a few dollars» — vague, so G1 holds nothing) and no money line.
+  money_unread: (i) => (i.draft.body = 'Narxi bir necha dollar.'),
+  // A Chinese numeral the readers cannot tell from a word (auto-money `numeralUnread`, read by `autoFactsFor`).
+  numeral_unread: (i) => (i.draft.unreadNumeral = true),
   estimate_unnamed: (i) => (quote(i).money.unnamed = true),
   estimate_moved: (i) => (quote(i).money.moved = true),
   tariff_unconfirmed: (i) => (quote(i).money.tariffUnconfirmed = true),
@@ -170,7 +173,7 @@ describe('the gate', () => {
       ONE_CHANGE[code](input);
     }
     input.draft.category = 'status';
-    input.draft.body = `Narxni dollarda aytaman. ${'x'.repeat(400)}`;
+    input.draft.body = `Narxi bir necha dollar. ${'x'.repeat(400)}`;
     const out = autoVerdict(input);
     expect(out.eligible).toBe(false);
     expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => r !== 'category' && !QUOTE_ONLY.has(r)));
@@ -428,11 +431,11 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
   it('a call stored with NO estimate flag reads as a priced estimate — failing closed (`toolCallsOf`)', () => {
     const old = toolCallsOf([{ name: 'yolkira_estimate', ok: true, text: 'below_minimum: …' }]);
     expect(old).toEqual([{ name: 'yolkira_estimate', ok: true, estimate: true }]);
-    // Such a draft carries no stored estimates: refused.
+    // Such a draft carries no stored estimates: refused — and, read as priced, its reply quotes no figure of it.
     const input = eligible();
     input.config.categories = [...FOUR, 'price'];
     input.tools = old;
-    expect(autoVerdict(input).reasons).toEqual(['money']);
+    expect(autoVerdict(input).reasons).toEqual(['money', 'money_unread']);
     // The flag as stored is read as stored — never from the text.
     expect(toolCallsOf([{ name: 'yolkira_estimate', ok: true, text: 'Taxminiy …', estimate: false }])[0]!.estimate).toBe(false);
     expect(toolCallsOf([{ name: 'avia_estimate', ok: true, text: 'below_minimum: …', estimate: true }])[0]!.estimate).toBe(true);
@@ -456,6 +459,115 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
     }
     // A quote whose currency IS a money line is no `money_unread`.
     expect(money(() => undefined)).toEqual([]);
+  });
+
+  it('…and the currency WORD alone is no price (0148 fix): the seeded payment answer and «narx dollarda» go by themselves, as at main', () => {
+    // The review's regress finding: line 290 fired on `namesCurrency(body)` alone, so every one of these — figure-free,
+    // no tool call, the first the seeded fact payment@1's own sentence — waited for his ✅ under «raqami o‘qilmadi».
+    for (const body of [
+      'Toʻlov yuk Toshkentga yetib kelganda, olishdan oldin soʻmda qilinadi; narx dollarda kelishiladi.',
+      'To‘lov so‘mda qilinadi, narx dollarda kelishiladi.',
+      'Оплата — в сумах по прибытии груза; цена согласуется в долларах.',
+      'Narxni dollarda aytaman. Uch omborimizdan qaysi biriga yetkazasiz?',
+      "To'lov so'mda yoki dollarda bo'ladi. Uch omborimizdan qaysi biri yaqin?",
+      "Ikki yo'l bor: avia va avto, narxi dollarda.",
+      'Есть два варианта: авто и авиа. Цена в долларах.',
+      'Hi! Prices are in US dollars. Which of our three warehouses will your supplier deliver to?',
+      '价格以美元计算，请告诉我货物的体积和重量。',
+      'قیمت به دلار محاسبه می‌شود.',
+    ]) {
+      const input = eligible();
+      input.draft.category = 'faq';
+      input.draft.body = body;
+      expect(autoVerdict(input).reasons, body).toEqual([]);
+    }
+    // …while a quantity beside the currency that no reader placed is still a price nobody read: spelled out with an
+    // ending, a plural, a million, the vague «a few», a Chinese numeral, «one» — in the currency's OWN sentence.
+    for (const body of [
+      'Narxi yuzlab dollar.',
+      'Narxi bir necha dollar.',
+      'Примерно пару сотен долларов.',
+      'Несколько долларов за кило.',
+      'Штука баксов за всё.',
+      'It will cost hundreds of dollars.',
+      'A few dollars per kilo.',
+      'هزینه حمل یک میلیون تومان است',
+      'چند دلار برای هر کیلو.',
+      '运费九百美元',
+      '大概几美元一公斤。',
+      'Kilosiga bir dollar.',
+    ]) {
+      const input = eligible();
+      input.draft.body = body;
+      expect(autoVerdict(input).reasons, body).toContain('money_unread');
+    }
+    // A numeral in ANOTHER sentence than the currency's is not its amount.
+    const apart = eligible();
+    apart.draft.body = 'Narxni dollarda aytaman. Ikki xil yo‘l bor.';
+    expect(autoVerdict(apart).reasons).toEqual([]);
+  });
+
+  it('a PRICED run whose reply holds no figure of its estimate is `money_unread` — the price was not said, or nothing could read it (0148 fix)', () => {
+    // The review's (b): the tool said 800 $, the reply «到塔什干的运费大概六百左右» — an EMPTY ledger; every clause
+    // of the money split passed on the empty list, «到塔什干» satisfied the destination, and it was pressed.
+    expect(money((i) => (i.draft.ledger = []))).toEqual(['money_unread']);
+    // Measures alone are no quote either.
+    expect(money((i) => (i.draft.ledger = i.draft.ledger.filter((l) => l.kind !== 'money')))).toEqual(['money_unread']);
+    // The flag alone (`memory.hasEstimate`) asks it, and so does the priced call alone.
+    expect(
+      money((i) => {
+        i.draft.ledger = [];
+        i.tools = [];
+      }),
+    ).toEqual(['money_unread']);
+    // Below the minimum nothing was priced: no figure is owed.
+    const below = eligible();
+    below.config.categories = [...FOUR, 'price'];
+    below.draft.category = 'qualification';
+    below.tools = [{ name: 'yolkira_estimate', ok: true, estimate: false }];
+    expect(autoVerdict(below).reasons).toEqual([]);
+  });
+
+  it('a numeral no reader reads reliably refuses on its own — whatever else the reply is (0148 fix, `numeral_unread`)', () => {
+    const plain = eligible();
+    plain.draft.unreadNumeral = true;
+    expect(autoVerdict(plain).reasons).toEqual(['numeral_unread']);
+    expect(money((i) => (i.draft.unreadNumeral = true))).toEqual(['numeral_unread']);
+    expect(AUTO_REFUSAL_WORDS.numeral_unread).toBe('javobda ieroglif bilan yozilgan son bo‘lishi mumkin — uni o‘qib bo‘lmadi');
+  });
+
+  it('his answer’s figure comes back to him whoever the ledger says vouched (0148 fix, `owner_figure` asked of the ANSWER)', () => {
+    // The customer wrote «300 kg», he answered «300 kg dan kam yukni olmaymiz»: the reply's 300 is the CUSTOMER's
+    // in the ledger (`sourceFor` names the first source that fits) — and was pressed.
+    const input = eligible();
+    input.draft.ledger = [{ kind: 'measure', origin: 'customer', tool: null, role: null }];
+    expect(autoVerdict(input).reasons).toEqual([]);
+    input.money.ownerFigure = true;
+    expect(autoVerdict(input).reasons).toEqual(['owner_figure']);
+    // …and a redraft quoting the TOOL's 800 $ where he said 700 $ carries no line of his at all.
+    expect(money((i) => (i.money.ownerFigure = true))).toEqual(['owner_figure']);
+    // A figure-free answer still goes.
+    expect(money((i) => (i.money.ownerFigure = false))).toEqual([]);
+  });
+
+  it('an admitted quote never launders the model’s label: «complaint» and «other» stay his, a status claim is still asked for its reading (0148 fix)', () => {
+    // Before 0148 any money refused, so these never went; with «Narx» ticked the override judged every admitted
+    // quote as `price` — and «Sizlar bilan sudlashaman … yo‘lkira qancha?» answered with the estimate was pressed.
+    for (const label of ['complaint', 'other', null]) {
+      expect(money((i) => (i.draft.category = label)), String(label)).toEqual(['category']);
+    }
+    // The kinds that go by themselves are judged as `price` once the clause admits the money, as before.
+    for (const label of ['greeting', 'qualification', 'faq', 'price']) {
+      expect(money((i) => (i.draft.category = label)), label).toEqual([]);
+    }
+    // «status»: the quote is admitted, the label is still the model's claim that it READ the cargo.
+    expect(money((i) => (i.draft.category = 'status'))).toEqual(['status_unbacked']);
+    expect(
+      money((i) => {
+        i.draft.category = 'status';
+        i.tools = [...i.tools, { name: 'cargo_status', ok: true, estimate: false }];
+      }),
+    ).toEqual([]);
   });
 
   it('the quote’s own facts are asked only of a quote the clause admitted — a refused one is `money` alone', () => {

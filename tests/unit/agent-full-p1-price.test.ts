@@ -281,6 +281,47 @@ describe('the destination (spec §1.8): any city or region other than Tashkent, 
     expect(namesForeignPlace([line])).toBe(false);
   });
 
+  // 0148 fix — the review's two («Qarshi shahriga», «Olmaotaga») and the class they stand in: the place's own form
+  // with any ending after «shahri», the Uzbek Latin name of a neighbour's city, the district towns.
+  it.each([
+    'Yiwudan Qarshi shahriga 5 kub 1000 kg yuk bor, yo\'lkira qancha bo\'ladi?',
+    'Qarshi shahriga kerak',
+    'Қарши шаҳрига керак',
+    'Карши шахрига керак',
+    'Qarshi shaxridan yozyapman',
+    'Qarshi tumaniga',
+    'Osh shahriga yuk bor',
+    'Ўш шаҳрига юк бор',
+    'Ош шахрига',
+    'Olmaotaga yuk bor',
+    'Olma-otaga',
+    'Олма-отага',
+    'Алматага',
+    'Xivaga',
+    'Хивага керак',
+    'Denovga',
+    'Bekobodga',
+    'Kogonga yetkazasizmi?',
+    'Ashxobodga',
+    'Moskvaga ham olib borasizmi?',
+    '运到希瓦多少钱？',
+    'تا خیوه چقدر است؟',
+  ])('«%s» names one (the review’s finding and its neighbours)', (line) => {
+    expect(namesForeignPlace([line])).toBe(true);
+  });
+
+  it.each([
+    'Qarshi emasman, shahar ichida yetkazasizmi?',
+    'Bunga qarshi fikrim yo‘q',
+    'Osh tayyor, keyin yozaman',
+    'Kitob va daftar olib kelmoqchiman',
+    'Ramazon muborak! Yukim keldimi?',
+    'Parkent bozoriga yaqin joydaman',
+    'Для семей с детьми есть скидка?',
+  ])('«%s» still names none', (line) => {
+    expect(namesForeignPlace([line])).toBe(false);
+  });
+
   it('the run reads the whole inbound window and the burst — never our own lines', () => {
     const ctx = ctxWith('5 kub 800 kg', []);
     const earlier: ChatMessage = { ...msg('Andijonga kerak', 2) };

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { autoVerdict } from '@/modules/wms/agent/auto-gate';
+import { autoVerdict, type AutoGateInput } from '@/modules/wms/agent/auto-gate';
+import { numeralUnread } from '@/modules/wms/agent/auto-money';
 import { hitWords } from '@/modules/wms/agent/card';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits, unverifiableNumeral } from '@/modules/wms/agent/digits';
 import { servedText, WAREHOUSE_ADDRESS_SEED, type KbHit } from '@/modules/wms/agent/kb';
 import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import { extractNumbers, PHONE_RE, sourceFor, urlsIn, type FoundNumber, type NumberSource } from '@/modules/wms/agent/numbers';
-import { addressAnchorsOf, checkAgentReply, foreignCodes, promiseHits, vagueTravelTime, type PolicyInput, type PolicyResult } from '@/modules/wms/agent/policy';
+import { addressAnchorsOf, checkAgentReply, foreignCodes, hanOnly, promiseHits, vagueTravelTime, type PolicyInput, type PolicyResult } from '@/modules/wms/agent/policy';
 import { stableHead } from '@/modules/wms/agent/prompt';
 import { memoryFor, type ComposeReply } from '@/modules/wms/agent/run';
 import { GS_REMINDER, SEED_FACTS } from '@/modules/wms/agent/seed-kb';
@@ -1986,9 +1987,10 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
         estimatesStored: false,
         rail: false,
         customerLocale: mem.customerLocale ?? null,
+        unreadNumeral: false,
       },
       tools: [],
-      money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false },
+      money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
       burstMedia: false,
       chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
       workAccount: true,
@@ -2033,5 +2035,273 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
     expect(blockCodes(verdict(UZ1, 'latin', 'uz', 'Нархни ҳисоблаш учун куб ва кг ни ёзинг.')).length).toBeGreaterThan(0);
     expect(verdict(UZC1, 'cyrillic', 'uz_cyrl', 'Нархни ҳисоблаш учун куб ва кг ни ёзинг.').ok).toBe(true);
     expect(blockCodes(verdict(UZC1, 'cyrillic', 'uz_cyrl', 'Narxni hisoblash uchun kub va kg ni yozing.')).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 0148, the review's blocker — zh joined the languages a reply goes in by itself, and a price in Chinese numerals
+ * with no currency word («到塔什干的运费大概九百左右») passed G1 with an EMPTY ledger, G11 and the whole money
+ * clause: an invented price pressed by the machine, or the tool's 800 $ sent as «六百». The class, not the case:
+ * every way the six languages write a figure is either READ (a digit in any script folds to ASCII and is asked
+ * its source) or REFUSED — spelled in words with their endings («sakkiz yuzga», «пятисот», «hundreds», «نهصدتا»),
+ * in Chinese numerals plain or financial, a digit mixed with a Chinese scale («9百», «1千2»). And where the
+ * reader cannot tell a number from a word — a Chinese character is both — the MACHINE never presses
+ * (`numeral_unread`, the gate), whatever G1 let through. Every reply here was probed through the real policy and
+ * the real gate.
+ */
+const FIVE = ['greeting', 'qualification', 'faq', 'status', 'price'];
+function gate(
+  lines: readonly string[],
+  script: ScriptName,
+  language: AgentLocale,
+  reply: string,
+  patch: (i: AutoGateInput) => void = () => undefined,
+): string[] {
+  const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, reply), tools: [], outcomes: [], usage }, FACTS, 'gsr-t');
+  const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
+  const input: AutoGateInput = {
+    config: { armed: true, categories: FIVE, maxChars: 400, minConfidence: 0.8, perDay: null },
+    agentOn: true,
+    draft: {
+      kind: 'reply',
+      status: 'pending',
+      ownText: false,
+      blocked: !r.ok,
+      needsOwner: false,
+      warnings: r.warnings.length,
+      notes: 0,
+      actionTypes: [],
+      category: 'faq',
+      language,
+      body: reply,
+      confidence: 0.9,
+      ledger: r.ledger.map((l) => ({ kind: l.kind, origin: l.origin ?? null, tool: l.tool ?? null, role: l.role ?? null })),
+      hasEstimate: false,
+      estimatesStored: false,
+      rail: false,
+      customerLocale: mem.customerLocale ?? null,
+      // The fact `autoFactsFor` reads with the same function (auto-money `numeralUnread`).
+      unreadNumeral: numeralUnread(reply, mem.quotableHan ?? ''),
+    },
+    tools: [],
+    money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
+    burstMedia: false,
+    chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
+    workAccount: true,
+    at: new Date('2026-11-11T07:00:00Z'),
+    now: new Date('2026-11-11T07:00:00Z'),
+    streak: 0,
+    pressedToday: 0,
+    budgetLeft: null,
+    sendingEnabled: null,
+    listenerCurrent: null,
+  };
+  patch(input);
+  return autoVerdict(input).reasons;
+}
+
+describe('0148 fix — a figure in Chinese numerals is never read as a word: G1 blocks the price shapes, the machine presses none', () => {
+  it.each([
+    // The review's eight, each with an EMPTY ledger and no block at 311ec89b.
+    '到塔什干的运费大概九百左右，不含关税和增值税。',
+    '运费大约九百。',
+    '大概要九百。',
+    '到塔什干大约八百，不含关税和增值税。',
+    '运费大约一千二。',
+    '运费大约九百刀。',
+    '大约二十来天。',
+    '到塔什干的运费大概六百左右，不含关税和增值税。',
+    // …and their neighbours: the financial forms, a hedge after the figure, a discount, a vague scale, one digit.
+    '运费大约玖佰。',
+    '大概壹仟贰佰。',
+    '每方大概一百六。',
+    '大概两千。',
+    '八五折优惠。',
+    '大约九百多。',
+    '二十多天到。',
+    '一共八百。',
+    '运费大概九。',
+    '大概几百。',
+    '运费近千。',
+    '运费两千左右。',
+    '一个月左右到。',
+    // A digit glued to a Chinese scale the reader has no reading for: «9百» read as a bare 9.
+    '大概9百。',
+    '大概1千2。',
+    '运费2百五。',
+    // A percent, a discount, a fraction — a figure in characters all the same.
+    '运费是货值的百分之十。',
+    '可以打八折。',
+    '运费是货值的十分之一。',
+  ])('«%s» is a figure nothing can read — blocked, and never pressed', (reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBe('han_numeral');
+    const r = verdict(ZH, 'han', 'zh', reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r)).toContain('number_unverifiable:han_numeral');
+    expect(r.ok).toBe(false);
+    expect(gate(ZH, 'han', 'zh', reply)).toEqual(expect.arrayContaining(['blocked', 'numeral_unread']));
+  });
+
+  it.each([
+    '您好！请告诉我货物的体积（立方米）和重量（公斤）。',
+    '您好！请告诉我一下货物的名称。',
+    '请稍等一下，我帮您查一下。',
+    '我们有两种运输方式：汽运和空运。',
+    '十分感谢！',
+    '千万不要把电池放在货物里。',
+    '我们一般走陆运，也可以空运。',
+    '请告诉我重量（千克）和体积。',
+    '运费需要根据体积和重量计算，请告诉我一下货物的尺寸。',
+    '第一步，请告诉我货物名称。',
+    '我们有三个仓库，您的货在哪个城市？',
+    '二手设备和五金配件都可以运。',
+    // «之一», «万一», «一一» at a clause's end or as a word are no count.
+    '我们是中亚线路最大的货代之一。',
+    '万一有问题，请随时联系我们。',
+    '收到后请一一确认。',
+  ])('«%s» holds no figure: its ✅ stays, and it goes by itself', (reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBeNull();
+    const r = verdict(ZH, 'han', 'zh', reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r)).toEqual([]);
+    expect(gate(ZH, 'han', 'zh', reply)).toEqual([]);
+  });
+
+  it.each([
+    // No price word, no measure, no hedge — G1 has nothing to hold them by, and a character is a word as often
+    // as a number: his ✅ stays (he reads the gloss), the machine's press does not.
+    '我们有三家合作工厂。',
+    '货物分三批到。',
+    '周一发货。',
+  ])('«%s» — a Chinese numeral the reader cannot tell from a word: the machine does not press it', (reply) => {
+    // His ✅ is G1's and G2's to give or keep; whatever they say, the machine's press is refused.
+    expect(gate(ZH, 'han', 'zh', reply)).toContain('numeral_unread');
+  });
+
+  it('a Chinese address quoted from a fact is the fact’s spelling, never a figure (the gate reads the reply less its quotes)', () => {
+    const horgos = SEED_FACTS.find((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED) && /金亿/u.test(f.answer))!;
+    const quoted = /[\p{Script=Han}]*金亿[\p{Script=Han}]*/u.exec(horgos.answer)![0];
+    expect(numeralUnread(`仓库：${quoted}`, hanOnly(horgos.answer))).toBe(false);
+    expect(numeralUnread(`仓库：${quoted}`, '')).toBe(true);
+  });
+});
+
+describe('0148 fix — a digit in any script is READ, and asked its source like any other', () => {
+  it.each([
+    [ZH, 'han', 'zh', '运费大约９００美元。', '900'],
+    [ZH, 'han', 'zh', '运费大约９００。', '900'],
+    [FA, 'arabic', 'fa', 'هزینه حمل تقریباً ۹۰۰ دلار است', '900'],
+    [FA, 'arabic', 'fa', 'هزینه حمل تقریباً ٩٠٠ دلار است', '900'],
+    [UZ, 'latin', 'uz', 'Narxi taxminan ９００ $ bo‘ladi.', '900'],
+    [RU, 'cyrillic', 'ru', 'Примерно ۹۰۰ долларов.', '900'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» reads %s, money with no source', (lines, script, language, reply, value) => {
+    expect(extractNumbers(reply).map((f) => [f.value, f.kind])).toEqual([[Number(value), 'money']]);
+    const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r).some((c) => c.startsWith('number_unsourced:')), reply).toBe(true);
+    expect(gate(lines, script, language, reply)).toContain('blocked');
+  });
+});
+
+describe('0148 fix — a number in words keeps being a number with its ending, its case, its plural', () => {
+  it.each([
+    // Uzbek hangs a case, «-ta», «-cha», «-lab» on the numeral itself: «sakkiz yuzga tushadi» is how a price is said.
+    [UZ, 'latin', 'uz', 'Taxminan sakkiz yuzga tushadi.'],
+    [UZ, 'latin', 'uz', 'Narxi taxminan mingga yaqin.'],
+    [UZ, 'latin', 'uz', 'Taxminan besh yuzcha.'],
+    [UZ, 'latin', 'uz', 'Taxminan mingtacha dollar.'],
+    [UZ, 'latin', 'uz', 'Narxi yuzlab dollar.'],
+    [UZ, 'latin', 'uz', 'Bir million so‘m.'],
+    [UZ, 'latin', 'uz', 'Yarim million so‘m.'],
+    [UZ, 'latin', 'uz', 'Kilosiga bir dollar.'],
+    [UZ, 'latin', 'uz', 'Yigirmatacha kun.'],
+    [UZ, 'latin', 'uz', 'Narxi ellikka yaqin.'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Тахминан саккиз юзга тушади.'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Нархи тахминан мингга яқин.'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Бир миллион сўм.'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Килосига бир доллар.'],
+    // «ўн» as a Russian keyboard writes it — «ун», which alone is flour — is ten before the unit it makes a teen of.
+    [UZC, 'cyrillic', 'uz_cyrl', 'Нархи ун беш.'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Тахминан ун икки минг.'],
+    [UZ, 'latin', 'uz', 'Narxi on besh.'],
+    // A hedge before a bare thousand makes it an amount, priced or not.
+    [UZ, 'latin', 'uz', 'Taxminan mingga yaqin.'],
+    [RU, 'cyrillic', 'ru', 'Где-то тыща.'],
+    [EN, 'latin', 'en', 'Around a thousand.'],
+    [FA, 'arabic', 'fa', 'حدود هزار.'],
+    // The percent as Persian writes it.
+    [FA, 'arabic', 'fa', 'ده درصد ارزش بار.'],
+    // «One» and a half before a bare thousand count it: «bir yarim mingcha», «one thousand», «یک هزار».
+    [UZ, 'latin', 'uz', 'Bir yarim mingcha.'],
+    [UZ, 'latin', 'uz', 'Yarim ming chiqadi.'],
+    [RU, 'cyrillic', 'ru', 'Одна тысяча.'],
+    [EN, 'latin', 'en', 'One thousand.'],
+    [FA, 'arabic', 'fa', 'یک هزار می‌شود.'],
+    // The half as a time: «yarim oyda», «полмесяца», «half a month», «نیم ماه».
+    [UZ, 'latin', 'uz', 'Yarim oyda keladi.'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Ярим ойда келади.'],
+    [RU, 'cyrillic', 'ru', 'Придёт за полмесяца.'],
+    [EN, 'latin', 'en', 'It arrives in half a month.'],
+    [FA, 'arabic', 'fa', 'نیم ماه طول می‌کشد.'],
+    // Slang for a hundred and a thousand beside what it prices.
+    [RU, 'cyrillic', 'ru', 'Сотка за куб.'],
+    [RU, 'cyrillic', 'ru', 'Косарь баксов.'],
+    // A digit and a hundred in words: the figure reader knows «ming», «тыс», «k» as scales and no hundred — «8 yuz»
+    // read as a bare 8, which the customer's own «8 kub» vouches for.
+    [['Assalomu alaykum', '8 kub yuk bor', 'narxi qancha'], 'latin', 'uz', 'Taxminan 8 yuz chiqadi.'],
+    [['Assalomu alaykum', '8 kub yuk bor', 'narxi qancha'], 'latin', 'uz', 'Taxminan 8 yuzga tushadi.'],
+    [['Ассалому алайкум', '8 куб юк бор', 'нархи қанча'], 'cyrillic', 'uz_cyrl', 'Тахминан 8 юзга тушади.'],
+    [['Здравствуйте', 'есть груз 8 кубов', 'сколько стоит'], 'cyrillic', 'ru', 'Выйдет 8 сотен.'],
+    [['Hello', 'I have 9 m3 of cargo', 'how much'], 'latin', 'en', 'It comes to 9 hundred.'],
+    [['سلام', 'بار دارم ۸ متر مکعب', 'قیمت چند است'], 'arabic', 'fa', 'می‌شود ۸ صد.'],
+    // Russian in its oblique cases, the hundred as a noun, the half, the million.
+    [RU, 'cyrillic', 'ru', 'Примерно около ста долларов.'],
+    [RU, 'cyrillic', 'ru', 'Примерно пару сотен долларов.'],
+    [RU, 'cyrillic', 'ru', 'Около пятисот долларов.'],
+    [RU, 'cyrillic', 'ru', 'Около полутора тысяч.'],
+    [RU, 'cyrillic', 'ru', 'Где-то тыща долларов.'],
+    [RU, 'cyrillic', 'ru', 'Выйдет в восемь сотен.'],
+    [RU, 'cyrillic', 'ru', 'Около пяти сотен.'],
+    [RU, 'cyrillic', 'ru', 'Миллион сум.'],
+    [RU, 'cyrillic', 'ru', 'Полмиллиона сум.'],
+    [RU, 'cyrillic', 'ru', 'Около двадцати дней.'],
+    [RU, 'cyrillic', 'ru', 'Один доллар за кило.'],
+    [RU, 'cyrillic', 'ru', 'Полторы сотни.'],
+    [RU, 'cyrillic', 'ru', 'Примерно сотня долларов.'],
+    // English plurals, the grand, the «one» beside its currency.
+    [EN, 'latin', 'en', 'It will cost hundreds of dollars.'],
+    [EN, 'latin', 'en', 'About a grand.'],
+    [EN, 'latin', 'en', 'About 2 grand.'],
+    [EN, 'latin', 'en', 'About one dollar per kilo.'],
+    [EN, 'latin', 'en', 'Half a million sum.'],
+    [EN, 'latin', 'en', 'About a million sum.'],
+    // Persian: the classifier glued on, the plurals, the million, «یک» beside its currency.
+    [FA, 'arabic', 'fa', 'هزینه حمل یک میلیون تومان است'],
+    [FA, 'arabic', 'fa', 'هزینه حمل نیم میلیون تومان است'],
+    [FA, 'arabic', 'fa', 'حدود نهصدتا می‌شود.'],
+    [FA, 'arabic', 'fa', 'صدها دلار می‌شود.'],
+    [FA, 'arabic', 'fa', 'هزاران دلار می‌شود.'],
+    [FA, 'arabic', 'fa', 'کیلویی یک دلار.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» is a figure spelled out', (lines, script, language, reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBe('word_numeral');
+    const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r)).toContain('number_unverifiable:word_numeral');
+    expect(gate(lines, script, language, reply)).toContain('blocked');
+  });
+
+  it.each([
+    [UZ, 'latin', 'uz', 'Yuzga suriladigan krem uchun narxni kub hisobida aytaman — yukingiz necha kub?'],
+    [UZ, 'latin', 'uz', 'Narxni aytishim uchun ikkita narsa kerak: kub va kg.'],
+    [UZ, 'latin', 'uz', 'Narxni dollarda aytishim uchun kub va kg ni yozing.'],
+    [UZ, 'latin', 'uz', 'Uchta omborimiz bor — qaysi biriga yetkazasiz?'],
+    [UZ, 'latin', 'uz', 'Oltin buyumlarni olmaymiz. Yukingiz necha kub?'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Ун юкини ҳам оламиз. Юкингиз неча куб ва неча кг?'],
+    [RU, 'cyrillic', 'ru', 'Здравствуйте! Сколько стоит — зависит от объёма и веса. Напишите кубы и кг.'],
+    [RU, 'cyrillic', 'ru', 'Для вашей семьи мебель привезём, напишите объём в кубах.'],
+    [EN, 'latin', 'en', 'The grand total depends on the volume (m3) and weight (kg).'],
+    [EN, 'latin', 'en', 'One of our managers will check it. How many m3 and kg?'],
+    [FA, 'arabic', 'fa', 'یک لحظه لطفاً، حجم (متر مکعب) و وزن (کیلو) بار را بنویسید.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» holds no figure and keeps its ✅', (lines, script, language, reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBeNull();
+    const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r)).toEqual([]);
+    expect(r.ok).toBe(true);
   });
 });

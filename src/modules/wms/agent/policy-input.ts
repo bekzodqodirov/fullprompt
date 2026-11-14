@@ -65,9 +65,11 @@ export interface PolicyMemory {
    */
   rail?: boolean;
   /**
-   * The customer's language as the run read the message it answers (`detectLocale(anchor, stored)`, spec §4) —
-   * the auto layer sends an English, Persian or Chinese reply by itself only when this CONFIDENTLY says that
-   * language, never on the model's own label. Absent (stored before 0148) = not known.
+   * The customer's language as the run read what it answers — his whole burst, every line since our last one
+   * (`detectLocale(burst, stored)`, spec §4) — the auto layer sends an English, Persian or Chinese reply by itself
+   * only when this CONFIDENTLY says that language, never on the model's own label. `confident` = a mark in his own
+   * words decided; Cyrillic or Latin that carries none is a guess and refuses nothing. Absent (stored before 0148)
+   * = not known.
    */
   customerLocale?: { locale: AgentLocale | null; confident: boolean };
   /**

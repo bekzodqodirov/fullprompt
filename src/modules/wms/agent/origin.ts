@@ -91,6 +91,18 @@ const PLACES: readonly Place[] = [
  */
 const CHINA = /(?<!\p{L})(?:xitoy|hitoy|хитой|кита[йяеюи]|china|chinese)|چین|中国/iu;
 
+/**
+ * Where each named place stands in the text — EVERY mention, as written (the Yiwu spelling takes its Uzbek case
+ * ending with it: «Иуга»). For a reader that asks what the text says ABOUT the place: run.ts `sendsToChina` tells
+ * «Guanchjouga» from «Guanchjoudan», and a reply may say both.
+ */
+export function originMentions(text: string | null): { place: string; index: number; match: string }[] {
+  const t = text ?? '';
+  return PLACES.flatMap((p) =>
+    [...t.matchAll(new RegExp(p.re.source, `${p.re.flags.replace('g', '')}g`))].map((m) => ({ place: p.place, index: m.index, match: m[0] })),
+  );
+}
+
 /** Every named place in the text, each once, in the list's order. */
 export function namedOrigins(text: string | null): { place: string; zone: OriginZone | null }[] {
   const t = text ?? '';

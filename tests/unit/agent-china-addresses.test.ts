@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
@@ -7,6 +8,7 @@ import { airMentionIn, namesMode, PHONE_RE, pricedRoadOf, roadChoiceIn } from '@
 import {
   addressAnchorsOf,
   checkAgentReply,
+  EXCLUSION_SENTENCE,
   isReceivingAddressFact,
   statesChinaAddress,
   withoutQuotedHan,
@@ -21,6 +23,7 @@ import {
   memoryFor,
   railChat,
   shipmentWeightIn,
+  talksDelivery,
   withAviaGuard,
   withAviaRule,
   type ComposeReply,
@@ -393,6 +396,98 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
       ]) {
         expect(ruleArmed(compose('uz', { replyText: reply }), [air], aviaChat), reply).toMatchObject({ needsOwner: true, ownerQuestion: line });
       }
+    });
+
+    // 0148 fix — the reply is read with lists of its OWN. The armed rule read it with the customer's asking stems:
+    // «пошл» is inside «Пошлина», so the exclusion sentence the prompt dictates in Russian made every Russian
+    // flight quote his question (the price act did nothing in Russian); «ship» is inside «shipment», «ارسال» the
+    // noun of «هزینه ارسال هوایی». Each language's price-only quote, carrying its own mandated sentence:
+    const PRICE_ONLY: readonly (readonly [AgentLocale, string])[] = [
+      ['uz', `30 kg yukingiz uchun Toshkentgacha avia taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz}`],
+      // Where the cargo STARTS is no direction: «from Guangzhou», in each language.
+      ['uz', `Guanchjoudan Toshkentgacha avia 30 kg uchun taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz}`],
+      ['uz_cyrl', `Гуанчжоудан Тошкентгача авиа 30 кг учун тахминан 510 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`],
+      ['ru', `Из Гуанчжоу до Ташкента авиа 30 кг — примерно 510 $. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', `From Guangzhou to Tashkent, air freight for 30 kg is about $510. ${EXCLUSION_SENTENCE.en}`],
+      ['zh', `30公斤从广州空运到塔什干大约510美元。${EXCLUSION_SENTENCE.zh}`],
+      ['fa', `هزینه هوایی ۳۰ کیلو از گوانگژو تا تاشکند حدود ۵۱۰ دلار است. ${EXCLUSION_SENTENCE.fa}`],
+      ['uz_cyrl', `30 кг юкингиз учун Тошкентгача авиа тахминан 510 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`],
+      ['ru', `30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', `Air freight for your 30 kg shipment to Tashkent is about $510. ${EXCLUSION_SENTENCE.en}`],
+      ['fa', `هزینه ارسال هوایی ۳۰ کیلو تا تاشکند حدود ۵۱۰ دلار است. ${EXCLUSION_SENTENCE.fa}`],
+      ['zh', `30公斤空运到塔什干大约510美元。${EXCLUSION_SENTENCE.zh}`],
+      // …and the ordinary wordings beside them: our own sending, a noun, a verb that only looks like one.
+      ['uz', `Avia bilan 30 kg yukni Toshkentgacha taxminan 510 $ ga yetkazamiz. ${EXCLUSION_SENTENCE.uz}`],
+      ['ru', `Доставка авиа до Ташкента — примерно 510 $ за 30 кг, цена складывается из веса. ${EXCLUSION_SENTENCE.ru}`],
+      ['ru', `Авиа до Ташкента примерно 510 $ за 30 кг, отправим ближайшим рейсом. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', `We ship your 30 kg to Tashkent by air for about $510. ${EXCLUSION_SENTENCE.en}`],
+      ['zh', `30公斤空运大约510美元，送到塔什干。${EXCLUSION_SENTENCE.zh}`],
+    ];
+
+    it.each(PRICE_ONLY)('armed: a price-only quote in %s asks him nothing — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(false);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    });
+
+    it.each(PRICE_ONLY)('off: the same quote in %s asks him with its cargo, as it always has — «%s»', (language, reply) => {
+      expect(rule(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
+    // …and the reply's own way of sending him somewhere — a place of ours, an address, the hand-over asked of HIM —
+    // which the asking stems did not hold either: «…qabul punktimizga olib boring» went by itself (the review's nit).
+    const DIRECTS: readonly (readonly [AgentLocale, string])[] = [
+      ['uz', `${quoted} Yukni Guanchjoudagi qabul punktimizga olib boring.`],
+      ['uz', `${quoted} Yukni olib keling.`],
+      ['uz', `${quoted} Yukni topshirishingiz mumkin.`],
+      ['uz', `${quoted} Yukni filialimizga yetkazib bering.`],
+      ['uz', `${quoted} Yukni jo'nating.`],
+      ['uz', `${quoted} Lokatsiyani yuboraman.`],
+      // A Chinese city as where the cargo GOES or STAYS — whatever the verb, listed or not.
+      ['uz', `${quoted} Tovarni Guanchjouda qoldirsangiz kifoya.`],
+      ['uz', `${quoted} Yuk Ivuga yetib borsa bo'ldi.`],
+      ['uz', "Guanchjoudan Toshkentgacha avia taxminan 510 $ bo'ladi. Boj va QQS alohida hisoblanadi. Yuk Guanchjouda tursa bo'ldi."],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Товарни Гуанчжоуда қолдирсангиз кифоя.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Груз оставьте в Гуанчжоу.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Leave it in Guangzhou.'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。货放在广州就可以。'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. بار را در گوانگژو بگذارید.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Юкни қабул пунктимизга олиб боринг.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Омборимизга топширинг.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Манзилни ёзаман.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Складимизга юборинг.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Сдайте груз в наш пункт приёма.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Можете привезти груз завтра.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Отправьте груз на наш склад в Гуанчжоу.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Доставьте в наш филиал.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Please drop it off at our branch.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. You can bring the cargo tomorrow.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. I will send you the address.'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。请送到我们的收货点。'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。您可以把货交到广州网点。'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。地址稍后发给您。'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. بار را به شعبه ما تحویل دهید.'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. بار را به انبار ما ارسال کنید.'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. نشانی را می‌فرستم.'],
+    ];
+
+    it.each(DIRECTS)('armed: a reply in %s that directs the cargo asks HIM, with the cargo — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(true);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
+    it.each(DIRECTS)('off: the same reply in %s asks him too — «%s»', (language, reply) => {
+      expect(rule(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
+    it('the customer’s asking lists are untouched — the reply got lists of its own (spec §1.2: «do not touch the guards’ word lists»)', () => {
+      const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
+      // The stems, byte for byte, where `asksWhereToSend` reads them.
+      expect(src).toContain("const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;");
+      expect(src).toContain('const WAREHOUSE_WORD = /ombor|sklad|склад|warehouse|仓库|انبار/iu;');
+      expect(src).toContain("/yubor|jo['‘’ʻ`]?nat|yetkaz(?:sin|ay|sam|ib\\s+ber(?:ay|sin|sam))|olib\\s+kel(?:ay|sin|sam|aman|ishim)|отправ|вышл|пошл|доставить|привез|send|ship|deliver\\s+(?:it|them|the|our|my|cargo|goods)|寄|发|ارسال|بفرست|");
+      // …and the reply is never read with them.
+      const fn = src.slice(src.indexOf('export function talksDelivery'), src.indexOf('export function talksDelivery') + 400);
+      expect(fn).not.toMatch(/SEND_VERB|WAREHOUSE_WORD|ADDRESS_WORD/u);
     });
 
     it('…the customer’s own «where do I send it» asks him, armed or not (the burst, never the model’s question)', () => {
