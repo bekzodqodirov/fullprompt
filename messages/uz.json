@@ -4340,6 +4340,7 @@
     "linksShownOf": "{total} tadan {shown} tasi ko‘rsatilgan",
     "sheetTitle": "Hisob tafsiloti",
     "answerSellerNoteLabel": "Sotuvchiga izoh (ixtiyoriy)",
+    "answerSellerNoteAi": "Bu yerga biror narsa yozilsa, AI sotuvchi mijozga bu narxni o‘zi aytmaydi — narxni sotuvchi yoki egasi aytadi. Hisob qanday chiqqani «Ichki izoh»ga yoziladi.",
     "answerInternalNoteLabel": "Ichki izoh — qanday hisobladim (majburiy, sotuvchi ko‘rmaydi)",
     "filterKind": "Turi",
     "kindAll": "Hammasi",

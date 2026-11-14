@@ -4340,6 +4340,7 @@
     "linksShownOf": "显示 {shown} / {total}",
     "sheetTitle": "计算明细",
     "answerSellerNoteLabel": "给销售的备注（可选）",
+    "answerSellerNoteAi": "此处只要填写任何内容，AI 销售就不会自行向客户报出此价格——由销售或老板报价。计算过程请写在「内部备注」中。",
     "answerInternalNoteLabel": "内部备注——如何计算的（必填，销售看不到）",
     "filterKind": "类型",
     "kindAll": "全部",

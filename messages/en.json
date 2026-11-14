@@ -4340,6 +4340,7 @@
     "linksShownOf": "Showing {shown} of {total}",
     "sheetTitle": "What the price is made of",
     "answerSellerNoteLabel": "Note for the seller (optional)",
+    "answerSellerNoteAi": "If anything is written here, the AI seller will not quote this price to the customer by itself — the seller or the owner will. How it was calculated goes in the «internal note».",
     "answerInternalNoteLabel": "Internal note — how I worked it out (required, the seller does not see it)",
     "filterKind": "Kind",
     "kindAll": "All",

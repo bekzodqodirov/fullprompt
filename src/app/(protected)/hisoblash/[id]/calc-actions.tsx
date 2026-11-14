@@ -245,6 +245,12 @@ export function CalcActions({
               value={note}
               onChange={(event) => setNote(event.target.value)}
             />
+            {/* Any text here keeps the AI seller from quoting this answer by itself (calc-price `answer_noted`): the
+                note may make the figure conditional, so the seller or the owner says it. The VED is told where he
+                types it — the owner alone was told, on the announcement (the check of part 2's fix pass 4). */}
+            <p className="text-xs text-ink-500" data-testid="calc-answer-note-ai">
+              {t('answerSellerNoteAi')}
+            </p>
             <label className="label" htmlFor="calc-answer-internal">
               {t('answerInternalNoteLabel')}
             </label>

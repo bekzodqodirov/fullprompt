@@ -11,6 +11,7 @@ import {
   tgMessages,
 } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
+import { clipText } from '../../platform/telegram/format';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { parseTypedMoney } from '../calc/money-input';
 import { agentRunning, readAgentConfig } from './config';
@@ -462,7 +463,9 @@ async function queueCalcAnswer(
 async function answerNoteOf(requestId: string): Promise<string | null> {
   const [r] = await db.select({ note: calcRequests.answerNote }).from(calcRequests).where(eq(calcRequests.id, requestId));
   const note = (r?.note ?? '').trim();
-  return note === '' ? null : note.slice(0, 300);
+  // `clipText`, never `slice`: a halved emoji is a lone surrogate jsonb refuses — the whole announcement (his 💵 door
+  // with it) was lost with an error (the check of fix pass 4; #1115's rule).
+  return note === '' ? null : clipText(note, 300);
 }
 
 // The run's key for one standing anchor of a chain (§2.3) — drafts.ts holds it, so the draft's own transaction can ask

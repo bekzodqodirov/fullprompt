@@ -1813,6 +1813,17 @@ describe('fix pass 4 — the VED answer’s run never takes over another reply; 
     expect(await calcPriceFor({ managerUserId: holderId, peerId: n.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ total: 176 })] });
   });
 
+  it('a note whose 300th character halves an emoji still reaches him — clipped by code points, never a lone surrogate jsonb refuses (the check of fix pass 4)', async () => {
+    const c = await answeredChain('160');
+    const note = `${'a'.repeat(299)}😀 va boshqalar`;
+    await db.update(calcRequests).set({ answerNote: note }).where(eq(calcRequests.id, c.requestId));
+    expect(await announceAgentCalc(c.requestId, 'done', { amountText: '160 $' }, { now: T0 })).toBe(true);
+    const said = (await sayingOf(c.requestId)).at(-1)!.text;
+    expect(said).toContain('AI narx aytmaydi');
+    expect(said).toContain('a'.repeat(299));
+    expect(said).not.toContain('va boshqalar');
+  });
+
   /** A VED-answer card that asks HIM a question (needs_owner) — the ✍️ door's own card. */
   async function calcQuestion(c: { chat: Chat; requestId: string }) {
     const q = compose(priceReply('1359'));
