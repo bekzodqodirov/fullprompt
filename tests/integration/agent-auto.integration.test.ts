@@ -447,7 +447,8 @@ describe('the plan — written beside the draft by the inbound run', () => {
     // agent-owner-answer.integration: a hand-back run writes no verdict row).
     const plans = owner.match(/autoPlanFor\(/gu) ?? [];
     expect(plans).toHaveLength(1);
-    expect(owner).toMatch(/const autoPlan = answer \|\| calcAnswer \? await autoPlanFor\(/u);
+    // …and never a lesson's rewrite, even of a VED answer's card that carries the mark (fix pass 4).
+    expect(owner).toMatch(/const autoPlan = !lesson && \(answer \|\| calcAnswer\) \? await autoPlanFor\(/u);
     const loop = readFileSync('src/modules/wms/agent/calc-loop.ts', 'utf8');
     const handBack = loop.slice(loop.indexOf('export async function handleHandBack'), loop.indexOf('export function tooOldWords'));
     expect(handBack.length, 're-anchor: handleHandBack').toBeGreaterThan(200);

@@ -166,6 +166,8 @@ let fullP2Behind = false;
  * refuse the very ticks this asks for. Cached TRUE only (the `agentFullP1Ready` idiom). Asked by `setAutoCategories`
  * (ticking either box one migration behind is refused in words), the offer step's writer and the four
  * `payableOffersSql` consumers; everything else part 2 keeps lives in settings rows and tables that always exist.
+ * And the ↩️ task's request (`calc_return_tasks`, fix pass 4): its writer (`returnCalcRequest`) and its two readers (the
+ * hand-back loop's `returnTaskOpen`, `closeReturnTasks`) — one migration behind, no task is bound and no loop is taken.
  */
 export async function agentFullP2Ready(): Promise<boolean> {
   if (fullP2Behind) return false;
@@ -174,6 +176,7 @@ export async function agentFullP2Ready(): Promise<boolean> {
   try {
     const rows = await db.execute<{ ok: boolean }>(sql`
       SELECT to_regclass('public.agent_offers') IS NOT NULL
+         AND to_regclass('public.calc_return_tasks') IS NOT NULL
          AND coalesce((SELECT pg_get_constraintdef(oid) LIKE '%''calc''%' AND pg_get_constraintdef(oid) LIKE '%''calc_price''%'
                          FROM pg_constraint
                         WHERE conname = 'agent_auto_config_categories_check'

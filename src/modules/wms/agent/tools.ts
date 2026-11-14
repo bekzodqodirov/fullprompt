@@ -211,7 +211,7 @@ export const TOOL_SPECS: ModelToolSpec[] = [
   {
     name: CALC_PRICE_TOOL,
     description:
-      "VED javob bergan hisoblatishning MIJOZ narxi (VED javobi asosida, ustama bilan) — faqat shu chatning hisoblari. Kirish yo'q. Narxni faqat shu vositadan ayt, o'zgartirma, boshqa raqam qo'shma; rad etsa — narx aytma.",
+      "VED javob bergan hisoblatishning MIJOZ narxi (VED javobi asosida) — faqat shu chatning hisoblari. Kirish yo'q. Narxni faqat shu vositadan ayt, o'zgartirma, boshqa raqam qo'shma; rad etsa — narx aytma.",
     input_schema: obj({}),
   },
   {
@@ -475,10 +475,20 @@ async function calcPrice(env: ToolEnv): Promise<ToolOutcome> {
   return {
     ok: true,
     text:
-      `VED javobi asosida, ustama bilan — ${lines.join('; ')}. Mijozga shu narxni ayt (umumiy narx), boshqa raqam qo'shma.` +
+      // Neutral (fix pass 4): «ustama bilan» was false with the markup empty, and the markup is no word for the customer.
+      `VED javobi asosida — ${lines.join('; ')}. Mijozga shu narxni ayt (umumiy narx), boshqa raqam qo'shma.` +
       (r.prices.length > 1 ? " Har bir narx qaysi yuk uchunligini aniq ayt — bir yukning narxini boshqasiga aytma." : '') +
       (r.fromOurWarehouse ? ` Narx Xitoydagi omborimizdan: ikkala jumla ham bo'lsin — ${warehouseSentencesText()}.` : ''),
-    sources: r.prices.map((p) => ({ value: p.total, kind: 'money', label: 'VED narxi (ustama bilan)', origin: 'tool', currency: 'USD', role: 'total', tool: CALC_PRICE_TOOL })),
+    // His card's numbers line names the rule the figure was made on (his §00 words): «ustamasiz» when nothing was added.
+    sources: r.prices.map((p) => ({
+      value: p.total,
+      kind: 'money',
+      label: p.rule === 'none' ? 'VED narxi (ustamasiz)' : 'VED narxi (ustama bilan)',
+      origin: 'tool',
+      currency: 'USD',
+      role: 'total',
+      tool: CALC_PRICE_TOOL,
+    })),
     calcPrices: r.prices,
     calcCardLine: r.cardLine,
     fromOurWarehouse: r.fromOurWarehouse,

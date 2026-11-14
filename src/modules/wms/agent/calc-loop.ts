@@ -15,7 +15,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { parseTypedMoney } from '../calc/money-input';
 import { agentRunning, readAgentConfig } from './config';
 import { chatIdentity } from './context';
-import { createDraft, requestRecalculated, type DraftPolicyJson } from './drafts';
+import { calcAnswerMaySupersede, createDraft, requestRecalculated, type DraftPolicyJson } from './drafts';
 import { AGENT_LOCALES, detectLocale, type AgentLocale } from './locale';
 import { WAREHOUSE_SENTENCES } from './policy';
 import { ownerPolicyFor } from './policy-input';
@@ -432,7 +432,11 @@ async function queueCalcAnswer(
   if ((await linkReplyOf(requestId)) === 'unsent') return null;
   const now = deps.now ?? new Date();
   const priced = await calcPriceFor({ managerUserId: link.managerUserId, peerId: link.peerId, requestId, now });
-  if (!priced.ok) return `🤖 AI narx aytmaydi: ${CALC_PRICE_REFUSAL_WORDS[priced.reason]}. Narx bersangiz bo'ladi.`;
+  if (!priced.ok) {
+    // The VED's note to the seller is what stopped the machine (fix pass 4): printed for HIM here, beside the refusal.
+    const note = priced.reason === 'answer_noted' ? await answerNoteOf(requestId) : null;
+    return `🤖 AI narx aytmaydi: ${CALC_PRICE_REFUSAL_WORDS[priced.reason]}.${note ? `\n📝 VED izohi: «${note}»\n` : ' '}Narx bersangiz bo'ladi.`;
+  }
   const mark = priced.prices.find((p) => p.requestId === requestId) ?? priced.prices[0]!;
   const job: AgentCalcAnswerJob = {
     managerUserId: link.managerUserId,
@@ -449,7 +453,16 @@ async function queueCalcAnswer(
     return "Narx bersangiz bo'ladi.";
   }
   const when = startAfter !== undefined ? ' (ertalab 08:30 dan keyin)' : '';
-  return `🤖 AI mijozga ustama bilan narx aytadi${when}:\n${priced.cardLine}\nO‘zingiz bermoqchi bo‘lsangiz — 💵.`;
+  // His §00 words: with the markup EMPTY nothing is added, and the line he reads before his ✅ says so (fix pass 4).
+  const head = priced.prices.every((p) => p.rule === 'none') ? 'VED narxini (ustamasiz) aytadi' : 'ustama bilan narx aytadi';
+  return `🤖 AI mijozga ${head}${when}:\n${priced.cardLine}\nO‘zingiz bermoqchi bo‘lsangiz — 💵.`;
+}
+
+/** The VED's note to the seller on its «Готово» answer, as typed (trimmed, capped) — or null. */
+async function answerNoteOf(requestId: string): Promise<string | null> {
+  const [r] = await db.select({ note: calcRequests.answerNote }).from(calcRequests).where(eq(calcRequests.id, requestId));
+  const note = (r?.note ?? '').trim();
+  return note === '' ? null : note.slice(0, 300);
 }
 
 /** The run's key for one standing anchor of a chain (§2.3): a later seal is its own key, a redelivery is the same. */
@@ -487,9 +500,19 @@ export async function handleCalcAnswer(job: AgentCalcAnswerJob, deps: CalcAnswer
   const peerId = BigInt(job.peerId);
   const { chatCalcChains } = await import('./context');
   const chain = (await chatCalcChains(job.managerUserId, peerId)).find((c) => c.memberIds.includes(job.requestId)) ?? null;
-  if (await ownerPriceOnChain(job.managerUserId, peerId, chain?.memberIds ?? [job.requestId])) {
+  const members = chain?.memberIds ?? [job.requestId];
+  if (await ownerPriceOnChain(job.managerUserId, peerId, members)) {
     await tellCalcAnswer(job, 'narxni o‘zingiz yozgansiz (💵) — sizning narxingiz ustun');
     return { outcome: 'stood_down', reason: 'owner_price' };
+  }
+  // Another reply already waits in the chat (fix pass 4): nothing the customer wrote started this run, so it takes over
+  // no reply — said to him now, before the model is paid. The draft's own transaction asks the same under the chat's
+  // lock (drafts `NewDraft.calcChain`), for a reply drafted while the model worked.
+  const held = await liveReplyHeld(job.managerUserId, peerId, members);
+  if (held) {
+    const out: RunResult = { outcome: 'stood_down', reason: held };
+    await tellCalcAnswer(job, calcAnswerWhy(out)!);
+    return out;
   }
   const { passesByItself, runOwnerTriggered } = await import('./run');
   const out = await runOwnerTriggered(
@@ -500,6 +523,7 @@ export async function handleCalcAnswer(job: AgentCalcAnswerJob, deps: CalcAnswer
       sourceKey: job.sourceKey,
       instruction: calcAnswerInstruction(chain?.section ?? null),
       calcAnswer: { requestId: job.requestId },
+      calcChain: members,
     },
     deps,
   );
@@ -518,6 +542,24 @@ export async function handleCalcAnswer(job: AgentCalcAnswerJob, deps: CalcAnswer
 }
 
 /**
+ * The chat's live reply this VED answer's run may not take over (fix pass 4): `editing` (he is typing), `other_live`
+ * (any reply waiting for his ✅ that is not this chain's own earlier price card — `calcAnswerMaySupersede`), or null.
+ */
+async function liveReplyHeld(managerUserId: string, peerId: bigint, chain: readonly string[]): Promise<'editing' | 'other_live' | null> {
+  const [live] = await db
+    .select({ status: agentDrafts.status, kind: agentDrafts.kind, policy: agentDrafts.policy, finalBody: agentDrafts.finalBody })
+    .from(agentDrafts)
+    .where(and(eq(agentDrafts.managerUserId, managerUserId), eq(agentDrafts.peerId, peerId), inArray(agentDrafts.status, ['pending', 'editing'])))
+    .limit(1);
+  if (!live) return null;
+  if (live.status === 'editing') return 'editing';
+  return calcAnswerMaySupersede(live, chain) ? null : 'other_live';
+}
+
+/** Another reply waits for his ✅ in the chat — the VED answer's price is not written over it (fix pass 4). */
+export const OTHER_LIVE_WORDS = 'bu chatda ✅ kutayotgan boshqa javob bor — u yo‘qolmasin deb narx uning o‘rniga yozilmadi';
+
+/**
  * Why the VED answer's run left no price for the customer, in his words — or null when there is nothing to tell: a
  * draft (its card says the rest), a duplicate delivery, the agent switched off. The «too old» age is the run's own
  * clock (K2: a week).
@@ -525,6 +567,7 @@ export async function handleCalcAnswer(job: AgentCalcAnswerJob, deps: CalcAnswer
 export function calcAnswerWhy(out: RunResult): string | null {
   if (out.outcome === 'stood_down') {
     if (out.reason === 'editing') return 'siz bu chatga javob yozayapsiz (✏️)';
+    if (out.reason === 'other_live') return OTHER_LIVE_WORDS;
     return null;
   }
   if (out.outcome === 'no_reply') return 'AI javob kerak emas deb topdi';
@@ -900,6 +943,8 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
     actions: [],
     citedMessageIds: [],
     offerId: null,
+    // The reply his 💵 takes the place of was not overtaken by the customer — its card says he priced it (fix pass 4).
+    supersedeStale: 'owner_price',
   });
   // The check above ran before the write; a ✏️ pressed in between still lands
   // here, and createDraft wrote nothing for it.

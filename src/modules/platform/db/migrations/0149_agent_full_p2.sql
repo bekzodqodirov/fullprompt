@@ -38,3 +38,18 @@ CREATE TABLE "agent_offers" (
 );
 --> statement-breakpoint
 CREATE INDEX "agent_offers_draft_idx" ON "agent_offers" ("draft_id");
+--> statement-breakpoint
+-- (3) Which RETURNED request a «↩️ Ma'lumot to'ldiring» task is for (fix pass 4). The VED's «Qaytarish» opens the task on
+-- the CARD, and a card may hold two jobs handed back — a lead holds every job its chat sends. Asked by the card alone,
+-- the hand-back loop closed EVERY open ↩️ task on it with «AI ma'lumotni to'ldirib qayta yubordi» (another job's
+-- question never answered), and a loop he had closed by hand was still a loop while another job's task stood open. One
+-- row per task, written beside it by `returnCalcRequest`; read by the loop (`chatCalcChains.returnTaskOpen`) and closed
+-- through (`closeReturnTasks`). A task with no row (opened before this, or a write that failed) is no loop and is never
+-- closed by the machine — it fails toward his ✅. `tasks` gains no column (the CHECK on `bound_id` is the calc clock's).
+CREATE TABLE "calc_return_tasks" (
+  "task_id" uuid PRIMARY KEY REFERENCES "tasks"("id") ON DELETE CASCADE,
+  "request_id" uuid NOT NULL REFERENCES "calc_requests"("id") ON DELETE CASCADE,
+  "created_at" timestamptz NOT NULL DEFAULT now()
+);
+--> statement-breakpoint
+CREATE INDEX "calc_return_tasks_request_idx" ON "calc_return_tasks" ("request_id");

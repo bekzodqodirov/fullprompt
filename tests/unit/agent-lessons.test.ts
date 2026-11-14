@@ -616,9 +616,10 @@ describe('the wiring (spec §3.1, §3.2, §3.5, §6)', () => {
     expect(job).toMatch(/trigger: 'owner_edit'/u);
     const run = strip(readFileSync('src/modules/wms/agent/run.ts', 'utf8'));
     // The plan is the ANSWER's and the VED answer's price's (SPEC-P2-v2 §2.3) alone: a lesson's rewrite and a hand-back's
-    // question get null — neither passes a `calcAnswer`.
-    expect(run).toMatch(/const autoPlan = answer \|\| calcAnswer \? await autoPlanFor\(/u);
-    expect(job).not.toMatch(/calcAnswer/u);
+    // question get null. A lesson's rewrite of a VED answer's card carries that card's mark (fix pass 4: K1, K2) — and
+    // still no plan: the lesson is asked first (the behaviour is pinned in agent-full-p2-price.integration, seams-0 C).
+    expect(run).toMatch(/const autoPlan = !lesson && \(answer \|\| calcAnswer\) \? await autoPlanFor\(/u);
+    expect(job).toMatch(/calcAnswer: calcAnswerMarkOf\(d\)/u);
     const jobs = strip(readFileSync('src/modules/wms/agent/jobs.ts', 'utf8'));
     expect(jobs).toMatch(/job\.data\.lessonId \? await handleLessonRedraft\(job\.data\) : await handleOwnerAnswer\(job\.data\)/u);
   });

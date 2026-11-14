@@ -5,6 +5,7 @@ import {
   calcOffers,
   calcRequestItems,
   calcRequests,
+  calcReturnTasks,
   crmActivities,
   clients,
   dealLines,
@@ -960,7 +961,7 @@ export async function returnCalcRequest(
     const due = new Date();
     due.setUTCDate(due.getUTCDate() + 1);
     due.setUTCHours(23, 59, 59, 999);
-    await createTask(
+    const task = await createTask(
       {
         title: `↩️ Ma'lumot to'ldiring: ${await requestLabel(row.entityType, row.entityId)}`,
         note: trimmed.slice(0, 500),
@@ -986,6 +987,9 @@ export async function returnCalcRequest(
       // the VED tracks in «📤 Men bergan», and not bound to the calc clock.
       { origin: 'calc_return' },
     );
+    // …and which request it is for (0149, fix pass 4): the AI seller's hand-back loop closes THIS task, never another
+    // job's on the same card. Its own catch — a task with no row is no loop, and the machine never closes it.
+    await bindReturnTask(task.id, id).catch((err: unknown) => logger.error({ err, id, taskId: task.id }, '[calc] return task not bound'));
   } catch (err) {
     logger.error({ err, id }, '[calc] return task creation failed');
   }
@@ -996,19 +1000,39 @@ export async function returnCalcRequest(
 }
 
 /**
- * The «↩️ Ma'lumot to'ldiring» tasks a hand-back opened on a card, closed by the one who fills the information in
- * (SPEC-P2-v2 §1.5: the AI seller's resubmission lands on the returned request's card and closes its task with
- * «AI ma'lumotni to'ldirib qayta yubordi»). The task's own origin (`calc_return`) and assignee say which — never a
- * title. A compare-and-set on 'open', audited under the person the task was for, its Telegram copies retired after the
- * write. Pooled, never inside a transaction (#714). Returns how many it closed.
+ * The ↩️ task's request (0149 `calc_return_tasks`, fix pass 4) — written beside the task, one migration behind nothing
+ * (no table: no task is bound, and the loop takes none).
  */
-export async function closeReturnTasks(input: { entityType: string; entityId: string; holderId: string; result: string }): Promise<number> {
+async function bindReturnTask(taskId: string, requestId: string): Promise<void> {
+  const { agentFullP2Ready } = await import('../agent/config');
+  if (!(await agentFullP2Ready())) return;
+  await db.insert(calcReturnTasks).values({ taskId, requestId }).onConflictDoNothing();
+}
+
+/**
+ * The «↩️ Ma'lumot to'ldiring» task a hand-back opened for ONE returned request, closed by the one who fills the
+ * information in (SPEC-P2-v2 §1.5: the AI seller's resubmission lands on the returned request's card and closes its
+ * task with «AI ma'lumotni to'ldirib qayta yubordi»). The task's request (`calc_return_tasks`, fix pass 4) says which —
+ * a card may hold another job's ↩️ task, whose question nobody answered; and its origin (`calc_return`), card and
+ * assignee must agree — never a title. A compare-and-set on 'open', audited under the person the task was for, its
+ * Telegram copies retired after the write. Pooled, never inside a transaction (#714). Returns how many it closed.
+ */
+export async function closeReturnTasks(input: {
+  requestId: string;
+  entityType: string;
+  entityId: string;
+  holderId: string;
+  result: string;
+}): Promise<number> {
+  const { agentFullP2Ready } = await import('../agent/config');
+  if (!(await agentFullP2Ready())) return 0;
   const now = new Date();
   const closed = await db
     .update(tasks)
     .set({ status: 'done', doneAt: now, doneBy: input.holderId, result: input.result, updatedAt: now })
     .where(
       and(
+        inArray(tasks.id, db.select({ id: calcReturnTasks.taskId }).from(calcReturnTasks).where(eq(calcReturnTasks.requestId, input.requestId))),
         eq(tasks.origin, 'calc_return'),
         eq(tasks.entityType, input.entityType),
         eq(tasks.entityId, input.entityId),

@@ -1828,6 +1828,12 @@ export async function runOwnerTriggered(
      * leaves a note on the card, which refuses the machine's press.
      */
     calcAnswer?: { requestId: string } | null;
+    /**
+     * The VED answer's own run (`trigger: 'calc_answer'`): every request of the chain it prices. The draft then takes
+     * over NO other reply the chat holds (drafts `NewDraft.calcChain`, fix pass 4) — only this chain's own earlier
+     * price card. Absent on a rewrite of such a card (his ✍️ answer, his 📝 lesson), which replaces its own card by id.
+     */
+    calcChain?: readonly string[] | null;
   },
   deps: RunDeps = {},
 ): Promise<RunResult> {
@@ -1841,8 +1847,9 @@ export async function runOwnerTriggered(
   const t = now();
   // ONE clock (SPEC-P2-v2 K2): a VED answer's run may answer a line up to a week old, every other run 24 hours —
   // asked here AND by the eligibility rule below, with the same number, or the rule refused what this let through
-  // and took the source key with it.
-  const maxAgeMs = anchorMaxAgeMsForTrigger(input.trigger);
+  // and took the source key with it. A REWRITE of a VED answer's card (his ✍️ answer, his 📝 lesson — `calcAnswer`
+  // carried from the card it replaces, fix pass 4) keeps that card's week: the card it rewrites was drafted on it.
+  const maxAgeMs = anchorMaxAgeMsForTrigger(input.calcAnswer ? 'calc_answer' : input.trigger);
   if (!ctx.anchor || t.getTime() - ctx.anchor.sentAt.getTime() > maxAgeMs) {
     return { outcome: 'skipped', reason: 'no_fresh_inbound' };
   }
@@ -1992,15 +1999,18 @@ export async function runOwnerTriggered(
     // His answer's redraft carries a plan (§2.2), and the VED answer's price (SPEC-P2-v2 §2.3) — judged on the very row
     // about to be written, as the inbound run's. A lesson's rewrite carries none (§3.4), and neither does a hand-back's
     // question.
-    const autoPlan = answer || calcAnswer ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
+    // A lesson's rewrite never carries one, even of a VED answer's card (fix pass 4): he has just judged it wrong.
+    const autoPlan = !lesson && (answer || calcAnswer) ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
     if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
     const written = await writeDraft({
       ...draftInput,
       autoPlan,
       answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
       redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
+      calcChain: input.calcChain ?? null,
     });
-    const stood = written.kind === 'editing' ? 'editing' : written.kind === 'question_gone' ? 'question_gone' : null;
+    const stood =
+      written.kind === 'editing' ? 'editing' : written.kind === 'question_gone' ? 'question_gone' : written.kind === 'other_live' ? 'other_live' : null;
     settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };
     return stood !== null ? { outcome: 'stood_down', reason: stood } : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
   } catch (err) {

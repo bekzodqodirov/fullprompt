@@ -52,6 +52,7 @@ export const CALC_PRICE_REFUSALS = [
   'expired',
   'not_usd',
   'discounted',
+  'answer_noted',
 ] as const;
 export type CalcPriceRefusal = (typeof CALC_PRICE_REFUSALS)[number];
 
@@ -67,6 +68,7 @@ export const CALC_PRICE_REFUSAL_WORDS: Record<CalcPriceRefusal, string> = {
   expired: 'VED javobining muddati o‘tgan',
   not_usd: 'VED javobi dollarda emas',
   discounted: 'VED chegirma bergan — bu narxga ustama qo‘shilmaydi',
+  answer_noted: 'VED javobida sotuvchiga izoh bor — narx shartli bo‘lishi mumkin, uni o‘zingiz bering',
 };
 
 /** One VED answer the AI priced — the CLIENT price and how it was reached, never the floor (law 4, a type-keys test). */
@@ -246,6 +248,8 @@ interface AnchorRow {
   return_reason: string | null;
   answer_amount: string | null;
   answer_currency: string | null;
+  /** The VED wrote a note for the seller beside its «Готово» figure (`answer_note`, not blank) — never its text. */
+  answer_noted: boolean;
   answer_stands: boolean;
   not_superseded: boolean;
   version_id: string | null;
@@ -261,6 +265,7 @@ async function anchorOf(requestId: string): Promise<AnchorRow | null> {
   const rows = (await db.execute(sql`
     SELECT r.id::text AS id, r.section, r.entity_type, r.entity_id::text AS entity_id, r.completed_at, r.return_reason,
            r.answer_amount::text AS answer_amount, r.answer_currency,
+           coalesce(btrim(r.answer_note), '') <> '' AS answer_noted,
            coalesce((${answerFloorStandsSql()}), false) AS answer_stands,
            NOT EXISTS (SELECT 1 FROM calc_requests r2 WHERE r2.supersedes_request_id = r.id) AS not_superseded,
            v.id::text AS version_id, v.total_usd::text AS total_usd, v.discount_usd::text AS discount_usd,
@@ -335,6 +340,10 @@ async function priceChain(
   if (!row.answer_stands) return { ok: false, reason: 'not_standing' };
   const completed = new Date(row.completed_at);
   if (completed.getTime() + validDays * 86_400_000 < now.getTime()) return { ok: false, reason: 'expired' };
+  // The VED's note to the seller («1 kub uchun narx», «QQS alohida», «sertifikatsiz +15 %») qualifies the figure, and
+  // «Готово» is used exactly on the jobs the workspace cannot seal (fix pass 4, check send-1): the machine states no
+  // price beside a condition it cannot read. The note is his — on the announcement — and never the model's.
+  if (row.answer_noted) return { ok: false, reason: 'answer_noted' };
   const base = centsOf(row.answer_amount);
   if (base === null || base <= 0n) return { ok: false, reason: 'not_standing' };
   if (await personOfferOn({ requestId: row.id })) return { ok: false, reason: 'person_offer' };
@@ -478,7 +487,7 @@ export function storedMarksOf(raw: unknown): CalcPriceMark[] | null {
  * price read at the press as «VED javobi yoki ustama o‘zgardi», which neither had); any other refusal, a difference, a
  * mark that cannot be read, or a throw: `moved`.
  */
-async function calcPricesStanding(
+export async function calcPricesStanding(
   raw: unknown,
   chat: { managerUserId: string; peerId: bigint },
   now: Date,

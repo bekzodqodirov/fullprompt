@@ -3,6 +3,7 @@ import { db } from '../../platform/db/client';
 import { agentDrafts } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { calcAnswerMarkOf } from './anchor-clock';
 import { HAND_BACK_RETRY_S, NO_DRAFT_WORDS } from './calc-loop';
 import { releaseAnswering } from './decide';
 import { ownerAnswerInstruction } from './owner-answer';
@@ -108,6 +109,10 @@ export async function handleOwnerAnswer(job: AgentOwnerAnswerJob, deps: OwnerAns
       peerId: q.peerId,
       sourceKey: `answer:${q.id}:${job.messageId}`,
       instruction: ownerAnswerInstruction(answer.text, q.ownerQuestion),
+      // A question the VED answer's run asked (fix pass 4): the redraft keeps its mark — the week's clock and the
+      // forgiven head (K1, K2) — or our own «yubordim» cancels it as «he answered himself», and a request line older than
+      // a day refuses it outright.
+      calcAnswer: calcAnswerMarkOf(q),
       answer: {
         questionDraftId: q.id,
         questionAnchor: q.anchorTgMessageId,

@@ -113,7 +113,9 @@ describe('the seven kinds and who may name them (§1.1, §4.4)', () => {
     const ved = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'calc_price'] });
     expect(ved).not.toContain('narx, shikoyat');
     expect(ved).toContain('yo‘lkira va avia narxi, shikoyat va savolli javoblar har doim sizga qoladi');
-    expect(ved).toContain('VED javobiga ustama qo‘shilgan narx qoidalar ruxsat bersa o‘zi ketadi');
+    // Whatever the markup — an empty one quotes the VED's own figure (his §00 A1; fix pass 4: «ustama qo‘shilgan» was false then).
+    expect(ved).toContain('VED javobidagi narx (sozlamadagi ustama bilan, bo‘sh bo‘lsa ustamasiz) qoidalar ruxsat bersa o‘zi ketadi');
+    expect(ved).not.toContain('ustama qo‘shilgan');
     const both = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price', 'calc_price', 'calc'] });
     expect(both).toContain('shikoyat va savolli javoblar har doim sizga qoladi');
     expect(both).not.toMatch(/narxi?, shikoyat/u);
@@ -285,7 +287,8 @@ describe('ONE anchor clock (K2)', () => {
       'src/modules/wms/agent/eligibility.ts': /f\.anchorMaxAgeMs/u,
       'src/modules/wms/agent/send-step.ts': /f\.anchorMaxAgeMs/u,
       'src/modules/wms/agent/decide.ts': /anchorMaxAgeMsFor\(d\)/u,
-      'src/modules/wms/agent/run.ts': /anchorMaxAgeMsForTrigger\(input\.trigger\)/u,
+      // A rewrite of a VED answer's card keeps its week (fix pass 4): the trigger, or the mark it carries.
+      'src/modules/wms/agent/run.ts': /anchorMaxAgeMsForTrigger\(input\.calcAnswer \? 'calc_answer' : input\.trigger\)/u,
       'src/modules/wms/agent/outbox-store.ts': /anchorMaxAgeMsFor\(clocked\)/u,
     };
     for (const [file, asks] of Object.entries(files)) {

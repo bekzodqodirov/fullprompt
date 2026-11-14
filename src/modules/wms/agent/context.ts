@@ -558,8 +558,10 @@ export interface CalcChain {
   /** The newest member's card still takes jobs: its deal's or lead's stage is of kind `open` (not won, not lost). */
   cardOpen: boolean;
   /**
-   * A «↩️ Ma'lumot to'ldiring» task of the hand-back (origin `calc_return`) stands open on that card for this account —
-   * the task the hand-back loop closes (calc/service `closeReturnTasks`, the same predicate).
+   * The «↩️ Ma'lumot to'ldiring» task the VED opened for THE NEWEST MEMBER ITSELF (`calc_return_tasks`, fix pass 4)
+   * stands open on that card for this account — the task the hand-back loop closes (calc/service `closeReturnTasks`,
+   * the same predicate). Never another job's task on the same card: a lead holds every job its chat sends, and a loop
+   * he closed by hand must stay closed while another job's task is open. One migration behind: false (no loop).
    */
   returnTaskOpen: boolean;
 }
@@ -571,6 +573,15 @@ export interface CalcChain {
  * is not). Pooled; never inside a transaction.
  */
 export async function chatCalcChains(managerUserId: string, peerId: bigint, limit: number | null = null): Promise<CalcChain[]> {
+  const { agentFullP2Ready } = await import('./config');
+  const returnTaskOpen = (await agentFullP2Ready())
+    ? sql`EXISTS (
+             SELECT 1 FROM calc_return_tasks b JOIN tasks tk ON tk.id = b.task_id
+              WHERE b.request_id = n.id
+                AND tk.origin = 'calc_return' AND tk.entity_type = n.entity_type AND tk.entity_id = n.entity_id
+                AND tk.assignee_id = ${managerUserId}::uuid AND tk.status = 'open'
+           )`
+    : sql`false`;
   const rows = (await db.execute(sql`
     WITH RECURSIVE linked AS (
       SELECT root_request_id AS root, request_id AS id, created_at
@@ -596,11 +607,7 @@ export async function chatCalcChains(managerUserId: string, peerId: bigint, limi
            d.client_id::text AS deal_client_id,
            coalesce(d.code, l.name) AS card_label,
            coalesce((SELECT ds.kind FROM deal_stages ds WHERE ds.id = d.stage_id), (SELECT ls.kind FROM lead_stages ls WHERE ls.id = l.stage_id)) = 'open' AS card_open,
-           EXISTS (
-             SELECT 1 FROM tasks tk
-              WHERE tk.origin = 'calc_return' AND tk.entity_type = n.entity_type AND tk.entity_id = n.entity_id
-                AND tk.assignee_id = ${managerUserId}::uuid AND tk.status = 'open'
-           ) AS return_task_open,
+           ${returnTaskOpen} AS return_task_open,
            EXISTS (SELECT 1 FROM tree t JOIN calc_requests c ON c.id = t.id WHERE t.root = r.root AND c.completed_at IS NULL) AS any_open,
            ARRAY(SELECT DISTINCT t.id::text FROM tree t WHERE t.root = r.root) AS member_ids
       FROM roots r

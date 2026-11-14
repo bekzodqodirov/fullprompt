@@ -106,6 +106,8 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   estimate_moved: 'errors.estimate_moved',
   offer_gone: 'errors.offer_gone',
   calc_price_moved: 'errors.calc_price_moved',
+  calc_owner_priced: 'errors.calc_owner_priced',
+  calc_person_offer: 'errors.calc_person_offer',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',

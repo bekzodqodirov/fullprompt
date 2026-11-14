@@ -69,7 +69,12 @@ export type WriteDraftResult =
    * The draft this one was to replace is no longer waiting for it — the question his ✍️ answer was for (`answers`),
    * or the reply his lesson was rewriting (`redrafts`): nothing was written.
    */
-  | { kind: 'question_gone'; draftId: string };
+  | { kind: 'question_gone'; draftId: string }
+  /**
+   * The VED answer's run (`calcChain`) found ANOTHER reply live in the chat — an ordinary reply waiting for his ✅,
+   * another job's price — and wrote nothing over it (fix pass 4): the caller tells him, with the 💵 door.
+   */
+  | { kind: 'other_live'; draftId: string };
 
 /** Everything a new draft row carries — the machine's reply, a price, a hand-back question. */
 export interface NewDraft {
@@ -118,6 +123,31 @@ export interface NewDraft {
    * is written (`question_gone`). The rewrite gets a card of its own, a push, and the old card is closed in words.
    */
   redrafts?: { draftId: string; lessonId: string; decidedBy: string } | null;
+  /**
+   * The VED answer's run (SPEC-P2-v2 §2.3; fix pass 4): the requests of the chain it prices. Nothing the customer
+   * wrote started this run, so it supersedes NO reply the chat holds — only the machine's own earlier price card of
+   * this very chain (`calcAnswerMaySupersede`), with words of its own (`stale: 'calc_answer'`). Any other live reply
+   * — an ordinary one waiting for his ✅, another job's price — and nothing is written (`other_live`): taken over, it
+   * would never go and its card would say «Mijoz yana yozdi», which nobody wrote. Asked under the chat's lock, so a
+   * reply drafted while the model worked is seen too.
+   */
+  calcChain?: readonly string[] | null;
+  /**
+   * Why the live reply this one supersedes stopped standing, when the CUSTOMER did not write again (fix pass 4): his
+   * 💵 (`owner_price`, calc-loop `priceDraftFromText`) — its card then says he priced it, never «Mijoz yana yozdi».
+   */
+  supersedeStale?: 'owner_price' | null;
+}
+
+/**
+ * May the VED answer's run replace this live reply (fix pass 4)? Only the machine's own earlier price card of the same
+ * chain — a reply marked `policy.calcAnswer` for one of its requests, still in the machine's words. Pure.
+ */
+export function calcAnswerMaySupersede(live: { kind: string | null; policy: unknown; finalBody?: string | null }, chain: readonly string[]): boolean {
+  if (live.kind !== 'reply' || (live.finalBody ?? null) !== null) return false;
+  const mark = live.policy !== null && typeof live.policy === 'object' ? (live.policy as { calcAnswer?: unknown }).calcAnswer : undefined;
+  const requestId = mark !== null && typeof mark === 'object' ? (mark as { requestId?: unknown }).requestId : undefined;
+  return typeof requestId === 'string' && chain.includes(requestId);
 }
 
 const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
@@ -134,7 +164,7 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
   let closeOld = false as boolean;
   const out = await db.transaction(async (tx): Promise<WriteDraftResult> => {
     const [live] = await tx
-      .select({ id: agentDrafts.id, status: agentDrafts.status })
+      .select({ id: agentDrafts.id, status: agentDrafts.status, kind: agentDrafts.kind, policy: agentDrafts.policy, finalBody: agentDrafts.finalBody })
       .from(agentDrafts)
       .where(
         and(
@@ -208,8 +238,19 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       closeOld = true;
     } else if (live?.status === 'editing') {
       return { kind: 'editing', draftId: live.id };
+    } else if (live && n.calcChain && !calcAnswerMaySupersede(live, n.calcChain)) {
+      return { kind: 'other_live', draftId: live.id };
     } else if (live) {
-      await tx.update(agentDrafts).set({ status: 'superseded', updatedAt: new Date() }).where(eq(agentDrafts.id, live.id));
+      // A reason of its own when the customer did not write: the VED's newer word on the same chain, or his 💵.
+      const stale = n.calcChain ? 'calc_answer' : (n.supersedeStale ?? null);
+      await tx
+        .update(agentDrafts)
+        .set({
+          status: 'superseded',
+          updatedAt: new Date(),
+          ...(stale ? { policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ stale })}::jsonb` } : {}),
+        })
+        .where(eq(agentDrafts.id, live.id));
       superseded = live.id;
     }
     const [draft] = await tx
@@ -397,9 +438,17 @@ export async function writeDraft(
     answers?: NewDraft['answers'];
     /** His lesson's rewrite: the reply it replaces (`NewDraft.redrafts`). */
     redrafts?: NewDraft['redrafts'];
+    /** The VED answer's run: the chain it prices — it takes over no other reply (`NewDraft.calcChain`). */
+    calcChain?: NewDraft['calcChain'];
   },
 ): Promise<WriteDraftResult> {
-  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null, answers: input.answers ?? null, redrafts: input.redrafts ?? null });
+  return createDraft({
+    ...draftFromRun(input),
+    autoPlan: input.autoPlan ?? null,
+    answers: input.answers ?? null,
+    redrafts: input.redrafts ?? null,
+    calcChain: input.calcChain ?? null,
+  });
 }
 
 export { cardMemory };
@@ -465,7 +514,7 @@ export async function requestRecalculated(requestId: string): Promise<boolean> {
  * What the send step, his ✅ and the press hear of a draft's figure: it stands, a VED recalculation took it, its table
  * moved, or a VED answer's price no longer stands as it was quoted (SPEC-P2-v2 §2.5).
  */
-export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved';
+export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved' | 'calc_owner_priced' | 'calc_person_offer';
 
 /**
  * A draft's figure still stands; null when the draft carries none — a REASON, never a boolean (spec SPEC-P1-v2
@@ -514,21 +563,33 @@ export async function draftOfferStands(draftId: string, now: Date = new Date()):
   // request — the same anchor, the same rule, the same total — or `calc_price_moved`. A later seal or a newer answer on
   // the card, the quote's clock, a concession, a markup edit: each stops it here. Never a throw (the listener).
   if (Array.isArray(memory?.calcPrices) && memory.calcPrices.length > 0) {
-    const stands = await calcPricesStandFor(draft, memory.calcPrices, now);
-    if (!stands) return 'calc_price_moved';
+    const standing = await calcPricesStandFor(draft, memory.calcPrices, now);
+    if (standing !== 'stands') return standing;
     if (!Array.isArray(memory.estimates) || memory.estimates.length === 0) return 'stands';
   }
   return estimatesStand(memory?.estimates, now);
 }
 
-/** `calcPricesStand` by dynamic import — a load or a read that fails answers «moved», never a throw in the send step. */
-async function calcPricesStandFor(draft: { managerUserId: string; peerId: bigint }, marks: unknown, now: Date): Promise<boolean> {
+/**
+ * `calcPricesStanding` by dynamic import, each reason in its own words (fix pass 4): HIS 💵 on the job
+ * (`calc_owner_priced`) or a person's newer offer on the card (`calc_person_offer`) — the gate's two words — and
+ * anything else `calc_price_moved`. A load or a read that fails answers «moved», never a throw in the send step.
+ */
+async function calcPricesStandFor(
+  draft: { managerUserId: string; peerId: bigint },
+  marks: unknown,
+  now: Date,
+): Promise<'stands' | 'calc_price_moved' | 'calc_owner_priced' | 'calc_person_offer'> {
   try {
-    const { calcPricesStand } = await import('./calc-price');
-    return await calcPricesStand(marks, { managerUserId: draft.managerUserId, peerId: draft.peerId }, now);
+    const { calcPricesStanding } = await import('./calc-price');
+    const standing = await calcPricesStanding(marks, { managerUserId: draft.managerUserId, peerId: draft.peerId }, now);
+    if (standing === 'stands') return 'stands';
+    if (standing === 'owner_priced') return 'calc_owner_priced';
+    if (standing === 'person_offer') return 'calc_person_offer';
+    return 'calc_price_moved';
   } catch (err) {
     logger.warn({ err, peer: String(draft.peerId) }, '[agent] calc price not re-priced at the send');
-    return false;
+    return 'calc_price_moved';
   }
 }
 

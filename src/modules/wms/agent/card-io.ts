@@ -102,6 +102,9 @@ const CANCEL_WORDS: Record<string, string> = {
   estimate_moved: 'narx jadvali o‘zgardi — bu narx yuborilmadi',
   // A VED answer's price priced again at the send no longer stood as quoted (drafts `draftOfferStands`, SPEC-P2-v2 §2.5).
   calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi',
+  // …refused because his own 💵 now stands on the job, or a person's newer offer on the card (fix pass 4: the gate's words).
+  calc_owner_priced: 'bu ishga narxni 💵 bilan o‘zingiz bergansiz — AI narxi yuborilmadi',
+  calc_person_offer: 'kartada sotuvchining yangiroq narxi turibdi — AI narxi yuborilmadi',
   // His own 💵 on the request the AI priced, while the AI's approved price still waited (calc-loop `priceDraftFromText`).
   owner_price: 'narxni o‘zingiz berdingiz (💵) — AI narxi yuborilmadi',
   // His newer 💵 on the same request while this one of his still waited (calc-loop `priceDraftFromText`, fix pass 1).
@@ -158,7 +161,10 @@ export function answeredNow(d: Pick<DraftRow, 'status' | 'policy'>): boolean {
  * approved a reply to as answered. Each said as itself — «Mijoz yana yozdi»
  * would send him looking for a message that is not there.
  */
-const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'markup' | 'owner_answered' | 'owner_lesson', string> = {
+const STALE_WORDS: Record<
+  SupersededStale | 'recalc' | 'avia_rate' | 'markup' | 'owner_answered' | 'owner_lesson' | 'calc_answer' | 'owner_price',
+  string
+> = {
   recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
   // His markup changed while the AI's VED price waited (config `setCalcMarkup`, SPEC-P2-v2 §2.1).
   markup: '💱 Ustama o‘zgardi — bu narx yuborilmaydi. Kerak bo‘lsa narxni 💵 bilan bering.',
@@ -181,6 +187,11 @@ const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'markup' | 
   // His lesson was saved on this card and the AI rewrote the reply on a card of its own (§3.4, drafts `createDraft`
   // with `redrafts`) — never «↪️ Mijoz yana yozdi», which is false here.
   owner_lesson: '📝 Saboq bo‘yicha AI qayta yozdi (yangi kartada).',
+  // The VED's newer word on the same job priced it again (calc-loop `handleCalcAnswer`, drafts `calcChain`, fix pass 4)
+  // — the customer wrote nothing.
+  calc_answer: '🧮 VED yangi javob berdi — narx yangi kartada qayta yozildi.',
+  // His 💵 took this card's place (calc-loop `priceDraftFromText`, fix pass 4) — the customer wrote nothing.
+  owner_price: '💵 Narxni o‘zingiz berdingiz — bu javob yuborilmadi (narxingiz yangi kartada).',
 };
 
 /**
@@ -390,6 +401,16 @@ export function afterSentLines(d: Pick<DraftRow, 'status' | 'policy'>): string[]
 /** Its card's title (§2.3): the holder sees at a glance it is the VED's figure with his markup. */
 export const CALC_PRICE_TITLE = '🧮 VED narxi + ustama';
 
+/** …and with the markup EMPTY (his §00 A1: «ustama qo'ymasdan»): a card he is about to ✅ never says a markup was added. */
+export const CALC_PRICE_TITLE_NONE = '🧮 VED narxi (ustamasiz)';
+
+/** The title by the rule the stored prices were made on (`CalcPriceMark.rule`): `none` on every one — «ustamasiz». */
+export function calcPriceTitle(d: Pick<DraftRow, 'policy'>): string {
+  const marks = ((d.policy ?? {}) as Partial<DraftPolicyJson>).memory?.calcPrices;
+  const none = Array.isArray(marks) && marks.length > 0 && marks.every((m) => (m as { rule?: unknown }).rule === 'none');
+  return none ? CALC_PRICE_TITLE_NONE : CALC_PRICE_TITLE;
+}
+
 /** …and its card once the customer wrote past it. */
 export const CALC_PRICE_SUPERSEDED_LINE = '↪️ VED narxi yuborilmadi — mijoz yana yozdi (yangi qoralama).';
 
@@ -490,7 +511,7 @@ export function renderDraftCardFull(
   const live = d.status === 'pending' || d.status === 'editing';
   const input = (sendable: boolean): CardInput => ({
     customerLabel: card.customerLabel,
-    title: d.kind === 'reply' && quotesCalcPrice(d) ? CALC_PRICE_TITLE : (TITLES[d.kind] ?? TITLES.reply!),
+    title: d.kind === 'reply' && quotesCalcPrice(d) ? calcPriceTitle(d) : (TITLES[d.kind] ?? TITLES.reply!),
     // «O'zi yuborish» folded in (auto-card `withAutoLine`): the timer while it counts down, the reason it
     // did not go, ⏸, the layer's «off», «🤖 O‘zi yuborildi» on the approved line and his 👎.
     statusLine: withAutoLine(statusLine(d, o, opts, sendable), opts.auto, d, sendable, o?.status ?? null),

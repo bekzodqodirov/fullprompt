@@ -137,6 +137,10 @@ export type DecideRefusal =
   | 'offer_gone'
   /** A VED answer's price no longer stands as it was quoted — a later seal, a newer answer, its clock, a concession, a markup edit (§2.5). */
   | 'calc_price_moved'
+  /** …because HIS 💵 now stands on the job (given, waiting, or his «💵 Narx yozaman» armed) — fix pass 4: said as itself. */
+  | 'calc_owner_priced'
+  /** …because a person's newer offer is the card's word on the job — fix pass 4: said as itself. */
+  | 'calc_person_offer'
   | 'empty';
 
 export type DecideResult =
@@ -624,7 +628,7 @@ async function landCalc(
     // behaviour — its estimate still announced to the owner (his Q5 ⭐ c).
     intakeDoor: null,
     machine: opts.machine,
-    onCard: loop ? { kind: loop.card.kind, id: loop.card.id } : null,
+    onCard: loop ? { kind: loop.card.kind, id: loop.card.id, requestId: loop.requestId } : null,
   }).catch((err: unknown) => {
     if (err instanceof CalcError) return { refused: err.code } as const;
     throw err;
@@ -1151,7 +1155,15 @@ export async function decideDraft(
   const memory = p.memory;
   const { draftOfferStands } = await import('./drafts');
   const standing = await draftOfferStands(d.id, now);
-  if (standing === 'estimate_moved' || standing === 'calc_price_moved' || standing === 'offer_gone') return { ok: false, code: standing };
+  if (
+    standing === 'estimate_moved' ||
+    standing === 'calc_price_moved' ||
+    standing === 'calc_owner_priced' ||
+    standing === 'calc_person_offer' ||
+    standing === 'offer_gone'
+  ) {
+    return { ok: false, code: standing };
+  }
   // His ✅ on the machine's VED price (§2.1, his §7 Q5 ⭐): the rule it was priced on is the one he vouched for — the
   // next machine price on it may go by itself. Stamped inside the approval below; never by the machine's own press.
   const markupVouched = !opts.auto && d.finalBody === null && standing === 'stands' ? markupRuleOfMarks(memory?.calcPrices) : null;

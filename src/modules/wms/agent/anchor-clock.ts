@@ -31,6 +31,15 @@ export function isCalcAnswerDraft(d: ClockedDraft): boolean {
   return mark !== null && typeof mark === 'object' && typeof (mark as { requestId?: unknown }).requestId === 'string';
 }
 
+/**
+ * The mark itself, to carry into a REWRITE of such a card (fix pass 4): his ✍️ answer's redraft and his 📝 lesson's
+ * rewrite replace the VED answer's card, and keep its week (K2) and its forgiven head (K1) — the rewrite is still the
+ * reply the VED's answer started. Null on any other draft.
+ */
+export function calcAnswerMarkOf(d: ClockedDraft): { requestId: string } | null {
+  return isCalcAnswerDraft(d) ? { requestId: (policyOf(d).calcAnswer as { requestId: string }).requestId } : null;
+}
+
 /** His 💵: a price draft that names the request his figure answers (calc-loop `priceDraftFromText`). */
 export function isPriceRequestDraft(d: ClockedDraft): boolean {
   return d.kind === 'price' && typeof policyOf(d).priceRequestId === 'string';

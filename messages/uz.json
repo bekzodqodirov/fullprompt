@@ -6783,6 +6783,8 @@
       "markup_changed": "Ustama sahifa ochilgandan keyin o‘zgargan — sahifani yangilang va yangi ustamani ko‘rib tasdiqlang.",
       "offer_gone": "VED bu hisobni qayta hisoblayapti — bu narx endi amal qilmaydi, javob yuborilmadi.",
       "calc_price_moved": "VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi. Yangi narxni 💵 bilan bering.",
+      "calc_owner_priced": "Bu ishga narxni 💵 bilan o‘zingiz bergansiz — sizning narxingiz ustun, AI narxi yuborilmadi.",
+      "calc_person_offer": "Kartada sotuvchining yangiroq narxi turibdi — o‘sha narx ustun, AI narxi yuborilmadi.",
       "ai_price_sent": "Mijozga AI narxi ketgan — sizning narxingiz yuborilsinmi? Yana bir marta yozing.",
       "bad_open_limit": "Chegara noto‘g‘ri — 1 dan 200 gacha butun son yozing."
     },

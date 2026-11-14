@@ -17,7 +17,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
-import { clients, users } from './platform';
+import { clients, tasks, users } from './platform';
 import { calcOffers, calcRequests, leads, tgAccounts, tgMessages } from './wms';
 
 /**
@@ -639,4 +639,24 @@ export const agentOffers = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('agent_offers_draft_idx').on(t.draftId)],
+);
+
+/**
+ * Which RETURNED request a «↩️ Ma'lumot to'ldiring» task is for (0149, fix pass 4): one row per task the VED's
+ * «Qaytarish» opened, written beside it (calc/service `returnCalcRequest`). The hand-back loop asks it per request
+ * (context `chatCalcChains.returnTaskOpen`) and closes through it (`closeReturnTasks`) — never by the card alone, which
+ * may hold another job's task. A task with no row is no loop, and the machine never closes it.
+ */
+export const calcReturnTasks = pgTable(
+  'calc_return_tasks',
+  {
+    taskId: uuid('task_id')
+      .primaryKey()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('calc_return_tasks_request_idx').on(t.requestId)],
 );

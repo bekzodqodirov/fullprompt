@@ -1123,24 +1123,24 @@ describe('the returned card’s own fences — his ✅ is gated by them alone, n
     const theirs = await clientOf(await freshClient());
     // The control: this client's own open deal takes the job.
     const ownDeal = await openDealOf(mine.id);
-    const ok = await land({ client: mine, onCard: { kind: 'deal', id: ownDeal } });
+    const ok = await land({ client: mine, onCard: { kind: 'deal', id: ownDeal, requestId: randomUUID() } });
     expect(ok).toMatchObject({ kind: 'deal', id: ownDeal, outcome: 'returned_card' });
 
     const foreignDeal = await openDealOf(theirs.id);
     const a = randomUUID();
-    expect(await refusalOf(land({ noteId: a, client: mine, onCard: { kind: 'deal', id: foreignDeal } }))).toBe('note_foreign');
+    expect(await refusalOf(land({ noteId: a, client: mine, onCard: { kind: 'deal', id: foreignDeal, requestId: randomUUID() } }))).toBe('note_foreign');
     expect(await noteWritten(a)).toBe(false);
 
     const named = await leadRef(await freshLead());
     const other = await freshLead();
     const b = randomUUID();
-    expect(await refusalOf(land({ noteId: b, lead: named, onCard: { kind: 'lead', id: other } }))).toBe('note_foreign');
+    expect(await refusalOf(land({ noteId: b, lead: named, onCard: { kind: 'lead', id: other, requestId: randomUUID() } }))).toBe('note_foreign');
     expect(await noteWritten(b)).toBe(false);
 
     const lost = await leadRef(await freshLead());
     await db.update(leads).set({ stageId: stageIds.lost, lostReason: 'qimmat' }).where(eq(leads.id, lost.id));
     const c = randomUUID();
-    expect(await refusalOf(land({ noteId: c, lead: lost, onCard: { kind: 'lead', id: lost.id } }))).toBe('lead_closed');
+    expect(await refusalOf(land({ noteId: c, lead: lost, onCard: { kind: 'lead', id: lost.id, requestId: randomUUID() } }))).toBe('lead_closed');
     expect(await noteWritten(c)).toBe(false);
 
     const filler: string[] = [];
@@ -1153,7 +1153,7 @@ describe('the returned card’s own fences — his ✅ is gated by them alone, n
         filler.push(row!.id);
       }
       const d = randomUUID();
-      expect(await refusalOf(land({ noteId: d, client: mine, onCard: { kind: 'deal', id: ownDeal } }))).toBe('too_many_open');
+      expect(await refusalOf(land({ noteId: d, client: mine, onCard: { kind: 'deal', id: ownDeal, requestId: randomUUID() } }))).toBe('too_many_open');
       expect(await noteWritten(d)).toBe(false);
     } finally {
       if (filler.length) await db.delete(calcRequests).where(inArray(calcRequests.id, filler));
@@ -1204,5 +1204,76 @@ describe('which of the chat’s files go with a job (review nit: each fence of t
     const files = await chatFilesForJob(holderId, peer, null);
     expect(files.map((f) => f.id)).toEqual(kept.slice(-CALC_FILES_MAX));
     for (const not of [older, deleted, ours]) expect(files.map((f) => f.id)).not.toContain(not);
+  });
+});
+
+describe('fix pass 4 — a «↩️» task is its OWN request’s: two jobs handed back on one lead (check send-2, send-3)', () => {
+  const RASTAMOJKA_LINE = 'Rastamojka: kafel 120 m2, 1500 kg, 3 kub';
+  const RASTAMOJKA_GOODS = [{ name: 'kafel', quantity: 120, unit: 'm2', weight_kg: null }];
+  const MID = new Date(T0.getTime() + 2 * 60_000);
+
+  /**
+   * A lead chat holding TWO jobs the VED handed back: R1 (podklyuch, the machine's) and R2 (rastamojka, his ✅) — each
+   * with its own «↩️» task on the same lead, assigned to the holder. `closeR1`: he dealt with R1 himself.
+   */
+  async function twoReturned(opts: { closeR1: boolean }) {
+    const peer = newPeer();
+    const lead = await freshLead();
+    const first = await drafted(peer, { leadId: lead });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    const [r1] = await requestsOn(noteIdFor(first.d.id));
+    expect(r1).toMatchObject({ entityType: 'lead', entityId: lead, section: 'podklyuch' });
+    await returnCalcRequest(r1!.id, 'R1 PODKLYUCH: tovar nomi yetarli emas', { actorId: vedId });
+    const second = await drafted(peer, { leadId: lead }, { body: RASTAMOJKA_LINE, section: 'rastamojka', goods: RASTAMOJKA_GOODS, now: MID });
+    expect(await decideDraft(person(), second.d.id, 'send', { digest: await digestOf(second.d.id) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const [r2] = await requestsOn(noteIdFor(second.d.id));
+    expect(r2).toMatchObject({ entityType: 'lead', entityId: lead, section: 'rastamojka' });
+    await returnCalcRequest(r2!.id, 'R2 RASTAMOJKA: kafel turi noma’lum', { actorId: vedId });
+    const all = await db.select().from(tasks).where(and(eq(tasks.origin, 'calc_return'), eq(tasks.entityId, lead)));
+    const t1 = all.find((t) => (t.note ?? '').startsWith('R1'))!;
+    const t2 = all.find((t) => (t.note ?? '').startsWith('R2'))!;
+    expect([t1.status, t2.status, t1.assigneeId, t2.assigneeId]).toEqual(['open', 'open', holderId, holderId]);
+    if (opts.closeR1) await db.update(tasks).set({ status: 'done', doneAt: new Date(), doneBy: holderId, result: 'o‘zim so‘radim' }).where(eq(tasks.id, t1.id));
+    return { peer, lead, r1: r1!, r2: r2!, t1, t2 };
+  }
+
+  it('the customer answers R1: the machine resubmits podklyuch on the lead and closes R1’s task ALONE — R2’s stays open and still a loop', async () => {
+    const x = await twoReturned({ closeR1: false });
+    const answer = await drafted(x.peer, { leadId: x.lead }, {
+      body: 'Kurtka — erkaklar qishki kurtkasi, 100 dona; 3 kub 500 kg; Xitoydan Toshkentga podklyuch',
+      goods: [{ name: 'erkaklar qishki kurtkasi', quantity: 100, unit: null, weight_kg: null }],
+      now: LATER,
+    });
+    expect(await verdictOf(answer.d.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(LATER_DUE)).toBe(1);
+    const [r3] = await requestsOn(noteIdFor(answer.d.id));
+    expect(r3).toMatchObject({ entityType: 'lead', entityId: x.lead, section: 'podklyuch' });
+    const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, r3!.id));
+    expect(link!.rootRequestId).toBe(x.r1.id);
+    const statusOf = async (id: string) => (await db.select({ s: tasks.status, r: tasks.result }).from(tasks).where(eq(tasks.id, id)))[0]!;
+    expect(await statusOf(x.t1.id)).toEqual({ s: 'done', r: HAND_BACK_TASK_DONE });
+    // R2's question was never answered: its reminder stays on the seller's day, in no false words.
+    expect(await statusOf(x.t2.id)).toEqual({ s: 'open', r: null });
+    // …and R2's chain is still the loop it was: its task is open.
+    const { chatCalcChains } = await import('@/modules/wms/agent/context');
+    const r2chain = (await chatCalcChains(holderId, x.peer)).find((c) => c.memberIds.includes(x.r2.id));
+    expect(r2chain).toMatchObject({ status: 'returned', returnTaskOpen: true });
+  });
+
+  it('R1’s task closed by his own hand, R2’s still open: R1 is NO loop — a new podklyuch shipment waits for him (`calc_recent`), nothing lands', async () => {
+    const x = await twoReturned({ closeR1: true });
+    const third = await drafted(x.peer, { leadId: x.lead }, {
+      body: 'Yangi yuk: oyinchoqlar 2000 dona, 5 kub 900 kg, Xitoydan Toshkentga podklyuch',
+      goods: [{ name: 'oyinchoqlar', quantity: 2000, unit: null, weight_kg: null }],
+      now: LATER,
+    });
+    expect((await verdictOf(third.d.id))!.reasons).toEqual(['calc_recent']);
+    expect(await pressDueAutos(LATER_DUE)).toBe(0);
+    expect(await requestsOn(noteIdFor(third.d.id))).toHaveLength(0);
+    const [t2] = await db.select({ s: tasks.status }).from(tasks).where(eq(tasks.id, x.t2.id));
+    expect(t2!.s).toBe('open');
+    const { chatCalcChains } = await import('@/modules/wms/agent/context');
+    const r1chain = (await chatCalcChains(holderId, x.peer)).find((c) => c.memberIds.includes(x.r1.id));
+    expect(r1chain).toMatchObject({ status: 'returned', returnTaskOpen: false });
   });
 });

@@ -501,11 +501,11 @@ export async function landIntake(input: {
   machine: boolean;
   /**
    * The card a RETURNED request of this chat sits on (SPEC-P2-v2 §1.5, the hand-back loop): the job lands there — no
-   * new deal, no new lead — and the «↩️ Ma'lumot to'ldiring» task the VED's «Qaytarish» opened on it is closed.
-   * Fenced like `cardOfNote`: only this client's deal, or the lead this landing names; any other card refuses
+   * new deal, no new lead — and the «↩️ Ma'lumot to'ldiring» task the VED's «Qaytarish» opened for THAT request
+   * (`requestId`, the returned one — fix pass 4: never another job's task on the same card) is closed. Fenced like `cardOfNote`: only this client's deal, or the lead this landing names; any other card refuses
    * `note_foreign`. Absent on every other landing.
    */
-  onCard?: { kind: 'deal' | 'lead'; id: string } | null;
+  onCard?: { kind: 'deal' | 'lead'; id: string; requestId: string } | null;
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is
@@ -629,7 +629,7 @@ export async function landIntake(input: {
     } catch (err) {
       logger.error({ err, kind: landedTarget.kind, id: landedTarget.id }, '[calc-intake] stage move failed');
     }
-    if (input.onCard) await closeHandBackTask(landedTarget, input.collectedBy);
+    if (input.onCard) await closeHandBackTask(landedTarget, input.collectedBy, input.onCard.requestId);
     return { ...landedTarget, queued: true, requestId, queueError: null, replyQueued };
   }
   const queuedBefore = await rootRequestOfNote(input.noteId);
@@ -713,7 +713,7 @@ export async function landIntake(input: {
   } catch (err) {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
-  if (input.onCard && queued) await closeHandBackTask(target, input.collectedBy);
+  if (input.onCard && queued) await closeHandBackTask(target, input.collectedBy, input.onCard.requestId);
 
   return { ...target, queued, requestId, queueError, replyQueued };
 }
@@ -767,11 +767,14 @@ async function landOnReturnedCard(input: {
 /** The words the hand-back loop closes the «↩️ Ma'lumot to'ldiring» task with (SPEC-P2-v2 §1.5). */
 export const HAND_BACK_TASK_DONE = "AI ma'lumotni to'ldirib qayta yubordi";
 
-/** Close the card's open «↩️» task — never fatal: the job has landed, and a task left open is a visible chore. */
-async function closeHandBackTask(target: IntakeTarget, holderId: string): Promise<void> {
+/**
+ * Close the RETURNED request's own «↩️» task (fix pass 4: never another job's on the same card) — never fatal: the job
+ * has landed, and a task left open is a visible chore.
+ */
+async function closeHandBackTask(target: IntakeTarget, holderId: string, requestId: string): Promise<void> {
   try {
     const { closeReturnTasks } = await import('./service');
-    await closeReturnTasks({ entityType: target.kind, entityId: target.id, holderId, result: HAND_BACK_TASK_DONE });
+    await closeReturnTasks({ requestId, entityType: target.kind, entityId: target.id, holderId, result: HAND_BACK_TASK_DONE });
   } catch (err) {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] hand-back task not closed');
   }

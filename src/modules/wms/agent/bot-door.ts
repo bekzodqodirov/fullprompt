@@ -148,6 +148,9 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   // His 💵's request was replaced by a VED correction, or the AI's VED price no longer stands as quoted (SPEC-P2-v2 §2.5).
   offer_gone: '🔄 VED bu hisobni qayta hisoblayapti — bu narx endi amal qilmaydi, javob yuborilmadi. Yangi javob kelganda narx bering.',
   calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi. Yangi narxni «💵 Narx yozaman» bilan bering yoki mijozga o‘zingiz javob bering.',
+  // The gate's own two words (auto-gate `calc_owner_priced` / `calc_person_offer`) — neither the answer nor the markup moved.
+  calc_owner_priced: 'Bu ishga narxni 💵 bilan o‘zingiz bergansiz (yoki yozayapsiz) — sizning narxingiz ustun, AI narxi yuborilmadi.',
+  calc_person_offer: 'Kartada sotuvchining yangiroq narxi turibdi — o‘sha narx ustun, AI narxi yuborilmadi.',
   empty: "Javob bo'sh.",
 };
 
@@ -1326,7 +1329,8 @@ export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categ
   const stays = price && vedPrice ? 'shikoyat va savolli javoblar' : price ? 'VED narxi, shikoyat va savolli javoblar' : vedPrice ? 'yo‘lkira va avia narxi, shikoyat va savolli javoblar' : 'narx, shikoyat va savolli javoblar';
   const goes = [
     ...(price ? ['taxminiy yo‘lkira va avia narxi qoidalar ruxsat bersa o‘zi ketadi'] : []),
-    ...(vedPrice ? ['VED javobiga ustama qo‘shilgan narx qoidalar ruxsat bersa o‘zi ketadi'] : []),
+    // Whatever the markup — an empty one quotes the VED's own figure (his §00 A1, fix pass 4).
+    ...(vedPrice ? ['VED javobidagi narx (sozlamadagi ustama bilan, bo‘sh bo‘lsa ustamasiz) qoidalar ruxsat bersa o‘zi ketadi'] : []),
     ...(c.categories.includes('calc') ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi'] : []),
   ];
   const kept = [`${stays} har doim sizga qoladi`, ...goes].join('; ');

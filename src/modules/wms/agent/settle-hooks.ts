@@ -42,7 +42,7 @@ export async function onAgentOutboxSettled(outboxId: string): Promise<void> {
 export async function offerStandsFor(
   draftId: string,
   now: Date = new Date(),
-): Promise<'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved' | null> {
+): Promise<'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved' | 'calc_owner_priced' | 'calc_person_offer' | null> {
   const { draftOfferStands } = await import('./drafts');
   return draftOfferStands(draftId, now);
 }

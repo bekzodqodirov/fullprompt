@@ -59,6 +59,8 @@ export const AUTO_PRESS_WORDS: Record<DecideRefusal, string> = {
   estimate_moved: 'narx jadvali o‘zgargan — narx qayta tekshirilmagan',
   offer_gone: 'VED qayta hisoblayapti — narx endi amal qilmaydi',
   calc_price_moved: 'VED javobi yoki ustama o‘zgardi — narx endi amal qilmaydi',
+  calc_owner_priced: 'bu ishga narxni 💵 bilan o‘zingiz bergansiz — sizning narxingiz ustun',
+  calc_person_offer: 'kartada sotuvchining yangiroq narxi turibdi — o‘sha narx ustun',
   empty: 'javob bo‘sh',
 };
 
