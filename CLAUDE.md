@@ -175,7 +175,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
-| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, his six questions of 2026-11-10; **§18.3 = «o'zi yuborish», the auto-send layer AS BUILT** on his answer of 2026-11-11, migration 0145; **§18.8 = the FULL seller's part 1 AS BUILT** — the price act «Narx», «✍️ Savolga javob», «📝 Tuzatish» lessons, six languages, the account's limits, migration 0148, and **the reader corpus** every reader change runs first) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live; auto-send SHIPPED, armed only by him; full seller part 1 + 1b SHIPPED («Narx» may be ticked after 1b), parts 2-3 in build |
+| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, his six questions of 2026-11-10; **§18.3 = «o'zi yuborish», the auto-send layer AS BUILT** on his answer of 2026-11-11, migration 0145; **§18.8 = the FULL seller's part 1 AS BUILT** — the price act «Narx», «✍️ Savolga javob», «📝 Tuzatish» lessons, six languages, the account's limits, migration 0148, and **the reader corpus** every reader change runs first) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live; auto-send SHIPPED, armed only by him; full seller part 1 + 1b SHIPPED («Narx» may be ticked after 1b); **§18.9 = part 2 AS BUILT** (the calc sent by itself, the VED answer with his markup, the card and the funnel; migration 0149); part 3 next |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
@@ -3858,7 +3858,26 @@ was written from his words, not his database — corrected). Two tests that were
 and agent-decide-send derived the ramp's start from the REAL clock against faked dates (red on main too from 11-14
 ~15:00 UTC) — literals now; m9zzzg's lesson tag is spelled in letters.
 
-**Latest migration: 0148** (`agent_full_p1`, `when` …127; ledger must reach **149**). Before
+**Round — To'liq AI sotuvchi, 2-qism (2026-11-14 → 11-15; DECISIONS #1791-#1799; migration 0149 `agent_full_p2`,
+`when` …128 — ledger must reach 150; spec SPEC-P2-v2 with his §00 answers, `docs/AI-SOTUVCHI.md` §18.9).** The AI
+submits the calculation by itself (kind `calc`, judged by the ACTION; five facts at scheduling and press; the landing
+race closed; the chat's files copied; the hand-back loop onto the returned card via `calc_return_tasks`), quotes the VED's
+answer with HIS markup (kind `calc_price`; `calc-markup.ts` pure cents; `calc-price.ts` the ONE reader of a
+calculation's money; one closed tool; re-priced at every press and send step; **an empty markup = no markup** (his A1),
+the markup on the whole figure (A2)), writes that price onto the card once it REACHED the customer (`recordOffer` +
+`agent_offers`, never commission — `payableOffersSql({machineOffers})`) and moves the lead to two new optional stages
+(`moveLeadByMachine`, forward only). Kernel: the AI seat (`agent_seat_user_id`), one open-calc cap (`openCalcCapFor`:
+100 for the seat, 20 for people), one anchor clock (a week for his 💵 and a VED-answer reply), K1 (our own «yubordim»
+never cancels an owner-started reply). The RULES the reviews left: **his 💵 outranks the machine everywhere**
+(`ownerPricedChain`, the waits' table read in the listener too), **a person's newer offer on the card stands**, a
+«Готово» with a seller note is never quoted by the machine (`answer_noted` — said at the VED's own box), beside a
+waiting reply the price is held and re-queued (`calcAnswerOverLive`). Ships OFF (both boxes unticked, no seat), the
+markup EMPTY = a VED answer to an AI job becomes a PRICE card at the VED's own figure for his ✅. Merged with 1b and checked
+twice more after the merge (fix passes 4-5); CI-order run at 47507ee9: vitest 949 / 19,476, e2e 527 + 1 skipped.
+tg-listen MUST be rebuilt.
+
+**Latest migration: 0149** (`agent_full_p2`, `when` …128; ledger must reach **150**). Before
+it: 0148 (`agent_full_p1`, `when` …127). Before
 it: 0147 (`prixod_javoblar`, `when` …126). Before
 it: 0146 (`prixod_xabari`, `when` …125). Before
 it: 0145 (`agent_auto`, `when` …124). Before
@@ -4011,7 +4030,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **149** since 0148 (148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **150** since 0149 (149 since 0148, 148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

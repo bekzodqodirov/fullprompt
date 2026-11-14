@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## 2026-11-15 — To'liq AI sotuvchi, 2-qism: hisoblatishni o'zi yuboradi, VED javobini ustama bilan aytadi, kartaga yozadi, lidni bosqichdan o'tkazadi
+
+**Migratsiya bor: 0149.** Deploydan keyin son **150** bo'lishi, `/api/version` bugungi vaqtni ko'rsatishi kerak.
+**tg-listen ham qayta qurilishi shart.** Qadamlar: `docs/UPDATE.md` → «To‘liq AI sotuvchi, 2-qism (2026-11-15, 0149)».
+
+### Deploy kuni nima o'zgaradi
+- **Ustama bo'sh turadi = ustamasiz.** AI yuborgan hisoblatishga VED javob bersa, endi **narx kartasi** keladi — VEDning
+  o'z summasi (butun dollarga yuqoriga), «ustamasiz» deb yozilgan, ✅ingizni kutadi. **Birinchi ish — ustamani yozing**
+  («Suhbatlar → AI sotuvchi»: foiz yoki qat'iy summa, keyin «✅ Ustama to'g'ri»).
+- «Hisoblatish» va «VED narxi» kataklari **belgilanmagan** — ikkalasi ham hozircha ✅ingizni kutadi.
+- «Bu akkaunt — AI sotuvchi» hali belgilanmagan: super admin sahifada bir marta bosadi (+998902405077 egasi bo'lganda).
+  Shundan keyin AI'ning ochiq hisoblatishlari chegarasi 100 ta (odamlarda 20 ta) va AI narxi kartaga yoziladi.
+- 💵 bilan yozgan narxingiz endi so'rovdan keyin **7 kungacha** qabul qilinadi va AI'ning «yubordim» xabari uni bekor
+  qilmaydi.
+
+### 1. Hisoblatishni o'zi yuboradi («Hisoblatish» katagi)
+- Mijoz yuk ma'lumotini bersa, AI hisoblatishni VEDga o'zi yuboradi va mijozga «yubordim» deydi.
+- Quyidagilarda o'zi yubormaydi, sizga keladi: chat telefon bilan tasdiqlanmagan, boshqa sotuvchining mijozi, ochiq
+  hisoblatishlar chegarasi to'lgan, shu bo'lim bo'yicha 14 kun ichida hisoblatish bo'lgan, mijoz yuborgan fayl
+  saqlanmagan.
+- Mijoz chatdagi fayllari (oxirgi 10 ta) VEDga hisoblatish bilan birga boradi.
+- VED hisobni **qaytarsa**, AI mijozdan yetishmagan ma'lumotni so'raydi va javobni **o'sha kartaga** qayta yuboradi,
+  «↩️ Ma'lumot to'ldiring» vazifasini yopadi.
+
+### 2. VED javobini ustama bilan aytadi («VED narxi» katagi)
+- VED «Готово» yoki muhr bosganda AI mijozga narxni aytadi: **VED summasi + sizning ustamangiz** (foiz yoki qat'iy $),
+  butun summaga, har qanday bo'limda. Ustama bo'sh bo'lsa — ustamasiz.
+- Narxni AI emas, **dastur hisoblaydi**. AI faqat tayyor raqamni aytadi.
+- Siz 💵 bilan narx bergan bo'lsangiz yoki kartada sotuvchining yangiroq narxi turgan bo'lsa, AI o'z narxini aytmaydi.
+- **VED sotuvchiga izoh yozsa** («Sotuvchiga izoh» maydoni), AI narxni o'zi aytmaydi — sizga qoldiradi. Bu VEDning
+  oynasida ham yozilgan.
+- Chatda ✅ingizni kutayotgan boshqa javob bo'lsa, AI kutadi va u hal bo'lgach narxni yozadi.
+
+### 3. Kartaga yozadi va lidni o'tkazadi
+- AI aytgan VED narxi mijozga **yetib borgandan keyin** bitim/lid kartasiga narx sifatida yoziladi (faqat AI akkaunti
+  belgilangan bo'lsa, faqat sizning yoki egasiz kartaga). Bu narxdan **sotuvchi ulushi (upsale) hisoblanmaydi**.
+- Lid «AI birinchi javob berdi» va «AI narx aytdi» bosqichlariga o'tadi — bu ikki bosqichni «CRM → Sozlamalar» da
+  tanlaysiz (tanlanmasa hech narsa o'tmaydi). Yutildi yoki yo'qotildi hech qachon AI tomonidan qo'yilmaydi.
+
+### Qanday tekshirildi
+Spek 4 tomondan ko'rib chiqildi (57 e'tiroz), 4 paket qurildi, 4 tomondan tekshirildi va 3 marta tuzatildi; keyin
+1b bilan birlashtirildi va yana 2 marta mustaqil tekshirib tuzatildi. Doimiy test to'plamida xavfli javob o'tmaydi.
+To'liq sinov (CI tartibida, toza baza): 19 476 test va 527 brauzer testi yashil.
+
+### Bilib qo'ying
+- Deploydan oldin VED qaytargan ishlar «↩️» halqasiga tushmaydi — ular hozirgidek ✅ingizni kutadi.
+- VED odatda sotuvchiga izoh yozsa («👍», «Tayyor»), AI narxni hech qachon o'zi aytmaydi. VEDlarga ayting: hisob
+  qanday chiqqani «Ichki izoh»ga yoziladi.
+
 ## 2026-11-14 kechqurun — To'liq AI sotuvchi, 1b: oxirgi tekshiruvlar, til bo'yicha tuzatishlar va «AI egasi uzilgan» ogohlantirishi
 
 **Migratsiya yo'q** — son **149** bo'lib qoladi. Kod o'zgargani uchun `/api/version` bugungi kechki vaqtni ko'rsatishi

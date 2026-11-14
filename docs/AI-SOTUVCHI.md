@@ -1436,3 +1436,20 @@ ratchet. The rare wrong-language sends the last check named (English words endin
 Uzbek interjection, Latin Russian, a forwarded Uzbek message in the window) are stated in #1788 and owed. «Narx» may be
 ticked after 1b. **And `agentOwnerConnected`**: a signed-out owner is said in words on the page and in `/agent` — on his
 server the owner was a signed-out account and the AI had drafted nothing since 10-29 under «ishlayapti» (#1789).
+
+### 18.9 The full seller, part 2 — as built (2026-11-14 → 11-15; DECISIONS #1791-#1799; migration 0149 `agent_full_p2`, ledger 150)
+
+**His answers bind (§00 of SPEC-P2-v2):** an empty markup is no markup (the VED's own figure, ⌈⌉ whole dollars); the
+markup goes on the whole VED figure in every section; everything else as its ⭐. **The calculation by itself** (kind
+`calc`, judged by the action, «Hisoblatish» box): five facts at scheduling and press (`calc_identity`, `calc_foreign`,
+`calc_refused`, `calc_recent`, `calc_file_missing`), the landing race closed, the chat's files copied to the VED, the
+hand-back loop onto the returned card (`calc_return_tasks`). **The VED's answer with his markup** (kind `calc_price`,
+«VED narxi» box): `calc-markup.ts` (pure cents) and `calc-price.ts` (the one reader of a calculation's money, the
+model never sees the floor) behind one closed tool; the job `agent.calc_answer` off the VED's press; re-priced at every
+press, his ✅ and every send step; his 💵 and a person's newer offer always outrank the machine; a «Готово» with a
+seller note is never quoted by the machine (`answer_noted`, said at the VED's box); beside a waiting reply the price
+is held and re-queued (`calcAnswerOverLive`). **The card and the funnel** (after the reply REACHED the customer): the
+machine's offer through `recordOffer`, marked in `agent_offers`, never commission; the lead to «AI birinchi javob
+berdi» / «AI narx aytdi» (`moveLeadByMachine`, forward only). **The kernel**: the AI seat (`agent_seat_user_id`), one
+open-calc cap (100 for the seat, 20 for people), one anchor clock (a week for his 💵 and a VED-answer reply), our own
+«yubordim» forgiven for an owner-started reply (K1).
