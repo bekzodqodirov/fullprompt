@@ -6611,6 +6611,7 @@
     "sessionLabel": "Eski serverdagi sessiya o‘chirilgan",
     "sessionNotYet": "tasdiqlanmagan",
     "listenerBehind": "Telegram tinglovchisi yangilanmagan — ✅ ishlamaydi. Serverda tg-listen’ni qayta quring.",
+    "ownerSignedOut": "AI egasining Telegram akkaunti uzilgan — AI xabarlarga javob yozmaydi. AI ni o‘chirib, «Kimning akkaunti»da ulangan akkauntni tanlang yoki shu akkauntni qayta ulang.",
     "floodUntil": "Telegram {when} gacha kutishni so‘ragan.",
     "onHolderOnly": "Yoqishni faqat akkaunt egasi — o‘z kirishidan — qiladi.",
     "modeOn": "Yoqish (har bir javob ✅ orqali)",

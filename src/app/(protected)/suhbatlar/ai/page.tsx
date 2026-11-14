@@ -201,7 +201,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
     saboqlar: 0,
     sozlamalar: 0,
   };
-  const settingsAlarm = owner?.pausedAt != null || (running && owner?.listenerBehind === true);
+  const settingsAlarm = owner?.pausedAt != null || (running && (owner?.connected === false || owner?.listenerBehind === true));
 
   return (
     <div className="mx-auto max-w-3xl space-y-3">
@@ -517,10 +517,19 @@ async function SettingsSection({
         />
         {/* Said whenever an owner is set, not only while running: «is the
             listener current» is a question to answer BEFORE switching on. */}
-        {owner && owner.listenerBehind && (
-          <p className="text-sm font-semibold text-warn" data-testid="agent-listener-behind">
-            ⚠ {t('listenerBehind')}
+        {/* A signed-out owner first: the listener runs only on connected accounts, so «not updated» would send him
+            to rebuild a container that is fine (2026-11-14, his server). */}
+        {owner && !owner.connected ? (
+          <p className="text-sm font-semibold text-warn" data-testid="agent-owner-signed-out">
+            ⚠ {t('ownerSignedOut')}
           </p>
+        ) : (
+          owner &&
+          owner.listenerBehind && (
+            <p className="text-sm font-semibold text-warn" data-testid="agent-listener-behind">
+              ⚠ {t('listenerBehind')}
+            </p>
+          )
         )}
         {owner?.floodUntil && owner.floodActive && (
           <p className="text-sm text-warn">⏳ {t('floodUntil', { when: tashkentWhen(owner.floodUntil) })}</p>

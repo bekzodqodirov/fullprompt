@@ -9,7 +9,7 @@ import type { AgentOp as BotAgentOp } from '../../platform/telegram/staff-bot';
 import { phoneSiblingClients } from '../client-cabinet/service';
 import { digestBody, hitWords } from './card';
 import { actionLines } from './card-io';
-import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
+import { agentOwnerConnected, agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
 import {
   AUTO_CONFIG_WORDS,
   AUTO_FEEDBACK_WORDS,
@@ -1237,7 +1237,16 @@ export async function agentCommand(staffId: string, arg: string): Promise<string
     }
   }
   const running = agentRunning(config);
-  const status = running ? '🤖 AI sotuvchi ishlayapti (soya rejimi). O‘chirish: /agent off' : "⏹ AI sotuvchi o'chiq. Yoqish: /agent on";
+  // «Yoqilgan» is not «ishlayapti» when the owner's Telegram is signed out: the listener runs only on connected
+  // accounts, so nothing is drafted (2026-11-14, his server — two weeks of silence under «ishlayapti»).
+  const signedOut = running && !(await agentOwnerConnected(config.ownerUserId));
+  const status = signedOut
+    ? '⚠ AI sotuvchi yoqilgan, lekin uning Telegram akkaunti uzilgan — xabarlarga javob yozilmaydi. ' +
+      '«Suhbatlar → AI sotuvchi» sahifasida AI ni o‘chiring, «Kimning akkaunti»da ulangan akkauntni tanlang, ' +
+      'keyin shu akkauntdan /agent on.'
+    : running
+      ? '🤖 AI sotuvchi ishlayapti (soya rejimi). O‘chirish: /agent off'
+      : "⏹ AI sotuvchi o'chiq. Yoqish: /agent on";
   // One migration behind there is no layer and no line — the answer is today's.
   const auto = await autoStatusLine(config.ownerUserId);
   return auto ? `${status}\n${auto}` : status;
