@@ -175,7 +175,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
-| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, his six questions of 2026-11-10; **§18.3 = «o'zi yuborish», the auto-send layer AS BUILT** on his answer of 2026-11-11, migration 0145) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live; auto-send SHIPPED, armed only by him |
+| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, his six questions of 2026-11-10; **§18.3 = «o'zi yuborish», the auto-send layer AS BUILT** on his answer of 2026-11-11, migration 0145; **§18.8 = the FULL seller's part 1 AS BUILT** — the price act «Narx», «✍️ Savolga javob», «📝 Tuzatish» lessons, six languages, the account's limits, migration 0148, and **the reader corpus** every reader change runs first) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live; auto-send SHIPPED, armed only by him; full seller part 1 SHIPPED with «Narx» unticked, 1b owed, parts 2-3 in build |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
@@ -3815,7 +3815,34 @@ unit files reach postgres and fall back to `gsr_dev` without `DATABASE_URL` — 
 fresh gsr_ci in CI's order at 6175c3c, ledger 148; the test-only `79773b9` after it ran its file (50) on its own.
 Before the fixes' review: 16,335 + 526 at `e9b6ab4`. PR bekzodqodirov/fullprompt#150.
 
-**Latest migration: 0147** (`prixod_javoblar`, `when` …126; ledger must reach **148**). Before
+**Round — To'liq AI sotuvchi, 1-qism (2026-11-13 → 11-14; DECISIONS #1766-#1784, numbered past main's #1765; migration
+0148 `agent_full_p1`, `when` …127 — minted as 0146 and renumbered on the merge, the FORTIETH collision — ledger must reach
+149; spec `docs/AI-SOTUVCHI.md` §18.8 as built).** His «bularni hammasini qur bir boshdan ful ai sotuvchi kerak menga
+ozi sotuv qilsin bilmagan savollar kelganda botdan habar jonatsin … sotuvchi javob bersa ushani olsin», cut in three
+parts (2 = calc by itself + the VED answer with his markup + stages, building on `full-p2` with his §00 answers;
+3 = the Friday greeting + the AI's own seat). Part 1: the PRICE ACT — a fifth auto kind «Narx» (ships UNTICKED), only a
+figure the tool priced goes (`ToolOutcome.priced`, `memory.estimates`), re-priced at every press and send step
+(`estimate.ts`, `estimate-check.ts`, `draftOfferStands`), the kub/kg and «Toshkentgacha» restated, another named
+place is his (`destination.ts`), a changed China column waits once (`tariff-watch.ts`), the website table ends
+31.12.2026; «✍️ Savolga javob» (`ag:j`, `policy.ownerAnswer`, `agent.owner_answer`, refusals `owner_figure` /
+`owner_personal` / `answer_stale` measured from what the run READ — `burstSeenAt`); «📝 Tuzatish» (`ag:l`, ONE writer
+`lessons.ts`, `stableHead` only, ≤ 40 / 6 000 chars); six auto languages; `per_day` NULL («chegara qoyma») and
+`agent_send_caps` (≤ 200/day, ≤ 100/hour). 0148 is ONE-WAY for an armed layer (main reads `per_day` NULL as «0 left»):
+`/agent auto off` before any rollback. Judged by four lenses before code (68 objections, 11 blockers), reviewed as
+built (23 findings, 15 upheld), fixed in five passes and checked twice — and the checks showed the readers swinging:
+dangerous replies let through main 90 → a005de00 174 → b348b5fe 79. **The cure was a regression corpus** (#1783,
+#1463's lesson a SECOND time): `tests/unit/fixtures/agent-reader-corpus.ts` + the eval + the runner + the ratchet;
+zero tolerance for a dangerous case, a rule that cannot tell HOLDS; at b0f2559b 656 dangerous held / 0 let through,
+377 ordinary go / 8 on the ratchet. **Any change to the avia rule, `destination.ts`, `locale.ts`, `digits.ts`,
+`numbers.ts`, `auto-money.ts`, `auto-gate.ts`, `lessons.ts` or the owner-answer readers runs the whole corpus first.**
+Shipped at his «1 chi boshqichni bolsa ham merge qilib menga ber» while an independent hunt over the corpus was still
+being verified; its reproduced finds (avia hand-over verbs and Chinese places outside the lists, city spellings, Uzbek
+Cyrillic without ў/қ/ғ/ҳ read as Russian, spelled numerals in his ✍️ answer, a priced lesson without a money word) are
+OWED to part 1b and he was told to leave «Narx» unticked and write figures in digits until then. Local ritual on a
+fresh gsr_ci in CI's order at b0f2559b (the docs commit after it is docs only); GitHub's CI on the PR head.
+
+**Latest migration: 0148** (`agent_full_p1`, `when` …127; ledger must reach **149**). Before
+it: 0147 (`prixod_javoblar`, `when` …126). Before
 it: 0146 (`prixod_xabari`, `when` …125). Before
 it: 0145 (`agent_auto`, `when` …124). Before
 it: 0144 (`tarkib_takliflar`, `when` …123). Before
@@ -3967,7 +3994,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **148** since 0147 (147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **149** since 0148 (148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3989,7 +4016,7 @@ must read **137**, and the yo'ldagi-yuk round (0137) **138**.
 **Then he CONFIRMED 145** («deploy qildim 145 chiqdi», 2026-11-11, after PR #145 — the two tarkib rounds), so
 everything through #1682 is LIVE. PR #147 («o'zi yuborish», 0145) was merged the same day and its deploy is NOT
 confirmed: alone it reads 146, and with the prixod-xabari round (0146) the count must read **147**; with the
-prixod-javoblari round (0147) **148**.
+prixod-javoblari round (0147) **148**; with the full seller's part 1 (0148) **149**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

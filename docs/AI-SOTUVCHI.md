@@ -1306,7 +1306,7 @@ stays a record on the page and in the script; it gates nothing (#1683).
 | **0 — Draft** (live since 2026-10-29) | every reply drafted in seconds; he presses ✅ | phase 1 (§17) | — |
 | **1 — Wide memory + measuring** (this round) | the AI reads up to 100 messages; the system measures which replies could have gone alone; nothing changes for customers | §18.1-§18.2; next: the rehearsal's verdict rows, the page's table, the 20:00 AI line, the bot ⏹ | ≥ 2 weeks on the current brain; one category at lower95 ≥ 0.80 over ≥ 50 blind labels; his six answers |
 | **2 — It answers by itself** (BUILT 2026-11-11, armed by him) | greetings, qualifying questions, standard information and cargo status go out 2 minutes after the card reaches him | §18.3 | 4 weeks armed with no forced-off and no block traced to an auto reply; ≤ 1 👎 a week; his ⏸/❌ on machine replies not rising |
-| **3 — A sales manager's actions** | each act rehearsed, then switched on, with its own measured cell: (a) `calc_submit` by itself when the checklist is complete (label = the VED did not hand it back); (b) yo'lkira estimates from the website table (a money cell, lower95 ≥ 0.95); (c) the holding line on escalation; (d) hand-back questions; (e) follow-ups that ACT on the date — the first controlled exception to «never first»: chats that wrote within 30 days, an open lead, a small daily cap; (f) lead stage moves through `moveLead` (never won — that mints codes; never lost — a person's reason) | per act | each act's cell proven; customer blocks and complaints per 100 auto messages not rising |
+| **3 — A sales manager's actions** | each act rehearsed, then switched on, with its own measured cell: (a) `calc_submit` by itself when the checklist is complete (label = the VED did not hand it back); (b) yo'lkira estimates from the website table (a money cell, lower95 ≥ 0.95); (c) the holding line on escalation; (d) hand-back questions; (e) follow-ups that ACT on the date — the first controlled exception to «never first»: chats that wrote within 30 days, an open lead, a small daily cap; (f) lead stage moves through `moveLead` (never won — that mints codes; never lost — a person's reason) | per act — **(b) BUILT as the price act of the full seller's part 1 (§18.8, ships unticked); (c) DROPPED (§18.8 — it would cancel the reply it promised)**; (a) and (f) are part 2 | each act's cell proven; customer blocks and complaints per 100 auto messages not rising |
 | **4 — Autonomous sales manager** | an AI seat that owns leads end to end, measured against the sellers | the AI as a no-login `users` row (0120's pattern) owning leads, in /crm/tahlil, out of the rating and KPI pay; its own KPI page (response time, conversion, money won); payment reminders from `own_balance` with his template; a weekly self-report; the style refreshed from his edits; more accounts, each with its holder's consent; and, for full autonomy, an OFFICIAL channel (Telegram Business bot / WhatsApp Cloud API) so a ban never costs a person's account — §0 forbade AI sends through personal sessions, and his 10-23 override covered shadow | phase-3 cells stable for a quarter; conversion of AI-owned leads ≥ the median seller's |
 | **5 — Other channels** | WhatsApp, Instagram, on the same gate | the channel adapters | — |
 
@@ -1368,3 +1368,62 @@ gate, no proof by his presses). Built as §18.3.
    - ⭐ a: his, in his style, as today; «botmisiz?» goes to him;
    - b: a small «(avto-javob)» mark;
    - c: a separate «GSR sotuv menejeri» persona (phase 4, its own number).
+
+### 18.8 The full seller, part 1 — as built (2026-11-13 → 11-14; DECISIONS #1766-#1784; migration 0148 `agent_full_p1`, ledger 149)
+
+His request: «bularni hammasini qur bir boshdan ful ai sotuvchi kerak menga ozi sotuv qilsin bilmagan savollar kelganda
+botdan habar jonatsin shu savolga javobni bilmayabman deb va sotuvchi javob bersa ushani olsin». Three parts, each
+deployed when ready: **(1) this section**; (2) the calculation submitted by itself, the VED answer turned into a client
+price with his markup, lead stages; (3) the Friday greeting to quiet customers, the AI as its own seat. The holder IS
+the AI seat on his server («BEKZOD AI sotuvchisi», +998902405077), so «ask me in that account» is today's routing.
+
+**The price act (§18.4 phase 3b).** A fifth auto kind «Narx» (`auto-categories.ts`, the one home of the five kinds),
+armed only when ticked AND the layer armed (`priceActArmed()`, read once per run). Only a figure the TOOL priced goes:
+every tool call is stored with its outcome (`ToolOutcome.priced`); a money line must come from `yolkira_estimate` /
+`avia_estimate` in role total or rate, the estimates stored in `memory.estimates`; a rail chat, a refused estimate, a
+balance are always his. The reply must restate the priced kub/kg and «Toshkentgacha» (`estimate_unnamed`,
+`destination_unsaid` in `auto-money.ts`); a customer who named another place (`destination.ts` — the curated list is
+the whole reader, #1783) is `foreign_destination`. **Every press and send step re-prices** (`estimate.ts` +
+`estimate-check.ts`; `draftOfferStands` = stands | offer_gone | estimate_moved): a moved figure never goes, his ✏️ is the
+remedy. The website table ends 31.12.2026 (`SITE_TARIFF.validThrough`, a 14-day notice `AgentTariffNotice`); after it
+`freightFor`'s list price and 15-25 days. A changed China column waits for his ✅ or «✅ Tarif to'g'ri» once
+(`tariff-watch.ts`, `agent_send_caps.tariff_confirmed_at`; NULL after 0148, so the first truck estimate after the deploy
+waits). The armed avia rule lets a quoted flight go unless the reply hands cargo over or names a receiving point
+(`run.ts` `talksDelivery`, the reply's own lists). The holding line («Bir daqiqa, aniqlab aytaman») was DROPPED before
+code: the live head cancels a reply on any newer outgoing message, ours included.
+
+**«✍️ Savolga javob».** A question card carries ✍️ (`ag:j`, reply drafts only); the holder presses, swipe-replies, his
+text is checked (no phone — `phonesIn`, a range or a date is not one — no link, no Chinese text), stored as
+`policy.ownerAnswer`, queued on `agent.owner_answer`, and the AI redrafts from his words verbatim and first
+(`runOwnerTriggered('owner_edit')`). The redraft's auto plan refuses `owner_figure` (any figure in HIS answer — Q2 ⭐),
+`owner_personal`, and `answer_stale` (any burst line the question's run READ was edited or deleted since —
+`burstSeenAt`). The rail price and the avia address never get ✍️ — his ✏️ goes verbatim.
+
+**«📝 Tuzatish» — lessons.** `ag:l` on every card whose words are the machine's; his text stored unconfirmed, echoed with
+«✅ Saqlash» (one-time token) / «✖ Bekor»; ONE writer `lessons.ts` (bot + page) refuses a price and personal bits.
+Lessons live in `stableHead` only (cached), newest first, ≤ 40 and ≤ 6 000 characters as rendered, for every chat
+(Q3 ⭐). A confirmed lesson on a pending reply rewrites it (`lesson-job.ts`). The page's fifth tab «Saboqlar». Replies
+he shaped (trigger ≠ `inbound`) count apart in every «80 %» reader.
+
+**Six languages.** `AUTO_LANGUAGES` = uz, uz_cyrl, ru, en, fa, zh; en/fa/zh only when `memory.customerLocale`
+confidently names that language (Q9 ⭐); uz/uz_cyrl/ru refused on a confident guess that differs, and an unconfident
+guess that LEANS admits only that language. A Chinese reply holding a numeral run no reader keeps is `numeral_unread`
+(his ✅).
+
+**The limits.** «chegara qoyma»: `agent_auto_config.per_day` NULL (0148 sets it, one audit row). The account's own
+ceilings are `agent_send_caps` (≤ 200 a day, ≤ 100 an hour — `SEND_CAP_BOUNDS` from `HUMAN_LIMITS`, Q8 ⭐), edited on the
+page by the holder or a super_admin. ONE-WAY: main's code on the migrated database reads `per_day` NULL as «0 left» —
+a rollback below 0148 is preceded by `/agent auto off`.
+
+**The reader corpus (#1783) — read before touching any reader.** `tests/unit/fixtures/agent-reader-corpus.ts` +
+`agent-reader-corpus-eval.ts` + `tests/unit/agent-reader-corpus.test.ts` + the ratchet `agent-reader-corpus-known.ts`:
+nine readers, every case any review named, labelled dangerous or ordinary, run through the real functions. Zero
+tolerance for a dangerous case; where a rule cannot tell, it holds. At b0f2559b: 656 dangerous held, 0 let through;
+377 ordinary go, 8 held on the ratchet (main: 90 dangerous let through). Any change to the avia rule, `destination.ts`,
+`locale.ts`, `digits.ts`, `numbers.ts`, `auto-money.ts`, `auto-gate.ts`, `lessons.ts` or the owner-answer readers runs
+the whole corpus first, and a new find becomes a case before it becomes a fix.
+
+**Owed to part 1b (#1784).** An independent hunt AFTER the corpus reproduced more: hand-over verbs and Chinese places
+outside the avia lists, city spellings and whole countries the destination list lacks, Uzbek Cyrillic with no
+ў/қ/ғ/ҳ read as Russian, spelled numerals in his ✍️ answer and in replies, a lesson stating a price with no money
+word. The price act ships unticked and he was told to leave it unticked until 1b; he writes figures in digits.

@@ -369,6 +369,48 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## To‘liq AI sotuvchi, 1-qism (2026-11-14, 0148) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0148** — deploydan keyin son **149** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). Agar serveringizda 0145-0147 hali yo‘q bo‘lsa, ular shu
+deployda birga o‘tadi — son baribir **149** (ularning bo‘limlari pastda). Migratsiya mavjud jadvalga ustun
+qo‘shmaydi: ikkita yangi jadval (saboqlar va akkaunt chegaralari), «o‘zi yuborish» turlariga «Narx» qo‘shiladi
+(**belgilanmagan holda**), kunlik o‘zi yuborish soni «chegara yo‘q» bo‘ladi (bitta tarix yozuvi bilan) va botning
+ikkita yangi kutish turi.
+
+**tg-listen QAYTA QURILISHI SHART**: yuborish qadami endi narxni yuborish oldidan qayta hisoblaydi va akkaunt
+chegaralarini yangi jadvaldan o‘qiydi.
+
+**Orqaga qaytarish haqida (muhim):** 0148 dan keyin ilovani ESKI versiyaga qaytarsangiz, «o‘zi yuborish» hech qanday
+xabarsiz to‘xtaydi — har bir javob «kunlik chegara tugadi» deb qoladi. Qaytarishdan OLDIN botda `/agent auto off`
+yozing.
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build` (bu tg-listen’ni ham qayta quradi).
+3. Sonni o‘qing — **149**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+   (Son 148 bo‘lib qolsa — 0148 o‘tmagan — tizim avvalgidek ishlaydi: «Narx» katagi, «Saboqlar» va chegaralar
+   kartasi ko‘rinmaydi, ✍️/📝 bosilsa «Server hali yangilanmagan — keyinroq bosing» deydi; migratsiya o‘tgach, qayta ishga tushirmasdan
+   yangisiga o‘tadi.)
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Botga **+998902405077 akkauntidan** bir marta `/hodim` yuboring (savollar va kartalar shu akkauntga keladi).
+6. Sinov («Suhbatlar → AI sotuvchi» sahifasi va bot):
+   - Sahifada «🤖 O‘zi yuborish» blokida beshta katak (salomlashish, aniqlashtirish, ma’lumot, yuk holati, **Narx**)
+     — «Narx» belgilanmagan; kunlik son «chegara yo‘q»; yangi «Akkauntni himoya chegaralari» kartasi (kuniga 200,
+     soatiga 100 dan oshmaydi). Bu kartada «✅ Tarif to‘g‘ri» tugmasi ham bor.
+   - Ish raqamidan boshqa telefondan yozing: «Salom, Yiwudan 5 kub 800 kg kiyim bor, Toshkentgacha qancha?» — karta
+     narx bilan keladi va ✅ ingizni kutadi («Narx» belgilanmagan). ✅ bossangiz ketadi.
+   - Mijoz AI bilmaydigan savol bersin (masalan «Suyuq atir olib kelasizlarmi?») — karta «❓ Sizdan savol: …» va
+     **«✍️ Savolga javob»** tugmasi bilan keladi. Bosing, «Ha, olamiz» deb yozing — «✅ Javobingiz olindi — AI javob
+     yozmoqda», bir daqiqada yangi karta: «✍️ Sizning javobingiz asosida yozildi».
+   - Istalgan AI kartasida **«📝 Tuzatish»** ni bosing, «Mijozga har doim yukning rasmini so‘ra» deb yozing —
+     bot qaytaradi «📝 Saboq: …» va «✅ Saqlash». Saqlang — sahifadagi «Saboqlar» bo‘limida ko‘rinadi.
+   - **«Narx» katagini hozircha belgilamang** — avia chatlar va shahar nomlari bo‘yicha oxirgi tekshiruv topgan
+     holatlar **1b** tuzatishida keladi. 1b dan keyin: «Narx» katagini belgilang va «✅ Tarif to‘g‘ri» ni bosing (yoki
+     birinchi narx kartasiga ✅ bosing) — mashina va avia narxi qoidalar ruxsat bersa 2 daqiqadan keyin o‘zi ketadi.
+7. Kuzating (birinchi kun): `docker compose logs -f app | grep -E "\[agent\]"` — birinchi «✍️» javob, birinchi
+   saboq bo‘yicha qayta yozish («lesson rewrite») va birinchi o‘zi ketgan narx shu yerda ko‘rinadi.
+
 ## Prixod javoblari (2026-11-13, 0147) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0147** — deploydan keyin son **148** bo‘ladi (repo’dagi fayllar soni:
