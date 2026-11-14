@@ -29,6 +29,7 @@ import { cardAsks, cardDigest, digestBody } from './card';
 import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
 import { agentAutoReady, agentFullP1Ready, agentRunning, readAgentConfig } from './config';
 import { bindMoved, chatIdentity } from './context';
+import { approvedLocale } from './locale';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { AFTER_AUTO, keptFileSql } from './outbox-store';
@@ -1136,6 +1137,21 @@ export async function decideDraft(
         .insert(agentCalcLinks)
         .values({ requestId, rootRequestId: requestId, managerUserId: d.managerUserId, peerId: d.peerId, draftId })
         .onConflictDoNothing();
+    }
+    // HIS ✅ teaches the chat the language he approved, where it stores none (fix pass 8, the check #1 — locale
+    // `approvedLocale`): a chat whose lines said no language held its every later «ok», «GS778», «👍» for ever, his
+    // press on the first held reply notwithstanding. Never the machine's press, and never over what the chat stores
+    // (`coalesce`) — nor over what the draft's own reading says the customer spoke.
+    const taught = opts.auto ? null : approvedLocale({ reading: p.memory?.customerLocale, language: d.language, ownText: d.finalBody });
+    if (taught) {
+      await tx
+        .insert(agentConversations)
+        .values({ managerUserId: d.managerUserId, peerId: d.peerId, locale: taught })
+        .onConflictDoUpdate({
+          target: [agentConversations.managerUserId, agentConversations.peerId],
+          // `${table}.column` — inside ON CONFLICT the bare name is the proposed row's too (#128's cousin).
+          set: { locale: sql`coalesce(${agentConversations}.locale, ${taught})`, updatedAt: now },
+        });
     }
     await writeAudit(tx, ctx, {
       entityType: 'agent_draft',

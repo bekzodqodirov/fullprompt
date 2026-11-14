@@ -29,7 +29,8 @@
  * expects `held` and every ordinary one `goes` — the corpus states it per case so a reader of the file need not know
  * the rule. `source`: where the case came from — `check2#N` (the check of fix pass 3, item N), `check1:` (the check
  * of passes 1-2), `review:<lens>#N` (the review of 0148 as built), `pinned:` (a fix pass's own test, which stays),
- * `hunt#N` (the hunt over fix pass 5, item N — fix pass 6).
+ * `hunt#N` (the hunt over fix pass 5, item N — fix pass 6), `check7#N` (the check of fix pass 6 — fix pass 7),
+ * `check8#N` (the check of fix pass 7 — fix pass 8, the last).
  *
  * Literal inputs only: nothing here is computed by the code under test.
  */
@@ -46,9 +47,11 @@ export interface ReaderCase {
   /**
    * `language`: the conversation's stored language and the reply's; `money` / `han`: the reply's language. `before`
    * (fix pass 7): the customer's EARLIER lines in the chat's window, our reply after them, and `input` the next burst —
-   * with `remember`, the stored language is what the earlier turn's run remembered.
+   * with `remember`, the stored language is what the earlier turn's run remembered. `approved` (fix pass 8): the
+   * language of the earlier turn's reply HE approved by hand (his ✅ — decide `approvedLocale`), taught to the chat
+   * where nothing was stored.
    */
-  context?: { stored?: string | null; reply?: string; before?: string; remember?: boolean };
+  context?: { stored?: string | null; reply?: string; before?: string; remember?: boolean; approved?: string };
   expect: Observed;
   kind: Kind;
   source: string;
@@ -841,6 +844,47 @@ const LANGUAGE_DANGEROUS: readonly Row[] = [
   // went by itself (found while proving check7#6 — anything of Uzbek in the text is Uzbek's guess).
   ['lg122', 'Здравствуйте\nМебель олиб келасизларми', 'check7#6 neighbour', { stored: null, reply: 'ru' }],
   ['lg123', 'Склад адреси?', 'check7#3', { stored: null, reply: 'ru' }],
+  // Fix pass 8 (the check #1): his own ✅ on a reply to a turn that said no language teaches the chat THAT language —
+  // and no other: a later unmarked line admits only the language he approved.
+  ['lg124', 'Ok', 'check8#1 neighbour', { stored: null, reply: 'ru', before: 'GS777', remember: true, approved: 'uz' }],
+  ['lg125', 'GS778', 'check8#1 neighbour', { stored: null, reply: 'en', before: 'GS777', remember: true, approved: 'uz' }],
+  ['lg126', 'Хорошо', 'check8#1 neighbour', { stored: null, reply: 'uz_cyrl', before: 'GS777', remember: true, approved: 'ru' }],
+  ['lg127', 'Груз из Гуанчжоу', 'check8#1 neighbour', { stored: null, reply: 'uz_cyrl', before: '👍', remember: true, approved: 'ru' }],
+  ['lg128', '5 куб 800 кг', 'check8#1 neighbour', { stored: null, reply: 'uz_cyrl', before: 'Груз из Гуанчжоу', remember: true, approved: 'ru' }],
+  ['lg129', '👍', 'check8#1 neighbour', { stored: null, reply: 'ru', before: 'GS777', remember: true, approved: 'uz' }],
+  // …the customer's own words still decide against it: what he approved never outranks what the customer SAYS.
+  ['lg130', 'Сколько стоит доставка?', 'check8#1 neighbour', { stored: null, reply: 'uz', before: 'GS777', remember: true, approved: 'uz' }],
+  ['lg131', 'Hello, how much is shipping?', 'check8#1 neighbour', { stored: null, reply: 'uz', before: 'GS777', remember: true, approved: 'uz' }],
+  // …and where the earlier turn SAID its language (remembered by its run), his ✅ on another one teaches nothing.
+  ['lg132', '800 кг', 'check8#1 neighbour', { stored: null, reply: 'uz_cyrl', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб', remember: true, approved: 'uz_cyrl' }],
+  ['lg133', 'GS778', 'check8#1 neighbour', { stored: null, reply: 'en', before: 'Assalomu alaykum, yukim qayerda?\nGS777', remember: true, approved: 'en' }],
+  ['lg134', 'Ок', 'check8#1 neighbour', { stored: 'ru', reply: 'uz_cyrl', before: 'GS777', remember: true, approved: 'uz_cyrl' }],
+  // …nor where the draft he pressed RECORDS that the customer said one, though nothing was stored (a draft written before
+  // its run remembered a lean — fix pass 6 stored only a confident reading): the draft's own reading outranks his ✅.
+  ['lg155', '800 кг', 'check8#1 neighbour', { stored: null, reply: 'uz_cyrl', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб', approved: 'uz_cyrl' }],
+  // Fix pass 8 (the check #2): colloquial Uzbek Latin is Uzbek — never another language's reply by itself.
+  ['lg135', 'Xizmat turlari qanaqa?', 'check8#2', { stored: null, reply: 'ru' }],
+  ['lg136', 'Xizmat turlari qanaqa?', 'check8#2', { stored: null, reply: 'en' }],
+  ['lg137', 'Narxlari qanaqa?', 'check8#2', { stored: null, reply: 'en' }],
+  ['lg138', 'Tarif qanaqa?', 'check8#2', { stored: null, reply: 'ru' }],
+  ['lg139', 'Ish vaqti?', 'check8#2', { stored: null, reply: 'en' }],
+  ['lg140', 'Ish vaqti?', 'check8#2', { stored: null, reply: 'ru' }],
+  ['lg141', 'Tolov turlari?', 'check8#2', { stored: null, reply: 'en' }],
+  ['lg142', 'Tolov turlari?', 'check8#2', { stored: null, reply: 'ru' }],
+  ['lg143', 'Batafsil malumot?', 'check8#2', { stored: null, reply: 'en' }],
+  ['lg144', 'Avto', 'check8#2', { stored: null, reply: 'ru', before: 'Xizmat turlari qanaqa?', remember: true }],
+  // …and its neighbours, English and Russian typed in Latin, are never Uzbek: «Tarif?» (тариф) says no language, «dollari»
+  // is Russian's plural, never Uzbek's «-lari».
+  ['lg145', 'Tarif?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg146', 'Tarif?', 'check8#2 neighbour', { stored: null, reply: 'en' }],
+  ['lg147', 'Tarif kakoy?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg148', 'Kakie usloviya?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg149', 'Dollari?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg150', 'Skolko dollari?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg151', 'Prices?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg152', 'What are the rates?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg153', 'Working hours?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg154', 'Services?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
 ];
 
 const LANGUAGE_ORDINARY: readonly Row[] = [
@@ -1030,6 +1074,41 @@ const LANGUAGE_ORDINARY: readonly Row[] = [
   // The check #3's flips in the ordinary suites: «Склад адреси?» carries Uzbek's own case; «адрес склада» carries nothing.
   ['lg377', 'Склад адреси?', 'check7#3', { stored: null, reply: 'uz_cyrl' }],
   ['lg378', 'адрес склада', 'check7#3 (a first message)', { stored: null, reply: 'ru' }],
+  // Fix pass 8 (the check #1): a chat whose earlier lines said no language — «GS777», «👍», an unmarked Russian line —
+  // held its every later unmarked line, and his ✅ on the held reply taught it nothing. His OWN ✅ (never the machine's)
+  // teaches the chat the language he approved, where nothing is stored: the next unmarked line leans on it.
+  ['lg379', 'Ok', 'check8#1', { stored: null, reply: 'uz', before: 'GS777', remember: true, approved: 'uz' }],
+  ['lg380', 'GS778', 'check8#1', { stored: null, reply: 'uz', before: 'GS777', remember: true, approved: 'uz' }],
+  ['lg381', 'Ок', 'check8#1', { stored: null, reply: 'ru', before: 'GS777', remember: true, approved: 'ru' }],
+  ['lg382', '👍', 'check8#1', { stored: null, reply: 'uz', before: 'GS777', remember: true, approved: 'uz' }],
+  ['lg383', 'Хорошо', 'check8#1', { stored: null, reply: 'ru', before: 'GS777', remember: true, approved: 'ru' }],
+  ['lg384', 'GS778', 'check8#1', { stored: null, reply: 'uz', before: 'GS777\nOk', remember: true, approved: 'uz' }],
+  ['lg385', 'Груз из Гуанчжоу', 'check8#1', { stored: null, reply: 'ru', before: '👍', remember: true, approved: 'ru' }],
+  ['lg386', '5 куб 800 кг', 'check8#1', { stored: null, reply: 'ru', before: 'Груз из Гуанчжоу', remember: true, approved: 'ru' }],
+  ['lg387', 'Одежда', 'check8#1', { stored: null, reply: 'ru', before: 'Груз из Гуанчжоу\n5 куб 800 кг', remember: true, approved: 'ru' }],
+  ['lg388', 'Ок', 'check8#1', { stored: null, reply: 'uz_cyrl', before: '5 куб 800 кг', remember: true, approved: 'uz_cyrl' }],
+  ['lg389', 'Avia 30 kg', 'check8#1', { stored: null, reply: 'uz', before: 'GS777', remember: true, approved: 'uz' }],
+  // Fix pass 8 (the check #2): colloquial Uzbek Latin — «qanaqa», the possessive «-lari», «vaqti», «batafsil» — read as
+  // no language and was held; the forms with «-ingiz» went. A first message and its follow-up.
+  ['lg390', 'Xizmat turlari qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg391', 'Narxlari qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg392', 'Tarif qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg393', 'Shartlari qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg394', 'Kunlari qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg395', 'Ish vaqti?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg396', 'Tolov turlari?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg397', 'Kargo narxlari qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg398', 'Sharoitlari qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg399', 'Rastamojka qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg400', 'Pul otkazish qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg401', 'Muddati qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg402', 'Yetkazib berish muddati qanaqa?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg403', 'Batafsil malumot?', 'check8#2', { stored: null, reply: 'uz' }],
+  ['lg404', 'Avto', 'check8#2', { stored: null, reply: 'uz', before: 'Xizmat turlari qanaqa?', remember: true }],
+  ['lg405', 'Narxlaringiz qanaqa?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg406', 'Ish vaqtingiz?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg407', 'Qanaqa yuklar olasiz?', 'check8#2 neighbour', { stored: null, reply: 'uz' }],
+  ['lg408', 'Narxlari qanaqa?', 'check8#2', { stored: 'uz', reply: 'uz' }],
 ];
 
 // ── his ✍️ answer: does it hold a figure? ───────────────────────────────────

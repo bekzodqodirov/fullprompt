@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectLocale, dominantScript, scriptOf, uzbekEndingLean } from '@/modules/wms/agent/locale';
+import { approvedLocale, detectLocale, dominantScript, scriptOf, uzbekEndingLean } from '@/modules/wms/agent/locale';
 
 describe('detectLocale', () => {
   it('reads the six languages he answered for (his 13)', () => {
@@ -165,6 +165,40 @@ describe('detectLocale', () => {
     expect(detectLocale('Assalomu alaykum')).toEqual({ locale: 'uz', confident: true, script: 'latin' });
     expect(detectLocale('Hello')).toEqual({ locale: 'en', confident: true, script: 'latin' });
     expect(detectLocale('Rahmat\nThanks', null)).toMatchObject({ confident: false });
+  });
+
+  // Fix pass 8 (the check #2): colloquial Uzbek Latin — «qanaqa», «vaqt», «batafsil» are Uzbek's own words, the
+  // possessive plural «-lari» leans Uzbek; Russian's «dollari» and the neighbours that say no language never do.
+  it('colloquial Uzbek Latin is Uzbek — «qanaqa», «vaqti», «batafsil», the possessive «-lari»', () => {
+    for (const t of ['Xizmat turlari qanaqa?', 'Tarif qanaqa?', 'Ish vaqti?', 'Batafsil malumot?', 'Qanaqasi bor?']) {
+      expect(detectLocale(t), t).toEqual({ locale: 'uz', confident: true, script: 'latin' });
+    }
+    for (const t of ['Tolov turlari?', 'Shartlarini ayting']) {
+      expect(detectLocale(t), t).toEqual({ locale: 'uz', confident: false, script: 'latin' });
+      expect(uzbekEndingLean(t), t).toBe('uz');
+    }
+    for (const t of ['Tarif?', 'Dollari?', 'Skolko dollari?', 'Tarif kakoy?', 'Working hours?']) {
+      expect(uzbekEndingLean(t), t).toBeNull();
+      expect(detectLocale(t).locale, t).not.toBe('uz');
+    }
+  });
+
+  // Fix pass 8 (the check #1): the language his own ✅ teaches the chat.
+  it('his ✅ teaches the reply’s language — his own words’ when he typed them; never over what the customer said', () => {
+    // The draft's reading said nothing: the reply he approved.
+    expect(approvedLocale({ reading: { locale: null, confident: false }, language: 'uz', ownText: null })).toBe('uz');
+    expect(approvedLocale({ reading: { locale: 'ru', confident: false }, language: 'ru', ownText: null })).toBe('ru');
+    // A draft with no reading of its own (a price, a legacy row): the reply he approved.
+    expect(approvedLocale({ reading: undefined, language: 'uz_cyrl', ownText: null })).toBe('uz_cyrl');
+    // His own words: what they confidently say — and nothing when they say nothing.
+    expect(approvedLocale({ reading: { locale: null, confident: false }, language: 'uz', ownText: 'Здравствуйте! Сколько кубов?' })).toBe('ru');
+    expect(approvedLocale({ reading: { locale: null, confident: false }, language: 'uz', ownText: 'OK 👍' })).toBeNull();
+    // The customer spoke a language (confident, or a lean the run remembers): his ✅ teaches nothing.
+    expect(approvedLocale({ reading: { locale: 'ru', confident: true }, language: 'uz_cyrl', ownText: null })).toBeNull();
+    expect(approvedLocale({ reading: { locale: 'ru', confident: false, leans: true }, language: 'uz_cyrl', ownText: null })).toBeNull();
+    // A language the chat cannot store teaches nothing.
+    expect(approvedLocale({ reading: null, language: 'de', ownText: null })).toBeNull();
+    expect(approvedLocale({ reading: null, language: null, ownText: null })).toBeNull();
   });
 
   it('every locale names the script its reply must be written in', () => {

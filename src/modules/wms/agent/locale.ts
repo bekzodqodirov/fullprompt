@@ -170,9 +170,13 @@ const SHORT_LINE = 12;
 
 /** The Uzbek Latin apostrophe letters, in every spelling a phone keyboard produces. */
 const UZ_LATIN_LETTERS = /[og]['ʻʼ‘’`]/iu;
-/** Everyday Uzbek Latin words that are not English. */
+/**
+ * Everyday Uzbek Latin words that are not English — and (fix pass 8, the check #2) colloquial ones neither English nor
+ * Russian typed in Latin has: «qanaqa» (the everyday twin of «qanday»), «vaqt», «batafsil». «Xizmat turlari qanaqa?»,
+ * «Tarif qanaqa?», «Ish vaqti?», «Batafsil malumot?» read as no language, and the Uzbek reply waited for his ✅.
+ */
 const UZ_LATIN_WORDS =
-  /(?:^|[^\p{L}])(?:qancha|kancha|nechpul|necha|nechchi|kerak|bor|bormi|yoq|yo'q|yuk|yukim|narx|narxi|qayerda|qachon|kachon|keldimi|ketdimi|bo'ladi|boladi|aka|opa|uka|iltimos|mumkin|mumkinmi|qilib|olib|berasiz|bering|kub|kubi|xitoydan|toshkentga|tayyor|ekan|tovar|tovarim|turibdi|turibdimi|xizmati|qilganman|kelasizmi|kelasizlarmi|qanday|yaxshi|tushundim|kiyim\p{L}*|manzil\p{L}*|yubor\p{L}*|jo['‘’ʻ`]?nat\p{L}*|qayer\p{L}*)(?=$|[^\p{L}])|\p{L}{2,}(?:gacha|imiz|ingiz|imizni|ingizni)(?=$|[^\p{L}])|(?:^|[^\p{L}])(?:ivu|yiwu|guanchjou|guanjou|shenchjen|shenjen|toshkent|xitoy)(?:dan|da|dagi|ga|ning)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:qancha|kancha|nechpul|necha|nechchi|kerak|bor|bormi|yoq|yo'q|yuk|yukim|narx|narxi|qayerda|qachon|kachon|keldimi|ketdimi|bo'ladi|boladi|aka|opa|uka|iltimos|mumkin|mumkinmi|qilib|olib|berasiz|bering|kub|kubi|xitoydan|toshkentga|tayyor|ekan|tovar|tovarim|turibdi|turibdimi|xizmati|qilganman|kelasizmi|kelasizlarmi|qanday|yaxshi|tushundim|kiyim\p{L}*|manzil\p{L}*|yubor\p{L}*|jo['‘’ʻ`]?nat\p{L}*|qayer\p{L}*|qanaqa(?:si|lar)?|vaqt\p{L}*|batafsil)(?=$|[^\p{L}])|\p{L}{2,}(?:gacha|imiz|ingiz|imizni|ingizni)(?=$|[^\p{L}])|(?:^|[^\p{L}])(?:ivu|yiwu|guanchjou|guanjou|shenchjen|shenjen|toshkent|xitoy)(?:dan|da|dagi|ga|ning)(?=$|[^\p{L}])/iu;
 /**
  * Everyday English words that are not Uzbek — and the function words an English request is made of (fix pass 4): «Hi,
  * I have 3 cbm of clothes in Yiwu» carried no mark once «Hi» was none, and the English reply waited. Never «it» (a
@@ -190,8 +194,12 @@ const EN_WORDS =
  * is no mark at all: «5 cbm 800 kg» is every customer's.)
  */
 const EN_LOAN = /(?:^|[^\p{L}])(?:cargo|delivery|order|i|to|price|prices|goods|address|ready)(?=$|[^\p{L}])/iu;
+/**
+ * Uzbek Latin's word endings — a LEAN, never a mark (`uzbekLatinLeans`). Fix pass 8 (the check #2): the possessive
+ * plural «-lari» — «Narxlari», «Xizmat turlari», «Tolov turlari?» — never «dollari», Russian's plural typed in Latin.
+ */
 const UZ_LATIN_ENDING =
-  /\p{L}{2,}(?:lar|larmi|mi|dan|ga|gacha|da|dagi|imiz|ingiz|aman|amiz|yapman|ganman|ganmiz|asiz|asizlarmi|ibdi|di|moqchi(?:man|miz))(?=$|[^\p{L}])/iu;
+  /\p{L}{2,}(?:lar|larmi|mi|dan|ga|gacha|da|dagi|imiz|ingiz|aman|amiz|yapman|ganman|ganmiz|asiz|asizlarmi|ibdi|di|moqchi(?:man|miz)|(?<!dol)lari(?:ni|ga|da|dan)?)(?=$|[^\p{L}])/iu;
 /** Uzbek's case endings typed APART from their word (fix pass 7, the check #13): «Yiwu dan», «Tashkent ga», «Ivu da». */
 const UZ_LATIN_DETACHED = /\p{L}\s+(?:dan|gacha|ga|da|dagi|ning)(?=$|[^\p{L}])/iu;
 /** Russian typed in Latin letters — «skolko», «kogda», «dostavka» — is no Uzbek, whatever its endings («kogda», «doroga»). */
@@ -334,6 +342,29 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
     return { locale: m.uz ? 'uz' : null, confident: false, script };
   }
   return { locale: previous, confident: false, script };
+}
+
+/**
+ * The language HIS OWN ✅ teaches the chat (fix pass 8, the check #1): a chat whose earlier lines said no language —
+ * «GS777», «👍», «5 куб 800 кг», an unmarked Russian line — held every later unmarked line for ever, and his ✅ on the
+ * held reply taught it nothing. He reads the reply he approves, and its language is his decision: the reply's own
+ * language, or — when he typed the words himself — what those words confidently say. Never where the draft's own
+ * reading says the customer spoke a language (`reading`, the run's `customerLocaleOf`, stored with the draft): what the
+ * customer SAID outranks his ✅. The caller writes it only where the chat stores nothing (decide's `coalesce`) and only
+ * for a PERSON's press — never the machine's, whose reply went because the customer's language was already read. A
+ * LEAN, as the run's own memory is: a later line that says its language still decides.
+ */
+export function approvedLocale(a: {
+  reading: { locale: AgentLocale | null; confident: boolean; leans?: boolean } | null | undefined;
+  language: string | null;
+  ownText: string | null;
+}): AgentLocale | null {
+  if (a.reading && a.reading.locale !== null && (a.reading.confident || a.reading.leans === true)) return null;
+  if (a.ownText !== null) {
+    const said = detectLocale(a.ownText);
+    return said.confident ? said.locale : null;
+  }
+  return AGENT_LOCALES.find((l) => l === a.language) ?? null;
 }
 
 /** The script a reply in this language must be written in — G5's half of the rule. */

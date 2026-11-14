@@ -3109,6 +3109,94 @@ describe('0148 fix — what goes by itself, on real runs', () => {
       expect((coded.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz', confident: true });
       expect(await remembered()).toBe('uz');
     });
+
+    // Fix pass 8 (the check #1): a chat whose lines said no language — «GS777», «👍», an unmarked Russian line — held every
+    // later unmarked line by «language», and his ✅ on the held reply taught it nothing. HIS press teaches the chat the
+    // language he approved, where it stores none (locale `approvedLocale`, decide's `coalesce`).
+    describe('his ✅ teaches the chat the language he approved (fix pass 8, the check #1)', () => {
+      const remembered = async () =>
+        (
+          await db
+            .select({ locale: agentConversations.locale })
+            .from(agentConversations)
+            .where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)))
+        )[0]?.locale ?? null;
+      const press = (draftId: string, digest?: string) => decideDraft(actorOf(ownerId), draftId, 'send', digest ? { digest } : {}, { actorId: ownerId });
+      /** The pump sends his approved reply — the outbox row 'sent', the thread's copy (`recordSent`). */
+      async function sent(draftId: string, at: Date) {
+        msgSeq += 1n;
+        await applyAgentOutcome((await agentRowById((await outboxOf(draftId))!.id))!, { kind: 'sent', tgMessageId: msgSeq }, alarmAccount(), at);
+      }
+      /** A later burst on the machine's clock: his lines a minute before `at`, the run at `at`, the card shown then. */
+      async function later(lines: readonly string[], steps: { name: string; input: Record<string, unknown> }[], at: Date) {
+        let anchor = 0n;
+        for (const line of lines) anchor = await inbound(line, PEER, at);
+        const out = await handleInbound(job(anchor), { callModel: scripted(steps), now: () => at });
+        expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+        const draftId = (out as { draftId: string }).draftId;
+        await shownAt(draftId, at);
+        const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+        return d!;
+      }
+      const T1 = new Date(T0.getTime() + 6 * 60_000);
+
+      it('«GS777» is held by the language; his ✅ on the Uzbek reply teaches «uz» — and the next «GS778» leans on it and goes', async () => {
+        const first = await ran(['GS777'], [compose(`Ha, yordam beraman. Qanday yuk ${TAG}?`)]);
+        expect((first.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: null, confident: false });
+        expect((await verdictOf(first.id))!.reasons).toEqual(['language']);
+        expect(await remembered()).toBeNull();
+        expect(await press(first.id, await cardDigestOf(first.id))).toMatchObject({ ok: true, status: 'approved' });
+        expect(await remembered()).toBe('uz');
+        await sent(first.id, new Date(T0.getTime() + 3 * 60_000));
+        const next = await later(['GS778'], [compose(`Albatta. Yukingiz qayerda ${TAG}?`)], T1);
+        expect((next.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz', confident: false, leans: true });
+        expect(await verdictOf(next.id)).toMatchObject({ eligible: true, reasons: [], state: 'waiting' });
+        expect(await pressDueAutos(new Date(T1.getTime() + HOLD_MS + 1_000))).toBe(1);
+        // …and only THAT language: a Russian reply to the same line is his.
+        await clearChats();
+        await db.insert(agentConversations).values({ managerUserId: ownerId, peerId: PEER, locale: 'uz' });
+        const ru = await ran(['GS778'], [compose(`Конечно. Где ваш груз ${TAG}?`, { language: 'ru' })]);
+        expect((await verdictOf(ru.id))!.reasons).toEqual(['language']);
+      });
+
+      it('his OWN words teach what they say — «Сколько …?» on a draft the machine wrote in Uzbek Cyrillic teaches «ru»', async () => {
+        const d = await ran(['Груз из Гуанчжоу'], [compose(`Юкингиз неча куб ${TAG}?`, { language: 'uz_cyrl', category: 'qualification' })]);
+        expect((await verdictOf(d.id))!.reasons).toEqual(['language']);
+        expect(await submitOwnText(actorOf(ownerId), d.id, 'Здравствуйте! Сколько кубов и какой вес у груза?', { actorId: ownerId })).toMatchObject({ ok: true });
+        expect(await press(d.id)).toMatchObject({ ok: true, status: 'approved' });
+        expect(await remembered()).toBe('ru');
+      });
+
+      it('his ❌ and 🙋 teach nothing — only the reply he lets go', async () => {
+        const rejected = await ran(['GS777'], [compose(`Ha, yordam beraman. Qanday yuk ${TAG}?`)]);
+        expect(await decideDraft(actorOf(ownerId), rejected.id, 'reject', {}, { actorId: ownerId })).toMatchObject({ ok: true });
+        expect(await remembered()).toBeNull();
+        await clearChats();
+        const taken = await ran(['GS777'], [compose(`Ha, yordam beraman. Qanday yuk ${TAG}?`)]);
+        expect(await decideDraft(actorOf(ownerId), taken.id, 'human', {}, { actorId: ownerId })).toMatchObject({ ok: true });
+        expect(await remembered()).toBeNull();
+      });
+
+      it('never over what the chat stores — nor over what the draft he pressed says the customer spoke', async () => {
+        // The chat stores «ru»; his draft carries no reading of its own (one written before its run read one): his ✅ on an
+        // Uzbek reply leaves «ru» as it stands.
+        const stored = await ran(['GS777'], [compose(`Ha, yordam beraman. Qanday yuk ${TAG}?`)], { stored: 'ru' });
+        await db
+          .update(agentDrafts)
+          .set({ policy: sql`jsonb_set(${agentDrafts.policy}, '{memory}', (${agentDrafts.policy}->'memory') - 'customerLocale')` })
+          .where(eq(agentDrafts.id, stored.id));
+        expect(await press(stored.id, await cardDigestOf(stored.id))).toMatchObject({ ok: true, status: 'approved' });
+        expect(await remembered()).toBe('ru');
+        await clearChats();
+        // Nothing stored, and the draft's reading says the customer spoke Russian (a lean the run did not remember — fix
+        // pass 6 stored only a confident one): his ✅ on an Uzbek Cyrillic reply teaches nothing.
+        const leaned = await ran(['Здравствуйте', 'Груз из Гуанчжоу, 5 куб'], [compose(`Юкингиз неча кг ${TAG}?`, { language: 'uz_cyrl', category: 'qualification' })]);
+        expect((leaned.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'ru', confident: false, leans: true });
+        await db.update(agentConversations).set({ locale: null }).where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)));
+        expect(await press(leaned.id, await cardDigestOf(leaned.id))).toMatchObject({ ok: true, status: 'approved' });
+        expect(await remembered()).toBeNull();
+      });
+    });
   });
 
   describe('an admitted quote never launders the model’s label', () => {
