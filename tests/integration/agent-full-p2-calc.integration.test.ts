@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, like, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** pg-boss is never started in this process: every job a landing would queue (the AI VED pass, thumbnails) is caught here. */
@@ -25,7 +25,19 @@ const seam = vi.hoisted(() => ({
   landed: null as null | (() => Promise<void>),
   /** Runs just before the real landing — after the press read the hand-back loop (fix pass 1). */
   beforeLand: null as null | (() => Promise<void>),
+  /** The calculation's facts throw when armed — a db blip at the scheduling or the press (review tests). */
+  factsThrow: false,
 }));
+vi.mock('@/modules/wms/agent/calc-submit', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/wms/agent/calc-submit')>();
+  return {
+    ...real,
+    calcSubmitFacts: async (...args: Parameters<typeof real.calcSubmitFacts>) => {
+      if (seam.factsThrow) throw Object.assign(new Error('Connection terminated unexpectedly'), { code: '57P01' });
+      return real.calcSubmitFacts(...args);
+    },
+  };
+});
 vi.mock('@/modules/wms/agent/send-window', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/modules/wms/agent/send-window')>();
   return {
@@ -81,6 +93,7 @@ import {
   calcRequests,
   clients,
   crmActivities,
+  dealStages,
   deals,
   events,
   leadStages,
@@ -91,6 +104,7 @@ import {
   tgAccountGuard,
   tgAccounts,
   tgChatRules,
+  tgMessageFlags,
   tgMessages,
   tnvedAssignments,
   userRoles,
@@ -99,7 +113,7 @@ import {
 import { getStorage } from '@/modules/platform/files/storage';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { pressDueAutos, readAutoConfig, stopAuto, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
-import { copyChatFilesToNote } from '@/modules/wms/agent/calc-files';
+import { CALC_FILES_MAX, chatFilesForJob, copyChatFilesToNote } from '@/modules/wms/agent/calc-files';
 import { calcLinkReplySent } from '@/modules/wms/agent/calc-loop';
 import { renderDraftCard } from '@/modules/wms/agent/card-io';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
@@ -397,6 +411,7 @@ beforeEach(async () => {
   seam.window = null;
   seam.landed = null;
   seam.beforeLand = null;
+  seam.factsThrow = false;
   queued.length = 0;
   await armAuto();
   await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
@@ -413,18 +428,26 @@ afterAll(async () => {
       .from(calcRequests)
       .where(inArray(calcRequests.requestedBy, [holderId, vedId, colleagueId]));
     const requestIds = requests.map((r) => r.id);
+    const dealIds = madeClients.length ? (await db.select({ id: deals.id }).from(deals).where(inArray(deals.clientId, madeClients))).map((d) => d.id) : [];
+    const cards = [...dealIds, ...madeLeads];
+    // The tasks this file's landings made — found by the requests and the cards, NEVER by assignee alone: the VED rota
+    // hands a landed job to whoever holds the role, the seeded «VED Demo» included (review tests: 7 open «Hisoblash»
+    // tasks per run were left on a person the browser suite logs in as, #154/#183).
+    const taskIds = new Set(requests.map((r) => r.taskId).filter((id): id is string => id !== null));
+    const byWhat = [inArray(tasks.assigneeId, [holderId, vedId, colleagueId])];
+    if (requestIds.length) byWhat.push(inArray(tasks.boundId, requestIds));
+    if (cards.length) byWhat.push(inArray(tasks.entityId, cards));
+    for (const t of await db.select({ id: tasks.id }).from(tasks).where(or(...byWhat))) taskIds.add(t.id);
     if (requestIds.length) {
       await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, requestIds));
       await db.update(calcRequests).set({ supersedesRequestId: null }).where(inArray(calcRequests.id, requestIds));
       await db.delete(calcRequests).where(inArray(calcRequests.id, requestIds));
     }
-    const taskRows = await db.select({ id: tasks.id }).from(tasks).where(inArray(tasks.assigneeId, [holderId, vedId, colleagueId]));
-    if (taskRows.length) {
-      await db.delete(events).where(inArray(events.entityId, taskRows.map((t) => t.id)));
-      await db.delete(tasks).where(inArray(tasks.id, taskRows.map((t) => t.id)));
+    if (taskIds.size) {
+      await db.delete(events).where(inArray(events.entityId, [...taskIds]));
+      await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join([...taskIds].map((id) => sql`${id}`), sql`, `)})`);
+      await db.delete(tasks).where(inArray(tasks.id, [...taskIds]));
     }
-    const dealIds = madeClients.length ? (await db.select({ id: deals.id }).from(deals).where(inArray(deals.clientId, madeClients))).map((d) => d.id) : [];
-    const cards = [...dealIds, ...madeLeads];
     if (cards.length) {
       const notes = (await db.select({ id: crmActivities.id }).from(crmActivities).where(inArray(crmActivities.entityId, cards))).map((n) => n.id);
       if (notes.length) {
@@ -906,5 +929,280 @@ describe('the lead’s stage on the machine’s own layer (§1.8)', () => {
     const [audit] = await auditsOf(lead);
     expect(audit!.actorId).toBe(holderId);
     expect((audit!.after as Record<string, unknown>).via).toBeUndefined();
+  });
+});
+
+describe('review — the calc gate’s untested halves (the tests lens)', () => {
+  const RASTAMOJKA_LINE = 'Rastamojka: kafel 120 m2, 1500 kg, 3 kub';
+  const RASTAMOJKA_GOODS = [{ name: 'kafel', quantity: 120, unit: 'm2', weight_kg: null }];
+  const SECOND = { body: 'Yana podklyuch: 4 kub 600 kg, kurtka 150 dona, Xitoydan Toshkentga', goods: [{ name: 'kurtka', quantity: 150, unit: null, weight_kg: null }], now: LATER };
+
+  it('a request on the chat’s LEAD within 14 days that no link names (a seller’s own 🧮) → `calc_recent` (s10)', async () => {
+    const peer = newPeer();
+    const lead = await freshLead();
+    await db.execute(sql`
+      INSERT INTO calc_requests (entity_type, entity_id, requested_by, item_count, due_at, section)
+      VALUES ('lead', ${lead}::uuid, ${vedId}::uuid, 1, now() + interval '1 hour', 'podklyuch')`);
+    const { d } = await drafted(peer, { leadId: lead });
+    expect((await verdictOf(d.id))!.reasons).toEqual(['calc_recent']);
+  });
+
+  it('a coded client whose seller is a colleague → `calc_foreign`; a client with no seller is the machine’s to touch (s03)', async () => {
+    const theirs = await drafted(newPeer(), { clientId: await freshClient(colleagueId) });
+    expect((await verdictOf(theirs.d.id))!.reasons).toEqual(['calc_foreign']);
+    const nobodys = await drafted(newPeer(), { clientId: await freshClient(null) });
+    expect(await verdictOf(nobodys.d.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await stopAuto(holderId, nobodys.d.id)).toEqual({ ok: true });
+  });
+
+  /** His machine's job handed back by the VED, its deal then moved by `move` — and the customer answers. */
+  async function handedBackThen(move: (r1: typeof calcRequests.$inferSelect, clientId: string) => Promise<void>) {
+    const peer = newPeer();
+    const clientId = await freshClient();
+    const first = await drafted(peer, { clientId });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    const [r1] = await requestsOn(noteIdFor(first.d.id));
+    await returnCalcRequest(r1!.id, 'tovar nomi yetarli emas', { actorId: vedId });
+    await move(r1!, clientId);
+    const second = await drafted(peer, { clientId }, {
+      body: 'Kurtka — erkaklar qishki kurtkasi, 100 dona; 3 kub 500 kg; Xitoydan Toshkentga podklyuch',
+      goods: [{ name: 'erkaklar qishki kurtkasi', quantity: 100, unit: null, weight_kg: null }],
+      now: LATER,
+    });
+    return { r1: r1!, second };
+  }
+
+  it('the hand-back loop onto a deal a colleague now owns, or whose client a colleague now sells → `calc_foreign`, nothing lands (s02)', async () => {
+    const owned = await handedBackThen(async (r1) => {
+      await db.update(deals).set({ ownerId: colleagueId }).where(eq(deals.id, r1.entityId));
+    });
+    expect((await verdictOf(owned.second.d.id))!.reasons).toEqual(['calc_foreign']);
+    const sold = await handedBackThen(async (_r1, clientId) => {
+      await db.update(clients).set({ salesManagerId: colleagueId }).where(eq(clients.id, clientId));
+    });
+    expect((await verdictOf(sold.second.d.id))!.reasons).toContain('calc_foreign');
+    expect(await pressDueAutos(LATER_DUE)).toBe(0);
+    expect(await requestsOn(noteIdFor(owned.second.d.id))).toHaveLength(0);
+    expect(await requestsOn(noteIdFor(sold.second.d.id))).toHaveLength(0);
+  });
+
+  it('the loop closes only the holder’s own «↩️» task — never a colleague’s, never his other tasks on the card (k42, k43)', async () => {
+    const made: string[] = [];
+    const { r1, second } = await handedBackThen(async (r) => {
+      const rows = await db
+        .insert(tasks)
+        .values([
+          { title: 'Ma’lumot to‘ldiring (hamkasb)', assigneeId: colleagueId, createdBy: vedId, origin: 'calc_return', entityType: 'deal', entityId: r.entityId },
+          { title: 'Qo‘ng‘iroq qilish', assigneeId: holderId, createdBy: holderId, origin: 'hand', entityType: 'deal', entityId: r.entityId },
+        ])
+        .returning({ id: tasks.id });
+      made.push(...rows.map((t) => t.id));
+    });
+    expect(await pressDueAutos(LATER_DUE)).toBe(1);
+    const [r2] = await requestsOn(noteIdFor(second.d.id));
+    expect(r2).toMatchObject({ entityType: 'deal', entityId: r1.entityId });
+    const statusOf = async (id: string) => (await db.select({ s: tasks.status }).from(tasks).where(eq(tasks.id, id)))[0]!.s;
+    expect(await statusOf(made[0]!)).toBe('open');
+    expect(await statusOf(made[1]!)).toBe('open');
+    // The control: his own «↩️» task is the one the loop closed.
+    const [own] = await db.select().from(tasks).where(and(eq(tasks.origin, 'calc_return'), eq(tasks.entityId, r1.entityId), eq(tasks.assigneeId, holderId)));
+    expect(own).toMatchObject({ status: 'done', result: HAND_BACK_TASK_DONE });
+  });
+
+  it('the holder at the people’s open cap → `calc_refused` at the scheduling; one under it the countdown runs (s05)', async () => {
+    const lead = await freshLead();
+    const openOf = async () => Number((await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM calc_requests WHERE requested_by = ${holderId}::uuid AND completed_at IS NULL`))[0]!.n);
+    const filler: string[] = [];
+    const fill = async (to: number) => {
+      for (let n = await openOf(); n < to; n++) {
+        const [row] = await db.execute<{ id: string }>(sql`
+          INSERT INTO calc_requests (entity_type, entity_id, requested_by, item_count, due_at, section)
+          VALUES ('lead', ${lead}::uuid, ${holderId}::uuid, 1, now() + interval '1 hour', 'yolkira') RETURNING id::text`);
+        filler.push(row!.id);
+      }
+    };
+    try {
+      await fill(19);
+      const under = await drafted(newPeer(), { leadId: await freshLead() });
+      expect((await verdictOf(under.d.id))!.reasons).not.toContain('calc_refused');
+      expect(await stopAuto(holderId, under.d.id)).toEqual({ ok: true });
+      await fill(20);
+      const at = await drafted(newPeer(), { leadId: await freshLead() });
+      expect((await verdictOf(at.d.id))!.reasons).toEqual(['calc_refused']);
+    } finally {
+      if (filler.length) await db.delete(calcRequests).where(inArray(calcRequests.id, filler));
+    }
+  });
+
+  it('a chain landed on a lead, the chat later taken onto a client WITHOUT a win → `calc_recent` (only the chain’s own age sees it)', async () => {
+    const peer = newPeer();
+    const lead = await freshLead();
+    const first = await drafted(peer, { leadId: lead });
+    expect(await decideDraft(person(), first.d.id, 'send', { digest: await digestOf(first.d.id) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const [r1] = await requestsOn(noteIdFor(first.d.id));
+    expect(r1).toMatchObject({ entityType: 'lead', entityId: lead });
+    await db.update(calcRequests).set({ completedAt: new Date(), completedVia: 'lines' }).where(eq(calcRequests.id, r1!.id));
+    const clientId = await freshClient();
+    const [c] = await db.select({ phones: clients.phones }).from(clients).where(eq(clients.id, clientId));
+    await db.insert(tgChatRules).values({ managerUserId: holderId, peerId: peer, decision: 'include', clientId, peerPhone: (c!.phones as string[])[0]!, peerTitle: 'C', decidedBy: holderId, decidedAt: new Date() });
+    const second = await drafted(peer, { clientId }, SECOND);
+    expect((await verdictOf(second.d.id))!.reasons).toEqual(['calc_recent']);
+  });
+
+  it('a podklyuch job, then a RASTAMOJKA submit on the same chat within 14 days → no `calc_recent` (each section its own job)', async () => {
+    const peer = newPeer();
+    const clientId = await freshClient();
+    const first = await drafted(peer, { clientId });
+    expect(await decideDraft(person(), first.d.id, 'send', { digest: await digestOf(first.d.id) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const [r1] = await requestsOn(noteIdFor(first.d.id));
+    expect(r1).toMatchObject({ entityType: 'deal', section: 'podklyuch' });
+    await db.update(calcRequests).set({ completedAt: new Date(), completedVia: 'lines' }).where(eq(calcRequests.id, r1!.id));
+    const second = await drafted(peer, { clientId }, { body: RASTAMOJKA_LINE, section: 'rastamojka', goods: RASTAMOJKA_GOODS, now: LATER });
+    expect(await verdictOf(second.d.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await stopAuto(holderId, second.d.id)).toEqual({ ok: true });
+  });
+
+  it('the calculation’s facts cannot be read at the press: every calc refusal at once, nothing lands (review tests: the fail-closed catch)', async () => {
+    const peer = newPeer();
+    const lead = await freshLead();
+    const { d } = await drafted(peer, { leadId: lead });
+    expect(await verdictOf(d.id)).toMatchObject({ eligible: true, state: 'waiting' });
+    seam.factsThrow = true;
+    try {
+      expect(await pressDueAutos(DUE)).toBe(0);
+    } finally {
+      seam.factsThrow = false;
+    }
+    expect((await verdictOf(d.id))!.reasons).toEqual(expect.arrayContaining(['calc_identity', 'calc_foreign', 'calc_refused', 'calc_recent', 'calc_file_missing']));
+    expect(await requestsOn(noteIdFor(d.id))).toHaveLength(0);
+  });
+});
+
+describe('the returned card’s own fences — his ✅ is gated by them alone, never by the machine’s facts (review nit)', () => {
+  const FACTS = { fromCity: 'Xitoy', toCity: 'Toshkent', weightKg: 300, volumeM3: 2, goods: [{ name: 'shim', quantity: 50 }] };
+  type LandInput = Parameters<typeof landIntake>[0];
+  const land = (over: Partial<LandInput>) =>
+    landIntake({
+      machine: false,
+      noteId: randomUUID(),
+      section: 'podklyuch',
+      facts: FACTS,
+      steps: [],
+      fileCount: 0,
+      collectedBy: holderId,
+      collectedByName: 'P2',
+      client: null,
+      leadName: '',
+      leadPhone: null,
+      intakeDoor: null,
+      ...over,
+    });
+  const noteWritten = async (noteId: string) => (await db.select({ id: crmActivities.id }).from(crmActivities).where(eq(crmActivities.id, noteId))).length > 0;
+  const refusalOf = (p: Promise<unknown>) => p.then(() => 'landed', (e: unknown) => (e as { code?: string }).code ?? String(e));
+  let dealSeq = 0;
+  async function openDealOf(clientId: string): Promise<string> {
+    const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+    dealSeq += 1;
+    const [d] = await db
+      .insert(deals)
+      .values({ code: `RC-${SUFFIX}-${dealSeq}`, clientId, stageId: stage!.id, title: 'P2 qaytgan', createdBy: holderId })
+      .returning({ id: deals.id });
+    return d!.id;
+  }
+  async function clientOf(id: string) {
+    const [c] = await db.select({ id: clients.id, clientCode: clients.clientCode, name: clients.name }).from(clients).where(eq(clients.id, id));
+    return c!;
+  }
+  const leadRef = async (id: string) => {
+    const [l] = await db.select({ id: leads.id, name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, id));
+    return l!;
+  };
+
+  it('another client’s deal, a lead the chat does not name, the requester at his cap, a lead lost since — each refused, no note written', async () => {
+    const mine = await clientOf(await freshClient());
+    const theirs = await clientOf(await freshClient());
+    // The control: this client's own open deal takes the job.
+    const ownDeal = await openDealOf(mine.id);
+    const ok = await land({ client: mine, onCard: { kind: 'deal', id: ownDeal } });
+    expect(ok).toMatchObject({ kind: 'deal', id: ownDeal, outcome: 'returned_card' });
+
+    const foreignDeal = await openDealOf(theirs.id);
+    const a = randomUUID();
+    expect(await refusalOf(land({ noteId: a, client: mine, onCard: { kind: 'deal', id: foreignDeal } }))).toBe('note_foreign');
+    expect(await noteWritten(a)).toBe(false);
+
+    const named = await leadRef(await freshLead());
+    const other = await freshLead();
+    const b = randomUUID();
+    expect(await refusalOf(land({ noteId: b, lead: named, onCard: { kind: 'lead', id: other } }))).toBe('note_foreign');
+    expect(await noteWritten(b)).toBe(false);
+
+    const lost = await leadRef(await freshLead());
+    await db.update(leads).set({ stageId: stageIds.lost, lostReason: 'qimmat' }).where(eq(leads.id, lost.id));
+    const c = randomUUID();
+    expect(await refusalOf(land({ noteId: c, lead: lost, onCard: { kind: 'lead', id: lost.id } }))).toBe('lead_closed');
+    expect(await noteWritten(c)).toBe(false);
+
+    const filler: string[] = [];
+    try {
+      const open = async () => Number((await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM calc_requests WHERE requested_by = ${holderId}::uuid AND completed_at IS NULL`))[0]!.n);
+      for (let n = await open(); n < 20; n++) {
+        const [row] = await db.execute<{ id: string }>(sql`
+          INSERT INTO calc_requests (entity_type, entity_id, requested_by, item_count, due_at, section)
+          VALUES ('deal', ${ownDeal}::uuid, ${holderId}::uuid, 1, now() + interval '1 hour', 'yolkira') RETURNING id::text`);
+        filler.push(row!.id);
+      }
+      const d = randomUUID();
+      expect(await refusalOf(land({ noteId: d, client: mine, onCard: { kind: 'deal', id: ownDeal } }))).toBe('too_many_open');
+      expect(await noteWritten(d)).toBe(false);
+    } finally {
+      if (filler.length) await db.delete(calcRequests).where(inArray(calcRequests.id, filler));
+    }
+  });
+});
+
+describe('which of the chat’s files go with a job (review nit: each fence of the window)', () => {
+  it('the customer’s kept files since the chat’s last landed job — not ours, not a deleted line’s, not older, at most the newest ten', async () => {
+    const peer = newPeer();
+    const lead = await freshLead();
+    const owner = { leadId: lead };
+    const HOUR = 3_600_000;
+    // Before the chat's last landed job: the window starts after it.
+    const before = await inbound(peer, owner, 'eski invoys', { ago: 5 * HOUR, media: true });
+    const older = await keptFile(before.rowId, 'old.pdf');
+    const [r] = await db
+      .insert(calcRequests)
+      .values({ entityType: 'lead', entityId: lead, requestedBy: holderId, itemCount: 1, section: 'podklyuch', dueAt: new Date(T0.getTime() + HOUR), completedAt: new Date(T0.getTime() - 4 * HOUR), completedVia: 'lines' })
+      .returning({ id: calcRequests.id });
+    // The landed job's link names the draft that landed it, as every landing writes it.
+    const [landed] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: holderId, peerId: peer, leadId: lead, anchorTgMessageId: before.tgId, status: 'approved', kind: 'reply', proposedBody: 'Hisoblatishga yubordim.' })
+      .returning({ id: agentDrafts.id });
+    await db.insert(agentCalcLinks).values({ requestId: r!.id, rootRequestId: r!.id, managerUserId: holderId, peerId: peer, draftId: landed!.id, createdAt: new Date(T0.getTime() - 4 * HOUR) });
+    // A line the customer deleted, and our own outgoing file, inside the window.
+    const gone = await inbound(peer, owner, 'xato fayl', { ago: 3 * HOUR, media: true });
+    const deleted = await keptFile(gone.rowId, 'deleted.pdf');
+    await db.insert(tgMessageFlags).values({ messageId: gone.rowId, deletedAt: new Date() });
+    msgSeq += 1n;
+    const [out] = await db
+      .insert(tgMessages)
+      .values({ leadId: lead, managerUserId: holderId, peerId: peer, tgMessageId: msgSeq, direction: 'out', body: 'bizning prays', hasMedia: true, sentAt: new Date(T0.getTime() - 3 * HOUR) })
+      .returning({ id: tgMessages.id });
+    const ours = await keptFile(out!.id, 'ours.pdf');
+    // Three of the customer's kept files after the job: exactly those go, oldest first — under the cap, so a fence
+    // that let one of the three above in would show (the cap must not be what hides them).
+    const kept: string[] = [];
+    const add = async (i: number) => {
+      const line = await inbound(peer, owner, `invoys ${i}`, { ago: 2 * HOUR - i * 60_000, media: true });
+      kept.push(await keptFile(line.rowId, `inv-${i}.pdf`));
+    };
+    for (let i = 0; i < 3; i++) await add(i);
+    expect((await chatFilesForJob(holderId, peer, null)).map((f) => f.id)).toEqual(kept);
+    // Twelve: the newest ten go, oldest first.
+    for (let i = 3; i < 12; i++) await add(i);
+    const files = await chatFilesForJob(holderId, peer, null);
+    expect(files.map((f) => f.id)).toEqual(kept.slice(-CALC_FILES_MAX));
+    for (const not of [older, deleted, ours]) expect(files.map((f) => f.id)).not.toContain(not);
   });
 });

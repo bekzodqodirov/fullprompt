@@ -150,8 +150,9 @@ async function markedBefore(draftId: string, requestId: string): Promise<number 
 /**
  * The card already carries this very promise (fix pass 1, finding 3): the newest offer on the mark's anchor is the
  * AI's own, at this price — a later reply that says the same figure again is no new promise, and a second row would
- * only list it twice (or put back a price a person corrected on the card since; then the newest is theirs and the
- * restatement is written). Never throws a refusal: a read is a read.
+ * only list it twice. Where a person's offer is the newest instead, the re-price below refuses it (`person_offer`,
+ * review crm 1): the machine never writes an older figure of its own back over a price a person gave. Never throws a
+ * refusal: a read is a read.
  */
 async function sameOfferStands(m: CalcPriceMark): Promise<boolean> {
   const anchor = m.anchor === 'seal' ? sql`o.version_id = ${m.anchorId}::uuid` : sql`o.request_id = ${m.requestId}::uuid AND o.version_id IS NULL`;

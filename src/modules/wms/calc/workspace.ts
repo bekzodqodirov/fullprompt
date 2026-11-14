@@ -5709,23 +5709,10 @@ export async function recordOffer(
     offeredBy: ctx.actorId,
   };
   const machine = input.machine;
-  // The machine's offer and its mark are ONE transaction of two INSERTs (§2.4a) — every read above is on the pool,
-  // before it (#714), and nothing is read between them.
-  const [saved] = machine
-    ? await db.transaction(async (tx) => {
-        const rows = await tx.insert(calcOffers).values(offerRow).returning({ id: calcOffers.id });
-        await tx.insert(agentOffers).values({ offerId: rows[0]!.id, requestId: request.id, draftId: machine.draftId });
-        return rows;
-      })
-    : await db.insert(calcOffers).values(offerRow).returning({ id: calcOffers.id });
-  // A new standing offer can change what the sellers are owed (it replaces
-  // the job's payable row): the Balans's minute-long memo forgets it (3a).
-  forgetUpsaleLiability();
-
-  await writeAudit(db, ctx, {
+  const auditEntry = (id: string) => ({
     entityType: 'calc_offer',
-    entityId: saved!.id,
-    action: 'create',
+    entityId: id,
+    action: 'create' as const,
     after: {
       versionId,
       requestId,
@@ -5736,6 +5723,30 @@ export async function recordOffer(
       ...(machine ? { via: AUDIT_VIA_AI } : {}),
     },
   });
+  if (machine) {
+    if (belowFloor) throw new CalcError('below_floor_reason_required');
+    // The machine's offer is EVERY write of it in ONE transaction (§2.4a; review crm 0): the offer, its mark, its audit
+    // row and the card's price. Its caller (the after-sent job) retries a database error and takes a mark it finds as
+    // «written» — so a retry must find everything or nothing, never an offer whose card was not written. A machine
+    // never allows a price below the floor (refused just above), so its offer is always released; and it pushes no
+    // second «offer» to the holder's chat (§2.4 — the customer already has the price). Every read above is on the
+    // pool, before it (#714); nothing is read inside it.
+    const saved = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(calcOffers).values(offerRow).returning({ id: calcOffers.id });
+      await tx.insert(agentOffers).values({ offerId: row!.id, requestId: request.id, draftId: machine.draftId });
+      await writeAudit(tx, ctx, auditEntry(row!.id));
+      await applyOfferToCard(row!.id, request, input.clientPriceUsd, tx);
+      return row!;
+    });
+    forgetUpsaleLiability();
+    return { id: saved.id, text, belowFloor, delivered: false, pending: false };
+  }
+  const [saved] = await db.insert(calcOffers).values(offerRow).returning({ id: calcOffers.id });
+  // A new standing offer can change what the sellers are owed (it replaces
+  // the job's payable row): the Balans's minute-long memo forgets it (3a).
+  forgetUpsaleLiability();
+
+  await writeAudit(db, ctx, auditEntry(saved!.id));
 
   // A PENDING promise sends nothing and hands back nothing to forward. The
   // row exists — that is the owner's visibility — but until somebody allows
@@ -5790,12 +5801,14 @@ async function applyOfferToCard(
   offerId: string,
   request: typeof calcRequests.$inferSelect,
   clientPriceUsd: number,
+  // The machine's offer writes the card inside its own transaction (review crm 0); everyone else on the pool.
+  exec: Pick<typeof db, 'update'> = db,
 ): Promise<void> {
   const set = { quotedAmount: clientPriceUsd.toFixed(2), quotedCurrency: 'USD', updatedAt: new Date() };
   if (request.entityType === 'lead') {
-    await db.update(leads).set(set).where(eq(leads.id, request.entityId));
+    await exec.update(leads).set(set).where(eq(leads.id, request.entityId));
   } else {
-    await db.update(deals).set(set).where(eq(deals.id, request.entityId));
+    await exec.update(deals).set(set).where(eq(deals.id, request.entityId));
   }
   logger.info({ offerId, entityId: request.entityId }, '[calc] client price written to card');
 }

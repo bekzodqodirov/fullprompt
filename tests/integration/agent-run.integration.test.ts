@@ -444,6 +444,20 @@ describe('his decision (one function for the bot and the web)', () => {
     const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d!.id));
     expect(after!.status).toBe('expired');
   });
+
+  it('an inbound run keeps ITS 24-hour clock — never the VED answer’s week: 25 h and 6 days refused, 23 h drafted (review tests)', async () => {
+    // The listener catching up after days offline must not draft, bill and card a reply the send step then cancels.
+    for (const hours of [25, 6 * 24]) {
+      await clearChat();
+      const old = await inbound('Yukim qayerda? Qachon keladi?', hours * 3_600_000);
+      expect(await handleInbound(job(old), { callModel: scripted([compose('Tekshirib aytaman.')]) }), `${hours} h`).toEqual({ outcome: 'refused', reason: 'too_old' });
+      expect(await liveDraft(), `${hours} h`).toBeNull();
+    }
+    await clearChat();
+    const fresh = await inbound('Yukim qayerda? Qachon keladi?', 23 * 3_600_000);
+    expect(await handleInbound(job(fresh), { callModel: scripted([compose('Tekshirib aytaman.')]) })).toMatchObject({ outcome: 'draft' });
+    expect(await liveDraft()).not.toBeNull();
+  });
 });
 
 describe('a chat whose bind it does not prove reads none of the client’s own facts (identity review B7)', () => {

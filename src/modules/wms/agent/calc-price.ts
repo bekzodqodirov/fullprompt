@@ -30,7 +30,10 @@ import { calcFromOurWarehouse } from './types';
  * customer in the machine's own words (`submitReplyOf` — «javob kelishi bilan aytaman» was said there and nowhere
  * else; his ✏️ words promised whatever he wrote, an ❌ promised nothing), and he has not priced it himself
  * (`ownerPricedChain` — his 💵 for any member of the chain, given, approved or on its way: his figure always outranks
- * the machine's, at every door that prices it, never only at the VED answer's job).
+ * the machine's, at every door that prices it, never only at the VED answer's job). Nor where a PERSON already gave the
+ * price on the card (`personOfferOn`, review crm 1): the newest released offer on the very anchor it would price is a
+ * person's — a seller's or his own, written through the card's offer form — so the machine never states, and never writes
+ * back over it, an older figure of its own.
  *
  * Reached by dynamic import from the send step (drafts `draftOfferStands`) — it imports nothing the listener cannot
  * load (the calc modules it reads are the pure version-set and upsale predicates), and never throws there: the caller
@@ -43,6 +46,7 @@ export const CALC_PRICE_REFUSALS = [
   'not_linked',
   'owner_words',
   'owner_priced',
+  'person_offer',
   'card_moved',
   'not_standing',
   'expired',
@@ -57,6 +61,7 @@ export const CALC_PRICE_REFUSAL_WORDS: Record<CalcPriceRefusal, string> = {
   not_linked: 'bu hisob AI orqali yuborilmagan yoki VED hali javob bermagan',
   owner_words: 'hisoblatishga yuborilgani haqidagi javob ✏️ bilan qo‘lda yozilgan — narx ham qo‘lda beriladi',
   owner_priced: 'bu hisobga narx 💵 bilan qo‘lda berilgan — o‘sha narx ustun',
+  person_offer: 'kartada sotuvchining yangiroq narxi turibdi — o‘sha narx ustun',
   card_moved: 'hisob turgan karta endi bu chatniki emas',
   not_standing: 'VED javobi endi amal qilmaydi (kartada yangiroq javob yoki muhr bor, yoki qayta hisoblanmoqda)',
   expired: 'VED javobining muddati o‘tgan',
@@ -304,6 +309,7 @@ async function priceChain(
     if (!eligible) return { ok: false, reason: 'discounted' };
     const base = centsOf(row.total_usd ?? '');
     if (base === null || base <= 0n) return { ok: false, reason: 'not_standing' };
+    if (await personOfferOn({ versionId: row.version_id })) return { ok: false, reason: 'person_offer' };
     const { clientDollars } = markupPrice({ baseCents: base, rule });
     return {
       ok: true,
@@ -318,12 +324,35 @@ async function priceChain(
   if (completed.getTime() + validDays * 86_400_000 < now.getTime()) return { ok: false, reason: 'expired' };
   const base = centsOf(row.answer_amount);
   if (base === null || base <= 0n) return { ok: false, reason: 'not_standing' };
+  if (await personOfferOn({ requestId: row.id })) return { ok: false, reason: 'person_offer' };
   const { clientDollars } = markupPrice({ baseCents: base, rule });
   return {
     ok: true,
     baseCents: base,
     mark: { requestId: row.id, section, anchor: 'answer', anchorId: row.id, rule: ruleText, total: Number(clientDollars) },
   };
+}
+
+/**
+ * A PERSON's price is the newest word on this anchor (review crm 1): the newest RELEASED offer on it — in the order it
+ * reached the card (`lastReleasedOfferFor`'s order: the approval for a below-floor promise, else the offer) — carries no
+ * AI mark (`agent_offers`). A seller's or the holder's own hand offer outranks the machine's VED price exactly as his 💵
+ * does: the tool, the VED answer's job, the press, his ✅, every send step and the offer step refuse it in words. A
+ * below-floor promise still waiting for approval reached nobody and is no price yet; an offer on an anchor the machine is
+ * not pricing (an answer a later seal outranked) is not this anchor's word. Reads no amount (law 4 stays this file's).
+ */
+async function personOfferOn(anchor: { versionId: string } | { requestId: string }): Promise<boolean> {
+  const on = 'versionId' in anchor ? sql`o.version_id = ${anchor.versionId}::uuid` : sql`o.request_id = ${anchor.requestId}::uuid AND o.version_id IS NULL`;
+  const rows = (await db.execute(sql`
+    SELECT (a.offer_id IS NULL) AS person
+      FROM calc_offers o
+      LEFT JOIN agent_offers a ON a.offer_id = o.id
+     WHERE ${on}
+       AND (NOT o.below_floor OR o.approved_at IS NOT NULL)
+     ORDER BY coalesce(o.approved_at, o.offered_at) DESC, o.id DESC
+     LIMIT 1
+  `)) as unknown as { person: boolean }[];
+  return [...rows][0]?.person === true;
 }
 
 /** Did the chain's submitting reply say the job was priced from our China warehouses (the link draft's own action)? */

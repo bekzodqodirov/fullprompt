@@ -501,3 +501,29 @@ describe('ONE open-calc cap (§1.3)', () => {
     }
   });
 });
+
+describe('the seat panel and the stage order say what the code does (review crm nits)', () => {
+  const bundles = { uz, ru, en, zh } as const;
+  type Bundle = { agentAi: Record<string, string>; crm: Record<string, string> };
+
+  it('«AI o‘rni boshqada» names the seat’s STORED cap, never a figure typed into the words (1..200 is his to set)', () => {
+    for (const [locale, b] of Object.entries(bundles)) {
+      const words = (b as unknown as Bundle).agentAi.seatElsewhere!;
+      expect(words, locale).toContain('{cap}');
+      expect(words, locale).not.toMatch(/\d/u);
+    }
+    const page = readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8');
+    expect(page).toMatch(/t\('seatElsewhere', \{[^}]*cap: seat\.openLimit \?\? OPEN_CALC_CAP_SEAT_DEFAULT/u);
+  });
+
+  it('/crm/settings says the AI moves the AI account’s lead or nobody’s — never «yours» (the reader is anyone with crm.manage)', () => {
+    const order = (l: keyof typeof bundles) => (bundles[l] as unknown as Bundle).crm.aiStagesOrder!;
+    expect(order('uz')).toContain('AI akkauntiniki yoki egasiz');
+    expect(order('uz')).not.toMatch(/sizniki/u);
+    expect(order('en')).toContain("of the AI's account or nobody's");
+    expect(order('en')).not.toMatch(/\byours\b/u);
+    expect(order('ru')).toContain('аккаунта ИИ или ничей');
+    expect(order('zh')).toContain('AI 账号的或无人负责的');
+    expect(order('zh')).not.toMatch(/您的/u);
+  });
+});

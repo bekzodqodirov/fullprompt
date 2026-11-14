@@ -11,6 +11,38 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   }),
 }));
 
+/**
+ * Reads that FAIL (review tests: every fail-closed catch of the VED price could be flipped open with the suite green).
+ * Each a passthrough until armed: the chain read every price asks (`chatCalcChains`, a db blip), and the two calc-price
+ * entry points the send step and the press reach by dynamic import (`calcPricesStand`, `calcPriceGateFacts`).
+ */
+const fail = vi.hoisted(() => ({ chains: false, stand: false, facts: false }));
+const blip = () => Object.assign(new Error('Connection terminated unexpectedly'), { code: '57P01' });
+vi.mock('@/modules/wms/agent/context', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/wms/agent/context')>();
+  return {
+    ...real,
+    chatCalcChains: async (...args: Parameters<typeof real.chatCalcChains>) => {
+      if (fail.chains) throw blip();
+      return real.chatCalcChains(...args);
+    },
+  };
+});
+vi.mock('@/modules/wms/agent/calc-price', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/wms/agent/calc-price')>();
+  return {
+    ...real,
+    calcPricesStand: async (...args: Parameters<typeof real.calcPricesStand>) => {
+      if (fail.stand) throw blip();
+      return real.calcPricesStand(...args);
+    },
+    calcPriceGateFacts: async (...args: Parameters<typeof real.calcPriceGateFacts>) => {
+      if (fail.facts) throw blip();
+      return real.calcPriceGateFacts(...args);
+    },
+  };
+});
+
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -23,6 +55,7 @@ import {
   agentOffers,
   agentOutbox,
   agentRuns,
+  agentSendCaps,
   auditLog,
   calcOffers,
   calcRequestItems,
@@ -42,12 +75,12 @@ import {
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
-import { AGENT_SEAT_KEY } from '@/modules/platform/settings/agent-seat';
+import { AGENT_SEAT_KEY, agentSeatUserId } from '@/modules/platform/settings/agent-seat';
 import { getSetting, setSetting, SETTINGS_AUDIT_ID } from '@/modules/platform/settings/service';
 import { handleAfterSent } from '@/modules/wms/agent/after-sent';
 import { pressDueAutos, readAutoConfig, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
 import { announceAgentCalc, handleCalcAnswer, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
-import { calcPriceFor, MARKUP_CONFIRMED_KEY } from '@/modules/wms/agent/calc-price';
+import { CALC_PRICE_FACTS_UNREAD, calcPriceFor, calcPriceGateFacts, calcPricesStand, MARKUP_CONFIRMED_KEY } from '@/modules/wms/agent/calc-price';
 import { renderDraftCard } from '@/modules/wms/agent/card-io';
 import { AgentConfigError, confirmCalcMarkup, readAgentConfig, setCalcMarkup, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft } from '@/modules/wms/agent/decide';
@@ -61,6 +94,7 @@ import { JOB_AGENT_CALC_ANSWER, type AgentCalcAnswerJob } from '@/modules/wms/ag
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { armWait, dropWait, flushWaitWrites, nowSec } from '@/modules/platform/telegram/waits';
 import { tgErrorKind } from '@/modules/wms/crm/telegram-guard';
+import { recordOffer } from '@/modules/wms/calc/workspace';
 
 /**
  * «VED javobi → ustama bilan narx» against a real database (SPEC-P2-v2 §2, package P3): the price `calcPriceFor` makes
@@ -102,6 +136,13 @@ let stageId = '';
 let agentSnapshot: AgentConfig | null = null;
 let autoSnapshot: AutoConfig | null = null;
 let sendingBefore = false;
+/**
+ * The account's day and hour of AI sends (0148's caps, CONFIGURATION — put back in `finally`): this file approves one
+ * fresh holder's replies past the 80 of `AGENT_LIMITS.perDay`, and every chain it mints carries a «yubordim» SENT 40
+ * minutes before T0 — past twenty of them the send step's hour cap waits. A ✅ past the day is `budget_spent`, a step
+ * past the hour waits: neither is a subject here.
+ */
+let capsBefore: { dayCap: number | null; hourCap: number | null } = { dayCap: null, hourCap: null };
 const SETTING_KEYS = ['agent_calc_markup_kind', 'agent_calc_markup_value', MARKUP_CONFIRMED_KEY, 'quote_valid_days', AGENT_SEAT_KEY];
 const settingsBefore = new Map<string, unknown>();
 const madeLeads: string[] = [];
@@ -373,6 +414,9 @@ beforeAll(async () => {
   if (!agentSnapshot || !autoSnapshot) throw new Error('0138/0145 are not applied on this database');
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
   for (const key of SETTING_KEYS) settingsBefore.set(key, await rawSetting(key));
+  const [caps] = await db.select({ dayCap: agentSendCaps.dayCap, hourCap: agentSendCaps.hourCap }).from(agentSendCaps).where(eq(agentSendCaps.id, 1));
+  capsBefore = { dayCap: caps?.dayCap ?? null, hourCap: caps?.hourCap ?? null };
+  await db.update(agentSendCaps).set({ dayCap: 200, hourCap: 100 }).where(eq(agentSendCaps.id, 1));
   holderId = await makeUser(`P3 narx egasi ${SUFFIX}`, 'super_admin', '01');
   colleagueId = await makeUser(`P3 narx hamkasb ${SUFFIX}`, 'sales_manager', '02');
   const [acc] = await db
@@ -400,6 +444,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  fail.chains = false;
+  fail.stand = false;
+  fail.facts = false;
   queued.length = 0;
   await armAuto();
   await markup('percent', '10', 'percent:10');
@@ -435,6 +482,7 @@ afterAll(async () => {
     await __restoreAutoConfig(autoSnapshot);
     await setSetting('tg_sending_enabled', sendingBefore, null);
     for (const [key, value] of settingsBefore) await putSetting(key, value);
+    await db.update(agentSendCaps).set(capsBefore).where(eq(agentSendCaps.id, 1));
     await db.update(users).set({ active: false }).where(inArray(users.id, [holderId, colleagueId]));
   }
 });
@@ -551,6 +599,18 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
     // A chat with nothing linked.
     const lone = await chatOn(await freshLead());
     expect(await refusal(await calcPriceFor({ managerUserId: holderId, peerId: lone.peer }))).toBe('not_linked');
+    // A SEAL past its own valid_until — the seal's clock, apart from the answer's (review tests p01).
+    const lapsedLead = await freshLead();
+    const lapsed = await chatOn(lapsedLead);
+    const lapsedReq = await request(lapsedLead, 'rastamojka', lapsed);
+    await submitted(lapsed, lapsedReq);
+    await sealed(lapsedReq, '1300', { validMs: -DAY });
+    expect(await refusal(await calcPriceFor({ managerUserId: holderId, peerId: lapsed.peer }))).toBe('expired');
+    expect(await refusal(await calcPriceFor({ managerUserId: holderId, peerId: lapsed.peer, requestId: lapsedReq }))).toBe('expired');
+    // A person's released offer is the anchor's newest word — a seller's, recorded through the card (review crm 1).
+    const offered = await answeredChain();
+    await recordOffer({ requestId: offered.requestId }, { clientPriceUsd: 1500, locale: 'uz' }, { actorId: colleagueId });
+    expect(await refusal(await calcPriceFor({ managerUserId: holderId, peerId: offered.chat.peer }))).toBe('person_offer');
   });
 });
 
@@ -577,6 +637,21 @@ describe('the VED’s answer queues the price — never a run inside the VED’s
     expect(p.text).toContain('🤖 AI mijozga ustama bilan narx aytadi');
     expect(p.text).toContain('VED 1 234,56 $ · ustama 10 % → mijozga 1 359 $');
     expect(p.priceable).toBe(true);
+  });
+
+  it('a VED answer for an account the agent no longer speaks from queues no price run (review nit)', async () => {
+    const c = await answeredChain();
+    await db.update(agentConfig).set({ ownerUserId: colleagueId }).where(eq(agentConfig.id, 1));
+    const sent: unknown[] = [];
+    try {
+      await announceAgentCalc(c.requestId, 'done', { amountText: '1234.56 USD' }, { enqueue: async (...a) => void sent.push(a), now: T0 });
+      expect(sent).toEqual([]);
+    } finally {
+      await db.update(agentConfig).set({ ownerUserId: holderId }).where(eq(agentConfig.id, 1));
+    }
+    // The control: back on the account it spoke from, the same answer queues its price.
+    await announceAgentCalc(c.requestId, 'done', { amountText: '1234.56 USD' }, { enqueue: async (...a) => void sent.push(a), now: T0 });
+    expect(sent).toHaveLength(1);
   });
 
   it('an answer in the night is queued for 08:30 Tashkent; an estimate, a reply that never went, garbage markup queue nothing', async () => {
@@ -707,12 +782,17 @@ describe('the price stops standing — at the press, at his ✅ and at the send 
   const markupEdit = async () => {
     await putSetting('agent_calc_markup_value', '12');
   };
+  // A seller records the price he agreed on the phone — the card's offer form (review crm 1).
+  const personOffer = async (c: { chat: Chat; requestId: string }) => {
+    await recordOffer({ requestId: c.requestId }, { clientPriceUsd: 1500, locale: 'uz' }, { actorId: colleagueId });
+  };
 
   it.each([
     ['a later seal on the same card', later],
     ['a newer answer on the same card', newer],
     ['the quote’s clock', expired],
     ['a markup edit', markupEdit],
+    ['a person’s offer on the card', personOffer],
   ] as const)('%s: refused at the press, at his ✅ and at the send step', async (_name, change) => {
     // At the press.
     const a = await answeredChain();
@@ -743,6 +823,39 @@ describe('the price stops standing — at the press, at his ✅ and at the send 
       final: true,
       reason: 'calc_price_moved',
     });
+  });
+
+  it('an expired SEAL — its own clock, apart from the answer’s: refused at the press, at his ✅ and at the send step (review tests p01)', async () => {
+    const sealedChain = async () => {
+      const leadId = await freshLead();
+      const chat = await chatOn(leadId);
+      const requestId = await request(leadId, 'rastamojka', chat);
+      await submitted(chat, requestId);
+      const versionId = await sealed(requestId, '1300');
+      return { chat, requestId, versionId };
+    };
+    const lapse = (versionId: string) => db.update(calcVersions).set({ validUntil: new Date(Date.now() - DAY) }).where(eq(calcVersions.id, versionId));
+    // At the press.
+    const a = await sealedChain();
+    const atPress = await priceDraft(a, PRICED('1430'));
+    expect((await verdictOf(atPress))!.state).toBe('waiting');
+    await lapse(a.versionId);
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await outboxOf(atPress)).toHaveLength(0);
+    expect((await verdictOf(atPress))!.outcome).toMatch(/calc_price_moved/u);
+    // At his ✅.
+    const b = await sealedChain();
+    const atOk = await priceDraft(b, PRICED('1430'));
+    await lapse(b.versionId);
+    expect(await draftOfferStands(atOk)).toBe('calc_price_moved');
+    expect(await decideDraft(person(), atOk, 'send', { digest: await digestOf(atOk) }, { actorId: holderId })).toEqual({ ok: false, code: 'calc_price_moved' });
+    // At the send step: approved while it stood, lapsed before it went.
+    const s = await sealedChain();
+    const atSend = await priceDraft(s, PRICED('1430'));
+    expect(await decideDraft(person(), atSend, 'send', { digest: await digestOf(atSend) }, { actorId: holderId })).toMatchObject({ ok: true });
+    await lapse(s.versionId);
+    const [o] = await outboxOf(atSend);
+    expect((await sendFactsFor((await agentRowById(o!.id))!, STEP_NOW(), stepCtx())).offerStands).toBe('calc_price_moved');
   });
 
   it('a discount added by a correction’s seal: the old price stops standing', async () => {
@@ -813,6 +926,17 @@ describe('his doors on the markup (§2.1)', () => {
     expect(await rawSetting(MARKUP_CONFIRMED_KEY)).toBe('percent:7.5');
     expect(await setCalcMarkup({ id: holderId, roles: ['super_admin'] }, { kind: 'percent', value: '' }, { actorId: holderId })).toMatchObject({ value: '' });
     expect(await confirmCalcMarkup({ id: holderId, roles: ['super_admin'] }, 'none', { actorId: holderId })).toBe('none');
+    // «✅ Ustama to‘g‘ri» is his too: a colleague's press vouches for nothing, whatever rule the page showed him.
+    expect(await refused(confirmCalcMarkup({ id: colleagueId, roles: ['sales_manager'] }, 'none', { actorId: colleagueId }))).toBe('forbidden');
+  });
+
+  it('a stored seat that is no user id names nobody — fails closed (review nit)', async () => {
+    for (const garbage of ['', 'not-a-uuid', `${holderId}x`, '12345']) {
+      await putSetting(AGENT_SEAT_KEY, garbage);
+      expect(await agentSeatUserId(), garbage).toBeNull();
+    }
+    await putSetting(AGENT_SEAT_KEY, holderId.toUpperCase());
+    expect(await agentSeatUserId()).toBe(holderId.toLowerCase());
   });
 });
 
@@ -1210,5 +1334,96 @@ describe('fix pass 1 — what goes by itself (the VED price)', () => {
     expect(refused).toBe('markup_changed');
     expect(await rawSetting(MARKUP_CONFIRMED_KEY)).toBeNull();
     expect(await confirmCalcMarkup(holder, 'fixed:1', { actorId: holderId })).toBe('fixed:1');
+  });
+});
+
+describe('review — the price’s untested guards (the tests lens)', () => {
+  it('the VED price on a chain whose lead a colleague now owns → `calc_foreign`: the machine presses nothing (p07)', async () => {
+    const c = await answeredChain();
+    await db.update(leads).set({ ownerId: colleagueId }).where(eq(leads.id, c.chat.leadId));
+    const draftId = await priceDraft(c);
+    expect((await verdictOf(draftId))!.reasons).toContain('calc_foreign');
+    // The control: the same chain on the holder's own lead counts down.
+    const own = await answeredChain();
+    const ownDraft = await priceDraft(own);
+    expect((await verdictOf(ownDraft))!.reasons).not.toContain('calc_foreign');
+  });
+
+  it('a job submitted «from our warehouses»: the price carries it, the draft keeps it, a reply without the two sentences is blocked (p18)', async () => {
+    const c = await answeredChain('1234.56', { fromOurWarehouse: true });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toMatchObject({ ok: true, fromOurWarehouse: true });
+    const draftId = await priceDraft(c, PRICED('1359'));
+    const p = (await draftOf(draftId)).policy as { memory: { fromOurWarehouse?: boolean }; blocks: { code: string }[] };
+    expect(p.memory.fromOurWarehouse).toBe(true);
+    expect(p.blocks.map((b) => b.code)).toContain('warehouse_condition');
+    // The control: a job not submitted so carries neither.
+    const plain = await answeredChain();
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: plain.chat.peer })).toMatchObject({ ok: true, fromOurWarehouse: false });
+  });
+
+  it('re-saving the SAME markup retires nothing — a pending price stays pending, an approved one still goes (k45)', async () => {
+    const pending = await answeredChain();
+    const p = await priceDraft(pending);
+    const waiting = await answeredChain();
+    const w = await priceDraft(waiting);
+    expect(await decideDraft(person(), w, 'send', { digest: await digestOf(w) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const holder = { id: holderId, roles: ['super_admin'] };
+    expect(await setCalcMarkup(holder, { kind: 'percent', value: '10' }, { actorId: holderId })).toMatchObject({ retired: 0 });
+    expect((await draftOf(p)).status).toBe('pending');
+    expect((await outboxOf(w))[0]).toMatchObject({ status: 'agent' });
+  });
+
+  it('a price draft he already edited with ✏️ is his own figure — a markup change does not retire it (k47)', async () => {
+    const c = await answeredChain();
+    const p = await priceDraft(c);
+    await db.update(agentDrafts).set({ finalBody: 'Narx 1500 $, kelishamiz.' }).where(eq(agentDrafts.id, p));
+    const holder = { id: holderId, roles: ['super_admin'] };
+    await setCalcMarkup(holder, { kind: 'fixed', value: '150' }, { actorId: holderId });
+    expect((await draftOf(p)).status).toBe('pending');
+    // The control: the machine's own words on another rule are retired by the same press.
+    await markup('percent', '10', 'percent:10');
+    const other = await answeredChain();
+    const q = await priceDraft(other);
+    await setCalcMarkup(holder, { kind: 'fixed', value: '150' }, { actorId: holderId });
+    expect((await draftOf(q)).status).toBe('superseded');
+  });
+});
+
+describe('a read that FAILS is a price that does not stand — every fail-closed door of the VED price (review tests)', () => {
+  it('the chain read fails: calc-price answers «moved» and refuses all four facts; his ✅ and the send step say `calc_price_moved`', async () => {
+    const c = await answeredChain();
+    const draftId = await priceDraft(c);
+    const marks = ((await draftOf(draftId)).policy as { memory: { calcPrices: unknown } }).memory.calcPrices;
+    const chat = { managerUserId: holderId, peerId: c.chat.peer };
+    // The control: read, it stands.
+    expect(await calcPricesStand(marks, chat)).toBe(true);
+    fail.chains = true;
+    try {
+      expect(await calcPricesStand(marks, chat)).toBe(false);
+      expect(await calcPriceGateFacts(marks, chat, new Date())).toEqual(CALC_PRICE_FACTS_UNREAD);
+      expect(await draftOfferStands(draftId)).toBe('calc_price_moved');
+    } finally {
+      fail.chains = false;
+    }
+  });
+
+  it('the price’s module throws at the send step or at the press: `calc_price_moved` and every fact refused — nothing pressed', async () => {
+    const c = await answeredChain();
+    const draftId = await priceDraft(c);
+    expect((await verdictOf(draftId))!.state).toBe('waiting');
+    fail.stand = true;
+    try {
+      expect(await draftOfferStands(draftId)).toBe('calc_price_moved');
+    } finally {
+      fail.stand = false;
+    }
+    fail.facts = true;
+    try {
+      expect(await pressDueAutos(DUE)).toBe(0);
+    } finally {
+      fail.facts = false;
+    }
+    expect(await outboxOf(draftId)).toHaveLength(0);
+    expect((await verdictOf(draftId))!.reasons).toEqual(expect.arrayContaining(['markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'calc_foreign', 'media']));
   });
 });

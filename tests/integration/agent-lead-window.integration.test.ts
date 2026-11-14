@@ -54,11 +54,16 @@ const actor = () => ({ id: ownerId, roles: ['super_admin'], permissions: new Set
 const ctx = () => ({ actorId: ownerId });
 const stepCtx = () => ({ accountId, caughtUp: () => true, random: () => 0 });
 
-/** Freeze the app's clock at `at`, with the listener's two stamps on the same clock (S11). */
+/**
+ * Freeze the app's clock at `at`, with the listener's two stamps on the same clock (S11) — and the agent's start a month
+ * before it: the ramp's clock is `startedAt`, and one read off the REAL now went past these fixed days on 2026-11-14
+ * (a day under 14 days after the start has a ceiling of one send, so the control's ✅ answered `budget_spent`).
+ */
 async function clockAt(at: Date) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(at);
   await db.update(tgAccountGuard).set({ agentPumpAt: at, caughtUpAt: at }).where(eq(tgAccountGuard.accountId, accountId));
+  await db.update(agentConfig).set({ startedAt: new Date(at.getTime() - 30 * 86_400_000) }).where(eq(agentConfig.id, 1));
 }
 
 /** The customer's question on a lead chat, and a pending draft of HIS words answering it. */

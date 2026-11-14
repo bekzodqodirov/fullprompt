@@ -626,7 +626,8 @@ async function SettingsSection({
           )}
           {/* «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4): the seat is the account the AI speaks from,
               named by a super_admin; re-pointing the holder leaves it naming the old one and every seat-only act
-              stops (the 100-request cap, the AI's price on a card) until he names it again. */}
+              stops (the seat's open-request cap — the stored one, never a figure typed in the words — and the AI's
+              price on a card) until he names it again. */}
           <div className="space-y-1 border-t border-line pt-2" data-testid="agent-seat" data-seat={seat.state}>
             <p className="text-sm font-semibold">{t('seatTitle')}</p>
             <p
@@ -636,7 +637,7 @@ async function SettingsSection({
               {seat.state === 'holds'
                 ? `✅ ${t('seatHolds', { name: seat.seatName ?? '—' })}`
                 : seat.state === 'elsewhere'
-                  ? `⚠ ${t('seatElsewhere', { name: seat.seatName ?? '—' })}`
+                  ? `⚠ ${t('seatElsewhere', { name: seat.seatName ?? '—', cap: seat.openLimit ?? OPEN_CALC_CAP_SEAT_DEFAULT })}`
                   : t('seatNone')}
             </p>
             <p className="text-xs text-ink-500">{t('seatHint')}</p>

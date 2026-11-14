@@ -38,7 +38,7 @@ import {
 import { enqueue, getBoss } from '@/modules/platform/jobs/boss';
 import { AGENT_SEAT_KEY } from '@/modules/platform/settings/agent-seat';
 import { handleAfterSent, OFFER_WORDS, queueMissedAfterSent } from '@/modules/wms/agent/after-sent';
-import { calcPriceFor, MARKUP_CONFIRMED_KEY, type CalcPriceMark } from '@/modules/wms/agent/calc-price';
+import { CALC_PRICE_REFUSAL_WORDS, calcPriceFor, MARKUP_CONFIRMED_KEY, type CalcPriceMark } from '@/modules/wms/agent/calc-price';
 import { renderDraftCard } from '@/modules/wms/agent/card-io';
 import { __forgetAgentFullP2Ready, __pretendAgentFullP2Behind, __restoreAgentConfig, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { loadContext } from '@/modules/wms/agent/context';
@@ -63,6 +63,25 @@ import { arriveOnDeal, removeArrived } from '../fixtures/deal-cargo';
  * back in `finally`; the stages, leads, deals, requests and chats this file mints are removed; fixture people are
  * deactivated, never deleted (the audit FK).
  */
+
+/**
+ * A database error inside the machine offer's own write (review crm 0): the offer's audit row throws ONCE when armed —
+ * a passthrough otherwise. The retry must find everything or nothing, never an offer whose card was not written.
+ */
+const fault = vi.hoisted(() => ({ auditOnce: false }));
+vi.mock('@/modules/platform/audit/service', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/platform/audit/service')>();
+  return {
+    ...real,
+    writeAudit: async (...args: Parameters<typeof real.writeAudit>) => {
+      if (fault.auditOnce && args[2].entityType === 'calc_offer') {
+        fault.auditOnce = false;
+        throw Object.assign(new Error('Connection terminated unexpectedly'), { code: '57P01' });
+      }
+      return real.writeAudit(...args);
+    },
+  };
+});
 
 const SUFFIX = String(Date.now()).slice(-6);
 let seq = BigInt(`86${SUFFIX}`) * 1000n;
@@ -489,6 +508,21 @@ describe('the job is queued from the listener’s `sent` branch alone — one jo
     expect(await send()).toBeNull();
     expect(await afterSentJobs(due.outboxId)).toHaveLength(1);
   });
+
+  it('the minute sweep drives the net at ITS clock: a sent row with no recorded outcome is queued under its own id (review tests)', async () => {
+    const { agentSweep } = await import('@/modules/wms/agent/jobs');
+    const c = await pricedChain();
+    // The oldest row inside the day's window, so the net's cap (oldest first) always reaches it.
+    const due = await reply(c.chat, { memory: calcMemory(c.marks), sentAgoMs: 24 * 3_600_000 - 90_000 });
+    const startedAt = new Date();
+    const out = await agentSweep(new Date());
+    // Jobs this sweep queued for OTHER files' rows go — the shared database is left as found (#183).
+    await db.execute(
+      sql`DELETE FROM pgboss.job WHERE name = ${JOB_AGENT_AFTER_SENT} AND created_on >= ${startedAt.toISOString()}::timestamptz AND id <> ${due.outboxId}::uuid`,
+    );
+    expect(out.afterSent).toBeGreaterThanOrEqual(1);
+    expect((await afterSentJobs(due.outboxId)).map((j) => [j.outbox, j.retry_limit])).toEqual([[due.outboxId, AFTER_SENT_RETRY_LIMIT]]);
+  });
 });
 
 describe('the offer — written onto the card after the price WENT (§2.4)', () => {
@@ -525,6 +559,90 @@ describe('the offer — written onto the card after the price WENT (§2.4)', () 
     await db.update(agentDrafts).set({ policy: sql`${agentDrafts.policy} - 'afterSent'` }).where(eq(agentDrafts.id, draftId));
     expect(await handleAfterSent({ outboxId })).toMatchObject({ outcome: 'done', offer: ['💳 Kartaga yozildi: 1 359 $'] });
     expect(await offersOn(c.requestId)).toHaveLength(1);
+  });
+
+  it('a database error inside the offer’s write leaves NOTHING — the retry writes the offer, its mark, its audit and the card’s price together (review crm 0)', async () => {
+    const c = await pricedChain();
+    const { outboxId, draftId } = await reply(c.chat, { memory: calcMemory(c.marks) });
+    fault.auditOnce = true;
+    await expect(handleAfterSent({ outboxId })).rejects.toThrow(/Connection terminated/u);
+    // The first attempt died: no half of it stands — no offer, no mark, no price on the card, no recorded outcome.
+    expect(await offersOn(c.requestId)).toHaveLength(0);
+    expect(await marksOn(c.requestId)).toHaveLength(0);
+    expect((await leadOf(c.leadId)).quotedAmount).toBeNull();
+    expect(((await draftOf(draftId)).policy as { afterSent?: unknown }).afterSent).toBeUndefined();
+    // pg-boss redelivers the job: the card says «yozildi» and HOLDS it, the offer carries its audit row.
+    expect(await handleAfterSent({ outboxId })).toMatchObject({ outcome: 'done', offer: ['💳 Kartaga yozildi: 1 359 $'] });
+    const offers = await offersOn(c.requestId);
+    expect(offers.map((o) => o.clientPriceUsd)).toEqual(['1359.00']);
+    expect(await marksOn(c.requestId)).toHaveLength(1);
+    expect((await leadOf(c.leadId)).quotedAmount).toBe('1359.00');
+    const audits = await db.select().from(auditLog).where(and(eq(auditLog.entityType, 'calc_offer'), eq(auditLog.entityId, offers[0]!.id)));
+    expect(audits).toHaveLength(1);
+  });
+
+  it('a person’s newer offer on the card is never written over — the restatement says so; one AI offer, his price on the card (review crm 1)', async () => {
+    // A lead nobody owns (K3 admits it): the AI's price went and was written.
+    const c = await pricedChain({ owner: null });
+    const first = await reply(c.chat, { memory: calcMemory(c.marks) });
+    expect(await handleAfterSent({ outboxId: first.outboxId })).toMatchObject({ offer: ['💳 Kartaga yozildi: 1 359 $'] });
+    // A seller records the price HE agreed on the phone (the card's offer form).
+    const human = await recordOffer({ requestId: c.requestId }, { clientPriceUsd: 1500, locale: 'uz' }, { actorId: sellerId });
+    expect((await leadOf(c.leadId)).quotedAmount).toBe('1500.00');
+    // The price is no longer the machine's to state: the tool, the job and every re-price refuse it in words.
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'person_offer' });
+    // A restatement that went anyway (drafted before his offer): never a second AI row, never his price overwritten.
+    const again = await reply(c.chat, { memory: calcMemory(c.marks) });
+    expect(await handleAfterSent({ outboxId: again.outboxId })).toMatchObject({ offer: [OFFER_WORDS.notWritten(CALC_PRICE_REFUSAL_WORDS.person_offer)] });
+    const offers = (await offersOn(c.requestId)).sort((a, b) => a.offeredAt.getTime() - b.offeredAt.getTime());
+    expect(offers.map((o) => [o.clientPriceUsd, o.offeredBy === sellerId])).toEqual([
+      ['1359.00', false],
+      ['1500.00', true],
+    ]);
+    expect(await marksOn(c.requestId)).toHaveLength(1);
+    expect((await leadOf(c.leadId)).quotedAmount).toBe('1500.00');
+    expect((await offersFor('lead', c.leadId))[0]).toMatchObject({ id: human.id, byAi: false });
+  });
+
+  it('whose offer stands on the anchor decides — his own hand offer refuses, a pending below-floor one does not, the AI’s own newest does not (review crm 1)', async () => {
+    // The holder recorded the price by hand on the card: a person's price too, the machine does not quote over it.
+    const own = await pricedChain({ owner: null });
+    await recordOffer({ requestId: own.requestId }, { clientPriceUsd: 1450, locale: 'uz' }, { actorId: holderId });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: own.chat.peer })).toEqual({ ok: false, reason: 'person_offer' });
+    // A below-floor offer waiting for approval reached no customer and no card: the machine's price still stands.
+    const pending = await pricedChain({ owner: null });
+    await recordOffer({ requestId: pending.requestId }, { clientPriceUsd: 1000, locale: 'uz', belowFloorReason: 'eski mijoz', mayApprove: false }, { actorId: sellerId });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: pending.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ total: 1359 })] });
+    // An older person's offer under the AI's own newer one: the newest is the machine's, its price stands.
+    const older = await pricedChain({ owner: null });
+    await recordOffer({ requestId: older.requestId }, { clientPriceUsd: 1500, locale: 'uz' }, { actorId: sellerId });
+    const { draftId } = await reply(older.chat, { status: 'cancelled' });
+    await new Promise((r) => setTimeout(r, 5));
+    await recordOffer({ requestId: older.requestId }, { clientPriceUsd: 1359, locale: 'uz', mayApprove: false, push: false, machine: { draftId } }, { actorId: holderId });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: older.chat.peer })).toMatchObject({ ok: true });
+  });
+
+  it('the anchor decides on a seal too: a seller’s offer on the seal refuses; one on the answer a later seal outranked does not (review crm 1)', async () => {
+    const sealOn = async (requestId: string) => {
+      const at = new Date(Date.now() - 10 * 60_000);
+      const [v] = await db
+        .insert(calcVersions)
+        .values({ requestId, versionNo: 1, sealedAt: at, sealedBy: holderId, validUntil: new Date(Date.now() + 10 * DAY), section: 'rastamojka', totalUsd: '1300' })
+        .returning({ id: calcVersions.id });
+      await db.update(calcRequests).set({ completedAt: at, completedVia: 'sealed', currentVersionNo: 1 }).where(eq(calcRequests.id, requestId));
+      return v!.id;
+    };
+    const onSeal = await pricedChain({ owner: null });
+    const v = await sealOn(onSeal.requestId);
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: onSeal.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ anchor: 'seal', total: 1430 })] });
+    await recordOffer({ versionId: v }, { clientPriceUsd: 1500, locale: 'uz' }, { actorId: sellerId });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: onSeal.chat.peer })).toEqual({ ok: false, reason: 'person_offer' });
+    // A seller's offer on the «Готово» answer, then the VED sealed the same job: the seal is the newest word, priced.
+    const outranked = await pricedChain({ owner: null });
+    await recordOffer({ requestId: outranked.requestId }, { clientPriceUsd: 1500, locale: 'uz' }, { actorId: sellerId });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: outranked.chat.peer })).toEqual({ ok: false, reason: 'person_offer' });
+    await sealOn(outranked.requestId);
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: outranked.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ anchor: 'seal' })] });
   });
 
   it('ONE transaction: a mark that cannot be written leaves no offer and no price on the card', async () => {
