@@ -159,6 +159,7 @@ const env = (ctx: AgentContext): ToolEnv => ({
   kb: async () => [],
   chinaPlaces: async () => OURS,
   priceArmed: false,
+  calcArmed: false,
 });
 
 const compose = (over: Partial<ComposeReply> = {}): ComposeReply => ({

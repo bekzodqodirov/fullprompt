@@ -67,6 +67,11 @@ export interface CardRenderOptions {
    * name it in; absent, the words say the cap was reached without a figure (never a second constant).
    */
   openCalcCap?: number | null;
+  /**
+   * The card a calculation landed on while its reply did not go (`LANDED_UNSENT`, SPEC-P2-v2 §1.2) — a deal's code or
+   * «lid …», read by the renderer that draws that line; absent, the line names no card.
+   */
+  landedLabel?: string | null;
 }
 
 /** «2 soat» for whole hours, «90 daqiqa» otherwise — the config is minutes, he reads time. */
@@ -178,6 +183,21 @@ const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answ
 export const LANDING_CLAIM = 'landing';
 
 /**
+ * …and the marker a press leaves when it LOST after its calculation landed (SPEC-P2-v2 §1.2: ⏸, 🙋 or a disarm
+ * between the landing and the approval): the job is at the VED, linked, and the customer was told nothing. A later ✅
+ * reuses the job (decide `noteIdFor`); ❌ leaves it at the VED.
+ */
+export const LANDED_UNSENT = 'landed_unsent';
+
+/** The card's line for `LANDED_UNSENT` — on a live card, and on one he then ❌'d. */
+export function landedUnsentLine(label: string | null | undefined, rejected = false): string {
+  const where = label ? ` (${label})` : '';
+  return rejected
+    ? `🧮 Hisoblatish VEDda qoldi${where} — mijozga javob ketmadi.`
+    : `🧮 VEDga tushdi${where} — mijozga javob ketmadi: ✅ bilan yuboring yoki ❌ (VED ishi qoladi).`;
+}
+
+/**
  * Why the VED queue did not take a calculation, in words (final review K26)
  * — the staff bot's own sentences for the same refusals (staff-handlers
  * `QUEUE_REFUSAL`), told as what HE can do about them: a job is never «sent
@@ -257,6 +277,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       // A ✅ whose calculation the queue refused (K26): the draft waits, and says why, for as long as it stands.
       // A press landing it right now (decide `claimLanding`) says so, never «did not reach the queue».
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
+      if (d.actionError === LANDED_UNSENT) return landedUnsentLine(opts.landedLabel);
       if (d.actionStatus === 'failed') {
         return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError, opts.openCalcCap ?? null)}. Javob yuborilmadi.`;
       }
@@ -281,7 +302,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
         ? '✏️ Matnni shu botga yozing (mijozning chatiga emas) — yoki AI matnini ✅ bilan yuboring.'
         : '✏️ Matnni shu botga yozing (mijozning chatiga emas) — keyin ✅ chiqadi.';
     case 'rejected':
-      return '❌ Rad etildi.';
+      return d.actionError === LANDED_UNSENT ? `❌ Rad etildi. ${landedUnsentLine(opts.landedLabel, true)}` : '❌ Rad etildi.';
     case 'superseded':
       return STALE_WORDS[(((d.policy ?? {}) as { stale?: string }).stale ?? '') as keyof typeof STALE_WORDS] ?? '↪️ Mijoz yana yozdi — yangi qoralama.';
     case 'expired':
@@ -492,6 +513,23 @@ async function humanReplyAt(d: DraftRow): Promise<Date | null> {
   return first?.sentAt ?? null;
 }
 
+/** The card the draft's landed job sits on, through its link (`agent_calc_links.draft_id`): «B-…» or «lid …». */
+async function landedCardLabel(draftId: string): Promise<string | null> {
+  const rows = (await db.execute(sql`
+    SELECT r.entity_type, d.code, l.name
+      FROM agent_calc_links k
+      JOIN calc_requests r ON r.id = k.request_id
+      LEFT JOIN deals d ON r.entity_type = 'deal' AND d.id = r.entity_id
+      LEFT JOIN leads l ON r.entity_type = 'lead' AND l.id = r.entity_id
+     WHERE k.draft_id = ${draftId}::uuid
+     ORDER BY k.created_at DESC
+     LIMIT 1
+  `)) as unknown as { entity_type: string; code: string | null; name: string | null }[];
+  const row = rows[0];
+  if (!row) return null;
+  return row.entity_type === 'deal' ? row.code : row.name ? `lid «${row.name}»` : 'lid';
+}
+
 /**
  * Re-render the draft's card and put it everywhere it is: the notification
  * row's payload (so an unsent copy goes out current) and the sent Telegram
@@ -515,7 +553,9 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   const auto = await autoCardStateFor(draftId);
   // The open-calc cap is read only for the one refusal that names it — the holder's own (§1.3).
   const openCalcCap = d.actionError === 'too_many_open' ? await openCalcCapFor(d.managerUserId) : null;
-  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, openCalcCap, auto });
+  // The card a landed-but-unsent job sits on — read only for the one line that names it (§1.2).
+  const landedLabel = d.actionError === LANDED_UNSENT ? await landedCardLabel(d.id) : null;
+  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, openCalcCap, landedLabel, auto });
   const live = d.status === 'pending' || d.status === 'editing';
   const body = digestBody(d);
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;

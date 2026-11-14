@@ -357,6 +357,7 @@ describe('a Chinese place we have no warehouse in is priced from ours — the co
       kb: async () => [],
       chinaPlaces: async () => OURS,
       priceArmed: false,
+      calcArmed: false,
     };
     const out = await runTool('calc_checklist', { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] }, env);
     expect(out.checklist).toMatchObject({ complete: true, fromOurWarehouse: true, facts: { fromCity: 'Dongguan' } });

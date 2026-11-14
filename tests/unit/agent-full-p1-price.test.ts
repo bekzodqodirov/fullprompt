@@ -184,6 +184,7 @@ const env = (ctx: AgentContext, priceArmed: boolean): ToolEnv => ({
   kb: async () => [],
   chinaPlaces: async () => new Set(['Yiwu', 'Guangzhou']),
   priceArmed,
+  calcArmed: false,
 });
 
 describe('the avia tool’s words, his price act off and on (spec §1.2)', () => {

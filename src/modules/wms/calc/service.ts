@@ -995,6 +995,41 @@ export async function returnCalcRequest(
   await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
 }
 
+/**
+ * The «↩️ Ma'lumot to'ldiring» tasks a hand-back opened on a card, closed by the one who fills the information in
+ * (SPEC-P2-v2 §1.5: the AI seller's resubmission lands on the returned request's card and closes its task with
+ * «AI ma'lumotni to'ldirib qayta yubordi»). The task's own origin (`calc_return`) and assignee say which — never a
+ * title. A compare-and-set on 'open', audited under the person the task was for, its Telegram copies retired after the
+ * write. Pooled, never inside a transaction (#714). Returns how many it closed.
+ */
+export async function closeReturnTasks(input: { entityType: string; entityId: string; holderId: string; result: string }): Promise<number> {
+  const now = new Date();
+  const closed = await db
+    .update(tasks)
+    .set({ status: 'done', doneAt: now, doneBy: input.holderId, result: input.result, updatedAt: now })
+    .where(
+      and(
+        eq(tasks.origin, 'calc_return'),
+        eq(tasks.entityType, input.entityType),
+        eq(tasks.entityId, input.entityId),
+        eq(tasks.assigneeId, input.holderId),
+        eq(tasks.status, 'open'),
+      ),
+    )
+    .returning({ id: tasks.id });
+  for (const t of closed) {
+    await writeAudit(db, { actorId: input.holderId }, {
+      entityType: 'task',
+      entityId: t.id,
+      action: 'status_change',
+      before: { status: 'open' },
+      after: { status: 'done', result: input.result },
+    });
+  }
+  if (closed.length > 0) retireTaskCopiesSoon({ taskIds: closed.map((t) => t.id), outcome: 'done' });
+  return closed.length;
+}
+
 /** The currencies the fold offers — the answer is typed as the VED read it. */
 const ANSWER_CURRENCIES = new Set(['USD', 'UZS', 'CNY']);
 

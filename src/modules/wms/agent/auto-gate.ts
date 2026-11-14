@@ -43,6 +43,12 @@ export const AUTO_REFUSALS = [
   'warnings',
   'notes',
   'actions',
+  // A calculation the machine lands by itself (SPEC-P2-v2 §1.1) — asked only of a draft judged as `calc`.
+  'calc_identity',
+  'calc_foreign',
+  'calc_refused',
+  'calc_recent',
+  'calc_file_missing',
   'money',
   // The money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.8, §2.2): each its own refusal, its own words.
   'money_unread',
@@ -89,6 +95,11 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   warnings: 'kartada ogohlantirish bor',
   notes: 'kartada izoh bor',
   actions: 'javob bilan birga amal bor (hisoblatish yoki AI o‘chirish)',
+  calc_identity: 'chat telefon bilan tasdiqlanmagan — hisoblatishni o‘zingiz yuboring',
+  calc_foreign: 'bu boshqa sotuvchining mijozi yoki lidi',
+  calc_refused: 'VED navbati bu hisoblatishni olmaydi (lid yopilgan yoki ochiq so‘rovlar to‘la)',
+  calc_recent: '14 kun ichida shu yuk uchun hisoblatish bor — ikkinchisini o‘zingiz yuboring',
+  calc_file_missing: 'mijoz yuborgan fayl saqlanmagan — VED uni ko‘rmaydi',
   money: 'javobda pul (narx, balans yoki taxminiy hisob) bor',
   money_unread: 'javobda pul so‘zi bor, lekin raqami o‘qilmadi',
   numeral_unread: 'javobda ieroglif bilan yozilgan son bo‘lishi mumkin — uni o‘qib bo‘lmadi',
@@ -157,6 +168,33 @@ export interface AutoLedgerLine {
   tool: string | null;
   role: string | null;
 }
+
+/**
+ * A draft whose ONLY act besides a follow-up is ONE calculation sent to the VED (SPEC-P2-v2 §1.1): judged as category
+ * `calc` — by what it does, never by the model's label (the model labels a submit reply `price` or `qualification`).
+ * A draft that also mutes, or that carries two submits, is not one. ONE home: the gate and `autoFactsFor`, which reads
+ * the calc facts only for such a draft.
+ */
+export function isCalcSubmitOnly(actionTypes: readonly string[]): boolean {
+  return actionTypes.filter((a) => a === 'calc_submit').length === 1 && actionTypes.every((a) => a === 'calc_submit' || a === 'set_followup');
+}
+
+/** The five gate facts of a calc submit (§1.1, read by calc-submit `calcSubmitFacts`) — each TRUE where it refuses. */
+export interface CalcSubmitFacts {
+  /** `calc_identity`: neither a lead chat nor a client the chat proved by phone. */
+  unproven: boolean;
+  /** `calc_foreign`: the landing's card is a colleague's (`machineMayTouch`, K3). */
+  foreign: boolean;
+  /** `calc_refused`: the queue would refuse — the lead closed, or the holder's open requests at their cap. */
+  refused: boolean;
+  /** `calc_recent`: a calculation of this section for this cargo within 14 days, or one still open. */
+  recent: boolean;
+  /** `calc_file_missing`: a line in the job's window carried a medium this system did not keep. */
+  fileMissing: boolean;
+}
+
+/** Every fact refusing — what a calc draft whose facts were not read is judged on (fails closed). */
+export const CALC_FACTS_UNREAD: CalcSubmitFacts = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
 
 /** The one tool whose answer backs a «status» reply: the customer's own cargo, read. */
 export const STATUS_TOOL = 'cargo_status';
@@ -235,6 +273,12 @@ export interface AutoGateInput {
   };
   /** The customer's burst carried a photo, a voice note or a file. */
   burstMedia: boolean;
+  /**
+   * The five facts of a calculation the machine would land (SPEC-P2-v2 §1.1, calc-submit `calcSubmitFacts`) — read
+   * only for a draft judged as `calc` (its one act a calc submit, and `calc` ticked); null otherwise. A calc draft
+   * whose facts are null is judged as if every one refused (fails closed).
+   */
+  calc: CalcSubmitFacts | null;
   chat: {
     /** Bound to a client or a lead. */
     hasOwner: boolean;
@@ -297,7 +341,19 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (draft.needsOwner) hit.add('needs_owner');
   if (draft.warnings > 0) hit.add('warnings');
   if (draft.notes > 0) hit.add('notes');
-  if (draft.actionTypes.some((a) => a !== 'set_followup')) hit.add('actions');
+  // A calculation goes by itself only as its own kind (SPEC-P2-v2 §1.1): a draft whose one act is a calc submit is
+  // judged as `calc` — by what it DOES, never by the model's label — and only once he ticked «Hisoblatish». Unticked,
+  // it is judged exactly as before: an action, refused.
+  const calc = isCalcSubmitOnly(draft.actionTypes) && config.categories.includes('calc');
+  if (draft.actionTypes.some((a) => a !== 'set_followup' && !(calc && a === 'calc_submit'))) hit.add('actions');
+  if (calc) {
+    const f = input.calc ?? CALC_FACTS_UNREAD;
+    if (f.unproven) hit.add('calc_identity');
+    if (f.foreign) hit.add('calc_foreign');
+    if (f.refused) hit.add('calc_refused');
+    if (f.recent) hit.add('calc_recent');
+    if (f.fileMissing) hit.add('calc_file_missing');
+  }
   const money = moneyVerdict(input);
   if (money.refused) hit.add('money');
   // A price nobody read (spec §1.1, narrowed and widened by the 0148 fix): a currency named beside a quantity no
@@ -329,12 +385,15 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   const label = draft.category ?? '';
   const goes = LABEL_CATEGORIES.includes(label as AutoCategory);
   const category = money.present && !money.refused && goes ? 'price' : label;
-  if (!LABEL_CATEGORIES.includes(category as AutoCategory) || !config.categories.includes(category)) hit.add('category');
+  // A calc draft is its own kind whatever the label (§1.1) — it passes because he ticked it, never by its label.
+  if (!calc && (!LABEL_CATEGORIES.includes(category as AutoCategory) || !config.categories.includes(category))) hit.add('category');
   // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess —
   // asked of the model's OWN label, so a status claim riding an admitted quote is still asked for its reading.
   if (label === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
   if (!languageAdmits(draft.language, draft.customerLocale)) hit.add('language');
-  if (input.burstMedia) hit.add('media');
+  // Not asked of a calculation (§1.1, judge regress 8): the burst's invoice IS the material — it goes to the VED with
+  // the job (calc-files), and the reply («yubordim») claims nothing about reading it.
+  if (input.burstMedia && !calc) hit.add('media');
   if (draft.body.length > config.maxChars) hit.add('too_long');
   if (draft.confidence === null || !Number.isFinite(draft.confidence) || draft.confidence < config.minConfidence) hit.add('low_confidence');
   if (!input.chat.hasOwner) hit.add('stranger');

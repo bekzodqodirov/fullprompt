@@ -84,6 +84,19 @@ async function linkFor(requestId: string) {
   return link ?? null;
 }
 
+/**
+ * Did the reply that SUBMITTED this request's chain reach the customer (SPEC-P2-v2 §1.2)? Read through the link's
+ * draft and its outbox row — the link is written by the landing, before the approval, so a press that lost after
+ * landing leaves a link whose reply never went. A VED answer is priced to the customer (§2.3) only on a chain whose
+ * submitting reply went: «javob kelishi bilan aytaman» was said there and nowhere else.
+ */
+export async function calcLinkReplySent(requestId: string): Promise<boolean> {
+  const link = await linkFor(requestId);
+  if (!link?.draftId) return false;
+  const [o] = await db.select({ status: agentOutbox.status }).from(agentOutbox).where(eq(agentOutbox.draftId, link.draftId));
+  return o?.status === 'sent';
+}
+
 function labelOf(identity: Awaited<ReturnType<typeof chatIdentity>>): string {
   if (identity.clientId) {
     const codes = identity.codes.map((c) => c.clientCode).join(', ');

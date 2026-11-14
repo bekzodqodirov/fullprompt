@@ -24,11 +24,20 @@ import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
-import { afterPressOf, autoChatTakenInTx, autoPressStandsInTx, machinePressedReply, settleAutoPressInTx, stopAutoForPerson, type AutoPressLoss } from './auto-send';
+import {
+  afterPressOf,
+  autoChatTakenInTx,
+  autoPressStandsInTx,
+  autoPressStandsNow,
+  machinePressedReply,
+  settleAutoPressInTx,
+  stopAutoForPerson,
+  type AutoPressLoss,
+} from './auto-send';
 import { cardAsks, cardDigest, digestBody } from './card';
-import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
+import { LANDED_UNSENT, LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
 import { agentAutoReady, agentFullP1Ready, agentRunning, readAgentConfig } from './config';
-import { bindMoved, chatIdentity } from './context';
+import { bindMoved, chatCalcChains, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { AFTER_AUTO, keptFileSql } from './outbox-store';
@@ -496,18 +505,34 @@ async function landCalc(
   d: typeof agentDrafts.$inferSelect,
   action: Extract<ComposedAction, { type: 'calc_submit' }>,
   actor: DeciderActor,
+  opts: {
+    /**
+     * The machine's own press (SPEC-P2-v2 §1.8): the landing moves a LEAD only through the machine's stage layer
+     * (the holder's or nobody's lead, its stage still open, the follow-up kept). His ✅ moves it as it always did.
+     */
+    machine: boolean;
+  },
 ): Promise<{ queued: boolean; requestId: string | null; queueError: string | null }> {
   const noteId = noteIdFor(d.id);
   const { intakeNoteExists } = await import('./calc-note');
   if (await intakeNoteExists(noteId)) {
     const [req] = await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.noteId, noteId));
-    if (req) return { queued: true, requestId: req.id, queueError: null };
+    if (req) {
+      // Landed before — by a press that then lost, or before the link was the landing's (a link already there is kept).
+      await linkLanding(d, req.id, req.id);
+      return { queued: true, requestId: req.id, queueError: null };
+    }
     // The note landed and the QUEUE refused (final review K26): a server
     // mid-deploy. `landIntake` writes the note and moves the stage before it
     // asks the queue, so this ✅ is the job asked again — never «already
     // landed» for ever over a job no VED will ever see.
     if (!(await claimLanding(d.id))) return { queued: false, requestId: null, queueError: 'in_flight' };
-    return requeueLanded(noteId, action, actor);
+    const identity = await chatIdentity(d.managerUserId, d.peerId);
+    const { handBackLoopOf } = await import('./calc-submit');
+    const loop = handBackLoopOf(await chatCalcChains(d.managerUserId, d.peerId), action.section, identity);
+    const again = await requeueLanded(noteId, action, actor);
+    if (again.requestId) await linkLanding(d, again.requestId, loop?.rootRequestId ?? again.requestId);
+    return again;
   }
   if (!(await claimLanding(d.id))) return { queued: false, requestId: null, queueError: 'in_flight' };
   const identity = await chatIdentity(d.managerUserId, d.peerId);
@@ -525,16 +550,21 @@ async function landCalc(
         )
         .orderBy(tgMessages.sentAt)
     : [];
-  const files = cited.filter((m) => m.hasMedia).length;
   // Each cited line carries its Tashkent date (#1627): the model reads a hundred messages and may cite one from an
   // earlier shipment beside today's — the VED must see which is which, the job's own figures being the checklist's.
   const dated = (m: { body: string | null; sentAt: Date }) => {
     const [y, mo, d] = tashkentDay(m.sentAt).split('-');
     return `${d}.${mo}.${y}: ${m.body ?? ''}`;
   };
+  // The customer's files go WITH the job (SPEC-P2-v2 §1.4): every file this system kept from the chat since its last
+  // landed job, copied onto the note before it is written — the VED cannot open his Telegram. His ✅ and the
+  // machine's alike; a file nobody kept is said as such.
+  const { copyChatFilesToNote, filesMaterialLine, missingChatFiles } = await import('./calc-files');
+  const files = await copyChatFilesToNote({ managerUserId: d.managerUserId, peerId: d.peerId, noteId, draftId: d.id, uploadedBy: actor.id });
+  const notKept = (await missingChatFiles(d.managerUserId, d.peerId, d.id)).length;
   const material = [
     ...cited.filter((m) => (m.body ?? '').trim() !== '').map(dated),
-    ...(files > 0 ? [`(Chatda ${files} ta fayl/rasm bor — Telegram suhbatida.)`] : []),
+    ...filesMaterialLine(files.copied, notKept + files.failed),
   ];
   const [me] = await db.select({ name: users.fullName }).from(users).where(eq(users.id, actor.id));
   const client = identity.clientId
@@ -545,6 +575,10 @@ async function landCalc(
     const [l] = await db.select({ id: leads.id, name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, identity.leadId));
     lead = l ?? null;
   }
+  // The hand-back loop (SPEC-P2-v2 §1.5, ⭐ §7 Q13): the customer's answer to a request the VED handed back lands ON
+  // that request's card — no new deal, no new lead — and is linked under the same chain.
+  const { handBackLoopOf } = await import('./calc-submit');
+  const loop = handBackLoopOf(await chatCalcChains(d.managerUserId, d.peerId), action.section, identity);
   const { landIntake } = await import('../calc/intake-land');
   const { CalcError } = await import('../calc/service');
   // The landing refuses BEFORE it writes a card or a note when the sender has
@@ -557,7 +591,10 @@ async function landCalc(
     section: action.section,
     facts: action.facts,
     steps: [
-      "AI sotuvchi mijozning Telegram suhbatidan yig'di, egasi tasdiqladi.",
+      // Neutral (SPEC-P2-v2 §1.2): the note is written BEFORE the approval, so neither «egasi tasdiqladi» (false under
+      // a machine press) nor «AI o'zi yubordi» (false when he presses ✅ after a lost race) is true of it. Who pressed
+      // is the approval's own audit row (`via: 'auto'`).
+      "AI sotuvchi mijozning Telegram suhbatidan yig'di.",
       // His 9 (2026-10-24): «kelib chiqish sertifikati bor, biz o'zimiz olamiz».
       "Kelib chiqish sertifikati: kompaniya o'zi oladi",
       // His third set «3»: cargo from China or a place we have no warehouse in is priced from ours —
@@ -579,12 +616,44 @@ async function landCalc(
     // No bot door (docs/IKKI-ESHIK.md §0.1): the agent's job keeps today's
     // behaviour — its estimate still announced to the owner (his Q5 ⭐ c).
     intakeDoor: null,
+    machine: opts.machine,
+    onCard: loop ? { kind: loop.card.kind, id: loop.card.id } : null,
   }).catch((err: unknown) => {
     if (err instanceof CalcError) return { refused: err.code } as const;
     throw err;
   });
   if ('refused' in target) return { queued: false, requestId: null, queueError: target.refused };
-  return { queued: target.queued === true && Boolean(target.requestId), requestId: target.requestId ?? null, queueError: target.queueError ?? null };
+  const requestId = target.requestId ?? null;
+  // The link is the LANDING's fact (SPEC-P2-v2 §1.2): written the moment the job exists, so a press that then loses
+  // (⏸, 🙋, a disarm) leaves a job the VED's answer still finds its way back from — never an unlinked one.
+  if (requestId) await linkLanding(d, requestId, loop?.rootRequestId ?? requestId);
+  return { queued: target.queued === true && Boolean(requestId), requestId, queueError: target.queueError ?? null };
+}
+
+/**
+ * The chat's link to a landed job (`agent_calc_links`) — written by the landing itself, once (`onConflictDoNothing`
+ * on the request): the approval's own insert is then a no-op. `rootRequestId` is the chain the job belongs to — its
+ * own id, or the returned request's root on the hand-back loop (§1.5).
+ */
+async function linkLanding(d: typeof agentDrafts.$inferSelect, requestId: string, rootRequestId: string): Promise<void> {
+  await db
+    .insert(agentCalcLinks)
+    .values({ requestId, rootRequestId, managerUserId: d.managerUserId, peerId: d.peerId, draftId: d.id })
+    .onConflictDoNothing();
+}
+
+/**
+ * A press that lost AFTER its calculation landed (SPEC-P2-v2 §1.2): the job is at the VED and the customer was told
+ * nothing. The landing's claim is released into words for the card — «✅ bilan yuboring yoki ❌ (VED ishi qoladi)» —
+ * and a later ✅ reuses the job (`noteIdFor`). Only while the draft is still live: a press that lost to another
+ * press's approval leaves that approval's own state alone.
+ */
+async function markLandedUnsent(draftId: string): Promise<void> {
+  await db
+    .update(agentDrafts)
+    .set({ actionError: LANDED_UNSENT, updatedAt: new Date() })
+    .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['pending', 'editing'])));
+  await refreshDraftCard(draftId);
 }
 
 /**
@@ -1061,7 +1130,14 @@ export async function decideDraft(
   const calc = actions.find((a): a is Extract<ComposedAction, { type: 'calc_submit' }> => a.type === 'calc_submit');
   let requestId: string | null = null;
   if (calc) {
-    const landed = await landCalc(d, calc, actor);
+    // The machine's press asked again IMMEDIATELY before it lands (SPEC-P2-v2 §1.2): a ⏸, 🙋 or disarm during the
+    // hold stops it before a job, a note, a stage move and an AI-VED bill exist — the approval's own check comes
+    // after them. The press loses as it always did.
+    if (opts.auto) {
+      const lost = await autoPressStandsNow(d.id, d.managerUserId, d.peerId, now);
+      if (lost) return { ok: false, code: lost };
+    }
+    const landed = await landCalc(d, calc, actor, { machine: opts.auto === true });
     // Another press is landing this very job: nothing is written here — its own outcome releases the claim (F12).
     if (landed.queueError === 'in_flight') return { ok: false, code: 'calc_in_flight' };
     if (!landed.queued || !landed.requestId) {
@@ -1152,6 +1228,8 @@ export async function decideDraft(
     if (err instanceof AutoPressLost) return err.code;
     throw err;
   });
+  // Lost after the job landed: said on the card, the claim released (§1.2).
+  if (approved !== true && requestId) await markLandedUnsent(draftId);
   if (approved !== true && approved !== false) return { ok: false, code: approved };
   if (!approved) {
     // The row moved under the press — his own words landed on it between the read and here (the
@@ -1181,7 +1259,8 @@ export async function runDraftActions(draftId: string, actor: DeciderActor): Pro
   try {
     for (const a of actions) {
       if (a.type === 'calc_submit') {
-        const landed = await landCalc(d, a, actor);
+        // After the approval the job has landed: this is a read of it (or the K26 re-ask), never a stage move.
+        const landed = await landCalc(d, a, actor, { machine: false });
         if (!landed.queued) throw new Error(landed.queueError ?? 'calc_not_queued');
       } else if (a.type === 'set_followup') {
         const kind = d.clientId ? 'client' : 'lead';

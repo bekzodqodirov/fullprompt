@@ -26,7 +26,17 @@ import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from './auto-categories';
 import { estimateUnnamed, numeralUnread } from './auto-money';
 import { estimatesStand } from './estimate-check';
 import { tariffUnconfirmed } from './tariff-watch';
-import { autoVerdict, type AutoGateInput, type AutoLedgerLine, type AutoRefusal, type AutoToolCall } from './auto-gate';
+import {
+  CALC_FACTS_UNREAD,
+  autoVerdict,
+  isCalcSubmitOnly,
+  type AutoGateInput,
+  type AutoLedgerLine,
+  type AutoRefusal,
+  type AutoToolCall,
+  type CalcSubmitFacts,
+} from './auto-gate';
+import type { CalcSubmitAction } from './calc-submit';
 import { cardDigest, digestBody } from './card';
 import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
@@ -118,10 +128,27 @@ export async function priceActArmed(): Promise<boolean> {
   return priceActArmedOf(await readAutoConfig());
 }
 
+/**
+ * His calculation act (SPEC-P2-v2 §1.6): `calc` ticked among the kinds AND the layer armed. While it holds, the
+ * checklist codes each goods line and asks the figure its law pins (litr, juft, m², sm³) BEFORE the job goes — the
+ * machine must not land a job the VED will only refuse with `measure_missing`. Off (or 0145/0149 not landed), the
+ * checklist is today's, byte for byte.
+ */
+export function calcActArmedOf(auto: Pick<AutoConfig, 'armed' | 'categories'> | null): boolean {
+  return auto?.armed === true && auto.categories.includes('calc');
+}
+
+/** `calcActArmedOf` over the stored row — read once per run, beside the price act. */
+export async function calcActArmed(): Promise<boolean> {
+  return calcActArmedOf(await readAutoConfig());
+}
+
 // ── the facts ───────────────────────────────────────────────────────────────
 
 /** What the gate reads of a draft — a stored row, or the one the run is about to write. */
 export interface AutoDraftShape {
+  /** The stored draft's id — absent at the scheduling, when the row is about to be written. */
+  id?: string;
   managerUserId: string;
   peerId: bigint;
   runId: string | null;
@@ -292,7 +319,7 @@ async function burstHadMedia(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' 
 export async function autoFactsFor(
   d: AutoDraftShape,
   opts: { at: Date; now: Date; tools?: readonly ToolCall[]; config?: AutoConfig | null; scheduling?: boolean },
-): Promise<AutoGateInput> {
+): Promise<AutoGateInput & { calcNotes: readonly string[] }> {
   const auto = opts.config === undefined ? await readAutoConfig() : opts.config;
   const agent = await readAgentConfig();
   const policy = (d.policy ?? {}) as Partial<DraftPolicyJson>;
@@ -324,6 +351,13 @@ export async function autoFactsFor(
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, d.managerUserId), eq(agentConversations.peerId, d.peerId)));
   const memory = policy.memory;
+  // A calculation judged as its own kind (SPEC-P2-v2 §1.1): its five facts, read now — only when he ticked
+  // «Hisoblatish» (unticked it is refused as an action, exactly as before, and nothing more is read).
+  const calcAct = actions.find((a) => a?.type === 'calc_submit') as CalcSubmitAction | undefined;
+  const calcRead =
+    calcAct && isCalcSubmitOnly(actions.map((a) => (typeof a?.type === 'string' ? a.type : '?'))) && (auto?.categories ?? []).includes('calc')
+      ? await calcFactsOf(d, calcAct, opts.now)
+      : null;
   const fromAnswer = answerMarkOf(policy.fromAnswer);
   const estimates = Array.isArray(memory?.estimates) ? memory.estimates : [];
   // The machine's words carry the machine's figures; his own (✏️) are never auto-pressed anyway.
@@ -380,6 +414,7 @@ export async function autoFactsFor(
       ownerFigure: fromAnswer?.figures === true,
     },
     burstMedia: await burstHadMedia(d),
+    calc: calcRead?.facts ?? null,
     chat: {
       hasOwner: d.clientId !== null || d.leadId !== null,
       prospect: (await sendWindowFor(d)) === 'agent_lead',
@@ -395,7 +430,23 @@ export async function autoFactsFor(
     budgetLeft: sends ? sends.ceiling - sends.used - queued : null,
     sendingEnabled: opts.scheduling ? (await getSetting('tg_sending_enabled')) === true : null,
     listenerCurrent: opts.scheduling ? listenerIsCurrent(guard, opts.now) : null,
+    // The card's lines a person decides by (a waited duplicate, a file the VED will not get) — the plan writes them.
+    calcNotes: calcRead?.cardNotes ?? [],
   };
+}
+
+/**
+ * The calc facts of a draft (calc-submit `calcSubmitFacts`) — one that cannot be read refuses every one (fails
+ * closed). The card lines a person decides by ride beside them, for the plan to write onto the card.
+ */
+async function calcFactsOf(d: AutoDraftShape, action: CalcSubmitAction, now: Date): Promise<{ facts: CalcSubmitFacts; cardNotes: string[] } | null> {
+  try {
+    const { calcSubmitFacts } = await import('./calc-submit');
+    return await calcSubmitFacts({ managerUserId: d.managerUserId, peerId: d.peerId, action, draftId: d.id ?? null, now });
+  } catch (err) {
+    logger.warn({ err, peer: String(d.peerId) }, '[agent] auto: the calculation’s facts not read');
+    return { facts: CALC_FACTS_UNREAD, cardNotes: [] };
+  }
 }
 
 /**
@@ -461,6 +512,12 @@ export interface AutoPlan {
   dueAt: Date | null;
   /** The hold it was scheduled with (`hold_sec`) — what `countdownMayRide` measures an old card copy by. */
   holdSec: number;
+  /**
+   * Lines the CARD carries for a calculation the machine will not land by itself (SPEC-P2-v2 §1.1): a waited
+   * duplicate («✅ yangi so'rov ochadi») and a file the VED will not get — what he decides his ✅ by. The run writes
+   * them among the draft's notes; empty for every other draft.
+   */
+  cardNotes?: string[];
 }
 
 /**
@@ -503,7 +560,8 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
     const category = input.draft.category && (CATEGORIES as readonly string[]).includes(input.draft.category) ? input.draft.category : 'other';
     const draft: AutoDraftShape = { ...input.draft, category, confidence: confidenceOf(input.draft.confidence) };
     const dueAt = new Date(input.now.getTime() + config.holdSec * 1000);
-    const verdict = autoVerdict(await autoFactsFor(draft, { at: dueAt, now: input.now, tools: input.tools, config, scheduling: true }));
+    const facts = await autoFactsFor(draft, { at: dueAt, now: input.now, tools: input.tools, config, scheduling: true });
+    const verdict = autoVerdict(facts);
     return {
       eligible: verdict.eligible,
       reasons: verdict.reasons,
@@ -512,6 +570,7 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
       digest: cardDigest(digestBody(draft), Array.isArray(draft.actions) ? draft.actions : []),
       dueAt: verdict.eligible ? dueAt : null,
       holdSec: config.holdSec,
+      cardNotes: [...facts.calcNotes],
     };
   } catch (err) {
     logger.error({ err, peer: String(input.draft.peerId) }, '[agent] auto plan not computed');
@@ -897,6 +956,28 @@ export async function autoPressStandsInTx(tx: Tx, managerUserId: string): Promis
   if (!config?.armedAt) return 'auto_disarmed';
   const [acc] = await tx.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, managerUserId));
   return acc?.work === true ? null : 'auto_disarmed';
+}
+
+/**
+ * The machine's press, asked again IMMEDIATELY before it lands a calculation (SPEC-P2-v2 §1.2, the landing race):
+ * the landing runs BEFORE the approval's transaction and writes a job, a note, the AI-VED pass and a stage move, so a
+ * ⏸, a 🙋 or a disarm that landed during the hold must stop it before any of that — the approval's own in-tx check
+ * comes after the job exists. The verdict still 'pressing' (the sweep claimed it; a stop moved it), the layer armed,
+ * the account a work number, the chat not his. Pooled reads: this only NARROWS the window — the approval's
+ * `autoPressStandsInTx` is still the guard, and a press that loses after a landing leaves the job said as
+ * `landed_unsent` (decide `decideDraft`).
+ */
+export async function autoPressStandsNow(draftId: string, managerUserId: string, peerId: bigint, now: Date = new Date()): Promise<AutoPressLoss | null> {
+  const [v] = await db.select({ state: agentAutoVerdicts.state }).from(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, draftId));
+  if (v?.state !== 'pressing') return 'auto_stopped';
+  const config = await readAutoConfig();
+  if (!config?.armed) return 'auto_disarmed';
+  if (!(await workAccountOf(managerUserId))) return 'auto_disarmed';
+  const [conv] = await db
+    .select({ humanUntil: agentConversations.humanUntil })
+    .from(agentConversations)
+    .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)));
+  return conv?.humanUntil != null && conv.humanUntil.getTime() > now.getTime() ? 'taken_over' : null;
 }
 
 /**

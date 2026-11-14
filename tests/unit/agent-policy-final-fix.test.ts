@@ -420,6 +420,7 @@ const envOf = (ctx: AgentContext, rate: number | null = 17): ToolEnv => ({
   kb: async () => [],
   chinaPlaces: async () => OURS,
   priceArmed: false,
+  calcArmed: false,
 });
 
 function compose(replyText: string, patch: Partial<ComposeReply> = {}): ComposeReply {

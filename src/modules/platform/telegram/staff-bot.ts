@@ -1693,6 +1693,8 @@ export async function landCollectedIntake(
     // thread's, the agent's) gives NULL: never «🤖» by the collection's flag,
     // which for a legacy source is only `openSeeded`'s «a customs section».
     intakeDoor: toVed ? 'plain' : door,
+    // A person's collection, never the AI seller's machine press (SPEC-P2-v2 §1.8): the stage moves as it always did.
+    machine: false,
     // The record stays honest (§1.3 a): the card says the AI door collected
     // it and why the AI did not compute — and a cut reading that lands as it
     // is (the plain door's) says the list is not whole (as-built review OWNER-3).

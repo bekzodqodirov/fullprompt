@@ -5,8 +5,10 @@ import { db } from '../../platform/db/client';
 import { warehouses } from '../../platform/db/schema';
 import { balanceMessages, cargoMessages } from '../client-cabinet/bot-text';
 import { cargoOverview, debtSummary } from '../client-cabinet/service';
-import { FIELD_LABEL, missingFields, type CalcFacts, type CalcGoodsFact, type CalcSection } from '../calc/intake';
+import { FIELD_LABEL, lineNeeds, missingFields, type CalcFacts, type CalcGoodsFact, type CalcSection } from '../calc/intake';
 import { parseManualFacts } from '../calc/intake-manual';
+import { needWhatUz, type NeedLaw } from '../calc/needs';
+import { normalizeRowUnit } from '../calc/units';
 import { tariffFor } from '../calc/tariff-read';
 import type { StoredEstimate } from './auto-money';
 import { AVIA_RATE_LABEL } from './config';
@@ -49,7 +51,21 @@ export interface ToolEnv {
    * address is asked. Off, its words are today's, byte for byte. Read once per run.
    */
   priceArmed: boolean;
+  /**
+   * His calculation act is armed (SPEC-P2-v2 §1.6: `calc` among the auto kinds AND the layer armed — auto-send
+   * `calcActArmed`): the checklist then codes each goods line and asks the figure its law pins before the job goes. Off,
+   * the checklist is today's, byte for byte. Read once per run.
+   */
+  calcArmed: boolean;
 }
+
+/**
+ * The unit a checklist goods line's figure is IN (SPEC-P2-v2 §1.6) — what the model reads off the customer's words
+ * («kafel 120 m2», «pivo 1000 litr»). Routed by the door's own rule (`normalizeRowUnit`) into the column the unit
+ * names, so a line of square metres never lands as pieces. `karobka` is a carton count — packing, never the goods'
+ * count — and null (or `dona`) keeps today's «nomi, soni».
+ */
+export const CHECKLIST_UNITS = ['dona', 'kg', 'm2', 'juft', 'litr', 'sm3', 'karobka'] as const;
 
 /**
  * What the checklist found. No certificate (his 9, 2026-10-24: «kelib chiqish
@@ -160,6 +176,9 @@ export const TOOL_SPECS: ModelToolSpec[] = [
         items: obj({
           name: { type: 'string' },
           quantity: { type: ['number', 'null'] },
+          // The unit `quantity` is in, as the customer wrote it (SPEC-P2-v2 §1.6): «120 m2» is 120 with m2, never
+          // 120 pieces.
+          unit: { type: ['string', 'null'], enum: [...CHECKLIST_UNITS, null] },
           weight_kg: { type: ['number', 'null'] },
         }),
       },
@@ -635,11 +654,17 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
     if (!stated(ctx, [quantity, weightKg])) {
       return { ok: false, text: `«${name}» qatoridagi son mijozning "Suhbat" qismidagi xabarida yo'q (oldingi suhbatdagi son eskirgan) — so'ra, o'zingdan qo'yma.`, sources: [] };
     }
-    goods.push({ name, quantity, weightKg });
+    goods.push(checklistLine(name, quantity, weightKg, g.unit));
   }
   facts.goods = goods;
   // No certificate question (his 9): the company obtains it itself.
-  const missing = missingFields(section, facts, new Map()).map((f) => FIELD_LABEL[f]);
+  // His calculation act armed (SPEC-P2-v2 §1.6): each line coded as the landing's INSERT codes it — memory, then the
+  // exact-key book, never the model (`codeRows`) — and the book's law asked of it, so the figure a law pins (litr,
+  // juft, m², sm³) is asked of the CUSTOMER before the job goes. Off: the call is today's, byte for byte.
+  const laws = env.calcArmed ? await armedLaws(goods) : null;
+  const missing = laws
+    ? missingFields(section, laws.facts(facts), laws.map).flatMap((f) => (f === 'lineNeed' ? lineNeedWords(section, laws.facts(facts), laws.map) : [FIELD_LABEL[f]]))
+    : missingFields(section, facts, new Map()).map((f) => FIELD_LABEL[f]);
   const complete = missing.length === 0;
   // The gaps as «•» lines, never «1) … 2) …» (incident 2026-10-29): the model copies the shape it is handed,
   // and a list's own numbers read as figures nobody vouched for.
@@ -653,4 +678,56 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
     sources: [],
     checklist: { section, facts, complete, fromOurWarehouse },
   };
+}
+
+/**
+ * One checklist goods line (SPEC-P2-v2 §1.6): the figure read in the unit the model said it is in, routed by the
+ * door's own rule (`normalizeRowUnit`) into its column — m²/juft/litr/sm³ into the measure pair, kg into the line's
+ * weight, a carton count out of the count (said in the note, as the door says it). A line with no unit, or in pieces,
+ * is today's `{name, quantity, weightKg}` exactly.
+ */
+export function checklistLine(name: string, quantity: number | null, weightKg: number | null, unit: unknown): CalcGoodsFact {
+  const word = typeof unit === 'string' && (CHECKLIST_UNITS as readonly string[]).includes(unit) ? unit : null;
+  if (word === null || word === 'dona' || quantity === null) return { name, quantity, weightKg };
+  const routed = normalizeRowUnit({ quantity, unit: word, weightKg, volumeM3: null, measureUnit: null, measureQty: null });
+  if (!routed.moved) return { name, quantity, weightKg };
+  const { quantity: q, weightKg: kg, measureUnit, measureQty } = routed.patch;
+  return {
+    name,
+    quantity: q,
+    weightKg: kg,
+    ...(measureUnit !== null && measureQty !== null ? { measureUnit, measureQty } : {}),
+    note: routed.note,
+  };
+}
+
+/**
+ * The book's law for the checklist's lines, while his calculation act is armed: each line coded by the INSERT's own
+ * coding (`codeRows` — the sealed memory, then the exact-key book; no model), and `bookLawsFor` over those codes. The
+ * code is used to READ the law and is never written onto the facts the job carries: the INSERT codes the row itself,
+ * the same way, so the tool and the landing agree. `facts` adds the codes to a COPY of the facts for the reading only.
+ */
+async function armedLaws(goods: readonly CalcGoodsFact[]): Promise<{
+  map: Map<string, NeedLaw>;
+  facts: (f: CalcFacts) => CalcFacts;
+}> {
+  const { codeRows } = await import('../calc/row-coding');
+  const { bookLawsFor } = await import('../calc/book-laws');
+  const coded = await codeRows(goods.map((g) => ({ name: g.name, own: null, model: null })));
+  const map = await bookLawsFor(coded.map((c) => c.code));
+  return {
+    map,
+    facts: (f) => ({ ...f, goods: (f.goods ?? []).map((g, i) => ({ ...g, tnvedCode: coded[i]?.code ?? null })) }),
+  };
+}
+
+/**
+ * Each line a law still owes a figure, in the customer-facing words the model asks with (SPEC-P2-v2 §1.6) — the
+ * line's own name and the unit's words (`needWhatUz`), never the staff label «kod so'ragan o'lchov» and never the
+ * law's rate (a dollar figure no tool vouched for would be the model's to quote).
+ */
+export function lineNeedWords(section: CalcSection, facts: CalcFacts, laws: ReadonlyMap<string, NeedLaw>): string[] {
+  return lineNeeds(section, facts, laws)
+    .filter((l) => l.pinned.length > 0)
+    .map((l) => `«${l.name}»: ${[...new Set(l.pinned.map((n) => needWhatUz(n.unit)))].join(', ')}`);
 }

@@ -64,7 +64,7 @@ export interface IntakeTarget {
    * colleague's client or that lead joined, a stranger's lead, or — on a
    * retried «Saqlash» — the card the earlier attempt already wrote.
    */
-  outcome?: 'deal' | 'adopted' | 'about' | 'about_joined' | 'lead' | 'lead_joined' | 'retried';
+  outcome?: 'deal' | 'adopted' | 'about' | 'about_joined' | 'lead' | 'lead_joined' | 'retried' | 'returned_card';
   /** On a lead about a colleague's client: whose client it is, for the ✅. */
   about?: { clientCode: string; sellerName: string | null } | null;
   /**
@@ -491,6 +491,21 @@ export async function landIntake(input: {
    * every door that has none.
    */
   refusedFiles?: readonly { name: string; why: string; resent?: boolean }[];
+  /**
+   * The AI seller's MACHINE press landed it (SPEC-P2-v2 §1.8) — REQUIRED, so no door can forget to say. True only from
+   * the agent's landing under «o'zi yuborish»: a LEAD then moves through the machine's own stage layer (the holder's or
+   * nobody's lead, its stage still open, the seller's follow-up kept, audited `via: 'ai'`) — a colleague's lead keeps
+   * its stage, the note and the job land all the same. A deal moves as it always did. Every other door — the bot, the
+   * card, the thread, his own ✅ on the agent's card — passes false and moves exactly as before.
+   */
+  machine: boolean;
+  /**
+   * The card a RETURNED request of this chat sits on (SPEC-P2-v2 §1.5, the hand-back loop): the job lands there — no
+   * new deal, no new lead — and the «↩️ Ma'lumot to'ldiring» task the VED's «Qaytarish» opened on it is closed.
+   * Fenced like `cardOfNote`: only this client's deal, or the lead this landing names; any other card refuses
+   * `note_foreign`. Absent on every other landing.
+   */
+  onCard?: { kind: 'deal' | 'lead'; id: string } | null;
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is
@@ -514,7 +529,17 @@ export async function landIntake(input: {
   // A coded client: a NEW card per request (his 2026-10-27), written with its
   // note in one commit, and found again through that note on a retry.
   let target: IntakeTarget;
-  if (input.client) {
+  if (input.onCard) {
+    target = await landOnReturnedCard({
+      noteId: input.noteId,
+      noteText,
+      itemCount: items.length,
+      senderId: input.collectedBy,
+      card: input.onCard,
+      clientId: input.client?.id ?? null,
+      leadId: input.client ? null : (input.lead?.id ?? null),
+    });
+  } else if (input.client) {
     target = await landCodedRequest({
       noteId: input.noteId,
       noteText,
@@ -595,10 +620,11 @@ export async function landIntake(input: {
         })
       : false;
     try {
-      await moveToCalcStage(landedTarget, input.collectedBy);
+      await moveToCalcStage(landedTarget, input.collectedBy, input.machine);
     } catch (err) {
       logger.error({ err, kind: landedTarget.kind, id: landedTarget.id }, '[calc-intake] stage move failed');
     }
+    if (input.onCard) await closeHandBackTask(landedTarget, input.collectedBy);
     return { ...landedTarget, queued: true, requestId, queueError: null, replyQueued };
   }
   const queuedBefore = await rootRequestOfNote(input.noteId);
@@ -678,15 +704,76 @@ export async function landIntake(input: {
   // dragged it. Fenced: a funnel misconfiguration must never lose the note
   // that was just written, which is the part the bot promised to save.
   try {
-    await moveToCalcStage(target, input.collectedBy);
+    await moveToCalcStage(target, input.collectedBy, input.machine);
   } catch (err) {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] stage move failed');
   }
+  if (input.onCard && queued) await closeHandBackTask(target, input.collectedBy);
 
   return { ...target, queued, requestId, queueError, replyQueued };
 }
 
-async function moveToCalcStage(target: IntakeTarget, actorId: string): Promise<void> {
+/**
+ * The hand-back loop's landing (SPEC-P2-v2 §1.5): the note on the RETURNED request's card, in one statement, after
+ * the same refusals every landing asks first. A retried press finds its own note (`cardOfNote`). The card is fenced
+ * as `cardOfNote` fences a posted note: this client's deal, or the lead the chat names — else `note_foreign`.
+ */
+async function landOnReturnedCard(input: {
+  noteId: string;
+  noteText: string;
+  itemCount: number;
+  senderId: string;
+  card: { kind: 'deal' | 'lead'; id: string };
+  clientId: string | null;
+  leadId: string | null;
+}): Promise<IntakeTarget> {
+  const prior = await cardOfNote(input.noteId, input.senderId, input.clientId);
+  if (prior === 'foreign') throw new CalcError('note_taken');
+  if (prior) return prior;
+  let label: string;
+  let leadOwnerId: string | null = null;
+  if (input.card.kind === 'deal') {
+    const [d] = await db.select({ code: deals.code, clientId: deals.clientId }).from(deals).where(eq(deals.id, input.card.id));
+    if (!d || input.clientId === null || d.clientId !== input.clientId) throw new CalcError('note_foreign');
+    label = d.code;
+  } else {
+    const [l] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, input.card.id));
+    if (!l || input.leadId !== input.card.id) throw new CalcError('note_foreign');
+    label = l.name;
+    leadOwnerId = l.ownerId;
+  }
+  const refused = await calcOpenRefusal(input.senderId, input.itemCount);
+  if (refused) throw new CalcError(refused);
+  if (input.card.kind === 'lead' && !(await leadTakesJobs(input.card.id))) throw new CalcError('lead_closed');
+  await addActivity(
+    { id: input.noteId, entityType: input.card.kind, entityId: input.card.id, kind: 'note', note: input.noteText },
+    { actorId: input.senderId },
+  );
+  return { kind: input.card.kind, id: input.card.id, label, leadOwnerId, outcome: 'returned_card' };
+}
+
+/** The words the hand-back loop closes the «↩️ Ma'lumot to'ldiring» task with (SPEC-P2-v2 §1.5). */
+export const HAND_BACK_TASK_DONE = "AI ma'lumotni to'ldirib qayta yubordi";
+
+/** Close the card's open «↩️» task — never fatal: the job has landed, and a task left open is a visible chore. */
+async function closeHandBackTask(target: IntakeTarget, holderId: string): Promise<void> {
+  try {
+    const { closeReturnTasks } = await import('./service');
+    await closeReturnTasks({ entityType: target.kind, entityId: target.id, holderId, result: HAND_BACK_TASK_DONE });
+  } catch (err) {
+    logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] hand-back task not closed');
+  }
+}
+
+async function moveToCalcStage(target: IntakeTarget, actorId: string, machine: boolean): Promise<void> {
+  if (target.kind === 'lead' && machine) {
+    // The AI seller's own landing (SPEC-P2-v2 §1.8): through the machine's layer — forward, between open stages, the
+    // holder's or nobody's lead, the follow-up kept, `via: 'ai'`. A refusal of its own rules is no failure: the note
+    // and the job stand on the card.
+    const { moveLeadByMachine } = await import('../crm/service');
+    await moveLeadByMachine(target.id, 'calc', { holderId: actorId });
+    return;
+  }
   if (target.kind === 'lead') {
     const [row] = await db
       .select({ stageId: leads.stageId })

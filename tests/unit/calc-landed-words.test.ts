@@ -17,6 +17,8 @@ const MINTED: Record<Outcome, boolean> = {
   lead: true,
   lead_joined: false,
   retried: false,
+  // The AI seller's hand-back loop (SPEC-P2-v2 §1.5): the returned request's own card — never minted.
+  returned_card: false,
 };
 
 describe('landedWords', () => {

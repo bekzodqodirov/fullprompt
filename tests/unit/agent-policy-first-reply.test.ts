@@ -182,7 +182,7 @@ describe('P1: a list’s own numbers are no figures', () => {
     expect(head).not.toMatch(/raqamlangan ro'yxat/u);
     expect(head).toMatch(/har bir bandi "•" belgisi bilan/u);
     const ctx = ctxOf(['Rastamojka kerak, kurtka'], 'latin');
-    const env: ToolEnv = { ctx, day: '2026-10-29', aviaUsdPerKg: 17, kb: async () => [], chinaPlaces: async () => new Set(['Yiwu']), priceArmed: false };
+    const env: ToolEnv = { ctx, day: '2026-10-29', aviaUsdPerKg: 17, kb: async () => [], chinaPlaces: async () => new Set(['Yiwu']), priceArmed: false, calcArmed: false };
     const out = await runTool('calc_checklist', { section: 'rastamojka', goods: [] }, env);
     const lines = out.text.split('\n').slice(1);
     expect(lines.length).toBeGreaterThan(0);
@@ -1992,6 +1992,7 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
       tools: [],
       money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
       burstMedia: false,
+      calc: null,
       chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
       workAccount: true,
       at: new Date('2026-11-11T07:00:00Z'),
@@ -2086,6 +2087,7 @@ function gate(
     tools: [],
     money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
     burstMedia: false,
+    calc: null,
     chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
     at: new Date('2026-11-11T07:00:00Z'),

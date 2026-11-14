@@ -29,7 +29,7 @@ import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './dr
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
 import type { ForcedQuestion } from './types';
-import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, priceActArmed } from './auto-send';
+import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, calcActArmed, priceActArmed } from './auto-send';
 import { namesForeignPlace } from './destination';
 import {
   airMentionIn,
@@ -202,6 +202,11 @@ export async function runLoop(input: {
   /** His price act (spec §1.2, `priceActArmed`), read ONCE for the run — the head and the avia tool say the same. */
   priceArmed: boolean;
   /**
+   * His calculation act (SPEC-P2-v2 §1.6, `calcActArmed`), read ONCE for the run: while it holds, the checklist asks
+   * the figures the goods' laws pin before a job goes. Off, the checklist is today's.
+   */
+  calcArmed: boolean;
+  /**
    * His lessons (spec §3.3, lessons `promptLessons`), read ONCE for the run beside the general facts: every round's
    * head is then the same bytes — an edit on the page mid-run cannot move the cache between two rounds.
    */
@@ -229,6 +234,7 @@ export async function runLoop(input: {
     // Read once per run, and only when a tool asks where the cargo starts.
     chinaPlaces: () => (places ??= ourChinaPlaces()),
     priceArmed: input.priceArmed,
+    calcArmed: input.calcArmed,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
@@ -496,9 +502,11 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const taught = await promptLessons();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
     const day = tashkentDay(t);
-    // His price act, read once: the head, the avia tool and the avia rule below agree for the whole run (§1.2).
+    // His price act, read once: the head, the avia tool and the avia rule below agree for the whole run (§1.2) — and
+    // his calculation act beside it (SPEC-P2-v2 §1.6).
     const act = { priceArmed: await priceActArmed() };
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, lessons: taught.lessons });
+    const calcArmed = await calcActArmed();
+    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, lessons: taught.lessons });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -536,6 +544,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
+    // A calculation the machine will not land by itself carries what he decides his ✅ by (SPEC-P2-v2 §1.1): a
+    // waited duplicate, a file the VED will not get. Only ever on a plan already refused (the facts that write them
+    // refuse it), so no countdown rides a card these lines were added to.
+    if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
     const written = await writeDraft({ ...input, autoPlan });
     // The customer's language, remembered for the next «ok».
     const locale = detectLocale(ctx.anchor.body, ctx.storedLocale).locale ?? c.language;
@@ -1529,6 +1541,7 @@ export async function runOwnerTriggered(
       now,
       instruction: input.instruction,
       priceArmed: act.priceArmed,
+      calcArmed: await calcActArmed(),
       lessons: taught.lessons,
     });
     settle = {
@@ -1593,6 +1606,7 @@ export async function runOwnerTriggered(
     // His answer's redraft alone carries a plan (§2.2) — judged on the very row about to be written, as the inbound
     // run's. A lesson's rewrite carries none (§3.4), and neither does a hand-back's question.
     const autoPlan = answer ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
+    if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
     const written = await writeDraft({
       ...draftInput,
       autoPlan,
