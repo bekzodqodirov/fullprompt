@@ -3001,8 +3001,9 @@ describe('0148 fix — what goes by itself, on real runs', () => {
     const UZC = `Ассалому алайкум! Хитойдан юк олиб келишда ёрдам бераман. Юкингиз неча куб ва неча кг ${TAG}?`;
 
     it('Uzbek typed on a Russian keyboard (no ў қ ғ ҳ) in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
-      // (Fix pass 6: «Гуанчжоудан» — a place with an Uzbek case — is a mark now; written without its case, the line is unmarked.)
-      const d = await ran(['Кийим-кечак, Гуанчжоу жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      // (Fix pass 6: «Гуанчжоудан» — a place with an Uzbek case — is a mark now; written without its case, the line is unmarked.
+      // Fix pass 7: «Кийим-кечак» is Uzbek's own word now — «Мебель», which both languages say, keeps it unmarked.)
+      const d = await ran(['Мебель, Гуанчжоу жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
       // An unconfident guess that leans on the conversation's own language (fix pass 4): only that language goes.
       expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
       await goes(d);
@@ -3033,7 +3034,8 @@ describe('0148 fix — what goes by itself, on real runs', () => {
     });
 
     it('«Здравствуйте» on top of an unmarked Uzbek line in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
-      const d = await ran(['Здравствуйте', 'Кийим-кечак, Гуанчжоу жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      // (Fix pass 7: «Мебель» for «Кийим-кечак», which marks Uzbek now.)
+      const d = await ran(['Здравствуйте', 'Мебель, Гуанчжоу жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
       expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
       await goes(d);
     });
@@ -3084,6 +3086,28 @@ describe('0148 fix — what goes by itself, on real runs', () => {
       expect((marked.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: true });
       await goes(marked);
       expect(await remembered()).toBe('uz_cyrl');
+    });
+
+    // Fix pass 7 (the check #1): what the run READ over the whole burst is remembered — never the last line alone. A
+    // greeting sent as its own message, then the request: the reply went, and «ru» was forgotten, so every later «800 кг»
+    // was held for ever.
+    it('the burst’s own reading is remembered — a greeting line before an unmarked request leaves «ru» for the next turn', async () => {
+      const remembered = async () =>
+        (
+          await db
+            .select({ locale: agentConversations.locale })
+            .from(agentConversations)
+            .where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)))
+        )[0]?.locale ?? null;
+      const greeted = await ran(['Здравствуйте', 'Груз из Гуанчжоу, 5 куб'], [compose(RUQ, { language: 'ru', category: 'qualification' })]);
+      expect((greeted.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'ru', confident: false, leans: true });
+      await goes(greeted);
+      expect(await remembered()).toBe('ru');
+      await clearChats();
+      // …and a confident burst whose LAST line says nothing: «Assalomu alaykum, yukim qayerda?» / «GS777» is Uzbek.
+      const coded = await ran(['Assalomu alaykum, yukim qayerda?', 'GS777'], [compose(undefined, { category: 'greeting' })]);
+      expect((coded.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz', confident: true });
+      expect(await remembered()).toBe('uz');
     });
   });
 

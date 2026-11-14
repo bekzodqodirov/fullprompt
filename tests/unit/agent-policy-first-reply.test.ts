@@ -938,7 +938,6 @@ describe('second review — a deadline pointed back at is a dispatch promise, af
 describe('second review — a vague count of days the cargo comes in is G1’s figure, as it was at a4e1b1c', () => {
   it.each([
     [UZ, 'latin', 'uz', 'Yukingiz taxminan bir necha kunda Toshkentga yetib keladi.'],
-    [UZ, 'latin', 'uz', "Taxminan bir necha haftada Toshkentda bo'ladi."],
     [UZ, 'latin', 'uz', 'Odatda bir necha kunda yetkazamiz.'],
     [RU, 'cyrillic', 'ru', 'Груз придёт примерно через несколько дней.'],
     [RU, 'cyrillic', 'ru', 'Ваш груз доставим примерно за несколько дней.'],
@@ -947,6 +946,16 @@ describe('second review — a vague count of days the cargo comes in is G1’s f
     [UZC, 'cyrillic', 'uz_cyrl', 'Юкингиз тахминан бир неча кунда етиб келади.'],
   ] as const)('«%s» … «%s» is a delivery time nothing vouches for', (lines, script, language, reply) => {
     expect(vagueTravelTime(reply)).toBe(true);
+    expect(blockCodes(verdict(lines, script, language, reply))).toContain('number_unverifiable:word_numeral');
+  });
+
+  // Fix pass 7 (the check #7) — corrected: a vague count of WEEKS is G1's figure by itself now, wherever it stands
+  // («It usually takes a couple of weeks» named no cargo and went), so it is no longer the travel-time reader's.
+  it.each([
+    [UZ, 'latin', 'uz', "Taxminan bir necha haftada Toshkentda bo'ladi."],
+    [['Hello', 'I have cargo'], 'latin', 'en', 'It usually takes a couple of weeks.'],
+    [RU, 'cyrillic', 'ru', 'Обычно пару недель.'],
+  ] as const)('«%s» … «%s» holds a count of weeks — G1’s figure', (lines, script, language, reply) => {
     expect(blockCodes(verdict(lines, script, language, reply))).toContain('number_unverifiable:word_numeral');
   });
 

@@ -11,7 +11,7 @@ import { answeredNow } from './card-io';
 import { knownNamesFor } from './chat-names';
 import { agentFullP1Ready, agentRunning, mayRunAgent, readAgentConfig } from './config';
 import { personalBitsWithBook } from './kb';
-import { currencyBesideQuantity, namesCurrency, normalizeDigits } from './digits';
+import { currencyBesideQuantity, namesCurrency, normalizeDigits, spelledNumeralRuns } from './digits';
 import { extractNumbers, LESSON_COUNT_AFTER } from './numbers';
 import { fitLessons, lessonsBlock, lessonsChars, LESSON_LIMITS, type LessonSetMark, type PromptLesson } from './lesson-rules';
 import { ANSWER_RUN_STALE_MS } from './owner-answer';
@@ -147,9 +147,9 @@ export function lessonShapeRefusal(text: string): { code: 'empty' | 'too_long' |
  * 160», «1 kub = 160», «160/kub», «Har kilo 17», «Каждый куб 160», «Every cbm 160», «Air is 17 a kilo»), after the
  * price QUESTION («Mijoz qancha deb so'rasa 160 de», «If asked how much, say 160»), spelled out beside a currency
  * («o'n yetti dollar», «семнадцать долларов»), or counted with «ta» before its currency («17 ta dollar») or after its
- * price word with nothing counted («Narx 17 tadan»). Read FAIL-CLOSED: in a lesson that names a measure unit or asks
- * the price, every bare figure that is no count is a price — a lesson is an instruction, never a source, and a price
- * saved in one is said to every customer.
+ * price word with nothing counted («Narx 17 tadan»). Read FAIL-CLOSED: every bare figure that is no count is a price
+ * (fix pass 7 — it was only in a lesson naming a unit or asking the price, and «Avia 17, avto 160» was neither) — a
+ * lesson is an instruction, never a source, and a price saved in one is said to every customer.
  */
 const LESSON_UNIT = '(?:kub|kilo|kg|tonn|cbm|cubes?|m3|куб|кило|кг|тонн|м3)\\p{L}*';
 const LESSON_UNIT_ANY = new RegExp(`(?<![\\p{L}])${LESSON_UNIT}`, 'iu');
@@ -158,11 +158,22 @@ const UNIT_PER_AFTER = new RegExp(`^\\s*(?:/|(?:a|an|per|each|за|в)\\s+)\\s*$
 const PRICE_ASKED = /(?<![\p{L}])(?:qancha\p{L}*|necha\s+pul|nechpul|қанча\p{L}*|неча\s+пул|сколько|почём|почем|how\s+much|what\s+price)/iu;
 const PRICE_WORD_BEFORE = /(?<![\p{L}])(?:narx\p{L}*|нарх\p{L}*|цен\p{L}*|price\p{L}*|tarif\p{L}*|тариф\p{L}*)\s*[:—–-]?\s*$/iu;
 const CLASSIFIER_THEN = /^\s*(?:ta|та)(?:dan|дан)?(?:\s+(\S+)|\s*(?:[,.;!?]|$))/iu;
+/**
+ * What makes a SPELLED numeral in a lesson a price (fix pass 7, the check #11 — «Avia o'n yetti», «Kubi bir yuz
+ * oltmish»): a unit, the price question, a road («avia», «avto», «air»), a price word, a floor or a ceiling («past
+ * tushma», «не ниже», «minimum»), a discount. A digit needs none of these: it is a price wherever it counts nothing.
+ */
+const PRICE_CONTEXT =
+  /(?<![\p{L}])(?:avia|avto|авиа|авто|air|truck|poyezd|poezd|поезд|rail|fura|фура|narx\p{L}*|нарх\p{L}*|цен\p{L}*|price\p{L}*|tarif\p{L}*|тариф\p{L}*|stavka\p{L}*|ставк\p{L}*|past|ниже|выше|minimum|maximum|минимум|максимум|oshmasin|oshirma|skidka\p{L}*|скидк\p{L}*|chegirma\p{L}*|чегирма\p{L}*|discount\p{L}*)(?![\p{L}])/iu;
+/** «Skidka 10 foizdan oshmasin», «Chegirma 5 %» — a discount is a price said as its share. */
+const DISCOUNT_WORD = /(?<![\p{L}])(?:skidka|скидк|chegirma|чегирма|discount)\p{L}*/iu;
 function priceNamingNoMoney(body: string): string | null {
   const t = normalizeDigits(body);
   if (currencyBesideQuantity(t)) return t.trim();
-  const unitNamed = LESSON_UNIT_ANY.test(t);
-  const asked = PRICE_ASKED.test(t);
+  const priced = LESSON_UNIT_ANY.test(t) || PRICE_ASKED.test(t) || PRICE_CONTEXT.test(t);
+  for (const r of priced ? spelledNumeralRuns(t) : []) {
+    if (!LESSON_COUNT_AFTER.test(t.slice(r.index + r.raw.length))) return r.raw;
+  }
   for (const f of extractNumbers(t, [], { lesson: true })) {
     if (f.kind === 'date' || f.fixed) continue;
     const before = t.slice(0, f.index);
@@ -175,7 +186,11 @@ function priceNamingNoMoney(body: string): string | null {
     if (counted && ((next !== undefined && namesCurrency(next)) || (PRICE_WORD_BEFORE.test(before) && (next === undefined || !LESSON_COUNT_AFTER.test(next))))) {
       return f.raw;
     }
-    if (f.kind === 'plain' && !LESSON_COUNT_AFTER.test(after) && (unitNamed || asked)) return f.raw;
+    // Any bare figure that counts nothing is a price (fix pass 7, the check #11): «Avia 17, avto 160», «Kiyim 160, mebel
+    // 140», «160 dan past tushma», «Doimiy mijozga 150 dan ayt», «160 de» named no unit and asked no price, and each was
+    // saved to be said to every customer. A lesson is an instruction, never a source.
+    if (f.kind === 'plain' && !LESSON_COUNT_AFTER.test(after)) return f.raw;
+    if (f.kind === 'percent' && DISCOUNT_WORD.test(t)) return f.raw;
   }
   return null;
 }

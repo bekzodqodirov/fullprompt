@@ -67,6 +67,10 @@ const STEMS: readonly string[] = [
   'nurafshon', 'нурафшон',
   'asaka', 'асака',
   'shahrixon', 'шаҳрихон', 'шахрихан',
+  // …the Andijan region's district towns, where the company has a warehouse of its own (fix pass 7, the check #10).
+  // «Marhamat» is «please» and «Baliqchi» a fisherman: those two only in a place's own form (`ENDED`).
+  'qorasuv', 'қорасув', 'корасув', 'xonobod', 'хонобод', 'ханабад', `oltinko${A}l`, 'олтинкўл', 'олтинкул', 'алтынкул',
+  `paytug${A}`, 'пайтуғ', 'пайтуг', 'izboskan', 'избоскан', `qo${A}rg${A}ontepa`, 'қўрғонтепа', 'кургантепа', 'кургонтепа',
   'quvasoy', 'қувасой', 'кувасай',
   'rishton', 'риштон', 'риштан',
   'kosonsoy', 'косонсой', 'касансай',
@@ -109,6 +113,8 @@ const STEMS: readonly string[] = [
   'jalol-?obod', 'жалол-?обод', 'джалал-?абад', 'jalal-?abad',
   'karakol', 'каракол',
   'batken', 'баткен', 'tokmok', 'токмок', `o${A}zgan`, 'ўзган', 'узген',
+  // …and Kara-Suu, Naryn (fix pass 7, the check #10; Talas below).
+  'kara-?\\s?suu', 'кара-?\\s?суу', 'карасуу', 'карасу', 'naryn', 'нарын', 'norin', 'норин',
   // Tajikistan.
   'tojikisto?n', 'тожикисто?н', 'таджикистан', 'tajikistan',
   'dushanbe', 'душанбе',
@@ -118,6 +124,9 @@ const STEMS: readonly string[] = [
   `afg${A}onisto?n`, 'афғонисто?н', 'афганистан', 'afghanistan',
   'kobul', 'кобул',
   `mozori${A}?\\s*sharif`, 'мазари-?\\s*шариф', 'mazar-?i-?\\s*sharif', 'mazari\\s*sharif',
+  // …and the Afghan hub as people write it (fix pass 7, the check #10): «Mazar-e Sharif», «Mazar», «Mozor», «Мазар»,
+  // and Afghanistan in short — «Afg'on», «Афган».
+  'mazar', 'мазар', 'mozor', 'мозор', `afg${A}on`, 'афғон', 'афгон', 'афган',
   'hirot', 'ҳирот', 'герат', 'herat',
   'qandahor', 'қандаҳор', 'кандагар', 'kandahar',
   'qunduz', 'қундуз', 'кундуз', 'kunduz',
@@ -188,6 +197,11 @@ const ENDED: readonly string[] = [
   // «Navoiy ko'chasi» is a street in every town.
   `navoiy?(?:ga|gacha|dan|da|ning)?(?![\\p{L}])(?!\\s*(?:ko${A}ch|кўч|коч|ул|str|прос|shoh|шоҳ))`,
   `навои[йи]?(?:га|гача|дан|да|нинг)?(?![\\p{L}])(?!\\s*(?:кўч|коч|ул|прос|шоҳ))`,
+  // «Marhamat» is «please», «baliqchi» a fisherman — the Andijan towns only with a place's ending (fix pass 7).
+  `marhamat(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `марҳамат(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, `мархамат(?:${SEP}(?:га|гача|дан|да)|${TOWN_CYRL})`,
+  `baliqchi(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `балиқчи(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, '(?:в|до|из)\\s+балыкчи',
+  // «talash» is a quarrel: Talas only as itself or with its own ending.
+  `talas(?:${SEP}(?:ga|gacha|dan|da|ning))?`, 'талас(?:а|е|у|ом|га|гача|дан|да)?',
   // «kabul qilasizmi», «кабул киласизми» is «qabul» typed without its «q» — «accept».
   'kabul(?:ga|gacha|dan|da)?(?![\\p{L}])(?!\\s*(?:qil|kil|etil))', 'кабул(?:га|гача|дан|да|е|а)?(?![\\p{L}])(?!\\s*(?:қил|кил))',
 ];
@@ -210,6 +224,11 @@ const PERSIAN: readonly string[] = [
   'اصفهان', 'باکو', 'آذربایجان', 'مینسک',
   // fix pass 6, the hunt #8: Iran and Turkey, and the Afghan cities his Persian-writing customers name.
   'ایران', 'ترکیه', 'بلخ', 'جلال\\s*آباد', 'کندز', 'شبرغان', 'پلخمری', 'غزنی',
+  // fix pass 7, the check #10: Iran's cities and Afghanistan's, in Persian — and «مزار» alone. «رشت», «قم», «یزد», «خوست»
+  // end their word: «رشته» is a noodle.
+  'شیراز', 'تبریز', 'کرج', 'بندر[\\s\\u200c]*عباس', 'اهواز', 'کرمانشاه', 'کرمان', 'همدان', 'ارومیه', 'زاهدان', 'سرخس',
+  'قم(?![\\p{L}])', 'یزد(?![\\p{L}])', 'رشت(?![\\p{L}])', 'مزار',
+  'فیض[\\s\\u200c]*آباد', 'تالقان', 'میمنه', 'بامیان', 'خوست(?![\\p{L}])', 'سمنگان', 'سر[\\s\\u200c]*پل', 'اندخوی', 'آقچه',
 ];
 
 const PLACE = new RegExp(

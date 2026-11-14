@@ -43,8 +43,12 @@ export interface ReaderCase {
   reader: Reader;
   /** The reply, the customer's lines («\n» between them), his answer, the lesson — what the reader reads. */
   input: string;
-  /** `language`: the conversation's stored language and the reply's; `money` / `han`: the reply's language. */
-  context?: { stored?: string | null; reply?: string };
+  /**
+   * `language`: the conversation's stored language and the reply's; `money` / `han`: the reply's language. `before`
+   * (fix pass 7): the customer's EARLIER lines in the chat's window, our reply after them, and `input` the next burst —
+   * with `remember`, the stored language is what the earlier turn's run remembered.
+   */
+  context?: { stored?: string | null; reply?: string; before?: string; remember?: boolean };
   expect: Observed;
   kind: Kind;
   source: string;
@@ -282,6 +286,15 @@ const AVIA_DANGEROUS: readonly Row[] = [
   // …and «to us» beside the cargo, with a verb no list holds.
   ['av174', `${Q_EN} Get the goods to us.`, 'hunt#2 neighbour'],
   ['av175', `${Q_RU} Тащите груз к нам.`, 'hunt#2 neighbour'],
+  // Fix pass 7 (the check #12): «our base» and «our terminal» are places of ours; «занесите», «отдаст» hand it over.
+  ['av176', `${Q_UZ} Yuk bazamizga keladi.`, 'check7#12'],
+  ['av177', `${Q_RU} Груз приходит на нашу базу.`, 'check7#12'],
+  ['av178', `${Q_UZ} Yukingiz bazamizga tushadi.`, 'check7#12'],
+  ['av179', `${Q_UZ} Yuk terminalimizga keladi.`, 'check7#12'],
+  ['av180', `${Q_RU} Груз поступает на базу.`, 'check7#12'],
+  ['av181', `${Q_RU} Груз занесите.`, 'check7#12'],
+  ['av182', `${Q_RU} Поставщик отдаст груз нашему человеку.`, 'check7#12'],
+  ['av183', `${Q_EN} The cargo comes to our base.`, 'check7#12'],
 ];
 
 const AVIA_ORDINARY: readonly Row[] = [
@@ -399,6 +412,9 @@ const AVIA_ORDINARY: readonly Row[] = [
   ['av290', 'Пришлите ссылку на товар — проверим, можно ли его авиа.', 'hunt#13'],
   ['av291', 'Если сомневаетесь, пришлите ссылку на товар — проверим и ответим.', 'hunt#13'],
   ['av292', 'Пришлите ссылку на товар, пожалуйста.', 'hunt#13'],
+  // Fix pass 7: the customs «base» is no place of ours.
+  ['av293', `${Q_UZ} Boj bojxona bazasiga qarab hisoblanadi.`, 'check7#12 neighbour'],
+  ['av294', `${Q_RU} Пошлина считается на базе таможенной стоимости.`, 'check7#12 neighbour'],
 ];
 
 // ── destination: what the customer wrote, under an admitted Tashkent quote ──
@@ -530,6 +546,34 @@ const DESTINATION_DANGEROUS: readonly Row[] = [
   ['ds119', 'Fergonaga kerak', 'hunt#8'],
   ['ds120', 'Qashqadaryaga yuk bor', 'hunt#8'],
   ['ds121', 'Kukonga', 'hunt#8'],
+  // Fix pass 7 (the check #10): the Afghan hub in its other spellings, Afghanistan in short, the Andijan region and
+  // Kyrgyzstan's towns, the Iranian and Afghan cities in Persian.
+  ['ds122', 'Salom, Yiwudan Mozorga 5 kub 1000 kg yuk bor, narxi qancha?', 'check7#10'],
+  ['ds123', 'Yiwudan Afg\'onga 5 kub 1000 kg', 'check7#10'],
+  ['ds124', 'Yiwudan Qorasuvga 5 kub 1000 kg', 'check7#10'],
+  ['ds125', 'Yiwudan Xonobodga 5 kub 1000 kg', 'check7#10'],
+  ['ds126', 'Hello, 5 m3 1000 kg from Yiwu to Mazar-e Sharif, how much?', 'check7#10'],
+  ['ds127', '5 cbm 1000 kg going to Mazar. Price?', 'check7#10'],
+  ['ds128', 'Oltinko\'lga yuk bor', 'check7#10'],
+  ['ds129', 'Marhamatga yuk bor', 'check7#10'],
+  ['ds130', 'Paytug\'ga yuk bor', 'check7#10'],
+  ['ds131', 'Izboskanga yuk bor', 'check7#10'],
+  ['ds132', 'Baliqchiga yuk bor', 'check7#10'],
+  ['ds133', 'Qo\'rg\'ontepaga yuk bor', 'check7#10'],
+  ['ds134', 'Доставка в Карасу', 'check7#10'],
+  ['ds135', 'Talasga yuk bor', 'check7#10'],
+  ['ds136', 'Narynga yuk bor', 'check7#10'],
+  ['ds137', 'بار به شیراز', 'check7#10'],
+  ['ds138', 'بار به مزار', 'check7#10'],
+  ['ds139', 'بار به فیض‌آباد', 'check7#10'],
+  ['ds140', 'به تبریز', 'check7#10'],
+  ['ds141', 'به قم', 'check7#10'],
+  ['ds142', 'به رشت', 'check7#10'],
+  ['ds143', 'به بندرعباس', 'check7#10'],
+  ['ds144', 'به خوست', 'check7#10'],
+  ['ds145', 'به میمنه', 'check7#10'],
+  ['ds146', 'Доставка в Мазар', 'check7#10'],
+  ['ds147', 'Kara-Suu ga yuk bor', 'check7#10'],
 ];
 
 const DESTINATION_ORDINARY: readonly Row[] = [
@@ -644,6 +688,12 @@ const DESTINATION_ORDINARY: readonly Row[] = [
   ['ds305', "Xitoydan elektronikaga yo'lkira qancha?", 'check2:tests#3'],
   ['ds306', "Yiwudan kafelga yo'lkira qancha?", 'check2:tests#3'],
   ['ds307', "Xitoydan o'yinchoqqa yo'lkira qancha?", 'check2:tests#3'],
+  // Fix pass 7: «marhamat» is «please», «baliqchi» a fisherman, «رشته» a noodle — no place.
+  ['ds308', 'Marhamat, 5 kub yuk bor, narxi qancha?', 'check7#10 neighbour'],
+  ['ds309', 'Assalomu alaykum, marhamat, yukim Yiwuda', 'check7#10 neighbour'],
+  ['ds310', 'رشته فرنگی دارم، قیمت حمل چند است؟', 'check7#10 neighbour'],
+  ['ds311', 'Baliqchi idishlari bor, 3 kub', 'check7#10 neighbour'],
+  ['ds312', 'قیمت حمل به تاشکند چند است؟', 'check7#10 neighbour'],
 ];
 
 // ── language: the customer's lines, the conversation's stored language, the reply's ──
@@ -731,6 +781,66 @@ const LANGUAGE_DANGEROUS: readonly Row[] = [
   ['lg066', 'tovarim Guanchjouda, to Toshkent olib kelasizlarmi', 'hunt#10', lg(null, 'en')],
   ['lg067', 'Assalomu alaykum\nkiyim i poyabzal bor, Ivuda\nolib kelasizlarmi?', 'hunt#10', lg('uz', 'en')],
   ['lg068', 'Ivuda tovarim tayyor, order qilganman', 'hunt#10', lg('uz', 'en')],
+  // Fix pass 7 (the check of pass 6): the chat REMEMBERS what the earlier turn's reading decided (#1) and an unmarked
+  // line leans on what the window said (#4) — never the other language; pass 6's soft Russian words (#2, #5) and every
+  // Russian word (#6) beside anything of Uzbek; the Latin loan words beside an Uzbek greeting or detached ending (#13).
+  ['lg069', '800 кг', 'check7#1', { stored: null, reply: 'uz_cyrl', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб', remember: true }],
+  ['lg070', '5 куб 800 кг', 'check7#1', { stored: null, reply: 'uz_cyrl', before: 'Здравствуйте, хотел узнать цену доставки\nОдежда', remember: true }],
+  ['lg071', '800 kg', 'check7#1', { stored: null, reply: 'en', before: 'Salom\nKiyim kechak', remember: true }],
+  ['lg072', 'GS778', 'check7#1', { stored: null, reply: 'en', before: 'Assalomu alaykum, yukim qayerda?\nGS777', remember: true }],
+  ['lg073', 'Хорошо', 'check7#1', { stored: null, reply: 'uz_cyrl', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб 800 кг', remember: true }],
+  ['lg074', '5 куб 800 кг', 'check7#4', { stored: null, reply: 'uz_cyrl', before: 'Здравствуйте, сколько стоит доставка?' }],
+  ['lg075', 'GS777', 'check7#4', { stored: null, reply: 'en', before: 'Assalomu alaykum, yukim qayerda?' }],
+  ['lg076', 'Рахмат ака понял', 'check7#2', { stored: null, reply: 'ru' }],
+  ['lg077', 'Хоп ака, ясно', 'check7#2', { stored: null, reply: 'ru' }],
+  ['lg078', 'Понял ака, рахмат', 'check7#2', { stored: null, reply: 'ru' }],
+  ['lg079', 'Рахмат ака, понял, кутаман', 'check7#2', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg080', 'Хоп ака понял кутаман', 'check7#2', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg081', 'Понял ака, юкимни жунатаман', 'check7#2', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg082', 'Ака понял рахмат катта', 'check7#2', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg083', 'Ассалому алайкум ака, хотел узнать', 'check7#2', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg084', 'Понял, спасибо', 'check7#2 neighbour', { stored: null, reply: 'uz_cyrl' }],
+  ['lg085', 'Хоп ака понял, рахмат', 'check7#5', { stored: null, reply: 'ru' }],
+  ['lg086', 'Хоп ака, ясно, рахмат', 'check7#5', { stored: null, reply: 'ru' }],
+  ['lg087', 'Хоп ака, понял, ертага юбораман', 'check7#5', { stored: null, reply: 'ru' }],
+  ['lg088', 'Хоп ака, понял, ертага юбораман', 'check7#5', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg089', 'Хоп ака понял, ертага жунатаман', 'check7#5', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg090', 'Ака ясно, ертага олиб келаман', 'check7#5', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg091', '5 куб 800 кг', 'check7#5 (the chain)', { stored: null, reply: 'ru', before: 'Хоп ака, понял, ертага юбораман', remember: true }],
+  ['lg092', 'Ака, уже жунатдим', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg093', 'Ака товар когда кетади?', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg094', 'Ака, нархи сколько?', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg095', 'Ака юкимни когда оласизлар?', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg096', 'Ака манга адрес скиньте', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg097', 'Ака склад адресини скиньте', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg098', 'Ака адресни отправьте', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg099', 'Ака напишите манзилни', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg100', 'Документлар есть', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg101', 'Ака, кийимлар есть 3 куб', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg102', 'Ака, надо срочно жунатиш', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg103', 'Ака что булди юкимга?', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg104', 'Товар готов, когда оласизлар', 'check7#6', { stored: null, reply: 'ru' }],
+  ['lg105', 'Ака, уже жунатдим', 'check7#6', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg106', 'Ака товар когда кетади?', 'check7#6', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg107', 'Ака юкимни когда оласизлар?', 'check7#6', { stored: 'uz_cyrl', reply: 'ru' }],
+  ['lg108', 'Сколько стоит доставка, 50 доллар за куб?', 'check7#6 neighbour', { stored: null, reply: 'uz_cyrl' }],
+  ['lg109', 'Sertifikat kerakmi?', 'check7#3', { stored: null, reply: 'en' }],
+  ['lg110', 'Qanday ishlaysizlar?', 'check7#3', { stored: null, reply: 'en' }],
+  ['lg111', 'Kogda pridet gruz?', 'check7#3 neighbour', { stored: null, reply: 'uz' }],
+  ['lg112', 'Dostavka doroga?', 'check7#3 neighbour', { stored: null, reply: 'uz' }],
+  ['lg113', 'Skolko budet za 3 kuba?', 'check7#3 neighbour', { stored: null, reply: 'uz' }],
+  ['lg114', 'Salom, Yiwu dan 2 cbm, 300 kg, price?', 'check7#13', { stored: null, reply: 'en' }],
+  ['lg115', 'Salom, Yiwu dan 2 cbm, 300 kg, price?', 'check7#13', { stored: 'uz', reply: 'en' }],
+  ['lg116', 'Salom, price?', 'check7#13', { stored: null, reply: 'en' }],
+  ['lg117', 'Assalomu alaykum. Goods ready. Address?', 'check7#13', { stored: null, reply: 'en' }],
+  ['lg118', 'Assalomu alaykum. Goods ready. Address?', 'check7#13', { stored: 'uz', reply: 'en' }],
+  ['lg119', '800 кг', 'check7#1', { stored: null, reply: 'uz_cyrl', before: 'Здравствуйте! Груз из Гуанчжоу, 5 куб', remember: true }],
+  ['lg120', 'GS778', 'check7#1', { stored: null, reply: 'en', before: 'Salom, Yiwu dan GS777', remember: true }],
+  ['lg121', 'Yiwu dan 2 cbm, 300 kg, price?', 'check7#13', { stored: null, reply: 'en' }],
+  // An Uzbek speaker's own endings under a Russian greeting: the greeting leaned the guess Russian, and the Russian reply
+  // went by itself (found while proving check7#6 — anything of Uzbek in the text is Uzbek's guess).
+  ['lg122', 'Здравствуйте\nМебель олиб келасизларми', 'check7#6 neighbour', { stored: null, reply: 'ru' }],
+  ['lg123', 'Склад адреси?', 'check7#3', { stored: null, reply: 'ru' }],
 ];
 
 const LANGUAGE_ORDINARY: readonly Row[] = [
@@ -811,6 +921,115 @@ const LANGUAGE_ORDINARY: readonly Row[] = [
   ['lg271', 'Ivuda tovarim tayyor, order qilganman', 'hunt#10', lg(null, 'uz')],
   ['lg272', 'tovarim Guanchjouda, to Toshkent olib kelasizlarmi', 'hunt#10', lg(null, 'uz')],
   ['lg273', 'Ivuda tovarim tayyor, order qilganman', 'hunt#10', lg('uz', 'uz')],
+  // Fix pass 7 (the check of pass 6): the same lines answered in their own language.
+  ['lg274', '800 кг', 'check7#1', { stored: null, reply: 'ru', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб', remember: true }],
+  ['lg275', '5 куб 800 кг', 'check7#1', { stored: null, reply: 'ru', before: 'Здравствуйте, хотел узнать цену доставки\nОдежда', remember: true }],
+  ['lg276', '800 кг', 'check7#1', { stored: null, reply: 'ru', before: 'Добрый день, у меня груз в Гуанчжоу\nОдежда', remember: true }],
+  ['lg277', '800 kg', 'check7#1', { stored: null, reply: 'uz', before: 'Salom\nKiyim kechak', remember: true }],
+  ['lg278', 'GS778', 'check7#1', { stored: null, reply: 'uz', before: 'Assalomu alaykum, yukim qayerda?\nGS777', remember: true }],
+  ['lg279', 'Хорошо', 'check7#1', { stored: null, reply: 'ru', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб 800 кг', remember: true }],
+  ['lg280', 'Ок', 'check7#1', { stored: null, reply: 'ru', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб 800 кг', remember: true }],
+  ['lg281', 'Одежда', 'check7#1', { stored: null, reply: 'ru', before: 'Здравствуйте\nГруз из Гуанчжоу, 5 куб 800 кг', remember: true }],
+  ['lg282', 'Да', 'check7#1', { stored: null, reply: 'ru', before: 'Добрый день\nГруз 5 куб 800 кг из Иу', remember: true }],
+  ['lg283', '5 куб 800 кг', 'check7#4', { stored: null, reply: 'ru', before: 'Здравствуйте, сколько стоит доставка?' }],
+  ['lg284', 'GS777', 'check7#4', { stored: null, reply: 'uz', before: 'Assalomu alaykum, yukim qayerda?' }],
+  ['lg285', '👍', 'check7#4', { stored: null, reply: 'uz', before: 'Assalomu alaykum, yukim qayerda?' }],
+  ['lg286', 'Invoice', 'check7#4', { stored: null, reply: 'ru', before: 'Здравствуйте, сколько стоит доставка?' }],
+  ['lg287', 'GS777', 'check7#4 (a first message)', { stored: null, reply: 'uz' }],
+  ['lg288', '5 куб 800 кг', 'check7#4 (a first message)', { stored: null, reply: 'ru' }],
+  ['lg289', '5 куб 800 кг', 'check7#4 (a first message)', { stored: null, reply: 'uz_cyrl' }],
+  ['lg290', '👍', 'check7#4 (a first message)', { stored: null, reply: 'uz' }],
+  ['lg291', 'Invoice', 'check7#4 (a first message)', { stored: null, reply: 'uz' }],
+  ['lg292', 'Инвойс', 'check7#4 (a first message)', { stored: null, reply: 'ru' }],
+  ['lg293', 'Груз из Гуанчжоу', 'check7#4 (a first message)', { stored: null, reply: 'ru' }],
+  ['lg294', 'Хорошо', 'check7#4 (a first message)', { stored: null, reply: 'ru' }],
+  ['lg295', 'Ладно, жду', 'check7#4 (a first message)', { stored: null, reply: 'ru' }],
+  ['lg296', 'Оплата?', 'check7#4 (a first message)', { stored: null, reply: 'ru' }],
+  ['lg297', 'Ака доставка Гуанчжоу Ташкент', 'check7#4 (a first message)', { stored: null, reply: 'uz_cyrl' }],
+  ['lg298', '5 cbm 1000 kg', 'check7#4 (a first message)', { stored: null, reply: 'uz' }],
+  ['lg299', 'Avia 30 kg', 'check7#4 (a first message)', { stored: null, reply: 'uz' }],
+  ['lg300', 'Ok', 'check7#3 (a first message)', { stored: null, reply: 'uz' }],
+  ['lg301', 'Кийим кечак 3 куб', 'check7#4', { stored: null, reply: 'uz_cyrl' }],
+  ['lg302', 'Рахмат ака понял', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg303', 'Хоп ака, ясно', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg304', 'Понял ака, рахмат', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg305', 'Рахмат ака, понял, кутаман', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg306', 'Ассалому алайкум, хотел узнать нархи', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg307', 'Хоп, понял', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg308', 'Ака понял, юк качон келади', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg309', 'Ака, интересно канча булади', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg310', 'Понял, рахмат', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg311', 'Хоп ака понятно', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg312', 'Понятно ака рахмат', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg313', 'Ха ака понял', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg314', 'Ака хотел узнать юк качон келади', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg315', 'Ака интересует нарх', 'check7#2', { stored: null, reply: 'uz_cyrl' }],
+  ['lg316', 'Рахмат ака, понял, кутаман', 'check7#2', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg317', 'Хоп ака понял кутаман', 'check7#2', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg318', 'Понял ака, юкимни жунатаман', 'check7#2', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg319', 'Ака понял рахмат катта', 'check7#2', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg320', 'Ассалому алайкум ака, хотел узнать', 'check7#2', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg321', 'Понял, спасибо', 'check7#2 neighbour', { stored: null, reply: 'ru' }],
+  ['lg322', 'Ясно, спасибо, жду', 'check7#2 neighbour', { stored: null, reply: 'ru' }],
+  ['lg323', 'Хоп ака понял, рахмат', 'check7#5', { stored: null, reply: 'uz_cyrl' }],
+  ['lg324', 'Хоп ака, ясно, рахмат', 'check7#5', { stored: null, reply: 'uz_cyrl' }],
+  ['lg325', 'Хоп ака, понял, ертага юбораман', 'check7#5', { stored: null, reply: 'uz_cyrl' }],
+  ['lg326', 'Хоп ака, понял, ертага юбораман', 'check7#5', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg327', 'Хоп ака понял, ертага жунатаман', 'check7#5', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg328', 'Ака ясно, ертага олиб келаман', 'check7#5', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg329', '5 куб 800 кг', 'check7#5 (the chain)', { stored: null, reply: 'uz_cyrl', before: 'Хоп ака, понял, ертага юбораман', remember: true }],
+  ['lg330', 'Ака, уже жунатдим', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg331', 'Ака товар когда кетади?', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg332', 'Ака, нархи сколько?', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg333', 'Ака юкимни когда оласизлар?', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg334', 'Ака манга адрес скиньте', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg335', 'Ака склад адресини скиньте', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg336', 'Ака адресни отправьте', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg337', 'Ака напишите манзилни', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg338', 'Документлар есть', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg339', 'Ака, кийимлар есть 3 куб', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg340', 'Ака, надо срочно жунатиш', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg341', 'Ака что булди юкимга?', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg342', 'Товар готов, когда оласизлар', 'check7#6', { stored: null, reply: 'uz_cyrl' }],
+  ['lg343', 'Ака, уже жунатдим', 'check7#6', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg344', 'Ака товар когда кетади?', 'check7#6', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg345', 'Ака юкимни когда оласизлар?', 'check7#6', { stored: 'uz_cyrl', reply: 'uz_cyrl' }],
+  ['lg346', 'Сколько стоит доставка, 50 доллар за куб?', 'check7#6 neighbour', { stored: null, reply: 'ru' }],
+  ['lg347', 'Sertifikat kerakmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg348', 'GS kod qanday ochiladi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg349', 'Qanday ishlaysizlar?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg350', 'Ertaga ishlaysizlarmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg351', 'Mebel ham olasizlarmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg352', 'Qayerdan olaman?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg353', 'GS kod (markirovka) qanday ochiladi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg354', 'Kelib chiqish sertifikati kerakmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg355', 'Ivu manzili qanday?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg356', 'Xorgosga yubormoqchiman, manzil?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg357', 'Yaxshi, manzilni yuboring', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg358', 'Manzil qayerga yuboraman?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg359', 'Bugun ishlaysizlarmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg360', 'Shanba kuni ishlaysizlarmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg361', 'Elektronika olasizlarmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg362', 'Kiyim kechak olasizlarmi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg363', 'Ombor manzilini yuboring', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg364', 'Kod ochmoqchiman', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg365', 'Nechchi kunda keladi?', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg366', 'Tushundim', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg367', 'Yaxshi', 'check7#3', { stored: null, reply: 'uz' }],
+  ['lg368', 'Salom, Yiwu dan 2 cbm, 300 kg, price?', 'check7#13', { stored: null, reply: 'uz' }],
+  ['lg369', 'Salom, Yiwu dan 2 cbm, 300 kg, price?', 'check7#13', { stored: 'uz', reply: 'uz' }],
+  ['lg370', 'Salom, price?', 'check7#13', { stored: null, reply: 'uz' }],
+  ['lg371', 'Assalomu alaykum. Goods ready. Address?', 'check7#13', { stored: null, reply: 'uz' }],
+  ['lg372', 'Assalomu alaykum. Goods ready. Address?', 'check7#13', { stored: 'uz', reply: 'uz' }],
+  // …a turn remembered from ONE line that leans and is no mark alone — no line of the window says the language by itself,
+  // so only what the earlier run remembered carries it (check7#1).
+  ['lg373', '800 кг', 'check7#1', { stored: null, reply: 'ru', before: 'Здравствуйте! Груз из Гуанчжоу, 5 куб', remember: true }],
+  ['lg374', 'GS778', 'check7#1', { stored: null, reply: 'uz', before: 'Salom, Yiwu dan GS777', remember: true }],
+  ['lg375', 'Yiwu dan 2 cbm, 300 kg, price?', 'check7#13', { stored: null, reply: 'uz' }],
+  ['lg376', 'Здравствуйте\nМебель олиб келасизларми', 'check7#6 neighbour', { stored: null, reply: 'uz_cyrl' }],
+  // The check #3's flips in the ordinary suites: «Склад адреси?» carries Uzbek's own case; «адрес склада» carries nothing.
+  ['lg377', 'Склад адреси?', 'check7#3', { stored: null, reply: 'uz_cyrl' }],
+  ['lg378', 'адрес склада', 'check7#3 (a first message)', { stored: null, reply: 'ru' }],
 ];
 
 // ── his ✍️ answer: does it hold a figure? ───────────────────────────────────
@@ -876,6 +1095,24 @@ const OWNER_DANGEROUS: readonly Row[] = [
   ['of055', 'Вполовину дешевле', 'hunt#4'],
   ['of056', 'پونصد دلار', 'hunt#4'],
   ['of057', 'Десяток коробок', 'hunt#4'],
+  // Fix pass 7 (the check #8): a DAY in his answer is his figure too — a weekday, «ertaga», «завтра», «next Monday» —
+  // and «yarim-yarim», the 50/50 split.
+  ['of058', 'Ertaga yuklanadi', 'check7#8'],
+  ['of059', 'Dushanba kuni yuklanadi', 'check7#8'],
+  ['of060', 'Indinga jo\'natamiz', 'check7#8'],
+  ['of061', 'Kelasi hafta keladi', 'check7#8'],
+  ['of062', 'Oy oxirigacha keladi', 'check7#8'],
+  ['of063', 'Отправим в понедельник', 'check7#8'],
+  ['of064', 'Завтра', 'check7#8'],
+  ['of065', 'Через пару дней', 'check7#8'],
+  ['of066', 'Tomorrow', 'check7#8'],
+  ['of067', 'Next Monday', 'check7#8'],
+  ['of068', 'To\'lovni yarim-yarim qilamiz', 'check7#8'],
+  ['of069', 'Yarim-yarim to\'laysiz', 'check7#8'],
+  ['of070', 'Послезавтра отправим', 'check7#8'],
+  ['of071', 'В конце месяца', 'check7#8'],
+  ['of072', 'Juma kuni yuklanadi', 'check7#8'],
+  ['of073', 'Эртага юкланади', 'check7#8'],
 ];
 
 const OWNER_ORDINARY: readonly Row[] = [
@@ -901,6 +1138,11 @@ const OWNER_ORDINARY: readonly Row[] = [
   ['of219', 'Ҳа, ҳар бир қутига ёзамиз', 'check2:tests#8 D19'],
   ['of220', 'Yes, every one box gets a label', 'check2:tests#8 D19'],
   ['of221', 'Bir daqiqa, hozir aniqlab aytaman', 'check2:tests#8 D20'],
+  // Fix pass 7: «Juma» the name, and answers with no day.
+  ['of222', 'Juma akaga ayting, u biladi', 'check7#8 neighbour'],
+  ['of223', 'Ha, bu tovarni olamiz, muammo yo‘q', 'check7#8 neighbour'],
+  ['of224', 'Sertifikat kerak emas', 'check7#8 neighbour'],
+  ['of225', 'Yo‘q, bu yo‘nalishda ishlamaymiz', 'check7#8 neighbour'],
 ];
 
 // ── money: a reply through the policy and the gate ─────────────────────────
@@ -1014,6 +1256,41 @@ const MONEY_DANGEROUS: readonly Row[] = [
   ['mn096', 'Your cargo arrives in a fortnight.', 'hunt#6', r('en')],
   ['mn097', 'It arrives within the second week.', 'hunt#6', r('en')],
   ['mn098', 'Delivery on the third day.', 'hunt#6', r('en')],
+  // Fix pass 7 (the check of pass 6, #7): a transit time with no numeral word — «около недели», «за неделю», «неделя-две»,
+  // «a couple of weeks», «hafta ichida» — and (#9) a loading or departing day: «ertaga yuklanadi», «загрузят в понедельник».
+  ['mn099', 'Доставка обычно занимает около недели.', 'check7#7', r('ru')],
+  ['mn100', 'Доставим за неделю.', 'check7#7', r('ru')],
+  ['mn101', 'В пути около месяца.', 'check7#7', r('ru')],
+  ['mn102', 'Груз придёт за неделю.', 'check7#7', r('ru')],
+  ['mn103', 'Доставка займёт неделю.', 'check7#7', r('ru')],
+  ['mn104', 'В пути примерно неделю.', 'check7#7', r('ru')],
+  ['mn105', 'Доставка займёт месяц.', 'check7#7', r('ru')],
+  ['mn106', 'Груз в пути до недели.', 'check7#7', r('ru')],
+  ['mn107', 'Сроки — до месяца.', 'check7#7', r('ru')],
+  ['mn108', 'Не больше недели.', 'check7#7', r('ru')],
+  ['mn109', 'Меньше недели.', 'check7#7', r('ru')],
+  ['mn110', 'Доставка — неделя-две.', 'check7#7', r('ru')],
+  ['mn111', 'Примерно неделя-полторы.', 'check7#7', r('ru')],
+  ['mn112', 'Обычно неделя, максимум полторы.', 'check7#7', r('ru')],
+  ['mn113', 'Груз приходит за сутки.', 'check7#7', r('ru')],
+  ['mn114', 'Доставка — неделю с небольшим.', 'check7#7', r('ru')],
+  ['mn115', 'It usually takes a couple of weeks.', 'check7#7', r('en')],
+  ['mn116', 'It takes a few weeks.', 'check7#7', r('en')],
+  ['mn117', 'Yuk hafta ichida keladi.', 'check7#7', r('uz')],
+  ['mn118', 'Yukingiz haftada yetib keladi.', 'check7#7', r('uz')],
+  ['mn119', 'Юкингиз ҳафта ичида келади.', 'check7#7', r('uz_cyrl')],
+  ['mn120', 'Yukingiz ertaga yuklanadi.', 'check7#9', r('uz')],
+  ['mn121', 'Yukingiz dushanba kuni yuklanadi.', 'check7#9', r('uz')],
+  ['mn122', 'Yukingizni ertaga yuklaymiz.', 'check7#9', r('uz')],
+  ['mn123', 'Yukingiz payshanba kuni omborga tushadi.', 'check7#9', r('uz')],
+  ['mn124', 'Ваш груз загрузят в понедельник.', 'check7#9', r('ru')],
+  ['mn125', 'Груз уходит завтра.', 'check7#9', r('ru')],
+  ['mn126', 'Груз загрузим завтра.', 'check7#9', r('ru')],
+  ['mn127', 'Машина выходит в пятницу.', 'check7#9', r('ru')],
+  ['mn128', 'Загрузка в понедельник.', 'check7#9', r('ru')],
+  ['mn129', 'The truck leaves on Friday.', 'check7#9', r('en')],
+  ['mn130', 'Loading is on Monday.', 'check7#9', r('en')],
+  ['mn131', 'Your cargo will be loaded on Monday.', 'check7#9', r('en')],
 ];
 
 const MONEY_ORDINARY: readonly Row[] = [
@@ -1065,6 +1342,13 @@ const MONEY_ORDINARY: readonly Row[] = [
   ['mn242', 'Hisoblash uchun bir dollar ham qo‘shilmaydi. Yuk necha kub?', 'check2:tests#1', r('uz')],
   ['mn243', 'Hisoblash uchun bir so‘m ham kerak emas. Yuk necha kub?', 'check2:tests#1', r('uz')],
   ['mn244', 'برای محاسبه یک دلار هم اضافه نمی‌شود. حجم بار چقدر است؟', 'check2:tests#1', r('fa')],
+  // Fix pass 7: the neighbours — a week that is no transit time, and a loading day that is a timetable.
+  ['mn245', 'Мы работаем всю неделю без выходных.', 'check7#7 neighbour', r('ru')],
+  ['mn246', 'Пишите в любой день недели.', 'check7#7 neighbour', r('ru')],
+  ['mn247', 'Каждую неделю отправляем машины.', 'check7#7 neighbour', r('ru')],
+  ['mn248', 'Mashinalar har dushanba yuklanadi.', 'check7#9 neighbour', r('uz')],
+  ['mn249', 'Грузим каждую пятницу.', 'check7#9 neighbour', r('ru')],
+  ['mn250', 'Trucks leave every Friday.', 'check7#9 neighbour', r('en')],
 ];
 
 // ── han: a Chinese reply through the policy and the gate ───────────────────
@@ -1235,6 +1519,27 @@ const LESSON_DANGEROUS: readonly Row[] = [
   ['ls045', 'Narx 17 tadan, kubi 160 tadan', 'hunt#7'],
   ['ls046', 'Narx 17 tadan deb ayt', 'hunt#7 neighbour'],
   ['ls047', 'Avia 17 ta dollar deb ayt', 'hunt#7 neighbour'],
+  // Fix pass 7 (the check #11): a price named by its road, its goods, its customer, a floor or a discount — or by «de» alone.
+  ['ls048', 'Avia 17, avto 160', 'check7#11'],
+  ['ls049', 'Avia 17 dan hisobla', 'check7#11'],
+  ['ls050', 'Авиа 17', 'check7#11'],
+  ['ls051', 'Air 17', 'check7#11'],
+  ['ls052', 'Kiyim 160, mebel 140', 'check7#11'],
+  ['ls053', '160 dan past tushma', 'check7#11'],
+  ['ls054', 'Не ниже 150', 'check7#11'],
+  ['ls055', 'Minimum 150', 'check7#11'],
+  ['ls056', 'Doimiy mijozga 150 dan ayt', 'check7#11'],
+  ['ls057', 'Avto 160', 'check7#11'],
+  ['ls058', 'Avia 17 dan, avto 160 dan', 'check7#11'],
+  ['ls059', 'Авиа по 17', 'check7#11'],
+  ['ls060', 'Mebelga 140 de', 'check7#11'],
+  ['ls061', 'Optomchilarga 140', 'check7#11'],
+  ['ls062', 'Skidka 10 dan oshmasin', 'check7#11'],
+  ['ls063', 'Chegirma 5 foizdan oshmasin', 'check7#11'],
+  ['ls064', 'Avia o\'n yetti', 'check7#11'],
+  ['ls065', 'Kubi bir yuz oltmish', 'check7#11'],
+  ['ls066', '160 de', 'check7#11'],
+  ['ls067', 'Zichligi 200 dan past bo‘lsa 140 de', 'check7#11'],
 ];
 
 const LESSON_ORDINARY: readonly Row[] = [
@@ -1259,6 +1564,12 @@ const LESSON_ORDINARY: readonly Row[] = [
   ['ls219', 'Narx so‘rasa, 1 tadan ortiq emoji qo‘yma', 'check2#19'],
   ['ls220', 'Narx so‘rasa, 2 tadan ko‘p savol berma', 'check2#19'],
   ['ls221', 'Narx haqida javobni 3 qismga bo‘lib yoz', 'check2#19'],
+  // Fix pass 7: lessons that count, or name no figure at all.
+  ['ls222', 'Emojini ko‘p ishlatma', 'check7#11 neighbour'],
+  ['ls223', 'Javobni 2 ta gapdan oshirma', 'check7#11 neighbour'],
+  ['ls224', 'Sertifikat haqida so‘rasa, kerak emas de', 'check7#11 neighbour'],
+  ['ls225', 'Mijozga 3 ta savoldan ko‘p berma', 'check7#11 neighbour'],
+  ['ls226', 'Avia haqida 2 marta aytma', 'check7#11 neighbour'],
 ];
 
 // ── phone: the ✍️ door's phone refusal ──────────────────────────────────────

@@ -635,6 +635,18 @@ function spelledDurationSrc(vague: boolean): string {
     `(?<![\\p{L}])(?:${ru})(?:[-–\\s]+(?:${ru}))*\\s+(?:(?:рабоч|календарн)\\p{L}*\\s+)?(?:дн(?:я|ей)|день|сут(?:ки|ок)|недел[иьяю]|недельк\\p{L}*|месяц(?:а|ев)?|час(?:а|ов)?)(?![\\p{L}])`,
     '(?<![\\p{L}])(?:через|в\\s+течение|в\\s+пределах)\\s+(?:недел[юи]|недельк\\p{L}*|месяц[а]?|сутки|суток|день|дня|час[а]?)(?![\\p{L}])',
     '(?<![\\p{L}])пол[-\\s]?(?:месяца|года|недели|дня|часа)(?![\\p{L}])',
+    // A transit time said with its unit ALONE (fix pass 7, the check #7) — «около недели», «за неделю», «займёт неделю»,
+    // «до месяца», «неделя-две», «за сутки», «неделю с небольшим»: a time no numeral word states and every reader
+    // missed. Only with what makes it a span — never «всю неделю», «каждую неделю», «на этой неделе».
+    '(?<![\\p{L}])(?:за|около|примерно|приблизительно|где-?то|обычно|до|больше|более|меньше|менее|займ[её]т|занима(?:ет|ют)|ид[её]т|в\\s+пути)\\s+(?:всего\\s+)?(?:недел[юия]|недельк\\p{L}*|месяц[а]?|сутки|суток)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:недел[юя]|месяц)\\s*[-–]\\s*(?:две|два|три|полтор[аы])(?![\\p{L}])|(?<![\\p{L}])недел[юя]\\s+с\\s+небольшим(?![\\p{L}])',
+    '(?<![\\p{L}])(?:hafta|oy|ҳафта|хафта|ой)\\s+(?:ichida|ичида)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:haftada|oyda|ҳафтада|хафтада|ойда)\\s+(?:yetib\\s+|етиб\\s+)?(?:kel|bor|yetkaz|кел|бор|етказ)\\p{L}*',
+    // …and a vague count of WEEKS or MONTHS — «a couple of weeks», «пару недель», «bir necha hafta» — is a transit time
+    // and nothing else here (a calculation takes minutes, an answer hours): a count, as a definite one is.
+    '(?<![\\p{L}])(?:a\\s+couple\\s+of|couple\\s+of|a\\s+few|several)\\s+(?:weeks?|months?)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:пар[уыа]|нескольк\\p{L}*)\\s+(?:недел\\p{L}*|месяц\\p{L}*)',
+    '(?<![\\p{L}])(?:bir\\s+necha|бир\\s+неча)\\s+(?:hafta|oy|ҳафта|хафта|ой)\\p{L}*',
     `(?<![\\p{L}])(?:${en})(?:[-–\\s]+(?:or\\s+)?(?:${en}))*\\s+(?:(?:business|working|calendar)\\s+)?(?:days?|weeks?|months?|hours?)(?![\\p{L}])`,
     '(?<![\\p{L}])(?:in|within)\\s+(?:a|an)\\s+(?:day|week|month|hour|fortnight)(?![\\p{L}])',
     // «It takes a week or so», «in a fortnight» (fix pass 6, the hunt #6) — never «once a week», «a week ago».
@@ -1224,9 +1236,63 @@ const ANSWER_FIGURE = new RegExp(
     '(?<![\\p{L}])(?:second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|fortnights?)(?![\\p{L}])',
     '(?<![\\p{L}])(?:треть\\p{L}*|трети|четверт\\p{L}*|chorak\\p{L}*|чорак\\p{L}*|quarters?)(?![\\p{L}])|ربع|ثلث',
     "(?<![\\p{L}])(?:bir|бир)\\s+(?:marta|марта)(?![\\p{L}])|(?<![\\p{L}])раз\\s+в(?![\\p{L}])|(?<![\\p{L}])(?:once|twice)(?![\\p{L}])",
+    // …the 50/50 split typed with its hyphen (fix pass 7, the check #8): «To'lovni yarim-yarim qilamiz».
+    '(?<![\\p{L}])(?:yarim|ярим)\\s*[-–]\\s*(?:yarim|ярим)(?![\\p{L}])',
   ].join('|'),
   'iu',
 );
+/**
+ * A DAY in his answer (fix pass 7, the check #8) — a weekday, «ertaga», «indinga», «завтра», «tomorrow», «kelasi hafta»,
+ * «на следующей неделе», «oy oxiri», «next Monday», «明天», «فردا»: «Ertaga yuklanadi», «Dushanba kuni yuklanadi» were read
+ * as holding no figure, and the redraft «Yukingiz ertaga yuklanadi» went by itself. A date he gives is his figure as a
+ * digit date is (prompt rule 1 names «kun, sana»). «Juma» only as the day — «juma kuni», «jumada» — it is a name too.
+ */
+const ANSWER_DAY = new RegExp(
+  [
+    "(?<![\\p{L}])(?:ertaga|indinga|indin|ertasiga|dushanba|seshanba|chorshanba|payshanba|shanba|yakshanba)\\p{L}*",
+    "(?<![\\p{L}])juma(?:da|gacha|ga|\\s+kun\\p{L}*)(?![\\p{L}])",
+    "(?<![\\p{L}])(?:kelasi|keyingi|kelgusi)\\s+(?:hafta|oy)\\p{L}*|(?<![\\p{L}])(?:hafta|oy)\\s+(?:oxir|bosh)\\p{L}*",
+    '(?<![\\p{L}])(?:эртага|ертага|индинга|душанба|сешанба|чоршанба|пайшанба|шанба|якшанба)\\p{L}*',
+    '(?<![\\p{L}])жума(?:да|гача|га|\\s+кун\\p{L}*)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:келаси|кейинги|келгуси)\\s+(?:ҳафта|хафта|ой)\\p{L}*|(?<![\\p{L}])(?:ҳафта|хафта|ой)\\s+(?:охир|бош)\\p{L}*',
+    '(?<![\\p{L}])(?:(?:после)?завтра|понедельник\\p{L}*|вторник\\p{L}*|сред[уы]|четверг\\p{L}*|пятниц\\p{L}*|суббот\\p{L}*|воскресень\\p{L}*)',
+    '(?<![\\p{L}])(?:на\\s+)?следующ\\p{L}*\\s+(?:недел|месяц)\\p{L}*|(?<![\\p{L}])(?:в|к|до)\\s+конц[еау]\\s+(?:недел|месяц)\\p{L}*',
+    '(?<![\\p{L}])(?:tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\\s+(?:week|month)|end\\s+of\\s+(?:the\\s+)?(?:week|month))(?![\\p{L}])',
+    '明天|后天|下周|下星期|下礼拜|星期[一二三四五六日天]|礼拜[一二三四五六日天]|周[一二三四五六日]|月底',
+    'فردا|شنبه|جمعه|هفته[\\s\\u200c]*(?:ی\\s+)?(?:بعد|آینده)|آخر\\s+ماه',
+  ].join('|'),
+  'iu',
+);
+/** Every spelled duration, the vague ones included — «через пару дней» in his answer is a time he gave (fix pass 7). */
+const ANSWER_DURATION = new RegExp(SPELLED_DURATION_SRC, 'iu');
+
+/**
+ * The spelled numerals of a NORMALISED text, run by run — «o'n yetti», «bir yuz oltmish», «семнадцать» — each with
+ * where it starts (fix pass 7, the check #11: «Avia o'n yetti», «Kubi bir yuz oltmish» saved as lessons). «bir» belongs
+ * to a run only before another numeral: alone it is the article.
+ */
+export function spelledNumeralRuns(normalized: string): { raw: string; index: number }[] {
+  const out: { raw: string; index: number }[] = [];
+  let start = -1;
+  let end = -1;
+  let pendingBir = -1;
+  for (const m of normalized.matchAll(TOKEN)) {
+    const t = m[0];
+    if (NUMERAL_TOKEN.test(t)) {
+      if (start < 0) start = pendingBir >= 0 ? pendingBir : m.index;
+      end = m.index + t.length;
+      pendingBir = -1;
+      continue;
+    }
+    if (start >= 0) {
+      out.push({ raw: normalized.slice(start, end), index: start });
+      start = -1;
+    }
+    pendingBir = /^(?:bir|бир)$/iu.test(t) ? m.index : -1;
+  }
+  if (start >= 0) out.push({ raw: normalized.slice(start, end), index: start });
+  return out;
+}
 /**
  * «One» as the article it also is — a count only beside a measure, a classifier or a currency; «bitta» the same
  * («bitta karobka» is one carton, «bitta savol» one question). Never «bir necha», «a few»: a vague count is no figure.
@@ -1248,7 +1314,7 @@ export function holdsNumeral(text: string): boolean {
   if (/\p{N}/u.test(normalized) || unverifiableNumeral(normalized) !== null || unreadNumeral(normalized)) return true;
   // «Bir daqiqa, hozir aytaman», «Одну минуту, уточню» are «one moment» — G1's own exception (`ONE_MOMENT`).
   const said = normalized.replace(ONE_MOMENT, ' ');
-  if (ONE_COUNTS_ITSELF.test(said) || HALF_GLUED.test(said) || ANSWER_FIGURE.test(said)) return true;
+  if (ONE_COUNTS_ITSELF.test(said) || HALF_GLUED.test(said) || ANSWER_FIGURE.test(said) || ANSWER_DAY.test(said) || ANSWER_DURATION.test(said)) return true;
   const tokens = said.match(TOKEN) ?? [];
   return tokens.some(
     (t, i) =>

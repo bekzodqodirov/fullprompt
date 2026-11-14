@@ -534,11 +534,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
     const written = await writeDraft({ ...input, autoPlan });
-    // The customer's language, remembered for the next «ok» — only what his message SAID (fix pass 6, the hunt #3): an
-    // unconfident fallback (or the model's own reply language) stored here became the next turn's «leans», and an Uzbek
-    // line with no mark then let a Russian reply go by itself. Unconfident, the stored language stands.
-    const heard = detectLocale(ctx.anchor.body, ctx.storedLocale);
-    const locale = heard.confident ? heard.locale : ctx.storedLocale;
+    // The customer's language, remembered for the next «ok» — only what his message SAID (fix pass 6, the hunt #3), read
+    // over his whole burst as the memory reads it (fix pass 7, `localeToRemember`).
+    const locale = localeToRemember(ctx);
     await db
       .insert(agentConversations)
       .values({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, locale })
@@ -589,6 +587,55 @@ const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
 ];
 
 /**
+ * The language the customer CONFIDENTLY said earlier in the chat's window, before this burst (fix pass 7, the check #4):
+ * what an unmarked burst — «GS777», «5 куб 800 кг», «👍» — leans on when the conversation has no stored language yet.
+ * A text that is nothing but a code or a number with its unit says no language, and a first message that says none
+ * stays his.
+ */
+function windowLocale(ctx: Pick<AgentContext, 'messages' | 'burst'>): AgentLocale | null {
+  const inBurst = new Set(ctx.burst.map((m) => m.id));
+  for (let i = ctx.messages.length - 1; i >= 0; i -= 1) {
+    const m = ctx.messages[i]!;
+    if (m.direction !== 'in' || inBurst.has(m.id) || !m.body) continue;
+    const g = detectLocale(m.body);
+    if (g.confident && g.locale !== null) return g.locale;
+  }
+  return null;
+}
+
+/**
+ * The customer's language over his whole BURST — every line since our last message, which is what the reply answers —
+ * never the last line alone (0148 fix): «Ассалому алайкум» / «Гуанчжоудан юк бор эди» / «5 куб 800 кг» says Uzbek in
+ * its first line and nothing in its last. An unconfident guess that LEANS — on the conversation's language (stored,
+ * else what the window confidently said, fix pass 7), on the one language its greetings said, or on Uzbek's word
+ * endings (fix pass 5, locale `uzbekEndingLean`) — admits only that language (fix pass 4, auto-gate `languageAdmits`):
+ * «Здравствуйте» over unmarked words let an Uzbek reply go to a Russian customer, and it was no mark of Russian either.
+ */
+export function customerLocaleOf(
+  ctx: Pick<AgentContext, 'burst' | 'anchor' | 'messages' | 'storedLocale'>,
+): { locale: AgentLocale | null; confident: boolean; leans?: true } {
+  const said = ctx.burst.length > 0 ? ctx.burst.map((m) => m.body).join('\n') : (ctx.anchor?.body ?? '');
+  const previous = ctx.storedLocale ?? windowLocale(ctx);
+  const guess = detectLocale(said, previous);
+  const leans =
+    !guess.confident &&
+    guess.locale !== null &&
+    (guess.locale === previous || guess.locale === greetingLean(said) || guess.locale === uzbekEndingLean(said));
+  return { locale: guess.locale, confident: guess.confident, ...(leans ? { leans: true as const } : {}) };
+}
+
+/**
+ * The language the chat REMEMBERS after this turn (fix pass 7, the check #1): what this turn's own reading decided —
+ * a confident guess, or one that leans on what the customer said (his greeting, his Uzbek endings, the language he
+ * said before) — never the model's reply language, never an unconfident fallback (fix pass 6, the hunt #3). The last
+ * line alone remembered nothing of «Здравствуйте» / «Груз из Гуанчжоу, 5 куб», and every later «800 кг» was held.
+ */
+export function localeToRemember(ctx: Pick<AgentContext, 'burst' | 'anchor' | 'messages' | 'storedLocale'>): AgentLocale | null {
+  const g = customerLocaleOf(ctx);
+  return g.locale !== null && (g.confident || g.leans === true) ? g.locale : ctx.storedLocale;
+}
+
+/**
  * What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). `ownerAnswer`: his
  * ✍️ answer this redraft is made of (spec SPEC-P1-v2 §2.2) — a SOURCE, read as a fact is (`ownerAnswerSources`), for
  * this draft alone; it adds nothing to the phones, links, names or Han text a reply may carry (an address or a
@@ -606,11 +653,6 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // yo'l bilan taxminan 960 $» passed on the truck's figure.
   const rail = railChat(ctx, loop.compose);
   const road = chatRoadOf(ctx, loop);
-  // The customer's language over his whole BURST — every line since our last message, which is what the reply
-  // answers — never the last line alone (0148 fix): «Ассалому алайкум» / «Гуанчжоудан юк бор эди» / «5 куб 800 кг»
-  // says Uzbek in its first line and nothing in its last.
-  const said = ctx.burst.length > 0 ? ctx.burst.map((m) => m.body).join('\n') : (ctx.anchor?.body ?? '');
-  const guess = detectLocale(said, ctx.storedLocale);
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
@@ -662,17 +704,8 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // customer's language as the message the draft answers says it — read once here, so the scheduling and the
     // press judge the same thing.
     rail,
-    // An unconfident guess that LEANS — on the conversation's own stored language, on the one language its greetings
-    // said, or on its Uzbek Cyrillic word endings (fix pass 5, locale `uzbekEndingLean`) — admits only that language
-    // (fix pass 4, auto-gate `languageAdmits`): «Здравствуйте» over unmarked words let an Uzbek reply go to a Russian
-    // customer, and it was no mark of Russian either.
-    customerLocale: {
-      locale: guess.locale,
-      confident: guess.confident,
-      ...(!guess.confident && guess.locale !== null && (guess.locale === ctx.storedLocale || guess.locale === greetingLean(said) || guess.locale === uzbekEndingLean(said))
-        ? { leans: true }
-        : {}),
-    },
+    // The burst's language and what it leans on (`customerLocaleOf` — the same reading the chat remembers).
+    customerLocale: customerLocaleOf(ctx),
     // The Chinese the facts this run read hold (his fourth set): a reply that
     // quotes a warehouse address verbatim is measured in its OWN script.
     quotableHan: hanOnly([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])].join('')),
@@ -918,6 +951,12 @@ const REPLY_PLACE = new RegExp(
     // kerak», «货送义乌办公室», «بار به دفتر ما» sent the flight's cargo to us with no warehouse named.
     '(?<![\\p{L}])(?:ofis|офис)\\p{L}*',
     '(?<![\\p{L}])(?:offices?|hubs?)(?![\\p{L}])',
+    // …and OUR base or terminal (fix pass 7, the check #12): «Yuk bazamizga keladi», «Груз приходит на нашу базу», «Yuk
+    // terminalimizga keladi». Only as ours or as where the cargo goes: «bojxona bazasiga qarab», «на базе таможенной
+    // стоимости» is the customs value it is reckoned on.
+    '(?<![\\p{L}])(?:bazamiz|terminalimiz|базамиз|терминалимиз)\\p{L}*|(?<![\\p{L}])(?:terminalga|терминалга)(?![\\p{L}])',
+    '(?<![\\p{L}])наш\\p{L}*\\s+(?:баз|терминал)\\p{L}*|(?<![\\p{L}])(?:на|в)\\s+(?:баз[уы]|терминал)(?![\\p{L}])',
+    '(?<![\\p{L}])our\\s+(?:bases?|terminals?)(?![\\p{L}])',
     '仓库|仓(?!储)|收货点|收货地|网点|站点|办公室',
     'انبار|شعبه|نمایندگی|دفتر',
   ].join('|'),
@@ -1123,7 +1162,7 @@ const UZ_SEND = new RegExp(
   'giu',
 );
 const RU_SEND =
-  /(?<![\p{L}])(?:отправ(?!к|лени|ител)|присыл|присла|пришл(?:ите|ю|ем|ём)|высыл|высла|вышл|пошл(?!ин)|шл(?:и|ите|ю|ём|ем|ёт|ет)(?![\p{L}])|привез|привоз|привёз|принес|принос|принёс|сда(?:й|в|д|т|м)|достав(?!к|щик)|переда(?!ч)|завез|завоз|подвез|подвоз|отвез|отвоз|увез|увоз|вез(?:и|у|ём|ем|ёт|ет|ут)|вози(?:те|м|т)|отгруж|отгруз(?!к)|погруз(?!к)|загруз(?!к)|скин|скид(?!к)|закид|кида(?:й|ть)|подкин|направ(?!лени|о(?![\p{L}]))|отда(?:й|в|д|т|м)|переправ)\p{L}*/giu;
+  /(?<![\p{L}])(?:отправ(?!к|лени|ител)|присыл|присла|пришл(?:ите|ю|ем|ём)|высыл|высла|вышл|пошл(?!ин)|шл(?:и|ите|ю|ём|ем|ёт|ет)(?![\p{L}])|привез|привоз|привёз|принес|принос|принёс|сда(?:й|в|д|т|м)|достав(?!к|щик)|переда(?!ч)|завез|завоз|подвез|подвоз|отвез|отвоз|увез|увоз|вез(?:и|у|ём|ем|ёт|ет|ут)|вози(?:те|м|т)|отгруж|отгруз(?!к)|погруз(?!к)|загруз(?!к)|скин|скид(?!к)|закид|кида(?:й|ть)|подкин|направ(?!лени|о(?![\p{L}]))|отда(?:й|в|д|т|м|ст)|занес|занос|занёс|переправ)\p{L}*/giu;
 const EN_SEND =
   /(?<![\p{L}-])(?:send|sends|sending|sent|ship|ships|shipped|deliver|delivers|delivering|delivered|bring|brings|bringing|brought|drop|drops|dropped|dispatch|dispatches|dispatched|forward|forwards|forwarded|mail|mails|mailed|courier|couriers|couriered|hand(?:s|ed)?(?=\s+(?:it|them|over|in|the|your|this|these|those|us|off)(?![\p{L}])))(?![\p{L}])/giu;
 const ZH_SEND =
