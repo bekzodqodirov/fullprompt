@@ -529,16 +529,21 @@ export async function landIntake(input: {
   // A coded client: a NEW card per request (his 2026-10-27), written with its
   // note in one commit, and found again through that note on a retry.
   let target: IntakeTarget;
-  if (input.onCard) {
-    target = await landOnReturnedCard({
-      noteId: input.noteId,
-      noteText,
-      itemCount: items.length,
-      senderId: input.collectedBy,
-      card: input.onCard,
-      clientId: input.client?.id ?? null,
-      leadId: input.client ? null : (input.lead?.id ?? null),
-    });
+  // The hand-back loop's card — or null when it no longer takes jobs (a deal won or lost, a lead closed since the
+  // loop was read): the job then lands as any other, never on a closed sale.
+  const returned = input.onCard
+    ? await landOnReturnedCard({
+        noteId: input.noteId,
+        noteText,
+        itemCount: items.length,
+        senderId: input.collectedBy,
+        card: input.onCard,
+        clientId: input.client?.id ?? null,
+        leadId: input.client ? null : (input.lead?.id ?? null),
+      })
+    : null;
+  if (returned) {
+    target = returned;
   } else if (input.client) {
     target = await landCodedRequest({
       noteId: input.noteId,
@@ -716,7 +721,9 @@ export async function landIntake(input: {
 /**
  * The hand-back loop's landing (SPEC-P2-v2 §1.5): the note on the RETURNED request's card, in one statement, after
  * the same refusals every landing asks first. A retried press finds its own note (`cardOfNote`). The card is fenced
- * as `cardOfNote` fences a posted note: this client's deal, or the lead the chat names — else `note_foreign`.
+ * as `cardOfNote` fences a posted note: this client's deal, or the lead the chat names — else `note_foreign`. A card
+ * that no longer takes jobs — its stage won or lost since the loop was read (fix pass 1) — answers null, before a word
+ * is written: the caller lands the job as any other.
  */
 async function landOnReturnedCard(input: {
   noteId: string;
@@ -726,15 +733,20 @@ async function landOnReturnedCard(input: {
   card: { kind: 'deal' | 'lead'; id: string };
   clientId: string | null;
   leadId: string | null;
-}): Promise<IntakeTarget> {
+}): Promise<IntakeTarget | null> {
   const prior = await cardOfNote(input.noteId, input.senderId, input.clientId);
   if (prior === 'foreign') throw new CalcError('note_taken');
   if (prior) return prior;
   let label: string;
   let leadOwnerId: string | null = null;
   if (input.card.kind === 'deal') {
-    const [d] = await db.select({ code: deals.code, clientId: deals.clientId }).from(deals).where(eq(deals.id, input.card.id));
+    const [d] = await db
+      .select({ code: deals.code, clientId: deals.clientId, kind: dealStages.kind })
+      .from(deals)
+      .leftJoin(dealStages, eq(dealStages.id, deals.stageId))
+      .where(eq(deals.id, input.card.id));
     if (!d || input.clientId === null || d.clientId !== input.clientId) throw new CalcError('note_foreign');
+    if (d.kind !== 'open') return null;
     label = d.code;
   } else {
     const [l] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, input.card.id));
@@ -742,9 +754,9 @@ async function landOnReturnedCard(input: {
     label = l.name;
     leadOwnerId = l.ownerId;
   }
+  if (input.card.kind === 'lead' && !(await leadTakesJobs(input.card.id))) return null;
   const refused = await calcOpenRefusal(input.senderId, input.itemCount);
   if (refused) throw new CalcError(refused);
-  if (input.card.kind === 'lead' && !(await leadTakesJobs(input.card.id))) throw new CalcError('lead_closed');
   await addActivity(
     { id: input.noteId, entityType: input.card.kind, entityId: input.card.id, kind: 'note', note: input.noteText },
     { actorId: input.senderId },

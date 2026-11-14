@@ -23,7 +23,7 @@ import { chatBlock, runTail, stableHead } from './prompt';
 import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecsFor, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
-import { calcPricingFor } from './calc-price';
+import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { namedOrigins, originMentions } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
@@ -213,6 +213,11 @@ export async function runLoop(input: {
    */
   calcPricing: boolean;
   /**
+   * A `calc_answer` run's own request (fix pass 1, finding 2): `calc_price` then prices that job's chain alone. Null for
+   * every other run — the tool prices each answered chain of the chat.
+   */
+  calcRequestId: string | null;
+  /**
    * His lessons (spec §3.3, lessons `promptLessons`), read ONCE for the run beside the general facts: every round's
    * head is then the same bytes — an edit on the page mid-run cannot move the cache between two rounds.
    */
@@ -243,6 +248,7 @@ export async function runLoop(input: {
     priceArmed: input.priceArmed,
     calcArmed: input.calcArmed,
     calcPricing: input.calcPricing,
+    calcRequestId: input.calcRequestId,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
@@ -517,7 +523,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const calcArmed = await calcActArmed();
     // …and whether it quotes the VED's answers with his markup (SPEC-P2-v2 §2.3): a chat with an answered linked job.
     const calcPricing = await calcPricingFor(ctx);
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, calcPricing, lessons: taught.lessons });
+    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, calcPricing, calcRequestId: null, lessons: taught.lessons });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -542,6 +548,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     // A draft the avia guard holds asks him for the address (review R2).
     const c = withAviaGuard(drafted, policy, loop, ctx);
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
+    notes.push(...settleCalcPrices(memory, c.replyText));
     const rail = railNote(ctx, c);
     if (rail) notes.push(rail);
     const tariffMismatch = loop.outcomes.some((o) => o.tariffMismatch);
@@ -1442,6 +1449,27 @@ export function calcCardLineOf(outcomes: readonly ToolOutcome[]): string | null 
 /** The card's note on a VED answer's reply that quotes no `calc_price` figure (SPEC-P2-v2 §2.3) — a note refuses the press. */
 export const CALC_PRICE_UNSAID = 'AI narxni aytmadi — 💵 bilan o‘zingiz bering.';
 
+/**
+ * The card's note on a reply the tool offered SEVERAL jobs' prices for (fix pass 1, finding 2): the machine cannot tell
+ * which figure the words gave for which cargo — a note refuses the press, and he reads it.
+ */
+export const CALC_PRICE_MANY = 'Chatda bir nechta VED narxi bor — mijozga har bir yukning o‘z narxi aytilganini tekshiring.';
+
+/**
+ * What a reply settles of the VED prices its run was offered (fix pass 1, findings 2 and 3) — `memory.calcPrices` keeps
+ * only the ones its words STATE (calc-price `statedCalcMarks`): the draft's re-price, the card's offer and the lead's
+ * «AI narx aytdi» all read that list, and a price the reply never said reached nobody. The card's notes in return: one
+ * when the tool offered more than one job's price and the reply states any. A run offered none keeps its memory as it
+ * was, byte for byte.
+ */
+export function settleCalcPrices(memory: PolicyMemory, body: string): string[] {
+  const offered = memory.calcPrices ?? [];
+  if (offered.length === 0) return [];
+  const stated = statedCalcMarks(body, offered);
+  memory.calcPrices = stated;
+  return new Set(offered.map((m) => m.requestId)).size > 1 && stated.length > 0 ? [CALC_PRICE_MANY] : [];
+}
+
 /** The card's line on a redraft his answer could not make a reply of (a forcing rule asked him again). */
 export const ANSWER_STILL_HIS =
   '✍️ Javobingiz olindi, lekin bu savolni AI o‘zi yozmaydi (temir yo‘l narxi yoki avia manzili) — «✏️ O‘zgartirish» bilan o‘zingiz yozing.';
@@ -1574,6 +1602,7 @@ export async function runOwnerTriggered(
       priceArmed: act.priceArmed,
       calcArmed: await calcActArmed(),
       calcPricing: await calcPricingFor(ctx),
+      calcRequestId: input.calcAnswer?.requestId ?? null,
       lessons: taught.lessons,
     });
     settle = {
@@ -1593,13 +1622,15 @@ export async function runOwnerTriggered(
     const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: drafted.replyText, memory, strip: stripFor(ctx) });
     const c = withAviaGuard(drafted, policy, loop, ctx);
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
+    notes.push(...settleCalcPrices(memory, c.replyText));
     const rail = railNote(ctx, c);
     if (rail) notes.push(rail);
     // A forcing rule turned his answer's redraft back into a question (§2.2): said on the card, never a loop.
     if (answer && c.forcedQuestion) notes.push(ANSWER_STILL_HIS);
     const calcAnswer = input.calcAnswer ?? null;
-    // The VED's answer, and the reply states no price the tool made (§2.3): his 💵, never the machine's press.
-    if (calcAnswer && !loop.outcomes.some((o) => o.ok && (o.calcPrices?.length ?? 0) > 0)) notes.push(CALC_PRICE_UNSAID);
+    // The VED's answer, and the reply STATES no price the tool made (§2.3; fix pass 1, finding 3): no call, a refused
+    // one, or a figure the words never said — his 💵, never the machine's press.
+    if (calcAnswer && (memory.calcPrices ?? []).length === 0) notes.push(CALC_PRICE_UNSAID);
     const fromAnswer = answer
       ? {
           questionDraftId: answer.questionDraftId,

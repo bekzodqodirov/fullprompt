@@ -659,6 +659,10 @@ describe('a calculation the queue refused lands on a later ✅ (K26)', () => {
     const card = renderDraftCard(refused, null, [], { openCalcCap: await openCalcCapFor(ownerId) });
     expect(card).toContain(`${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov`);
     expect(card).not.toMatch(/Kartadan qo.lda yuboring|too_many_open|already_landed/u);
+    // …and the page's own reader names the same figure — the card, the bot and the page say one number (§1.3).
+    const onPage = (await webDrafts(actor())).pending.find((w) => w.id === draftId);
+    expect(onPage, 'the refused draft is on the page').toBeDefined();
+    expect(onPage!.cardText).toContain(`${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov`);
 
     // One of the twenty answered: the very next ✅ lands the job the note promised — never «already landed».
     await db.update(calcRequests).set({ completedAt: new Date(), completedBy: vedId, completedVia: 'task' }).where(eq(calcRequests.id, busy[0]!.id));

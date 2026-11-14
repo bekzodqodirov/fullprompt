@@ -405,7 +405,7 @@ function MarkupCard({ t, view }: { t: T; view: CalcMarkupView }) {
         </li>
       </ul>
       <MarkupForm kind={view.kind} value={view.value} />
-      {view.readable && !view.confirmed && <MarkupConfirmButton />}
+      {view.rule !== null && !view.confirmed && <MarkupConfirmButton rule={view.rule} />}
     </section>
   );
 }

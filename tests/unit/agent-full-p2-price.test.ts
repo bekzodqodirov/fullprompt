@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { autoVerdict, AUTO_REFUSALS, type AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import { cardLineOf, centsOf, markupPrice, ruleString, ruleWords, workedExample, type MarkupRule } from '@/modules/wms/agent/calc-markup';
-import { CALC_PRICE_REFUSAL_WORDS, markupRuleOf, storedMarksOf, type CalcPriceMark } from '@/modules/wms/agent/calc-price';
+import { CALC_PRICE_REFUSAL_WORDS, markupRuleOf, statedCalcMarks, storedMarksOf, type CalcPriceMark } from '@/modules/wms/agent/calc-price';
 import { calcAnswerSourceKey, calcAnswerWhy } from '@/modules/wms/agent/calc-loop';
 import { checkAgentReply, WAREHOUSE_SENTENCES, type PolicyInput } from '@/modules/wms/agent/policy';
 import { CALC_PRICE_RULE, chatBlock, stableHead } from '@/modules/wms/agent/prompt';
@@ -185,7 +185,7 @@ function eligible(): AutoGateInput {
     money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
     burstMedia: false,
     calc: null,
-    calcPrice: { unconfirmed: false, moved: false, foreign: false, media: false },
+    calcPrice: { unconfirmed: false, moved: false, foreign: false, media: false, ownerPriced: false },
     chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
     at: new Date('2026-11-12T07:00:00Z'),
@@ -220,6 +220,10 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     unquoted.draft.ledger = [];
     unquoted.draft.body = 'VED javobi keldi.';
     expect(autoVerdict(unquoted).reasons).toEqual(['money_unread']);
+    // …as the run now stores it (fix pass 1): a price the words never said is kept by no draft — still `money_unread`
+    // alone, never «pul bor» about a reply that states none.
+    unquoted.draft.calcPricesStored = false;
+    expect(autoVerdict(unquoted).reasons).toEqual(['money_unread']);
   });
 
   it('a calc_price REFUSAL is no money: a reply after it that states nothing is an ordinary reply', () => {
@@ -252,7 +256,7 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     expect(autoVerdict(i)).toEqual({ eligible: true, reasons: [] });
   });
 
-  it('its own four facts — each refuses alone; facts not read refuse all (fails closed)', () => {
+  it('its own five facts — each refuses alone; facts not read refuse all (fails closed)', () => {
     const one = (patch: Partial<NonNullable<AutoGateInput['calcPrice']>>) => {
       const i = ticked(eligible(), 'calc_price');
       i.calcPrice = { ...i.calcPrice!, ...patch };
@@ -262,9 +266,13 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     expect(one({ moved: true })).toEqual(['calc_price_moved']);
     expect(one({ foreign: true })).toEqual(['calc_foreign']);
     expect(one({ media: true })).toEqual(['media']);
+    // His 💵 for the job came while the machine's price counted down (finding 1) — its own words, never «moved».
+    expect(one({ ownerPriced: true })).toEqual(['calc_owner_priced']);
     const unread = ticked(eligible(), 'calc_price');
     unread.calcPrice = null;
-    expect(autoVerdict(unread).reasons).toEqual(AUTO_REFUSALS.filter((r) => ['calc_foreign', 'markup_unconfirmed', 'calc_price_moved', 'media'].includes(r)));
+    expect(autoVerdict(unread).reasons).toEqual(
+      AUTO_REFUSALS.filter((r) => ['calc_foreign', 'markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'media'].includes(r)),
+    );
   });
 
   it('the request burst’s own files are no refusal for a VED price (they went to the VED) — a file after the landing is', () => {
@@ -381,6 +389,18 @@ describe('the run’s memory of a VED price (§2.3) and G11 on it', () => {
     expect(codes(`${input.body} ${w.condition} ${w.factory}`)).toEqual([]);
     // Never «boj va QQS alohida» — a customs price includes them (§6 R1).
     expect(codes(`${input.body} ${w.condition} ${w.factory}`)).not.toContain('estimate_unhedged');
+  });
+
+  it('only the prices the reply STATES are kept (finding 3): a figure the words carry, never one the tool merely offered', () => {
+    const other: CalcPriceMark = { ...MARK, requestId: 'r2', anchorId: 'r2', total: 1100 };
+    expect(statedCalcMarks('Rastamojka narxi 1359 $ bo‘ladi.', [MARK, other])).toEqual([MARK]);
+    expect(statedCalcMarks('Rastamojka narxi 1 359 dollar.', [MARK])).toEqual([MARK]);
+    expect(statedCalcMarks('Narxi 1359 bo‘ladi.', [MARK])).toEqual([MARK]);
+    expect(statedCalcMarks('VED javobi keldi, narxni tez orada aytamiz.', [MARK, other])).toEqual([]);
+    // A figure in another currency, a measure or a count of the same digits is no statement of the price.
+    expect(statedCalcMarks('1359 so‘m', [MARK])).toEqual([]);
+    expect(statedCalcMarks('1359 kg yukingiz uchun narxni aytamiz', [MARK])).toEqual([]);
+    expect(statedCalcMarks('Ikkala yuk: 1359 $ va 1100 $.', [MARK, other])).toEqual([MARK, other]);
   });
 
   it('a rail chat keeps no VED price either (his price, §18.5)', () => {

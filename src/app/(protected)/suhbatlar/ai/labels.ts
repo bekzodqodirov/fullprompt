@@ -120,6 +120,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   seat_not_holder: 'errors.seat_not_holder',
   bad_open_limit: 'errors.bad_open_limit',
   bad_markup: 'errors.bad_markup',
+  markup_changed: 'errors.markup_changed',
   // «✅ Tarif to'g'ri»: the column changed since the page was drawn (tariff-watch `confirmTariff`).
   tariff_changed: 'errors.tariff_changed',
   // writeKbFact

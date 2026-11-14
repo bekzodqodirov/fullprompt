@@ -151,7 +151,51 @@ async function chatOn(card: { leadId?: string; clientId?: string }): Promise<Cha
   return { peer, leadId: card.leadId ?? null, clientId: card.clientId ?? null, anchor };
 }
 
-/** A request on a card — linked to the chat (the AI submitted it) or not. */
+/**
+ * The AI's submitting reply «yubordim», SENT in the machine's words (a draft, its outbox row, its Telegram line) — the
+ * chain's price is the machine's to state only where it said «javob kelishi bilan aytaman» itself (calc-price
+ * `submitReplyOf`). Its own after-sent outcome is recorded, so the sweep's net never counts it.
+ */
+async function submitted(chat: Chat, requestId: string): Promise<void> {
+  const ours = next();
+  const at = new Date(Date.now() - 55 * 60_000);
+  const body = 'Hisoblatishga yubordim, javob kelishi bilan aytaman.';
+  await db.insert(tgMessages).values({ leadId: chat.leadId, clientId: chat.clientId, managerUserId: holderId, peerId: chat.peer, tgMessageId: ours, direction: 'out', body, sentAt: at });
+  const [d] = await db
+    .insert(agentDrafts)
+    .values({
+      managerUserId: holderId,
+      peerId: chat.peer,
+      leadId: chat.leadId,
+      clientId: chat.clientId,
+      anchorTgMessageId: chat.anchor,
+      status: 'approved',
+      kind: 'reply',
+      proposedBody: body,
+      actions: [{ type: 'calc_submit', section: 'rastamojka', facts: {}, fromOurWarehouse: false, citedMessageIds: [] }],
+      policy: { afterSent: { at: at.toISOString(), offer: [], stage: 'kind' } },
+    })
+    .returning({ id: agentDrafts.id });
+  await db.insert(agentOutbox).values({
+    draftId: d!.id,
+    managerUserId: holderId,
+    peerId: chat.peer,
+    leadId: chat.leadId,
+    clientId: chat.clientId,
+    body,
+    randomId: next(),
+    answersTgMessageId: chat.anchor,
+    status: 'sent',
+    step: 'send',
+    nextStepAt: at,
+    queuedBy: holderId,
+    sentAt: at,
+    tgMessageId: ours,
+  });
+  await db.update(agentCalcLinks).set({ draftId: d!.id }).where(eq(agentCalcLinks.requestId, requestId));
+}
+
+/** A request on a card — linked to the chat (the AI submitted it, and its «yubordim» went) or not. */
 async function request(card: { type: 'lead' | 'deal'; id: string }, link: Chat | null, opts: { volumeM3?: string; weightKg?: string } = {}): Promise<string> {
   const [r] = await db
     .insert(calcRequests)
@@ -168,7 +212,10 @@ async function request(card: { type: 'lead' | 'deal'; id: string }, link: Chat |
     })
     .returning({ id: calcRequests.id });
   madeRequests.push(r!.id);
-  if (link) await db.insert(agentCalcLinks).values({ requestId: r!.id, rootRequestId: r!.id, managerUserId: holderId, peerId: link.peer });
+  if (link) {
+    await db.insert(agentCalcLinks).values({ requestId: r!.id, rootRequestId: r!.id, managerUserId: holderId, peerId: link.peer });
+    await submitted(link, r!.id);
+  }
   return r!.id;
 }
 

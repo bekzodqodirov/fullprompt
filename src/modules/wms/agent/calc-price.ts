@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentCalcLinks, agentDrafts } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
@@ -8,6 +8,7 @@ import { answerFloorStandsSql } from '../calc/version-set';
 import { cardLineOf, centsOf, markupPrice, ruleString, ruleWords, workedExample, type MarkupRule } from './calc-markup';
 import { chatCalcChains, chatIdentity, type CalcChain } from './context';
 import { machineMayTouch } from './machine-owner';
+import { extractNumbers } from './numbers';
 import { calcFromOurWarehouse } from './types';
 
 /**
@@ -25,19 +26,37 @@ import { calcFromOurWarehouse } from './types';
  *    seal on the same card) and within `quote_valid_days` of its completion (recordOffer's own two clocks).
  * Each refusal is a reason with words and no digit; the 💵 card stays exactly as it was.
  *
+ * And only a job whose price the machine may still state at all (fix pass 1): the chain's SUBMITTING reply reached the
+ * customer in the machine's own words (`submitReplyOf` — «javob kelishi bilan aytaman» was said there and nowhere
+ * else; his ✏️ words promised whatever he wrote, an ❌ promised nothing), and he has not priced it himself
+ * (`ownerPricedChain` — his 💵 for any member of the chain, given, approved or on its way: his figure always outranks
+ * the machine's, at every door that prices it, never only at the VED answer's job).
+ *
  * Reached by dynamic import from the send step (drafts `draftOfferStands`) — it imports nothing the listener cannot
  * load (the calc modules it reads are the pure version-set and upsale predicates), and never throws there: the caller
  * answers `calc_price_moved` on a throw.
  */
 
 /** Why the AI did not price a VED answer — each with its words (`CALC_PRICE_REFUSAL_WORDS`). */
-export const CALC_PRICE_REFUSALS = ['markup_unreadable', 'not_linked', 'card_moved', 'not_standing', 'expired', 'not_usd', 'discounted'] as const;
+export const CALC_PRICE_REFUSALS = [
+  'markup_unreadable',
+  'not_linked',
+  'owner_words',
+  'owner_priced',
+  'card_moved',
+  'not_standing',
+  'expired',
+  'not_usd',
+  'discounted',
+] as const;
 export type CalcPriceRefusal = (typeof CALC_PRICE_REFUSALS)[number];
 
 /** In his words — never a code, never a digit (a refusal is no money, pinned). */
 export const CALC_PRICE_REFUSAL_WORDS: Record<CalcPriceRefusal, string> = {
   markup_unreadable: 'ustama sozlamasi buzilgan — «Suhbatlar → AI sotuvchi» sahifasida qayta yozing',
   not_linked: 'bu hisob AI orqali yuborilmagan yoki VED hali javob bermagan',
+  owner_words: 'hisoblatishga yuborilgani haqidagi javob ✏️ bilan qo‘lda yozilgan — narx ham qo‘lda beriladi',
+  owner_priced: 'bu hisobga narx 💵 bilan qo‘lda berilgan — o‘sha narx ustun',
   card_moved: 'hisob turgan karta endi bu chatniki emas',
   not_standing: 'VED javobi endi amal qilmaydi (kartada yangiroq javob yoki muhr bor, yoki qayta hisoblanmoqda)',
   expired: 'VED javobining muddati o‘tgan',
@@ -66,6 +85,11 @@ export type CalcPriceResult =
       cardLine: string;
       /** A priced job was submitted as priced from our China warehouses (his third set «3») — the reply says both sentences. */
       fromOurWarehouse: boolean;
+      /**
+       * Each price's job named by its goods (the request's first lines, beside `prices`, '' when none were listed) — so
+       * the model and his card can tell which cargo a figure is for when a chat holds two jobs. Never an amount.
+       */
+      goods: string[];
     }
   | { ok: false; reason: CalcPriceRefusal };
 
@@ -113,6 +137,86 @@ export async function markupConfirmed(): Promise<string | null> {
     v: string | null;
   }[];
   return [...rows][0]?.v ?? null;
+}
+
+/**
+ * How the reply that SUBMITTED a job reached the customer (SPEC-P2-v2 §1.2): through its draft's outbox row — `sent` in
+ * the machine's own words (`final_body` NULL), `own_words` when his ✏️ text went instead, `unsent` for a draft that never
+ * went (a press that lost after the landing, his ❌, a row cancelled) or no draft at all. ONE rule for the VED answer's
+ * job (calc-loop `calcLinkReplySent`), the `calc_price` tool and every re-price.
+ */
+export type SubmitReply = 'sent' | 'own_words' | 'unsent';
+
+export async function submitReplyOf(draftId: string | null): Promise<SubmitReply> {
+  if (draftId === null) return 'unsent';
+  const rows = (await db.execute(sql`
+    SELECT o.status, (d.final_body IS NOT NULL) AS own
+      FROM agent_drafts d
+      LEFT JOIN agent_outbox o ON o.draft_id = d.id
+     WHERE d.id = ${draftId}::uuid
+  `)) as unknown as { status: string | null; own: boolean }[];
+  const row = [...rows][0];
+  if (!row || row.status !== 'sent') return 'unsent';
+  return row.own ? 'own_words' : 'sent';
+}
+
+/** The chain's newest link's submitting draft — the reply that last told the customer this job was sent. */
+async function chainSubmitDraft(chat: { managerUserId: string; peerId: bigint }, root: string): Promise<string | null> {
+  const rows = (await db.execute(sql`
+    SELECT draft_id::text AS draft_id FROM agent_calc_links
+     WHERE manager_user_id = ${chat.managerUserId}::uuid AND peer_id = ${String(chat.peerId)}::bigint AND root_request_id = ${root}::uuid
+     ORDER BY created_at DESC
+     LIMIT 1
+  `)) as unknown as { draft_id: string | null }[];
+  return [...rows][0]?.draft_id ?? null;
+}
+
+/**
+ * His own figure is on this chain (judge money 11, hands 5; fix pass 1): a 💵 draft of his naming any member — live,
+ * approved, sent, or approved and then cancelled before it went (a night hold the customer's morning line overtook) —
+ * or his «💵 Narx yozaman» armed for one of them. The machine then prices the chain nowhere: not the VED answer's job,
+ * not the inbound tool, not at the press or the send step. The wait is read from the bot's own memory (waits.ts: memory
+ * stays the reader — the bot and the app's worker are one process; the listener holds none and reads only the drafts).
+ */
+export async function ownerPricedChain(managerUserId: string, peerId: bigint, memberIds: readonly string[]): Promise<boolean> {
+  if (memberIds.length === 0) return false;
+  const [drafted] = await db
+    .select({ id: agentDrafts.id })
+    .from(agentDrafts)
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, managerUserId),
+        eq(agentDrafts.peerId, peerId),
+        eq(agentDrafts.kind, 'price'),
+        inArray(agentDrafts.status, ['pending', 'editing', 'approved']),
+        sql`${agentDrafts.policy}->>'priceRequestId' IN (${sql.join(memberIds.map((id) => sql`${id}`), sql`, `)})`,
+      ),
+    )
+    .limit(1);
+  if (drafted) return true;
+  const { nowSec, waitsOfKind } = await import('../../platform/telegram/waits');
+  const at = nowSec();
+  return waitsOfKind<{ requestId?: unknown }>('agent_price').some(
+    (w) => w.entry.expiresAt > at && typeof w.entry.payload.requestId === 'string' && memberIds.includes(w.entry.payload.requestId),
+  );
+}
+
+/** The job's goods as the customer named them — its first lines, newest member first; never an amount. */
+async function chainGoods(memberIds: readonly string[]): Promise<string> {
+  if (memberIds.length === 0) return '';
+  const rows = (await db.execute(sql`
+    SELECT i.name FROM calc_request_items i JOIN calc_requests r ON r.id = i.request_id
+     WHERE i.request_id IN (${sql.join(memberIds.map((id) => sql`${id}::uuid`), sql`, `)})
+     ORDER BY r.requested_at DESC, i.seq
+     LIMIT 6
+  `)) as unknown as { name: string | null }[];
+  const names: string[] = [];
+  for (const r of rows) {
+    const name = (r.name ?? '').replace(/\s+/gu, ' ').trim().slice(0, 40);
+    if (name !== '' && !names.includes(name)) names.push(name);
+    if (names.length === 3) break;
+  }
+  return names.join(', ');
 }
 
 interface AnchorRow {
@@ -167,6 +271,7 @@ function cardIsTheChats(row: Pick<AnchorRow, 'entity_type' | 'entity_id'>, chain
 
 /** One chain priced, or its refusal. */
 async function priceChain(
+  chat: { managerUserId: string; peerId: bigint },
   chain: CalcChain,
   rule: MarkupRule,
   identity: { clientId: string | null; leadId: string | null; codes: { id: string }[] },
@@ -175,6 +280,13 @@ async function priceChain(
 ): Promise<{ ok: true; mark: CalcPriceMark; baseCents: bigint } | { ok: false; reason: CalcPriceRefusal }> {
   // A recalculation in progress, or a hand-back: the chain's word on price is not in.
   if (chain.status !== 'answered') return { ok: false, reason: 'not_standing' };
+  // The machine states a VED price only where it said «javob kelishi bilan aytaman» itself (§1.2): the submitting reply
+  // went, in its own words. A press that lost after the landing, his ❌, his ✏️ text — the price is his to give.
+  const submit = await submitReplyOf(await chainSubmitDraft(chat, chain.root));
+  if (submit === 'unsent') return { ok: false, reason: 'not_linked' };
+  if (submit === 'own_words') return { ok: false, reason: 'owner_words' };
+  // His figure outranks the machine's on the whole chain (judge money 11): his 💵 given, waiting, or being typed.
+  if (await ownerPricedChain(chat.managerUserId, chat.peerId, chain.memberIds)) return { ok: false, reason: 'owner_priced' };
   const row = await anchorOf(chain.newestId);
   if (!row || row.completed_at === null || row.return_reason) return { ok: false, reason: 'not_standing' };
   if (!cardIsTheChats(row, chain, identity)) return { ok: false, reason: 'card_moved' };
@@ -240,20 +352,35 @@ export async function calcPriceFor(input: { managerUserId: string; peerId: bigin
   const validDays = Number((await getSetting('quote_valid_days')) ?? 30) || 30;
   const prices: CalcPriceMark[] = [];
   const lines: string[] = [];
+  const goods: string[] = [];
   let firstRefusal: CalcPriceRefusal | null = null;
   let ours = false;
   for (const chain of asked) {
-    const priced = await priceChain(chain, rule, identity, now, validDays);
+    const priced = await priceChain(input, chain, rule, identity, now, validDays);
     if (!priced.ok) {
       firstRefusal ??= priced.reason;
       continue;
     }
     prices.push(priced.mark);
     lines.push(cardLineOf(priced.baseCents, rule, SECTION_WORDS[priced.mark.section] ?? priced.mark.section));
+    goods.push(await chainGoods(chain.memberIds));
     if (await chainFromOurWarehouse(chain)) ours = true;
   }
   if (prices.length === 0) return { ok: false, reason: firstRefusal ?? 'not_standing' };
-  return { ok: true, prices, cardLine: lines.join('\n'), fromOurWarehouse: ours };
+  return { ok: true, prices, cardLine: lines.join('\n'), fromOurWarehouse: ours, goods };
+}
+
+/**
+ * The VED prices a reply STATES (fix pass 1) — a mark whose client total stands in the words as a figure: dollars, or a
+ * bare number (the way the policy reads a `calc_price` line, money in dollars first). What the draft keeps
+ * (`memory.calcPrices`), what the card writes as an offer and what moves a lead to «AI narx aytdi»: a price the tool
+ * merely OFFERED — a second job's, or one the reply chose not to say — reached nobody and settles nothing. Pure.
+ */
+export function statedCalcMarks(body: string, marks: readonly CalcPriceMark[]): CalcPriceMark[] {
+  const said = extractNumbers(body)
+    .filter((f) => (f.kind === 'money' && f.currency === 'USD') || (f.kind === 'plain' && f.fixed !== true && f.perUnit !== true))
+    .map((f) => f.value);
+  return marks.filter((m) => said.some((v) => Math.abs(v - m.total) < 0.005));
 }
 
 /** A stored mark as read back off a draft — anything else is no mark (the caller fails closed). */
@@ -279,33 +406,44 @@ export function storedMarksOf(raw: unknown): CalcPriceMark[] | null {
 }
 
 /**
- * Every price a draft quoted still stands — priced again NOW for each stored request, the same anchor, the same rule
- * and the same total (≥ 0.005 apart = moved). A refusal, a difference, a mark that cannot be read, or a throw: false
- * (§2.5 — the send step, his ✅ and the machine's press each answer `calc_price_moved`).
+ * Does every price a draft quoted still stand — priced again NOW for each stored request, the same anchor, the same rule
+ * and the same total (≥ 0.005 apart = moved)? `owner_priced` when his own 💵 now stands on a quoted job (the gate says
+ * so in his words); any other refusal, a difference, a mark that cannot be read, or a throw: `moved`.
  */
-export async function calcPricesStand(raw: unknown, chat: { managerUserId: string; peerId: bigint }, now: Date = new Date()): Promise<boolean> {
+async function calcPricesStanding(raw: unknown, chat: { managerUserId: string; peerId: bigint }, now: Date): Promise<'stands' | 'owner_priced' | 'moved'> {
   try {
     const marks = storedMarksOf(raw);
-    if (marks === null) return false;
+    if (marks === null) return 'moved';
     for (const m of marks) {
       const again = await calcPriceFor({ managerUserId: chat.managerUserId, peerId: chat.peerId, requestId: m.requestId, now });
-      if (!again.ok) return false;
+      if (!again.ok) return again.reason === 'owner_priced' ? 'owner_priced' : 'moved';
       const same = again.prices.find((p) => p.anchorId === m.anchorId && p.rule === m.rule && Math.abs(p.total - m.total) < 0.005);
-      if (!same) return false;
+      if (!same) return 'moved';
     }
-    return true;
+    return 'stands';
   } catch (err) {
     logger.warn({ err, peer: String(chat.peerId) }, '[agent] calc price not re-priced');
-    return false;
+    return 'moved';
   }
 }
 
-/** The gate's four facts of a draft quoting a VED price (§2.3) — each TRUE where it refuses. */
+/**
+ * Every price a draft quoted still stands (`calcPricesStanding`). False on anything else (§2.5 — the send step, his ✅
+ * and the machine's press each answer `calc_price_moved`): his own 💵 on the job is a price that no longer stands for
+ * the machine either.
+ */
+export async function calcPricesStand(raw: unknown, chat: { managerUserId: string; peerId: bigint }, now: Date = new Date()): Promise<boolean> {
+  return (await calcPricesStanding(raw, chat, now)) === 'stands';
+}
+
+/** The gate's five facts of a draft quoting a VED price (§2.3) — each TRUE where it refuses. */
 export interface CalcPriceGateFacts {
   /** `markup_unconfirmed`: the rule differs from the one he last vouched for (or none was ever stamped). */
   unconfirmed: boolean;
   /** `calc_price_moved`: a stored price does not stand today. */
   moved: boolean;
+  /** `calc_owner_priced`: his own 💵 now stands on a quoted job — given, waiting or being typed (fix pass 1). */
+  ownerPriced: boolean;
   /** `calc_foreign`: a priced request's card is a colleague's (K3). */
   foreign: boolean;
   /** `media`: the customer sent a file after the job landed (the request burst's own files went to the VED). */
@@ -313,9 +451,9 @@ export interface CalcPriceGateFacts {
 }
 
 /** Every fact refusing — what a calc-price draft whose facts could not be read is judged on (fails closed). */
-export const CALC_PRICE_FACTS_UNREAD: CalcPriceGateFacts = { unconfirmed: true, moved: true, foreign: true, media: true };
+export const CALC_PRICE_FACTS_UNREAD: CalcPriceGateFacts = { unconfirmed: true, moved: true, ownerPriced: true, foreign: true, media: true };
 
-/** The four facts, read now — at the scheduling and again at the press. Never throws (a read that fails refuses all). */
+/** The five facts, read now — at the scheduling and again at the press. Never throws (a read that fails refuses all). */
 export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: string; peerId: bigint }, now: Date): Promise<CalcPriceGateFacts> {
   try {
     const marks = storedMarksOf(raw);
@@ -323,7 +461,9 @@ export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: st
     const rule = await readMarkupRule();
     const confirmed = await markupConfirmed();
     const unconfirmed = rule === null || confirmed !== ruleString(rule);
-    const moved = !(await calcPricesStand(marks, chat, now));
+    const standing = await calcPricesStanding(marks, chat, now);
+    const moved = standing === 'moved';
+    const ownerPriced = standing === 'owner_priced';
     const ids = [...new Set(marks.map((m) => m.requestId))];
     const cards = (await db.execute(sql`
       SELECT r.id::text AS id, r.entity_type, l.owner_id::text AS lead_owner, d.owner_id::text AS deal_owner, c.sales_manager_id::text AS seller
@@ -346,7 +486,7 @@ export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: st
     const chains = (await chatCalcChains(chat.managerUserId, chat.peerId)).filter((c) => c.memberIds.some((id) => ids.includes(id)));
     const since = chains.length === 0 ? null : new Date(Math.min(...chains.map((c) => c.linkedAt.getTime())));
     const media = since === null ? true : await mediaSince(chat, since);
-    return { unconfirmed, moved, foreign, media };
+    return { unconfirmed, moved, ownerPriced, foreign, media };
   } catch (err) {
     logger.warn({ err, peer: String(chat.peerId) }, '[agent] auto: the calc price’s facts not read');
     return CALC_PRICE_FACTS_UNREAD;
@@ -372,6 +512,8 @@ export interface CalcMarkupView {
   value: string;
   /** The stored rule can be read; false = garbage in the row (the AI states no VED price until it is rewritten). */
   readable: boolean;
+  /** The rule's canonical string as this page draws it (`ruleString`) — what «✅ Ustama to'g'ri» vouches for; null unreadable. */
+  rule: string | null;
   ruleWords: string | null;
   /** He vouched for this very rule (his ✅ on a VED-price card, or «✅ Ustama to'g'ri»). */
   confirmed: boolean;
@@ -407,6 +549,7 @@ export async function calcMarkupView(): Promise<CalcMarkupView> {
     kind: typeof kind === 'string' ? kind : String(kind),
     value: typeof value === 'string' ? value : String(value),
     readable: rule !== null,
+    rule: rule === null ? null : ruleString(rule),
     ruleWords: rule === null ? null : ruleWords(rule),
     confirmed,
     example: rule === null ? null : workedExample(rule),

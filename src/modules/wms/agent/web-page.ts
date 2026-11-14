@@ -20,7 +20,7 @@ import { openCalcCapFor } from '../../platform/settings/calc-cap';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
 import { cardDigest, cardDrawsSend, cardTeaches, digestBody, lessonRewritingNow } from './card';
-import { answeredNow, renderDraftCardFull } from './card-io';
+import { answeredNow, cardReadsFor, renderDraftCardFull } from './card-io';
 import { autoCountingDown } from './auto-card';
 import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
 import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentTablesReady, type AgentConfig } from './config';
@@ -122,12 +122,20 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   return null;
 }
 
-function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0, auto: AutoCardState | null = null): WebDraft {
+function toWeb(
+  d: DraftRow,
+  o: OutboxRow | null,
+  holderName: string,
+  waitingInChat = 0,
+  auto: AutoCardState | null = null,
+  reads: { openCalcCap: number | null; landedLabel: string | null } = { openCalcCap: null, landedLabel: null },
+): WebDraft {
   const { kb, kbToken, ownerAnswer } = (d.policy ?? {}) as { kb?: string; kbToken?: string; ownerAnswer?: { text?: unknown } };
   // His ✍️ answer (spec SPEC-P1-v2 §2.3): the fact the «remember» buttons save, shown on the card they sit under.
   const answered = typeof ownerAnswer?.text === 'string' && ownerAnswer.text.trim() !== '' ? ownerAnswer.text : null;
   // The page lists live and approved drafts only, so no line here names his own reply's pause.
-  const card = renderDraftCardFull(d, o, [], { surface: 'web', auto });
+  // The cap and the landed card the bot's copy names too (card-io `cardReadsFor`) — one figure on both surfaces.
+  const card = renderDraftCardFull(d, o, [], { surface: 'web', auto, openCalcCap: reads.openCalcCap, landedLabel: reads.landedLabel });
   const sendable = cardDrawsSend({ blocked: d.blocked || card.tooLong, status: d.status, ownText: d.finalBody !== null });
   return {
     id: d.id,
@@ -260,14 +268,22 @@ export async function webDrafts(viewer: WebViewer, now = new Date()): Promise<{
   const waitingIn = new Map(waitingCounts.map((w) => [`${w.managerUserId}:${String(w.peerId)}`, Number(w.n)]));
   // Each card's «o'zi yuborish» state in one query — the bot's card and this one say the same line.
   const autos = await autoCardStatesFor([...liveRows, ...waitingRows].map((r) => r.d.id));
+  // The lines a card reads for itself — only the drafts whose refusal names a figure or a card (card-io `cardReadsFor`).
+  const reads = new Map(
+    await Promise.all(
+      [...liveRows, ...waitingRows, ...rememberRows]
+        .filter((r) => r.d.actionError !== null)
+        .map(async (r) => [r.d.id, await cardReadsFor(r.d)] as const),
+    ),
+  );
   const live = liveRows.map((r) =>
-    toWeb(r.d, r.o, r.holder, waitingIn.get(`${r.d.managerUserId}:${String(r.d.peerId)}`) ?? 0, autos.get(r.d.id) ?? null),
+    toWeb(r.d, r.o, r.holder, waitingIn.get(`${r.d.managerUserId}:${String(r.d.peerId)}`) ?? 0, autos.get(r.d.id) ?? null, reads.get(r.d.id)),
   );
   return {
     pending: live.filter((d) => !d.needsOwner),
     questions: live.filter((d) => d.needsOwner),
-    remember: rememberRows.map((r) => toWeb(r.d, r.o, r.holder)),
-    waiting: waitingRows.map((r) => toWeb(r.d, r.o, r.holder, 0, autos.get(r.d.id) ?? null)),
+    remember: rememberRows.map((r) => toWeb(r.d, r.o, r.holder, 0, null, reads.get(r.d.id))),
+    waiting: waitingRows.map((r) => toWeb(r.d, r.o, r.holder, 0, autos.get(r.d.id) ?? null, reads.get(r.d.id))),
   };
 }
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { isCalcSubmitOnly } from '@/modules/wms/agent/auto-gate';
 import { landedUnsentLine, LANDED_UNSENT, LANDING_CLAIM } from '@/modules/wms/agent/card-io';
 import { CALC_FILES_MAX, calcFileCopyId, filesMaterialLine, missingFilesNote } from '@/modules/wms/agent/calc-files';
-import { handBackLoopOf } from '@/modules/wms/agent/calc-submit';
+import { CALC_RECENT_MS, handBackLoopOf } from '@/modules/wms/agent/calc-submit';
 import type { AgentContext, CalcChain, ChatMessage } from '@/modules/wms/agent/context';
 import { CHECKLIST_UNITS, checklistLine, lineNeedWords, runTool, TOOL_SPECS, type ToolEnv } from '@/modules/wms/agent/tools';
 import { FIELD_LABEL, missingFields, type CalcFacts } from '@/modules/wms/calc/intake';
@@ -112,11 +112,16 @@ describe('the hand-back loop’s card (§1.5)', () => {
     dealClientId: 'c1',
     cardLabel: 'B-00001',
     memberIds: ['r1', 'q1'],
+    endedAt: new Date('2026-11-10T09:00:00Z'),
+    cardOpen: true,
+    returnTaskOpen: true,
     ...over,
   });
+  /** A day after the hand-back. */
+  const NOW = new Date('2026-11-11T09:00:00Z');
 
   it('a returned chain of the section on the client’s own deal is the loop', () => {
-    expect(handBackLoopOf([chain({})], 'rastamojka', { clientId: 'c1', leadId: null })).toEqual({
+    expect(handBackLoopOf([chain({})], 'rastamojka', { clientId: 'c1', leadId: null }, NOW)).toEqual({
       requestId: 'q1',
       rootRequestId: 'r1',
       card: { kind: 'deal', id: 'd1', label: 'B-00001' },
@@ -125,25 +130,43 @@ describe('the hand-back loop’s card (§1.5)', () => {
 
   it('…and on the chat’s own lead when the chat has no client', () => {
     const lead = chain({ entityType: 'lead', entityId: 'l1', dealClientId: null, cardLabel: 'Ali' });
-    expect(handBackLoopOf([lead], 'rastamojka', { clientId: null, leadId: 'l1' })?.card).toEqual({ kind: 'lead', id: 'l1', label: 'Ali' });
+    expect(handBackLoopOf([lead], 'rastamojka', { clientId: null, leadId: 'l1' }, NOW)?.card).toEqual({ kind: 'lead', id: 'l1', label: 'Ali' });
     // A lead beside a client (won since) is no loop: the landing would land on the client's new deal.
-    expect(handBackLoopOf([lead], 'rastamojka', { clientId: 'c1', leadId: 'l1' })).toBeNull();
+    expect(handBackLoopOf([lead], 'rastamojka', { clientId: 'c1', leadId: 'l1' }, NOW)).toBeNull();
   });
 
   it('never another section, an answered or open chain, another client’s deal or another lead', () => {
-    expect(handBackLoopOf([chain({})], 'podklyuch', { clientId: 'c1', leadId: null })).toBeNull();
-    expect(handBackLoopOf([chain({ status: 'answered' })], 'rastamojka', { clientId: 'c1', leadId: null })).toBeNull();
-    expect(handBackLoopOf([chain({ status: 'open' })], 'rastamojka', { clientId: 'c1', leadId: null })).toBeNull();
-    expect(handBackLoopOf([chain({ dealClientId: 'c2' })], 'rastamojka', { clientId: 'c1', leadId: null })).toBeNull();
+    expect(handBackLoopOf([chain({})], 'podklyuch', { clientId: 'c1', leadId: null }, NOW)).toBeNull();
+    expect(handBackLoopOf([chain({ status: 'answered' })], 'rastamojka', { clientId: 'c1', leadId: null }, NOW)).toBeNull();
+    expect(handBackLoopOf([chain({ status: 'open' })], 'rastamojka', { clientId: 'c1', leadId: null }, NOW)).toBeNull();
+    expect(handBackLoopOf([chain({ dealClientId: 'c2' })], 'rastamojka', { clientId: 'c1', leadId: null }, NOW)).toBeNull();
     expect(
-      handBackLoopOf([chain({ entityType: 'lead', entityId: 'l2', dealClientId: null })], 'rastamojka', { clientId: null, leadId: 'l1' }),
+      handBackLoopOf([chain({ entityType: 'lead', entityId: 'l2', dealClientId: null })], 'rastamojka', { clientId: null, leadId: 'l1' }, NOW),
     ).toBeNull();
   });
 
   it('the newest returned chain answers when there are two', () => {
     const older = chain({ newestId: 'q1', newestRequestedAt: new Date('2026-11-01T08:00:00Z') });
     const newer = chain({ root: 'r2', newestId: 'q2', newestRequestedAt: new Date('2026-11-09T08:00:00Z'), entityId: 'd2' });
-    expect(handBackLoopOf([older, newer], 'rastamojka', { clientId: 'c1', leadId: null })?.requestId).toBe('q2');
+    expect(handBackLoopOf([older, newer], 'rastamojka', { clientId: 'c1', leadId: null }, NOW)?.requestId).toBe('q2');
+  });
+
+  it('bounded (findings 7, 10): only a return within the 14 days, on a card still taking jobs, its ↩️ task still open', () => {
+    const id = { clientId: 'c1', leadId: null };
+    // The 14 days are the 14-day rule's own (`CALC_RECENT_MS`): exactly at the edge still the loop, a minute past it none.
+    const ended = new Date('2026-11-10T09:00:00Z');
+    expect(handBackLoopOf([chain({ endedAt: ended })], 'rastamojka', id, new Date(ended.getTime() + CALC_RECENT_MS))?.requestId).toBe('q1');
+    expect(handBackLoopOf([chain({ endedAt: ended })], 'rastamojka', id, new Date(ended.getTime() + CALC_RECENT_MS + 60_000))).toBeNull();
+    // A return with no time on it is no loop (fails closed).
+    expect(handBackLoopOf([chain({ endedAt: null })], 'rastamojka', id, NOW)).toBeNull();
+    // A deal won or lost since, a lead closed since — no loop.
+    expect(handBackLoopOf([chain({ cardOpen: false })], 'rastamojka', id, NOW)).toBeNull();
+    expect(handBackLoopOf([chain({ entityType: 'lead', entityId: 'l1', dealClientId: null, cardOpen: false })], 'rastamojka', { clientId: null, leadId: 'l1' }, NOW)).toBeNull();
+    // He closed the «↩️ Ma'lumot to'ldiring» himself — the request is handled, no loop.
+    expect(handBackLoopOf([chain({ returnTaskOpen: false })], 'rastamojka', id, NOW)).toBeNull();
+    // A stale returned chain does not hide a fresh one behind it.
+    const stale = chain({ newestId: 'q9', newestRequestedAt: new Date('2026-11-10T10:00:00Z'), cardOpen: false });
+    expect(handBackLoopOf([stale, chain({})], 'rastamojka', id, NOW)?.requestId).toBe('q1');
   });
 });
 

@@ -535,7 +535,7 @@ async function landCalc(
     if (!(await claimLanding(d.id))) return { queued: false, requestId: null, queueError: 'in_flight' };
     const identity = await chatIdentity(d.managerUserId, d.peerId);
     const { handBackLoopOf } = await import('./calc-submit');
-    const loop = handBackLoopOf(await chatCalcChains(d.managerUserId, d.peerId), action.section, identity);
+    const loop = handBackLoopOf(await chatCalcChains(d.managerUserId, d.peerId), action.section, identity, new Date());
     const again = await requeueLanded(noteId, action, actor);
     if (again.requestId) await linkLanding(d, again.requestId, loop?.rootRequestId ?? again.requestId);
     return again;
@@ -584,7 +584,7 @@ async function landCalc(
   // The hand-back loop (SPEC-P2-v2 §1.5, ⭐ §7 Q13): the customer's answer to a request the VED handed back lands ON
   // that request's card — no new deal, no new lead — and is linked under the same chain.
   const { handBackLoopOf } = await import('./calc-submit');
-  const loop = handBackLoopOf(await chatCalcChains(d.managerUserId, d.peerId), action.section, identity);
+  const loop = handBackLoopOf(await chatCalcChains(d.managerUserId, d.peerId), action.section, identity, new Date());
   const { landIntake } = await import('../calc/intake-land');
   const { CalcError } = await import('../calc/service');
   // The landing refuses BEFORE it writes a card or a note when the sender has
@@ -631,8 +631,11 @@ async function landCalc(
   if ('refused' in target) return { queued: false, requestId: null, queueError: target.refused };
   const requestId = target.requestId ?? null;
   // The link is the LANDING's fact (SPEC-P2-v2 §1.2): written the moment the job exists, so a press that then loses
-  // (⏸, 🙋, a disarm) leaves a job the VED's answer still finds its way back from — never an unlinked one.
-  if (requestId) await linkLanding(d, requestId, loop?.rootRequestId ?? requestId);
+  // (⏸, 🙋, a disarm) leaves a job the VED's answer still finds its way back from — never an unlinked one. Under the
+  // returned chain's root only when it landed ON the returned card: a card closed between the read and the landing
+  // sends the job down the ordinary path (intake-land `landOnReturnedCard`), and that job is a chain of its own.
+  const onLoop = loop !== null && target.kind === loop.card.kind && target.id === loop.card.id;
+  if (requestId) await linkLanding(d, requestId, onLoop ? loop.rootRequestId : requestId);
   return { queued: target.queued === true && Boolean(requestId), requestId, queueError: target.queueError ?? null };
 }
 

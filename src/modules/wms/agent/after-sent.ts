@@ -7,7 +7,7 @@ import { moveLeadByMachine, type MachineMoveResult } from '../crm/service';
 import { CalcError } from '../calc/service';
 import { recordOffer } from '../calc/workspace';
 import { dollarsWords } from './calc-markup';
-import { CALC_PRICE_REFUSAL_WORDS, calcPriceFor, storedMarksOf, type CalcPriceMark } from './calc-price';
+import { CALC_PRICE_REFUSAL_WORDS, calcPriceFor, statedCalcMarks, storedMarksOf, type CalcPriceMark } from './calc-price';
 import { agentFullP2Ready, agentTablesReady } from './config';
 import { chatCalcChains } from './context';
 import { machineMayTouch } from './machine-owner';
@@ -147,10 +147,31 @@ async function markedBefore(draftId: string, requestId: string): Promise<number 
   return row ? Number(row.price) : null;
 }
 
+/**
+ * The card already carries this very promise (fix pass 1, finding 3): the newest offer on the mark's anchor is the
+ * AI's own, at this price — a later reply that says the same figure again is no new promise, and a second row would
+ * only list it twice (or put back a price a person corrected on the card since; then the newest is theirs and the
+ * restatement is written). Never throws a refusal: a read is a read.
+ */
+async function sameOfferStands(m: CalcPriceMark): Promise<boolean> {
+  const anchor = m.anchor === 'seal' ? sql`o.version_id = ${m.anchorId}::uuid` : sql`o.request_id = ${m.requestId}::uuid AND o.version_id IS NULL`;
+  const rows = (await db.execute(sql`
+    SELECT o.client_price_usd::text AS price, (a.offer_id IS NOT NULL) AS ai
+      FROM calc_offers o
+      LEFT JOIN agent_offers a ON a.offer_id = o.id
+     WHERE ${anchor}
+     ORDER BY o.offered_at DESC, o.id DESC
+     LIMIT 1
+  `)) as unknown as { price: string; ai: boolean }[];
+  const row = [...rows][0];
+  return row !== undefined && row.ai && Math.abs(Number(row.price) - m.total) < 0.005;
+}
+
 /** One mark written as the card's offer — or the words why not. Throws only what is no refusal (a database error). */
 async function offerOne(o: OutboxRow, d: DraftRow, m: CalcPriceMark): Promise<string> {
   const before = await markedBefore(d.id, m.requestId);
   if (before !== null) return OFFER_WORDS.written(before);
+  if (await sameOfferStands(m)) return OFFER_WORDS.written(m.total);
   const again = await calcPriceFor({ managerUserId: o.managerUserId, peerId: o.peerId, requestId: m.requestId });
   if (!again.ok) return OFFER_WORDS.notWritten(CALC_PRICE_REFUSAL_WORDS[again.reason]);
   const same = again.prices.find((p) => p.requestId === m.requestId && p.anchorId === m.anchorId && p.rule === m.rule && Math.abs(p.total - m.total) < 0.005);
@@ -190,10 +211,15 @@ async function offerOne(o: OutboxRow, d: DraftRow, m: CalcPriceMark): Promise<st
  */
 export async function offerStep(o: OutboxRow, d: DraftRow): Promise<string[]> {
   const memory = ((d.policy ?? {}) as Partial<DraftPolicyJson>).memory as { calcPrices?: unknown } | undefined;
-  const marks = storedMarksOf(memory?.calcPrices);
-  if (marks === null) return [];
+  const stored = storedMarksOf(memory?.calcPrices);
+  if (stored === null) return [];
   // His ✏️ words went: the figure on the card would not be the one the customer read (money 6).
   if (d.finalBody !== null) return [OFFER_WORDS.notWritten(OFFER_WORDS.ownText)];
+  // Only a price the words that WENT state (fix pass 1, finding 3) — the card's offer is the figure the customer read,
+  // never one the run was merely offered. The run keeps only those already (`settleCalcPrices`); asked again here of the
+  // outbox body itself, the one text that reached the customer.
+  const marks = statedCalcMarks(o.body, stored);
+  if (marks.length === 0) return [];
   if (!(await agentFullP2Ready())) return [OFFER_WORDS.notWritten(OFFER_WORDS.behind)];
   // Only while the account the reply left from IS the AI seat AND still the holder (K4, hands 2): «never an offer a
   // person would be paid for», and never one written in the name of an account the AI no longer speaks from.

@@ -63,6 +63,8 @@ export const AUTO_REFUSALS = [
   // A VED answer's price (SPEC-P2-v2 §2.3, §2.5) — asked of a calc-price line only.
   'markup_unconfirmed',
   'calc_price_moved',
+  // His own 💵 for the quoted job arrived while the machine's price counted down (fix pass 1): his figure outranks it.
+  'calc_owner_priced',
   'owner_figure',
   'owner_personal',
   'answer_stale',
@@ -114,6 +116,7 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   destination_unsaid: 'javobda «Toshkentgacha» deyilmagan',
   markup_unconfirmed: 'ustama o‘zgargan — birinchi VED narxini o‘zingiz tasdiqlang',
   calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi',
+  calc_owner_priced: 'bu ishga narxni 💵 bilan o‘zingiz bergansiz — sizning narxingiz ustun',
   owner_figure: 'javobda sizning raqamingiz bor — ko‘rib yuboring',
   owner_personal: 'javobingizda boshqa mijoz ma’lumoti bor — ko‘rib yuboring',
   answer_stale: 'savolingizdan keyin mijoz yana yozdi',
@@ -206,7 +209,7 @@ export interface CalcSubmitFacts {
 }
 
 /** Every fact refusing — a VED-price draft whose facts were not read (fails closed; calc-price's own constant, restated pure). */
-const CALC_PRICE_FACTS_ALL: CalcPriceGateFacts = { unconfirmed: true, moved: true, foreign: true, media: true };
+const CALC_PRICE_FACTS_ALL: CalcPriceGateFacts = { unconfirmed: true, moved: true, ownerPriced: true, foreign: true, media: true };
 
 /** Every fact refusing — what a calc draft whose facts were not read is judged on (fails closed). */
 export const CALC_FACTS_UNREAD: CalcSubmitFacts = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
@@ -400,6 +403,7 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   const cp = calcQuote ? (input.calcPrice ?? CALC_PRICE_FACTS_ALL) : null;
   if (cp?.unconfirmed) hit.add('markup_unconfirmed');
   if (cp?.moved) hit.add('calc_price_moved');
+  if (cp?.ownerPriced) hit.add('calc_owner_priced');
   if (cp?.foreign) hit.add('calc_foreign');
   // A figure from HIS answer always comes back to him (§2.2, law 4): the AI never relays his number by itself.
   // Asked of his ANSWER as well as of the ledger: a figure of his that the customer, a tool or a fact also carries
@@ -419,8 +423,11 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // he ticks for it; one that also quotes the truck table is `price` (the money clause asked `calc_price` already).
   const category = money.present && !money.refused && goes ? (money.estimateMoney ? 'price' : money.calcPriced ? 'calc_price' : 'price') : label;
   const admitted = (LABEL_CATEGORIES as readonly string[]).includes(category) || (category === 'calc_price' && calcQuote);
-  // A calc draft is its own kind whatever the label (§1.1) — it passes because he ticked it, never by its label.
-  if (!calc && (!admitted || !config.categories.includes(category))) hit.add('category');
+  // A calc draft is its own kind whatever kind of reply the model labelled it (§1.1) — it passes because he ticked it,
+  // never by its label. But only among the labels that ever go (fix pass 1, finding 8): a submit the model labelled
+  // «complaint» or «other» — or labelled nothing — stays his, as the arming words promise («shikoyat … har doim sizga
+  // qoladi»); the price path keeps the same rule just above.
+  if (calc ? !goes : !admitted || !config.categories.includes(category)) hit.add('category');
   // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess —
   // asked of the model's OWN label, so a status claim riding an admitted quote is still asked for its reading.
   if (label === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
@@ -498,7 +505,9 @@ function moneyVerdict(input: AutoGateInput): {
     !calls.every((t) => isEstimateTool(t.name) && t.ok) ||
     !lines.every((l) => estimateLine(l) || calcLine(l)) ||
     (priced && !draft.estimatesStored) ||
-    (calcPriced && !draft.calcPricesStored) ||
+    // A VED price the reply STATES and the draft did not keep (fails closed). One the tool merely offered and the words
+    // never said is kept by no draft (run `settleCalcPrices`) — that reply is `money_unread` alone, below.
+    (lines.some(calcLine) && !draft.calcPricesStored) ||
     draft.rail;
   // A priced run whose reply carries no figure of an estimate (0148 fix): «到塔什干的运费大概六百左右» after a tool
   // that said 800 $ holds no money line at all — every clause above passes on an empty list.

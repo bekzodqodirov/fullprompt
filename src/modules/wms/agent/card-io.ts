@@ -104,6 +104,8 @@ const CANCEL_WORDS: Record<string, string> = {
   calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi',
   // His own 💵 on the request the AI priced, while the AI's approved price still waited (calc-loop `priceDraftFromText`).
   owner_price: 'narxni o‘zingiz berdingiz (💵) — AI narxi yuborilmadi',
+  // His newer 💵 on the same request while this one of his still waited (calc-loop `priceDraftFromText`, fix pass 1).
+  owner_price_again: 'yangi narxingiz (💵) bilan almashtirildi',
   // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
   // a reworded value still has its word and never prints raw.
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',
@@ -565,6 +567,19 @@ async function landedCardLabel(draftId: string): Promise<string | null> {
 }
 
 /**
+ * The two facts a card reads only for the one line that names them (SPEC-P2-v2 §1.3, §1.2) — the holder's open-calc
+ * cap on «too many open», and the card a landed-but-unsent job sits on. ONE reader for the bot's copy
+ * (`refreshAgentCard`) and the page's (web-page `webDrafts`): the figure the card names is the same on both (fix pass
+ * 1 — the page printed the figure-less words).
+ */
+export async function cardReadsFor(d: Pick<DraftRow, 'id' | 'managerUserId' | 'actionError'>): Promise<{ openCalcCap: number | null; landedLabel: string | null }> {
+  return {
+    openCalcCap: d.actionError === 'too_many_open' ? await openCalcCapFor(d.managerUserId) : null,
+    landedLabel: d.actionError === LANDED_UNSENT ? await landedCardLabel(d.id) : null,
+  };
+}
+
+/**
  * Re-render the draft's card and put it everywhere it is: the notification
  * row's payload (so an unsent copy goes out current) and the sent Telegram
  * message (edited, with the buttons `buttonsFor` draws for its new state).
@@ -585,10 +600,8 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   // «O'zi yuborish»'s state — every redraw keeps the timer, the reason or the 👎 (null one migration behind).
   const { autoCardStateFor } = await import('./auto-send');
   const auto = await autoCardStateFor(draftId);
-  // The open-calc cap is read only for the one refusal that names it — the holder's own (§1.3).
-  const openCalcCap = d.actionError === 'too_many_open' ? await openCalcCapFor(d.managerUserId) : null;
-  // The card a landed-but-unsent job sits on — read only for the one line that names it (§1.2).
-  const landedLabel = d.actionError === LANDED_UNSENT ? await landedCardLabel(d.id) : null;
+  // The open-calc cap and a landed job's card — read only for the one line that names each (§1.3, §1.2).
+  const { openCalcCap, landedLabel } = await cardReadsFor(d);
   const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, openCalcCap, landedLabel, auto });
   const live = d.status === 'pending' || d.status === 'editing';
   const body = digestBody(d);

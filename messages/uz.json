@@ -6779,6 +6779,7 @@
       "lesson_confirmed": "Saboq allaqachon saqlangan.",
       "seat_not_holder": "AI o‘rni faqat AI gapiradigan akkauntga belgilanadi — avval akkauntni tanlang.",
       "bad_markup": "Ustama noto‘g‘ri — foiz 0,01 dan 100 gacha (verguldan keyin ko‘pi bilan 2 raqam) yoki qat’iy summa 1 dan 5 000 $ gacha butun son yozing; bo‘sh qoldirsangiz ustama qo‘shilmaydi.",
+      "markup_changed": "Ustama sahifa ochilgandan keyin o‘zgargan — sahifani yangilang va yangi ustamani ko‘rib tasdiqlang.",
       "offer_gone": "VED bu hisobni qayta hisoblayapti — bu narx endi amal qilmaydi, javob yuborilmadi.",
       "calc_price_moved": "VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi. Yangi narxni 💵 bilan bering.",
       "ai_price_sent": "Mijozga AI narxi ketgan — sizning narxingiz yuborilsinmi? Yana bir marta yozing.",

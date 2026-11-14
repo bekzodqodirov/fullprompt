@@ -28,6 +28,15 @@ export const CALC_RECENT_MS = 14 * 24 * 60 * 60_000;
  * chat's landing would itself reach: the client's own deal, or — for a chat with no client — the chat's own lead. A
  * returned request sitting anywhere else (a lead since won into this client) is no loop: the submit lands as any
  * other, and the 14-day rule judges it.
+ *
+ * And only while the hand-back is still the matter at hand (fix pass 1, findings 7 and 10) — every one of:
+ *  - it was handed back within the 14 days the duplicate rule counts (`CALC_RECENT_MS`): months later the customer
+ *    writes about a NEW shipment, never the old request's missing answer;
+ *  - its card still takes jobs (a stage of kind `open`): a deal lost or won since is a closed sale, and a new job on
+ *    it is a job nobody's funnel shows;
+ *  - its «↩️ Ma'lumot to'ldiring» task still stands open: closed by hand, the request was dealt with.
+ * Otherwise it is no loop — his ✅ and the machine alike land the job as any other (a coded client's NEW deal), and
+ * `calc_recent` judges it for the machine. ONE rule for the gate's facts, the landing and his ✅ (decide `landCalc`).
  */
 export interface HandBackLoop {
   /** The returned request. */
@@ -41,9 +50,18 @@ export function handBackLoopOf(
   chains: readonly CalcChain[],
   section: string,
   identity: Pick<ChatIdentity, 'clientId' | 'leadId'>,
+  now: Date,
 ): HandBackLoop | null {
   const returned = chains
-    .filter((c) => c.section === section && c.status === 'returned')
+    .filter(
+      (c) =>
+        c.section === section &&
+        c.status === 'returned' &&
+        c.cardOpen &&
+        c.returnTaskOpen &&
+        c.endedAt !== null &&
+        now.getTime() - c.endedAt.getTime() <= CALC_RECENT_MS,
+    )
     .sort((a, b) => b.newestRequestedAt.getTime() - a.newestRequestedAt.getTime());
   for (const c of returned) {
     const fits =
@@ -72,7 +90,7 @@ export async function calcSubmitFacts(input: {
   const identity = await chatIdentity(input.managerUserId, input.peerId);
   const unproven = !(identity.cargoAllowed || (identity.clientId === null && identity.leadId !== null));
   const chains = await chatCalcChains(input.managerUserId, input.peerId);
-  const loop = handBackLoopOf(chains, input.action.section, identity);
+  const loop = handBackLoopOf(chains, input.action.section, identity, input.now);
 
   // The landing's card: the loop's, else the chat's client (a deal is minted for it) or the chat's lead.
   let foreign = true;

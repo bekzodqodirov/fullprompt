@@ -553,6 +553,15 @@ export interface CalcChain {
   cardLabel: string | null;
   /** Every member of the chain — what «is this request one of this chat's» is asked against (calc-price `calcPriceFor`). */
   memberIds: string[];
+  /** When the newest member ended — answered, sealed or handed back (`completed_at`); null while it is open. */
+  endedAt: Date | null;
+  /** The newest member's card still takes jobs: its deal's or lead's stage is of kind `open` (not won, not lost). */
+  cardOpen: boolean;
+  /**
+   * A «↩️ Ma'lumot to'ldiring» task of the hand-back (origin `calc_return`) stands open on that card for this account —
+   * the task the hand-back loop closes (calc/service `closeReturnTasks`, the same predicate).
+   */
+  returnTaskOpen: boolean;
 }
 
 /**
@@ -586,6 +595,12 @@ export async function chatCalcChains(managerUserId: string, peerId: bigint, limi
            n.completed_at, n.return_reason, n.entity_type, n.entity_id::text AS entity_id,
            d.client_id::text AS deal_client_id,
            coalesce(d.code, l.name) AS card_label,
+           coalesce((SELECT ds.kind FROM deal_stages ds WHERE ds.id = d.stage_id), (SELECT ls.kind FROM lead_stages ls WHERE ls.id = l.stage_id)) = 'open' AS card_open,
+           EXISTS (
+             SELECT 1 FROM tasks tk
+              WHERE tk.origin = 'calc_return' AND tk.entity_type = n.entity_type AND tk.entity_id = n.entity_id
+                AND tk.assignee_id = ${managerUserId}::uuid AND tk.status = 'open'
+           ) AS return_task_open,
            EXISTS (SELECT 1 FROM tree t JOIN calc_requests c ON c.id = t.id WHERE t.root = r.root AND c.completed_at IS NULL) AS any_open,
            ARRAY(SELECT DISTINCT t.id::text FROM tree t WHERE t.root = r.root) AS member_ids
       FROM roots r
@@ -608,6 +623,8 @@ export async function chatCalcChains(managerUserId: string, peerId: bigint, limi
     entity_id: string;
     deal_client_id: string | null;
     card_label: string | null;
+    card_open: boolean | null;
+    return_task_open: boolean;
     any_open: boolean;
     member_ids: string[] | null;
   }[];
@@ -623,6 +640,9 @@ export async function chatCalcChains(managerUserId: string, peerId: bigint, limi
     dealClientId: r.deal_client_id,
     cardLabel: r.card_label,
     memberIds: [...new Set(r.member_ids ?? [])],
+    endedAt: r.completed_at === null ? null : new Date(r.completed_at),
+    cardOpen: r.card_open === true,
+    returnTaskOpen: r.return_task_open === true,
   }));
 }
 

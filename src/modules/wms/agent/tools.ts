@@ -64,6 +64,12 @@ export interface ToolEnv {
    * then is `calc_price` offered (`toolSpecsFor`); off, the tools are today's list, byte for byte.
    */
   calcPricing: boolean;
+  /**
+   * The VED answered THIS job and the run was started by it (a `calc_answer` run, calc-loop `handleCalcAnswer`): the
+   * tool prices that request's chain ALONE (fix pass 1, finding 2) — a repeat client's other answered job is no figure
+   * this reply may state. Absent (an inbound run): every answered chain of the chat, each named by its goods.
+   */
+  calcRequestId?: string | null;
 }
 
 /**
@@ -456,14 +462,21 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
 async function calcPrice(env: ToolEnv): Promise<ToolOutcome> {
   if (!env.calcPricing) return { ok: false, text: `Noma'lum vosita: ${CALC_PRICE_TOOL}`, sources: [] };
   const { CALC_PRICE_REFUSAL_WORDS, calcPriceFor } = await import('./calc-price');
-  const r = await calcPriceFor({ managerUserId: env.ctx.managerUserId, peerId: env.ctx.peerId });
+  const r = await calcPriceFor({
+    managerUserId: env.ctx.managerUserId,
+    peerId: env.ctx.peerId,
+    ...(env.calcRequestId ? { requestId: env.calcRequestId } : {}),
+  });
   if (!r.ok) return { ok: false, text: `VED narxini aytib bo'lmaydi: ${CALC_PRICE_REFUSAL_WORDS[r.reason]}. Narx AYTMA.`, sources: [] };
   const words: Record<string, string> = { yolkira: "yo'lkira", rastamojka: 'rastamojka', podklyuch: 'podklyuch' };
-  const lines = r.prices.map((p) => `${words[p.section] ?? p.section}: ${p.total} $`);
+  // Each job named by its goods (fix pass 1, finding 2): a chat that holds two answered jobs gets two figures, and the
+  // model must tell the customer which cargo each is for — never one job's figure for the other's cargo.
+  const lines = r.prices.map((p, i) => `${words[p.section] ?? p.section}${r.goods[i] ? ` (${r.goods[i]})` : ''}: ${p.total} $`);
   return {
     ok: true,
     text:
       `VED javobi asosida, ustama bilan — ${lines.join('; ')}. Mijozga shu narxni ayt (umumiy narx), boshqa raqam qo'shma.` +
+      (r.prices.length > 1 ? " Har bir narx qaysi yuk uchunligini aniq ayt — bir yukning narxini boshqasiga aytma." : '') +
       (r.fromOurWarehouse ? ` Narx Xitoydagi omborimizdan: ikkala jumla ham bo'lsin — ${warehouseSentencesText()}.` : ''),
     sources: r.prices.map((p) => ({ value: p.total, kind: 'money', label: 'VED narxi (ustama bilan)', origin: 'tool', currency: 'USD', role: 'total', tool: CALC_PRICE_TOOL })),
     calcPrices: r.prices,

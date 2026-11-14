@@ -6779,6 +6779,7 @@
       "lesson_confirmed": "The lesson is already saved.",
       "seat_not_holder": "The AI seat is set only on the account the AI speaks from — pick the account first.",
       "bad_markup": "Invalid markup — a percent from 0.01 to 100 (at most 2 decimals) or a fixed sum of 1 to 5,000 $ as a whole number; empty means no markup.",
+      "markup_changed": "The markup changed after this page was opened — reload the page and confirm the new markup.",
       "offer_gone": "The customs desk is recalculating this job — the price no longer stands and the reply was not sent.",
       "calc_price_moved": "The customs desk's answer or the markup changed — this price was not sent. Give the new price with 💵.",
       "ai_price_sent": "The AI's price has already reached the customer — send yours? Type it once more.",

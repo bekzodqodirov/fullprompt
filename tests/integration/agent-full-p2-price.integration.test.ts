@@ -20,11 +20,17 @@ import {
   agentConfig,
   agentConversations,
   agentDrafts,
+  agentOffers,
   agentOutbox,
   agentRuns,
   auditLog,
+  calcOffers,
+  calcRequestItems,
   calcRequests,
   calcVersions,
+  clients,
+  dealStages,
+  deals,
   leadStages,
   leads,
   notifications,
@@ -36,7 +42,9 @@ import {
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
+import { AGENT_SEAT_KEY } from '@/modules/platform/settings/agent-seat';
 import { getSetting, setSetting, SETTINGS_AUDIT_ID } from '@/modules/platform/settings/service';
+import { handleAfterSent } from '@/modules/wms/agent/after-sent';
 import { pressDueAutos, readAutoConfig, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
 import { announceAgentCalc, handleCalcAnswer, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
 import { calcPriceFor, MARKUP_CONFIRMED_KEY } from '@/modules/wms/agent/calc-price';
@@ -44,9 +52,10 @@ import { renderDraftCard } from '@/modules/wms/agent/card-io';
 import { AgentConfigError, confirmCalcMarkup, readAgentConfig, setCalcMarkup, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft } from '@/modules/wms/agent/decide';
 import { draftOfferStands } from '@/modules/wms/agent/drafts';
-import { agentRowById, sendFactsFor } from '@/modules/wms/agent/outbox-store';
+import { agentRowById, applyAgentOutcome, sendFactsFor } from '@/modules/wms/agent/outbox-store';
 import { handleInbound, CALC_PRICE_UNSAID } from '@/modules/wms/agent/run';
-import { agentSendVerdict, runAgentStep, type AgentTelegram, type HeadMessage } from '@/modules/wms/agent/send-step';
+import { agentSendVerdict, liveHeadVerdict, runAgentStep, type AgentTelegram, type HeadMessage } from '@/modules/wms/agent/send-step';
+import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
 import { isNudge } from '@/modules/wms/agent/worthy';
 import { JOB_AGENT_CALC_ANSWER, type AgentCalcAnswerJob } from '@/modules/wms/agent/queues';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
@@ -93,10 +102,11 @@ let stageId = '';
 let agentSnapshot: AgentConfig | null = null;
 let autoSnapshot: AutoConfig | null = null;
 let sendingBefore = false;
-const SETTING_KEYS = ['agent_calc_markup_kind', 'agent_calc_markup_value', MARKUP_CONFIRMED_KEY, 'quote_valid_days'];
+const SETTING_KEYS = ['agent_calc_markup_kind', 'agent_calc_markup_value', MARKUP_CONFIRMED_KEY, 'quote_valid_days', AGENT_SEAT_KEY];
 const settingsBefore = new Map<string, unknown>();
 const madeLeads: string[] = [];
 const madeRequests: string[] = [];
+const madeClients: string[] = [];
 
 async function rawSetting(key: string): Promise<unknown> {
   const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, key));
@@ -393,6 +403,7 @@ beforeEach(async () => {
   queued.length = 0;
   await armAuto();
   await markup('percent', '10', 'percent:10');
+  await putSetting(AGENT_SEAT_KEY, null);
   await stampAgentPump(accountId, true);
 });
 
@@ -412,6 +423,10 @@ afterAll(async () => {
       await db.delete(calcRequests).where(inArray(calcRequests.id, madeRequests));
     }
     if (madeLeads.length) await db.delete(leads).where(inArray(leads.id, madeLeads));
+    if (madeClients.length) {
+      await db.delete(deals).where(inArray(deals.clientId, madeClients));
+      await db.delete(clients).where(inArray(clients.id, madeClients));
+    }
     if (stageId) await db.delete(leadStages).where(eq(leadStages.id, stageId));
     await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));
     await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
@@ -433,6 +448,8 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
       prices: [{ requestId: c.requestId, section: 'rastamojka', anchor: 'answer', anchorId: c.requestId, rule: 'percent:10', total: 1359 }],
       cardLine: '🧮 rastamojka: VED 1 234,56 $ · ustama 10 % → mijozga 1 359 $',
       fromOurWarehouse: false,
+      // No goods were listed on the job: nothing names it beyond its section.
+      goods: [''],
     });
   });
 
@@ -440,6 +457,7 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
     const leadId = await freshLead();
     const chat = await chatOn(leadId);
     const r1 = await request(leadId, 'rastamojka', chat);
+    await submitted(chat, r1);
     const v1 = await sealed(r1, '1300');
     expect(await calcPriceFor({ managerUserId: holderId, peerId: chat.peer, requestId: r1 })).toMatchObject({
       ok: true,
@@ -449,6 +467,7 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
     const lead2 = await freshLead();
     const chat2 = await chatOn(lead2);
     const r2 = await request(lead2, 'podklyuch', chat2);
+    await submitted(chat2, r2);
     await sealed(r2, '1300', { section: 'podklyuch', customs: '500', freight: '700', extras: '100' });
     expect(await calcPriceFor({ managerUserId: holderId, peerId: chat2.peer })).toMatchObject({ ok: true, prices: [{ section: 'podklyuch', total: 1430 }] });
     // A podklyuch «Готово» answer and a yo'lkira job the VED answered: priced on the whole figure.
@@ -456,6 +475,7 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
       const l = await freshLead();
       const ch = await chatOn(l);
       const r = await request(l, section, ch);
+      await submitted(ch, r);
       await answered(r, '800');
       expect(await calcPriceFor({ managerUserId: holderId, peerId: ch.peer })).toMatchObject({ ok: true, prices: [{ section, anchor: 'answer', total: 880 }] });
     }
@@ -481,6 +501,7 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
     const sellers = await request(leadId, 'yolkira', null);
     await sealed(sellers, '900', { section: 'yolkira', at: new Date(Date.now() - 2 * 3_600_000) });
     const ai = await request(leadId, 'rastamojka', chat);
+    await submitted(chat, ai);
     await answered(ai, '1000', { ago: 60 * 60_000 });
     expect(await calcPriceFor({ managerUserId: holderId, peerId: chat.peer })).toMatchObject({
       ok: true,
@@ -503,6 +524,7 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
       const l = await freshLead();
       const ch = await chatOn(l);
       const r = await request(l, 'rastamojka', ch);
+      await submitted(ch, r);
       await sealed(r, '1300', opts);
       expect(await refusal(await calcPriceFor({ managerUserId: holderId, peerId: ch.peer })), JSON.stringify(opts)).toBe('discounted');
     }
@@ -510,6 +532,7 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
     const l = await freshLead();
     const ch = await chatOn(l);
     const r = await request(l, 'rastamojka', ch);
+    await submitted(ch, r);
     await sealed(r, '1300', { density: '200', bandOverrideMin: '250' });
     expect(await refusal(await calcPriceFor({ managerUserId: holderId, peerId: ch.peer }))).toBe('ok');
     // The request's card is no longer the chat's (another lead).
@@ -517,6 +540,7 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
     const own = await freshLead();
     const moved = await chatOn(own);
     const onOther = await request(elsewhere, 'rastamojka', moved);
+    await submitted(moved, onOther);
     await answered(onOther, '1000');
     expect(await refusal(await calcPriceFor({ managerUserId: holderId, peerId: moved.peer }))).toBe('card_moved');
     // A newer USD answer of another job on the same card outranks it.
@@ -785,10 +809,10 @@ describe('his doors on the markup (§2.1)', () => {
       expect(await refused(setCalcMarkup({ id: holderId, roles: ['super_admin'] }, { kind: kind!, value: value! }, { actorId: holderId })), `${kind}:${value}`).toBe('bad_value');
     }
     expect(await setCalcMarkup({ id: holderId, roles: ['super_admin'] }, { kind: 'percent', value: '7,5' }, { actorId: holderId })).toMatchObject({ value: '7.5' });
-    expect(await confirmCalcMarkup({ id: holderId, roles: ['super_admin'] }, { actorId: holderId })).toBe('percent:7.5');
+    expect(await confirmCalcMarkup({ id: holderId, roles: ['super_admin'] }, 'percent:7.5', { actorId: holderId })).toBe('percent:7.5');
     expect(await rawSetting(MARKUP_CONFIRMED_KEY)).toBe('percent:7.5');
     expect(await setCalcMarkup({ id: holderId, roles: ['super_admin'] }, { kind: 'percent', value: '' }, { actorId: holderId })).toMatchObject({ value: '' });
-    expect(await confirmCalcMarkup({ id: holderId, roles: ['super_admin'] }, { actorId: holderId })).toBe('none');
+    expect(await confirmCalcMarkup({ id: holderId, roles: ['super_admin'] }, 'none', { actorId: holderId })).toBe('none');
   });
 });
 
@@ -881,5 +905,310 @@ describe('every outcome of the VED answer’s run that leaves no price is said t
       .where(and(eq(notifications.userId, holderId), eq(notifications.type, 'AgentCalcAnswered'), sql`${notifications.payload}->>'text' LIKE '%VED narxini yozmadi%'`, sql`${notifications.payload}->>'requestId' = ${c.requestId}`));
     expect(said).toBeDefined();
     expect(said!.payload).toMatchObject({ priceable: true });
+  });
+});
+
+/** A reply of ours that WENT: the draft's outbox row sent, and its Telegram copy in the chat. */
+async function wentOut(draftId: string, at: Date): Promise<bigint> {
+  const [o] = await outboxOf(draftId);
+  expect(o, 'an outbox row after the ✅').toBeDefined();
+  const tgId = next();
+  await db.update(agentOutbox).set({ status: 'sent', sentAt: at, tgMessageId: tgId }).where(eq(agentOutbox.id, o!.id));
+  await db.insert(tgMessages).values({ leadId: o!.leadId, clientId: o!.clientId, managerUserId: holderId, peerId: o!.peerId, tgMessageId: tgId, direction: 'out', body: o!.body, sentAt: at });
+  return tgId;
+}
+
+/** The customer writes again — a line newer than everything in the chat. */
+async function customerSays(chat: { peer: bigint; leadId?: string; clientId?: string }, body: string, at = new Date(T0.getTime() - 2 * 60_000)): Promise<bigint> {
+  const id = next();
+  await db.insert(tgMessages).values({ leadId: chat.leadId ?? null, clientId: chat.clientId ?? null, managerUserId: holderId, peerId: chat.peer, tgMessageId: id, direction: 'in', body, sentAt: at });
+  return id;
+}
+
+/** His 💵 drafted, approved by his ✅ — its outbox row waiting. */
+async function ownPrice(requestId: string, figure: string): Promise<string> {
+  const own = await priceDraftFromText(holderId, requestId, figure);
+  expect(own, JSON.stringify(own)).toMatchObject({ ok: true });
+  const id = (own as { draftId: string }).draftId;
+  expect(await decideDraft(person(), id, 'send', { digest: await digestOf(id) }, { actorId: holderId })).toMatchObject({ ok: true });
+  return id;
+}
+
+/** The tools' own answers the model read back (never the model's own words), from the requests it was sent. */
+function toolTextOf(seen: ModelRequest[]): string {
+  const results = (seen.at(-1)?.messages ?? []).flatMap((m) =>
+    Array.isArray(m.content) ? m.content.filter((b) => (b as { type?: string }).type === 'tool_result') : [],
+  );
+  return JSON.stringify(results);
+}
+
+/**
+ * A coded client's chat with TWO jobs the AI submitted — each on its own deal (a new deal per request), each with its
+ * own sent «yubordim» and its own goods: job A answered 1 000 $ two days ago (→ 1 100), job B 1 234,56 $ now (→ 1 359).
+ */
+async function twoJobs() {
+  const [cl] = await db
+    .insert(clients)
+    .values({ clientCode: `PF${SUFFIX}${madeClients.length + 1}`.slice(0, 10), name: `P3 ikki ish ${SUFFIX}`, phones: [], salesManagerId: holderId })
+    .returning({ id: clients.id });
+  madeClients.push(cl!.id);
+  const open = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
+  const mkDeal = async (n: number) =>
+    (await db.insert(deals).values({ code: `PF-${SUFFIX}-${madeClients.length}-${n}`, clientId: cl!.id, stageId: open!.id, title: 'ikki ish', createdBy: holderId, ownerId: holderId }).returning({ id: deals.id }))[0]!.id;
+  const peer = next();
+  peers.push(peer);
+  const job = async (goods: string, askedAt: Date, amount: string, answeredAgo: number) => {
+    const anchor = next();
+    await db.insert(tgMessages).values({ clientId: cl!.id, managerUserId: holderId, peerId: peer, tgMessageId: anchor, direction: 'in', body: `Rastamojka qancha? ${goods}.`, sentAt: askedAt });
+    const deal = await mkDeal(madeRequests.length);
+    const [r] = await db
+      .insert(calcRequests)
+      .values({ entityType: 'deal', entityId: deal, requestedBy: holderId, itemCount: 1, section: 'rastamojka', dueAt: new Date(Date.now() + 3_600_000), requestedAt: new Date(askedAt.getTime() + 5 * 60_000) })
+      .returning({ id: calcRequests.id });
+    madeRequests.push(r!.id);
+    await db.insert(calcRequestItems).values({ requestId: r!.id, seq: 1, name: goods });
+    await db.insert(agentCalcLinks).values({ requestId: r!.id, rootRequestId: r!.id, managerUserId: holderId, peerId: peer, createdAt: new Date(askedAt.getTime() + 5 * 60_000) });
+    const ours = next();
+    const at = new Date(askedAt.getTime() + 6 * 60_000);
+    await db.insert(tgMessages).values({ clientId: cl!.id, managerUserId: holderId, peerId: peer, tgMessageId: ours, direction: 'out', body: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', sentAt: at });
+    const [sd] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: holderId, peerId: peer, clientId: cl!.id, anchorTgMessageId: anchor, status: 'approved', kind: 'reply', proposedBody: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', actions: [{ type: 'calc_submit', section: 'rastamojka', facts: {}, fromOurWarehouse: false, citedMessageIds: [] }] })
+      .returning({ id: agentDrafts.id });
+    await db.insert(agentOutbox).values({ draftId: sd!.id, managerUserId: holderId, peerId: peer, clientId: cl!.id, body: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', randomId: next(), answersTgMessageId: anchor, status: 'sent', step: 'send', nextStepAt: at, queuedBy: holderId, sentAt: at, tgMessageId: ours });
+    await db.update(agentCalcLinks).set({ draftId: sd!.id }).where(eq(agentCalcLinks.requestId, r!.id));
+    await answered(r!.id, amount, { ago: answeredAgo });
+    return r!.id;
+  };
+  const a = await job('kurtka 100 dona', new Date(T0.getTime() - 3 * DAY), '1000', 2 * DAY);
+  const b = await job('oyoq kiyim 200 juft', new Date(T0.getTime() - 60 * 60_000), '1234.56', 30 * 60_000);
+  return { peer, clientId: cl!.id, a, b };
+}
+
+describe('fix pass 1 — what goes by itself (the VED price)', () => {
+  it('his 💵 SENT, then the customer asks again: the machine prices nothing — the tool refuses, the reply cannot quote, no press (finding 1)', async () => {
+    const c = await answeredChain();
+    const ownId = await ownPrice(c.requestId, '1500');
+    await wentOut(ownId, new Date(T0.getTime() - 10 * 60_000));
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'owner_priced' });
+    const q = await customerSays(c.chat, 'Yaxshi. Narxi qancha edi, yana bir aytib yuboring?');
+    const seen: ModelRequest[] = [];
+    const out = await handleInbound({ managerUserId: holderId, peerId: String(c.chat.peer), anchorTgMessageId: String(q), origin: 'live' }, { callModel: scripted(PRICED('1359'), seen), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    expect(toolTextOf(seen)).toContain('Narx AYTMA');
+    const d = await draftOf((out as { draftId: string }).draftId);
+    expect((d.policy as { memory: { calcPrices?: unknown[] } }).memory.calcPrices ?? []).toEqual([]);
+    expect(d.blocked).toBe(true);
+    expect((await verdictOf(d.id))!.eligible).toBe(false);
+    expect(await pressDueAutos(DUE)).toBe(0);
+    // His 💵 approved and never sent (a morning line cancelled it): his figure still outranks the machine's.
+    const n = await answeredChain();
+    const held = await ownPrice(n.requestId, '1500');
+    await db.update(agentOutbox).set({ status: 'cancelled', lastError: 'anchor_superseded' }).where(eq(agentOutbox.draftId, held));
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: n.chat.peer })).toEqual({ ok: false, reason: 'owner_priced' });
+  });
+
+  it('the machine price counting down, then his «💵 Narx yozaman» armed: the press refuses in his words (finding 1, the gate)', async () => {
+    const c = await answeredChain();
+    const draftId = await priceDraft(c);
+    expect((await verdictOf(draftId))!.state).toBe('waiting');
+    const botChat = 7_960_000_000 + Number(SUFFIX);
+    armWait(botChat, 'agent_price', { requestId: c.requestId }, 600_000, nowSec());
+    try {
+      expect(await pressDueAutos(DUE)).toBe(0);
+      expect(await outboxOf(draftId)).toHaveLength(0);
+      const v = await verdictOf(draftId);
+      expect(v!.outcome).toMatch(/calc_owner_priced/u);
+      expect(v!.outcome).not.toMatch(/calc_price_moved/u);
+    } finally {
+      dropWait(botChat, 'agent_price');
+      await flushWaitWrites();
+    }
+  });
+
+  it('two jobs on two deals: the VED answer’s run prices ITS job alone — another job’s figure cannot go (finding 2)', async () => {
+    const j = await twoJobs();
+    const seen: ModelRequest[] = [];
+    const wrong = `Rastamojka narxi 1100 $ bo‘ladi, ${letters(Number(SUFFIX))}${letters(++replySeq)}.`;
+    const out = await handleCalcAnswer(
+      { managerUserId: holderId, peerId: String(j.peer), requestId: j.b, sourceKey: `calc:${j.b}:answer` },
+      { callModel: scripted([{ name: 'calc_price', input: {} }, compose(wrong)], seen), now: () => T0 },
+    );
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const tool = toolTextOf(seen);
+    expect(tool).toContain('1359 $');
+    expect(tool).not.toContain('1100 $');
+    // The job is named by its goods, so the model and his card know which cargo the figure is for.
+    expect(tool).toContain('oyoq kiyim');
+    const d = await draftOf((out as { draftId: string }).draftId);
+    await shown(d.id, T0);
+    expect(d.blocked).toBe(true);
+    expect((d.policy as { memory: { calcPrices?: unknown[] } }).memory.calcPrices ?? []).toEqual([]);
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await outboxOf(d.id)).toHaveLength(0);
+  });
+
+  it('two jobs answered, the customer asks: the tool names each job, the draft keeps only what it states, and the machine presses none (finding 2)', async () => {
+    const j = await twoJobs();
+    const q = await customerSays({ peer: j.peer, clientId: j.clientId }, 'Narxlar chiqdimi?');
+    const seen: ModelRequest[] = [];
+    const out = await handleInbound({ managerUserId: holderId, peerId: String(j.peer), anchorTgMessageId: String(q), origin: 'live' }, { callModel: scripted(PRICED('1359'), seen), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const tool = toolTextOf(seen);
+    expect(tool).toContain('kurtka');
+    expect(tool).toContain('oyoq kiyim');
+    const d = await draftOf((out as { draftId: string }).draftId);
+    await shown(d.id, T0);
+    const p = d.policy as { memory: { calcPrices: { requestId: string; total: number }[] }; notes: string[] };
+    expect(p.memory.calcPrices.map((m) => [m.requestId, m.total])).toEqual([[j.b, 1359]]);
+    expect(p.notes.join(' ')).toContain('bir nechta VED narxi');
+    expect((await verdictOf(d.id))!.reasons).toContain('notes');
+    expect(await pressDueAutos(DUE)).toBe(0);
+  });
+
+  it('a reply that states NO VED figure keeps no price, writes no offer and moves the card nowhere as a quote (finding 3)', async () => {
+    await putSetting(AGENT_SEAT_KEY, holderId);
+    const c = await answeredChain();
+    const unsaid = `VED javobi keldi, narxni sizga tez orada aytamiz, ${letters(Number(SUFFIX))}${letters(++replySeq)}.`;
+    const draftId = await priceDraft(c, [{ name: 'calc_price', input: {} }, compose(unsaid)]);
+    const d = await draftOf(draftId);
+    const p = d.policy as { memory: { calcPrices?: unknown[] }; notes: string[] };
+    expect(p.memory.calcPrices ?? []).toEqual([]);
+    expect(p.notes).toContain(CALC_PRICE_UNSAID);
+    expect(await decideDraft(person(), draftId, 'send', { digest: await digestOf(draftId) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const [o] = await outboxOf(draftId);
+    const tgId = next();
+    await db.insert(tgMessages).values({ leadId: c.chat.leadId, managerUserId: holderId, peerId: c.chat.peer, tgMessageId: tgId, direction: 'out', body: o!.body, sentAt: new Date() });
+    await applyAgentOutcome((await agentRowById(o!.id))!, { kind: 'sent', tgMessageId: tgId } as never, { id: accountId, managerUserId: holderId, managerName: 'P3' });
+    const after = await handleAfterSent({ outboxId: o!.id });
+    expect(after).toMatchObject({ outcome: 'done', offer: [] });
+    expect(await db.select().from(calcOffers).where(eq(calcOffers.requestId, c.requestId))).toHaveLength(0);
+    const [lead] = await db.select({ quoted: leads.quotedAmount }).from(leads).where(eq(leads.id, c.chat.leadId));
+    expect(lead!.quoted).toBeNull();
+  });
+
+  it('a stored mark the sent words do not state writes no offer; a restated figure writes no second row (finding 3, the offer step)', async () => {
+    await putSetting(AGENT_SEAT_KEY, holderId);
+    const c = await answeredChain();
+    const draftId = await priceDraft(c);
+    expect(await decideDraft(person(), draftId, 'send', { digest: await digestOf(draftId) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const [o] = await outboxOf(draftId);
+    // The words that went name no figure, whatever the draft remembered.
+    await db.update(agentOutbox).set({ body: `Narxni hozir aytaman, ${letters(++replySeq)}.` }).where(eq(agentOutbox.id, o!.id));
+    await wentOut(draftId, new Date());
+    expect(await handleAfterSent({ outboxId: o!.id })).toMatchObject({ outcome: 'done', offer: [] });
+    expect(await db.select().from(calcOffers).where(eq(calcOffers.requestId, c.requestId))).toHaveLength(0);
+    // Two replies that each state the same figure on the same answer: ONE offer row, never two.
+    const twice = await answeredChain();
+    for (let i = 0; i < 2; i++) {
+      if (i === 1) await customerSays(twice.chat, `Yana bir bor ayting-chi ${letters(i)}?`, new Date(T0.getTime() - 60_000));
+      const id = await priceDraft(twice, PRICED('1359'));
+      expect(await decideDraft(person(), id, 'send', { digest: await digestOf(id) }, { actorId: holderId })).toMatchObject({ ok: true });
+      const [row] = await outboxOf(id);
+      await wentOut(id, new Date(Date.now() + i * 1000));
+      expect(await handleAfterSent({ outboxId: row!.id })).toMatchObject({ outcome: 'done', offer: ['💳 Kartaga yozildi: 1 359 $'] });
+      await db.update(agentRuns).set({ sourceKey: null }).where(eq(agentRuns.sourceKey, `calc:${twice.requestId}:answer`));
+    }
+    expect(await db.select().from(calcOffers).where(eq(calcOffers.requestId, twice.requestId))).toHaveLength(1);
+    expect(await db.select().from(agentOffers).where(eq(agentOffers.requestId, twice.requestId))).toHaveLength(1);
+  });
+
+  it('his second 💵 while his first still waits: the first is taken back, ONE price goes (finding 4)', async () => {
+    const c = await answeredChain();
+    const first = await ownPrice(c.requestId, '1300');
+    expect((await outboxOf(first))[0]!.status).toBe('agent');
+    expect(await priceDraftFromText(holderId, c.requestId, '1250')).toMatchObject({ ok: true });
+    const [o] = await outboxOf(first);
+    expect(o).toMatchObject({ status: 'cancelled' });
+    expect(o!.lastError).toMatch(/^owner_price/u);
+    // His first already in flight (claimed by the pump): asked first, never a second sent past it.
+    const f = await answeredChain();
+    const flying = await ownPrice(f.requestId, '1300');
+    await db.update(agentOutbox).set({ status: 'sending' }).where(eq(agentOutbox.draftId, flying));
+    expect(await priceDraftFromText(holderId, f.requestId, '1250')).toEqual({ ok: false, code: 'ai_price_sent', total: 1300, by: 'owner' });
+    expect((await outboxOf(flying))[0]!.status).toBe('sending');
+  });
+
+  it('his 💵 sent, the customer bargains, his next 💵 drafts at once; with no newer line it is asked first (finding 11)', async () => {
+    const c = await answeredChain();
+    const first = await ownPrice(c.requestId, '1250');
+    await wentOut(first, new Date(T0.getTime() - 10 * 60_000));
+    // No line of the customer's since his figure went: a second 💵 would follow on the same line — asked.
+    expect(await priceDraftFromText(holderId, c.requestId, '1100')).toEqual({ ok: false, code: 'ai_price_sent', total: 1250, by: 'owner' });
+    const b = await answeredChain();
+    const sent = await ownPrice(b.requestId, '1250');
+    await wentOut(sent, new Date(T0.getTime() - 10 * 60_000));
+    await customerSays(b.chat, 'Qimmat ekan, arzonroq bo‘lmaydimi?', new Date(T0.getTime() - 5 * 60_000));
+    expect(await priceDraftFromText(holderId, b.requestId, '1100')).toMatchObject({ ok: true });
+  });
+
+  it('the «yubordim» went in HIS ✏️ words: no machine price on that chain, and the live head never forgives his message (finding 5)', async () => {
+    const c = await answeredChain();
+    const own = 'Hisoblatishga yubordim. Narxni o‘zim aytaman, taxminan 1500 $ atrofida bo‘ladi.';
+    const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, c.requestId));
+    await db.update(agentDrafts).set({ finalBody: own }).where(eq(agentDrafts.id, link!.draftId!));
+    await db.update(agentOutbox).set({ body: own }).where(eq(agentOutbox.draftId, link!.draftId!));
+    await db.update(tgMessages).set({ body: own }).where(and(eq(tgMessages.peerId, c.chat.peer), eq(tgMessages.tgMessageId, c.ours)));
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'owner_words' });
+    const sent: unknown[] = [];
+    await announceAgentCalc(c.requestId, 'done', { amountText: '1234.56 USD' }, { enqueue: async (_n, d) => void sent.push(d), now: T0 });
+    expect(sent).toHaveLength(0);
+    // An owner-started reply on this chat (a VED answer's, written by any door): his ✏️ line after the anchor is HIS.
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, anchorTgMessageId: c.chat.anchor, status: 'approved', kind: 'reply', proposedBody: 'Rastamojka narxi 1359 $ bo‘ladi.', policy: { calcAnswer: { requestId: c.requestId } } })
+      .returning({ id: agentDrafts.id });
+    const [row] = await db
+      .insert(agentOutbox)
+      .values({ draftId: d!.id, managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, body: 'Rastamojka narxi 1359 $ bo‘ladi.', randomId: next(), answersTgMessageId: c.chat.anchor, status: 'agent', step: 'send', nextStepAt: T0, queuedBy: holderId })
+      .returning({ id: agentOutbox.id });
+    const facts = await sendFactsFor((await agentRowById(row!.id))!, STEP_NOW(), stepCtx());
+    expect([...facts.forgivenOut]).not.toContain(c.ours);
+    // …while the machine's own «yubordim» stays forgiven.
+    await db.update(agentDrafts).set({ finalBody: null }).where(eq(agentDrafts.id, link!.draftId!));
+    expect([...(await sendFactsFor((await agentRowById(row!.id))!, STEP_NOW(), stepCtx())).forgivenOut]).toContain(c.ours);
+    await db.update(agentDrafts).set({ finalBody: own }).where(eq(agentDrafts.id, link!.draftId!));
+    // The live head as Telegram shows it: his ✏️ line after the customer's — the machine's reply never goes past it.
+    const head = [
+      { id: c.ours, out: true, text: own, media: false },
+      { id: c.chat.anchor, out: false, text: 'Rastamojka qancha bo‘ladi?', media: false },
+    ];
+    const facts2 = await sendFactsFor((await agentRowById(row!.id))!, STEP_NOW(), stepCtx());
+    expect(liveHeadVerdict(head, c.chat.anchor, isNudge, AGENT_LIMITS.headMessages, facts2.forgivenOut)).toEqual({ ok: false, reason: 'human_replied' });
+  });
+
+  it('a chain whose «yubordim» never went (his ❌ after a lost race): no machine price on it, even when the customer asks (finding 6)', async () => {
+    const leadId = await freshLead();
+    const chat = await chatOn(leadId);
+    const requestId = await request(leadId, 'rastamojka', chat);
+    const [rejected] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: holderId, peerId: chat.peer, leadId, anchorTgMessageId: chat.anchor, status: 'rejected', kind: 'reply', proposedBody: 'Hisoblatishga yubordim.', actions: [{ type: 'calc_submit', section: 'rastamojka', facts: {}, fromOurWarehouse: false, citedMessageIds: [] }] })
+      .returning({ id: agentDrafts.id });
+    await db.update(agentCalcLinks).set({ draftId: rejected!.id }).where(eq(agentCalcLinks.requestId, requestId));
+    await answered(requestId, '1234.56');
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: chat.peer })).toEqual({ ok: false, reason: 'not_linked' });
+    const q = await customerSays(chat, 'Assalomu alaykum, rastamojka narxi chiqdimi?');
+    const seen: ModelRequest[] = [];
+    const out = await handleInbound({ managerUserId: holderId, peerId: String(chat.peer), anchorTgMessageId: String(q), origin: 'live' }, { callModel: scripted(PRICED('1359'), seen), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const d = await draftOf((out as { draftId: string }).draftId);
+    expect((d.policy as { memory: { calcPrices?: unknown[] } }).memory.calcPrices ?? []).toEqual([]);
+    expect(d.blocked).toBe(true);
+    expect(await pressDueAutos(DUE)).toBe(0);
+  });
+
+  it('«✅ Ustama to‘g‘ri» vouches only for the rule his page showed — a rule changed since is refused (finding 9)', async () => {
+    const holder = { id: holderId, roles: ['super_admin'] };
+    await markup('percent', '10', null);
+    // Another writer moves the rule while his page still shows +10 %.
+    await setCalcMarkup(holder, { kind: 'fixed', value: '1' }, { actorId: holderId });
+    const refused = await confirmCalcMarkup(holder, 'percent:10', { actorId: holderId }).then(
+      () => 'ok',
+      (e: unknown) => (e instanceof AgentConfigError ? e.code : String(e)),
+    );
+    expect(refused).toBe('markup_changed');
+    expect(await rawSetting(MARKUP_CONFIRMED_KEY)).toBeNull();
+    expect(await confirmCalcMarkup(holder, 'fixed:1', { actorId: holderId })).toBe('fixed:1');
   });
 });

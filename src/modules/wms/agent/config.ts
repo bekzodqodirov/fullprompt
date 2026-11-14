@@ -327,7 +327,9 @@ export type AgentConfigRefusal =
   | 'session_not_confirmed'
   | 'owner_not_connected'
   | 'turn_off_first'
-  | 'bad_value';
+  | 'bad_value'
+  /** «✅ Ustama to'g'ri» pressed on a page that showed another rule than the one stored now (fix pass 1, finding 9). */
+  | 'markup_changed';
 
 export class AgentConfigError extends Error {
   constructor(public readonly code: AgentConfigRefusal) {
@@ -741,11 +743,14 @@ export async function setCalcMarkup(
 }
 
 /**
- * «✅ Ustama to'g'ri» on /suhbatlar/ai (SPEC-P2-v2 §2.1, his §7 Q5 ⭐): he vouches for the rule as it stands — the next
- * machine VED price on it may go by itself. Stamped with the same writer his ✅ on a VED-price card uses. A rule that
- * cannot be read is refused (`bad_value`) — there is nothing to vouch for.
+ * «✅ Ustama to'g'ri» on /suhbatlar/ai (SPEC-P2-v2 §2.1, his §7 Q5 ⭐): he vouches for the rule his page SHOWED — the
+ * next machine VED price on it may go by itself. Stamped with the same writer his ✅ on a VED-price card uses. A rule
+ * that cannot be read is refused (`bad_value`) — there is nothing to vouch for; and one that is no longer the rule his
+ * page drew (`seen`, its canonical string) is refused `markup_changed` (fix pass 1, finding 9 — the shape of
+ * «✅ Tarif to'g'ri», tariff-watch `confirmTariff`): another writer — a second super_admin, his own second tab — moved
+ * it since, and a press never vouches for a rule nobody looked at.
  */
-export async function confirmCalcMarkup(actor: AgentActor, ctx: AuditContext): Promise<string> {
+export async function confirmCalcMarkup(actor: AgentActor, seen: string, ctx: AuditContext): Promise<string> {
   if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
   const config = await readAgentConfig();
   if (!mayRunAgent(actor, config)) throw new AgentConfigError('forbidden');
@@ -754,6 +759,7 @@ export async function confirmCalcMarkup(actor: AgentActor, ctx: AuditContext): P
   const rule = await readMarkupRule();
   if (rule === null) throw new AgentConfigError('bad_value');
   const text = ruleString(rule);
+  if (text !== seen) throw new AgentConfigError('markup_changed');
   const before = await markupConfirmed();
   const { SETTINGS_AUDIT_ID } = await import('../../platform/settings/service');
   const { stampMarkupConfirmedInTx } = await import('./decide');

@@ -121,12 +121,12 @@ function calcQuote(i: AutoGateInput): AutoGateInput {
   i.draft.ledger = [{ kind: 'money', origin: 'tool', tool: 'calc_price', role: 'total' }];
   i.draft.calcPricesStored = true;
   i.tools = [{ name: 'calc_price', ok: true, estimate: false }];
-  i.calcPrice = { unconfirmed: false, moved: false, foreign: false, media: false };
+  i.calcPrice = { unconfirmed: false, moved: false, foreign: false, media: false, ownerPriced: false };
   return i;
 }
 
 /** The refusals only a VED price can meet. */
-const CALC_PRICE_ONLY: ReadonlySet<AutoRefusal> = new Set(['markup_unconfirmed', 'calc_price_moved']);
+const CALC_PRICE_ONLY: ReadonlySet<AutoRefusal> = new Set(['markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced']);
 
 /** The refusals only a calc draft can meet. */
 const CALC_ONLY: ReadonlySet<AutoRefusal> = new Set(['calc_identity', 'calc_foreign', 'calc_refused', 'calc_recent', 'calc_file_missing']);
@@ -168,6 +168,8 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   destination_unsaid: (i) => (quote(i).draft.body = '5 kub, 800 kg yukingiz uchun taxminan 960 $. Boj va QQS alohida hisoblanadi.'),
   markup_unconfirmed: (i) => (calcQuote(i).calcPrice!.unconfirmed = true),
   calc_price_moved: (i) => (calcQuote(i).calcPrice!.moved = true),
+  // His own 💵 for the job arrived while the machine's price counted down (finding 1): his figure outranks it.
+  calc_owner_priced: (i) => (calcQuote(i).calcPrice!.ownerPriced = true),
   // A day count from HIS ✍️ answer — no money in it, and it still comes back to him.
   owner_figure: (i) => (i.draft.ledger = [{ kind: 'duration', origin: 'owner', tool: null, role: null }]),
   owner_personal: (i) => (i.money.ownerPersonal = true),
@@ -777,11 +779,19 @@ describe('a calculation the machine lands by itself (SPEC-P2-v2 §1.1)', () => {
     expect(autoVerdict(calcSubmit(eligible()))).toEqual({ eligible: true, reasons: [] });
   });
 
-  it('is judged as `calc` by its ACTION, whatever the model labelled it — never as the label', () => {
-    for (const label of ['price', 'qualification', 'faq', 'complaint', 'other', null]) {
+  it('is judged as `calc` by its ACTION, whatever kind of reply the model labelled it — never as the label', () => {
+    // (`status` is asked its own cargo reading beside — `status_unbacked` — whatever the act.)
+    for (const label of ['price', 'qualification', 'faq', 'greeting']) {
       const i = calcSubmit(eligible());
       i.draft.category = label;
       expect(autoVerdict(i), String(label)).toEqual({ eligible: true, reasons: [] });
+    }
+    // …but a label that never goes stays his whatever it does (finding 8): «shikoyat va savolli javoblar har doim
+    // sizga qoladi» — the arming words promise it, and a missing label is no kind at all (fails closed).
+    for (const label of ['complaint', 'other', null, '']) {
+      const i = calcSubmit(eligible());
+      i.draft.category = label;
+      expect(autoVerdict(i), String(label)).toEqual({ eligible: false, reasons: ['category'] });
     }
     // …and with «Hisoblatish» unticked it is judged exactly as before: an action, refused, beside its label's verdict.
     const off = calcSubmit(eligible());

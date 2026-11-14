@@ -289,11 +289,11 @@ export async function agentMarkupAction(kind: string, value: string): Promise<Ag
   });
 }
 
-/** «✅ Ustama to'g'ri» (§2.1, his §7 Q5 ⭐): he vouches for the rule as it stands. */
-export async function agentMarkupConfirmAction(): Promise<AgentActionResult> {
+/** «✅ Ustama to'g'ri» (§2.1, his §7 Q5 ⭐): he vouches for the rule his page showed (`seen`, its canonical string). */
+export async function agentMarkupConfirmAction(seen: string): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
     try {
-      await confirmCalcMarkup(actor, ctx);
+      await confirmCalcMarkup(actor, typeof seen === 'string' ? seen : '', ctx);
     } catch (err) {
       if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_markup' };
       throw err;

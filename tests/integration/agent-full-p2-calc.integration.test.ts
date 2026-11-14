@@ -23,6 +23,8 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
 const seam = vi.hoisted(() => ({
   window: null as null | { skip: number; run: () => Promise<void> },
   landed: null as null | (() => Promise<void>),
+  /** Runs just before the real landing — after the press read the hand-back loop (fix pass 1). */
+  beforeLand: null as null | (() => Promise<void>),
 }));
 vi.mock('@/modules/wms/agent/send-window', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/modules/wms/agent/send-window')>();
@@ -46,6 +48,11 @@ vi.mock('@/modules/wms/calc/intake-land', async (importOriginal) => {
   return {
     ...real,
     landIntake: async (...args: Parameters<typeof real.landIntake>) => {
+      const before = seam.beforeLand;
+      if (before) {
+        seam.beforeLand = null;
+        await before();
+      }
       const out = await real.landIntake(...args);
       const h = seam.landed;
       if (h) {
@@ -242,7 +249,7 @@ function submitReply(): string {
   return `Hisoblatishga yubordim, javob kelishi bilan aytaman, ${letters(Number(SUFFIX))}${letters(replySeq)}.`;
 }
 
-function submitSteps(section: string, goods: Record<string, unknown>[]) {
+function submitSteps(section: string, goods: Record<string, unknown>[], category = 'price') {
   return [
     { name: 'calc_checklist', input: { section, goods } },
     {
@@ -252,8 +259,8 @@ function submitSteps(section: string, goods: Record<string, unknown>[]) {
         reply_text: submitReply(),
         language: 'uz',
         gloss_uz: '',
-        // The model's label for a submit reply — the gate judges the draft by its ACTION.
-        category: 'price',
+        // The model's label for a submit reply — the gate judges the draft by its ACTION (among the labels that go).
+        category,
         confidence: 0.9,
         needs_owner: false,
         owner_question: '',
@@ -273,7 +280,7 @@ const PODKLYUCH_GOODS = [{ name: 'kurtka', quantity: 100, unit: null, weight_kg:
 async function drafted(
   peer: bigint,
   owner: Owner,
-  opts: { body?: string; section?: string; goods?: Record<string, unknown>[]; media?: boolean; file?: string; now?: Date } = {},
+  opts: { body?: string; section?: string; goods?: Record<string, unknown>[]; media?: boolean; file?: string; now?: Date; category?: string } = {},
 ) {
   const now = opts.now ?? T0;
   const { tgId, rowId } = await inbound(peer, owner, opts.body ?? PODKLYUCH_LINE, { media: opts.media || opts.file !== undefined, ago: T0.getTime() - now.getTime() + 60_000 });
@@ -281,7 +288,7 @@ async function drafted(
   if (opts.file !== undefined) await keptFile(rowId, opts.file);
   const out = await handleInbound(
     { managerUserId: holderId, peerId: String(peer), anchorTgMessageId: String(tgId), origin: 'live' },
-    { callModel: scripted(submitSteps(opts.section ?? 'podklyuch', opts.goods ?? PODKLYUCH_GOODS)), now: () => now },
+    { callModel: scripted(submitSteps(opts.section ?? 'podklyuch', opts.goods ?? PODKLYUCH_GOODS, opts.category)), now: () => now },
   );
   expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
   const draftId = (out as { draftId: string }).draftId;
@@ -389,6 +396,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   seam.window = null;
   seam.landed = null;
+  seam.beforeLand = null;
   queued.length = 0;
   await armAuto();
   await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
@@ -633,6 +641,16 @@ describe('the gate’s five facts (§1.1)', () => {
     expect(((d.policy as { notes?: string[] }).notes ?? []).join(' ')).toMatch(/📎 \d\d\.\d\d dagi fayl saqlanmagan — ✅ bossangiz faylsiz yuboriladi; faylni VEDga o‘zingiz bering\./u);
   });
 
+  it('a submit the model labelled «complaint» or «other» stays his — the arming words promise it (finding 8)', async () => {
+    for (const category of ['complaint', 'other']) {
+      const peer = newPeer();
+      const clientId = await freshClient();
+      const { d } = await drafted(peer, { clientId }, { body: `Oldingi safar narxingiz juda qimmat chiqdi, norozimiz! Yangi yuk: ${PODKLYUCH_LINE}`, category });
+      expect((await verdictOf(d.id))!.reasons, category).toEqual(['category']);
+    }
+    expect(await pressDueAutos(DUE)).toBe(0);
+  });
+
   it('«Hisoblatish» unticked: the calculation is judged exactly as before — an action, refused; no fact of it read', async () => {
     await armAuto([...FOUR]);
     const peer = newPeer();
@@ -673,6 +691,97 @@ describe('the hand-back loop lands on the returned card (§1.5)', () => {
     const ctx = await loadContext(holderId, peer, null);
     expect(ctx.openCalcs).toHaveLength(1);
     expect(ctx.openCalcs[0]).toMatchObject({ requestId: r2!.id, status: 'open' });
+  });
+});
+
+describe('the hand-back loop is bounded — an old return, a closed card, a closed ↩️ task are no loop (findings 7, 10)', () => {
+  /** A podklyuch job the VED handed back, its card then left as `after` says — and the customer asks about a NEW shipment. */
+  async function returnedThen(machine: boolean, after: { ageDays: number; lost?: boolean; taskDone?: boolean }) {
+    const peer = newPeer();
+    const clientId = await freshClient();
+    const first = await drafted(peer, { clientId });
+    if (machine) expect(await pressDueAutos(DUE)).toBe(1);
+    else expect(await decideDraft(person(), first.d.id, 'send', { digest: await digestOf(first.d.id) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const [r1] = await requestsOn(noteIdFor(first.d.id));
+    await returnCalcRequest(r1!.id, 'tovar nomi yetarli emas', { actorId: vedId });
+    if (after.ageDays > 0) {
+      await db.execute(sql`UPDATE calc_requests SET requested_at = now() - make_interval(days => ${after.ageDays}), completed_at = now() - make_interval(days => ${after.ageDays - 1}) WHERE id = ${r1!.id}::uuid`);
+      await db.execute(sql`UPDATE agent_calc_links SET created_at = now() - make_interval(days => ${after.ageDays}) WHERE request_id = ${r1!.id}::uuid`);
+    }
+    if (after.lost) {
+      const { dealStages } = await import('@/modules/platform/db/schema');
+      const [lost] = await db.select({ id: dealStages.id }).from(dealStages).where(eq(dealStages.kind, 'lost')).limit(1);
+      await db.update(deals).set({ stageId: lost!.id }).where(eq(deals.id, r1!.entityId));
+    }
+    if (after.taskDone) {
+      await db.update(tasks).set({ status: 'done', doneAt: new Date(), doneBy: holderId, result: 'o‘zim so‘radim' }).where(and(eq(tasks.origin, 'calc_return'), eq(tasks.entityId, r1!.entityId)));
+    }
+    const second = await drafted(peer, { clientId }, {
+      body: 'Yangi yuk: oyinchoqlar 2000 dona, 5 kub 900 kg, Xitoydan Toshkentga podklyuch',
+      goods: [{ name: 'oyinchoqlar', quantity: 2000, unit: null, weight_kg: null }],
+      now: LATER,
+    });
+    return { peer, clientId, r1: r1!, second: second.d };
+  }
+
+  it('returned 120 days ago, its deal lost: his ✅ opens a NEW deal and leaves the old ↩️ task alone', async () => {
+    await armAuto([...FOUR]);
+    const x = await returnedThen(false, { ageDays: 120, lost: true });
+    expect(await decideDraft(person(), x.second.id, 'send', { digest: await digestOf(x.second.id) }, { actorId: holderId })).toMatchObject({ ok: true });
+    const [r2] = await requestsOn(noteIdFor(x.second.id));
+    expect(r2!.entityId).not.toBe(x.r1.entityId);
+    expect(await db.select().from(deals).where(eq(deals.clientId, x.clientId))).toHaveLength(2);
+    const [task] = await db.select({ status: tasks.status }).from(tasks).where(and(eq(tasks.origin, 'calc_return'), eq(tasks.entityId, x.r1.entityId)));
+    expect(task!.status).toBe('open');
+  });
+
+  it('returned 60 days ago, its deal lost: the machine lands the new shipment as a NEW job on a NEW deal', async () => {
+    const x = await returnedThen(true, { ageDays: 60, lost: true });
+    expect(await verdictOf(x.second.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(LATER_DUE)).toBe(1);
+    const [r2] = await requestsOn(noteIdFor(x.second.id));
+    expect(r2!.entityId).not.toBe(x.r1.entityId);
+    const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, r2!.id));
+    expect(link!.rootRequestId).toBe(r2!.id);
+    const [task] = await db.select({ status: tasks.status }).from(tasks).where(and(eq(tasks.origin, 'calc_return'), eq(tasks.entityId, x.r1.entityId)));
+    expect(task!.status).toBe('open');
+  });
+
+  it('returned 30 days ago, its deal still open and its ↩️ task still open: no loop — the new shipment is a NEW job', async () => {
+    const x = await returnedThen(true, { ageDays: 30 });
+    expect(await verdictOf(x.second.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(LATER_DUE)).toBe(1);
+    const [r2] = await requestsOn(noteIdFor(x.second.id));
+    expect(r2!.entityId).not.toBe(x.r1.entityId);
+    const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, r2!.id));
+    expect(link!.rootRequestId).toBe(r2!.id);
+  });
+
+  it('returned yesterday but its deal lost since — no loop: the 14-day rule waits it for him', async () => {
+    const x = await returnedThen(true, { ageDays: 0, lost: true });
+    expect((await verdictOf(x.second.id))!.reasons).toEqual(['calc_recent']);
+  });
+
+  it('returned yesterday, the deal open, but he closed the ↩️ task himself — no loop: the 14-day rule waits it for him', async () => {
+    const x = await returnedThen(true, { ageDays: 0, taskDone: true });
+    expect((await verdictOf(x.second.id))!.reasons).toEqual(['calc_recent']);
+  });
+
+  it('the deal lost between the press reading the loop and the landing: a NEW deal, a chain of its own, the old task left open', async () => {
+    const x = await returnedThen(true, { ageDays: 0 });
+    expect(await verdictOf(x.second.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    const { dealStages } = await import('@/modules/platform/db/schema');
+    const [lost] = await db.select({ id: dealStages.id }).from(dealStages).where(eq(dealStages.kind, 'lost')).limit(1);
+    seam.beforeLand = async () => {
+      await db.update(deals).set({ stageId: lost!.id }).where(eq(deals.id, x.r1.entityId));
+    };
+    expect(await pressDueAutos(LATER_DUE)).toBe(1);
+    const [r2] = await requestsOn(noteIdFor(x.second.id));
+    expect(r2!.entityId).not.toBe(x.r1.entityId);
+    const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, r2!.id));
+    expect(link!.rootRequestId).toBe(r2!.id);
+    const [task] = await db.select({ status: tasks.status }).from(tasks).where(and(eq(tasks.origin, 'calc_return'), eq(tasks.entityId, x.r1.entityId)));
+    expect(task!.status).toBe('open');
   });
 });
 

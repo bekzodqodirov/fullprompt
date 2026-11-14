@@ -567,13 +567,16 @@ export function MarkupForm({ kind, value }: { kind: string; value: string }) {
   );
 }
 
-/** «✅ Ustama to'g'ri» (§2.1, his §7 Q5 ⭐): he vouches for the rule as it stands — the next VED price may go by itself. */
-export function MarkupConfirmButton() {
+/**
+ * «✅ Ustama to'g'ri» (§2.1, his §7 Q5 ⭐): he vouches for the rule this page SHOWS (`rule`, its canonical string) — the
+ * next VED price may go by itself. A rule another writer moved since is refused in words (fix pass 1, finding 9).
+ */
+export function MarkupConfirmButton({ rule }: { rule: string }) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
   return (
     <div className="space-y-1">
-      <button type="button" className="btn-secondary" disabled={pending} data-testid="agent-markup-confirm" onClick={() => run(() => agentMarkupConfirmAction())}>
+      <button type="button" className="btn-secondary" disabled={pending} data-testid="agent-markup-confirm" onClick={() => run(() => agentMarkupConfirmAction(rule))}>
         {t('markupConfirm')}
       </button>
       <Feedback error={error} note={null} />
