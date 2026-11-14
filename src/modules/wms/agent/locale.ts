@@ -70,9 +70,12 @@ const UZ_CYRL_WORDS = /(?:^|[^\p{L}])(?:ва|учун|керак|канча|қа
  */
 const RU_LETTERS = /[ыщЫЩ]/u;
 // …and the everyday Russian a request is made of (fix pass 3), now that «пожалуйста» and «здравствуйте» are greetings:
-// «Отправьте фото груза сегодня, пожалуйста» is Russian by «отправьте» and «сегодня».
+// «Отправьте фото груза сегодня, пожалуйста» is Russian by «отправьте» and «сегодня». And the trade's own words in
+// the cases Uzbek does not decline them into (fix pass 4): «5 кубов», «3 куба», «вес груза», «Цена?» — «Здравствуйте!
+// Груз из Гуанчжоу, 5 кубов, 800 кг. Цена?» carried no mark once the greeting was none, and an Uzbek reply went by
+// itself. «Груз», «куб», «товар», «доставка» stay unmarked: an Uzbek says them too.
 const RU_WORDS =
-  /(?:^|[^\p{L}])(?:сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до|сегодня|завтра|вчера|сейчас|потом|тогда|тоже|очень|только|здесь|напишите|скиньте|отправьте|пришлите|подскажите|скажите|который|которая|которые)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до|сегодня|завтра|вчера|сейчас|потом|тогда|тоже|очень|только|здесь|напишите|скиньте|отправьте|пришлите|подскажите|скажите|который|которая|которые|кубов|куба|кубы|кубах|кубами|груза|грузов|грузы|грузом|товара|товаров|товары|цена|цену|цены|ценой|вес|веса|весом|стоимость|стоимости|объём|объем|объёма|объема|доставку|доставки|килограмм|килограммов)(?=$|[^\p{L}])/iu;
 
 /**
  * The greetings, thanks and «yes» every customer here says in BOTH languages (fix pass 3): «Ассалому алайкум»,
@@ -97,9 +100,13 @@ const UZ_LATIN_LETTERS = /[og]['ʻʼ‘’`]/iu;
 /** Everyday Uzbek Latin words that are not English. */
 const UZ_LATIN_WORDS =
   /(?:^|[^\p{L}])(?:qancha|kancha|nechpul|necha|kerak|bormi|yoq|yo'q|yuk|yukim|narx|narxi|qayerda|qachon|kachon|keldimi|ketdimi|bo'ladi|boladi|aka|opa|uka|iltimos|mumkinmi|qilib|berasiz|bering|kub|kubi|xitoydan|toshkentga)(?=$|[^\p{L}])/iu;
-/** Everyday English words that are not Uzbek. */
+/**
+ * Everyday English words that are not Uzbek — and the function words an English request is made of (fix pass 4): «Hi,
+ * I have 3 cbm of clothes in Yiwu» carried no mark once «Hi» was none, and the English reply waited. Never «it» (a
+ * dog) or «in» (a den): Uzbek words too.
+ */
 const EN_WORDS =
-  /(?:^|[^\p{L}])(?:the|is|are|what|how|much|price|cost|cargo|shipping|please|when|where|my|your|can|you|need|delivery|from|to)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:the|is|are|what|how|much|price|cost|cargo|shipping|please|when|where|my|your|can|you|need|delivery|from|to|i|i'm|i've|have|has|of|we|want|would|like|ship|send|and|with|for|this|that|do|does|any|our|us|me|there|here|get|buy|order|quote|goods|freight)(?=$|[^\p{L}])/iu;
 
 /**
  * One script's two languages, read as MARKS: each language's own words or letters (`uz`, `other`) — never a
@@ -111,17 +118,40 @@ function marksOf(
   strong: { uz: (t: string) => boolean; other: (t: string) => boolean },
   greeting: { uz: RegExp; other: RegExp },
   letters: RegExp,
-): { uz: boolean; other: boolean; greetingOnly: boolean; guess: 'uz' | 'other' | null } {
+): { uz: boolean; other: boolean; greetingOnly: boolean; guess: 'uz' | 'other' | null; letters: number } {
   const words = text.replace(greeting.uz, ' ').replace(greeting.other, ' ');
+  // The letters a line carries beside its greetings (fix pass 4): what `SHORT_LINE` measures — «Assalomu alaykum, cargo
+  // price?» is a short English line in an Uzbek conversation, and the greeting's own letters made it a long one.
+  const said = count(words, letters);
   const uz = strong.uz(words);
   const other = strong.other(words);
-  if (uz || other) return { uz, other, greetingOnly: false, guess: null };
+  if (uz || other) return { uz, other, greetingOnly: false, guess: null, letters: said };
   const uzGreet = new RegExp(greeting.uz.source, 'iu').test(text);
   const otherGreet = new RegExp(greeting.other.source, 'iu').test(text);
   const guess = uzGreet === otherGreet ? null : uzGreet ? 'uz' : 'other';
   // No word of either language's own: a greeting speaks only for a text that holds nothing else.
-  if (count(words, letters) >= GREETING_ONLY) return { uz: false, other: false, greetingOnly: false, guess };
-  return { uz: uzGreet, other: otherGreet, greetingOnly: true, guess };
+  if (said >= GREETING_ONLY) return { uz: false, other: false, greetingOnly: false, guess, letters: said };
+  return { uz: uzGreet, other: otherGreet, greetingOnly: true, guess, letters: said };
+}
+
+/**
+ * The language a text's greetings alone point to — one language's greeting and not the other's, in its script — or
+ * null. What an UNCONFIDENT guess leans on (fix pass 4): the run stores it beside the guess (`memoryFor`), and the
+ * gate admits only that language for a reply (auto-gate `languageAdmits`) — «Здравствуйте» over unmarked words is no
+ * mark of Russian, and it is no licence for an Uzbek reply either.
+ */
+export function greetingLean(text: string): AgentLocale | null {
+  const script = dominantScript(text);
+  const pair =
+    script === 'cyrillic'
+      ? ([CYRL_GREETING_UZ, CYRL_GREETING_RU, 'uz_cyrl', 'ru'] as const)
+      : script === 'latin'
+        ? ([LATIN_GREETING_UZ, LATIN_GREETING_EN, 'uz', 'en'] as const)
+        : null;
+  if (!pair) return null;
+  const uz = new RegExp(pair[0].source, 'iu').test(text);
+  const other = new RegExp(pair[1].source, 'iu').test(text);
+  return uz === other ? null : uz ? pair[2] : pair[3];
 }
 
 /**
@@ -150,7 +180,7 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
     if (m.other && !m.uz) {
       // Russian by its own words — unless the conversation is Uzbek Cyrillic
       // already and this line is too short to say otherwise.
-      if (previous === 'uz_cyrl' && count(text, CYRILLIC) < SHORT_LINE) return { locale: previous, confident: false, script };
+      if (previous === 'uz_cyrl' && m.letters < SHORT_LINE) return { locale: previous, confident: false, script };
       return { locale: 'ru', confident: true, script };
     }
     // Both languages' own words, or no mark of either (0148 fix): the conversation keeps its Cyrillic language;
@@ -170,7 +200,7 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
     if (m.other && !m.uz) {
       // «Hello», «ok price?» in an Uzbek conversation is an Uzbek customer's
       // loan word, not a switch to English — the Cyrillic rule's twin.
-      if (previous === 'uz' && (m.greetingOnly || count(text, LATIN) < SHORT_LINE)) return { locale: previous, confident: false, script };
+      if (previous === 'uz' && (m.greetingOnly || m.letters < SHORT_LINE)) return { locale: previous, confident: false, script };
       return { locale: 'en', confident: true, script };
     }
     // Both or neither: the conversation keeps its language — a Russian

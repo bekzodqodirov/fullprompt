@@ -71,7 +71,7 @@ export interface PolicyMemory {
    * words decided; Cyrillic or Latin that carries none is a guess and refuses nothing. Absent (stored before 0148)
    * = not known.
    */
-  customerLocale?: { locale: AgentLocale | null; confident: boolean };
+  customerLocale?: { locale: AgentLocale | null; confident: boolean; leans?: boolean };
   /**
    * Every priced estimate call of the run (spec §1.3 — written by its package): what the press and the send step
    * re-price, and what «the reply names the load it priced» is judged against. Absent = none stored; a draft

@@ -200,7 +200,7 @@ export interface AutoGateInput {
     /** A chat about rail (`memory.rail`): its price is his (§18.5). */
     rail: boolean;
     /** The customer's language as the run read the message the draft answers (`memory.customerLocale`); null = not stored. */
-    customerLocale: { locale: string | null; confident: boolean } | null;
+    customerLocale: { locale: string | null; confident: boolean; leans?: boolean } | null;
     /**
      * The reply holds a numeral in a system no reader here reads reliably — a Chinese numeral run (auto-money
      * `numeralUnread`, over the reply less its facts' quoted Chinese). A character is a word as often as a number.
@@ -393,12 +393,16 @@ function moneyVerdict(input: AutoGateInput): { present: boolean; refused: boolea
 /**
  * The reply's language against the customer's (spec §4): one of the six; English, Persian and Chinese only when
  * the customer's message confidently says that very language; Uzbek and Russian unless it confidently says
- * another. A guess not stored (a draft written before 0148) is no confident guess.
+ * another — or an unconfident guess LEANS on another (fix pass 4: the conversation's stored language, or the one
+ * language the greetings said — run `memoryFor`): «Здравствуйте! Груз из Гуанчжоу, 5 куб, 800 кг» answered in Uzbek
+ * went by itself once a greeting was no mark, and where the rule cannot tell the customer's language it holds. A guess
+ * not stored (a draft written before 0148) is no confident guess, and leans on nothing.
  */
 function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale']): boolean {
   const lang = language ?? '';
   if (!(AUTO_LANGUAGES as readonly string[]).includes(lang)) return false;
   const confident = guess !== null && guess.confident && guess.locale !== null;
   if ((AUTO_STRICT_LANGUAGES as readonly string[]).includes(lang)) return confident && guess!.locale === lang;
+  if (!confident && guess !== null && guess.leans === true && guess.locale !== null) return guess.locale === lang;
   return !confident || guess!.locale === lang;
 }

@@ -345,7 +345,7 @@ const HAN_NUM = '零〇一二两俩三仨四五六七八九十百千万亿壹贰
  * index the readers below hand each other stays where it was.
  */
 const HAN_FOLD: Readonly<Record<string, string>> = {
-  萬: '万', 億: '亿', 兩: '两', 貳: '贰', 參: '叁', 叄: '叁', 陸: '陆', 倆: '俩',
+  萬: '万', 億: '亿', 兩: '两', 貳: '贰', 參: '参', 叄: '叁', 陸: '陆', 倆: '俩',
   費: '费', 運: '运', 價: '价', 錢: '钱', 幣: '币', 塊: '块', 圓: '圆', 歐: '欧', 盧: '卢', 蘇: '苏', 堅: '坚',
   約: '约', 關: '关', 稅: '税', 個: '个', 週: '周', 時: '时', 鐘: '钟', 噸: '吨', 單: '单', 車: '车', 櫃: '柜',
   託: '托', 貨: '货', 發: '发', 從: '从', 義: '义', 烏: '乌', 廣: '广', 達: '达', 這: '这', 們: '们', 為: '为',
@@ -355,9 +355,18 @@ const HAN_FOLD: Readonly<Record<string, string>> = {
   馬: '马', 齊: '齐', 實: '实', 際: '际', 須: '须',
 };
 const HAN_FOLD_RE = new RegExp(`[${Object.keys(HAN_FOLD).join('')}]`, 'gu');
+/**
+ * «參» is the traditional «参» — «參考» (reference), «參觀» (a visit), «參加» — far more often than the financial «three»
+ * (fix pass 4: «以上報價僅供參考» read as the numeral «叁», and a traditional reply lost its ✅ and its press). The three
+ * only beside another numeral or a scale: «參仟», «參萬», «貳拾參».
+ */
+const CAN_BESIDE = /[零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟萬億兩貳陸]/u;
 /** The text with its traditional characters read as simplified — the same length, place for place. */
 export function hanFold(text: string): string {
-  return text.replace(HAN_FOLD_RE, (c) => HAN_FOLD[c] ?? c);
+  return text.replace(HAN_FOLD_RE, (c, i: number) => {
+    if (c === '參') return CAN_BESIDE.test(text[i - 1] ?? '') || CAN_BESIDE.test(text[i + 1] ?? '') ? '叁' : '参';
+    return HAN_FOLD[c] ?? c;
+  });
 }
 /**
  * The ordinary words that hold a numeral character and count nothing (0148 fix). Taken out before a run is looked
@@ -1022,8 +1031,9 @@ const GRAND = /(?<![\p{L}])(?:\d+(?:[.,]\d+)?|a|one|two|three|four|five|six|seve
  * alone — at a sentence's head, followed by its comma or «kuting» / «hozir»: «Bir daqiqada hisoblab
  * beraman» is a time all the same.
  */
+// …and its Russian twin (fix pass 4): «Одну минуту, уточню» is «one moment», and his answer in it holds no figure.
 const ONE_MOMENT =
-  /(?<=(?:^|[.!?\n])\s*)(?:bir|бир)\s+(?:daqiqa|soniya|minut|дақиқа|сония|минут)(?=\s*[,!.…—–-]|\s+(?:kuting|кутинг|hozir|ҳозир|iltimos|илтимос)(?![\p{L}]))/giu;
+  /(?<=(?:^|[.!?\n])\s*)(?:(?:bir|бир)\s+(?:daqiqa|soniya|minut|дақиқа|сония|минут)|(?:одну|одна)\s+(?:минут(?:у|ку|очку)|секунд(?:у|очку)))(?=\s*[,!.…—–-]|\s+(?:kuting|кутинг|hozir|ҳозир|iltimos|илтимос|пожалуйста|сейчас)(?![\p{L}]))/giu;
 
 export type UnverifiableNumeral = 'other_script_digit' | 'han_numeral' | 'word_numeral';
 
@@ -1071,9 +1081,28 @@ const CURRENCY_AS_AMOUNT = new RegExp(
     `(?<![\\p{L}])(?:dollar|dollor|so['‘’ʻ\`]?m|sum|yuan|y?evro|доллар|долар|сўм|сум|юан|евро)дан|(?<![\\p{L}])(?:dollar|dollor|so['‘’ʻ\`]?m|sum|yuan|y?evro)dan(?![\\p{L}])`,
     `${CURRENCY_WORD}[-\\s]+(?:\\p{L}+[-\\s]+)?(?:yarim|ярим|с\\s+половиной|and\\s+a\\s+half|و\\s+نیم)`,
     `(?<![\\p{L}])(?:полтинник|стольник|пятихатк|пятисотк|косар|тысячн)\\p{L}*\\s+(?:\\p{L}+\\s+)?${CURRENCY_WORD}`,
-    `${CURRENCY_WORD}\\s+(?:за|per|a|an|for\\s+(?:a|each|one|every))\\s+(?:кило\\p{L}*|кг|куб\\p{L}*|тонн\\p{L}*|kilo\\p{L}*|kg|cubes?|m3|cbm|tons?)(?![\\p{L}])`,
+    // The per-unit right after the currency — only where the currency word IS the amount: its bare singular, never
+    // after «в»/«in» («Цены указаны в долларах за куб», «Our rates are in dollars per kg» name the currency of a
+    // price, and lost going by themselves to this branch — fix pass 4).
+    `(?<![\\p{L}])(?<!(?:в|in|по)\\s+)(?:доллар|долар|dollar|buck|евро|euro|юань|yuan|рубль|ruble|rouble|сум|сўм|sum|so['‘’ʻ\`]?m)\\s+(?:за|per|a|an|for\\s+(?:a|each|one|every))\\s+(?:кило\\p{L}*|кг|куб\\p{L}*|тонн\\p{L}*|kilo\\p{L}*|kg|cubes?|m3|cbm|tons?)(?![\\p{L}])`,
   ].join('|'),
   'iu',
+);
+/**
+ * A Chinese amount with no numeral in it beside its currency (fix pass 4, the narrowing of pass 3's blanket): the half
+ * («半美元»), the vague («几美元», «若干美元», «一些美元», «多少美元»), the approximators after it («美元左右», «美元出头»), and
+ * a per-unit word right before it («每公斤美元») — a price all the same. «价格以美元计算», «我们收美元和人民币» name the
+ * currency of a price and state none: pass 3 held every Chinese sentence naming a currency, the seeded payment answer
+ * in Chinese among them.
+ */
+const HAN_CURRENCY = `(?:${alt(CURRENCY_HAN)})`;
+const HAN_CURRENCY_AMOUNT = new RegExp(
+  [
+    `(?:半|几|数|若干|一些|多少|好几|些许)\\s*${HAN_CURRENCY}`,
+    `${HAN_CURRENCY}\\s*(?:左右|上下|出头|多|来)`,
+    `每\\s*(?:公斤|千克|斤|方|立方米?|吨|件|箱|个|kg|KG|公尺)\\s*(?:大约|大概|约|差不多)?\\s*${HAN_CURRENCY}`,
+  ].join('|'),
+  'u',
 );
 
 /**
@@ -1090,13 +1119,13 @@ export function currencyBesideQuantity(text: string): boolean {
   return normalized.split(SENTENCE_BREAK).some((sentence) => {
     const folded = hanFold(sentence);
     if (!CURRENCY_NAMED.test(folded)) return false;
-    // A Chinese sentence that names a currency is held as the fence was built (fix pass 3): the narrowing was for
-    // «narx dollarda kelishiladi» — Chinese writes its amounts in characters no reader here reads reliably.
-    if (/\p{Script=Han}/u.test(sentence)) return true;
+    // A Chinese sentence: any numeral run beside the currency, or an amount in characters that holds none
+    // (`HAN_CURRENCY_AMOUNT`) — never the currency word alone (fix pass 4, narrowing pass 3's blanket).
     return (
       unverifiableNumeral(sentence) !== null ||
       VAGUE_BEFORE_CURRENCY.test(sentence) ||
       CURRENCY_AS_AMOUNT.test(sentence) ||
+      HAN_CURRENCY_AMOUNT.test(folded) ||
       hanNumeralRuns(sentence).length > 0
     );
   });
@@ -1118,15 +1147,19 @@ export function unreadNumeral(normalized: string): boolean {
  * «One» and a half that are a COUNT by their own form, in his answer (fix pass 3): «bitta», «bittadan», «yarimta»,
  * the Russian numeral in its cases — never «одна из» («one of») — and the half glued to what it halves («полкуба»).
  */
+// …never «the same» either (fix pass 4): «одно и то же», «один и тот же», «одна и та же» name no count.
 const ONE_COUNTS_ITSELF =
-  /(?<![\p{L}])(?:bittadan|биттадан|yarimta|яримта|од(?:ин|на|ну|но|ного|ной|ним|ном)(?!\s+из(?![\p{L}])))(?![\p{L}])/iu;
+  /(?<![\p{L}])(?:bittadan|биттадан|yarimta|яримта|од(?:ин|на|ну|но|ного|ной|ним|ном)(?!\s+из(?![\p{L}]))(?!\s+и\s+т(?:о|от|а|е|ого|ой|ем|у)(?![\p{L}])))(?![\p{L}])/iu;
 const HALF_GLUED = /(?<![\p{L}])пол(?:куб|тонн|кило|килограмм|метр|года|месяц|недел|дня|часа|доллар|евро|рубл|юан|сотни|тысяч|миллион)\p{L}*/iu;
 /**
  * «One» as the article it also is — a count only beside a measure, a classifier or a currency; «bitta» the same
  * («bitta karobka» is one carton, «bitta savol» one question). Never «bir necha», «a few»: a vague count is no figure.
  */
 const ONE_ARTICLE = /^(?:bir|бир|bitta|битта|one|single|a|an|یک|یه)[.,]?$/iu;
-const VAGUE_AFTER_ONE = /^(?:necha|nechta|неча|нечта|oz|оз|few|little|lot|bit|while|moment|چند)[.,]?$/iu;
+// «bir qancha» is «several», «bir xil» «the same», «bir paytda» «at one time», «bir yo‘la» «at once» (fix pass 4: «Ha, bir
+// xil kunda yuboramiz», «bir qancha karobka bo‘lsa ham olamiz» came back as cards with no figure in them).
+const VAGUE_AFTER_ONE =
+  /^(?:necha|nechta|неча|нечта|qancha|қанча|канча|xil|хил|paytda|пайтда|yo['‘’ʻ`]?la|йўла|oz|оз|few|little|lot|bit|while|moment|چند)[.,]?$/iu;
 
 /**
  * Does the text hold a number of ANY kind — a digit in any script, a numeral word with or without what it counts
@@ -1137,9 +1170,10 @@ const VAGUE_AFTER_ONE = /^(?:necha|nechta|неча|нечта|oz|оз|few|little
 export function holdsNumeral(text: string): boolean {
   const normalized = normalizeDigits(text);
   if (/\p{N}/u.test(normalized) || unverifiableNumeral(normalized) !== null || unreadNumeral(normalized)) return true;
-  if (ONE_COUNTS_ITSELF.test(normalized) || HALF_GLUED.test(normalized)) return true;
-  // «Bir daqiqa, hozir aytaman» is «one moment» — G1's own exception (`ONE_MOMENT`).
-  const tokens = normalized.replace(ONE_MOMENT, ' ').match(TOKEN) ?? [];
+  // «Bir daqiqa, hozir aytaman», «Одну минуту, уточню» are «one moment» — G1's own exception (`ONE_MOMENT`).
+  const said = normalized.replace(ONE_MOMENT, ' ');
+  if (ONE_COUNTS_ITSELF.test(said) || HALF_GLUED.test(said)) return true;
+  const tokens = said.match(TOKEN) ?? [];
   return tokens.some(
     (t, i) =>
       NUMERAL_TOKEN.test(t) ||

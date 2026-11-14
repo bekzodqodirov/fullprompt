@@ -16,7 +16,7 @@ import { generalFacts, kbSearch, type KbHit } from './kb';
 import type { PromptLesson } from './lesson-rules';
 import { promptLessons } from './lessons';
 import { AGENT_LIMITS } from './limits';
-import { detectLocale, dominantScript, type AgentLocale } from './locale';
+import { detectLocale, dominantScript, greetingLean, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
 import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
@@ -659,7 +659,16 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // customer's language as the message the draft answers says it — read once here, so the scheduling and the
     // press judge the same thing.
     rail,
-    customerLocale: { locale: guess.locale, confident: guess.confident },
+    // An unconfident guess that LEANS — on the conversation's own stored language, or on the one language its greetings
+    // said — admits only that language (fix pass 4, auto-gate `languageAdmits`): «Здравствуйте» over unmarked words let an
+    // Uzbek reply go to a Russian customer, and it was no mark of Russian either.
+    customerLocale: {
+      locale: guess.locale,
+      confident: guess.confident,
+      ...(!guess.confident && guess.locale !== null && (guess.locale === ctx.storedLocale || guess.locale === greetingLean(said))
+        ? { leans: true }
+        : {}),
+    },
     // The Chinese the facts this run read hold (his fourth set): a reply that
     // quotes a warehouse address verbatim is measured in its OWN script.
     quotableHan: hanOnly([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])].join('')),
@@ -872,13 +881,23 @@ export function withAviaRule(
  * of sending him somewhere — «qabul punktimizga olib boring», «сдайте на наш пункт», «drop it off at our branch»,
  * «送到我们的收货点» — matched nothing, and the flight's reply went by itself telling him where to bring the cargo.
  *
- * Three things a reply says when it directs the cargo, each as whole words:
+ * Four things a reply says when it directs the cargo, each as whole words:
  *  - a PLACE of ours that takes cargo — a warehouse, a reception point, a branch;
  *  - an ADDRESS, by any of its names;
  *  - the hand-over asked of HIM — an imperative or a second person: «yuboring», «yuborsangiz», «olib boring»,
  *    «topshirishingiz mumkin», «отправьте», «можете привезти», «please send», «you can drop it off», «请寄到»,
  *    «ارسال کنید». Never the noun («доставка», «shipment», «ارسال»), never OUR sending («yuboramiz», «отправим», «we
- *    ship») — those send him nowhere — and never «送到塔什干», which is where WE take it.
+ *    ship») — those send him nowhere — and never «送到塔什干», which is where WE take it;
+ *  - where WE receive it (`receivesThere`).
+ *
+ * Fix pass 4 (the readers' corpus, tests/unit/fixtures/agent-reader-corpus.ts): pass 3 freed ordinary replies with
+ * relaxations that each let a hand-over through — an information noun ANYWHERE in the clause cancelled it («Отправьте
+ * груз вместе с документами», «Yukni kompaniyamiz nomiga yuboring», «Отправьте 30 кг груза»), a locative of ours
+ * freed a receive verb («Авиагрузы принимаем на нашем складе в Гуанчжоу»), «нам» read as OUR sending («Груз нам
+ * отправьте»), the Tashkent pickup in one clause freed a Chinese warehouse in the next. Where the rule cannot tell an
+ * ordinary reply from a hand-over, it HOLDS: information frees a clause only when no cargo is left in it as the object;
+ * a receive verb beside a place of ours, an airport or a Chinese city directs, whatever its case; «we» is the
+ * nominative alone; a pickup frees only a sentence that names no Chinese place.
  */
 const AP_ = "['‘’ʻ`]";
 const REPLY_PLACE = new RegExp(
@@ -891,20 +910,26 @@ const REPLY_PLACE = new RegExp(
     `(?<![\\p{L}])qabul\\s+(?:joy|nuqta)\\p{L}*`,
     '(?<![\\p{L}])қабул\\s+(?:жой|нуқта)\\p{L}*',
     '(?<![\\p{L}])(?:warehouses?|depots?|branch(?:es)?|drop-?\\s?off\\s+points?|collection\\s+points?|receiving\\s+points?)(?![\\p{L}])',
-    // …and the airport a flight's cargo is handed in at (fix pass 3: «We receive cargo at Baiyun airport»).
-    '(?<![\\p{L}])(?:aeroport|airport|аэропорт)\\p{L}*',
-    '仓库|仓(?!储)|收货点|收货地|网点|站点|机场',
-    'انبار|شعبه|نمایندگی|فرودگاه',
+    '仓库|仓(?!储)|收货点|收货地|网点|站点',
+    'انبار|شعبه|نمایندگی',
   ].join('|'),
   'giu',
 );
+const REPLY_PLACE_ANY = new RegExp(REPLY_PLACE.source, 'iu');
+/**
+ * An airport — where a flight's cargo is handed in, or where it LANDS. It directs only beside a receive verb
+ * (`receivesThere`) or a hand-over (fix pass 4): pass 3 put it among our places, and «Yuk aeroportga kelgach sizga xabar
+ * beramiz» — the Tashkent arrival — became his avia question in every language.
+ */
+const AIRPORT = /(?<![\p{L}])(?:aeroport|airport|аэропорт)\p{L}*|机场|فرودگاه/iu;
 /**
  * A place of ours named as where the cargo LEAVES or IS (fix pass 3) — «Xitoydagi omborlarimizdan hisoblanadi», «qabul
  * punktidan joʻnatilgandan keyin», «из склада», «from our warehouse», «从仓库», «از انبار», and «omborimizda», «на
- * складе», «at our warehouse», «在仓库», «در انبار» — directs nothing; a hand-over verb in its clause still does.
+ * складе», «at our warehouse», «在仓库», «در انبار» — directs nothing BY ITSELF; a hand-over in its clause still does,
+ * and so does a receive verb in its sentence (`receivesThere`, fix pass 4).
  */
 // Uzbek's own case on the word — never Russian's «склада» (of the warehouse), whose «-да» is the stem's «д».
-const PLACE_FROM_OR_AT = /^(?:(?:ombor|sklad|punkt|filial|aeroport)\p{L}*(?:dan|da|dagi)|(?:омбор|пункт|филиал|аэропорт)\p{L}*(?:дан|да|даги)|склад\p{L}*д(?:ан|а|аги))$/iu;
+const PLACE_FROM_OR_AT = /^(?:(?:ombor|sklad|punkt|filial)\p{L}*(?:dan|da|dagi)|(?:омбор|пункт|филиал)\p{L}*(?:дан|да|даги)|склад\p{L}*д(?:ан|а|аги))$/iu;
 /** «uch omborimizdan qaysi biriga» — «of» our three warehouses, which: a place it GOES to, asked. */
 const PARTITIVE_AFTER = /^\s*(?:qaysi|biri|bittasi|қайси|бири|биттаси)(?![\p{L}])/iu;
 const BEFORE_FROM_OR_AT = /(?:(?<![\p{L}])(?:из|со|с|from|at|in)\s+(?:(?:наш|our|my|your|ваш)\p{L}*\s+)?|[从在]|(?<![\p{L}])(?:از|در)\s+)$/iu;
@@ -912,7 +937,9 @@ const RU_PREPOSITIONAL = /^(?:склад|пункт|филиал)е$/iu;
 /** «…aeroportdan olib ketasiz», «заберёте в аэропорту», «pick it up at the airport» — where he collects. */
 const PICKUP = /(?<![\p{L}])(?:olib\s+ket|олиб\s+кет|забер|забрать|забира|pick\s+(?:it\s+|them\s+)?up|collect)\p{L}*|自提|取货/iu;
 function placeDirects(sentence: string): boolean {
-  if (PICKUP.test(sentence)) return false;
+  // Where he collects — in a sentence that names no Chinese place (fix pass 4): «Yukingiz Guanchjou omborimizga keladi,
+  // keyin Toshkentdan olib ketasiz» freed the Chinese warehouse through the other clause's pickup.
+  if (PICKUP.test(sentence) && originMentions(sentence).length === 0) return false;
   return [...sentence.matchAll(REPLY_PLACE)].some((m) => {
     const word = m[0];
     const after = sentence.slice(m.index + word.length, m.index + word.length + 10);
@@ -920,34 +947,52 @@ function placeDirects(sentence: string): boolean {
     return !BEFORE_FROM_OR_AT.test(sentence.slice(Math.max(0, m.index - 14), m.index));
   });
 }
+/**
+ * WE receive the cargo there (fix pass 4): «qabul qilamiz», «принимаем», «we receive», «收货», «تحویل می‌گیریم» beside a
+ * place of ours, an airport or a Chinese city names where the flight's cargo is handed in — whatever the place's case
+ * or preposition: «Avia yuklarni Guanchjoudagi omborimizda qabul qilamiz», «Авиагрузы принимаем на нашем складе в
+ * Гуанчжоу», «We receive air cargo at our warehouse in Guangzhou», «Cargo is received in Guangzhou», «我们在广州收货».
+ * Never a receive verb with no place («Avia orqali 1 kg dan qabul qilamiz»), never one in Tashkent alone.
+ */
+const RECEIVE =
+  /(?<![\p{L}])(?:qabul\s+qil\p{L}*|қабул\s+қил\p{L}*|кабул\s+кил\p{L}*|приним\p{L}*|принят\p{L}*|receiv\p{L}*|accept\p{L}*)|收货|收件|接收|签收|(?<![\p{L}])(?:تحویل\s+می\S*\s*گیر|دریافت\s+می\S*\s*کن)\p{L}*/iu;
+function receivesThere(sentence: string): boolean {
+  if (!RECEIVE.test(sentence)) return false;
+  const chinese = originMentions(sentence).length > 0;
+  if (TASHKENT.test(sentence) && !chinese) return false;
+  return chinese || REPLY_PLACE_ANY.test(sentence) || AIRPORT.test(sentence);
+}
 // …and a street with its house number (fix pass 3: «Yiwu qabul punktidan — Futian ko‘chasi 88» names no «manzil»).
 const REPLY_ADDRESS =
   /(?<![\p{L}])(?:manzil|манзил|adres|адрес|address|lokatsiya|локация|location)\p{L}*|地址|آدرس|نشانی|(?<![\p{L}])(?:ko['‘’ʻ`]?cha|кўча|куча|улиц|street|road|avenue)\p{L}*\.?\s*\d|[路街]\s*\d|خیابان\s*\S*\s*\d/iu;
 /** The second person and the imperative a hand-over is asked in: «-ing», «-sangiz», «-ishingiz (mumkin)», «-asiz», «-avering». */
 const UZ_YOU = `(?:ing(?:lar|iz)?|sangiz(?:lar)?|ishingiz\\p{L}*|asiz(?:lar)?|avering)`;
 const UZ_CYRL_YOU = '(?:инг(?:лар|из)?|сангиз(?:лар)?|ишингиз\\p{L}*|асиз(?:лар)?|аверинг)';
+/** «yozib yuboring», «aytib yuboring» — WRITE it and send: a message, never the cargo (fix pass 4). */
+const WRITE_BEFORE = '(?<!(?:yozib|aytib|ёзиб|айтиб)\\s+)';
 /**
  * The hand-over asked of HIM, or of whoever brings his cargo — in this trade the SUPPLIER or the factory does (fix pass
  * 3: «Sotuvchingiz yukni bizga yuborsin», «Пусть завод отправит груз нам», «Have your supplier send the goods to our
  * office»): the jussive and the third person, «to us» beside a sending verb, and the verbs that leave or give
- * («qoldiring», «оставьте», «отдайте», «leave it», «放在», «بگذارید», «kuryerimizga bering»).
+ * («qoldiring», «оставьте», «отдайте», «leave it», «放在», «بگذارید», «kuryerimizga bering»). Never OUR offer: «let us
+ * deliver», «让我们…发货» (fix pass 4).
  */
 const REPLY_HANDOVER = new RegExp(
   [
-    `(?<![\\p{L}])(?:yubor|jo${AP_}?nat|yetkaz|topshir|keltir)(?:${UZ_YOU}|sin(?:lar)?|ib\\s+(?:ber|qo${AP_}?y)${UZ_YOU})(?![\\p{L}])`,
+    `${WRITE_BEFORE}(?<![\\p{L}])(?:yubor|jo${AP_}?nat|yetkaz|topshir|keltir)(?:${UZ_YOU}|sin(?:lar)?|ib\\s+(?:ber|qo${AP_}?y)${UZ_YOU})(?![\\p{L}])`,
     `(?<![\\p{L}])(?:olib\\s+(?:kel|bor)|eltib\\s+ber|tashlab\\s+ket)(?:${UZ_YOU}|sin(?:lar)?)(?![\\p{L}])`,
     `(?<![\\p{L}])\\p{L}+imizga\\s+(?:\\p{L}+\\s+)?(?:bering|beravering|topshiring)(?![\\p{L}])`,
-    `(?<![\\p{L}])(?:юбор|жўнат|жунат|етказ|топшир|келтир)(?:${UZ_CYRL_YOU}|син(?:лар)?|иб\\s+(?:бер|қўй|куй)${UZ_CYRL_YOU})(?![\\p{L}])`,
+    `${WRITE_BEFORE}(?<![\\p{L}])(?:юбор|жўнат|жунат|етказ|топшир|келтир)(?:${UZ_CYRL_YOU}|син(?:лар)?|иб\\s+(?:бер|қўй|куй)${UZ_CYRL_YOU})(?![\\p{L}])`,
     `(?<![\\p{L}])(?:олиб\\s+(?:кел|бор)|элтиб\\s+бер|ташлаб\\s+кет)(?:${UZ_CYRL_YOU}|син(?:лар)?)(?![\\p{L}])`,
     '(?<![\\p{L}])(?:отправ(?:ьте|ляйте|ите|ляете)|вышлите|пришлите|привез(?:ите|[её]те)|привозите|принес(?:ите|[её]те)|сда(?:йте|дите|вайте)|достав(?:ьте|ляйте)|переда(?:йте|дите)|завез(?:ите|[её]те)|подвез(?:ите|[её]те)|подвозите|завозите|отда(?:йте|дите|вайте))(?![\\p{L}])',
     '(?<![\\p{L}])(?:можете|сможете|можно|нужно|надо|необходимо|следует|должен|должна|должны|может|могут)\\s+(?:\\p{L}+\\s+){0,2}?(?:отправ(?:ить|лять)|привезти|привозить|сдать|сдавать|принести|доставить|передать|выслать|завезти)(?![\\p{L}])',
     '(?<![\\p{L}])пусть\\s+(?:\\p{L}+\\s+){0,3}?(?:отправ|привез|достав|сда|переда|вышл)\\p{L}*',
     '(?<![\\p{L}])(?:please|kindly|just|you\\s+(?:can|may|could|should|must|need\\s+to|have\\s+to|will\\s+need\\s+to)|if\\s+you|once\\s+you|when\\s+you)\\s+(?:\\p{L}+\\s+)?(?:send|ship|bring|deliver|drop|hand|take)(?![\\p{L}])',
-    '(?<![\\p{L}])(?:have|ask|tell|let)\\s+(?:\\p{L}+\\s+){0,3}?(?:send|ship|bring|deliver|drop|hand)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:have|ask|tell|let)\\s+(?!(?:us|me)(?![\\p{L}]))(?:\\p{L}+\\s+){0,3}?(?:send|ship|bring|deliver|drop|hand)(?![\\p{L}])',
     '(?<![\\p{L}])(?:supplier|factory|seller|vendor)s?\\s+(?:should|must|can|will|needs?\\s+to|has\\s+to)\\s+(?:send|ship|bring|deliver|drop|hand)(?![\\p{L}])',
     "(?:^|[.!?\\n]\\s*)(?:send|ship|bring|deliver|drop|hand|take)\\s+(?:it|them|the|your)(?![\\p{L}])(?!\\s+(?:time|word|call|seat|look|care|chance)(?![\\p{L}]))",
     '(?<![\\p{L}])(?:drop(?:\\s+(?:it|them))?\\s+off|hand(?:\\s+(?:it|them))?\\s+over)(?![\\p{L}])',
-    '请(?:您)?(?:把[^，。！？]{0,12})?(?:寄|发|送|交|拿|带)|(?:寄|发|送|交|拿|带)(?:到|去|往|来|过来)(?!塔什干|乌兹别克)|您(?:可以|需要|要)(?:把[^，。！？]{0,12})?(?:寄|发|送|交)|让[^，。！？]{1,8}?(?:寄|发|送|交)',
+    '请(?:您)?(?:把[^，。！？]{0,12})?(?:寄|发|送|交|拿|带)|(?:寄|发|送|交|拿|带)(?:到|去|往|来|过来)(?!塔什干|乌兹别克)|您(?:可以|需要|要)(?:把[^，。！？]{0,12})?(?:寄|发|送|交)|让(?!我)[^，。！？]{1,8}?(?:寄|发|送|交)',
     'ارسال\\s+(?:کنید|نمایید|بفرمایید)|بفرستید|تحویل\\s+(?:دهید|بدهید)|بیاورید|ببرید|برسانید',
   ].join('|'),
   'giu',
@@ -959,19 +1004,44 @@ const SENDING_ANY =
 /**
  * What a hand-over verb is about when it is no hand-over (fix pass 3): INFORMATION — a photo, a size, the weight, a
  * list, a number, a link, a name, a document. «пришлите фото товара», «og‘irligini (kg) yozib yuboring», «send the
- * weight», «请发照片», «عکس را بفرستید» ask him for a fact, never for the cargo; read in the verb's own clause.
+ * weight», «请发照片», «عکس را بفرستید» ask him for a fact, never for the cargo. Never a unit («30 кг груза» is
+ * cargo), never «nom…» with another case on it («kompaniyamiz nomiga» is whose NAME it goes in — fix pass 4).
  */
+const INFO_UZ = `(?:rasm|foto|surat|o${AP_}?lcham|og${AP_}?irli[gk]|vazn|hajm|ro${AP_}?yxat|raqam|havola|link|ma${AP_}?lumot|hujjat|invoys|skrinshot)\\p{L}*|nomi(?:ni|ngizni)?(?![\\p{L}])`;
+const INFO_UZC = '(?:расм|фото|сурат|ўлчам|улчам|оғирли[гк]|огирли[гк]|вазн|ҳажм|хажм|рўйхат|руйхат|рақам|ракам|ҳавола|маълумот|ҳужжат|хужжат)\\p{L}*|номи(?:ни|нгизни)?(?![\\p{L}])';
+const INFO_RU = '(?:фот|снимк|размер|объ[её]м|габарит|списк|номер|ссылк|данн|информаци|назван|документ|инвойс|скрин|параметр)\\p{L}*|список|вес(?:а|ом|у|е)?(?![\\p{L}])';
+const INFO_EN =
+  '(?:photos?|pictures?|pics?|images?|dimensions?|sizes?|weight|volume|list|number|link|details?|info(?:rmation)?|names?|documents?|invoices?|screenshots?|specs?|measurements?|requests?|comments?|messages?|questions?|reviews?|feedback)(?![\\p{L}])';
+const INFO_ASK = `(?:izoh|so${AP_}?rov|ariza|savol|xabar|заявк|отзыв|коммент|сообщени|вопрос|изоҳ|сўров|ариза|савол|хабар)\\p{L}*`;
+const INFO_ZH = '照片|图片|相片|尺寸|重量|体积|清单|信息|号码|链接|名称|资料|发票|截图|数据';
+const INFO_FA = 'عکس|تصویر|ابعاد|وزن|حجم|لیست|فهرست|شماره|لینک|اطلاعات|مدارک|فاکتور';
 const INFO_NOUN = new RegExp(
   [
-    `(?<![\\p{L}])(?:rasm|foto|surat|o${AP_}?lcham|og${AP_}?irli[gk]|vazn|hajm|ro${AP_}?yxat|raqam|havola|link|ma${AP_}?lumot|nom|nomi|hujjat|invoys|skrinshot|kub|kg|kilo|m3|cbm)\\p{L}*`,
-    '(?<![\\p{L}])(?:расм|фото|сурат|ўлчам|улчам|оғирли[гк]|огирли[гк]|вазн|ҳажм|хажм|рўйхат|руйхат|рақам|ракам|ҳавола|маълумот|ном|ҳужжат|хужжат|куб|кг|кило)\\p{L}*',
-    '(?<![\\p{L}])(?:фот\\p{L}*|снимк\\p{L}*|размер\\p{L}*|вес(?:а|ом|у|е)?(?![\\p{L}])|объ[её]м\\p{L}*|габарит\\p{L}*|список\\p{L}*|списк\\p{L}*|номер\\p{L}*|ссылк\\p{L}*|данн\\p{L}*|информаци\\p{L}*|назван\\p{L}*|документ\\p{L}*|инвойс\\p{L}*|скрин\\p{L}*|параметр\\p{L}*)',
-    '(?<![\\p{L}])(?:photos?|pictures?|pics?|images?|dimensions?|sizes?|weight|volume|list|number|link|details?|info(?:rmation)?|names?|documents?|invoices?|screenshots?|specs?|measurements?|requests?|comments?|messages?|questions?|reviews?|feedback)(?![\\p{L}])',
-    `(?<![\\p{L}])(?:izoh|so${AP_}?rov|ariza|savol|xabar|заявк|отзыв|коммент|сообщени|вопрос|изоҳ|сўров|ариза|савол|хабар)\\p{L}*`,
-    '照片|图片|相片|尺寸|重量|体积|清单|信息|号码|链接|名称|资料|发票|截图|数据',
-    'عکس|تصویر|ابعاد|وزن|حجم|لیست|فهرست|شماره|لینک|اطلاعات|مدارک|فاکتور',
+    `(?<![\\p{L}])(?:${INFO_UZ})`,
+    `(?<![\\p{L}])(?:${INFO_UZC})`,
+    `(?<![\\p{L}])(?:${INFO_RU})`,
+    `(?<![\\p{L}])${INFO_EN}`,
+    `(?<![\\p{L}])${INFO_ASK}`,
+    INFO_ZH,
+    INFO_FA,
   ].join('|'),
   'iu',
+);
+/**
+ * …and the CARGO named only as the information's own (fix pass 4): «фото товара», «вес груза», «yukning og‘irligini»,
+ * «Tovar rasmini», «a photo of the goods», «货物的照片», «عکس بار» — the photo is the object there, never the cargo. A
+ * cargo noun anywhere else in the clause is the hand-over's object, whatever information rides with it.
+ */
+const CARGO_OF_INFO = new RegExp(
+  [
+    `(?<![\\p{L}])(?:${INFO_RU})\\s+(?:(?:вашего|вашей|ваших|вашу|этого|этой|этих|всего|всех)\\s+)?(?:груз(?:а|ов)|товар(?:а|ов)|посыл(?:ки|ок))(?![\\p{L}])`,
+    `(?<![\\p{L}])${INFO_EN}(?:\\s+\\([^)]*\\))?\\s+of\\s+(?:(?:the|your|this|these|those|its|all)\\s+)?(?:cargo|goods|shipment|parcel)s?(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:yuk|tovar|mol)(?:lar)?(?:ingiz|imiz)?(?:ning)?\\s+(?:${INFO_UZ})`,
+    `(?<![\\p{L}])(?:юк|товар|мол)(?:лар)?(?:ингиз|имиз)?(?:нинг)?\\s+(?:${INFO_UZC})`,
+    `(?:货物?|货品)的?(?:${INFO_ZH})`,
+    `(?:${INFO_FA})\\s+(?:بار|کالا)(?![\\p{L}])`,
+  ].join('|'),
+  'giu',
 );
 /**
  * Where the cargo is to STAY — «qoldiring», «Guanchjouda tursa bo'ldi», «оставьте», «leave it in…», «بگذارید» — a
@@ -982,18 +1052,26 @@ const STAY_VERB =
   /(?<![\p{L}])(?:qoldir\p{L}*|tur(?:sa\s+bo['‘’ʻ`]?l|sin(?![\p{L}]))|қолдир\p{L}*|колдир\p{L}*|оставь(?:те)?(?![\p{L}])|оставляйте|leave\s+(?:it|them|the\s+\p{L}+|your\s+\p{L}+)\s+(?:in|at|with)(?![\p{L}]))|بگذارید/iu;
 const CARGO_NOUN = /(?<![\p{L}])(?:yuk|tovar|mol|юк|товар|груз|cargo|goods|shipment|parcel)\p{L}*|货|(?<![\p{L}])بار(?![\p{L}])/iu;
 const OURS = /(?<![\p{L}])(?:наш\p{L}*|our|bizning|бизнинг|\p{L}+imiz(?:ga|da)?|\p{L}+имиз(?:га|да)?)(?![\p{L}])|我们的|(?<![\p{L}])ما(?![\p{L}])/iu;
-/** WE are the ones handing it over (the payment rule's «we cannot hand it over») — said before the verb. */
-const OUR_BEFORE = /(?<![\p{L}])(?:we|we'll|we've|we're|мы|нам)(?![\p{L}])/iu;
+/**
+ * WE are the ones handing it over (the payment rule's «we cannot hand it over») — said before the verb, in the
+ * nominative. «Нам» is to whom HE hands it («Груз нам отправьте», fix pass 4) — ours only before a modal («нам нужно
+ * отправить»: we need to send).
+ */
+const OUR_BEFORE = /(?<![\p{L}])(?:we|we'll|we've|we're|мы|нам\s+(?:нужно|надо|необходимо|следует|можно|придётся|придется))(?![\p{L}])/iu;
 /** Where a sentence is split into the clauses a verb governs: commas, semicolons and «and». */
 const SUB_CLAUSE = /\s*[,，、;；]\s*|\s+(?:и|va|ва|and|و)\s+/iu;
 const SENTENCE = /[.!?\n。！？؟]+/u;
+/** «Пришлите, пожалуйста, фото груза» — the politeness between commas is no clause of its own (fix pass 4). */
+const POLITE_COMMAS = /\s*,\s*(?:пожалуйста|please|iltimos|илтимос)\s*,\s*/giu;
+const POLITE_TAIL = /\s*,\s*(?:пожалуйста|please|iltimos|илтимос)\s*$/iu;
 
 /** Tashkent named — a place of ours in that clause is where he collects, never the China end. */
 const TASHKENT = /(?<![\p{L}])(?:to['‘’ʻ`]?shkent|tashkent|тошкент|ташкент|chuqursoy|чуқурсой|чукурсой)\p{L}*|塔什干|تاشکند/iu;
 
-/** A hand-over the clause asks for: the cargo, never information, never ours. */
+/** A hand-over the clause asks for: the cargo, never information alone, never ours. */
 function handsOver(clause: string): boolean {
-  if (INFO_NOUN.test(clause)) return false;
+  // Information asked for frees the clause only when no cargo is left in it as the object (fix pass 4).
+  if (INFO_NOUN.test(clause) && !CARGO_NOUN.test(clause.replace(CARGO_OF_INFO, ' '))) return false;
   for (const m of clause.matchAll(REPLY_HANDOVER)) {
     if (!OUR_BEFORE.test(clause.slice(0, m.index))) return true;
   }
@@ -1007,7 +1085,8 @@ function handsOver(clause: string): boolean {
  * на Гуанчжоу», «送到广州». Never where it STARTS — «Guanchjoudan Toshkentgacha», «из Гуанчжоу», «from Guangzhou»,
  * «从广州», «از گوانگژو» is every quote's own first words — and never where it IS (fix pass 3): «Груз в Гуанчжоу или в
  * Иу?», «Is your cargo in Guangzhou?», «货在广州还是义乌？», «Yukingiz Guanchjoudami?» ask; where it STAYS is the
- * hand-over's own verbs above («qoldiring», «оставьте», «leave it», «放在», «بگذارید»).
+ * hand-over's own verbs above («qoldiring», «оставьте», «leave it», «放在», «بگذارید»), and where WE receive it is
+ * `receivesThere`'s.
  */
 const TO_ENDING = /^(?:ga|га)(?![\p{L}])/iu;
 const TO_ENDING_OWN = /(?:га)$/iu;
@@ -1020,11 +1099,11 @@ function sendsToChina(replyText: string): boolean {
   });
 }
 
-/** The reply directs the cargo: a place of ours, an address, or a hand-over asked of the customer (§1.2, armed only). */
+/** The reply directs the cargo: a place of ours, an address, where we receive it, or a hand-over asked of the customer (§1.2, armed only). */
 export function talksDelivery(replyText: string): boolean {
   return replyText.split(SENTENCE).some((said) => {
-    const sentence = said.trim();
-    if (REPLY_ADDRESS.test(sentence) || sendsToChina(sentence)) return true;
+    const sentence = said.trim().replace(POLITE_COMMAS, ' ').replace(POLITE_TAIL, '');
+    if (REPLY_ADDRESS.test(sentence) || sendsToChina(sentence) || receivesThere(sentence)) return true;
     // A place of ours in a sentence about Tashkent, naming no Chinese place, is the pickup (fix pass 3).
     if (placeDirects(sentence) && !(TASHKENT.test(sentence) && originMentions(sentence).length === 0)) return true;
     return sentence.split(SUB_CLAUSE).some(handsOver);

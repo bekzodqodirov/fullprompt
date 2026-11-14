@@ -806,6 +806,9 @@ const TOTAL_BEFORE =
  */
 const LESSON_COUNT_AFTER = new RegExp(
   `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:(?:ta|та)\\s+)?(?:${[
+    // The classifier itself, whatever follows it (fix pass 4): «1 tadan ortiq emoji qo‘yma», «2 tadan ko‘p savol berma»
+    // were refused as the price «1», «2». A price is never counted in «ta».
+    '(?:ta|та)(?:dan|дан)?(?![\\p{L}])',
     'marta(?![\\p{L}])',
     'марта(?:ба)?(?![\\p{L}])',
     'раз(?:а|у)?(?![\\p{L}])',
@@ -854,6 +857,11 @@ const LESSON_COUNT_AFTER = new RegExp(
     'options?(?![\\p{L}])',
     'xil\\p{L}*',
     'хил\\p{L}*',
+    // …and the parts a reply is cut into: «javobni 3 qismga bo‘lib yoz» (fix pass 4).
+    'qism\\p{L}*',
+    'қисм\\p{L}*',
+    'част(?:и|ей|ям|ями)(?![\\p{L}])',
+    'parts?(?![\\p{L}])',
   ].join('|')})`,
   'iu',
 );

@@ -15,6 +15,16 @@
  * Left out, each with its reason (stated): Persian «دوشنبه» (Dushanbe) is also «Monday»; Uzbek «qarshi» is also
  * «against» («qarshi emasman»), so Qarshi counts only with its place endings; Uzbek «osh» is also the dish, so Osh
  * counts only with its endings; «Navoiy» is a street in every town, so it counts only when no street word follows.
+ *
+ * A LIST, and nothing else (fix pass 4, the readers' corpus — tests/unit/fixtures/agent-reader-corpus.ts). Fix pass 3
+ * read the customer's grammar too — «<origin>dan X-ga», «из … в X», «from … to X», «到X», «به X» — to catch a place no
+ * list holds, and the slot is an open lexicon: time words («qachongacha», «yangi yilgacha», «до Нового года», «到现在»),
+ * pronouns and possessives («bizgacha», «firmangizga», «в Ваш склад», «به من»), Tashkent's own districts in two words or
+ * a Russian spelling («Mirzo Ulug'bek tumaniga», «в Юнусабад»), everyday nouns («sotuvga», «magazinga») — every one held
+ * an ordinary Tashkent quote, and no exclusion list ends either. The gate already demands that an estimate reply say
+ * «Toshkentgacha» (`destination_unsaid`), so a destination this list misses gets an EXPLICIT Tashkent price, never a
+ * silent wrong one: this check is defence in depth, and a missed exotic destination is the stated risk. Every place a
+ * check named is on the list; a new one is added here, by name.
  */
 
 import { chinaMentions } from './origin';
@@ -123,6 +133,17 @@ const STEMS: readonly string[] = [
   'istanbul', 'стамбул', 'истанбул', 'истамбул',
   'dubay', 'dubai', 'дубай',
   `sh[iy]mkent`, 'шимкент',
+  // …and every place the check of that pass named (fix pass 4), now that the list is the whole reader: Azerbaijan and
+  // Baku («Боку» is the Uzbek, and only with its endings — «на боку» is «on its side»), Minsk, Moldova, Temirtau, Abu
+  // Dhabi, Isfahan, Kazan (Russian «Казань» with its «ь» — «казан» is a cauldron, and goods).
+  `ozarbayjon`, 'озарбайжон', 'азербайджан', 'azerbaijan', 'azerbayjan',
+  'baku', 'баку',
+  'minsk', 'минск', 'belarus', 'беларус',
+  'moldov', 'молдов',
+  'temirtau', 'темиртау',
+  'abu-?\\s?dab', 'абу-?\\s?даб',
+  'isfahan', 'esfahan', 'исфахан',
+  'казань',
 ];
 
 /**
@@ -148,6 +169,11 @@ const ENDED: readonly string[] = [
   // name it after a preposition («to Osh», «на Ош», «в г. Ош»), or after «г.» (fix pass 3).
   `osh(?:ga|gacha|dan|da|ning|${TOWN})`, `o${A}sh(?:ga|gacha|dan|da|ning|${TOWN})`, `ўш(?:га|гача|дан|да|${TOWN_CYRL})?`, `ош(?:га|гача|дан|${TOWN_CYRL})`,
   '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?ош[аеу]?', '(?<![\\p{L}])г\\.\\s*ош[аеу]?', '(?:to|in|for)\\s+osh',
+  // «Chust» is a skullcap's and a knife's name too («Chust do'ppi») — the town only with its place endings or after a
+  // preposition (fix pass 4: «Yiwudan Toshkentga emas, Chustga», «доставка в Чуст»).
+  `chust(?:ga|gacha|dan|da|ning|${TOWN})`, `чуст(?:га|гача|дан|да|нинг|${TOWN_CYRL})`, '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?чуст[аеу]?',
+  // «Boku», «Боку» — Baku in Uzbek — only with an ending; «Kazan» only after «to»/«in» (a «qozon» is a cauldron).
+  `boku(?:ga|gacha|dan|da)`, `боку(?:га|гача|дан|да)`, '(?:to|in)\\s+kazan',
   // «Navoiy ko'chasi» is a street in every town.
   `navoiy?(?:ga|gacha|dan|da|ning)?(?![\\p{L}])(?!\\s*(?:ko${A}ch|кўч|коч|ул|str|прос|shoh|шоҳ))`,
   `навои[йи]?(?:га|гача|дан|да|нинг)?(?![\\p{L}])(?!\\s*(?:кўч|коч|ул|прос|шоҳ))`,
@@ -162,6 +188,7 @@ const SCRIPT_ONLY: readonly string[] = [
   // Kazakhstan, Kyrgyzstan, Tajikistan, Afghanistan
   '哈萨克斯坦', '阿拉木图', '阿斯塔纳', '奇姆肯特', '吉尔吉斯', '比什凯克', '奥什', '塔吉克斯坦', '杜尚别', '苦盏', '阿富汗', '喀布尔', '马扎里沙里夫', '赫拉特', '坎大哈',
   '土库曼斯坦', '阿什哈巴德', '俄罗斯', '莫斯科',
+  '德黑兰', '马什哈德', '伊斯坦布尔', '迪拜', '巴库', '阿塞拜疆', '明斯克', '喀山', '阿布扎比',
 ];
 const PERSIAN: readonly string[] = [
   'اندیجان', 'نمنگان', 'فرغانه', 'سمرقند', 'بخارا', 'ترمذ', 'خوقند', 'خوارزم', 'جیزخ',
@@ -169,6 +196,7 @@ const PERSIAN: readonly string[] = [
   'افغانستان', 'کابل', 'مزار\\s*شریف', 'مزارشریف', 'هرات', 'قندهار', 'قندوز', 'حیرتان',
   'خیوه', 'ترکمنستان', 'عشق\\s*آباد', 'روسیه', 'مسکو',
   'تهران', 'مشهد', 'استانبول', 'دبی',
+  'اصفهان', 'باکو', 'آذربایجان', 'مینسک',
 ];
 
 const PLACE = new RegExp(
@@ -182,133 +210,13 @@ const PLACE = new RegExp(
 );
 
 /**
- * A list never ends — Iran, Turkey, the Emirates, the rest of Russia (fix pass 3). So the customer's own GRAMMAR is
- * read too: a destination FORM after the place the cargo starts from — «Yiwudan X-ga», «Xitoydan … X-ga», «из Иу в
- * X», «на X из Иу», «from Yiwu to X», «Иу — X», «从义乌到X», «از ایوو به X» — whose X is not Tashkent (nor
- * Uzbekistan, nor a district of Tashkent). What else stands in that slot is no place: a pronoun («bizga»), a place of
- * ours («omboringizga»), a unit or a price («5 kubga», «qanchaga»), a road («avtoga»), a verb («olib kelishga»), a
- * question («qayerga»). A Russian, English or route X must be capitalised (lower case there is every other word);
- * an Uzbek X with its case ending need not be — the ending says it. Errs toward naming a place, like the list.
+ * The route as a customer writes it — «Иу — Ош», «Yiwu-Qarshi», «Yiwu → Osh»: the places whose bare word is something
+ * else too (`ENDED`), named bare right after the place the cargo starts from, are the destination. A list's names only:
+ * the route's other end is never read as a place by its shape (fix pass 4).
  */
-/** Tashkent, its districts and Uzbekistan — the table's own destination. */
-const HOME = new RegExp(
-  `^(?:to${A}shkent|tashkent|toshkand|тошкент|ташкент|o${A}zbekiston|uzbekiston|uzbekistan|ozbekiston|ўзбекистон|узбекистон|узбекистан|` +
-    `chilonzor|yunusobod|sergeli|yakkasaroy|mirobod|olmazor|uchtepa|bektemir|shayxontohur|chuqursoy|yashnobod|yangihayot|mirzo|qo${A}yliq|ippodrom|abu|` +
-    `чилонзор|юнусобод|сергели|яккасарой|миробод|олмазор|учтепа|бектемир|шайхонтоҳур|чуқурсой|чукурсой|яшнобод|мирзо|қўйлиқ|куйлюк|ипподром|` +
-    `кита[йяеюи]|xitoy|хитой|china)`,
-  'iu',
-);
-/** What else an Uzbek «-ga» right after the origin is: pronouns, ours, units, money, time, roads, cargo, a verb, a question. */
-const NOT_PLACE_UZ = new RegExp(
-  `^(?:(?:men|sen|biz|siz|sizlar|bizlar|ular|un|o${A}z\\p{L}*|мен|сен|биз|сиз|сизлар|бизлар|улар|ун|ўз\\p{L}*)(?:ga|га)|` +
-    `\\p{L}*(?:imiz|ingiz|lar|im|ing|имиз|ингиз|лар|им|инг)(?:ga|га)|` +
-    `\\p{L}+(?:ish|ash|иш|аш)(?:i|im|ing|imiz|ingiz|и|им|инг|имиз|ингиз)?(?:ga|га)|` +
-    `(?:ombor|sklad|склад|омбор|filial|филиал|punkt|пункт|uy|уй|ofis|офис|do${A}kon|дўкон|bozor|бозор|` +
-    `kub|куб|kilo|кило|kg|кг|tonn|тонн|gramm|грамм|metr|метр|dona|дона|karobka|коробк|quti|қути|mesta|мест|palet|паллет|` +
-    `pul|пул|narx|нарх|qancha|қанча|канча|necha|неча|dollar|доллар|so${A}m|сўм|сум|yuan|юан|` +
-    `kun|кун|hafta|ҳафта|хафта|oy|ой|soat|соат|ertaga|эртага|bugun|бугун|keyin|кейин|oldin|олдин|vaqt|вақт|муддат|muddat|` +
-    `avto|авто|avia|авиа|mashina|машина|fura|фура|poyezd|поезд|samolyot|самолёт|самолет|temir|темир|konteyner|контейнер|kargo|карго|` +
-    `yuk|юк|tovar|товар|mol|мол|bojxona|божхона|rastamojka|растаможка|chegara|чегара|granitsa|граница|` +
-    `zakaz|заказ|buyurtma|буюртма|dostavka|доставка|fabrika|фабрика|zavod|завод|sotuvchi|сотувчи|postavshik|поставщик|` +
-    `alibaba|taobao|pinduoduo|1688|` +
-    `ikkala|иккала|hamma|ҳамма|хамма|bari|бари|har|ҳар|хар|qaysi|қайси|кайси|boshqa|бошқа|бошка|o${A}shan|ўшан|ушан|` +
-    `qayer|қаер|каер|nima|нима|shun|шун|bun|бун|sha${A}?h[ae]r|шаҳар|шахар|viloyat|вилоят|tuman|туман)\\p{L}*)$`,
-  'iu',
-);
-/** «shahriga», «tumaniga», «viloyatiga» — the place is the word BEFORE it («Tehron shahriga», «Toshkent shahriga»). */
-const TOWN_WORD = /^(?:sha[hx](?:ri|ar)|шаҳ(?:ри|ар)|шах(?:ри|ар)|tuman|туман|viloyat|вилоят)\p{L}*$/iu;
-/** The dative and the terminative: «-ga», «-gacha», and «-ka»/«-qa» only after the «k»/«q» they assimilate to («Bishkekka»). */
-const UZ_DATIVE = /^\p{L}[\p{L}'‘’ʻʼ`´-]*?(?:gacha|ga|гача|га|(?<=[kк])(?:ka|ка)|(?<=[qқ])(?:qa|қа))$/iu;
-const CLAUSE_END = /[.!?;\n。！？؟]/u;
-const WORD_G = /[\p{L}\p{N}'‘’ʻʼ`´.-]+/gu;
-
-/** The Uzbek form: «<origin>dan … X-ga» within six words of its clause. */
-function uzbekDestination(line: string): boolean {
-  return chinaMentions(line).some(({ index, match }) => {
-    const rest = line.slice(index + match.length);
-    // «Иудан» is one spelling of Yiwu with its ending already in the match.
-    const glued = /(?:dan|дан)$/iu.test(match);
-    const from = glued ? null : /^(?:\s+shahridan|['‘’ʻʼ`´]?(?:dan|дан))(?![\p{L}])/iu.exec(rest);
-    if (!glued && !from) return false;
-    const clause = rest.slice(from?.[0].length ?? 0).split(CLAUSE_END)[0] ?? '';
-    const words = (clause.match(WORD_G) ?? []).slice(0, 7);
-    for (let i = 0; i < words.length; i += 1) {
-      const w = words[i]!.replace(/[.,]+$/u, '');
-      if (!UZ_DATIVE.test(w)) continue;
-      // «Tehron shahriga»: the name is the word before.
-      const name = TOWN_WORD.test(w) ? (words[i - 1] ?? '') : w;
-      if (TOWN_WORD.test(w) && name === '') return false;
-      if (HOME.test(name) || /^\p{N}/u.test(name)) return false;
-      if (NOT_PLACE_UZ.test(w) && !TOWN_WORD.test(w)) continue;
-      return true;
-    }
-    return false;
-  });
-}
-
-/** A capitalised place word, Latin or Cyrillic — never Tashkent, Uzbekistan, China or a place the cargo starts at. */
-function capitalisedElsewhere(word: string): boolean {
-  if (!/^\p{Lu}/u.test(word) || HOME.test(word)) return false;
-  return chinaMentions(word).length === 0;
-}
-
-/** The Russian, English and route forms: «из/с <origin> … в/на/до X», «X … из <origin>», «from <origin> to X», «<origin> — X». */
-function otherDestination(line: string): boolean {
-  for (const sentence of line.split(CLAUSE_END)) {
-    const origins = chinaMentions(sentence);
-    if (origins.length === 0) continue;
-    const ru = /(?:^|[^\p{L}])(?:из|с|от)\s+$/iu;
-    const fromRu = origins.some(({ index }) => ru.test(sentence.slice(Math.max(0, index - 6), index)));
-    if (fromRu) {
-      for (const m of sentence.matchAll(/(?:^|[^\p{L}])(?:[вВ]о?|[нН]а|[дД]о)\s+(?:г\.?\s*|город\p{L}*\s+)?([А-ЯЁЎҚҒҲ][\p{L}-]*)/gu)) {
-        if (capitalisedElsewhere(m[1]!)) return true;
-      }
-    }
-    const fromEn = origins.some(({ index }) => /(?:^|[^\p{L}])from\s+$/iu.test(sentence.slice(Math.max(0, index - 6), index)));
-    if (fromEn) {
-      for (const m of sentence.matchAll(/(?:^|[^\p{L}])[tT]o\s+(\p{Lu}[\p{L}-]*)/gu)) {
-        if (capitalisedElsewhere(m[1]!)) return true;
-      }
-    }
-    // The route: «Иу — Ош», «Yiwu-Qarshi», «Yiwu → Tehron».
-    for (const { index, match } of origins) {
-      const route = /^\s*(?:[-–—>→]+|->)\s*(\p{Lu}[\p{L}'‘’ʻʼ`´-]*)/u.exec(sentence.slice(index + match.length));
-      if (route && capitalisedElsewhere(route[1]!)) return true;
-    }
-  }
-  return false;
-}
-
-/** Han: «从义乌（运/发）到X», «义乌到X» — X the next Han word, its question tail taken off. */
-const HAN_TAIL = /(?:多少钱|多少|需要|一共|大概|运费|怎么|可以|要|的|吗|呢|是|有|能|啊|呀)+$/u;
-const HAN_NOT_PLACE = /^(?:了|达|货|时|底|处|期|这|那|你|我|您|仓|家|门|哪|手|齐|位|港口|账|付|发|运)/u;
-const HAN_HOME = /^(?:塔什干|乌兹别克|中国)/u;
-function hanDestination(line: string): boolean {
-  return chinaMentions(line).some(({ index, match }) => {
-    if (!/\p{Script=Han}/u.test(match)) return false;
-    const m = /^[^。！？\n]{0,6}?到(\p{Script=Han}{2,6})/u.exec(line.slice(index + match.length));
-    if (!m) return false;
-    const x = m[1]!.replace(HAN_TAIL, '');
-    return [...x].length >= 2 && !HAN_HOME.test(x) && !HAN_NOT_PLACE.test(x) && chinaMentions(x).length === 0;
-  });
-}
-
-/** Persian: «از <origin> به/تا X». */
-const FA_NOT_PLACE = /^(?:ما|شما|انبار\p{L}*|دفتر\p{L}*|کجا|چه|فردا|امروز|هفته|ماه|روز|کی|اینجا|آنجا)$/u;
-const FA_HOME = /^(?:تاشکند|ازبکستان)/u;
-function persianDestination(line: string): boolean {
-  return chinaMentions(line).some(({ index, match }) => {
-    if (!/\p{Script=Arabic}/u.test(match)) return false;
-    if (!/(?:^|[^\p{L}])از\s+$/u.test(line.slice(Math.max(0, index - 4), index))) return false;
-    const m = /^[^.!?؟\n]{0,12}?(?:^|[^\p{L}])(?:به|تا)\s+(\p{Script=Arabic}+)/u.exec(line.slice(index + match.length));
-    if (!m) return false;
-    return !FA_HOME.test(m[1]!) && !FA_NOT_PLACE.test(m[1]!) && chinaMentions(m[1]!).length === 0;
-  });
-}
-
-/** The customer's own grammar names a destination that is not Tashkent. */
-export function namesDestinationForm(line: string): boolean {
-  return uzbekDestination(line) || otherDestination(line) || hanDestination(line) || persianDestination(line);
+const ROUTE_BARE = /^\s*(?:[-–—>→]+|->)\s*(?:o['‘’ʻʼ`´]?sh|ош|ўш|qarshi|қарши|карши|chust|чуст)(?![\p{L}])/iu;
+function namesRoute(line: string): boolean {
+  return chinaMentions(line).some(({ index, match }) => ROUTE_BARE.test(line.slice(index + match.length)));
 }
 
 /**
@@ -319,6 +227,6 @@ export function namesDestinationForm(line: string): boolean {
 export function namesForeignPlace(lines: readonly string[]): boolean {
   return lines.some((line) => {
     const t = line.normalize('NFKC');
-    return PLACE.test(t) || namesDestinationForm(t);
+    return PLACE.test(t) || namesRoute(t);
   });
 }

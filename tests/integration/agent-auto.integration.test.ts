@@ -2960,7 +2960,8 @@ describe('0148 fix — what goes by itself, on real runs', () => {
 
     it('Uzbek typed on a Russian keyboard (no ў қ ғ ҳ) in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
       const d = await ran(['Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
-      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false });
+      // An unconfident guess that leans on the conversation's own language (fix pass 4): only that language goes.
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
       await goes(d);
     });
 
@@ -2990,7 +2991,7 @@ describe('0148 fix — what goes by itself, on real runs', () => {
 
     it('«Здравствуйте» on top of an unmarked Uzbek line in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
       const d = await ran(['Здравствуйте', 'Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
-      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false });
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
       await goes(d);
     });
 
