@@ -1,9 +1,9 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { tgMessageFlags, tgMessages } from '../../platform/db/schema';
-import { holdsNumeral } from './digits';
+import { holdsNumeral, normalizeDigits } from './digits';
 import { personalBitsWithBook } from './kb';
-import { PHONE_RE, urlsIn } from './numbers';
+import { phonesIn, urlsIn } from './numbers';
 import { keptFileSql } from './outbox-store';
 import { asksAnew } from './send-step';
 import { knownNamesForMask } from './style';
@@ -26,20 +26,55 @@ export const ANSWER_WAIT_MS = 30 * 60_000;
  */
 export const ANSWER_RUN_STALE_MS = 15 * 60_000;
 
+/** What his answer was refused for, and the very text that was read as it — so the words can name it. */
+export interface AnswerContact {
+  code: 'contact';
+  what: 'link' | 'phone' | 'han';
+  read: string;
+}
+
 /**
  * Why his typed answer is refused before anything is stored (§2.2, the money lens's «swipe»): a phone, a link or
  * Chinese text is an address or a contact — the AI never re-types one (a garbled Chinese street sends the cargo to
  * the wrong place, and `statesChinaAddress` checks only OUR anchors), so it goes verbatim through ✏️. Null = take it.
+ *
+ * A phone is what the text HOLDS as one (numbers `phonesIn`), never any nine digits in a row: §2.2 expects him to
+ * answer with money and days — its own example is a price — and «10000-12000 dollar», «120 000 000 so'm» and
+ * «20.11.2026-25.11.2026» were each refused with a sentence about an address he never wrote, again on every retry
+ * (review of 0148 as built). The same reader blanks a phone from the redraft's figures, so what is taken here as a
+ * fact is read there as its sources.
  */
-export function answerTextRefusal(text: string): 'contact' | null {
-  if (urlsIn(text).length > 0) return 'contact';
-  if ([...text.matchAll(PHONE_RE)].length > 0) return 'contact';
-  if (/\p{Script=Han}/u.test(text)) return 'contact';
+export function answerTextRefusal(text: string): AnswerContact | null {
+  const url = urlsIn(text)[0];
+  if (url !== undefined) return { code: 'contact', what: 'link', read: url };
+  const phone = phonesIn(normalizeDigits(text))[0];
+  if (phone !== undefined) return { code: 'contact', what: 'phone', read: phone.raw };
+  const han = /\p{Script=Han}+/u.exec(text);
+  if (han) return { code: 'contact', what: 'han', read: han[0] };
   return null;
 }
 
-/** The refusal's words — the wait stays armed, so his next text is still the answer. */
+/** The refusal's words where nothing was read to name (a door that holds only the code) — the wait stays armed. */
 export const ANSWER_CONTACT_WORDS = 'Manzil yoki telefonni ✏️ bilan yozing — AI uni qayta yozmaydi. Javobni manzil va telefonsiz qayta yozing.';
+
+/** How much of what was read the refusal quotes back — a phone or a link, never a paragraph. */
+const READ_SHOWN_CHARS = 60;
+
+/**
+ * The refusal in words that NAME what was read, and the way out for a fact that is no contact: digits with no unit
+ * beside them are a phone's shape, and «Narxi 9000-10000» is told to say its currency. Starts as the short words do.
+ */
+export function answerContactWords(refused: AnswerContact): string {
+  const head = 'Manzil yoki telefonni ✏️ bilan yozing — AI uni qayta yozmaydi.';
+  const shown = [...refused.read].length > READ_SHOWN_CHARS ? `${[...refused.read].slice(0, READ_SHOWN_CHARS).join('')}…` : refused.read;
+  if (refused.what === 'link') return `${head} Javobingizda havola bor: «${shown}». Javobni havolasiz qayta yozing.`;
+  if (refused.what === 'han') return `${head} Javobingizda xitoycha matn bor: «${shown}». Javobni xitoycha matnsiz qayta yozing.`;
+  return (
+    `${head} Javobingizdagi «${shown}» telefon raqamiga o‘xshaydi. ` +
+    'Narx, miqdor yoki sana bo‘lsa — birligi bilan yozing (masalan: «10000-12000 dollar», «120 000 000 so‘m», «15.11.2026»). ' +
+    'Telefon bo‘lsa — javobni telefonsiz qayta yozing.'
+  );
+}
 
 /** How much of the AI's own question the redraft is shown — a question is a sentence, never the chat. */
 const QUESTION_SHOWN_CHARS = 400;

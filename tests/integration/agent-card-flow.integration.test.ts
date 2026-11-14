@@ -102,7 +102,10 @@ import { JOB_AGENT_INBOUND, type AgentInboundJob } from '@/modules/wms/agent/que
 import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
 import { CANCELLED_BY_HOLDER } from '@/modules/wms/agent/web-thread';
 import { handleInbound } from '@/modules/wms/agent/run';
-import { agentDecideAction } from '@/modules/wms/agent/web-actions';
+import { agentAutoCategoriesAction, agentAutoPerDayAction, agentDecideAction, agentSendCapsAction } from '@/modules/wms/agent/web-actions';
+import { AUTO_PER_DAY_MAX, readAutoConfig, __restoreAutoConfig } from '@/modules/wms/agent/auto-send';
+import { SEND_CAP_BOUNDS, readSendCaps, __restoreSendCaps } from '@/modules/wms/agent/send-caps';
+import { createTranslator } from 'next-intl';
 import type { PolicyMemory } from '@/modules/wms/agent/policy-input';
 import { errorKey } from '@/app/(protected)/suhbatlar/ai/labels';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
@@ -1599,5 +1602,75 @@ describe('the bot’s copies of a draft’s words go with the chat’s purge (re
       expect(String(c.body.text)).toBe(PURGED_CARD_TEXT);
       expect(c.body.reply_markup).toBeUndefined();
     }
+  });
+});
+
+/**
+ * The review of 0148 as built (bot lens), through the page's own actions. The two new number boxes answered a wrong
+ * number with `auto_bad_value` — the KINDS form's code, whose words in all four bundles are «…kamida bitta turni
+ * belgilang»: he typed a number and was told to tick a box, with no bound named. Each box has its own code now, and
+ * its words name its bounds (the forms hand them to the translator — the constants are written nowhere twice).
+ */
+describe('a wrong NUMBER on the settings page is said as a number (review of 0148 as built)', () => {
+  it('the daily count and the account limits each refuse in their own code — and nothing is written', async () => {
+    const me = await owner();
+    const autoBefore = await readAutoConfig();
+    const capsBefore = await readSendCaps();
+    webActor.current = { id: me.id, roles: ['super_admin'], permissions: new Set<string>() };
+    try {
+      for (const raw of ['0', '1001', 'abc', '-5', '1.5']) {
+        expect(await agentAutoPerDayAction(raw), raw).toEqual({ ok: false, error: 'auto_bad_per_day' });
+      }
+      for (const values of [
+        { dayCap: '500', hourCap: '' },
+        { dayCap: 'x', hourCap: '' },
+        { dayCap: '', hourCap: '101' },
+        { dayCap: '0', hourCap: '' },
+      ]) {
+        expect(await agentSendCapsAction(values), JSON.stringify(values)).toEqual({ ok: false, error: 'auto_bad_caps' });
+      }
+      // The kinds form keeps the sentence that was always its own.
+      expect(await agentAutoCategoriesAction([])).toEqual({ ok: false, error: 'auto_bad_value' });
+      expect((await readAutoConfig())?.perDay).toBe(autoBefore?.perDay);
+      expect((await readSendCaps()).stored).toEqual(capsBefore.stored);
+    } finally {
+      webActor.current = null;
+      await __restoreAutoConfig(autoBefore);
+      await __restoreSendCaps(capsBefore);
+    }
+  });
+
+  it.each(['uz', 'ru', 'en', 'zh-CN'])('%s: each sentence names its bounds, and neither is the kinds form’s', (locale) => {
+    const messages = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { agentAi: { errors: Record<string, string> } };
+    const t = createTranslator({ locale, messages: messages as never, namespace: 'agentAi' as never }) as unknown as (key: string, values?: Record<string, number>) => string;
+    const kinds = t(errorKey('auto_bad_value'));
+    // As the forms say them (agent-ui `useAction(values)`): the bounds they were drawn with.
+    const perDay = t(errorKey('auto_bad_per_day'), { max: AUTO_PER_DAY_MAX });
+    const caps = t(errorKey('auto_bad_caps'), { dayMax: SEND_CAP_BOUNDS.day.max, hourMax: SEND_CAP_BOUNDS.hour.max });
+    expect(errorKey('auto_bad_per_day')).toBe('errors.auto_bad_per_day');
+    expect(errorKey('auto_bad_caps')).toBe('errors.auto_bad_caps');
+    expect(perDay).not.toBe(kinds);
+    expect(caps).not.toBe(kinds);
+    expect(perDay).toContain(String(AUTO_PER_DAY_MAX));
+    expect(caps).toContain(String(SEND_CAP_BOUNDS.day.max));
+    expect(caps).toContain(String(SEND_CAP_BOUNDS.hour.max));
+    // The bundle's own text carries the placeholders — never a number typed a second time.
+    expect(messages.agentAi.errors.auto_bad_per_day).toContain('{max}');
+    expect(messages.agentAi.errors.auto_bad_caps).toContain('{dayMax}');
+    expect(messages.agentAi.errors.auto_bad_caps).toContain('{hourMax}');
+  });
+
+  it('the two forms hand their bounds to the refusal’s words (agent-ui wire)', () => {
+    const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
+    // The hook hands what it was given to the translator — a sentence with «{max}» and no value throws at render.
+    const hook = ui.slice(ui.indexOf('function useAction('), ui.indexOf('function Feedback('));
+    expect(hook).toMatch(/function useAction\(errorValues\?: Record<string, number>\)/u);
+    expect(hook).toMatch(/t\(errorKey\(res\.error\) as 'errors\.unknown', errorValues\)/u);
+    const perDay = ui.slice(ui.indexOf('export function AutoPerDayForm'), ui.indexOf('export function SendCapsForm'));
+    expect(perDay).toMatch(/useAction\(\{ max \}\)/u);
+    const caps = ui.slice(ui.indexOf('export function SendCapsForm'), ui.indexOf('export function TariffConfirmButton'));
+    expect(caps).toMatch(/useAction\(\{ dayMax: bounds\.dayMax, hourMax: bounds\.hourMax \}\)/u);
+    const page = readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8');
+    expect(page).toMatch(/<SendCapsForm[^>]*bounds=\{\{ dayMax: SEND_CAP_BOUNDS\.day\.max, hourMax: SEND_CAP_BOUNDS\.hour\.max \}\}/u);
   });
 });

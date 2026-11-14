@@ -209,7 +209,7 @@ describe('what a lesson’s text is refused for before any name is read (spec §
     expect(lessonShapeRefusal('x'.repeat(500))).toBeNull();
     expect(lessonShapeRefusal('Avia narxini 17 $ deb ayt')).toEqual({ code: 'money', detail: '17' });
     expect(lessonShapeRefusal('Mijozga 120 000 so‘m deb aytma')).toMatchObject({ code: 'money' });
-    expect(LESSON_WORDS.money).toBe('Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi.');
+    expect(LESSON_WORDS.money).toMatch(/^Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi\./u);
     expect(LESSON_WORDS.personal).toContain('Matnda mijoz ma’lumoti bor — saboq hamma chatga boradi.');
   });
 
@@ -220,6 +220,54 @@ describe('what a lesson’s text is refused for before any name is read (spec §
 
   it('a refusal names what was read — the figure, the personal bit — never «narx» about a text with none', () => {
     expect(lessonRefusalWords({ code: 'money', detail: '17' })).toBe(`«17» — ${LESSON_WORDS.money}`);
+  });
+
+  /**
+   * The review of 0148 as built (bot lens): a lesson ABOUT how to speak of the price is the round's most likely one,
+   * and a bare count in it was «a price» — `moneyIn` reads any bare figure in a text that names money as money (right
+   * for a FACT, which is a source; a lesson is an instruction). A lesson's price is a figure that says so itself: a
+   * currency beside it, a scale word, a per-unit word, or a price word right before it.
+   */
+  it.each([
+    'Narx haqida 1 marta ayt, takrorlama',
+    '"Arzon" dema, narx bozorga mos de — 5 yillik tajribamiz bor',
+    'Narxni 2 marta aytma',
+    'Narx so‘ralsa, avval 3 narsani so‘ra: tovar, kub, kg',
+    'Нархни 2 марта айтма',
+    'Цену называй 1 раз, не повторяй',
+    'Про оплату пиши не больше 2 предложений',
+    'Mention the price 1 time only',
+    'To‘lov haqida 2 gapdan ko‘p yozma',
+    'Narx aytganda javobni 4 qatordan oshirma',
+  ])('a count in a lesson about price is no price: «%s»', (text) => {
+    expect(lessonShapeRefusal(text)).toBeNull();
+  });
+
+  it.each([
+    ['Avia narxini 17 $ deb ayt', '17'],
+    ['Narxni 20 dollar deb ayt', '20'],
+    ['Avia narxi 17 deb ayt', '17'],
+    ['Yo‘lkira narxi: 160', '160'],
+    ['Narxi taxminan 160 deb ayt', '160'],
+    ['Yo‘lkira kubiga 160 deb ayt', '160'],
+    ['Avia kilosiga 17 deb ayt', '17'],
+    ['Цена 17 за кг', '17'],
+    ['Говори, что стоит 480', '480'],
+    ['Narxni 480 ming deb ayt', '480 ming'],
+    ['Say the price is $17 per kg', '17'],
+    ['Jami 800 bo‘ladi deb ayt', '800'],
+  ])('…while a figure that IS a price stays refused: «%s»', (text, figure) => {
+    expect(lessonShapeRefusal(text)).toEqual({ code: 'money', detail: figure });
+  });
+
+  it('the refusal’s words give the way out for a number that is no price — in the bot and in all four bundles', () => {
+    expect(LESSON_WORDS.money).toContain('so‘z bilan yozing');
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { agentAi: { errors: Record<string, string> } };
+      // Two sentences: the rule, and what to do when the figure is not a price.
+      expect(bundle.agentAi.errors.lesson_money!.split(/[.。]/u).filter((part) => part.trim() !== '').length, locale).toBeGreaterThanOrEqual(2);
+    }
+    expect((JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { agentAi: { errors: Record<string, string> } }).agentAi.errors.lesson_money).toContain('so‘z bilan yozing');
     expect(lessonRefusalWords({ code: 'personal', detail: 'GS555' })).toBe(`«GS555» — ${LESSON_WORDS.personal}`);
     expect(lessonRefusalWords({ code: 'too_long' })).toBe(LESSON_WORDS.too_long);
   });

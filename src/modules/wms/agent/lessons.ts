@@ -10,7 +10,8 @@ import { afterPressOf, machinePressedReply, stopAutoForPerson, STOP_AUTO_WORDS, 
 import { answeredNow } from './card-io';
 import { knownNamesFor } from './chat-names';
 import { agentFullP1Ready, agentRunning, mayRunAgent, readAgentConfig } from './config';
-import { moneyIn, personalBitsWithBook } from './kb';
+import { personalBitsWithBook } from './kb';
+import { extractNumbers } from './numbers';
 import { fitLessons, lessonsBlock, lessonsChars, LESSON_LIMITS, type LessonSetMark, type PromptLesson } from './lesson-rules';
 import { ANSWER_RUN_STALE_MS } from './owner-answer';
 import { JOB_AGENT_OWNER_ANSWER, type AgentOwnerAnswerJob } from './queues';
@@ -53,7 +54,7 @@ export const LESSON_WORDS: Record<LessonRefusal, string> = {
   not_teachable: 'Bu kartadagi matn AI yozgan emas — tuzatish AI yozgan javobga yoziladi.',
   empty: 'Saboq bo‘sh.',
   too_long: `Saboq juda uzun — ${LESSON_LIMITS.maxChars} belgigacha, qisqa qoida qilib yozing.`,
-  money: 'Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi.',
+  money: 'Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi. Bu son narx bo‘lmasa — uni so‘z bilan yozing (masalan: «bir marta»).',
   personal: 'Matnda mijoz ma’lumoti bor — saboq hamma chatga boradi. Ism, kod va telefonsiz qayta yozing.',
   already: 'Allaqachon saqlangan.',
   confirmed: 'Saboq allaqachon saqlangan — o‘chirish yoki o‘zgartirish «Suhbatlar → AI sotuvchi → Saboqlar» sahifasida.',
@@ -128,7 +129,11 @@ export function lessonShapeRefusal(text: string): { code: 'empty' | 'too_long' |
   const body = text.trim();
   if (!body) return { code: 'empty' };
   if ([...body].length > LESSON_LIMITS.maxChars) return { code: 'too_long' };
-  const money = moneyIn(null, body);
+  // A lesson's price is a figure that says so ITSELF (numbers `ownMoneyOnly`): a currency or a scale word beside it,
+  // a per-unit or a price word right before it. A fact's reader (`moneyIn`) calls every bare figure money in a text
+  // that names money — right for a source, and «Narx haqida 1 marta ayt» was refused as the price «1» (review of
+  // 0148 as built): lessons about HOW to speak of the price are the likeliest ones.
+  const money = extractNumbers(body, [], { ownMoneyOnly: true }).find((f) => f.kind === 'money');
   if (money) return { code: 'money', detail: money.raw };
   return null;
 }

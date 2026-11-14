@@ -361,6 +361,15 @@ export function cardAsks(d: { status: string; kind: string; needsOwner: boolean;
  * already rewriting: from his ✍️ answer (card-io `answeredNow`, asked by the card's writer) or from a lesson
  * (`lessonRedraft`). ONE rule for `createDraft` and `refreshAgentCard`.
  */
+/**
+ * Is the AI rewriting this reply from his lesson right now (§3.4) — the mark its rewrite must find, on a reply still
+ * waiting whose words are still the machine's? ONE rule for the card's «📝 Saboq saqlandi…» line (card-io
+ * `statusLine`) and for the page's row, which keeps the 📝's place mounted while it holds (web-page `lessonRewriting`).
+ */
+export function lessonRewritingNow(d: { status: string; finalBody: string | null; policy: unknown }): boolean {
+  return d.status === 'pending' && d.finalBody === null && Boolean(((d.policy ?? {}) as { lessonRedraft?: unknown }).lessonRedraft);
+}
+
 export function cardTeaches(d: { status: string; kind: string; finalBody: string | null; needsOwner: boolean; policy: unknown }): boolean {
   if (d.kind === 'price') return false;
   if (d.status === 'pending' || d.status === 'editing') {

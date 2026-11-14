@@ -6727,6 +6727,8 @@
       "auto_agent_off": "Avval AI sotuvchini yoqing.",
       "auto_not_work_account": "Avval raqamni «Ish raqami» deb belgilang.",
       "auto_bad_value": "Noto‘g‘ri qiymat — kamida bitta turni belgilang.",
+      "auto_bad_per_day": "Butun son yozing — 1 dan {max} gacha — yoki bo‘sh qoldiring (chegara yo‘q).",
+      "auto_bad_caps": "Butun son yozing: kuniga 1 dan {dayMax} gacha, soatiga 1 dan {hourMax} gacha — yoki bo‘sh qoldiring (standart qiymat).",
       "auto_stop_not_found": "Bu javob o‘zi yuborilmaydi.",
       "auto_stop_not_account_holder": "Bu javob sizning akkauntingizdan emas.",
       "auto_stop_pressed": "Kech — AI javobni o‘zi tasdiqladi. Ketmasin desangiz, «Bekor qilish»ni bosing.",
@@ -6741,7 +6743,7 @@
       "lesson_not_teachable": "Bu kartadagi matn AI yozgan emas — tuzatish AI yozgan javobga yoziladi.",
       "lesson_empty": "Saboq bo‘sh.",
       "lesson_too_long": "Saboq juda uzun — 500 belgigacha, qisqa qoida qilib yozing.",
-      "lesson_money": "Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi.",
+      "lesson_money": "Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi. Bu son narx bo‘lmasa — uni so‘z bilan yozing (masalan: «bir marta»).",
       "lesson_personal": "Matnda mijoz ma’lumoti bor (ism, kod, telefon) — saboq hamma chatga boradi.",
       "lesson_already": "Allaqachon saqlangan.",
       "lesson_confirmed": "Saboq allaqachon saqlangan."

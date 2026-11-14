@@ -508,6 +508,24 @@ describe('the lesson: typed, echoed, confirmed (spec §3.2)', () => {
     expect(queued.jobs.filter((j) => j.name === JOB_AGENT_OWNER_ANSWER)).toHaveLength(1);
   });
 
+  it('«✅ Saqlash» is the agent’s HOLDER’s: a lesson he typed while he was, pressed after the agent got another holder, counts for nothing', async () => {
+    // The creator alone is not enough (review of 0148 as built, tests lens): a lesson reaches every chat of the
+    // agent's account, and that account is no longer his.
+    const d = await drafted();
+    const { id, token } = await typed(d.id);
+    await db.update(agentConfig).set({ ownerUserId: colleagueId, sessionExclusiveBy: colleagueId }).where(eq(agentConfig.id, 1));
+    try {
+      const press = await agentPress(ownerId, 'y', id, token);
+      expect(press.toast).toBe(LESSON_WORDS.not_found);
+      expect((await lessonRow(id))!.confirmedAt).toBeNull();
+      expect((await promptLessons()).lessons.map((l) => l.id)).not.toContain(id);
+    } finally {
+      await db.update(agentConfig).set({ ownerUserId: ownerId, sessionExclusiveBy: ownerId }).where(eq(agentConfig.id, 1));
+    }
+    // His again, the same press confirms.
+    expect((await agentPress(ownerId, 'y', id, token)).toast).toBe('✅ Saboq saqlandi');
+  });
+
   it('«✖ Bekor» drops the unconfirmed lesson; on a confirmed one it says where a lesson is changed', async () => {
     const d = await drafted();
     const { id } = await typed(d.id);
@@ -717,6 +735,25 @@ describe('the rewrite of a card still waiting for his ✅ (spec §3.4)', () => {
     expect(await rewrite(job!, `Boshqa matn ${TAG}`)).toBeNull();
     const live = await db.select({ id: agentDrafts.id }).from(agentDrafts).where(and(eq(agentDrafts.peerId, PEER), eq(agentDrafts.status, 'pending')));
     expect(live.map((r) => r.id)).toEqual([(out as { draftId: string }).draftId]);
+    expect(await notices()).toHaveLength(0);
+  });
+
+  it('the lesson’s key already taken by a run still writing it: this delivery stands down in silence and takes nothing from under it', async () => {
+    // The answer job's twin (review of 0148 as built, tests lens): without the early return this delivery cleared
+    // the mark from under the run that is rewriting the card, and told him «AI javobni qayta yozmadi».
+    const d = await drafted();
+    const { id, job } = await taught(d.id);
+    await db.insert(agentRuns).values({
+      managerUserId: ownerId,
+      peerId: PEER,
+      trigger: 'owner_edit',
+      anchorTgMessageId: d.anchorTgMessageId,
+      sourceKey: `lesson:${id}`,
+    });
+    expect(await rewrite(job!)).toEqual({ outcome: 'stood_down', reason: 'duplicate' });
+    const now = await draftOf(d.id);
+    expect(now.status).toBe('pending');
+    expect((now.policy as { lessonRedraft?: { lessonId: string } }).lessonRedraft?.lessonId).toBe(id);
     expect(await notices()).toHaveLength(0);
   });
 
@@ -993,6 +1030,53 @@ describe('the page (spec §3.6) and the edges', () => {
     expect(await decideDraft(actorOf(ownerId), d.id, 'send', { digest: String((await cardOf(d.id)).digest) }, ctxOf(ownerId))).toMatchObject({ ok: true });
     const waiting = (await webDrafts(viewer)).waiting.find((w) => w.id === d.id);
     expect(waiting).toMatchObject({ teach: true, lessonRewrites: false });
+  });
+
+  /**
+   * The review of 0148 as built (bot lens), reproduced in a browser on a built server: the HOLDER saves a lesson on a
+   * reply still waiting, with the prompt at its cap. The save answers «✅ Saboq saqlandi… ⚠️ Promptga sig‘may qolgan
+   * eski saboq: «…»» and revalidates the page — the draft now carries the rewrite's mark, so `teach` is false, and
+   * `{d.teach && <LessonButton/>}` UNMOUNTED the component that holds the answer: the ⚠️ line was on screen for a
+   * fifth of a second (spec §3.3, binding: a lesson that pushes another out names which one drops). The row says it
+   * is being rewritten (`lessonRewriting`), and the page keeps the 📝's place mounted for it — the opener gone, the
+   * answer not.
+   */
+  it('the holder’s lesson on a waiting reply at the cap: the answer names the lesson that fell out, and the row keeps the place it is said in', async () => {
+    const d = await drafted();
+    const base = Date.now() - 3_600_000;
+    await db.insert(agentLessons).values(
+      Array.from({ length: LESSON_LIMITS.promptCount }, (_, i) => ({
+        text: `Eski saboq ${i + 1} ${TAG}`,
+        createdBy: ownerId,
+        confirmedAt: new Date(base + i * 1000),
+        createdAt: new Date(base + i * 1000),
+      })),
+    );
+    const viewer = { id: ownerId, roles: ['super_admin'], permissions: new Set<string>(['crm.leads.view_all']) };
+    expect((await webDrafts(viewer)).pending.find((w) => w.id === d.id)).toMatchObject({ teach: true, lessonRewriting: false });
+    const saved = await lessonFromPage(actorOf(ownerId), { draftId: d.id, text: LESSON }, ctxOf(ownerId));
+    expect(saved).toMatchObject({ ok: true, redraft: 'queued', dropped: [`Eski saboq 1 ${TAG}`] });
+    expect(lessonSavedWords(saved as never)).toContain(`⚠️ Promptga sig‘may qolgan eski saboq: «Eski saboq 1 ${TAG}»`);
+    // The row after the save's own revalidation: no second 📝 — and still the lesson's place.
+    const marked = (await webDrafts(viewer)).pending.find((w) => w.id === d.id);
+    expect(marked).toMatchObject({ teach: false, lessonRewriting: true });
+    // ONE expression mounts the component before and after the save (the same element at the same place keeps its
+    // state — the note), and inside it only the OPENER and the box hang on `teach`: the answer is always drawn.
+    const page = readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8');
+    // The waiting reply's own card (the lists of sent replies are never rewritten — nothing unmounts theirs).
+    const card = page.slice(page.indexOf('function DraftCard('), page.indexOf('function Empty('));
+    expect(card).toMatch(/\{\(d\.teach \|\| d\.lessonRewriting\) && \(\s*<LessonButton draftId=\{d\.id\} teach=\{d\.teach\} rewrites=\{d\.lessonRewrites && d\.managerUserId === viewerId\} \/>\s*\)\}/u);
+    expect(card).not.toMatch(/\{d\.teach && <LessonButton/u);
+    const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
+    const button = ui.slice(ui.indexOf('export function LessonButton'), ui.indexOf('export function LessonEditor'));
+    expect(button).toMatch(/\{teach && \(\s*<button[^>]*?data-testid="agent-lesson-open"/su);
+    expect(button).toMatch(/\{teach && open && \(/u);
+    // The answer, outside both: the last thing the component draws, under no condition.
+    expect(button).toMatch(/\n      <Feedback error=\{error\} note=\{note\} \/>\n    <\/div>\n  \);\n\}/u);
+    // His own words typed since (✏️) end the rewrite: the row is an ordinary one again — nothing left to keep a place for.
+    expect(await submitOwnText(actorOf(ownerId), d.id, `O‘zim yozaman ${TAG}`, ctxOf(ownerId))).toMatchObject({ ok: true });
+    const own = (await webDrafts(viewer)).pending.find((w) => w.id === d.id);
+    expect(own).toMatchObject({ teach: false, lessonRewriting: false });
   });
 
   it('the page’s edit takes the same refusals, and saving an UNCONFIRMED lesson there confirms it', async () => {

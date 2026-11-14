@@ -58,6 +58,10 @@ export type AgentErrorCode =
   // «O'zi yuborish»'s doors (web-actions `agentAuto…`): their OWN codes, because the services share
   // words like `not_found` with the draft decisions and a switch is not a draft.
   | `auto_${AutoConfigRefusal}`
+  // A number out of bounds in the daily-count box and in the account-limit boxes (web-actions): each its own
+  // sentence, naming its bounds — `auto_bad_value` is the kinds form's «tick at least one».
+  | 'auto_bad_per_day'
+  | 'auto_bad_caps'
   | `auto_stop_${Exclude<StopAutoRefusal, 'not_ready'>}`
   | `auto_fb_${Exclude<AutoFeedbackRefusal, 'not_ready'>}`
   // «📝 Tuzatish» (web-actions `agentLesson…`, lessons.ts): their own codes too — «empty» and «too long» there
@@ -133,6 +137,8 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_agent_off: 'errors.auto_agent_off',
   auto_not_work_account: 'errors.auto_not_work_account',
   auto_bad_value: 'errors.auto_bad_value',
+  auto_bad_per_day: 'errors.auto_bad_per_day',
+  auto_bad_caps: 'errors.auto_bad_caps',
   auto_stop_not_found: 'errors.auto_stop_not_found',
   auto_stop_not_account_holder: 'errors.auto_stop_not_account_holder',
   auto_stop_pressed: 'errors.auto_stop_pressed',

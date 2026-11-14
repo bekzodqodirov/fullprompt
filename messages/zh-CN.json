@@ -6727,6 +6727,8 @@
       "auto_agent_off": "请先开启 AI 销售。",
       "auto_not_work_account": "请先将号码标记为「工作号码」。",
       "auto_bad_value": "值无效——至少勾选一项。",
+      "auto_bad_per_day": "请输入 1 到 {max} 之间的整数——或留空（不限制）。",
+      "auto_bad_caps": "请输入整数：每天 1 到 {dayMax}，每小时 1 到 {hourMax}——或留空（默认值）。",
       "auto_stop_not_found": "这条回复不会自动发送。",
       "auto_stop_not_account_holder": "这条回复不是从您的账号发出的。",
       "auto_stop_pressed": "太晚了——AI 已自行确认该回复。如不想发送，请点击「取消」。",
@@ -6741,7 +6743,7 @@
       "lesson_not_teachable": "这张卡片上的文字不是 AI 写的 — 纠正只针对 AI 写的回复。",
       "lesson_empty": "规则为空。",
       "lesson_too_long": "规则太长 — 最多 500 个字符，请写成简短的规则。",
-      "lesson_money": "价格不能作为规则 — 价格来自工具和设置。",
+      "lesson_money": "价格不能作为规则 — 价格来自工具和设置。如果这个数字不是价格，请用文字写出（例如：“一次”）。",
       "lesson_personal": "文本中有客户信息（姓名、代码、电话）— 规则会用于所有聊天。",
       "lesson_already": "已保存。",
       "lesson_confirmed": "规则已保存。"

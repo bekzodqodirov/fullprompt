@@ -15,7 +15,12 @@ export default defineConfig({
     // The factory map's geocoder and router are public services this
     // container cannot reach and the CI runner can (#278): the suite must
     // resolve the same in both, so it never calls out (pickups/geo-fetch.ts).
-    env: { GEO_NETWORK: 'off' },
+    //
+    // The AI sotuvchi's once-per-table tariff notice is a claim on the ONE
+    // database every file shares, taken by any sweep from 2026-12-17 on: off
+    // here, or the suite's behaviour changes by the calendar (tariff-watch
+    // `tariffNoticeOn`). The notice's own tests switch it on.
+    env: { GEO_NETWORK: 'off', AGENT_TARIFF_NOTICE: 'off' },
   },
   resolve: {
     alias: {

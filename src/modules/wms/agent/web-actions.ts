@@ -364,13 +364,17 @@ function capOf(raw: unknown): number | null {
   return /^\d{1,9}$/u.test(s) ? Number(s) : Number.NaN;
 }
 
-/** The layer's daily count (0148): an empty box is «no cap». The holder's — the service asks. */
+/**
+ * The layer's daily count (0148): an empty box is «no cap». The holder's — the service asks. A number out of its
+ * bounds is THIS box's own code: the services share `bad_value` with the kinds form, whose words («kamida bitta
+ * turni belgilang») told a person who had typed a number to tick a box (review of 0148 as built).
+ */
 export async function agentAutoPerDayAction(raw: string): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
     try {
       await setAutoPerDay(actor, capOf(raw), ctx);
     } catch (err) {
-      if (err instanceof AutoConfigError) return { ok: false, error: `auto_${err.code}` };
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_per_day' : `auto_${err.code}` };
       throw err;
     }
   });
@@ -378,14 +382,14 @@ export async function agentAutoPerDayAction(raw: string): Promise<AgentActionRes
 
 /**
  * The account-protection limits (0148): empty boxes are today's defaults. The holder's or a super_admin's — the
- * service asks; its refusals are the arming doors' own words (`auto_…`).
+ * service asks; its refusals are the arming doors' own words (`auto_…`), a number out of bounds its own.
  */
 export async function agentSendCapsAction(values: { dayCap: string; hourCap: string }): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
     try {
       await setSendCaps(actor, { dayCap: capOf(values?.dayCap), hourCap: capOf(values?.hourCap) }, ctx);
     } catch (err) {
-      if (err instanceof SendCapsError) return { ok: false, error: `auto_${err.code}` };
+      if (err instanceof SendCapsError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_caps' : `auto_${err.code}` };
       throw err;
     }
   });

@@ -3,7 +3,7 @@ import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db } from '../../platform/db/client';
 import { clients, kbFacts } from '../../platform/db/schema';
 import { normalizeDigits } from './digits';
-import { extractNumbers, PHONE_RE, urlsIn } from './numbers';
+import { extractNumbers, PHONE_RE, phonesIn, urlsIn } from './numbers';
 import { isReceivingAddressFact } from './policy';
 import { codeCandidates } from '../calc/channel-post';
 
@@ -317,7 +317,7 @@ export function personalBits(text: string, knownNames: readonly (string | null |
   const t = normalizeDigits(text);
   const out: string[] = [];
   out.push(...codesIn(t));
-  for (const m of t.matchAll(PHONE_RE)) out.push(m[0]);
+  for (const p of phonesIn(t)) out.push(p.raw);
   const folded = foldedText(t);
   for (const n of foldedNeedles(knownNames)) if (nameRe(n.folded, 'u').test(folded)) out.push(n.name);
   return out;

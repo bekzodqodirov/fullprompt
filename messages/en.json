@@ -6727,6 +6727,8 @@
       "auto_agent_off": "Switch the AI seller on first.",
       "auto_not_work_account": "Mark the number as «Work number» first.",
       "auto_bad_value": "Invalid value — tick at least one kind.",
+      "auto_bad_per_day": "Enter a whole number from 1 to {max} — or leave the box empty (no limit).",
+      "auto_bad_caps": "Enter whole numbers: 1 to {dayMax} a day, 1 to {hourMax} an hour — or leave a box empty (the default).",
       "auto_stop_not_found": "This reply does not go by itself.",
       "auto_stop_not_account_holder": "This reply is not from your account.",
       "auto_stop_pressed": "Too late — the AI approved the reply itself. To stop it, press «Cancel».",
@@ -6741,7 +6743,7 @@
       "lesson_not_teachable": "The text on this card was not written by the AI — a correction is given on a reply the AI wrote.",
       "lesson_empty": "The lesson is empty.",
       "lesson_too_long": "The lesson is too long — up to 500 characters, as a short rule.",
-      "lesson_money": "A price cannot be a lesson — prices come from the tools and the settings.",
+      "lesson_money": "A price cannot be a lesson — prices come from the tools and the settings. If this number is not a price, write it as a word (for example: “once”).",
       "lesson_personal": "The text carries customer details (name, code, phone) — a lesson is read in every chat.",
       "lesson_already": "Already saved.",
       "lesson_confirmed": "The lesson is already saved."

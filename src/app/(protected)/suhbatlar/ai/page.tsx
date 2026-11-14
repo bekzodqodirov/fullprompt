@@ -132,8 +132,13 @@ function DraftCard({ d, viewerId, t }: { d: WebDraft; viewerId: string; t: T }) 
         autoWaiting={d.autoWaiting}
       />
       {/* «📝 Tuzatish» wherever the words are the machine's — for everybody the page admits; only the holder's
-          lesson on a reply still waiting also rewrites it (spec SPEC-P1-v2 §3.1, §3.4). */}
-      {d.teach && <LessonButton draftId={d.id} rewrites={d.lessonRewrites && d.managerUserId === viewerId} />}
+          lesson on a reply still waiting also rewrites it (spec SPEC-P1-v2 §3.1, §3.4). ONE expression before and
+          after his save: the save marks the reply as being rewritten (`teach` false) and revalidates, and its answer
+          — which older lesson fell out of the prompt — lives in this component's state: unmounted, it was on
+          screen for a fifth of a second. While rewriting, the place stays and only the opener goes. */}
+      {(d.teach || d.lessonRewriting) && (
+        <LessonButton draftId={d.id} teach={d.teach} rewrites={d.lessonRewrites && d.managerUserId === viewerId} />
+      )}
     </article>
   );
 }
@@ -262,7 +267,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
                     <pre className="whitespace-pre-wrap font-sans text-sm text-ink-900 [overflow-wrap:anywhere]">
                       {d.cardText}
                     </pre>
-                    {d.teach && <LessonButton draftId={d.id} rewrites={false} />}
+                    {d.teach && <LessonButton draftId={d.id} teach rewrites={false} />}
                   </article>
                 );
               })}
@@ -295,7 +300,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
                   ) : (
                     <p className="text-xs text-ink-500">{t('notHolder', { name: d.holderName })}</p>
                   )}
-                  {d.teach && <LessonButton draftId={d.id} rewrites={false} />}
+                  {d.teach && <LessonButton draftId={d.id} teach rewrites={false} />}
                 </article>
               ))}
             </section>
@@ -623,7 +628,7 @@ async function SettingsSection({
           <p className="text-sm" data-testid="agent-caps-now">
             {t('capsNow', { day: caps.dayCap, hour: caps.hourCap })}
           </p>
-          <SendCapsForm stored={caps.stored} editable={holder || superAdmin} />
+          <SendCapsForm stored={caps.stored} editable={holder || superAdmin} bounds={{ dayMax: SEND_CAP_BOUNDS.day.max, hourMax: SEND_CAP_BOUNDS.hour.max }} />
           {/* The China column he vouched for (0148, spec §1.6): estimate replies wait for his ✅ after it changes. */}
           <div className="space-y-1 border-t border-line pt-2" data-testid="agent-tariff">
             <p className="text-sm" data-testid="agent-tariff-state">
@@ -850,7 +855,7 @@ function AutoSection({
                   )}
                 </div>
                 {/* Why it was wrong — a lesson for every later reply; a reply that went is never rewritten. */}
-                <LessonButton draftId={row.draftId} rewrites={false} />
+                <LessonButton draftId={row.draftId} teach rewrites={false} />
               </li>
             ))}
           </ul>

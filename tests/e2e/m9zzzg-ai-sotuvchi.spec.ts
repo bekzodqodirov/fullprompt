@@ -23,8 +23,10 @@ import postgres from 'postgres';
  *     tab «🤖 O‘zi yuborish» (0145) offers HIM the four kinds and says, BEFORE
  *     any press, why it cannot be switched on — the agent off, the number not
  *     «Ish raqami» — with the switch not offered (fix pass B, C9): nothing
- *     written, so nothing to put back; the owner (not the holder) is shown
- *     the same panel with neither;
+ *     written, so nothing to put back; a wrong number in the daily-count box
+ *     and in the account limits is refused in a sentence that names its own
+ *     bounds (0148 fix) — refused, so nothing written either; the owner (not
+ *     the holder) is shown the same panel with neither;
  *  4. cleanup, a FINAL TEST (#183): agent_config is a singleton
  *     CONFIGURATION row every later spec and the app's sweep read — it is put
  *     back exactly, and the fixture rows are deleted. The same restore runs
@@ -265,10 +267,28 @@ test('the holder is offered «O‘zi yuborish», and is told BEFORE any press wh
   await expect(auto.getByTestId('agent-auto-arm')).toBeDisabled();
   await expect(auto.getByTestId('agent-auto-category-faq')).toBeEnabled();
   await fitsThePhone(page);
+  // A wrong NUMBER is said as a number (review of 0148 as built): the daily count and the account limits each
+  // name their own bounds — the kinds form's «…отметьте хотя бы один вид» told a person who had typed a number
+  // to tick a box. Refused before anything is written, and the refused box keeps what he typed.
+  const perDay = auto.getByTestId('agent-auto-per-day');
+  await perDay.getByTestId('agent-auto-per-day-input').fill('0');
+  await perDay.getByTestId('agent-auto-per-day-save').click();
+  await expect(perDay.getByTestId('agent-error')).toContainText('1000');
+  await expect(perDay.getByTestId('agent-auto-per-day-input')).toHaveValue('0');
+  const caps = page.getByTestId('agent-caps-form');
+  await caps.getByTestId('agent-caps-dayCap').fill('500');
+  await caps.getByTestId('agent-caps-save').click();
+  await expect(caps.getByTestId('agent-error')).toContainText('200');
+  await expect(caps.getByTestId('agent-error')).toContainText('100');
+  await fitsThePhone(page);
   const sql = database();
   try {
-    const [row] = await sql<{ armed_at: Date | null }[]>`SELECT armed_at FROM agent_auto_config WHERE id = 1`;
+    const [row] = await sql<{ armed_at: Date | null; per_day: number | null }[]>`SELECT armed_at, per_day FROM agent_auto_config WHERE id = 1`;
     expect(row!.armed_at).toBeNull();
+    expect(row!.per_day).toBeNull();
+    const [stored] = await sql<{ day_cap: number | null; hour_cap: number | null }[]>`SELECT day_cap, hour_cap FROM agent_send_caps WHERE id = 1`;
+    expect(stored?.day_cap ?? null).toBeNull();
+    expect(stored?.hour_cap ?? null).toBeNull();
   } finally {
     await sql.end();
   }

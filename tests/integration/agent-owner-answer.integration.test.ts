@@ -41,6 +41,22 @@ vi.mock('@/modules/wms/agent/kb', async (original) => {
   };
 });
 
+/**
+ * `answerStale` with a failure a test may arm — «the chat could not be read» is a database blink no fixture
+ * reproduces. The gate's reader (auto-send `answerStaleOf`) must fail CLOSED on it. A pass-through otherwise.
+ */
+const staleHook = vi.hoisted(() => ({ fail: false }));
+vi.mock('@/modules/wms/agent/owner-answer', async (original) => {
+  const real = await original<typeof import('@/modules/wms/agent/owner-answer')>();
+  return {
+    ...real,
+    answerStale: async (...args: Parameters<typeof real.answerStale>) => {
+      if (staleHook.fail) throw new Error('chat not read');
+      return real.answerStale(...args);
+    },
+  };
+});
+
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -59,6 +75,7 @@ import {
   roles,
   tgAccountGuard,
   tgAccounts,
+  tgChatRules,
   tgMessages,
   userRoles,
   users,
@@ -67,10 +84,10 @@ import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { ANSWER_NOT_LIVE, ANSWER_TAKEN, ANSWER_WORDS, agentPress, agentText } from '@/modules/wms/agent/bot-door';
 import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, FROM_ANSWER_LINE } from '@/modules/wms/agent/card-io';
 import { pressDueAutos, readAutoConfig, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
-import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
+import { readAgentConfig, __forgetAgentFullP1Ready, __pretendAgentFullP1Behind, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { agentSweep, releaseForgottenAnswers } from '@/modules/wms/agent/jobs';
-import { ANSWER_CONTACT_WORDS, ownerPersonalOf } from '@/modules/wms/agent/owner-answer';
+import { ANSWER_CONTACT_WORDS, answerContactWords, ownerPersonalOf } from '@/modules/wms/agent/owner-answer';
 import { __restoreSendCaps, readSendCaps } from '@/modules/wms/agent/send-caps';
 import { markDeleted } from '@/modules/wms/crm/message-flags';
 import { applyEdit } from '@/modules/wms/crm/telegram-accounts';
@@ -290,6 +307,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   queued.jobs.length = 0;
   kbHook.beforeWrite = null;
+  staleHook.fail = false;
   await clearChat();
   await db
     .update(agentConfig)
@@ -501,7 +519,9 @@ describe('the question, the ✍️ press, his answer (spec §2.2)', () => {
     await agentPress(ownerId, 'j', q.id, undefined);
     queued.jobs.length = 0;
     const reply = await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, 'Shu raqamga qo‘ng‘iroq qilsin: +998 90 123 45 67', 1);
-    expect(reply?.text).toBe(ANSWER_CONTACT_WORDS);
+    // The door's own second fence names what it read, as the slot does (owner-answer `answerContactWords`).
+    expect(reply?.text).toBe(answerContactWords({ code: 'contact', what: 'phone', read: '+998 90 123 45 67' }));
+    expect(reply?.text.startsWith(ANSWER_CONTACT_WORDS.slice(0, 40))).toBe(true);
     expect((await draftOf(q.id)).policy).not.toHaveProperty('ownerAnswer');
     expect(queued.jobs).toHaveLength(0);
   });
@@ -584,6 +604,42 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect((old!.payload as { live?: unknown }).live).toBe(false);
   });
 
+  /**
+   * The review of 0148 as built (bot lens), end to end. «A phone» was any nine digits in a row, at three places at
+   * once: the door refused the range, the figure reader BLANKED it (so his answer lent the redraft no source), and
+   * G6 called the reply repeating it «another's phone». One reader now (numbers `phonesIn`): what the door takes as
+   * a fact is a source to the redraft and a figure to G1.
+   */
+  it.each([
+    ["Rastamojka taxminan 10000-12000 dollar bo'ladi", (tag: string) => `Rastamojka taxminan 10000-12000 dollar bo‘ladi ${tag}.`, ['10000 $', '12000 $']],
+    ["Yetkazib berish 100 000 - 150 000 so'm", (tag: string) => `Toshkent ichida yetkazib berish 100 000 - 150 000 so‘m ${tag}.`, ['100 000 so‘m', '150 000 so‘m']],
+  ] as const)('an answer with a price RANGE («%s»): taken, its figures HIS in the ledger — a card with ✅, never «another’s phone», never pressed', async (answer, reply, values) => {
+    const q = await question();
+    const job = await answered(q.id, answer);
+    const out = await redraft(job, reply(TAG));
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft', blocked: false });
+    const r = await draftOf((out as { draftId: string }).draftId);
+    const policy = r.policy as { ledger: { raw: string; kind: string; origin?: string }[]; blocks: { code: string }[]; fromAnswer: { personal: string[]; figures: boolean } };
+    expect(policy.blocks).toEqual([]);
+    // Each end of the range is a money line of its own, in the range's currency, vouched for by HIM.
+    expect(policy.ledger.map((l) => [l.raw, l.kind, l.origin])).toEqual(values.map((v) => [v, 'money', 'owner']));
+    // His figures are not «another customer's» (a phone is a personal bit) — and still come back to him.
+    expect(policy.fromAnswer).toMatchObject({ personal: [], figures: true });
+    const v = await verdictOf(r.id);
+    expect(v!.eligible).toBe(false);
+    expect(v!.reasons).toContain('owner_figure');
+  });
+
+  it('…while a range his answer never held is blocked as a FIGURE (G1), and a phone the reply invents as a phone (G6)', async () => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, rastamojka qilamiz');
+    const out = await redraft(job, `Rastamojka taxminan 10000-12000 dollar bo‘ladi, +998 90 123 45 67 ga yozing ${TAG}.`);
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft', blocked: true });
+    const blocks = ((await draftOf((out as { draftId: string }).draftId)).policy as { blocks: { code: string; detail?: string }[] }).blocks;
+    expect(blocks.filter((b) => b.code === 'number_unsourced').map((b) => b.detail)).toEqual(['10000 $', '12000 $']);
+    expect(blocks.filter((b) => b.code === 'foreign_phone').map((b) => b.detail)).toEqual(['+998 90 123 45 67']);
+  });
+
   it('an answer with a day count: a card, never pressed', async () => {
     const q = await question();
     const job = await answered(q.id, 'VED 3 kunda hisoblaydi');
@@ -647,6 +703,57 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect(other).toContain(`Boshqa Mijoz ${SUFFIX}`);
     expect(await ownerPersonalOf({ text: `${otherClientCode} da ham shunday`, ...own, cargoAllowed: true })).toEqual([otherClientCode]);
     expect(await ownerPersonalOf({ text: 'Ha, suyuqlik olmaymiz', ...own, cargoAllowed: false })).toEqual([]);
+  });
+
+  /**
+   * The review of 0148 as built (tests lens): `owner_personal` for the chat's OWN code was proven on the pure
+   * function alone — the run hands it «has this chat proved it is that client» (`identity.cargoAllowed`), and that
+   * hand-off could be hard-wired to «yes» with the suite green: a chat bound by hand would get, by relay, the cargo
+   * the tools refuse it.
+   */
+  it('a chat bound BY HAND (no proof it is that client): his answer naming its own code comes back to him — `owner_personal`, through the run', async () => {
+    const [rule] = await db
+      .insert(tgChatRules)
+      .values({ managerUserId: ownerId, peerId: PEER, decision: 'include', clientId, decidedBy: ownerId, decidedAt: new Date() })
+      .returning({ id: tgChatRules.id });
+    try {
+      const { r } = await answeredWith({ answer: `OA${SUFFIX} ning yuki haqida: suyuqlik olmaymiz`, reply: `Afsuski, suyuq yuk olmaymiz ${TAG}.` });
+      expect((r.policy as { fromAnswer: { personal: string[] } }).fromAnswer.personal).toEqual([`OA${SUFFIX}`]);
+      await comesBack(r, 'owner_personal');
+    } finally {
+      await db.delete(tgChatRules).where(eq(tgChatRules.id, rule!.id));
+    }
+  });
+
+  it('…while the same answer in a chat that IS that client by its own phone names nobody else', async () => {
+    const { r } = await answeredWith({ answer: `OA${SUFFIX} ning yuki haqida: suyuqlik olmaymiz`, reply: `Afsuski, suyuq yuk olmaymiz ${TAG}.` });
+    expect((r.policy as { fromAnswer: { personal: string[] } }).fromAnswer.personal).toEqual([]);
+    expect((await verdictOf(r.id))!.reasons).not.toContain('owner_personal');
+  });
+
+  it('a line the customer wrote after the question and DELETED before his answer asks nothing anew: not stale, the reply goes', async () => {
+    const { q, r } = await answeredWith({
+      answer: 'Ha, olamiz',
+      reply: `Ha, suyuq atir ham olib kelamiz ${TAG}.`,
+      meanwhile: async () => {
+        const later = await inbound(`Yana 2 kub kiyim ham bor ${TAG}`);
+        expect(await markDeleted(ownerId, [later])).toBe(1);
+      },
+    });
+    expect(r.anchorTgMessageId).toBe(q.anchorTgMessageId);
+    const v = await verdictOf(r.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+  });
+
+  it('the chat cannot be READ at the press (a database blink): the redraft is stale — the press fails closed', async () => {
+    const { r } = await answeredWith({ answer: 'Ha, olamiz', reply: `Ha, suyuq atir ham olib kelamiz ${TAG}.` });
+    expect(await verdictOf(r.id)).toMatchObject({ eligible: true, state: 'waiting' });
+    staleHook.fail = true;
+    expect(await pressDueAutos(DUE)).toBe(0);
+    const v = await verdictOf(r.id);
+    expect(v).toMatchObject({ state: 'refused' });
+    expect(v!.reasons).toContain('answer_stale');
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, r.id))).toHaveLength(0);
   });
 
   it('a redraft whose answer mark cannot be read never goes by itself — the press fails closed', async () => {
@@ -1026,6 +1133,87 @@ describe('the redraft from his answer (spec §2.2)', () => {
     const still = await draftOf(q.id);
     expect(still.status).toBe('editing');
     expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(1);
+  });
+
+  /**
+   * The review of 0148 as built (tests lens): only ✏️ and a second answer were raced against the redraft — his ✅,
+   * ❌ and 🙋 landing in the model's long middle had no test, and the two fences of `createDraft`'s answer branch
+   * («still editing», «still the chat's live draft») could both go with the suite green.
+   */
+  it.each([
+    ['send', 'approved'],
+    ['reject', 'rejected'],
+    ['human', 'taken_over'],
+  ] as const)('his %s landing WHILE the redraft is written: the question is decided (%s) and the redraft writes nothing — `question_gone`', async (decision, status) => {
+    const q = await question();
+    const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    const during = (async () => {
+      const r = await decideDraft(actorOf(ownerId), q.id, decision, {}, { actorId: ownerId });
+      expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+      return {
+        stopReason: 'tool_use',
+        content: [{ type: 'tool_use', id: 't1', name: 'compose_reply', input: compose(`Afsuski, suyuq yuk olmaymiz ${TAG}.`).input }],
+        usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      } as ModelResponse;
+    }) as CallModel;
+    const out = await handleOwnerAnswer(job, { callModel: during, now: () => T1 });
+    expect(out).toMatchObject({ outcome: 'stood_down', reason: 'question_gone' });
+    expect((await draftOf(q.id)).status).toBe(status);
+    // No second draft in the chat: the redraft's own transaction found the question decided.
+    expect(await db.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(1);
+    // …and what is said is that the question was decided — never «AI xato qildi».
+    expect((await notices()).some((n) => n.text.includes(QUESTION_DECIDED_WORDS))).toBe(true);
+  });
+
+  it('a run that FAILS hands the question back — and the customer line that stood down while he was answering is asked again', async () => {
+    const q = await question();
+    await agentPress(ownerId, 'j', q.id, undefined);
+    const next = await inbound(`Va qachon jo'natasiz ${TAG}?`);
+    // The customer's next line stands down for the card he is answering.
+    await handleInbound(
+      { managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(next), origin: 'live' },
+      { callModel: scripted([compose(`Tez orada ${TAG}.`)]), now: () => T0 },
+    );
+    botMsgSeq += 1;
+    queued.jobs.length = 0;
+    await agentText(ownerId, { kind: 'agent_answer', payload: { draftId: q.id } }, 'Ha, suyuqlik olmaymiz', botMsgSeq);
+    const job = queued.jobs.find((j) => j.name === JOB_AGENT_OWNER_ANSWER)!.data as AgentOwnerAnswerJob;
+    queued.jobs.length = 0;
+    const failing = (async () => {
+      throw new Error('model down');
+    }) as CallModel;
+    const out = await withModelKey(() => handleOwnerAnswer(job, { callModel: failing, now: () => T1 }));
+    expect(out).toMatchObject({ outcome: 'error' });
+    expect((await draftOf(q.id)).status).toBe('pending');
+    const again = queued.jobs.filter((j) => j.name === JOB_AGENT_INBOUND);
+    expect(again).toHaveLength(1);
+    expect(again[0]!.data).toMatchObject({ peerId: String(PEER), anchorTgMessageId: String(next), origin: 'redraft' });
+  });
+
+  it('one migration behind 0148 the ✍️ press is refused in words — nothing armed, the question untouched', async () => {
+    const q = await question();
+    __pretendAgentFullP1Behind();
+    try {
+      const press = await agentPress(ownerId, 'j', q.id, undefined);
+      expect(press.toast).toBe(ANSWER_WORDS.not_ready);
+      expect(press.arm).toBeUndefined();
+      expect((await draftOf(q.id)).status).toBe('pending');
+      expect((await draftOf(q.id)).policy).not.toHaveProperty('answering');
+    } finally {
+      __forgetAgentFullP1Ready();
+    }
+  });
+
+  it('while the AI writes from his answer the question’s card offers no 📝 — a lesson there would rewrite a reply that is already being rewritten', async () => {
+    const q = await question();
+    const [asked] = await cardRows(q.id);
+    // The question the machine should not have had to ask teaches…
+    expect((asked!.payload as { teach?: unknown }).teach).toBe(true);
+    await answered(q.id, 'Ha, suyuqlik olmaymiz');
+    // …until his answer is in and the worker is on it.
+    const [answering] = await cardRows(q.id);
+    expect((answering!.payload as { teach?: unknown; text: string }).text).toContain(ANSWER_TAKEN_LINE);
+    expect((answering!.payload as { teach?: unknown }).teach).toBe(false);
   });
 
   it('his answer is a person in the chat: two machine presses before it do not refuse the redraft as a streak', async () => {

@@ -30,6 +30,7 @@ import {
   agentConversations,
   agentDrafts,
   agentLessons,
+  agentSendCaps,
   clients,
   notifications,
   roles,
@@ -50,6 +51,8 @@ import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
 import { endIntake, HOLD_MS, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { retireOnHumanReply } from '@/modules/wms/agent/jobs';
+import { DEFAULT_SEND_CAPS, __restoreSendCaps, readSendCaps, type SendCaps } from '@/modules/wms/agent/send-caps';
+import { currentTariffFingerprint } from '@/modules/wms/agent/tariff-watch';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
 
 const STAMP = String(Date.now()).slice(-7);
@@ -435,11 +438,59 @@ describe('«✍️ Savolga javob» — his answer to the AI’s question, never 
     await pressAnswer(me, draftId);
     const m = h.mark();
     await h.handle(tg.text(me.chat, 'Shu raqamga qo‘ng‘iroq qilsin: +998 90 123 45 67'));
-    expect(h.textsTo(me.chat, m).some((t) => t.startsWith('Manzil yoki telefonni ✏️ bilan yozing'))).toBe(true);
+    const [words] = h.textsTo(me.chat, m).filter((t) => t.startsWith('Manzil yoki telefonni ✏️ bilan yozing'));
+    // …and the words name the very digits that were read as the phone.
+    expect(words).toContain('«+998 90 123 45 67»');
     expect(await answerOf(draftId)).toBeNull();
     expect(readWait(BigInt(me.chat), 'agent_answer')).not.toBeNull();
     await h.handle(tg.text(me.chat, `Olmaymiz ${STAMP}`));
     expect(await answerOf(draftId)).toBe(`Olmaymiz ${STAMP}`);
+  });
+
+  /**
+   * The review of 0148 as built (bot lens), through the handlers the server runs: §2.2 expects him to answer with
+   * MONEY and DAYS, and each of these was refused «Manzil yoki telefonni ✏️ bilan yozing…» — nothing stored, nothing
+   * queued, the wait kept, so every retry of the same shape heard the same sentence about a phone he never wrote.
+   */
+  it('a price range, a sum in so‘m, a date: each is his ANSWER — stored and queued, never «manzil yoki telefon»', async () => {
+    const facts = [
+      "Rastamojka taxminan 10000-12000 dollar bo'ladi",
+      "Yetkazib berish 100 000 - 150 000 so'm",
+      '9000-10000 dollar',
+      "120 000 000 so'm",
+      'Yuk 20.11.2026-25.11.2026 orasida keladi',
+      'Yuk 15.11.2026 10:00 da keladi',
+    ];
+    for (const fact of facts) {
+      vi.mocked(enqueue).mockClear();
+      const { me, draftId } = await owner();
+      await askOn(draftId);
+      await pressAnswer(me, draftId);
+      const m = h.mark();
+      await h.handle(tg.text(me.chat, fact));
+      expect(h.textsTo(me.chat, m).filter((t) => t.startsWith('Manzil yoki telefonni')), fact).toEqual([]);
+      expect(h.textsTo(me.chat, m).some((t) => t.startsWith('✅ Javobingiz olindi')), fact).toBe(true);
+      expect(await answerOf(draftId), fact).toBe(fact);
+      expect(answerJobs(), fact).toHaveLength(1);
+      expect(readWait(BigInt(me.chat), 'agent_answer'), fact).toBeNull();
+    }
+  });
+
+  it('digits with no unit beside them are a phone’s shape: the words NAME what was read and how to say it — and the same fact with its unit is taken', async () => {
+    const { me, draftId } = await owner();
+    await askOn(draftId);
+    await pressAnswer(me, draftId);
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, 'Narxi 9000-10000'));
+    const [words] = h.textsTo(me.chat, m).filter((t) => t.startsWith('Manzil yoki telefonni ✏️ bilan yozing'));
+    expect(words).toContain('«9000-10000» telefon raqamiga o‘xshaydi');
+    expect(words).toContain('birligi bilan yozing');
+    expect(await answerOf(draftId)).toBeNull();
+    expect(answerJobs()).toHaveLength(0);
+    expect(readWait(BigInt(me.chat), 'agent_answer')).not.toBeNull();
+    await h.handle(tg.text(me.chat, 'Narxi 9000-10000 dollar'));
+    expect(await answerOf(draftId)).toBe('Narxi 9000-10000 dollar');
+    expect(answerJobs()).toHaveLength(1);
   });
 
   it('a dead ✍️ wait (his own Telegram reply retired the question) lets a plain text through to the ladder', async () => {
@@ -704,9 +755,18 @@ describe('«📝 Tuzatish» — his lesson for the AI, never the customer’s wo
     await pressLesson(me, draftId);
     const m = h.mark();
     await h.handle(tg.text(me.chat, 'Avia narxini 17 $ deb ayt'));
-    expect(h.textsTo(me.chat, m)).toContain('«17» — Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi.');
+    // The words name the figure read as the price, and the way out for a number that is none (0148 fix).
+    expect(h.textsTo(me.chat, m)).toContain(
+      '«17» — Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi. Bu son narx bo‘lmasa — uni so‘z bilan yozing (masalan: «bir marta»).',
+    );
     expect(await lessonsOf(me)).toHaveLength(0);
     expect(readWait(BigInt(me.chat), 'agent_lesson')).not.toBeNull();
+    // A lesson ABOUT the price with a count in it is no price: echoed like any other (and dropped — one lesson below).
+    const about = h.mark();
+    await h.handle(tg.text(me.chat, 'Narx haqida 1 marta ayt, takrorlama'));
+    expect(h.textsTo(me.chat, about).some((t) => t.startsWith('📝 Saboq: «Narx haqida 1 marta ayt, takrorlama»'))).toBe(true);
+    await db.delete(agentLessons).where(eq(agentLessons.createdBy, me.id));
+    await pressLesson(me, draftId);
     // …and so is the chat's own customer by ONE word of the name.
     const named = h.mark();
     await h.handle(tg.text(me.chat, 'Zinapoya bilan doim rus tilida gaplash'));
@@ -812,6 +872,44 @@ describe('«📝 Tuzatish» — his lesson for the AI, never the customer’s wo
     expect(readWait(BigInt(me.chat), 'agent_lesson')).toMatchObject({ payload: { draftId } });
     await h.handle(tg.text(me.chat, RULE));
     expect((await lessonsOf(me)).map((l) => l.text)).toEqual([RULE]);
+  });
+});
+
+/**
+ * «✅ Tarif to'g'ri» on the 14-day notice, through the handlers the server runs (review of 0148 as built, bot lens):
+ * every outcome was a toast alone — gone in seconds — so nothing in the chat recorded that the China column was
+ * vouched for, the notice kept its button, and «tarif o'zgardi»'s two-step instruction vanished with the toast.
+ */
+describe('«✅ Tarif to‘g‘ri» is answered where it stays (spec SPEC-P1-v2 §1.6)', () => {
+  let caps: SendCaps = DEFAULT_SEND_CAPS;
+  beforeAll(async () => {
+    caps = await readSendCaps();
+  });
+  afterAll(async () => {
+    await __restoreSendCaps(caps);
+  });
+
+  it('the holder’s press: a MESSAGE says the column is confirmed, the notice’s button goes, and the column is vouched for', async () => {
+    const { me } = await owner();
+    await db.update(agentSendCaps).set({ tariffConfirmedAt: null }).where(eq(agentSendCaps.id, 1));
+    const stamp = await currentTariffFingerprint();
+    const notice = await sentCopy(me, 'AgentTariffNotice', { holderId: me.id, fingerprint: stamp });
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, notice, `ag:t:${me.id}:${stamp}`));
+    expect(h.textsTo(me.chat, m).some((t) => t.startsWith('✅ Xitoy tarifi tasdiqlandi'))).toBe(true);
+    expect(h.since(m).api.some((c) => c.method === 'editMessageReplyMarkup')).toBe(true);
+    expect((await readSendCaps()).tariffConfirmedAt).not.toBeNull();
+  });
+
+  it('a column written since the notice: the instruction is a MESSAGE too, nothing is confirmed and the button stays', async () => {
+    const { me } = await owner();
+    await db.update(agentSendCaps).set({ tariffConfirmedAt: null }).where(eq(agentSendCaps.id, 1));
+    const notice = await sentCopy(me, 'AgentTariffNotice', { holderId: me.id, fingerprint: '00000000' });
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, notice, `ag:t:${me.id}:00000000`));
+    expect(h.textsTo(me.chat, m)).toContain('Tarif xabardan keyin o‘zgardi — «/admin/tarif»ni qayta ko‘rib, «Suhbatlar → AI sotuvchi» sahifasida tasdiqlang.');
+    expect(h.since(m).api.some((c) => c.method === 'editMessageReplyMarkup')).toBe(false);
+    expect((await readSendCaps()).tariffConfirmedAt).toBeNull();
   });
 });
 

@@ -18,6 +18,7 @@ import {
   ledgerLine,
   phoneDigits,
   PHONE_RE,
+  phonesIn,
   placedLedger,
   statementsOf,
   urlsIn,
@@ -2680,9 +2681,10 @@ export function isReceivingAddressFact(text: string): boolean {
 export function foreignPhones(text: string, allowed: readonly string[]): string[] {
   const ok = new Set(allowed.map(phoneDigits).filter((d) => d.length >= 9).map((d) => d.slice(-9)));
   const found: string[] = [];
-  for (const m of text.matchAll(PHONE_RE)) {
-    const d = phoneDigits(m[0]);
-    if (!ok.has(d.slice(-9))) found.push(m[0]);
+  // What the text HOLDS as a phone (numbers `phonesIn`): an amount with its unit and a date are figures, and G1's.
+  for (const p of phonesIn(text)) {
+    const d = phoneDigits(p.raw);
+    if (!ok.has(d.slice(-9))) found.push(p.raw);
   }
   return found;
 }

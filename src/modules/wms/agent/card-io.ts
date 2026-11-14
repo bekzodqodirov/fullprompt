@@ -8,7 +8,7 @@ import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
 import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
 import type { AutoCardState } from './auto-send';
-import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, cardTeaches, CardTooLong, digestBody, type CardInput } from './card';
+import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, cardTeaches, CardTooLong, digestBody, lessonRewritingNow, type CardInput } from './card';
 import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -245,7 +245,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
       if (d.actionStatus === 'failed') return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.`;
       // His lesson is rewriting this reply (§3.4) — until the rewrite lands, or his own words replace it (✏️).
-      if (((d.policy ?? {}) as Partial<DraftPolicyJson>).lessonRedraft && d.finalBody === null) return LESSON_REDRAFT_LINE;
+      if (lessonRewritingNow(d)) return LESSON_REDRAFT_LINE;
       // The AI's rewrite after his lesson, and its reply to his ✍️ answer, each say where they came from — until
       // his own words replace them (✏️).
       if (((d.policy ?? {}) as Partial<DraftPolicyJson>).fromLesson && d.finalBody === null) return FROM_LESSON_LINE;

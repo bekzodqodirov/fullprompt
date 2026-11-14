@@ -312,10 +312,12 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
       return false;
     }
     // An address, a phone, Chinese text: refused in words and the wait KEPT — his next text is still the answer.
-    const { answerTextRefusal, ANSWER_CONTACT_WORDS } = await import('../../wms/agent/owner-answer');
-    if (live && answerTextRefusal(msg.text) !== null) {
+    // The words name WHAT was read as one — a figure with no unit beside it is told how to say itself.
+    const { answerTextRefusal, answerContactWords } = await import('../../wms/agent/owner-answer');
+    const contact = live ? answerTextRefusal(msg.text) : null;
+    if (contact !== null) {
       await markOnce(await messageKey(ctx, 'wait'));
-      await ctx.reply(ANSWER_CONTACT_WORDS);
+      await ctx.reply(answerContactWords(contact));
       return true;
     }
   }

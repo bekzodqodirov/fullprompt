@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { cardAsks, cardExtra } from '@/modules/wms/agent/card';
 import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, FROM_ANSWER_LINE, answeredNow, renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
-import { numberLedger, ownerAnswerSources, type NumberSource } from '@/modules/wms/agent/numbers';
-import { ANSWER_CONTACT_WORDS, answerHoldsFigure, answerTextRefusal, ownerAnswerInstruction } from '@/modules/wms/agent/owner-answer';
+import { extractNumbers, numberLedger, ownerAnswerSources, phonesIn, type NumberSource } from '@/modules/wms/agent/numbers';
+import { ANSWER_CONTACT_WORDS, answerContactWords, answerHoldsFigure, answerTextRefusal, ownerAnswerInstruction } from '@/modules/wms/agent/owner-answer';
+import { foreignPhones } from '@/modules/wms/agent/policy';
 import { answerNoDraftWhy } from '@/modules/wms/agent/owner-answer-job';
 import { stableHead } from '@/modules/wms/agent/prompt';
 import { memoryFor, withAviaGuard, withRailRule, type ComposeReply, type RunResult } from '@/modules/wms/agent/run';
@@ -206,7 +207,7 @@ describe('«javobingizda raqam bo‘lsa — karta» is asked of HIS words, never
 describe('what the bot refuses to take as an answer (§2.2 — an address or a phone is his ✏️ text)', () => {
   it('a phone, a link, Chinese text: refused in words', () => {
     for (const text of ['Telefoni +998 90 123 45 67', 'https://example.com/manzil', '义乌市 稠州北路 2255号']) {
-      expect(answerTextRefusal(text), text).toBe('contact');
+      expect(answerTextRefusal(text)?.code, text).toBe('contact');
     }
     expect(ANSWER_CONTACT_WORDS).toContain('✏️');
   });
@@ -214,6 +215,119 @@ describe('what the bot refuses to take as an answer (§2.2 — an address or a p
   it('a plain fact is taken', () => {
     expect(answerTextRefusal('Ha, suyuqlik olmaymiz')).toBeNull();
     expect(answerTextRefusal('VED 1200$ hisobladi')).toBeNull();
+  });
+
+  /**
+   * The review of 0148 as built (bot lens): §2.2 expects him to answer with MONEY and DAYS — its own example is a
+   * price — and «a phone» was any nine digits joined by spaces, dashes or dots, so two figures of a range, a sum in
+   * so'm or a date read as one phone and the fact was refused with a sentence about an address he never wrote. The
+   * review's six first, then their neighbours.
+   */
+  it.each([
+    "Rastamojka taxminan 10000-12000 dollar bo'ladi",
+    "Yetkazib berish 100 000 - 150 000 so'm",
+    '9000-10000 dollar',
+    "120 000 000 so'm",
+    'Yuk 20.11.2026-25.11.2026 orasida keladi',
+    'Yuk 15.11.2026 10:00 da keladi',
+    // …the neighbours: the currency before, glued, other currencies and scripts, a dotted thousand, measures and counts.
+    'Narxi $10000-12000 atrofida',
+    'Rastamojka 10000-12000$',
+    'Растаможка примерно 100 000 - 150 000 сум',
+    'Тахминан 10000-12000 доллар бўлади',
+    '120 000 000 сўм',
+    "150.000.000 so'm atrofida",
+    "Jami 1 250 000 000 so'm",
+    'Bir oyda 10000-15000 kg olib kelamiz',
+    'Zavod 10000-12000 dona chiqaradi',
+    'Yuk 20.11.2026 - 25.11.2026 kunlari keladi',
+    'Yuk 05.12.2026 14:30 da yetib keladi, 06.12.2026 09:00 dan olib ketsa bo‘ladi',
+    'Reys 15.11.2026 da, keyingisi 22.11.2026 da',
+    // …other spellings: a hard space between the thousands, spaced thousands in a range, every currency a reply
+    // may name, another script's digits, a cube and a percent.
+    '120\u00a0000\u00a0000 so‘m',
+    '10 000-12 000 dollar',
+    'Narxi 10000-12000 USD',
+    '10000-12000 yuan bo‘ladi',
+    'هزینه ۱۰۰۰۰-۱۲۰۰۰ دلار است',
+    '10000-12000 у.е.',
+    '100 000-150 000 рублей',
+    '10000-12000 евро',
+    'Bir oyda 10000-12000 kub',
+    'Muddat: 01.12.2026-15.12.2026.',
+  ])('money, a measure or a day is a FACT, never a contact: «%s»', (text) => {
+    expect(answerTextRefusal(text), JSON.stringify(phonesIn(text))).toBeNull();
+    expect(phonesIn(text)).toEqual([]);
+  });
+
+  it.each([
+    ['Telefoni +998 90 123 45 67', '+998 90 123 45 67'],
+    ['Telefoni 90 123 45 67', '90 123 45 67'],
+    ['Telefoni 901234567', '901234567'],
+    ['Telefoni 90-123-45-67', '90-123-45-67'],
+    ['Telefon (90) 123-45-67', '90) 123-45-67'],
+    ['Tel 8 (495) 123-45-67', '8 (495) 123-45-67'],
+    ['Xitoydagi raqami 13800138000', '13800138000'],
+    ['+86 138 0013 8000 ga yozsin', '+86 138 0013 8000'],
+    ['998901234567 ga qo‘ng‘iroq qilsin', '998901234567'],
+    // A card number and a tracking number are no fact for the AI to retype either.
+    ['Karta 8600 1234 5678 9012', '8600 1234 5678 9012'],
+    ['Trek raqami 773812345678', '773812345678'],
+    // A phone beside a date, a price or a unit is still a phone: only an AMOUNT's own shape with its unit is not.
+    ['Tel 901234567, 15.11.2026 dan keyin', '901234567'],
+    ['Telefon 901234567 kun bo‘yi ishlaydi', '901234567'],
+    ['Telefoni 901234567 ta xodimda bor', '901234567'],
+    ['+998901234567 dollar masalasida', '+998901234567'],
+    ['90 123 45 67 dollar masalasida', '90 123 45 67'],
+    ['901-234-567 kg', '901-234-567'],
+    // …and digits with NO unit beside them are nobody's amount: he is told what was read and how to say it.
+    ['Narxi 9000-10000', '9000-10000'],
+    ['Narxi 120 000 000', '120 000 000'],
+    // A range runs up: «90123-4567 dollar» is no range.
+    ['90123-4567 dollar', '90123-4567'],
+    // A phone beside a fact is still the phone: each run is judged on its own.
+    ['Tel 90 123 45 67 dan 10000-12000 dollar so‘rang', '90 123 45 67'],
+    ['25.11.2026 14:00 da, tel 901234567', '901234567'],
+  ])('…while «%s» is still refused — and the words name what was read', (text, read) => {
+    const refused = answerTextRefusal(text);
+    expect(refused).toEqual({ code: 'contact', what: 'phone', read });
+    const words = answerContactWords(refused!);
+    expect(words).toContain(`«${read}»`);
+    expect(words).toContain('✏️');
+    // …and the way out for a fact that is no phone: its unit beside it.
+    expect(words).toMatch(/birligi/u);
+  });
+
+  it('a link and Chinese text are named as what they are', () => {
+    expect(answerTextRefusal('Manzil: https://example.com/manzil')).toEqual({ code: 'contact', what: 'link', read: 'https://example.com/manzil' });
+    expect(answerContactWords(answerTextRefusal('Manzil: https://example.com/manzil')!)).toContain('havola');
+    expect(answerTextRefusal('义乌市 稠州北路 2255号')).toMatchObject({ code: 'contact', what: 'han' });
+    expect(answerContactWords(answerTextRefusal('义乌市 稠州北路 2255号')!)).toContain('xitoycha');
+  });
+
+  it('the fact he was allowed to state reaches the redraft as SOURCES — the same reader on both sides (numbers `phonesIn`)', () => {
+    // What is no phone at the door is no phone to the figure reader, or the redraft quoting it could never keep its ✅.
+    expect(ownerAnswerSources("Rastamojka taxminan 10000-12000 dollar bo'ladi")).toEqual([
+      expect.objectContaining({ value: 10000, kind: 'money', origin: 'owner' }),
+      expect.objectContaining({ value: 12000, kind: 'money', origin: 'owner' }),
+    ]);
+    expect(ownerAnswerSources("Yetkazib berish 100 000 - 150 000 so'm").map((s) => [s.value, s.kind])).toEqual([
+      [100000, 'money'],
+      [150000, 'money'],
+    ]);
+    // The day is read as a day (its hour as a time always was: one plain figure) — before, both were blanked as a phone.
+    expect(extractNumbers('Yuk 15.11.2026 10:00 da keladi').map((f) => [f.raw, f.kind])).toEqual([
+      ['15.11.2026', 'date'],
+      ['10:00', 'plain'],
+    ]);
+    // …and to G6: a reply that repeats his range is not «another's phone» — its figures are G1's to hold.
+    expect(foreignPhones("Rastamojka taxminan 10000-12000 dollar bo'ladi", [])).toEqual([]);
+    expect(foreignPhones('Yuk 20.11.2026-25.11.2026 orasida keladi', [])).toEqual([]);
+    // A phone stays G6's in every spelling, and is never read as a figure.
+    for (const phone of ['+998 90 123 45 67', '90 123 45 67', '901234567', '90-123-45-67', '8600 1234 5678 9012']) {
+      expect(foreignPhones(`Tel: ${phone}`, []), phone).toEqual([phone]);
+      expect(extractNumbers(`Tel: ${phone}`), phone).toEqual([]);
+    }
   });
 });
 

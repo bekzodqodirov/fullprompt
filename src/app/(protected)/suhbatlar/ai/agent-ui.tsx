@@ -45,7 +45,11 @@ import { CATEGORY_KEYS, errorKey } from './labels';
  * No `router.refresh()`: every action revalidates the page itself (#1242).
  */
 
-function useAction() {
+/**
+ * `errorValues`: what a refusal's sentence is filled with — a form whose refusal names its bounds hands them here
+ * (the daily count, the account limits), so no bundle types a constant a second time. Unused by every other key.
+ */
+function useAction(errorValues?: Record<string, number>) {
   const t = useTranslations('agentAi');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +63,7 @@ function useAction() {
         onOk?.(res);
       } else {
         setNote(null);
-        const words = t(errorKey(res.error) as 'errors.unknown');
+        const words = t(errorKey(res.error) as 'errors.unknown', errorValues);
         // A money refusal names the number it read as a price (F7) — never «a price» about a text with none.
         setError(res.detail ? `${words} ${t('errors.figureRead', { figure: res.detail })}` : words);
       }
@@ -739,7 +743,7 @@ function typedCap(raw: string): number | null | 'bad' {
  */
 export function AutoPerDayForm({ current, editable, max }: { current: number | null; editable: boolean; max: number }) {
   const t = useTranslations('agentAi');
-  const { pending, error, run } = useAction();
+  const { pending, error, run } = useAction({ max });
   const [value, setValue] = useState(current === null ? '' : String(current));
   const typed = typedCap(value);
   const changed = typed !== current;
@@ -782,12 +786,15 @@ export function AutoPerDayForm({ current, editable, max }: { current: number | n
 export function SendCapsForm({
   stored,
   editable,
+  bounds,
 }: {
   stored: { dayCap: number | null; hourCap: number | null };
   editable: boolean;
+  /** The most each box takes (send-caps `SEND_CAP_BOUNDS`) — what a refused number is told. */
+  bounds: { dayMax: number; hourMax: number };
 }) {
   const t = useTranslations('agentAi');
-  const { pending, error, run } = useAction();
+  const { pending, error, run } = useAction({ dayMax: bounds.dayMax, hourMax: bounds.hourMax });
   const [values, setValues] = useState({
     dayCap: stored.dayCap === null ? '' : String(stored.dayCap),
     hourCap: stored.hourCap === null ? '' : String(stored.hourCap),
@@ -882,29 +889,33 @@ export function AutoBadButton({ draftId }: { draftId: string }) {
  * also rewrites that reply (`rewrites`, said before he types). The server FIRST, like ✏️: a reply counting down
  * stops before the box opens. Controlled — a refusal keeps what he typed (#463).
  */
-export function LessonButton({ draftId, rewrites }: { draftId: string; rewrites: boolean }) {
+export function LessonButton({ draftId, teach, rewrites }: { draftId: string; teach: boolean; rewrites: boolean }) {
   const t = useTranslations('agentAi');
   const { pending, error, note, run } = useAction();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
+  // `teach` false: the reply is being rewritten from the lesson just saved here — no second 📝, and the save's
+  // answer below stays (the page keeps this component mounted for exactly that).
   return (
     <div className="space-y-2">
-      <button
-        type="button"
-        className="btn-ghost !min-h-8 !px-2 text-xs"
-        disabled={pending}
-        data-testid="agent-lesson-open"
-        onClick={() => {
-          if (open) {
-            setOpen(false);
-            return;
-          }
-          run(() => agentLessonOpenAction(draftId), () => setOpen(true));
-        }}
-      >
-        📝 {t('lessonTeach')}
-      </button>
-      {open && (
+      {teach && (
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-open"
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            run(() => agentLessonOpenAction(draftId), () => setOpen(true));
+          }}
+        >
+          📝 {t('lessonTeach')}
+        </button>
+      )}
+      {teach && open && (
         <div className="space-y-2" data-testid="agent-lesson-box">
           <label className="label" htmlFor={`lesson-${draftId}`}>
             {t('lessonBoxLabel')}

@@ -42,7 +42,7 @@ import { confirmTariffInTx } from './tariff-watch';
 import { capReached, dayRunCounts, OUTBOX_GOING, sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { isFirstAsk, JOB_AGENT_INBOUND, JOB_AGENT_OWNER_ANSWER, nextRedraftAttempt, type AgentInboundJob, type AgentOwnerAnswerJob } from './queues';
-import { ANSWER_WAIT_MS, answerTextRefusal } from './owner-answer';
+import { ANSWER_WAIT_MS, answerTextRefusal, type AnswerContact } from './owner-answer';
 import { isNudge } from './worthy';
 import type { PolicyHit } from './policy';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -1331,10 +1331,12 @@ export async function storeOwnerAnswer(
   messageId: number,
   ctx: AuditContext,
   now: Date = new Date(),
-): Promise<{ ok: true } | { ok: false; code: AnswerRefusal }> {
+): Promise<{ ok: true } | { ok: false; code: AnswerRefusal; contact?: AnswerContact }> {
   const body = text.trim();
   if (!body) return { ok: false, code: 'empty' };
-  if (answerTextRefusal(body)) return { ok: false, code: 'contact' };
+  // What was read as the contact travels with the refusal, so the door's words can name it.
+  const contact = answerTextRefusal(body);
+  if (contact) return { ok: false, code: 'contact', contact };
   const ownerAnswer = { text: body, at: now.toISOString(), messageId };
   const [row] = await db
     .update(agentDrafts)

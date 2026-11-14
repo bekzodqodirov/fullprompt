@@ -151,12 +151,25 @@ export function tariffNoticeText(validThrough: string, day: string): string {
 }
 
 /**
+ * The suites' switch (`AGENT_TARIFF_NOTICE=off`, set by vitest.config and the Playwright server's env — the
+ * `GEO_NETWORK` / `NAV_AUTO` precedent). The notice is ONE claim per table on the one database every test file and
+ * the browser suite's own server share, and any sweep on or after `validThrough − 14 days` takes it: from 2026-12-17
+ * every file that runs `agentSweep` — seven of them, and the e2e server's own minute sweep — would have left the
+ * claim spent on a deactivated fixture holder with a card queued to him. Configuration left behind (#183), and a
+ * suite whose behaviour changes by the calendar (review of 0148 as built). The notice's own tests switch it on.
+ */
+export function tariffNoticeOn(): boolean {
+  return process.env.AGENT_TARIFF_NOTICE !== 'off';
+}
+
+/**
  * The 14-day notice (spec §1.6): ONCE per `validThrough` — the claim is `agent_send_caps.tariff_notice_for`, taken
  * by a compare-and-set so two sweeps send one — to the agent's holder, by day only (a claim taken at 03:00 would
  * be its one chance, delivered at night). A deploy after the date sends it too, worded as past. Returns whether it
  * was sent.
  */
 export async function tariffExpiryNotice(now: Date): Promise<boolean> {
+  if (!tariffNoticeOn()) return false;
   const valid = SITE_TARIFF.validThrough;
   const day = tashkentDay(now);
   if (day < tariffNoticeFrom(valid) || quietHour(now)) return false;

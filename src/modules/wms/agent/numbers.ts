@@ -1,6 +1,7 @@
 import {
   CURRENCY_AFTER_SRC,
   CURRENCY_BEFORE_SRC,
+  PRICE_NAME_SRC,
   CURRENCY_LABEL,
   currenciesNamed,
   currencyOf,
@@ -546,8 +547,75 @@ export interface LedgerEntry {
   role?: MoneyRole;
 }
 
-/** A phone in any spelling: an optional +, then ≥ 9 digits with spaces, dashes, dots or brackets between. */
+/**
+ * The WIDE net: an optional +, then ≥ 9 digits with spaces, dashes, dots or brackets between — anything that could
+ * be a phone. Read as it stands only where over-reading is the safe side (the phones a fact lends a reply, our
+ * warehouses' anchors, the mask a text is shown to the model through). What a text HOLDS as a phone — what G6
+ * refuses, what the figure reader blanks, what makes a fact personal, what his ✍️ answer is refused for — is
+ * `phonesIn`'s.
+ */
 export const PHONE_RE = /\+?\d(?:[\s\-.()]*\d){8,}/gu;
+
+/** A whole date as it is typed — dd.mm.yyyy, a real day and month, this century or the last. */
+const FULL_DATE_RE = /(?<![\d.])(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:19|20)\d{2}(?!\d|\.\d)/gu;
+/** One amount as written: plain digits, or thousands in groups of three by a space or by a dot. */
+const AMOUNT_SRC = '(?:\\d{1,3}(?:[ \\u00a0]\\d{3})+|\\d{1,3}(?:\\.\\d{3})+|\\d+)';
+/** A candidate that is ONE amount, or a range of two — «120 000 000», «10000-12000», «100 000 - 150 000». */
+const AMOUNT_OR_RANGE = new RegExp(`^(${AMOUNT_SRC})(?:\\s*-\\s*(${AMOUNT_SRC}))?$`, 'u');
+/** What a masked date is written with: no digit, no separator, no letter — nothing a reader takes for a word. */
+const MASK = '\u0001';
+
+export interface PhoneHit {
+  raw: string;
+  index: number;
+}
+
+/**
+ * The phones a text holds (review of 0148 as built, bot lens). `PHONE_RE` alone reads two figures of a range, a sum
+ * in so'm and a date as one phone: «Rastamojka taxminan 10000-12000 dollar», «120 000 000 so'm», «20.11.2026-
+ * 25.11.2026» — his ✍️ answer was refused with a sentence about an address he never wrote, and a reply repeating
+ * such a figure was G6's «another's phone» with its figures blanked from G1. Two shapes are NOT a phone, and only
+ * these two:
+ *  - a whole date (dd.mm.yyyy) — its digits are the date's, alone, in a range or before a time;
+ *  - an AMOUNT with its unit beside it, as the figure reader reads the unit (`readAt`): one number — plain or in
+ *    thousands — that is MONEY (a currency right after it, or right before it), or a range of two that runs UP and
+ *    is money, a measure, a count or a percent. Never with a leading «+», never any other grouping («90 123 45 67
+ *    dollar», «901-234-567 kg»), never a lone number that is no money («901234567 kun bo'yi»).
+ * Digits with no unit stay a phone's shape — «Narxi 9000-10000» is told to name its currency (`answerContactWords`)
+ * — so nothing that was refused as a phone is let through as nothing: what leaves this list is a FIGURE, and G1 holds
+ * every figure to its source. The text's own digits, already folded (`normalizeDigits`) by every caller.
+ */
+export function phonesIn(text: string): PhoneHit[] {
+  // Same length, so every index is the text's own.
+  const scan = text.replace(FULL_DATE_RE, (m) => MASK.repeat(m.length));
+  const out: PhoneHit[] = [];
+  for (const m of scan.matchAll(PHONE_RE)) {
+    if (!statesAmount(scan, m.index, m[0])) out.push({ raw: m[0], index: m.index });
+  }
+  return out;
+}
+
+/** Is the phone-shaped run at `index` an amount with its unit (`phonesIn`)? */
+function statesAmount(text: string, index: number, raw: string): boolean {
+  // Digits from its first character: a run with a leading «+» is no amount.
+  const parts = AMOUNT_OR_RANGE.exec(raw);
+  if (!parts) return false;
+  const end = index + raw.length;
+  const last = parts[2] ?? parts[1]!;
+  const kind = readAt(text, end - last.length, end).kind;
+  // «$10000-12000»: the currency stands before the FIRST number.
+  const money = kind === 'money' || MONEY_BEFORE.test(text.slice(Math.max(0, index - 12), index));
+  if (parts[2] === undefined) return money;
+  if (!(parseFigure(parts[1]!) < parseFigure(parts[2]))) return false;
+  return money || kind === 'measure' || kind === 'count' || kind === 'percent';
+}
+
+/** `text` with every phone it holds blanked out, at the same length. */
+function withoutPhones(text: string): string {
+  let t = text;
+  for (const p of phonesIn(text)) t = `${t.slice(0, p.index)}${' '.repeat(p.raw.length)}${t.slice(p.index + p.raw.length)}`;
+  return t;
+}
 
 /** Digits only — how two phones are compared. */
 export function phoneDigits(raw: string): string {
@@ -732,6 +800,19 @@ const TOTAL_BEFORE =
   /(?:(?<![\p{L}])(?:jami|жами|итого|total|hammasi\s+bo['‘’ʻ`]?lib|ҳаммаси\s+бўлиб|in\s+total|altogether|all\s+in)(?:\s+(?:bo['‘’ʻ`]?ladi|bo['‘’ʻ`]?lib|chiqadi|бўлади|получается|получится|выйдет|выходит|составит|составляет|comes\s+to|is|will\s+be|of|amounts?\s+to))?|(?<![\p{L}])(?:всего|в\s+сумме|в\s+итоге)(?:\s+(?:получается|получится|выйдет|выходит|составит|составляет|будет)|\s*[:：]))\s*[:：—–=-]?\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly)\s+|[~≈]\s*)?$/iu;
 
 /**
+ * A price NAME right before a bare figure — «narxi 17», «narx: 160», «tarif taxminan 160», «kubiga 160», «цена 17»
+ * — and the words after a figure that make it a count of TIMES or years, never an amount: «narxni 2 marta aytma»,
+ * «цену называй 1 раз», «5 yillik tajriba». Asked only where a figure must be a price by its OWN words
+ * (`ownMoneyOnly`, a lesson): everywhere else a text that names money makes every bare figure money.
+ */
+const PRICE_NAME_BEFORE = new RegExp(
+  `(?<![\\p{L}])(?:${PRICE_NAME_SRC})\\s*[:：=—–-]?\\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly|is|are)\\s+|[~≈]\\s*)?$`,
+  'iu',
+);
+const OCCURRENCE_AFTER =
+  /^\s*-?\s*(?:marta(?![\p{L}])|марта(?:ба)?(?![\p{L}])|раз(?:а|у)?(?![\p{L}])|times?(?![\p{L}])|karra(?![\p{L}])|yil\p{L}*|йил\p{L}*|год(?:а|у|ов)?(?![\p{L}])|лет(?![\p{L}])|years?(?![\p{L}]))/iu;
+
+/**
  * Figures whose FORM says what they are, so a money word elsewhere in the text never makes them money:
  * an Uzbek ordinal glued to its noun («3-ko'chada», «2-omborda», «15-uy» — but not a case ending on a
  * cardinal, «480-ga»), and an hour of the day after «soat» («soat 9 dan 18 gacha»). Before this a fact
@@ -882,7 +963,7 @@ function blanked(text: string, removeWhole: readonly string[]): string {
     if (whole) t = t.split(whole).join(' '.repeat(whole.length));
   }
   for (const u of urlsIn(t)) t = t.split(u).join(' '.repeat(u.length));
-  return t.replace(PHONE_RE, (m) => ' '.repeat(m.length));
+  return withoutPhones(t);
 }
 
 /**
@@ -1011,10 +1092,13 @@ export function namesMoney(text: string): boolean {
 export function extractNumbers(
   text: string,
   removeWhole: readonly string[] = [],
-  opts: { moneyContext?: boolean } = {},
+  opts: { moneyContext?: boolean; ownMoneyOnly?: boolean } = {},
 ): FoundNumber[] {
   const t = blanked(text, removeWhole);
-  const moneyText = opts.moneyContext === true || MONEY_WORD.test(t);
+  // `ownMoneyOnly` (a lesson — an INSTRUCTION, never a source): a figure is money only by its own words — a
+  // currency or a scale word beside it, a price verb, a total's heading or a price NAME right before it. A text
+  // about how to speak of the price («Narx haqida 1 marta ayt») names money and holds no price.
+  const moneyText = opts.ownMoneyOnly === true ? false : opts.moneyContext === true || MONEY_WORD.test(t);
   // A figure that is money because its TEXT names money takes the one currency the text names — «Narx
   // (yuanda): 480» is yuan — dollars when it names none, and no currency at all when it names two (K16).
   let textCurrency: Currency | null | undefined;
@@ -1070,7 +1154,8 @@ export function extractNumbers(
     }
     const before = t.slice(Math.max(0, start - 24), start);
     const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before) || ID_BEFORE.test(before) || ID_AFTER.test(after);
-    const priced = PRICE_VERB_BEFORE.test(before) || TOTAL_BEFORE.test(before);
+    const named = opts.ownMoneyOnly === true && PRICE_NAME_BEFORE.test(before) && !OCCURRENCE_AFTER.test(after);
+    const priced = PRICE_VERB_BEFORE.test(before) || TOTAL_BEFORE.test(before) || named;
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
     const kind: NumberKind =
       glued || (read.kind === 'plain' && !fixed && (moneyText || priced)) ? 'money' : read.kind;

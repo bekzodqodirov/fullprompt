@@ -18,7 +18,7 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
-import { cardDigest, cardDrawsSend, cardTeaches, digestBody } from './card';
+import { cardDigest, cardDrawsSend, cardTeaches, digestBody, lessonRewritingNow } from './card';
 import { answeredNow, renderDraftCardFull } from './card-io';
 import { autoCountingDown } from './auto-card';
 import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
@@ -87,6 +87,13 @@ export interface WebDraft {
    */
   teach: boolean;
   lessonRewrites: boolean;
+  /**
+   * The AI is rewriting this reply from a lesson (card `lessonRewritingNow` — the card's own «📝 Saboq saqlandi…»
+   * line). `teach` is false then (no second 📝), and the page still keeps the 📝's place mounted: the save's answer —
+   * what became of the card, and which older lesson fell out of the prompt (spec §3.3) — is shown there, and the
+   * save's own revalidation must not take it away (review of 0148 as built).
+   */
+  lessonRewriting: boolean;
 }
 
 type DraftRow = typeof agentDrafts.$inferSelect;
@@ -143,6 +150,7 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     autoWaiting: autoCountingDown(auto, d, sendable),
     teach: cardTeaches(d) && !answeredNow(d),
     lessonRewrites: d.status === 'pending' && d.kind === 'reply' && d.finalBody === null,
+    lessonRewriting: lessonRewritingNow(d),
   };
 }
 

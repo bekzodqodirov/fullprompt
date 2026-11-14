@@ -218,6 +218,9 @@ const PRICE_HAN = ['价格', '价钱', '报价', '费用', '运费', '付款', '
 
 const alt = (parts: readonly string[]) => parts.join('|');
 
+/** A price, a payment, a balance by NAME — for a caller that asks where the name stands (numbers `PRICE_NAME_BEFORE`). */
+export const PRICE_NAME_SRC = alt(PRICE_NAMES);
+
 /** A currency written right after a figure (or after its scale word). Anchored by the caller. */
 export const CURRENCY_AFTER_SRC = alt([...SIGNS, ...CURRENCY_NAMES, ...CURRENCY_HAN, ...CURRENCY_HAN_AFTER]);
 

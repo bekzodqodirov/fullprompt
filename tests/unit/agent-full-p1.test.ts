@@ -36,8 +36,13 @@ describe('the bot’s waits: the union, the schema and the last migration that r
   const schema = readFileSync('src/modules/platform/db/schema/platform.ts', 'utf8');
   const schemaKinds = inList(/'telegram_chat_waits_kind_check',\s*sql`([^`]*)`/u.exec(schema)?.[1] ?? '');
 
-  it('the last migration to re-make it is 0148, and it names the two new waits', () => {
-    expect(last).toBe('0148_agent_full_p1.sql');
+  // The LAST re-maker, whichever it is — found, never named (tests/unit/receipt-arrival.test.ts's rule): the other
+  // session re-made this CHECK in 0141 and again in 0146, and its next wait kind must not turn this file red while
+  // the three derived equalities below still hold. What 0148 owes is that it re-makes the CHECK at all — a last
+  // re-maker BEFORE it would mean its two waits are in no CHECK — and that the last one still names them.
+  it('0148 re-makes the CHECK, and the last migration to re-make it — 0148 or a later one — names the two new waits', () => {
+    expect(remakes).toContain('0148_agent_full_p1.sql');
+    expect(last >= '0148_agent_full_p1.sql').toBe(true);
     expect(migrationKinds).toEqual(expect.arrayContaining(['agent_answer', 'agent_lesson']));
   });
 
