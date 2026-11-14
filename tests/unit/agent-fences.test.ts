@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { getTableColumns, getTableName } from 'drizzle-orm';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import * as schema from '@/modules/platform/db/schema';
 import { isTelegramMuted, UNMUTABLE_TYPES } from '@/modules/platform/notifications/mutes';
@@ -75,12 +76,38 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
     }
   });
 
+  it('every table with an FK to agent_drafts is named by the purge or by a reason (0148, spec §3.2)', () => {
+    /** Tables that point at a draft and are deliberately NOT a chat's copy. */
+    const SURVIVES: Record<string, string> = {
+      agent_lessons:
+        'his instruction to EVERY chat, refused personal details at write — it survives the purge with draft_id NULL (0148)',
+    };
+    const pointing: string[] = [];
+    for (const value of Object.values(schema)) {
+      if (!value || typeof value !== 'object' || !(Symbol.for('drizzle:IsDrizzleTable') in (value as object))) continue;
+      const fks = getTableConfig(value as never).foreignKeys;
+      if (fks.some((fk) => getTableName(fk.reference().foreignTable) === 'agent_drafts')) pointing.push(getTableName(value as never));
+    }
+    expect(pointing).toEqual(expect.arrayContaining(['agent_outbox', 'agent_auto_verdicts', 'agent_lessons']));
+    for (const table of pointing) {
+      const named = (PURGED_TABLES as readonly string[]).includes(table) || table in SURVIVES;
+      expect(named, `${table} points at a draft and the purge does not name it`).toBe(true);
+    }
+    // A table the purge leaves standing must let its draft go: SET NULL, never a refusal of the purge's DELETE.
+    for (const table of Object.keys(SURVIVES)) {
+      const t = Object.values(schema).find((v) => v && typeof v === 'object' && Symbol.for('drizzle:IsDrizzleTable') in (v as object) && getTableName(v as never) === table);
+      const fk = getTableConfig(t as never).foreignKeys.find((f) => getTableName(f.reference().foreignTable) === 'agent_drafts');
+      expect(fk?.onDelete, table).toBe('set null');
+    }
+  });
+
   it('every agent card type is blanked by the purge, or is about no chat (review I5)', () => {
     /** Types that name an account or a day, never one customer's chat. */
     const NO_CHAT: Record<string, string> = {
       AgentCapReached: "the day's cap — no customer in it",
       AgentForcedOff: 'the account switched itself off — no customer in it',
       TgAccountPaused: 'the account was limited — no customer in it',
+      AgentTariffNotice: 'the website table runs out and the China column is his to vouch for (0148, §1.6) — no customer in it',
     };
     const src = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
     const where = src.slice(src.indexOf('function chatCardsWhere'), src.indexOf('export async function purgeAgentChat'));
@@ -153,6 +180,80 @@ describe('the ag: grammar', () => {
     expect(parseCallback(`ag:q:${id}`)).toBeNull();
     // The old approval grammar is untouched.
     expect(parseCallback(`a:1:${id}`)).toMatchObject({ kind: 'approval' });
+  });
+
+  it('the wms door’s press letters are the parser’s own — derived, never restated (spec SPEC-P1-v2 §6)', () => {
+    const door = strip(readFileSync('src/modules/wms/agent/bot-door.ts', 'utf8'));
+    expect(door).toMatch(/import type \{ AgentOp as BotAgentOp \} from '\.\.\/\.\.\/platform\/telegram\/staff-bot'/u);
+    expect(door).toMatch(/export type AgentOp = BotAgentOp;/u);
+    // No second list of letters anywhere in the door: a union of one-letter strings is the restatement.
+    expect(door).not.toMatch(/export type AgentOp\s*=\s*'[a-z]'/u);
+  });
+});
+
+describe('every button an agent card DRAWS is one the parser takes (spec SPEC-P1-v2 §6, #939)', () => {
+  // The grammar test above walks AGENT_OPS — the letters the parser knows. This one walks the KEYBOARDS: an
+  // unparsed callback is answered by nobody and spins for fifteen seconds, and a button drawn with a letter the
+  // parser never learned (or an id it refuses) is found only here. Every payload SHAPE is built — each key the
+  // cards write, on and off — so a key added next month is one more line in `FLAGS`, not a new test.
+  const id = '0f1e2d3c-4b5a-4968-8776-655443322110';
+  const FLAGS = ['live', 'blocked', 'kbAsk', 'ask', 'teach', 'autoSent', 'autoBad', 'autoCancel'] as const;
+  const drawn = new Set<string>();
+  const check = (type: string, payload: Record<string, unknown>) => {
+    for (const b of (buttonsFor(type, payload) ?? []).flat()) {
+      if (!('callback_data' in b)) continue;
+      const parsed = parseCallback(b.callback_data);
+      expect(parsed, `${type} ${JSON.stringify(payload)} draws «${b.text}» → ${b.callback_data}`).toMatchObject({ kind: 'agent' });
+      expect(AGENT_OPS as readonly string[]).toContain((parsed as { op: string }).op);
+      expect(Buffer.byteLength(b.callback_data), b.callback_data).toBeLessThanOrEqual(64);
+      drawn.add((parsed as { op: string }).op);
+    }
+  };
+
+  it('the draft card, in every shape its payload can take', () => {
+    for (let mask = 0; mask < 2 ** FLAGS.length; mask++) {
+      const flags = Object.fromEntries(FLAGS.map((f, i) => [f, (mask & (1 << i)) !== 0]));
+      for (const digest of ['a1b2c3d4', undefined]) {
+        for (const autoAt of [null, '2026-11-13T10:00:00.000Z']) {
+          check('AgentDraft', { draftId: id, kind: 'reply', text: 'x', ...flags, ...(digest ? { digest } : {}), autoAt });
+        }
+      }
+    }
+    // …and it really drew them: ✅ ✏️ ❌ 🙋, the countdown's ⏸, the sent card's 👎, the remember row, ✍️ and 📝.
+    for (const op of ['s', 'e', 'r', 'h', 'a', 'f', 'g', 'u', 'z', 'j', 'l']) expect([...drawn], op).toContain(op);
+  });
+
+  it('the other agent cards, and the rows the door itself draws under a press', async () => {
+    check('AgentTariffNotice', { holderId: id, fingerprint: 'a1b2c3d4', text: 'x' });
+    check('AgentCalcAnswered', { requestId: id, priceable: true, text: 'x' });
+    check('AgentStranger', { ruleId: id, text: 'x' });
+    check('AgentCodeEcho', { ruleId: id, clientId: '019a2b3c-4d5e-7f00-8a1b-2c3d4e5f6071', text: 'x' });
+    for (const op of ['t', 'p', 'n', 'k', 'x', 'c', 'b']) expect([...drawn], op).toContain(op);
+    // The «📌/👤/✖» row under his ✍️ answer's acknowledgement (§2.3) is drawn by the door, not by a card.
+    const { answerKbRow } = await import('@/modules/wms/agent/bot-door');
+    const row = answerKbRow(id).flat();
+    expect(row.map((b) => b.callback_data)).toEqual([`ag:g:${id}`, `ag:u:${id}`, `ag:z:${id}`]);
+    for (const b of row) expect(parseCallback(b.callback_data), b.callback_data).toMatchObject({ kind: 'agent' });
+    // A lesson's echo («✅ Saqlash / ✖ Bekor», §3.2) and 👎's «📝 Sababini yozish» (§3.5) are the lessons service's rows.
+    const { lessonEchoRow, lessonWhyRow } = await import('@/modules/wms/agent/lessons');
+    const taught = [...lessonEchoRow(id, 'a1b2c3d4').flat(), ...lessonWhyRow(id).flat()];
+    expect(taught.map((b) => b.callback_data)).toEqual([`ag:y:${id}:a1b2c3d4`, `ag:v:${id}`, `ag:l:${id}`]);
+    for (const b of taught) {
+      expect(parseCallback(b.callback_data), b.callback_data).toMatchObject({ kind: 'agent' });
+      expect(Buffer.byteLength(b.callback_data), b.callback_data).toBeLessThanOrEqual(64);
+    }
+  });
+
+  it('…and every `ag:` callback the door’s source writes names a letter the parser knows', () => {
+    const door = strip(readFileSync('src/modules/wms/agent/bot-door.ts', 'utf8'));
+    const letters = [...door.matchAll(/callback_data: `ag:([a-z]):/gu)].map((m) => m[1]!);
+    expect(letters.length, 're-anchor: the door’s own buttons').toBeGreaterThan(3);
+    for (const op of letters) expect(AGENT_OPS as readonly string[], op).toContain(op);
+    // …and the lessons service's, which draws its own three.
+    const lessons = strip(readFileSync('src/modules/wms/agent/lessons.ts', 'utf8'));
+    const taught = [...lessons.matchAll(/callback_data: `ag:([a-z]):/gu)].map((m) => m[1]!);
+    expect(taught.sort(), 're-anchor: the lessons’ own buttons').toEqual(['l', 'v', 'y']);
+    for (const op of taught) expect(AGENT_OPS as readonly string[], op).toContain(op);
   });
 });
 

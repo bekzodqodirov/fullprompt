@@ -6,12 +6,14 @@ import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../.
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
 import { autoPayload } from './auto-card';
 import { countdownMayRide, recordAutoVerdictInTx, settleSupersededAuto, type AutoPlan } from './auto-send';
-import { cardDrawsSend, cardExtra } from './card';
+import { cardAsks, cardDrawsSend, cardExtra, cardTeaches } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
 import { bindMoved, chatIdentity, type AgentContext } from './context';
+import { estimatesStand } from './estimate-check';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
-import type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
+import type { LessonSetMark } from './lesson-rules';
+import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson } from './types';
 
 export type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
 import type { ComposeReply } from './run';
@@ -60,7 +62,14 @@ async function cardRowFor(tx: Tx, draftId: string) {
   return row ?? null;
 }
 
-export type WriteDraftResult = { kind: 'written'; draftId: string; retargeted: boolean } | { kind: 'editing'; draftId: string };
+export type WriteDraftResult =
+  | { kind: 'written'; draftId: string; retargeted: boolean }
+  | { kind: 'editing'; draftId: string }
+  /**
+   * The draft this one was to replace is no longer waiting for it — the question his ✍️ answer was for (`answers`),
+   * or the reply his lesson was rewriting (`redrafts`): nothing was written.
+   */
+  | { kind: 'question_gone'; draftId: string };
 
 /** Everything a new draft row carries — the machine's reply, a price, a hand-back question. */
 export interface NewDraft {
@@ -93,6 +102,22 @@ export interface NewDraft {
    * null: no row (an owner-triggered draft, 0145 not landed, a plan that failed).
    */
   autoPlan?: AutoPlan | null;
+  /**
+   * His ✍️ answer's redraft (spec SPEC-P1-v2 §2.2): the question draft it answers, and the bot message his answer
+   * was. Inside this transaction THAT draft — and only while it still waits for this very answer (`editing`, its
+   * `ownerAnswer` this message) — is superseded as decided by him (`decided_by`, `decided_at`, `stale:
+   * 'owner_answered'`), though it is `editing`; anything else and nothing is written (`question_gone`). The redraft
+   * gets a card of its own, a push: never a silent edit of the question far up the chat.
+   */
+  answers?: { draftId: string; messageId: number; decidedBy: string } | null;
+  /**
+   * His lesson's rewrite («📝 Tuzatish» on a card still waiting, spec §3.4): the reply it replaces. Inside this
+   * transaction THAT draft — and only while it is still the machine's words waiting for his ✅ and still carries
+   * this very lesson's mark (`policy.lessonRedraft`) — is superseded as decided by him (`decided_by`, `decided_at`,
+   * `stale: 'owner_lesson'`); anything else (his ✅, ✏️, ❌ or 🙋, a newer customer line, a newer lesson) and nothing
+   * is written (`question_gone`). The rewrite gets a card of its own, a push, and the old card is closed in words.
+   */
+  redrafts?: { draftId: string; lessonId: string; decidedBy: string } | null;
 }
 
 const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
@@ -119,8 +144,71 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
         ),
       )
       .for('update');
-    if (live?.status === 'editing') return { kind: 'editing', draftId: live.id };
-    if (live) {
+    if (n.answers) {
+      // The question waits for THIS answer, or the redraft writes nothing: a ✅, ❌ or 🙋 on it, his ✏️ words, a
+      // newer answer, the sweep handing it back — each decided it first.
+      const [q] = await tx
+        .select({ id: agentDrafts.id })
+        .from(agentDrafts)
+        .where(
+          and(
+            eq(agentDrafts.id, n.answers.draftId),
+            eq(agentDrafts.managerUserId, n.managerUserId),
+            eq(agentDrafts.peerId, n.peerId),
+            eq(agentDrafts.status, 'editing'),
+            // Still waiting for an answer: his ✏️ after it took the mark away (decide `decideDraft` 'edit').
+            sql`${agentDrafts.policy} ? 'answering'`,
+            sql`${agentDrafts.policy}->'ownerAnswer'->>'messageId' = ${String(n.answers.messageId)}`,
+          ),
+        )
+        .for('update');
+      if (!q || live?.id !== q.id) return { kind: 'question_gone', draftId: n.answers.draftId };
+      const at = new Date();
+      await tx
+        .update(agentDrafts)
+        .set({
+          status: 'superseded',
+          decidedBy: n.answers.decidedBy,
+          decidedAt: at,
+          updatedAt: at,
+          policy: sql`(coalesce(${agentDrafts.policy}, '{}'::jsonb) - 'answering') || ${JSON.stringify({ stale: 'owner_answered' })}::jsonb`,
+        })
+        .where(eq(agentDrafts.id, q.id));
+      superseded = q.id;
+      closeOld = true;
+    } else if (n.redrafts) {
+      const [q] = await tx
+        .select({ id: agentDrafts.id })
+        .from(agentDrafts)
+        .where(
+          and(
+            eq(agentDrafts.id, n.redrafts.draftId),
+            eq(agentDrafts.managerUserId, n.managerUserId),
+            eq(agentDrafts.peerId, n.peerId),
+            eq(agentDrafts.status, 'pending'),
+            // Still the machine's words: his ✏️ text since is his own, and is never rewritten under him.
+            isNull(agentDrafts.finalBody),
+            sql`${agentDrafts.policy}->'lessonRedraft'->>'lessonId' = ${n.redrafts.lessonId}`,
+          ),
+        )
+        .for('update');
+      if (!q || live?.id !== q.id) return { kind: 'question_gone', draftId: n.redrafts.draftId };
+      const at = new Date();
+      await tx
+        .update(agentDrafts)
+        .set({
+          status: 'superseded',
+          decidedBy: n.redrafts.decidedBy,
+          decidedAt: at,
+          updatedAt: at,
+          policy: sql`(coalesce(${agentDrafts.policy}, '{}'::jsonb) - 'lessonRedraft') || ${JSON.stringify({ stale: 'owner_lesson' })}::jsonb`,
+        })
+        .where(eq(agentDrafts.id, q.id));
+      superseded = q.id;
+      closeOld = true;
+    } else if (live?.status === 'editing') {
+      return { kind: 'editing', draftId: live.id };
+    } else if (live) {
       await tx.update(agentDrafts).set({ status: 'superseded', updatedAt: new Date() }).where(eq(agentDrafts.id, live.id));
       superseded = live.id;
     }
@@ -166,8 +254,14 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       kind: row.kind,
       // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
       auto: autoPayload(auto, row, sendable),
+      // A question the model raised (spec §2.2) offers «✍️ Savolga javob».
+      ask: cardAsks(row),
+      // The machine's words offer «📝 Tuzatish» (§3.1) — never a 💵 price, which is his own figure.
+      teach: cardTeaches(row),
     });
-    const old = live ? await cardRowFor(tx, live.id) : null;
+    // His answer's redraft never rides the question's card (§2.2), nor his lesson's rewrite the card it replaces
+    // (§3.4): a push of its own, the old card closed after.
+    const old = live && !n.answers && !n.redrafts ? await cardRowFor(tx, live.id) : null;
     // A reply that counts down rides only a copy that rang within one hold (the final check, auto-send
     // `countdownMayRide`; a copy sent silently in the night never rang — the second check): an edit rings
     // nothing, so on an older copy it gets a card of its own — a push — and the old copy is closed after the
@@ -193,7 +287,9 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       await settleSupersededAuto(superseded).catch((err: unknown) => logger.warn({ err, draftId: superseded }, '[agent] superseded auto not settled'));
     }
     await kickTelegramDrain();
-    // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`).
+    // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`) — or, for
+    // the question his ✍️ answer was for, «✍️ Javobingiz olindi — AI qayta yozdi» (STALE_WORDS `owner_answered`), and
+    // for the reply his lesson rewrote, «📝 Saboq bo‘yicha AI qayta yozdi» (`owner_lesson`).
     if (closeOld && superseded) {
       const { refreshAgentCard } = await import('./card-io');
       await refreshAgentCard(superseded).catch((err: unknown) => logger.warn({ err }, '[agent] old card not closed'));
@@ -216,6 +312,24 @@ export interface RunDraftInput {
   actions: ComposedAction[];
   notes: string[];
   kind?: 'reply' | 'hand_back';
+  /** His ✍️ answer behind this redraft (spec §2.2) — kept on its policy for the auto layer (`owner_personal`, `answer_stale`). */
+  fromAnswer?: AnswerMark | null;
+  /** His lesson behind this rewrite (§3.4) — its card says so. */
+  fromLesson?: { lessonId: string; draftId: string } | null;
+  /** The lessons this run read (§3.7, lessons `promptLessons`) — null when it read none. */
+  lessonSet?: LessonSetMark | null;
+}
+
+/**
+ * How far the run had seen its burst when it READ it (fix pass 5): the newest edit of a burst line it read, ISO — or
+ * null, no line of it edited then. `answer_stale` measures a later edit or deletion of the question's burst against it
+ * (owner-answer-job `questionSeenAt`): the question's own `created_at` is the INSERT after the model call, and a line
+ * the customer corrected WHILE the model was writing the question was older than it — his answer to the old wording
+ * went by itself. Both stamps are the listener's own (`applyEdit`), so the comparison never crosses two clocks.
+ */
+export function burstSeenAt(ctx: Pick<AgentContext, 'burst'>): string | null {
+  const at = Math.max(...ctx.burst.map((m) => m.editedAt?.getTime() ?? Number.NEGATIVE_INFINITY));
+  return Number.isFinite(at) ? new Date(at).toISOString() : null;
 }
 
 /**
@@ -247,7 +361,13 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       ledger: policy.ledger,
       memory: input.memory,
       card: cardMemory(ctx),
+      burstSeenAt: burstSeenAt(ctx),
       notes: input.notes,
+      // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
+      ...(compose.forcedQuestion ? { forcedQuestion: compose.forcedQuestion } : {}),
+      ...(input.fromAnswer ? { fromAnswer: input.fromAnswer } : {}),
+      ...(input.fromLesson ? { fromLesson: input.fromLesson } : {}),
+      ...(input.lessonSet ? { lessons: input.lessonSet } : {}),
     },
     blocked: !policy.ok,
     needsOwner: compose.needsOwner,
@@ -263,11 +383,18 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
 /** The machine's reply to the chat, from a run. */
 export async function writeDraft(
   input: RunDraftInput & {
-    /** The inbound run's «o'zi yuborish» plan (auto-send `autoPlanFor`); never an owner-triggered run's. */
+    /**
+     * The «o'zi yuborish» plan (auto-send `autoPlanFor`): the inbound run's, and — of the owner-triggered ones —
+     * only his ✍️ answer's redraft (spec §2.2).
+     */
     autoPlan?: AutoPlan | null;
+    /** His ✍️ answer's redraft: the question it answers (`NewDraft.answers`). */
+    answers?: NewDraft['answers'];
+    /** His lesson's rewrite: the reply it replaces (`NewDraft.redrafts`). */
+    redrafts?: NewDraft['redrafts'];
   },
 ): Promise<WriteDraftResult> {
-  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null });
+  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null, answers: input.answers ?? null, redrafts: input.redrafts ?? null });
 }
 
 export { cardMemory };
@@ -329,34 +456,46 @@ export async function requestRecalculated(requestId: string): Promise<boolean> {
   return newer !== undefined;
 }
 
+/** What the send step, his ✅ and the press hear of a draft's figure: it stands, a VED recalculation took it, its table moved. */
+export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved';
+
 /**
- * A price reply's figure still stands; null when the draft carries none.
+ * A draft's figure still stands; null when the draft carries none — a REASON, never a boolean (spec SPEC-P1-v2
+ * §1.3), so the send step cancels each in its own words.
  *
- * Two anchors. Since his 6 b a 💵 writes no offer row — the figure answers
- * the REQUEST it was typed on (`policy.priceRequestId`), and it stops
- * standing the moment a VED recalculation supersedes that request
- * (`notSupersededSql`'s rule, the money side's: a correction exists, so the
- * promise no longer stands — sealed or not). Without this an approval he made
- * before the recalc, waiting in agent_outbox (the night hold, the gaps), went
- * out with the old figure: there was no offer to be gone (answers review). A
- * draft from before 6 b still carries an offer row, asked as before.
+ * His 💵 (two anchors). Since his 6 b a 💵 writes no offer row — the figure answers the REQUEST it was typed on
+ * (`policy.priceRequestId`), and it stops standing the moment a VED recalculation supersedes that request
+ * (`notSupersededSql`'s rule, the money side's: a correction exists, so the promise no longer stands — sealed or
+ * not). Without this an approval he made before the recalc, waiting in agent_outbox (the night hold, the gaps),
+ * went out with the old figure: there was no offer to be gone (answers review). A draft from before 6 b still
+ * carries an offer row, asked as before. Either is `offer_gone` («VED qayta hisobladi»), the 💵's alone.
+ *
+ * The MACHINE's figures (§1.3): a draft whose memory keeps the estimates it quoted, and whose words are still the
+ * machine's (no `finalBody` — his ✏️ text is his own figure), prices each again with the same function on today's
+ * tariff and avia rate (`estimatesStand`) — `estimate_moved` when any moved or the re-price refused, never an
+ * exception (this runs in the listener). A machine draft written before the estimates were kept answers null, as
+ * it always did.
  */
-export async function draftOfferStands(draftId: string): Promise<boolean | null> {
+export async function draftOfferStands(draftId: string, now: Date = new Date()): Promise<OfferStanding | null> {
   const [draft] = await db
-    .select({ offerId: agentDrafts.offerId, kind: agentDrafts.kind, policy: agentDrafts.policy })
+    .select({ offerId: agentDrafts.offerId, kind: agentDrafts.kind, policy: agentDrafts.policy, finalBody: agentDrafts.finalBody })
     .from(agentDrafts)
     .where(eq(agentDrafts.id, draftId));
   const priced = draft?.kind === 'price' ? ((draft.policy ?? {}) as { priceRequestId?: unknown }).priceRequestId : undefined;
   if (typeof priced === 'string' && UUID.test(priced)) {
-    if (await requestRecalculated(priced)) return false;
-    if (!draft!.offerId) return true;
+    if (await requestRecalculated(priced)) return 'offer_gone';
+    if (!draft!.offerId) return 'stands';
   }
-  if (!draft?.offerId) return null;
-  const [row] = await db
-    .select({ id: calcOffers.id })
-    .from(calcOffers)
-    .where(and(eq(calcOffers.id, draft.offerId), releasedOfferWhere(), offerStandsSql()));
-  return row !== undefined;
+  if (draft?.offerId) {
+    const [row] = await db
+      .select({ id: calcOffers.id })
+      .from(calcOffers)
+      .where(and(eq(calcOffers.id, draft.offerId), releasedOfferWhere(), offerStandsSql()));
+    return row !== undefined ? 'stands' : 'offer_gone';
+  }
+  if (!draft || draft.finalBody !== null) return null;
+  const memory = ((draft.policy ?? {}) as Partial<DraftPolicyJson>).memory;
+  return estimatesStand(memory?.estimates, now);
 }
 
 /**

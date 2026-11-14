@@ -9,6 +9,7 @@ import { recordSent } from '../crm/outbox';
 import { floodEnds } from '../crm/telegram-guard';
 import { agentRunning, readAgentConfig } from './config';
 import { AGENT_LIMITS, dailySendCeiling, sendJitterMs } from './limits';
+import { readSendCaps } from './send-caps';
 import { asksAnew, type AgentOutboxRow, type AgentStepStore, type SendFacts, type StepOutcome } from './send-step';
 import { sendWindowFor } from './send-window';
 import { offerStandsFor, onAgentOutboxSettled } from './settle-hooks';
@@ -344,8 +345,10 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
   const sendingEnabled = (await getSetting('tg_sending_enabled')) === true;
   const chat = await chatFacts(row, now);
   const substantive = await newerSubstantiveInbound(row);
-  const offerStands = await offerStandsFor(row.draftId);
+  const offerStands = await offerStandsFor(row.draftId, now);
   const average = config?.startedAt ? await ownAverage(row.managerUserId, config.startedAt) : 0;
+  // His caps, read at THIS tick like every other fact (spec §5.2) — the listener's copy of the number the ✅ uses.
+  const caps = await readSendCaps();
 
   // ONE «same person» rule (`bindMoved` over today's `chatIdentity`) — the
   // ✅ asks it and every tray door's withdrawal asks it; the stored newest
@@ -384,7 +387,9 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
     sentToChatToday: Number(chat.chat_today),
     sentLastHour: Number(chat.last_hour),
     sentToday: Number(chat.today),
-    dailyCeiling: dailySendCeiling({ startedAt: config?.startedAt ?? null, ownAverage: average, now }),
+    dailyCeiling: dailySendCeiling({ startedAt: config?.startedAt ?? null, ownAverage: average, now, dayCap: caps.dayCap }),
+    dayCap: caps.dayCap,
+    hourCap: caps.hourCap,
     lastChatSendAt: dateOf(chat.last_chat_ms),
     lastAccountSendAt: dateOf(chat.last_account_ms),
     accountGapMs: sendJitterMs(ctx.random),

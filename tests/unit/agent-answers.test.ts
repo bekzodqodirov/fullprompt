@@ -66,6 +66,7 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   kb: async () => [],
   // The demo seed's China receiving points (YW, GZ, KA) — read from the warehouses table in a run.
   chinaPlaces: async () => new Set(['Yiwu', 'Guangzhou', 'Qashqar']),
+  priceArmed: false,
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {
@@ -149,11 +150,12 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
     expect(out.sources).toEqual(
       expect.arrayContaining([
         // In dollars, and which is the load's price and which the kilo's (K16, K21).
-        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', currency: 'USD', role: 'total' },
-        { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool', currency: 'USD', role: 'rate' },
+        // Each names the tool that made it (0148, spec §1.1): the auto layer asks which tool vouched for a money line.
+        { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'total' },
+        { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'rate' },
         // The days are a FLIGHT's — never a truck's figure (fix round).
-        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
-        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', mode: 'air' },
+        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
       ]),
     );
   });
@@ -241,7 +243,7 @@ describe('rail is his question', () => {
   });
 
   it('the prompt says it too — the AI never quotes rail', () => {
-    expect(stableHead({ styleGuide: null, facts: [] })).toContain(RAIL_OWNER_QUESTION);
+    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] })).toContain(RAIL_OWNER_QUESTION);
   });
 });
 
@@ -264,7 +266,7 @@ describe('the certificate is the company’s (his 9)', () => {
     expect(actions).toHaveLength(1);
     // Nothing reads it since his «9» — and a stored «certificate: null» would only say the AI asked.
     expect(actions[0]).not.toHaveProperty('certificate');
-    expect(stableHead({ styleGuide: null, facts: [] })).toMatch(/sertifikatini HECH QACHON so'rama/u);
+    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] })).toMatch(/sertifikatini HECH QACHON so'rama/u);
   });
 });
 

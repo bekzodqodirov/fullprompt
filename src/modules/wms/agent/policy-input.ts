@@ -4,6 +4,7 @@ import { agentDrafts, agentOutbox, clients, users } from '../../platform/db/sche
 import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import type { StoredEstimate } from './auto-money';
 import type { AviaCargo, QuotedRoad } from './context';
 import type { AgentLocale, ScriptName } from './locale';
 import { airMentionIn, customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
@@ -57,6 +58,33 @@ export interface PolicyMemory {
   quotedRoad?: QuotedRoad | null;
   /** The flight's cargo as the avia tool read it, when this run quoted one — what the follow-up's card names. */
   quotedAir?: AviaCargo | null;
+  /**
+   * A chat about rail (`railChat`): the machine's money was dropped from the sources and the price is HIS
+   * (§18.5) — the auto layer never sends a money reply here (spec §1.1). Absent (a memory stored before 0148)
+   * reads as not one: such a chat's money has no source and blocks anyway.
+   */
+  rail?: boolean;
+  /**
+   * The customer's language as the run read what it answers — his whole burst, every line since our last one
+   * (`detectLocale(burst, stored)`, spec §4) — the auto layer sends an English, Persian or Chinese reply by itself
+   * only when this CONFIDENTLY says that language, never on the model's own label. `confident` = a mark in his own
+   * words decided; Cyrillic or Latin that carries none is a guess and refuses nothing. Absent (stored before 0148)
+   * = not known.
+   */
+  customerLocale?: { locale: AgentLocale | null; confident: boolean; leans?: boolean };
+  /**
+   * Every priced estimate call of the run (spec §1.3 — written by its package): what the press and the send step
+   * re-price, and what «the reply names the load it priced» is judged against. Absent = none stored; a draft
+   * with an estimate and none is refused by the auto layer (`money`, §1.1).
+   */
+  estimates?: StoredEstimate[];
+  /**
+   * The customer named a city or region other than Tashkent anywhere in what he wrote (spec §1.8, destination.ts
+   * `namesForeignPlace`) — the table is China → Tashkent, so an estimate reply waits for his ✅. A gate fact,
+   * never a policy block. Absent (stored before this) reads as named: such a draft carries no stored estimate
+   * and is refused `money` anyway.
+   */
+  foreignDestination?: boolean;
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;

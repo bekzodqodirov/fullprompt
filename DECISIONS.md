@@ -9468,3 +9468,250 @@ from its diff; a refuter's «the fix only reorders the two messages» is a verdi
 of the code could have given; and a background shell with no `timeout` is stopped at thirty minutes — the CI order
 (~50 min) died in `build` with «ELIFECYCLE Command failed», which reads like a red gate: its last two gates were
 resumed on the same tree and the database vitest left (CI's order kept), with a two-hour limit.
+
+## To'liq AI sotuvchi, 1-qism — the price by itself, «bilmayman → egasidan so'raydi», «📝 Tuzatish», six languages, the limits (2026-11-13 → 11-14; migration 0148 `agent_full_p1`, `when` …127, ledger 149; spec `docs/AI-SOTUVCHI.md` §18.8 as built; numbered #1766-#1783 — past main's #1765; the migration was minted as 0146 and renumbered on the merge, the FORTIETH collision: main's «Prixod xabari» and «Prixod javoblari», PRs #149-#150, took 0146-0147 and #1707-#1765 while this part was being built)
+
+**#1766 — His request, in three parts, and what binds them.** «bularni hammasini qur bir boshdan ful ai sotuvchi
+kerak menga ozi sotuv qilsin bilmagan savollar kelganda botdan habar jonatsin shu savolga javobni bilmayabman deb va
+sotuvchi javob bersa ushani olsin» — every stage of §18.4's roadmap left, plus the loop he named. Cut in three parts,
+each deployed when ready: (1) the price by itself, the unknown question asked of HIM and his answer taken, his
+corrections remembered, six languages, the limits; (2) the calculation submitted by itself, the VED answer turned into
+a client price with his markup, lead stages; (3) the Friday greeting to quiet customers, the AI as its own seat. His
+answers that bind part 1: Q1 ⭐ (the AI states the truck yo'lkira from the table and avia kg × his rate itself);
+«5 ai sotuvchi faqat meniki … usha akkountni ozida mendan sorasa boladi» + «6 … men ham usha akkountni ishlatib
+otraman» — **the holder IS the AI seat**: on his server `agent_config.owner_user_id` is «BEKZOD AI sotuvchisi», whose
+connected Telegram is +998902405077, so «ask me in that account» is today's routing and nothing in part 1 changes who
+receives a card; «7 chegara qoyma» — the auto layer's own daily count becomes NONE (`per_day` NULL); «4 hozircha
+qolsin keyinchalik ozgartiirish imkoni kerak boladi» — the account-protection limits stay, editable within the CRM's
+ceilings; «hato qilgan joyini men aytib ketay va u ozi organib boradgan bolsin» — lessons (#1777); «mijoz qaysi tilda
+yozsa usha tilda … kirilchada yozsa kirilchada … lotinchada yozsa lotinchada» — six auto languages (#1774). The spec
+was written first (`SPEC-P1`), judged by four lenses BEFORE code (money, regress, bot, learn: **68 objections, 11
+blockers**), revised (v2: 66 changes marked, 11 objections refused in writing, nine questions for him), then built as
+four sequential packages (K1 limits+gate, K2 the price, A the owner-answer loop, L lessons), reviewed as built by four
+lenses with one reproducing refuter per finding, fixed in two passes, and the FIXES checked by three more lenses.
+
+**#1767 — What the judge changed before a line was written.** The three that would have shipped as silent wrong sends:
+(1) v1 let a priced draft through when its tool was an estimate tool — the money clause is by the call's OUTCOME
+(#1769), because the same tool answers «below minimum» (no money), a priced estimate, or a refusal, and a refusal's
+text still states figures; (2) v1 trusted the figure the model saw at the run — a figure stored with the draft is
+RE-PRICED at every press and send step (#1771), because the countdown and the night hold mean minutes to hours
+between the run and the send; (3) v1 had a «holding line» («Bir daqiqa, aniqlab aytaman») sent while he answers — the
+live head cancels a reply on ANY outgoing message newer than its anchor, ours included, so the holding line would have
+killed the very answer it promised; DROPPED (spec §2.5, asked of him as Q6). Also: the rail price and the avia address
+never get ✍️ (a model re-typing a Chinese street address and phone is checked by nothing; his ✏️ goes verbatim); the
+caps go on a SIDE table and not on `agent_auto_config` (its reader `select()`s every column behind a probe that says
+true at ledger 146 — 42703 one migration behind); a lesson survives the chat's purge with `draft_id` NULL (it is his
+instruction to every chat, and the writer refuses personal bits); every new wait closes the other agent waits in words.
+
+**#1768 — 0148 adds no column to any existing table, and the one-way part is said.** The categories CHECK of
+`agent_auto_config` admits `'price'` (the stored row is untouched — «Narx» ships UNTICKED); `per_day` becomes nullable
+with no default, a typed value bounded 1-1000, and the stored row is set to NULL with one `audit_log` row (actor NULL,
+`via: '0148'`) — his «chegara qoyma» on deploy day; `agent_lessons` (text 1-500, `draft_id` ON DELETE SET NULL,
+`confirm_token` only while unconfirmed, a partial prompt index); `agent_send_caps` singleton (day 1-200, hour 1-100,
+`tariff_confirmed_at`, `tariff_notice_for`); `telegram_chat_waits_kind_check` re-made with `agent_answer` and
+`agent_lesson` — carrying main's `receipt_files` (0146), and the schema mirror kept on ONE line because main's
+`receipt-arrival.test.ts` reads it by its line. One probe, `agentFullP1Ready()` (both tables and both widened CHECKs via
+`pg_get_constraintdef`, caches true only); every reader runs today's shape behind it. STATED (regress[2], a deploy
+sentence): 0148 is one-way for an ARMED layer — main's code on the migrated database reads `per_day` NULL as «0 left»
+and refuses every reply `daily_cap` with nothing on any screen; a rollback below 0148 is preceded by `/agent auto off`.
+
+**#1769 — The money clause is decided by what each tool call ANSWERED.** Every tool call is stored
+`{name, ok, text, estimate}` with the estimate flag taken from the tool's own outcome (`ToolOutcome.priced`); a call
+stored without the flag reads as priced (fails closed). `below_minimum` is no money; `own_balance` and a refused
+estimate are always money. Every money line of the ledger must come from origin `tool`, from `yolkira_estimate` or
+`avia_estimate`, in role total or rate — anything else refuses `money`; a priced draft also needs its estimates STORED
+(`memory.estimates`, #1771); a rail chat (`memory.rail`) refuses `money`. `LedgerEntry`/`PlacedEntry` carry origin, tool
+and role, copied from the source that vouched. Nine new refusal codes, each with Uzbek words in `AUTO_REFUSAL_WORDS`.
+`money_unread` (a currency named, no money line read) uses the BOUNDED currency reader (`namesCurrency`) — the
+unbounded `sum`/`сум` read «sumka», «summa», «сумка», his own goods words. `estimate_unnamed` (the reply does not
+restate the kub/kg it priced) and `destination_unsaid` (no «Toshkentgacha») live in the pure `auto-money.ts`.
+
+**#1770 — «Narx» is the fifth kind, and the price act is ticked AND armed.** `auto-categories.ts` is the one home of
+the five kinds (auto-gate, `setAutoCategories`, the page's boxes); calibration's measured list stays four. An admitted
+quote is judged as category `price` — only when the model's own label is itself an auto kind (pass 1, #1780: «complaint»
+and «other» stay his). `priceActArmed()` = «Narx» ticked AND the layer armed, read once per run and passed down
+(`runLoop`, the tools' `ToolEnv`, `stableHead`, `withAviaRule(…, act)`); with the act off the tool texts and rule 9 are
+byte-identical to before (checked by rendering the head line by line). Only rule 8 changes regardless: the priced kub/kg
+and «Toshkentgacha» in six spellings, and a line asking for different wording per customer (G10's same-text fuse).
+
+**#1771 — A figure is re-priced at every press, and a moved one never goes.** `estimate.ts` (pure: `truckEstimate`,
+`aviaEstimate`, `reprice`, `storedEstimatesOf`; `YOLKIRA_GUARDS` moved here) is what the tools quote through and what
+re-prices; `memoryFor` stores `memory.estimates` (empty in a rail chat). `estimate-check.ts` `estimatesStand(raw, now)`
+re-prices on today's tariff and avia rate and never throws (an unreadable row answers `estimate_moved`).
+`draftOfferStands` answers `'stands' | 'offer_gone' | 'estimate_moved' | null` and re-prices a machine draft that has
+stored estimates and no final body; the send step's `FinalRefusal`, `decideDraft` (before anything is landed or queued)
+and the gate's `money.moved` all ask it. The remedy the refusal names — ✏️ his own figure — is proven (pass 2).
+
+**#1772 — The table ends on 31.12.2026, and a changed column waits for him once.** Before `validThrough` the website's
+figure is the price and must equal /admin/tarif; after it the price is `freightFor`'s list price and band rate with the
+$50 floor, and the days are `AGENT_LIMITS.truckDays` [15, 25] (Q5 ⭐). `tariff-watch.ts`: `tariffChangedAt` = the
+newest China-column write — row `created_at`, the dictionary's upsert read off its `calc_tariff` audit row (the upsert
+keeps `created_at`), a dated row from the start of its Tashkent day; `tariffUnconfirmed` compares it with
+`tariff_confirmed_at`, asked of TRUCK estimates only (the avia rate has its own re-price). His own ✅ on an estimate
+card stamps `greatest(existing, run start)` in the approval transaction — never the machine's press. «✅ Tarif to'g'ri»
+(bot op `ag:t:<holder>:<8-hex column stamp>`; page `TariffConfirmButton`) confirms only the column it was shown
+(`tariff_changed` otherwise). The 14-day notice `AgentTariffNotice` is sweep step 8, claimed by compare-and-set on
+`tariff_notice_for`, in `UNMUTABLE_TYPES`. After 0148 `tariff_confirmed_at` is NULL: the first truck estimate after the
+deploy waits for his ✅ even with «Narx» ticked (Q7 ⭐, told to him).
+
+**#1773 — The avia rule narrows only while the act is armed; a foreign destination stays his.** Armed, a quoted flight
+no longer forces a question; a reply in an air chat that tells the customer to hand cargo over or names our receiving
+point asks him. Pass 1 (#1780) moved that reading onto the REPLY's own lists — the customer's `SEND_VERB` /
+`WAREHOUSE_WORD` / `ADDRESS_WORD` stay byte-identical (pinned) — because «Пошлина» matched «пошл». `destination.ts`
+`namesForeignPlace` (Uzbek regions and towns, KZ/KG/TJ/AF, Latin, Cyrillic, Russian, English, Chinese, Persian);
+`memory.foreignDestination` from the inbound window plus the burst; a quote whose customer named somewhere other than
+Tashkent is `foreign_destination`. Left out on purpose: Persian «دوشنبه» (also Monday), bare «qarshi» (against) and
+«osh» (the dish) — they count only with a place ending or a preposition.
+
+**#1774 — Six auto languages, and «confident» means a mark in the customer's own words.** `AUTO_LANGUAGES` holds
+uz, uz_cyrl, ru, en, fa, zh. en/fa/zh go only when `memory.customerLocale` confidently names that same language (Q9 ⭐);
+uz/uz_cyrl/ru are refused only on a confident guess that differs. Pass 1 rewrote «confident»: Russian by its own words
+or letters; Cyrillic with no mark of either language keeps the conversation's Cyrillic language; a short English line
+in an Uzbek chat is a loan word; the run reads the whole burst. The check (#1782) then found one greeting of the OTHER
+language deciding a whole burst. The eight Persian compound hundreds joined `NUMERAL_WORDS`.
+
+**#1775 — The limits: no daily count of his, the account's own ceilings editable.** `perDay` is `number | null`
+through `AutoConfig`/`AutoGateInput`; the gate skips `daily_cap` on null; `setAutoPerDay` (holder only, audited).
+`send-caps.ts`: `readSendCaps` (today's constants one migration behind or with no row), `setSendCaps` (holder or
+super_admin, audited, its own `SendCapsError` — the listener imports it and must not pull in the press),
+`SEND_CAP_BOUNDS` from `HUMAN_LIMITS` (≤200/day, ≤100/hour, Q8 ⭐). `dailySendCeiling`/`sendsToday` take the day cap as
+a REQUIRED argument; the day cap is read by the listener's `sendFactsFor`, `decideDraft`'s budget, `autoFactsFor` and
+the page; the hour cap by the listener only. A wrong number on the page is told as a number (pass 2).
+
+**#1776 — «✍️ Savolga javob»: the AI asks HIM, he answers, the AI writes from his words.** A question card carries
+✍️ (`ag:j`, reply drafts only — a hand-back or price draft would lose the VED's reason or his figure). The press is the
+holder's alone, refused while busy, stops the countdown first, moves the question to `editing` with
+`policy.answering {since, until}` and arms the durable `agent_answer` wait; a swipe-reply to the card is the answer;
+✅/❌/🙋 drop the wait. His text is refused in words when it holds a phone, a link or Chinese text (the wait kept —
+pass 2 made a price RANGE or a date not a phone, `phonesIn`). It is stored by compare-and-set as
+`policy.ownerAnswer`, queued on `agent.owner_answer` (one retry on `listener_behind`), acknowledged with a «📌/👤/✖»
+row, and redrafted by `runOwnerTriggered('owner_edit')` keyed `answer:<draft>:<message>` — his words verbatim and
+first in the instruction, the AI's own question after them named «savol manba emas». His answer is an `owner`-origin
+G1 source for THAT draft only. The redraft's auto plan refuses `owner_figure` (any figure in his answer — Q2 ⭐ — asked
+of HIS text, pass 1), `owner_personal` (another client's code, phone or name; this chat's own code while the chat is not
+phone-proven) and `answer_stale` (the customer wrote, edited or deleted the asked line since). `createDraft(…, {answers})`
+supersedes the question only while it still waits for that very answer (`question_gone` otherwise); every failure is
+said; the sweep hands back a forgotten ✍️ and an answer nothing drafted in 15 minutes. `AgentOp` in the wms door is
+derived from the parser's list, and every button any agent card draws, in every payload shape, must parse.
+
+**#1777 — «📝 Tuzatish»: he says where the AI was wrong, and it stays.** `ag:l` on every card whose words are the
+machine's (payload key `teach`, always written); the press stops the countdown, closes an open ✏️/✍️ on that draft,
+arms `agent_lesson`; his text is stored UNCONFIRMED and echoed «📝 Saboq: «…»» with «✅ Saqlash» (`ag:y:<lesson>:<token>`,
+one-time token) / «✖ Bekor» (`ag:v`). ONE writer `lessons.ts` (bot + page): a price is refused (pass 2 narrowed it to a
+figure that IS a price by its own words — the check found that let real prices through, #1782), personal bits refused
+as for a general kb fact, every change audited (`agent_lesson`), behind `agentFullP1Ready()`. Lessons live in
+`stableHead` only (the cached head; never the per-run tail), newest first, capped at 40 lessons AND 6 000 characters as
+rendered (a prefix fit — the first lesson that does not fit ends the list, said on the page), Q3 ⭐ for every chat. A
+confirmed lesson given on a PENDING reply rewrites it (`lesson-job.ts`, `runOwnerTriggered` keyed `lesson:<id>`, no auto
+plan, superseded inside the rewrite's own transaction only while the reply still carries this lesson's mark). 👎 arms
+nothing; its answer offers «📝 Sababini yozish». The page's fifth tab «Saboqlar» lists, edits, switches and deletes.
+
+**#1778 — A reply he shaped does not count towards «80 %».** `agentStats`, the page's `webStats`, `agentCalibration`
+and `scripts/agent-calibration.ts` count drafts whose run trigger is not `inbound` APART (`coalesce(trigger,'inbound')
+<> 'inbound'`) — a reply written from his own answer or lesson and approved unchanged measures him, not the model.
+Hand-back question drafts leave the record too (stated).
+
+**#1779 — Reviewed as built: four lenses, 23 findings, 15 upheld by reproduction, one blocker.** The blocker: a price
+written in CHINESE NUMERALS («运费大概两万美元») passed G1, G11 and the money clause while zh had just become an auto
+language — the readers read digits. Upheld besides: `owner_figure` asked of the ledger line's origin and not of his
+answer; `answer_stale` blind to the customer EDITING the asked line; an admitted quote laundering the model's
+«complaint» into `price`; `foreign_destination` missing «Qarshi shahriga» and «Olmaotaga»; `money_unread` holding every
+reply that names a currency with no figure; the language clause refusing correct Uzbek Cyrillic; ✍️ refusing a price
+range or a date as «manzil yoki telefon»; the page saying «kamida bitta turni belgilang» about a wrong number and losing
+the lesson save's answer; every Russian avia quote forced into an address question («Пошлина» → «пошл»); and four test
+gaps (the price act never read through a run; «one number everywhere» asserted at the send step only; 0148's gate facts
+never asserted on a stored draft; the §1.6 vouch's fail-open fences). Nits: a lesson about prices with a bare count
+refused; «✅ Tarif to'g'ri» answered by a toast only; the `estimate_moved` remedy unproven; and from **2026-12-17** the
+agent integration suite would claim the tariff notice in the shared database — a test suite that changes by the
+calendar.
+
+**#1780 — Fix pass 1, what goes by itself: a figure no reader reads is never pressed.** Chinese numerals are read as
+RUNS (`hanNumeralRuns`: ordinary words out first — «一下», «陆运», «千克», «十分», «两种»; a run of two or more
+characters, plain or financial, is a figure in any reply; a hedge, a vague scale «几百», percent/fraction/discount and a
+digit glued to a Chinese scale «9百» count). A new refusal `numeral_unread` («javobda ieroglif bilan yozilgan son
+bo'lishi mumkin — uni o'qib bo'lmadi»): ANY kept Chinese numeral run refuses the MACHINE press whatever G1 said, read
+over the reply less its facts' quoted Chinese — his ✅ untouched. zh stays an auto language (an ordinary Chinese reply
+still goes, pinned); a Chinese reply holding a numeral outside the small ordinary-word list waits for him — fail
+closed, stated. The class in the other five languages: Uzbek endings on the numeral («sakkiz yuzga», «mingcha»),
+Russian oblique cases and the hundred as a noun («ста», «пятисот», «тыща», «сотка»), English plurals and «a grand»,
+Persian glued classifiers and plurals, million/milliard everywhere, the half as a time («yarim oyda»). `money_unread`
+narrowed to a currency whose OWN sentence holds a quantity no reader placed («bir necha dollar», «несколько долларов»,
+«几美元») — «Narxni dollarda aytaman» goes again. The language clause rewritten at the source of `confident` (#1774).
+`owner_figure` is asked of HIS answer (`answerHoldsFigure`; a stored mark that does not say reads as holding one).
+`answer_stale` reads the asked line's own edit stamp. `foreign_destination` widened (place endings after Qarshi and
+Osh, Almaty, district towns, Turkmenistan, Russia, zh/fa). The avia rule reads the reply with its own lists (#1773).
+
+**#1781 — Fix pass 2, his hands and the tests: every fence the review removed with the suite green now goes red.**
+«A phone» was any nine digits joined by spaces, dashes or dots in three places at once — the ✍️ door refused, the
+figure reader BLANKED the range (so his answer gave the redraft no source), G6 called a reply repeating it
+`foreign_phone`: one reader `phonesIn` (numbers.ts) where a whole dd.mm.yyyy date and an amount with its unit beside it
+are not a phone; the wide net `PHONE_RE` stays for the allowed-phone harvest, the China-address anchors and the model
+mask. The page names a wrong number in its own words (`auto_bad_per_day`, `auto_bad_caps`, with their bounds). The
+lesson save's answer stays mounted (`lessonRewriting`, one rule `lessonRewritingNow`) — measured in a browser at
+360×800, the note on screen from 264 ms to the end of the sample (4 frames before the fix). «✅ Tarif to'g'ri» answers in
+the chat and takes the button off. Real-run tests for the price act (ticked+armed, ticked+disarmed, armed+unticked),
+the one cap number through every door, every 0148 gate fact on a stored draft, and the vouch's change sources through
+the dictionary's own writer. The calendar: `AGENT_TARIFF_NOTICE=off` in vitest.config.ts and the Playwright server
+env (the GEO_NETWORK/NAV_AUTO precedent), the notice's own test derives its days from `SITE_TARIFF.validThrough` and a
+new file stands in a table whose window contains today — proven by moving `validThrough` so today falls inside it. The
+waits fence finds the LAST re-maker of the CHECK instead of pinning 0148's file name. §3.7 was checked and found built.
+
+**#1782 — The fixes checked by people who did not write them, twice — and the second check found the first fix's own
+relaxations.** The first check of passes 1-2 (three lenses, one reproducing refuter each) upheld eleven findings and six
+nits, fixed in pass 3 (b348b5fe, 40 red proofs): a greeting is no mark of either language; «one» beside a measure, a
+classifier or a currency is his figure; `answer_stale` reads the whole burst he answered, not the anchor line; Chinese
+numerals in traditional spelling are folded before every test; a whole dd.mm.yyyy is a date; the armed avia rule read
+per clause; and `foreign_destination` was taught the customer's GRAMMAR («<origin>dan … X-ga», «из … в X», «from … to
+X», «从…到X», «از … به X»). The second check of pass 3 (send / regress / tests, 25 judged, **25 upheld, four blockers**)
+found that most of pass 3's relaxations had opened a wrong send of their own: the avia rule freed any clause naming an
+«information» noun, unit or name («Отправьте груз вместе с документами» went by itself), a receive verb beside our
+place or a Chinese city directed nothing («…omborimizda qabul qilamiz»), «нам» counted as OURS, and «bir dollar ham
+qo'shiladi» — «ham» is «also», not «even» — let a one-dollar surcharge in words go by itself. The grammar forms read an
+open lexicon in their slot (time words, pronouns, Tashkent's districts, «до Нового года», «到现在») and held ordinary
+Tashkent quotes; one greeting still decided a burst in some shapes; «參» was always the numeral three («僅供參考»).
+Measured over the round, the same readers moved like a pendulum: dangerous replies let through main 90 → a005de00 174
+→ b348b5fe 79; ordinary replies held 239 → 74 → 111.
+
+**#1783 — The direction changed: a regression corpus, then the readers.** Fixing a free-text reader one complaint at
+a time reopens the complaint before it — #1463-#1468 learned that for the calc intake and this round learned it again
+over five passes. Passes 4-5 (fa99b0f5, b0f2559b) built the corpus FIRST: `tests/unit/fixtures/agent-reader-corpus.ts`
+(nine readers — the armed avia rule and the act OFF, the destination, the customer's language, his answer's figures,
+`money_unread`, the Chinese numerals at the press and at G1, the lesson's money, the ✍️ phone), every case any review,
+check or fix pass of this round named, each labelled dangerous or ordinary and run through the real functions
+(`memoryFor` / `checkAgentReply` / `autoVerdict`, `agent-reader-corpus-eval.ts`); the runner
+`tests/unit/agent-reader-corpus.test.ts`; the ratchet `agent-reader-corpus-known.ts` (`it.fails`; an ordinary case
+only, each with its reason — a dangerous case is refused on it). **Zero tolerance for a dangerous case; where a rule
+cannot tell an ordinary reply from a dangerous one, it HOLDS** (his ✅, never a wrong send). The destination grammar
+forms were REMOVED, not repaired: no form held zero ordinary cases without an exclusion list that never ends; the
+curated list is the whole reader (every place any check named, with endings and a route to a bare listed name), and
+`destination_unsaid` makes a missed place an explicit Tashkent price («Toshkentgacha»), never a silent wrong one —
+the stated risk. Language: an unconfident guess that LEANS (the stored language, the one language the greetings said,
+an Uzbek word ending beside Russian adverbs — `uzbekEndingLean`) admits only that language. Money: Chinese is held for
+an amount beside its currency, never for the currency word alone. Pass 5 re-ran the 36 guards a mutation could delete
+with the suite green: 24 still survived and each got a corpus case that goes red without it (39 of 40 mutants red; the
+one green, `greetingOnly`, is equivalent and stated). `answer_stale` measures from what the question's run READ
+(`burstSeenAt` in the draft's policy JSON — the run reads the chat before the model call and inserts after it, so an
+edit during the call was later than the question's own stamp). The six agent integration files leave nothing behind
+(`tests/integration/drain-kicks.ts`). Corpus at b0f2559b: **656 dangerous held, 0 let through; 377 ordinary go, 8 held
+on the ratchet**. RULE: any change to `run.ts` (the avia rule), `destination.ts`, `locale.ts`, `digits.ts`,
+`numbers.ts`, `auto-money.ts`, `auto-gate.ts`, `lessons.ts` or the owner-answer readers runs the WHOLE corpus first.
+
+**#1784 — What ships, what the hunt found after the corpus, and the process.** He asked for part 1 to try
+(«1 chi boshqichni bolsa ham merge qilib menga ber ishlatib koray»), so it ships at the corpus (b0f2559b) while an
+independent hunt over the corpus — a leak hunter and a held hunter, one reproducing refuter per finding — was still
+being verified. What it had reproduced by then is OWED to part 1b, and the deploy note says why it is safe to try:
+most of it is the ARMED avia rule and the destination, which run only while «Narx» is ticked — and «Narx» ships
+unticked; he is told not to tick it until 1b. Found: hand-over verbs outside the closed lists («Шлите», «Присылайте»,
+«dispatch», «opkeling», «jo'natvoring», «运/拉», «بفرستین») and a Chinese place with «в / in / -da», a bare «送/发» +
+city, «office», «we'll wait for it there»; Qarshi/Osh with a spaced or hyphenated suffix, after «Manzil:», whole
+countries; an Uzbek Cyrillic line with no ў/қ/ғ/ҳ and no listed word read as an unconfident Russian guess that
+admits a Russian reply (and is stored); Russian «i» in Latin making Uzbek read English; his ✍️ answer's figure missed
+in glued or colloquial Uzbek numerals, ordinals and «haftasiga bir marta»; a spelled price or travel time in forms no
+reader knows; a lesson stating a price with no money word. Measured against main the branch is strictly safer on every
+corpus case (main lets 90 dangerous cases through, this tree 0), and the spelled-figure classes are the base policy's,
+present on main — but a «0» on a corpus is a statement about the corpus, which is why the hunt runs AFTER it and its
+finds become cases. PROCESS: an agent that dies on a usage limit returns null, and a review that counts its upheld
+findings read that as «0 upheld» (#1662 again, the session moved to another model and the run was resumed from its
+journal); a running workflow does not see an edited spec, but an agent that has not started reads it — the owner's
+answers to part 2 were written into its spec as a binding §00 while part 1 was being checked; and the corpus should
+have been built at pass 1 — five passes and three checks paid for it.

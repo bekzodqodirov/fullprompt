@@ -58,6 +58,7 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   kb: async () => [],
   // The demo seed's China receiving points (YW, GZ, KA) — read from the warehouses table in a run.
   chinaPlaces: async () => new Set(['Yiwu', 'Guangzhou', 'Qashqar']),
+  priceArmed: false,
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {
@@ -142,6 +143,7 @@ describe('avia is the ACTUAL kilos × his rate — volume never changes the figu
         kind: 'money',
         label: 'avia (tarif × kg)',
         origin: 'tool',
+        tool: 'avia_estimate',
         currency: 'USD',
         role: 'total',
       });

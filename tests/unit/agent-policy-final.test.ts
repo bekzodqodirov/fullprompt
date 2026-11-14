@@ -151,6 +151,9 @@ describe('K13 — a bare figure only the money tool vouches for is a quoted pric
       kind: 'money',
       source: "yo'lkira (sayt kalkulyatori)",
       currency: 'USD',
+      // Who vouched, copied from the source (0148, spec §1.1) — the auto layer never reads the label.
+      origin: 'tool',
+      role: 'total',
     });
   });
 
@@ -238,7 +241,7 @@ describe('K16 — a figure and its source are one claim only in one currency', (
   it('the card’s line says the currency the figure was read in', () => {
     expect(numberLedger('运费大约330元', yolkira)).toEqual([{ raw: '330 yuan', kind: 'money', source: null, currency: 'CNY' }]);
     expect(numberLedger('Taxminan 330 $', yolkira)).toEqual([
-      { raw: '330 $', kind: 'money', source: "yo'lkira (sayt kalkulyatori)", currency: 'USD' },
+      { raw: '330 $', kind: 'money', source: "yo'lkira (sayt kalkulyatori)", currency: 'USD', origin: 'tool', role: 'total' },
     ]);
     // A bare figure in a text naming one currency is that currency; naming two, it is no currency at all.
     expect(extractNumbers('Narx (yuanda): 480')[0]?.currency).toBe('CNY');
@@ -355,6 +358,7 @@ const envOf = (ctx: AgentContext, rate: number | null = 17): ToolEnv => ({
   aviaUsdPerKg: rate,
   kb: async () => [],
   chinaPlaces: async () => OURS,
+  priceArmed: false,
 });
 
 describe('K21 — the tools price the customer’s NEWEST figures', () => {

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dropDrainKicksSince } from './drain-kicks';
 import type { CallModel } from '@/modules/platform/ai/model';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -178,7 +179,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// The drain's kicks this file's notifications queued, from its own start (fix pass 5 — `drain-kicks.ts`).
+const KICKS_FROM = new Date().toISOString();
 afterAll(async () => {
+  await dropDrainKicksSince(KICKS_FROM);
   await clearChat();
   await db.delete(notifications).where(eq(notifications.userId, ownerId));
   await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));

@@ -190,6 +190,11 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
           autoSent: false,
           autoBad: false,
           autoCancel: false,
+          // «✍️ Savolga javob» (0148, spec SPEC-P1-v2 §2.2) — drawn only under a live card, written all the same.
+          ask: false,
+          // «📝 Tuzatish» (§3.1) is drawn under a CLOSED card too — a reply that went, the «remember» card — so a
+          // purged card must say no: its press would arm a lesson on a chat that is gone.
+          teach: false,
         })}::jsonb`,
         status: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'muted' ELSE ${notifications.status} END`,
         error: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'chat purged' ELSE ${notifications.error} END`,

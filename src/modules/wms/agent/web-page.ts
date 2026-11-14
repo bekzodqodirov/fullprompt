@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   agentAutoVerdicts,
   agentDrafts,
   agentOutbox,
+  agentRuns,
   calcRequests,
   clients,
   kbFacts,
@@ -17,13 +18,14 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
-import { cardDigest, cardDrawsSend, digestBody } from './card';
-import { renderDraftCardFull } from './card-io';
+import { cardDigest, cardDrawsSend, cardTeaches, digestBody, lessonRewritingNow } from './card';
+import { answeredNow, renderDraftCardFull } from './card-io';
 import { autoCountingDown } from './auto-card';
 import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
-import { agentAutoReady, agentTablesReady, type AgentConfig } from './config';
+import { agentAutoReady, agentFullP1Ready, agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
+import { readSendCaps } from './send-caps';
 import { dayRunCounts, sendsToday } from './today';
 import type { ComposedAction } from './types';
 
@@ -78,6 +80,20 @@ export interface WebDraft {
    * the page draws ⏸ beside ✅, as the bot's keyboard does (payload `autoAt`).
    */
   autoWaiting: boolean;
+  /**
+   * The row offers «📝 Tuzatish» (card `cardTeaches`, the bot card's own `teach`): its words are the machine's.
+   * `lessonRewrites`: a lesson saved here by the account holder also rewrites this reply (it is still waiting for
+   * his ✅) — the box says so before he types (spec SPEC-P1-v2 §3.4).
+   */
+  teach: boolean;
+  lessonRewrites: boolean;
+  /**
+   * The AI is rewriting this reply from a lesson (card `lessonRewritingNow` — the card's own «📝 Saboq saqlandi…»
+   * line). `teach` is false then (no second 📝), and the page still keeps the 📝's place mounted: the save's answer —
+   * what became of the card, and which older lesson fell out of the prompt (spec §3.3) — is shown there, and the
+   * save's own revalidation must not take it away (review of 0148 as built).
+   */
+  lessonRewriting: boolean;
 }
 
 type DraftRow = typeof agentDrafts.$inferSelect;
@@ -106,7 +122,9 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
 }
 
 function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0, auto: AutoCardState | null = null): WebDraft {
-  const { kb, kbToken } = (d.policy ?? {}) as { kb?: string; kbToken?: string };
+  const { kb, kbToken, ownerAnswer } = (d.policy ?? {}) as { kb?: string; kbToken?: string; ownerAnswer?: { text?: unknown } };
+  // His ✍️ answer (spec SPEC-P1-v2 §2.3): the fact the «remember» buttons save, shown on the card they sit under.
+  const answered = typeof ownerAnswer?.text === 'string' && ownerAnswer.text.trim() !== '' ? ownerAnswer.text : null;
   // The page lists live and approved drafts only, so no line here names his own reply's pause.
   const card = renderDraftCardFull(d, o, [], { surface: 'web', auto });
   const sendable = cardDrawsSend({ blocked: d.blocked || card.tooLong, status: d.status, ownText: d.finalBody !== null });
@@ -121,15 +139,18 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     ownText: d.finalBody !== null,
     body: digestBody(d),
     digest: webDigest(d),
-    cardText: card.text,
+    cardText: answered ? `${card.text}\n\n✍️ Javobingiz: «${answered}»` : card.text,
     chatHref: chatHrefOf(d),
     createdAt: d.createdAt,
     outbox: o ? { id: o.id, status: o.status, nextStepAt: o.nextStepAt, readDone: o.readDone, step: o.step } : null,
-    kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
+    kbAsk: ((d.status === 'approved' && d.needsOwner && d.finalBody !== null) || answered !== null) && kb !== 'saved' && kb !== 'skipped',
     kbArmed: kb === 'general_armed',
     kbArmToken: kb === 'general_armed' && typeof kbToken === 'string' ? kbToken : null,
     waitingInChat,
     autoWaiting: autoCountingDown(auto, d, sendable),
+    teach: cardTeaches(d) && !answeredNow(d),
+    lessonRewrites: d.status === 'pending' && d.kind === 'reply' && d.finalBody === null,
+    lessonRewriting: lessonRewritingNow(d),
   };
 }
 
@@ -213,9 +234,12 @@ export async function webDrafts(viewer: WebViewer, now = new Date()): Promise<{
       .where(
         and(
           seen,
-          eq(agentDrafts.status, 'approved'),
-          eq(agentDrafts.needsOwner, true),
-          sql`${agentDrafts.finalBody} IS NOT NULL`,
+          // An answer of his own the customer got — or his ✍️ answer to the AI's question, whatever became of the
+          // question since (spec SPEC-P1-v2 §2.3: the bot offers the same three under its acknowledgement).
+          or(
+            and(eq(agentDrafts.status, 'approved'), eq(agentDrafts.needsOwner, true), sql`${agentDrafts.finalBody} IS NOT NULL`),
+            sql`coalesce(${agentDrafts.policy}->'ownerAnswer'->>'text', '') <> ''`,
+          ),
           sql`coalesce(${agentDrafts.policy}->>'kb', '') NOT IN ('saved', 'skipped')`,
           gte(agentDrafts.updatedAt, new Date(now.getTime() - 7 * 86_400_000)),
         ),
@@ -335,9 +359,10 @@ export interface AgentToday {
  */
 export async function agentToday(config: AgentConfig, now = new Date()): Promise<AgentToday> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
+  const caps = await readSendCaps();
   const [counts, budget] = await Promise.all([
     dayRunCounts(dayStart, null),
-    config.ownerUserId ? sendsToday(config.ownerUserId, config.startedAt, now) : Promise.resolve({ used: 0, ceiling: 0 }),
+    config.ownerUserId ? sendsToday(config.ownerUserId, config.startedAt, now, caps.dayCap) : Promise.resolve({ used: 0, ceiling: 0 }),
   ]);
   return {
     runs: counts.runs,
@@ -414,11 +439,15 @@ export async function webStats(now = new Date()): Promise<AgentStats> {
       outboxStatus: agentOutbox.status,
       category: agentDrafts.category,
       autoSent,
+      // A draft an owner-started run wrote — his ✍️ answer's reply, his lesson's rewrite, a hand-back's question —
+      // is counted apart (stats `ownerTriggered`, spec §3.7). A draft with no run (his 💵 price) is not one.
+      ownerTriggered: sql<boolean>`coalesce(${agentRuns.trigger}, 'inbound') <> 'inbound'`,
     })
     .from(agentDrafts)
     .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentDrafts.id))
+    .leftJoin(agentRuns, eq(agentRuns.id, agentDrafts.runId))
     .where(gte(agentDrafts.createdAt, since));
-  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true, autoSent: r.autoSent === true })));
+  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true, autoSent: r.autoSent === true, ownerTriggered: r.ownerTriggered === true })));
 }
 
 export interface OwnerAccountState {
@@ -537,6 +566,8 @@ export interface AutoPanel {
    */
   today: { sent: number; going: number; unclear: number; paused: number; waiting: number; left: number };
   sent: AutoSentRow[];
+  /** 0148 has landed: the «Narx» box and the daily count's own field are offered (one migration behind they are not). */
+  fullReady: boolean;
 }
 
 /** An outbox status as the panel's delivery — null: the reply never left (or, one migration behind, nothing). */
@@ -599,12 +630,14 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
       : Promise.resolve([]),
   ]);
   const c = counts[0];
+  const fullReady = await agentFullP1Ready();
   const n = (x: number | undefined) => Number(x ?? 0);
   const today = { sent: n(c?.sent), going: n(c?.going), unclear: n(c?.unclear), paused: n(c?.paused), waiting: n(c?.waiting) };
   return {
     config,
     armedByName,
     workAccount: account[0]?.work === true,
+    fullReady,
     today: {
       ...today,
       left: Math.max(0, n(c?.total) - today.sent - today.going - today.unclear - today.paused - today.waiting),

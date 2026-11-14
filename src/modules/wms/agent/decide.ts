@@ -25,20 +25,24 @@ import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { afterPressOf, autoChatTakenInTx, autoPressStandsInTx, machinePressedReply, settleAutoPressInTx, stopAutoForPerson, type AutoPressLoss } from './auto-send';
-import { cardDigest, digestBody } from './card';
+import { cardAsks, cardDigest, digestBody } from './card';
 import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
-import { agentAutoReady, agentRunning, readAgentConfig } from './config';
+import { agentAutoReady, agentFullP1Ready, agentRunning, readAgentConfig } from './config';
 import { bindMoved, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { AFTER_AUTO, keptFileSql } from './outbox-store';
 import { CANCELLED_BY_HOLDER } from './web-thread';
 import { AGENT_LIMITS } from './limits';
+import { estimatesStand } from './estimate-check';
 import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
+import { readSendCaps } from './send-caps';
+import { confirmTariffInTx } from './tariff-watch';
 import { capReached, dayRunCounts, OUTBOX_GOING, sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
-import { isFirstAsk, JOB_AGENT_INBOUND, nextRedraftAttempt, type AgentInboundJob } from './queues';
+import { isFirstAsk, JOB_AGENT_INBOUND, JOB_AGENT_OWNER_ANSWER, nextRedraftAttempt, type AgentInboundJob, type AgentOwnerAnswerJob } from './queues';
+import { ANSWER_WAIT_MS, answerTextRefusal, type AnswerContact } from './owner-answer';
 import { isNudge } from './worthy';
 import type { PolicyHit } from './policy';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -111,6 +115,12 @@ export type DecideRefusal =
   | 'auto_pressed'
   | 'auto_sending'
   | 'auto_sent'
+  /**
+   * The machine's estimate priced again at this press gives another figure, or could not be priced (spec
+   * SPEC-P1-v2 §1.3): a tariff edit or a new avia rate since the draft. Nothing is queued — the send step would
+   * only cancel it. His own words (✏️) carry his own figure and are never asked.
+   */
+  | 'estimate_moved'
   | 'empty';
 
 export type DecideResult =
@@ -238,9 +248,12 @@ async function identityMoved(d: typeof agentDrafts.$inferSelect): Promise<boolea
   return bindMoved(d, await chatIdentity(d.managerUserId, d.peerId));
 }
 
-/** Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). One home: today.ts. */
+/**
+ * Today's AI sends against the ceiling — a ✅ beyond it is refused with the text to copy (fit-8). One home:
+ * today.ts, over the effective day cap (send-caps.ts) the send step uses too.
+ */
 async function budgetLeft(managerUserId: string, startedAt: Date | null, now: Date): Promise<number> {
-  const { used, ceiling } = await sendsToday(managerUserId, startedAt, now);
+  const { used, ceiling } = await sendsToday(managerUserId, startedAt, now, (await readSendCaps()).dayCap);
   return ceiling - used;
 }
 
@@ -807,6 +820,19 @@ async function afterMachinePress(
 }
 
 /**
+ * The moment his ✅ vouches for the China column (spec SPEC-P1-v2 §1.6): the draft quoted a TRUCK figure (the column
+ * prices only the truck — the flight is his rate) that was priced again at this press and stands, and 0148 has
+ * landed. The run's own start: the figure was priced on the column as it stood then, and a write during the run
+ * must stay unconfirmed. null: nothing to vouch for.
+ */
+async function tariffVouchOf(d: Pick<typeof agentDrafts.$inferSelect, 'runId'>, estimates: unknown): Promise<Date | null> {
+  if (!Array.isArray(estimates) || !estimates.some((e) => (e as { tool?: unknown })?.tool === 'yolkira_estimate')) return null;
+  if (!d.runId || !(await agentFullP1Ready())) return null;
+  const [run] = await db.select({ createdAt: agentRuns.createdAt }).from(agentRuns).where(eq(agentRuns.id, d.runId));
+  return run?.createdAt ?? null;
+}
+
+/**
  * `auto`: «o'zi yuborish»'s machine press (§18.3, auto-send `pressDueAutos`) —
  * the same ✅, stricter: only 'send', only a strictly 'pending' machine reply
  * (never 'editing', never his words, never a price), only with the digest the
@@ -866,7 +892,12 @@ export async function decideDraft(
         .set({
           status,
           updatedAt: new Date(),
-          ...(decision === 'edit' ? {} : { decidedBy: actor.id, decidedAt: new Date() }),
+          // ✏️ ends a ✍️ on the same draft (spec SPEC-P1-v2 §2.2): his own words now, never the AI's from his answer —
+          // a redraft still on its way finds no `answering` and writes nothing (drafts `createDraft`).
+          // …and a lesson's rewrite still on its way (§3.4) finds no mark either: ✏️ means his own words.
+          ...(decision === 'edit'
+            ? { policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) - 'answering' - 'lessonRedraft'` }
+            : { decidedBy: actor.id, decidedAt: new Date() }),
         })
         .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['pending', 'editing'])))
         .returning({ id: agentDrafts.id });
@@ -1014,6 +1045,15 @@ export async function decideDraft(
     const asked = await anchorSentAt(d);
     if (asked && sendAt.getTime() - asked.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return { ok: false, code: 'window_closed' };
   }
+  // The machine's figures priced again at THIS press (spec §1.3) — his ✅ and the machine's alike, before anything
+  // is landed or queued: asked at one end only, the door queued a reply the send step was certain to cancel (the
+  // 💵 precedent). His own words (`finalBody`) are his own figure.
+  const memory = p.memory;
+  const standing = d.finalBody === null ? await estimatesStand(memory?.estimates, now) : null;
+  if (standing === 'estimate_moved') return { ok: false, code: 'estimate_moved' };
+  // A PERSON's ✅ on a truck figure priced on today's China column vouches for that column (§1.6
+  // `tariff_unconfirmed`) — as of the moment its run began, so a tariff write during the run stays unconfirmed.
+  const vouchesTariff = !opts.auto && standing === 'stands' ? await tariffVouchOf(d, memory?.estimates) : null;
   if ((await budgetLeft(d.managerUserId, config!.startedAt, now)) <= 0) return { ok: false, code: 'budget_spent' };
 
   // The calculation first — the reply promises it (regression-4).
@@ -1104,6 +1144,7 @@ export async function decideDraft(
       before: { status: d.status },
       after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId, ...(opts.auto ? { via: 'auto' } : {}) },
     });
+    if (vouchesTariff) await confirmTariffInTx(tx, vouchesTariff, actor.id);
     if (opts.auto && !(await settleAutoPressInTx(tx, draftId, opts.autoAt ?? now))) throw new AutoPressLost('auto_stopped');
     return true;
   }).catch((err: unknown) => {
@@ -1204,6 +1245,12 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
     }
   }
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson>;
+  // His own words end a ✍️ he had pressed (spec SPEC-P1-v2 §2.2): a redraft from his answer still on its way finds no
+  // mark and writes nothing over them (drafts `createDraft`). The page's ✏️ box writes here without a ✏️ press.
+  const kept: Partial<DraftPolicyJson> = { ...p };
+  delete kept.answering;
+  // …and a lesson's rewrite of this reply (§3.4): his own words are never rewritten under him.
+  delete kept.lessonRedraft;
   // His words pass the owner subset; the same-text count is only a warning on his card (K3).
   const policy = await ownerPolicyFor(body, p.memory?.ownCodes ?? [], {
     managerUserId: d.managerUserId,
@@ -1216,7 +1263,7 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
       finalBody: body,
       status: 'pending',
       blocked: !policy.ok,
-      policy: { ...p, blocks: policy.blocks, warnings: policy.warnings, ledger: [] },
+      policy: { ...kept, blocks: policy.blocks, warnings: policy.warnings, ledger: [] },
       updatedAt: new Date(),
     })
     .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['editing', 'pending'])))
@@ -1235,6 +1282,103 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
     digest: cardDigest(digestBody(row), (row.actions ?? []) as ComposedAction[]),
     actions: (row.actions ?? []) as ComposedAction[],
   };
+}
+
+// ── «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2) ───────────────────────────────────
+
+export type AnswerRefusal = 'not_ready' | 'not_found' | 'agent_off' | 'not_live' | 'not_question' | 'empty' | 'contact';
+
+/**
+ * His press of «✍️ Savolga javob» on a question the AI put to him: the holder alone (the draft's account AND the
+ * agent's — callback data can be forged, so anybody else hears «Topilmadi»), only a live question the model raised
+ * (`cardAsks`: a forced one is his ✏️ text). The draft's waiting auto stops first (`owner_answer`), then the ✏️
+ * compare-and-set moves it to `editing` with `policy.answering` — a customer's next line stands down (drafts
+ * `createDraft`) instead of superseding the very card he is answering, until his answer or `until`.
+ */
+export async function answerQuestion(actor: DeciderActor, draftId: string, now: Date = new Date()): Promise<{ ok: true; until: Date } | { ok: false; code: AnswerRefusal }> {
+  if (!(await agentFullP1Ready())) return { ok: false, code: 'not_ready' };
+  const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+  if (!d || d.managerUserId !== actor.id) return { ok: false, code: 'not_found' };
+  const config = await readAgentConfig();
+  if (!config || config.ownerUserId !== actor.id) return { ok: false, code: 'not_found' };
+  if (!agentRunning(config)) return { ok: false, code: 'agent_off' };
+  if (d.status !== 'pending' && d.status !== 'editing') return { ok: false, code: 'not_live' };
+  if (!cardAsks(d)) return { ok: false, code: 'not_question' };
+  await stopAutoForPerson(draftId, actor.id, 'owner_answer');
+  const until = new Date(now.getTime() + ANSWER_WAIT_MS);
+  const answering = { since: now.toISOString(), until: until.toISOString() };
+  const [row] = await db
+    .update(agentDrafts)
+    .set({ status: 'editing', updatedAt: now, policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ answering })}::jsonb` })
+    .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.managerUserId, actor.id), inArray(agentDrafts.status, ['pending', 'editing']), eq(agentDrafts.needsOwner, true)))
+    .returning({ id: agentDrafts.id });
+  if (!row) return { ok: false, code: 'not_live' };
+  await refreshDraftCard(draftId);
+  return { ok: true, until };
+}
+
+/**
+ * His answer, typed after «✍️» (§2.2): refused in words when it carries a phone, a link or Chinese text (the AI never
+ * re-types an address — ✏️ is the door), else stored on the question draft as `policy.ownerAnswer` by a
+ * compare-and-set on «still editing, still waiting for an answer» — a key no sender reads — and QUEUED: the model
+ * runs on the worker, never on the bot's sequential poller (round 101, #706). The question stays `editing` until the
+ * redraft supersedes it; a worker that dies with it is the sweep's to hand back (`ANSWER_RUN_STALE_MS`).
+ */
+export async function storeOwnerAnswer(
+  actor: DeciderActor,
+  draftId: string,
+  text: string,
+  messageId: number,
+  ctx: AuditContext,
+  now: Date = new Date(),
+): Promise<{ ok: true } | { ok: false; code: AnswerRefusal; contact?: AnswerContact }> {
+  const body = text.trim();
+  if (!body) return { ok: false, code: 'empty' };
+  // What was read as the contact travels with the refusal, so the door's words can name it.
+  const contact = answerTextRefusal(body);
+  if (contact) return { ok: false, code: 'contact', contact };
+  const ownerAnswer = { text: body, at: now.toISOString(), messageId };
+  const [row] = await db
+    .update(agentDrafts)
+    .set({ updatedAt: now, policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ ownerAnswer })}::jsonb` })
+    .where(
+      and(
+        eq(agentDrafts.id, draftId),
+        eq(agentDrafts.managerUserId, actor.id),
+        eq(agentDrafts.status, 'editing'),
+        sql`${agentDrafts.policy} ? 'answering'`,
+        sql`(${agentDrafts.policy}->'answering'->>'until')::timestamptz > ${now.toISOString()}::timestamptz`,
+      ),
+    )
+    .returning({ peerId: agentDrafts.peerId });
+  if (!row) return { ok: false, code: 'not_live' };
+  await writeAudit(db, ctx, { entityType: 'agent_draft', entityId: draftId, action: 'update', after: { ownerAnswer: true, messageId } });
+  await refreshDraftCard(draftId);
+  const job: AgentOwnerAnswerJob = { managerUserId: actor.id, peerId: String(row.peerId), draftId, messageId };
+  // retryLimit 0: a re-delivered model call is a second bill; the run's source key keeps one answer one draft. A job
+  // that never queued is the sweep's to hand back, in words (`ANSWER_RUN_STALE_MS`).
+  await enqueue(JOB_AGENT_OWNER_ANSWER, job, { retryLimit: 0 }).catch((err: unknown) =>
+    logger.error({ err, draftId }, '[agent] owner answer not queued'),
+  );
+  return { ok: true };
+}
+
+/**
+ * A question he pressed ✍️ on, handed back to him: `editing` → `pending`, the wait's mark gone (his stored answer
+ * stays — the «📌/👤» offer under its acknowledgement reads it). The card says why (`note`), and — `redraft` — every
+ * customer line that stood down while he was answering is asked again (the ❌ path, `redraftQuietly`): without it a
+ * pressed-and-forgotten ✍️ would silence the chat until the 24-hour expiry. False: it was no longer waiting.
+ */
+export async function releaseAnswering(draftId: string, opts: { note: string | null; redraft: boolean }): Promise<boolean> {
+  const [row] = await db
+    .update(agentDrafts)
+    .set({ status: 'pending', updatedAt: new Date(), policy: sql`${agentDrafts.policy} - 'answering'` })
+    .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, 'editing'), sql`${agentDrafts.policy} ? 'answering'`))
+    .returning();
+  if (!row) return false;
+  await refreshDraftCard(draftId, opts.note ? [opts.note] : []);
+  if (opts.redraft) await redraftQuietly(row, (await anchorEditedNow(row)) ? 'edited' : 'newer');
+  return true;
 }
 
 async function refreshDraftCard(draftId: string, notes: string[] = []): Promise<void> {

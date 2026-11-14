@@ -23,7 +23,10 @@ import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
 import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
-import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, stopAuto, stopAutoForEdit } from './auto-send';
+import { AutoConfigError, STOP_AUTO_WORDS, autoFeedback, setAutoArmed, setAutoCategories, setAutoPerDay, stopAuto, stopAutoForEdit } from './auto-send';
+import { deleteLesson, editLesson, lessonFromPage, lessonSavedWords, openLesson, setLessonActive, type LessonResult } from './lessons';
+import { SendCapsError, setSendCaps } from './send-caps';
+import { confirmTariff, TariffConfirmError } from './tariff-watch';
 
 /**
  * The web half of the AI sotuvchi's decisions (spec §17.7 «Web: the same
@@ -353,6 +356,61 @@ export async function agentAutoCategoriesAction(categories: string[]): Promise<A
   });
 }
 
+/** A box's whole number, null for an empty one, NaN for anything else — the service refuses NaN as `bad_value`. */
+function capOf(raw: unknown): number | null {
+  if (typeof raw !== 'string') return Number.NaN;
+  const s = raw.trim();
+  if (s === '') return null;
+  return /^\d{1,9}$/u.test(s) ? Number(s) : Number.NaN;
+}
+
+/**
+ * The layer's daily count (0148): an empty box is «no cap». The holder's — the service asks. A number out of its
+ * bounds is THIS box's own code: the services share `bad_value` with the kinds form, whose words («kamida bitta
+ * turni belgilang») told a person who had typed a number to tick a box (review of 0148 as built).
+ */
+export async function agentAutoPerDayAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoPerDay(actor, capOf(raw), ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_per_day' : `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/**
+ * The account-protection limits (0148): empty boxes are today's defaults. The holder's or a super_admin's — the
+ * service asks; its refusals are the arming doors' own words (`auto_…`), a number out of bounds its own.
+ */
+export async function agentSendCapsAction(values: { dayCap: string; hourCap: string }): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setSendCaps(actor, { dayCap: capOf(values?.dayCap), hourCap: capOf(values?.hourCap) }, ctx);
+    } catch (err) {
+      if (err instanceof SendCapsError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_caps' : `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/**
+ * «✅ Tarif to'g'ri» on the page (0148, spec SPEC-P1-v2 §1.6): vouches for the China column the page SHOWED (`seen`,
+ * its stamp) — a column written since is refused in words, never confirmed unseen. The holder's or a super_admin's.
+ */
+export async function agentConfirmTariffAction(seen: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    if (typeof seen !== 'string' || !/^[0-9a-f]{8}$/u.test(seen)) return { ok: false, error: 'tariff_changed' };
+    try {
+      await confirmTariff(actor, seen, ctx);
+    } catch (err) {
+      if (err instanceof TariffConfirmError) return { ok: false, error: err.code };
+      throw err;
+    }
+  });
+}
+
 /** ⏸ on a card counting down — the bot's op `a`. */
 export async function agentAutoStopAction(draftId: string): Promise<AgentActionResult> {
   return run(async ({ actor }) => {
@@ -368,5 +426,66 @@ export async function agentAutoFeedbackAction(draftId: string): Promise<AgentAct
     const r = await autoFeedback(actor.id, draftId);
     // Said by the page itself: the row reads «👎», and a step-down shows as the panel's «o‘chiq» with its reason.
     if (!r.ok) return { ok: false, error: r.code === 'not_ready' ? 'auto_not_ready' : `auto_fb_${r.code}` };
+  });
+}
+
+/**
+ * «📝 Tuzatish» on the page (spec SPEC-P1-v2 §3) — the bot's own writer (`lessons.ts`), behind the page's door:
+ * whoever it admits may teach, and only the account holder's lesson rewrites a card (the service asks). Each
+ * refusal comes back as its OWN page code (`lesson_…`); a saved lesson answers with the bot's own sentence.
+ */
+
+/** A lesson's refusal as the page's code — with the figure a money refusal read as a price. */
+function lessonRefused(r: Exclude<LessonResult, { ok: true }>): AgentActionResult {
+  return { ok: false, error: `lesson_${r.code}`, ...(r.code === 'money' && r.detail ? { detail: r.detail } : {}) };
+}
+
+/**
+ * 📝 pressed — BEFORE the box opens (§3.1, the `agentEditOpenAction` precedent): the holder's press on a reply
+ * counting down stops it on the server, so the AI's own text cannot go while he types why it is wrong. «Kech» once
+ * the machine pressed — said, and the box opens all the same: the lesson still teaches.
+ */
+export async function agentLessonOpenAction(draftId: string): Promise<AgentActionResult> {
+  return run(async ({ actor }) => {
+    const r = await openLesson(actor, draftId, 'web');
+    if (!r.ok) return { ok: false, error: `lesson_${r.code}` };
+    if (r.holder) revalidatePath('/suhbatlar', 'layout');
+    if (r.after === 'pressed' || r.after === 'sending') return { ok: true, message: STOP_AUTO_WORDS[r.after] };
+  });
+}
+
+/** The box's save — itself the confirmation (§3.2). The holder's lesson on a card still waiting rewrites it (§3.4). */
+export async function agentLessonSaveAction(draftId: string, text: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await lessonFromPage(actor, { draftId, text: typeof text === 'string' ? text : '' }, ctx);
+    if (!r.ok) return lessonRefused(r);
+    if (r.redraft === 'queued') revalidatePath('/suhbatlar', 'layout');
+    return { ok: true, message: lessonSavedWords(r) };
+  });
+}
+
+/** «Saboqlar»: a lesson's words corrected — the same refusals as a new one; saving an unconfirmed one confirms it. */
+export async function agentLessonEditAction(lessonId: string, text: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await editLesson(actor, lessonId, typeof text === 'string' ? text : '', ctx);
+    if (!r.ok) return lessonRefused(r);
+    return { ok: true, message: lessonSavedWords(r) };
+  });
+}
+
+/** «Saboqlar»: a lesson switched off (it leaves the prompt and stays on the page) or back on. */
+export async function agentLessonActiveAction(lessonId: string, active: boolean): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await setLessonActive(actor, lessonId, active === true, ctx);
+    if (!r.ok) return lessonRefused(r);
+    // Switched on, it is said whether the prompt has room for it — and what it pushed out.
+    if (active === true && (!r.fits || r.dropped.length > 0)) return { ok: true, message: lessonSavedWords(r) };
+  });
+}
+
+export async function agentLessonDeleteAction(lessonId: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const r = await deleteLesson(actor, lessonId, ctx);
+    if (!r.ok) return { ok: false, error: `lesson_${r.code}` };
   });
 }

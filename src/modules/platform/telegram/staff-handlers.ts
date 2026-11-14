@@ -1118,7 +1118,7 @@ export function registerStaffBot(bot: Bot): void {
     }
 
     // The AI sotuvchi's ONE text slot (0138, regression-6): his edited reply,
-    // his price, a stranger's code — BELOW every live collector (one
+    // his price, a stranger's code, his answer to its question (0148) — BELOW every live collector (one
     // collector at a time) and ABOVE the reply door and `takeTaskPending`
     // (which deletes on read). A swipe-reply names its own target, a newer
     // task wait wins over an older agent wait, and a forward is Door B's

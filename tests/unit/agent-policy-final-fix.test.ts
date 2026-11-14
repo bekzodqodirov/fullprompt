@@ -419,6 +419,7 @@ const envOf = (ctx: AgentContext, rate: number | null = 17): ToolEnv => ({
   aviaUsdPerKg: rate,
   kb: async () => [],
   chinaPlaces: async () => OURS,
+  priceArmed: false,
 });
 
 function compose(replyText: string, patch: Partial<ComposeReply> = {}): ComposeReply {

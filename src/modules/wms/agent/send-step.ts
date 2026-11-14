@@ -95,8 +95,11 @@ export interface SendFacts {
   ruleExcluded: boolean;
   /** Today's identity decision for the chat differs from the draft's (leak-4). */
   identityChanged: boolean;
-  /** A price draft's offer: null when the draft carries none. */
-  offerStands: boolean | null;
+  /**
+   * The draft's figure (drafts `draftOfferStands`): a 💵's request or offer, or the machine's estimates priced again
+   * on today's tariff (spec SPEC-P1-v2 §1.3); null when the draft carries none.
+   */
+  offerStands: 'stands' | 'offer_gone' | 'estimate_moved' | null;
   /**
    * Caps, counted over agent_outbox rows handed to Telegram — 'sent' AND 'unknown' (S5). The hour and the
    * account's last send count the account's sent CRM replies as well (K5); the day and the chat's two are
@@ -105,7 +108,14 @@ export interface SendFacts {
   sentToChatToday: number;
   sentLastHour: number;
   sentToday: number;
+  /** The day's ceiling (`dailySendCeiling` over the effective day cap — the ramp, then the cap). */
   dailyCeiling: number;
+  /**
+   * The account-protection caps as they stand (send-caps `readSendCaps`, 0148): his stored numbers, else
+   * `AGENT_LIMITS.perDay` / `perHour` — the one figure the ✅, the gate and the page read too (spec §5.2).
+   */
+  dayCap: number;
+  hourCap: number;
   lastChatSendAt: Date | null;
   lastAccountSendAt: Date | null;
   /** The jitter drawn for the account gap this tick. */
@@ -127,7 +137,9 @@ export type FinalRefusal =
   | 'muted'
   | 'excluded'
   | 'identity_changed'
-  | 'offer_gone';
+  | 'offer_gone'
+  /** A machine estimate priced again today gives another figure, or the re-price refused (spec §1.3). */
+  | 'estimate_moved';
 
 export type WaitReason =
   | 'flood_wait'
@@ -187,7 +199,8 @@ export function agentSendVerdict(
   if (f.conversationMuted) return fin('muted');
   if (f.ruleExcluded) return fin('excluded');
   if (f.identityChanged) return fin('identity_changed');
-  if (f.offerStands === false) return fin('offer_gone');
+  if (f.offerStands === 'offer_gone') return fin('offer_gone');
+  if (f.offerStands === 'estimate_moved') return fin('estimate_moved');
 
   if (f.floodUntil && f.floodUntil.getTime() > now) return wait('flood_wait', f.floodUntil);
   // The night rule at the SEND, not only at the ✅ (his Q14 ⭐, review S3): a row a flood wait, the hour cap
@@ -211,8 +224,8 @@ export function agentSendVerdict(
     return wait('account_gap', new Date(f.lastAccountSendAt.getTime() + f.accountGapMs));
   }
   if (f.sentToChatToday >= AGENT_LIMITS.perChatPerDay) return wait('chat_day_cap', nextTashkentMorning(f.now));
-  if (f.sentLastHour >= AGENT_LIMITS.perHour) return wait('hour_cap', new Date(now + 5 * 60_000));
-  if (f.sentToday >= Math.min(f.dailyCeiling, AGENT_LIMITS.perDay)) return wait('day_cap', nextTashkentMorning(f.now));
+  if (f.sentLastHour >= f.hourCap) return wait('hour_cap', new Date(now + 5 * 60_000));
+  if (f.sentToday >= Math.min(f.dailyCeiling, f.dayCap)) return wait('day_cap', nextTashkentMorning(f.now));
   return { ok: true };
 }
 

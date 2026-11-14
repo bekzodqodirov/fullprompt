@@ -1,7 +1,9 @@
 import { Api } from 'telegram';
 import { FloodWaitError, RPCMessageToError } from 'telegram/errors';
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { AGENT_LIMITS, dailySendCeiling, HUMAN_LIMITS, typingMs } from '@/modules/wms/agent/limits';
+import { SEND_CAP_BOUNDS } from '@/modules/wms/agent/send-caps';
 import {
   agentSendVerdict,
   choreographyPlan,
@@ -64,6 +66,8 @@ const facts: SendFacts = {
   sentLastHour: 0,
   sentToday: 0,
   dailyCeiling: 80,
+  dayCap: 80,
+  hourCap: 20,
   lastChatSendAt: null,
   lastAccountSendAt: null,
   accountGapMs: 15_000,
@@ -99,6 +103,21 @@ describe('the fuses (ban-11)', () => {
     expect(AGENT_LIMITS.sendJitterMs[0]).toBeGreaterThanOrEqual(60_000 / HUMAN_LIMITS.perMinute);
   });
 
+  it('…and so do the caps he may type (0148, spec §5.2): the bounds the page, the service and the CHECKs keep', () => {
+    expect(SEND_CAP_BOUNDS.day.max).toBeLessThanOrEqual(HUMAN_LIMITS.perDay);
+    expect(SEND_CAP_BOUNDS.hour.max / 60).toBeLessThanOrEqual(HUMAN_LIMITS.perMinute);
+    expect(SEND_CAP_BOUNDS.hour.max).toBeLessThanOrEqual(100);
+    expect(SEND_CAP_BOUNDS.day.min).toBe(1);
+    expect(SEND_CAP_BOUNDS.hour.min).toBe(1);
+    // The defaults sit inside the bounds — an empty box is never a cap the form itself would refuse.
+    expect(AGENT_LIMITS.perDay).toBeLessThanOrEqual(SEND_CAP_BOUNDS.day.max);
+    expect(AGENT_LIMITS.perHour).toBeLessThanOrEqual(SEND_CAP_BOUNDS.hour.max);
+    // The migration's CHECKs say the same numbers.
+    const sql = readFileSync('src/modules/platform/db/migrations/0148_agent_full_p1.sql', 'utf8');
+    expect(sql).toContain(`"day_cap" IS NULL OR "day_cap" BETWEEN ${SEND_CAP_BOUNDS.day.min} AND ${SEND_CAP_BOUNDS.day.max}`);
+    expect(sql).toContain(`"hour_cap" IS NULL OR "hour_cap" BETWEEN ${SEND_CAP_BOUNDS.hour.min} AND ${SEND_CAP_BOUNDS.hour.max}`);
+  });
+
   it('types for 3-12 seconds by length', () => {
     expect(typingMs(0)).toBe(3_000);
     expect(typingMs(150)).toBe(7_000);
@@ -109,11 +128,19 @@ describe('the fuses (ban-11)', () => {
 
   it('ramps to his own average for 14 days, then to 80 (his Q11 ⭐)', () => {
     const started = new Date(now.getTime() - 3 * 86_400_000);
-    expect(dailySendCeiling({ startedAt: started, ownAverage: 23.7, now })).toBe(23);
-    expect(dailySendCeiling({ startedAt: started, ownAverage: 0, now })).toBe(1);
-    expect(dailySendCeiling({ startedAt: started, ownAverage: 500, now })).toBe(80);
-    expect(dailySendCeiling({ startedAt: new Date(now.getTime() - 15 * 86_400_000), ownAverage: 5, now })).toBe(80);
-    expect(dailySendCeiling({ startedAt: null, ownAverage: 5, now })).toBe(0);
+    const dayCap = AGENT_LIMITS.perDay;
+    expect(dailySendCeiling({ startedAt: started, ownAverage: 23.7, now, dayCap })).toBe(23);
+    expect(dailySendCeiling({ startedAt: started, ownAverage: 0, now, dayCap })).toBe(1);
+    expect(dailySendCeiling({ startedAt: started, ownAverage: 500, now, dayCap })).toBe(80);
+    expect(dailySendCeiling({ startedAt: new Date(now.getTime() - 15 * 86_400_000), ownAverage: 5, now, dayCap })).toBe(80);
+    expect(dailySendCeiling({ startedAt: null, ownAverage: 5, now, dayCap })).toBe(0);
+  });
+
+  it('…to HIS day cap when he typed one (0148): the ramp tops out at it, and after the ramp it IS the ceiling', () => {
+    const started = new Date(now.getTime() - 3 * 86_400_000);
+    expect(dailySendCeiling({ startedAt: started, ownAverage: 500, now, dayCap: 150 })).toBe(150);
+    expect(dailySendCeiling({ startedAt: started, ownAverage: 500, now, dayCap: 40 })).toBe(40);
+    expect(dailySendCeiling({ startedAt: new Date(now.getTime() - 15 * 86_400_000), ownAverage: 5, now, dayCap: 150 })).toBe(150);
   });
 });
 
@@ -136,7 +163,9 @@ describe('agentSendVerdict', () => {
     [{ conversationMuted: true }, 'muted'],
     [{ ruleExcluded: true }, 'excluded'],
     [{ identityChanged: true }, 'identity_changed'],
-    [{ offerStands: false }, 'offer_gone'],
+    [{ offerStands: 'offer_gone' }, 'offer_gone'],
+    // The machine's estimate priced again at the step moved (spec SPEC-P1-v2 §1.3).
+    [{ offerStands: 'estimate_moved' }, 'estimate_moved'],
   ] as const)('refuses for good: %o → %s', (patch, reason) => {
     expect(agentSendVerdict(row, { ...facts, ...patch })).toEqual({ ok: false, final: true, reason });
   });
@@ -292,6 +321,22 @@ describe('agentSendVerdict', () => {
       reason: 'day_cap',
     });
     expect(agentSendVerdict(row, { ...facts, sentToChatToday: 12 })).toMatchObject({ final: false, reason: 'chat_day_cap' });
+  });
+
+  it('the hour and the day are HIS caps as read at this tick (0148, spec §5.2) — never the constant beside them', () => {
+    // His hour cap of 30: the 21st send of the hour still goes; the 30th waits.
+    expect(agentSendVerdict(row, { ...facts, hourCap: 30, sentLastHour: 20 })).toEqual({ ok: true });
+    expect(agentSendVerdict(row, { ...facts, hourCap: 30, sentLastHour: 30 })).toMatchObject({ final: false, reason: 'hour_cap' });
+    // A lower one binds below the constant.
+    expect(agentSendVerdict(row, { ...facts, hourCap: 5, sentLastHour: 5 })).toMatchObject({ final: false, reason: 'hour_cap' });
+    // His day cap of 150 past the ramp: the 81st send goes; the 150th waits for the morning.
+    expect(agentSendVerdict(row, { ...facts, dayCap: 150, dailyCeiling: 150, sentToday: 80 })).toEqual({ ok: true });
+    expect(agentSendVerdict(row, { ...facts, dayCap: 150, dailyCeiling: 150, sentToday: 150 })).toMatchObject({
+      final: false,
+      reason: 'day_cap',
+    });
+    // The cap binds even where a ceiling read elsewhere says more.
+    expect(agentSendVerdict(row, { ...facts, dayCap: 10, dailyCeiling: 80, sentToday: 10 })).toMatchObject({ final: false, reason: 'day_cap' });
   });
 });
 

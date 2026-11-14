@@ -171,6 +171,7 @@ describe('B3: a price, a day count or a day is the company’s word — never th
       aviaUsdPerKg: 17,
       kb: async () => [fact('Ombor manzili: Chilonzor 7, Toshkent.')],
       chinaPlaces: async () => new Set(['Yiwu']),
+      priceArmed: false,
     };
     const outs: ToolOutcome[] = [
       await runTool('avia_estimate', { weight_ref: 'w1' }, env),

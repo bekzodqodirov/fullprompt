@@ -37,7 +37,11 @@ export type WaitKind =
   | 'burst'
   // «📎 Fayl qo‘shish» under a prixod's message (0146, docs/PRIXOD-XABARI.md
   // §C.5): which prixod the chat is feeding files to. receipt-files.ts's own.
-  | 'receipt_files';
+  | 'receipt_files'
+  // The AI sotuvchi's two one-text waits of 0148 (spec §2.2, §3.1): his answer to the AI's question
+  // («✍️ Savolga javob»), and a lesson he gives the AI («📝 Tuzatish»).
+  | 'agent_answer'
+  | 'agent_lesson';
 
 /** Unix SECONDS, Telegram's unit. */
 export interface WaitEntry<P> {

@@ -5,6 +5,7 @@ import {
   currenciesNamed,
   currencyOf,
   MONEY_WORD,
+  namesCurrency,
   normalizeDigits,
   type Currency,
 } from './digits';
@@ -83,8 +84,13 @@ export type MoneyRole = 'total' | 'rate' | 'balance';
  * fact, or the customer. Without it a customer's own «5 kunda kelsinmi?»
  * backed the reply's «Odatda 5 kunda yetib keladi» — his wish, worded as our
  * estimate, passed G1 — and a fact's «15–25 kun» could not be told from his.
+ *
+ * `owner`: HIS answer to the AI's question («✍️ Savolga javob», spec SPEC-P1-v2 §2.2) — the company's word like a
+ * fact (`companySaid`), read like a fact (`ownerAnswerSources`), and for ONE redraft only: it lives in that draft's
+ * stored memory and nowhere else. A line it vouches for is the auto layer's `owner_figure` — his figure always comes
+ * back to him as a card, never by itself.
  */
-export type SourceOrigin = 'tool' | 'kb' | 'customer';
+export type SourceOrigin = 'tool' | 'kb' | 'customer' | 'owner';
 
 export interface NumberSource {
   value: number;
@@ -127,6 +133,12 @@ export interface NumberSource {
    * 100 kg yukingiz Toshkentga yetib keldi», a weight nobody stated. Absent = any sentence.
    */
   said?: 'minimum';
+  /**
+   * The tool that made it (`TOOL_SPECS` name) — set by the two estimate tools on every source of a priced
+   * answer (spec §1.1): the auto layer's money clause asks WHICH tool vouched for each money line, never its label.
+   * Absent = no tool named it (the customer, a fact, the company's rule, a memory stored before 0148).
+   */
+  tool?: string;
 }
 
 /** How cargo travels — the three roads a day count can be the time of. */
@@ -522,10 +534,87 @@ export interface LedgerEntry {
   source: string | null;
   /** A money figure's currency as read; null = none could be told. */
   currency?: Currency | null;
+  /**
+   * Who vouched for it — copied from the source `placedLedger` found, never read off the label (spec §1.1): the
+   * auto layer passes a money line only when a TOOL of this run said it, an estimate tool, as a total or a rate.
+   * Absent on a line nothing vouched for, and on every line stored before 0148 — read as «not the tool's».
+   */
+  origin?: SourceOrigin;
+  /** The tool that made the source (`NumberSource.tool`); absent = none named. */
+  tool?: string;
+  /** A money line's source role (K21); absent on any other line. */
+  role?: MoneyRole;
 }
 
-/** A phone in any spelling: an optional +, then ≥ 9 digits with spaces, dashes, dots or brackets between. */
+/**
+ * The WIDE net: an optional +, then ≥ 9 digits with spaces, dashes, dots or brackets between — anything that could
+ * be a phone. Read as it stands only where over-reading is the safe side (the phones a fact lends a reply, our
+ * warehouses' anchors, the mask a text is shown to the model through). What a text HOLDS as a phone — what G6
+ * refuses, what the figure reader blanks, what makes a fact personal, what his ✍️ answer is refused for — is
+ * `phonesIn`'s.
+ */
 export const PHONE_RE = /\+?\d(?:[\s\-.()]*\d){8,}/gu;
+
+/** A whole date as it is typed — dd.mm.yyyy, a real day and month, this century or the last. */
+const FULL_DATE_RE = /(?<![\d.])(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:19|20)\d{2}(?!\d|\.\d)/gu;
+/** One amount as written: plain digits, or thousands in groups of three by a space or by a dot. */
+const AMOUNT_SRC = '(?:\\d{1,3}(?:[ \\u00a0]\\d{3})+|\\d{1,3}(?:\\.\\d{3})+|\\d+)';
+/** A candidate that is ONE amount, or a range of two — «120 000 000», «10000-12000», «100 000 - 150 000». */
+const AMOUNT_OR_RANGE = new RegExp(`^(${AMOUNT_SRC})(?:\\s*-\\s*(${AMOUNT_SRC}))?$`, 'u');
+/** What a masked date is written with: no digit, no separator, no letter — nothing a reader takes for a word. */
+const MASK = '\u0001';
+
+export interface PhoneHit {
+  raw: string;
+  index: number;
+}
+
+/**
+ * The phones a text holds (review of 0148 as built, bot lens). `PHONE_RE` alone reads two figures of a range, a sum
+ * in so'm and a date as one phone: «Rastamojka taxminan 10000-12000 dollar», «120 000 000 so'm», «20.11.2026-
+ * 25.11.2026» — his ✍️ answer was refused with a sentence about an address he never wrote, and a reply repeating
+ * such a figure was G6's «another's phone» with its figures blanked from G1. Two shapes are NOT a phone, and only
+ * these two:
+ *  - a whole date (dd.mm.yyyy) — its digits are the date's, alone, in a range or before a time;
+ *  - an AMOUNT with its unit beside it, as the figure reader reads the unit (`readAt`): one number — plain or in
+ *    thousands — that is MONEY (a currency right after it, or right before it), or a range of two that runs UP and
+ *    is money, a measure, a count or a percent. Never with a leading «+», never any other grouping («90 123 45 67
+ *    dollar», «901-234-567 kg»), never a lone number that is no money («901234567 kun bo'yi»).
+ * Digits with no unit stay a phone's shape — «Narxi 9000-10000» is told to name its currency (`answerContactWords`)
+ * — so nothing that was refused as a phone is let through as nothing: what leaves this list is a FIGURE, and G1 holds
+ * every figure to its source. The text's own digits, already folded (`normalizeDigits`) by every caller.
+ */
+export function phonesIn(text: string): PhoneHit[] {
+  // Same length, so every index is the text's own.
+  const scan = text.replace(FULL_DATE_RE, (m) => MASK.repeat(m.length));
+  const out: PhoneHit[] = [];
+  for (const m of scan.matchAll(PHONE_RE)) {
+    if (!statesAmount(scan, m.index, m[0])) out.push({ raw: m[0], index: m.index });
+  }
+  return out;
+}
+
+/** Is the phone-shaped run at `index` an amount with its unit (`phonesIn`)? */
+function statesAmount(text: string, index: number, raw: string): boolean {
+  // Digits from its first character: a run with a leading «+» is no amount.
+  const parts = AMOUNT_OR_RANGE.exec(raw);
+  if (!parts) return false;
+  const end = index + raw.length;
+  const last = parts[2] ?? parts[1]!;
+  const kind = readAt(text, end - last.length, end).kind;
+  // «$10000-12000»: the currency stands before the FIRST number.
+  const money = kind === 'money' || MONEY_BEFORE.test(text.slice(Math.max(0, index - 12), index));
+  if (parts[2] === undefined) return money;
+  if (!(parseFigure(parts[1]!) < parseFigure(parts[2]))) return false;
+  return money || kind === 'measure' || kind === 'count' || kind === 'percent';
+}
+
+/** `text` with every phone it holds blanked out, at the same length. */
+function withoutPhones(text: string): string {
+  let t = text;
+  for (const p of phonesIn(text)) t = `${t.slice(0, p.index)}${' '.repeat(p.raw.length)}${t.slice(p.index + p.raw.length)}`;
+  return t;
+}
 
 /** Digits only — how two phones are compared. */
 export function phoneDigits(raw: string): string {
@@ -710,6 +799,76 @@ const TOTAL_BEFORE =
   /(?:(?<![\p{L}])(?:jami|жами|итого|total|hammasi\s+bo['‘’ʻ`]?lib|ҳаммаси\s+бўлиб|in\s+total|altogether|all\s+in)(?:\s+(?:bo['‘’ʻ`]?ladi|bo['‘’ʻ`]?lib|chiqadi|бўлади|получается|получится|выйдет|выходит|составит|составляет|comes\s+to|is|will\s+be|of|amounts?\s+to))?|(?<![\p{L}])(?:всего|в\s+сумме|в\s+итоге)(?:\s+(?:получается|получится|выйдет|выходит|составит|составляет|будет)|\s*[:：]))\s*[:：—–=-]?\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly)\s+|[~≈]\s*)?$/iu;
 
 /**
+ * What makes a figure a COUNT in a lesson (fix pass 3): an occurrence or a list word right after it — «narxni 2
+ * marta aytma», «цену называй 1 раз», «5 yillik tajriba», «2-3 jumladan», «3 ta savol», «2 строк», «4 qatordan». A
+ * lesson is an INSTRUCTION, never a source: in a text that names money every other bare figure is money, as a fact's
+ * («Narx: avia 17, avto 160», «Цену называй 17», «Avia narxi 1 kg uchun 17»); only what a count is is taken away.
+ */
+const LESSON_COUNT_AFTER = new RegExp(
+  // «3 ta savol» needs no prefix of its own: the classifier alone counts (fix pass 5 — the «ta» prefix pass 3 put here
+  // could be deleted with every test green, because «ta» below already reads it).
+  `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:${[
+    // The classifier itself, whatever follows it (fix pass 4): «1 tadan ortiq emoji qo‘yma», «2 tadan ko‘p savol berma»
+    // were refused as the price «1», «2». A price is never counted in «ta».
+    '(?:ta|та)(?:dan|дан)?(?![\\p{L}])',
+    'marta(?![\\p{L}])',
+    'марта(?:ба)?(?![\\p{L}])',
+    'раз(?:а|у)?(?![\\p{L}])',
+    'times?(?![\\p{L}])',
+    'karra(?![\\p{L}])',
+    'yil\\p{L}*',
+    'йил\\p{L}*',
+    'год(?:а|у|ов)?(?![\\p{L}])',
+    'лет(?![\\p{L}])',
+    'years?(?![\\p{L}])',
+    'jumla\\p{L}*',
+    'жумла\\p{L}*',
+    'gap\\p{L}*',
+    'гап\\p{L}*',
+    'qator\\p{L}*',
+    'қатор\\p{L}*',
+    'строк\\p{L}*',
+    'строчк\\p{L}*',
+    'lines?(?![\\p{L}])',
+    'предложени\\p{L}*',
+    'sentences?(?![\\p{L}])',
+    'savol\\p{L}*',
+    'савол\\p{L}*',
+    'вопрос\\p{L}*',
+    'questions?(?![\\p{L}])',
+    'xabar\\p{L}*',
+    'хабар\\p{L}*',
+    'сообщени\\p{L}*',
+    'messages?(?![\\p{L}])',
+    `so${"['‘’ʻ`]"}?z(?:lar)?\\p{L}*`,
+    'сўз\\p{L}*',
+    'слов\\p{L}*',
+    'words?(?![\\p{L}])',
+    'narsa\\p{L}*',
+    'нарса\\p{L}*',
+    'вещ\\p{L}*',
+    'things?(?![\\p{L}])',
+    'band\\p{L}*',
+    'пункт\\p{L}*',
+    'points?(?![\\p{L}])',
+    'abzas\\p{L}*',
+    'абзац\\p{L}*',
+    'paragraphs?(?![\\p{L}])',
+    'variant\\p{L}*',
+    'вариант\\p{L}*',
+    'options?(?![\\p{L}])',
+    'xil\\p{L}*',
+    'хил\\p{L}*',
+    // …and the parts a reply is cut into: «javobni 3 qismga bo‘lib yoz» (fix pass 4).
+    'qism\\p{L}*',
+    'қисм\\p{L}*',
+    'част(?:и|ей|ям|ями)(?![\\p{L}])',
+    'parts?(?![\\p{L}])',
+  ].join('|')})`,
+  'iu',
+);
+
+/**
  * Figures whose FORM says what they are, so a money word elsewhere in the text never makes them money:
  * an Uzbek ordinal glued to its noun («3-ko'chada», «2-omborda», «15-uy» — but not a case ending on a
  * cardinal, «480-ga»), and an hour of the day after «soat» («soat 9 dan 18 gacha»). Before this a fact
@@ -860,7 +1019,7 @@ function blanked(text: string, removeWhole: readonly string[]): string {
     if (whole) t = t.split(whole).join(' '.repeat(whole.length));
   }
   for (const u of urlsIn(t)) t = t.split(u).join(' '.repeat(u.length));
-  return t.replace(PHONE_RE, (m) => ' '.repeat(m.length));
+  return withoutPhones(t);
 }
 
 /**
@@ -989,7 +1148,7 @@ export function namesMoney(text: string): boolean {
 export function extractNumbers(
   text: string,
   removeWhole: readonly string[] = [],
-  opts: { moneyContext?: boolean } = {},
+  opts: { moneyContext?: boolean; lesson?: boolean } = {},
 ): FoundNumber[] {
   const t = blanked(text, removeWhole);
   const moneyText = opts.moneyContext === true || MONEY_WORD.test(t);
@@ -1009,8 +1168,9 @@ export function extractNumbers(
     if (taken.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
     const day = Number(m[1]);
     const month = Number(m[2]);
-    // «1.50 kg», «12.50 $» are figures with a unit, not the first of May.
-    if (kindAt(t, m.index, m.index + m[0].length) !== 'plain') continue;
+    // «1.50 kg», «12.50 $» are figures with a unit, not the first of May — never a whole dd.mm.yyyy (fix pass 3):
+    // «15.11.2026 kuni» is a day, and read as 15.11 and «2026 kun» it was a duration of 2026 days.
+    if (m[3]?.length !== 4 && kindAt(t, m.index, m.index + m[0].length) !== 'plain') continue;
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
       out.push({ raw: m[0], value: day * 100 + month, kind: 'date', index: m.index });
       taken.push([m.index, m.index + m[0].length]);
@@ -1048,10 +1208,13 @@ export function extractNumbers(
     }
     const before = t.slice(Math.max(0, start - 24), start);
     const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before) || ID_BEFORE.test(before) || ID_AFTER.test(after);
+    // `lesson` (a lesson — an INSTRUCTION, never a source): a count of times, sentences or questions is no price,
+    // whatever the text names — «Narx haqida 1 marta ayt» (fix pass 3 restored the rest of the fact's rule).
+    const counted = opts.lesson === true && LESSON_COUNT_AFTER.test(after);
     const priced = PRICE_VERB_BEFORE.test(before) || TOTAL_BEFORE.test(before);
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
     const kind: NumberKind =
-      glued || (read.kind === 'plain' && !fixed && (moneyText || priced)) ? 'money' : read.kind;
+      glued || (read.kind === 'plain' && !fixed && !counted && (moneyText || priced)) ? 'money' : read.kind;
     const token = read.token ?? gluedAfter?.[0] ?? gluedBefore?.[0] ?? null;
     const perUnit = PER_UNIT_AFTER.test(read.rest) || PER_UNIT_BEFORE.test(t.slice(Math.max(0, start - 40), start));
     out.push({
@@ -1081,7 +1244,9 @@ function sameValue(a: number, b: number): boolean {
  * to have repeated back.
  */
 const COMPANY_KINDS: ReadonlySet<NumberKind> = new Set(['money', 'duration', 'date', 'percent']);
-const companySaid = (s: NumberSource) => s.origin === 'tool' || s.origin === 'kb';
+// His ✍️ answer is the company speaking too (spec §2.2) — «VED 3 kunda hisoblaydi» vouches for «3 kunda»; the auto
+// layer never lets such a line go by itself (`owner_figure`).
+const companySaid = (s: NumberSource) => s.origin === 'tool' || s.origin === 'kb' || s.origin === 'owner';
 
 /**
  * A money figure and a money source are one claim only when they are in one
@@ -1136,7 +1301,8 @@ export function sourceFor(
     // A fact's bare figure is a house, a building, a distance in an address — «29号», «3栋», «168米» — and
     // vouches for that address said again, never for a time or a count of the same value: «Yukingiz taxminan
     // 29 kunda yetib keladi» passed on Guangzhou's house number (incident 2026-10-29, the fail-open side).
-    if (s.kind === 'plain' && s.origin === 'kb' && found.kind !== 'plain') return false;
+    // His ✍️ answer the same (spec §2.2): a house number in it never vouches for a day count.
+    if (s.kind === 'plain' && (s.origin === 'kb' || s.origin === 'owner') && found.kind !== 'plain') return false;
     if (found.kind === 'plain' && s.kind === 'money') return false;
     // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
     // flight's five is a promise nobody made. A day count naming NO road — and the customer asked none —
@@ -1301,11 +1467,16 @@ export function placedLedger(
     }
     const money = found.kind === 'money';
     const currency = money ? (found.currency ?? null) : undefined;
+    // Who vouched, as the source says it (spec §1.1) — a list's own count is vouched for by nobody's source.
+    const by = listed ? null : source;
     return {
       raw: money ? `${f.raw} ${currency ? CURRENCY_LABEL[currency] : '(valyuta noma’lum)'}` : f.raw,
       kind: found.kind,
       source: listed ? LISTED_COUNT : (source?.label ?? null),
       ...(money ? { currency } : {}),
+      ...(by?.origin ? { origin: by.origin } : {}),
+      ...(by?.tool ? { tool: by.tool } : {}),
+      ...(money && by ? { role: by.role ?? 'total' } : {}),
       index: f.index,
       end: f.index + f.raw.length,
       perUnit: f.perUnit === true,
@@ -1332,7 +1503,15 @@ export function numberLedger(
 
 /** A placed line as the card and the draft store it — without its place. */
 export function ledgerLine(e: PlacedEntry): LedgerEntry {
-  return { raw: e.raw, kind: e.kind, source: e.source, ...(e.currency !== undefined ? { currency: e.currency } : {}) };
+  return {
+    raw: e.raw,
+    kind: e.kind,
+    source: e.source,
+    ...(e.currency !== undefined ? { currency: e.currency } : {}),
+    ...(e.origin !== undefined ? { origin: e.origin } : {}),
+    ...(e.tool !== undefined ? { tool: e.tool } : {}),
+    ...(e.role !== undefined ? { role: e.role } : {}),
+  };
 }
 
 /**
@@ -1385,6 +1564,39 @@ export function factSources(text: string, label: string): NumberSource[] {
       ...(f.unit ? { unit: f.unit } : {}),
       // …and a minimum it states vouches for a minimum, as the company's rule does (second review).
       ...(f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length) ? { said: 'minimum' as const } : {}),
+    };
+  });
+}
+
+/** The label his answer's figures carry on the card's «🔢 Raqamlar» line. */
+export const OWNER_ANSWER_LABEL = 'sizning javobingiz';
+
+/**
+ * Sources from HIS answer to the AI's question (spec SPEC-P1-v2 §2.2) — built as `factSources` builds a fact's: the
+ * unit, the road and the minimum read the same way, and a bare figure of his vouches for that figure said again,
+ * never for a time or a count (`sourceFor`'s plain fence). Unlike a fact, his MONEY is a money source — but only
+ * with a currency written in his text («1200 $»: a «narxi 1200» with none vouches for nothing), and in the role its
+ * own form says (a figure said per unit is a rate, anything else a total). Origin `owner`: the reply may say it, the
+ * auto layer never sends it by itself (`owner_figure`).
+ */
+export function ownerAnswerSources(text: string): NumberSource[] {
+  const t = blanked(text, []);
+  // A currency WRITTEN in his text (the bounded reader `money_unread` asks too): the extractor would read a
+  // «narxi 1200» as dollars by default — every tool states dollars — and his bare figure is no price of ours.
+  const written = namesCurrency(text);
+  return extractNumbers(text).map((f): NumberSource => {
+    const mode = f.kind === 'duration' || f.kind === 'measure' ? modeAt(t, f.index) : null;
+    const money = f.kind === 'money' && written && f.currency !== null && f.currency !== undefined;
+    return {
+      value: f.value,
+      kind: f.kind === 'money' ? (money ? 'money' : 'customer_money') : f.kind,
+      label: OWNER_ANSWER_LABEL,
+      origin: 'owner',
+      ...(money ? { currency: f.currency!, role: f.perUnit === true ? ('rate' as const) : ('total' as const) } : {}),
+      ...(mode ? { mode } : {}),
+      ...(f.unit ? { unit: f.unit } : {}),
+      ...(f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length) ? { said: 'minimum' as const } : {}),
+      ...(f.fixed ? { fixed: true } : {}),
     };
   });
 }

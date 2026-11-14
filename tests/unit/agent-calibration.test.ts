@@ -80,6 +80,7 @@ const row = (patch: Partial<CalibrationDraftRow> = {}): CalibrationDraftRow => (
   money: false,
   actions: [],
   autoSent: false,
+  ownerTriggered: false,
   ...patch,
 });
 

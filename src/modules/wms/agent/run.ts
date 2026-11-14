@@ -13,22 +13,29 @@ import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } fro
 import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
 import { generalFacts, kbSearch, type KbHit } from './kb';
+import type { PromptLesson } from './lesson-rules';
+import { promptLessons } from './lessons';
 import { AGENT_LIMITS } from './limits';
-import { detectLocale, dominantScript, type AgentLocale } from './locale';
+import { detectLocale, dominantScript, greetingLean, uzbekEndingLean, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
 import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
-import { namedOrigins } from './origin';
+import { namedOrigins, originMentions } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion } from './auto-send';
+import { knownNamesFor } from './chat-names';
+import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
+import type { ForcedQuestion } from './types';
+import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, priceActArmed } from './auto-send';
+import { namesForeignPlace } from './destination';
 import {
   airMentionIn,
   extractNumbers,
   factSources,
   namesMode,
+  ownerAnswerSources,
   oneModeIn,
   pricedRoadOf,
   PROHIBITS,
@@ -88,11 +95,17 @@ export interface ComposeReply {
   actions: { type: string; section: string; citedMessageRefs: string[]; date: string; note: string }[];
   usedFactIds: string[];
   citedMessageRefs: string[];
+  /**
+   * Set by the rule that FORCED the question to him — rail's price (`withRailRule`) or the flight's address
+   * (`withAviaQuestion`) — never by the model (spec SPEC-P1-v2 §2.2): his answer to such a question goes verbatim
+   * through ✏️, so its card offers no «✍️ Savolga javob». Kept on the draft's policy (drafts `draftFromRun`).
+   */
+  forcedQuestion?: ForcedQuestion;
 }
 
 interface LoopResult {
   compose: ComposeReply;
-  tools: { name: string; ok: boolean; text: string }[];
+  tools: { name: string; ok: boolean; text: string; estimate: boolean }[];
   outcomes: ToolOutcome[];
   usage: ModelUsage;
 }
@@ -185,6 +198,13 @@ export async function runLoop(input: {
   now: () => Date;
   /** A run the OWNER's side started (a hand-back): what it is for, after the chat. */
   instruction?: string;
+  /** His price act (spec §1.2, `priceActArmed`), read ONCE for the run — the head and the avia tool say the same. */
+  priceArmed: boolean;
+  /**
+   * His lessons (spec §3.3, lessons `promptLessons`), read ONCE for the run beside the general facts: every round's
+   * head is then the same bytes — an edit on the page mid-run cannot move the cache between two rounds.
+   */
+  lessons: readonly PromptLesson[];
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
@@ -207,12 +227,18 @@ export async function runLoop(input: {
       kbSearch({ clientIds: ctx.identity.cargoAllowed ? ctx.identity.codes.map((c) => c.id) : [], leadId: ctx.identity.leadId }, q),
     // Read once per run, and only when a tool asks where the cargo starts.
     chinaPlaces: () => (places ??= ourChinaPlaces()),
+    priceArmed: input.priceArmed,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
     const res = await input.callModel({
       model: STAFF_MODEL,
-      systemCached: stableHead({ styleGuide: input.config.styleApprovedAt ? input.config.styleGuide : null, facts: input.facts }),
+      systemCached: stableHead({
+        styleGuide: input.config.styleApprovedAt ? input.config.styleGuide : null,
+        facts: input.facts,
+        priceArmed: input.priceArmed,
+        lessons: input.lessons,
+      }),
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
       tools: TOOL_SPECS,
@@ -238,7 +264,9 @@ export async function runLoop(input: {
         logger.warn({ err, tool: u.name }, '[agent] tool failed');
         out = { ok: false, text: 'Vosita ishlamadi — buni aytma, needs_owner.', sources: [] };
       }
-      tools.push({ name: u.name, ok: out.ok, text: out.text.slice(0, 500) });
+      // The estimate flag is the TOOL's own (`ToolOutcome.estimate`: a priced yo'lkira or avia answer), never read
+      // off its text: `below_minimum` and every refusal carry false (spec §1.1).
+      tools.push({ name: u.name, ok: out.ok, text: out.text.slice(0, 500), estimate: out.estimate === true });
       outcomes.push(out);
       results.push({ type: 'tool_result', tool_use_id: u.id, content: out.text, ...(out.ok ? {} : { is_error: true }) });
     }
@@ -461,17 +489,21 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   let settle: Partial<typeof agentRuns.$inferInsert> = { outcome: 'error', error: 'unknown' };
   try {
     const facts = await generalFacts();
+    // His lessons, read once beside the facts (§3.3): the head is the same bytes in every round of this run.
+    const taught = await promptLessons();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
     const day = tashkentDay(t);
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now });
+    // His price act, read once: the head, the avia tool and the avia rule below agree for the whole run (§1.2).
+    const act = { priceArmed: await priceActArmed() };
+    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, lessons: taught.lessons });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
       cacheReadTokens: loop.usage.cacheReadTokens,
       cacheWriteTokens: loop.usage.cacheWriteTokens,
-      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
+      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
+    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
@@ -497,7 +529,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
     if (late) notes.unshift(late);
 
-    const input = { runId, ctx, compose: c, policy, memory, actions, notes };
+    const input = { runId, ctx, compose: c, policy, memory, actions, notes, lessonSet: taught.mark };
     // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
@@ -511,10 +543,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
         target: [agentConversations.managerUserId, agentConversations.peerId],
         set: { locale, updatedAt: new Date() },
       });
-    settle = { ...settle, outcome: written.kind === 'editing' ? 'stood_down' : 'draft', error: written.kind === 'editing' ? 'editing' : null };
-    return written.kind === 'editing'
-      ? { outcome: 'stood_down', reason: 'editing' }
-      : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
+    // `question_gone` is an answer's redraft's alone (`answers`), never this run's — stood down all the same if it came.
+    const stood = written.kind === 'written' ? null : written.kind;
+    settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };
+    return stood !== null ? { outcome: 'stood_down', reason: stood } : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
   } catch (err) {
     logger.error({ err, runId }, '[agent] run failed');
     settle = { ...settle, outcome: 'error', error: err instanceof Error ? err.message.slice(0, 300) : 'error' };
@@ -553,8 +585,13 @@ const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
   { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
 ];
 
-/** What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). */
-export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string): PolicyMemory {
+/**
+ * What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). `ownerAnswer`: his
+ * ✍️ answer this redraft is made of (spec SPEC-P1-v2 §2.2) — a SOURCE, read as a fact is (`ownerAnswerSources`), for
+ * this draft alone; it adds nothing to the phones, links, names or Han text a reply may carry (an address or a
+ * phone is his ✏️ text, verbatim — the bot refuses one in an answer).
+ */
+export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string, ownerAnswer: string | null = null): PolicyMemory {
   // His «Temir yo'l mendan so'rasin»: in a chat about rail no figure the
   // machine found may carry a price — not the truck's website figure worded
   // as a rail one, not the avia rate. Dropped from the memory the ✅ re-runs
@@ -566,6 +603,11 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // yo'l bilan taxminan 960 $» passed on the truck's figure.
   const rail = railChat(ctx, loop.compose);
   const road = chatRoadOf(ctx, loop);
+  // The customer's language over his whole BURST — every line since our last message, which is what the reply
+  // answers — never the last line alone (0148 fix): «Ассалому алайкум» / «Гуанчжоудан юк бор эди» / «5 куб 800 кг»
+  // says Uzbek in its first line and nothing in its last.
+  const said = ctx.burst.length > 0 ? ctx.burst.map((m) => m.body).join('\n') : (ctx.anchor?.body ?? '');
+  const guess = detectLocale(said, ctx.storedLocale);
   const found = loop.outcomes.flatMap((o) => o.sources).filter((s) => !rail || s.kind !== 'money');
   const sources: NumberSource[] = [...customerNumberSources(ctx.messages), ...found];
   // General facts are in every prompt: their non-money figures, phones and
@@ -575,6 +617,8 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // number and hour of every other fact a price nobody may repeat.
   for (const f of facts) sources.push(...factSources(f.answer, 'kompaniya bilimi'));
   sources.push(...COMPANY_RULE_SOURCES);
+  // His answer's figures — but never money in a rail chat (his price, his ✏️; rail is a forced question anyway).
+  if (ownerAnswer !== null) sources.push(...ownerAnswerSources(ownerAnswer).filter((s) => !rail || s.kind !== 'money'));
   const urls = [...facts.flatMap((f) => f.urls), ...loop.outcomes.flatMap((o) => o.allowedUrls ?? [])];
   const { mapUrls, allowedUrls } = splitUrls(urls);
   return {
@@ -602,9 +646,30 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // card says so — a chat the words misread costs him one look, never a
     // flight sent to a truck's warehouse in silence.
     aviaMentioned: road !== 'air' && aviaSpokenOf(ctx, road),
+    // Every figure this run QUOTED (spec §1.3): what the send step, his ✅ and the machine's press price again with
+    // the same function (estimate.ts `reprice`). Never in a rail chat — there no machine figure goes out at all.
+    estimates: rail ? [] : loop.outcomes.flatMap((o) => (o.priced ? [o.priced] : [])),
+    // The table is China → Tashkent (spec §1.8): the customer named another city or region anywhere in what he
+    // wrote — the window and the burst — and an estimate reply then waits for his ✅ (a gate fact, never a block).
+    foreignDestination: namesForeignPlace([...ctx.messages.filter((m) => m.direction === 'in'), ...ctx.burst].map((m) => m.body)),
     // What this run quoted, for the next run's `lastQuote` (review R1).
     quotedRoad: rail ? null : quotedRoadOf(loop),
     quotedAir: rail ? null : (loop.outcomes.find((o) => o.air)?.air ?? null),
+    // The auto layer's two facts of the chat itself (spec §1.1, §4): a rail chat's money is his, and the
+    // customer's language as the message the draft answers says it — read once here, so the scheduling and the
+    // press judge the same thing.
+    rail,
+    // An unconfident guess that LEANS — on the conversation's own stored language, on the one language its greetings
+    // said, or on its Uzbek Cyrillic word endings (fix pass 5, locale `uzbekEndingLean`) — admits only that language
+    // (fix pass 4, auto-gate `languageAdmits`): «Здравствуйте» over unmarked words let an Uzbek reply go to a Russian
+    // customer, and it was no mark of Russian either.
+    customerLocale: {
+      locale: guess.locale,
+      confident: guess.confident,
+      ...(!guess.confident && guess.locale !== null && (guess.locale === ctx.storedLocale || guess.locale === greetingLean(said) || guess.locale === uzbekEndingLean(said))
+        ? { leans: true }
+        : {}),
+    },
     // The Chinese the facts this run read hold (his fourth set): a reply that
     // quotes a warehouse address verbatim is measured in its OWN script.
     quotableHan: hanOnly([...facts.map((f) => f.answer), ...loop.outcomes.flatMap((o) => o.factTexts ?? [])].join('')),
@@ -785,14 +850,275 @@ export function withAviaRule(
   c: ComposeReply,
   loop: Pick<LoopResult, 'tools' | 'outcomes'>,
   ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures' | 'lastQuote'>,
+  act: { priceArmed: boolean },
 ): ComposeReply {
   // A rail chat's question is the rail one — unless the CHAT chose the flight (#1540: «Poyezd kerak emas,
   // avia bilan»). Not this run's own avia figure: in a rail chat it never goes out (`memoryFor`).
   if (railChat(ctx, c) && chatRoadOf(ctx, { tools: [], outcomes: [] }) !== 'air') return c;
   const quoted = loop.outcomes.find((o) => o.air)?.air;
-  if (quoted) return withAviaQuestion(c, quoted);
-  if (c.replyNeeded && chatRoadOf(ctx, loop) === 'air' && asksWhereToSend(ctx.burst)) return withAviaQuestion(c, aviaCargoOf(loop, ctx));
+  // His price act armed (spec SPEC-P1-v2 §1.2): the flight's PRICE may go by itself — a quote alone asks him
+  // nothing. Off, every quoted flight asks him with its cargo, as it always has.
+  if (quoted && !act.priceArmed) return withAviaQuestion(c, quoted);
+  const road = chatRoadOf(ctx, loop);
+  // The customer's own words asking where to send it — kept as it was (the burst, never the model's question).
+  if (c.replyNeeded && road === 'air' && asksWhereToSend(ctx.burst)) return withAviaQuestion(c, aviaCargoOf(loop, ctx));
+  // …and, armed only, a REPLY in a flight's chat that names a place of ours, an address or a hand-over asked of
+  // the customer (`talksDelivery`, the reply's own lists): «Ivu omborimizga yuboring» anchors on none of our
+  // phones, Han pieces or house numbers (`statesChinaAddress`), and would send a flight's cargo to a truck's
+  // warehouse. The address is his, always (§18.5).
+  if (act.priceArmed && c.replyNeeded && (road === 'air' || road === 'both') && talksDelivery(c.replyText)) {
+    return withAviaQuestion(c, aviaCargoOf(loop, ctx));
+  }
+  // A question the model raised itself is never cleared here — its own `needs_owner` stands.
   return c;
+}
+
+/**
+ * OUR words, read with lists of their own (0148 fix). The armed rule first read the reply with the lists built for
+ * what a CUSTOMER asks (`WAREHOUSE_WORD`, `SEND_VERB`, `ADDRESS_WORD` — untouched), and they are stems: «пошл» is
+ * inside «Пошлина», so the exclusion sentence the prompt DICTATES in Russian («Пошлина и НДС считаются отдельно.»)
+ * made every Russian flight quote his question, and the price act did nothing in Russian; «ship» is inside
+ * «shipment», «ارسال» is the noun in «هزینه ارسال هوایی». And they are the customer's forms, so the reply's own way
+ * of sending him somewhere — «qabul punktimizga olib boring», «сдайте на наш пункт», «drop it off at our branch»,
+ * «送到我们的收货点» — matched nothing, and the flight's reply went by itself telling him where to bring the cargo.
+ *
+ * Four things a reply says when it directs the cargo, each as whole words:
+ *  - a PLACE of ours that takes cargo — a warehouse, a reception point, a branch;
+ *  - an ADDRESS, by any of its names;
+ *  - the hand-over asked of HIM — an imperative or a second person: «yuboring», «yuborsangiz», «olib boring»,
+ *    «topshirishingiz mumkin», «отправьте», «можете привезти», «please send», «you can drop it off», «请寄到»,
+ *    «ارسال کنید». Never the noun («доставка», «shipment», «ارسال»), never OUR sending («yuboramiz», «отправим», «we
+ *    ship») — those send him nowhere — and never «送到塔什干», which is where WE take it;
+ *  - where WE receive it (`receivesThere`).
+ *
+ * Fix pass 4 (the readers' corpus, tests/unit/fixtures/agent-reader-corpus.ts): pass 3 freed ordinary replies with
+ * relaxations that each let a hand-over through — an information noun ANYWHERE in the clause cancelled it («Отправьте
+ * груз вместе с документами», «Yukni kompaniyamiz nomiga yuboring», «Отправьте 30 кг груза»), a locative of ours
+ * freed a receive verb («Авиагрузы принимаем на нашем складе в Гуанчжоу»), «нам» read as OUR sending («Груз нам
+ * отправьте»), the Tashkent pickup in one clause freed a Chinese warehouse in the next. Where the rule cannot tell an
+ * ordinary reply from a hand-over, it HOLDS: information frees a clause only when no cargo is left in it as the object;
+ * a receive verb beside a place of ours, an airport or a Chinese city directs, whatever its case; «we» is the
+ * nominative alone; a pickup frees only a sentence that names no Chinese place.
+ */
+const AP_ = "['‘’ʻ`]";
+const REPLY_PLACE = new RegExp(
+  [
+    '(?<![\\p{L}])(?:ombor|sklad|punkt|filial)\\p{L}*',
+    '(?<![\\p{L}])(?:омбор|пункт|филиал)\\p{L}*',
+    // «Цена складывается из веса и объёма» is «adds up» and «складной стол» folds — the warehouse only in its own
+    // cases, Russian's and the endings Uzbek hangs on the loan word («складга», «складимизга»).
+    '(?<![\\p{L}])склад(?:а|у|ом|е|ы|ов|ам|ами|ах|ск(?:ой|ая|ое|ие|ого|их|ом|ую)|га|да|дан|ни|нинг|лар\\p{L}*|и(?:миз|нгиз)?(?:га|да|дан|ни|нинг)?)?(?![\\p{L}])',
+    `(?<![\\p{L}])qabul\\s+(?:joy|nuqta)\\p{L}*`,
+    '(?<![\\p{L}])қабул\\s+(?:жой|нуқта)\\p{L}*',
+    '(?<![\\p{L}])(?:warehouses?|depots?|branch(?:es)?|drop-?\\s?off\\s+points?|collection\\s+points?|receiving\\s+points?)(?![\\p{L}])',
+    '仓库|仓(?!储)|收货点|收货地|网点|站点',
+    'انبار|شعبه|نمایندگی',
+  ].join('|'),
+  'giu',
+);
+const REPLY_PLACE_ANY = new RegExp(REPLY_PLACE.source, 'iu');
+/**
+ * An airport — where a flight's cargo is handed in, or where it LANDS. It directs only beside a receive verb
+ * (`receivesThere`) or a hand-over (fix pass 4): pass 3 put it among our places, and «Yuk aeroportga kelgach sizga xabar
+ * beramiz» — the Tashkent arrival — became his avia question in every language.
+ */
+const AIRPORT = /(?<![\p{L}])(?:aeroport|airport|аэропорт)\p{L}*|机场|فرودگاه/iu;
+/**
+ * A place of ours named as where the cargo LEAVES or IS (fix pass 3) — «Xitoydagi omborlarimizdan hisoblanadi», «qabul
+ * punktidan joʻnatilgandan keyin», «из склада», «from our warehouse», «从仓库», «از انبار», and «omborimizda», «на
+ * складе», «at our warehouse», «在仓库», «در انبار» — directs nothing BY ITSELF; a hand-over in its clause still does,
+ * and so does a receive verb in its sentence (`receivesThere`, fix pass 4).
+ */
+// Uzbek's own case on the word — never Russian's «склада» (of the warehouse), whose «-да» is the stem's «д».
+const PLACE_FROM_OR_AT = /^(?:(?:ombor|sklad|punkt|filial)\p{L}*(?:dan|da|dagi)|(?:омбор|пункт|филиал)\p{L}*(?:дан|да|даги)|склад\p{L}*д(?:ан|а|аги))$/iu;
+/** «uch omborimizdan qaysi biriga» — «of» our three warehouses, which: a place it GOES to, asked. */
+const PARTITIVE_AFTER = /^\s*(?:qaysi|biri|bittasi|қайси|бири|биттаси)(?![\p{L}])/iu;
+const BEFORE_FROM_OR_AT = /(?:(?<![\p{L}])(?:из|со|с|from|at|in)\s+(?:(?:наш|our|my|your|ваш)\p{L}*\s+)?|[从在]|(?<![\p{L}])(?:از|در)\s+)$/iu;
+const RU_PREPOSITIONAL = /^(?:склад|пункт|филиал)е$/iu;
+/** «…aeroportdan olib ketasiz», «заберёте в аэропорту», «pick it up at the airport» — where he collects. */
+const PICKUP = /(?<![\p{L}])(?:olib\s+ket|олиб\s+кет|забер|забрать|забира|pick\s+(?:it\s+|them\s+)?up|collect)\p{L}*|自提|取货/iu;
+function placeDirects(sentence: string): boolean {
+  // Where he collects — in a sentence that names no Chinese place (fix pass 4): «Yukingiz Guanchjou omborimizga keladi,
+  // keyin Toshkentdan olib ketasiz» freed the Chinese warehouse through the other clause's pickup.
+  if (PICKUP.test(sentence) && originMentions(sentence).length === 0) return false;
+  return [...sentence.matchAll(REPLY_PLACE)].some((m) => {
+    const word = m[0];
+    const after = sentence.slice(m.index + word.length, m.index + word.length + 10);
+    if ((PLACE_FROM_OR_AT.test(word) && !PARTITIVE_AFTER.test(after)) || RU_PREPOSITIONAL.test(word)) return false;
+    return !BEFORE_FROM_OR_AT.test(sentence.slice(Math.max(0, m.index - 14), m.index));
+  });
+}
+/**
+ * WE receive the cargo there (fix pass 4): «qabul qilamiz», «принимаем», «we receive», «收货», «تحویل می‌گیریم» beside a
+ * place of ours, an airport or a Chinese city names where the flight's cargo is handed in — whatever the place's case
+ * or preposition: «Avia yuklarni Guanchjoudagi omborimizda qabul qilamiz», «Авиагрузы принимаем на нашем складе в
+ * Гуанчжоу», «We receive air cargo at our warehouse in Guangzhou», «Cargo is received in Guangzhou», «我们在广州收货».
+ * Never a receive verb with no place («Avia orqali 1 kg dan qabul qilamiz»), never one in Tashkent alone.
+ */
+const RECEIVE =
+  /(?<![\p{L}])(?:qabul\s+qil\p{L}*|қабул\s+қил\p{L}*|кабул\s+кил\p{L}*|приним\p{L}*|принят\p{L}*|прим(?:ем|ут|ет|ете)(?![\p{L}])|receiv\p{L}*|accept\p{L}*)|收货|收件|接收|签收|(?<![\p{L}])(?:تحویل\s+می\S*\s*گیر|دریافت\s+می\S*\s*کن)\p{L}*/iu;
+function receivesThere(sentence: string): boolean {
+  if (!RECEIVE.test(sentence)) return false;
+  const chinese = originMentions(sentence).length > 0;
+  if (TASHKENT.test(sentence) && !chinese) return false;
+  return chinese || REPLY_PLACE_ANY.test(sentence) || AIRPORT.test(sentence);
+}
+// …and a street with its house number (fix pass 3: «Yiwu qabul punktidan — Futian ko‘chasi 88» names no «manzil»).
+const REPLY_ADDRESS =
+  /(?<![\p{L}])(?:manzil|манзил|adres|адрес|address|lokatsiya|локация|location)\p{L}*|地址|آدرس|نشانی|(?<![\p{L}])(?:ko['‘’ʻ`]?cha|кўча|куча|улиц|street|road|avenue)\p{L}*\.?\s*\d|[路街]\s*\d|خیابان\s*\S*\s*\d/iu;
+/** The second person and the imperative a hand-over is asked in: «-ing», «-sangiz», «-ishingiz (mumkin)», «-asiz», «-avering». */
+const UZ_YOU = `(?:ing(?:lar|iz)?|sangiz(?:lar)?|ishingiz\\p{L}*|asiz(?:lar)?|avering)`;
+const UZ_CYRL_YOU = '(?:инг(?:лар|из)?|сангиз(?:лар)?|ишингиз\\p{L}*|асиз(?:лар)?|аверинг)';
+/** «yozib yuboring», «aytib yuboring» — WRITE it and send: a message, never the cargo (fix pass 4). */
+const WRITE_BEFORE = '(?<!(?:yozib|aytib|ёзиб|айтиб)\\s+)';
+/**
+ * The hand-over asked of HIM, or of whoever brings his cargo — in this trade the SUPPLIER or the factory does (fix pass
+ * 3: «Sotuvchingiz yukni bizga yuborsin», «Пусть завод отправит груз нам», «Have your supplier send the goods to our
+ * office»): the jussive and the third person, «to us» beside a sending verb, and the verbs that leave or give
+ * («qoldiring», «оставьте», «отдайте», «leave it», «放在», «بگذارید», «kuryerimizga bering»). Never OUR offer: «let us
+ * deliver», «让我们…发货» (fix pass 4).
+ */
+const REPLY_HANDOVER = new RegExp(
+  [
+    `${WRITE_BEFORE}(?<![\\p{L}])(?:yubor|jo${AP_}?nat|yetkaz|topshir|keltir)(?:${UZ_YOU}|sin(?:lar)?|ib\\s+(?:ber|qo${AP_}?y)${UZ_YOU})(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:olib\\s+(?:kel|bor)|eltib\\s+ber|tashlab\\s+ket)(?:${UZ_YOU}|sin(?:lar)?)(?![\\p{L}])`,
+    `(?<![\\p{L}])\\p{L}+imizga\\s+(?:\\p{L}+\\s+)?(?:bering|beravering|topshiring)(?![\\p{L}])`,
+    `${WRITE_BEFORE}(?<![\\p{L}])(?:юбор|жўнат|жунат|етказ|топшир|келтир)(?:${UZ_CYRL_YOU}|син(?:лар)?|иб\\s+(?:бер|қўй|куй)${UZ_CYRL_YOU})(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:олиб\\s+(?:кел|бор)|элтиб\\s+бер|ташлаб\\s+кет)(?:${UZ_CYRL_YOU}|син(?:лар)?)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:отправ(?:ьте|ляйте|ите|ляете)|вышлите|пришлите|привез(?:ите|[её]те)|привозите|принес(?:ите|[её]те)|сда(?:йте|дите|вайте)|достав(?:ьте|ляйте)|переда(?:йте|дите)|завез(?:ите|[её]те)|подвез(?:ите|[её]те)|подвозите|завозите|отда(?:йте|дите|вайте)|(?:от|у|до)?вез(?:и|ите|[её]те)|(?:от|до)?возите)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:можете|сможете|можно|нужно|надо|необходимо|следует|должен|должна|должны|может|могут)\\s+(?:\\p{L}+\\s+){0,2}?(?:отправ(?:ить|лять)|привезти|привозить|сдать|сдавать|принести|доставить|передать|выслать|завезти)(?![\\p{L}])',
+    '(?<![\\p{L}])пусть\\s+(?:\\p{L}+\\s+){0,3}?(?:отправ|привез|достав|сда|переда|вышл)\\p{L}*',
+    '(?<![\\p{L}])(?:please|kindly|just|you\\s+(?:can|may|could|should|must|need\\s+to|have\\s+to|will\\s+need\\s+to)|if\\s+you|once\\s+you|when\\s+you)\\s+(?:\\p{L}+\\s+)?(?:send|ship|bring|deliver|drop|hand|take)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:have|ask|tell|let)\\s+(?!(?:us|me)(?![\\p{L}]))(?:\\p{L}+\\s+){0,3}?(?:send|ship|bring|deliver|drop|hand)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:supplier|factory|seller|vendor)s?\\s+(?:should|must|can|will|needs?\\s+to|has\\s+to)\\s+(?:send|ship|bring|deliver|drop|hand)(?![\\p{L}])',
+    "(?:^|[.!?\\n]\\s*)(?:send|ship|bring|deliver|drop|hand|take)\\s+(?:it|them|the|your)(?![\\p{L}])(?!\\s+(?:time|word|call|seat|look|care|chance)(?![\\p{L}]))",
+    '(?<![\\p{L}])(?:drop(?:\\s+(?:it|them))?\\s+off|hand(?:\\s+(?:it|them))?\\s+over)(?![\\p{L}])',
+    '请(?:您)?(?:把[^，。！？]{0,12})?(?:寄|发|送|交|拿|带)|(?:寄|发|送|交|拿|带)(?:到|去|往|来|过来)(?!塔什干|乌兹别克)|您(?:可以|需要|要)(?:把[^，。！？]{0,12})?(?:寄|发|送|交)|让(?!我)[^，。！？]{1,8}?(?:寄|发|送|交)',
+    'ارسال\\s+(?:کنید|نمایید|بفرمایید)|بفرستید|تحویل\\s+(?:دهید|بدهید)|بیاورید|ببرید|برسانید',
+  ].join('|'),
+  'giu',
+);
+/** «To us» beside a sending verb in any form — the factory's «yuborsa», «привезёт», «deliver», «发给我们». */
+const TO_US = /(?<![\p{L}])(?:bizga|бизга|к\s+нам|нам|to\s+us|to\s+our\s+\p{L}+)(?![\p{L}])|给我们|به\s+ما(?![\p{L}])/iu;
+const SENDING_ANY =
+  /(?<![\p{L}])(?:yubor|jo['‘’ʻ`]?nat|yetkaz|olib\s+kel|topshir|юбор|жўнат|етказ|олиб\s+кел|отправ|привез|достав|сда|переда|вышл|send|ship|deliver|bring|drop)\p{L}*|(?:寄|发|送|交)|ارسال|بفرست|تحویل|بیاور/iu;
+/**
+ * What a hand-over verb is about when it is no hand-over (fix pass 3): INFORMATION — a photo, a size, the weight, a
+ * list, a number, a link, a name, a document. «пришлите фото товара», «og‘irligini (kg) yozib yuboring», «send the
+ * weight», «请发照片», «عکس را بفرستید» ask him for a fact, never for the cargo. Never a unit («30 кг груза» is
+ * cargo), never «nom…» with another case on it («kompaniyamiz nomiga» is whose NAME it goes in — fix pass 4).
+ */
+const INFO_UZ = `(?:rasm|foto|surat|o${AP_}?lcham|og${AP_}?irli[gk]|vazn|hajm|ro${AP_}?yxat|raqam|havola|link|ma${AP_}?lumot|hujjat|invoys|skrinshot)\\p{L}*|nomi(?:ni|ngizni)?(?![\\p{L}])`;
+const INFO_UZC = '(?:расм|фото|сурат|ўлчам|улчам|оғирли[гк]|огирли[гк]|вазн|ҳажм|хажм|рўйхат|руйхат|рақам|ракам|ҳавола|маълумот|ҳужжат|хужжат)\\p{L}*|номи(?:ни|нгизни)?(?![\\p{L}])';
+const INFO_RU = '(?:фот|снимк|размер|объ[её]м|габарит|списк|номер|ссылк|данн|информаци|назван|документ|инвойс|скрин|параметр)\\p{L}*|список|вес(?:а|ом|у|е)?(?![\\p{L}])';
+const INFO_EN =
+  '(?:photos?|pictures?|pics?|images?|dimensions?|sizes?|weight|volume|list|number|link|details?|info(?:rmation)?|names?|documents?|invoices?|screenshots?|specs?|measurements?|requests?|comments?|messages?|questions?|reviews?|feedback)(?![\\p{L}])';
+const INFO_ASK = `(?:izoh|so${AP_}?rov|ariza|savol|xabar|заявк|отзыв|коммент|сообщени|вопрос|изоҳ|сўров|ариза|савол|хабар)\\p{L}*`;
+const INFO_ZH = '照片|图片|相片|尺寸|重量|体积|清单|信息|号码|链接|名称|资料|发票|截图|数据';
+const INFO_FA = 'عکس|تصویر|ابعاد|وزن|حجم|لیست|فهرست|شماره|لینک|اطلاعات|مدارک|فاکتور';
+const INFO_NOUN = new RegExp(
+  [
+    `(?<![\\p{L}])(?:${INFO_UZ})`,
+    `(?<![\\p{L}])(?:${INFO_UZC})`,
+    `(?<![\\p{L}])(?:${INFO_RU})`,
+    `(?<![\\p{L}])${INFO_EN}`,
+    `(?<![\\p{L}])${INFO_ASK}`,
+    INFO_ZH,
+    INFO_FA,
+  ].join('|'),
+  'iu',
+);
+/**
+ * …and the CARGO named only as the information's own (fix pass 4): «фото товара», «вес груза», «yukning og‘irligini»,
+ * «Tovar rasmini», «a photo of the goods», «货物的照片», «عکس بار» — the photo is the object there, never the cargo. A
+ * cargo noun anywhere else in the clause is the hand-over's object, whatever information rides with it.
+ */
+const CARGO_OF_INFO = new RegExp(
+  [
+    `(?<![\\p{L}])(?:${INFO_RU})\\s+(?:(?:вашего|вашей|ваших|вашу|этого|этой|этих|всего|всех)\\s+)?(?:груз(?:а|ов)|товар(?:а|ов)|посыл(?:ки|ок))(?![\\p{L}])`,
+    `(?<![\\p{L}])${INFO_EN}(?:\\s+\\([^)]*\\))?\\s+of\\s+(?:(?:the|your|this|these|those|its|all)\\s+)?(?:cargo|goods|shipment|parcel)s?(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:yuk|tovar|mol)(?:lar)?(?:ingiz|imiz)?(?:ning)?\\s+(?:${INFO_UZ})`,
+    `(?<![\\p{L}])(?:юк|товар|мол)(?:лар)?(?:ингиз|имиз)?(?:нинг)?\\s+(?:${INFO_UZC})`,
+    `(?:货物?|货品)的?(?:${INFO_ZH})`,
+    `(?:${INFO_FA})\\s+(?:بار|کالا)(?![\\p{L}])`,
+  ].join('|'),
+  'giu',
+);
+/**
+ * Where the cargo is to STAY — «qoldiring», «Guanchjouda tursa bo'ldi», «оставьте», «leave it in…», «بگذارید» — a
+ * hand-over only about the CARGO, a place of ours or a Chinese city in its clause: «Raqamingizni qoldiring», «Telefon
+ * yoqilgan tursin», «Leave it to us» leave nothing anywhere.
+ */
+const STAY_VERB =
+  /(?<![\p{L}])(?:qoldir\p{L}*|tur(?:sa\s+bo['‘’ʻ`]?l|sin(?![\p{L}]))|қолдир\p{L}*|колдир\p{L}*|оставь(?:те)?(?![\p{L}])|оставляйте|leave\s+(?:it|them|the\s+\p{L}+|your\s+\p{L}+)\s+(?:in|at|with)(?![\p{L}]))|بگذارید/iu;
+const CARGO_NOUN = /(?<![\p{L}])(?:yuk|tovar|mol|юк|товар|груз|cargo|goods|shipment|parcel)\p{L}*|货|(?<![\p{L}])بار(?![\p{L}])/iu;
+const OURS = /(?<![\p{L}])(?:наш\p{L}*|our|bizning|бизнинг|\p{L}+imiz(?:ga|da)?|\p{L}+имиз(?:га|да)?)(?![\p{L}])|我们的|(?<![\p{L}])ما(?![\p{L}])/iu;
+/**
+ * WE are the ones handing it over (the payment rule's «we cannot hand it over») — said before the verb, in the
+ * nominative. «Нам» is to whom HE hands it («Груз нам отправьте», fix pass 4) — ours only before a modal («нам нужно
+ * отправить»: we need to send).
+ */
+const OUR_BEFORE = /(?<![\p{L}])(?:we|we'll|we've|we're|мы|нам\s+(?:нужно|надо|необходимо|следует|можно|придётся|придется))(?![\p{L}])/iu;
+/** Where a sentence is split into the clauses a verb governs: commas, semicolons and «and». */
+const SUB_CLAUSE = /\s*[,，、;；]\s*|\s+(?:и|va|ва|and|و)\s+/iu;
+const SENTENCE = /[.!?\n。！？؟]+/u;
+/** «Пришлите, пожалуйста, фото груза» — the politeness between commas is no clause of its own (fix pass 4). */
+const POLITE_COMMAS = /\s*,\s*(?:пожалуйста|please|iltimos|илтимос)\s*,\s*/giu;
+const POLITE_TAIL = /\s*,\s*(?:пожалуйста|please|iltimos|илтимос)\s*$/iu;
+
+/** Tashkent named — a place of ours in that clause is where he collects, never the China end. */
+const TASHKENT = /(?<![\p{L}])(?:to['‘’ʻ`]?shkent|tashkent|тошкент|ташкент|chuqursoy|чуқурсой|чукурсой)\p{L}*|塔什干|تاشکند/iu;
+
+/** A hand-over the clause asks for: the cargo, never information alone, never ours. */
+function handsOver(clause: string): boolean {
+  // Information asked for frees the clause only when no cargo is left in it as the object (fix pass 4).
+  if (INFO_NOUN.test(clause) && !CARGO_NOUN.test(clause.replace(CARGO_OF_INFO, ' '))) return false;
+  for (const m of clause.matchAll(REPLY_HANDOVER)) {
+    if (!OUR_BEFORE.test(clause.slice(0, m.index))) return true;
+  }
+  const stay = STAY_VERB.exec(clause);
+  if (stay && !OUR_BEFORE.test(clause.slice(0, stay.index)) && (CARGO_NOUN.test(clause) || OURS.test(clause) || originMentions(clause).length > 0)) return true;
+  return TO_US.test(clause) && SENDING_ANY.test(clause) && !OUR_BEFORE.test(clause.slice(0, clause.search(SENDING_ANY)));
+}
+
+/**
+ * …or it names a Chinese city as where the cargo GOES, whatever the verb: «Yuk Ivuga yetib borsa bo'ldi», «Отправьте
+ * на Гуанчжоу», «送到广州». Never where it STARTS — «Guanchjoudan Toshkentgacha», «из Гуанчжоу», «from Guangzhou»,
+ * «从广州», «از گوانگژو» is every quote's own first words — and never where it IS (fix pass 3): «Груз в Гуанчжоу или в
+ * Иу?», «Is your cargo in Guangzhou?», «货在广州还是义乌？», «Yukingiz Guanchjoudami?» ask; where it STAYS is the
+ * hand-over's own verbs above («qoldiring», «оставьте», «leave it», «放在», «بگذارید»), and where WE receive it is
+ * `receivesThere`'s.
+ */
+const TO_ENDING = /^(?:ga|га)(?![\p{L}])/iu;
+const TO_ENDING_OWN = /(?:га)$/iu;
+const TO_BEFORE = /(?:(?<![\p{L}])(?:на|to|به)\s+(?:our\s+|наш\p{L}*\s+)?|[到去往至]|放在)$/iu;
+function sendsToChina(replyText: string): boolean {
+  return originMentions(replyText).some(({ index, match }) => {
+    const after = replyText.slice(index + match.length, index + match.length + 8);
+    const before = replyText.slice(Math.max(0, index - 16), index);
+    return TO_ENDING.test(after) || TO_ENDING_OWN.test(match) || TO_BEFORE.test(before);
+  });
+}
+
+/**
+ * …and the cargo HANDED IN at a Chinese place (fix pass 5, the check of pass 3): «在义乌交货就行» — «hand it over in
+ * Yiwu» — names no place of ours, no «to», no «please», and went by itself once pass 3 dropped «在» from `TO_BEFORE`.
+ * Never ours: «我们在义乌交货» is where WE deliver.
+ */
+const HAN_HAND_IN = /(?<!我们|我方|我司|我)在([^，。！？；]{1,10}?)(?:交货|交付|送货|入库|进仓)/gu;
+function handsInAtChina(sentence: string): boolean {
+  return [...sentence.matchAll(HAN_HAND_IN)].some((m) => originMentions(m[1]!).length > 0);
+}
+
+/** The reply directs the cargo: a place of ours, an address, where we receive it, or a hand-over asked of the customer (§1.2, armed only). */
+export function talksDelivery(replyText: string): boolean {
+  return replyText.split(SENTENCE).some((said) => {
+    const sentence = said.trim().replace(POLITE_COMMAS, ' ').replace(POLITE_TAIL, '');
+    if (REPLY_ADDRESS.test(sentence) || sendsToChina(sentence) || receivesThere(sentence) || handsInAtChina(sentence)) return true;
+    // A place of ours in a sentence about Tashkent, naming no Chinese place, is the pickup (fix pass 3).
+    if (placeDirects(sentence) && !(TASHKENT.test(sentence) && originMentions(sentence).length === 0)) return true;
+    return sentence.split(SUB_CLAUSE).some(handsOver);
+  });
 }
 
 /**
@@ -813,8 +1139,11 @@ export function withAviaGuard(
 function withAviaQuestion(c: ComposeReply, air: AviaCargo): ComposeReply {
   const asked = c.ownerQuestion.trim();
   const line = aviaOwnerQuestion(air);
-  if (asksAviaAddress(asked) || asked.includes(line)) return { ...c, needsOwner: true };
-  return { ...c, needsOwner: true, ownerQuestion: asked ? `${asked} · ${line}` : line };
+  // The flight's address is his to give, verbatim (spec SPEC-P1-v2 §1.2, §2.2): a forced question, ✏️ only. A rail
+  // question forced first keeps its name — its price is his ✏️ too, and the rail rule asked first.
+  const forcedQuestion = c.forcedQuestion ?? 'avia';
+  if (asksAviaAddress(asked) || asked.includes(line)) return { ...c, needsOwner: true, forcedQuestion };
+  return { ...c, needsOwner: true, ownerQuestion: asked ? `${asked} · ${line}` : line, forcedQuestion };
 }
 
 /**
@@ -973,7 +1302,7 @@ export function aviaOwnerQuestion(air: AviaCargo): string {
  */
 export function withRailRule(c: ComposeReply, ctx: Pick<AgentContext, 'burst'>): ComposeReply {
   if (!railQuestion(ctx, c)) return c;
-  return { ...c, needsOwner: true, ownerQuestion: c.ownerQuestion || RAIL_OWNER_QUESTION };
+  return { ...c, needsOwner: true, ownerQuestion: c.ownerQuestion || RAIL_OWNER_QUESTION, forcedQuestion: 'rail' };
 }
 
 /**
@@ -1150,10 +1479,37 @@ export function passesByItself(reason: Ineligible): boolean {
 }
 
 /**
+ * His ✍️ answer an owner-triggered run redrafts from (spec SPEC-P1-v2 §2.2): the question draft it answers, the
+ * customer line that question answered, the bot message his answer was, and his words.
+ */
+export interface OwnerAnswerInput {
+  questionDraftId: string;
+  questionAnchor: bigint;
+  /** The edit of that line the question was drafted over (`agent_drafts.anchor_edited_at`) — what `answer_stale` compares a later edit with. */
+  questionAnchorEditedAt: Date | null;
+  /** How far the question's run had seen its burst (owner-answer-job `questionSeenAt`) — what `answer_stale` compares the rest of its burst with. */
+  questionDraftedAt: Date | null;
+  messageId: number;
+  text: string;
+}
+
+/** The card's line on a redraft his answer could not make a reply of (a forcing rule asked him again). */
+export const ANSWER_STILL_HIS =
+  '✍️ Javobingiz olindi, lekin bu savolni AI o‘zi yozmaydi (temir yo‘l narxi yoki avia manzili) — «✏️ O‘zgartirish» bilan o‘zingiz yozing.';
+
+/**
  * A run the OWNER's side starts — a VED hand-back's question for the customer
- * (fit-5). Keyed by its own source (`agent_runs_source_unique`), so the same
- * hand-back drafts once; the token cap holds, the inbound draft cap does not
- * (money-11: his own work must not compete with the customers' day).
+ * (fit-5), or the reply his ✍️ answer makes (`answer`, spec SPEC-P1-v2 §2.2).
+ * Keyed by its own source (`agent_runs_source_unique`), so the same hand-back
+ * — or the same answer — drafts once; the token cap holds, the inbound draft
+ * cap does not (money-11: his own work must not compete with the customers'
+ * day).
+ *
+ * His answer's redraft is the one owner-triggered draft that carries an «o'zi
+ * yuborish» plan (§2.2): judged by the same gate, plus `owner_figure`,
+ * `owner_personal` and `answer_stale` — a figure-free answer may go by itself,
+ * one with his figure always comes back to him. It supersedes the question
+ * draft only when written (`createDraft`'s `answers`), never before.
  */
 export async function runOwnerTriggered(
   input: {
@@ -1162,6 +1518,14 @@ export async function runOwnerTriggered(
     peerId: bigint;
     sourceKey: string;
     instruction: string;
+    answer?: OwnerAnswerInput | null;
+    /**
+     * His confirmed lesson rewriting a reply still waiting for his ✅ («📝 Tuzatish», spec §3.4): the draft the
+     * rewrite supersedes — inside its own transaction, and only while that draft still carries this lesson's mark.
+     * The lesson is the INSTRUCTION, never a source, and the rewrite carries NO «o'zi yuborish» plan: a reply he has
+     * just judged wrong comes back as an ordinary card.
+     */
+    lesson?: { draftId: string; lessonId: string } | null;
   },
   deps: RunDeps = {},
 ): Promise<RunResult> {
@@ -1233,31 +1597,93 @@ export async function runOwnerTriggered(
   let settle: Partial<typeof agentRuns.$inferInsert> = { outcome: 'error', error: 'unknown' };
   try {
     const facts = await generalFacts();
+    // Read AFTER the lesson was confirmed: the rewrite's own head already carries it (§3.3, §3.4).
+    const taught = await promptLessons();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
-    const loop = await runLoop({ ctx, config, facts, day: tashkentDay(t), canary, callModel, now, instruction: input.instruction });
+    const act = { priceArmed: await priceActArmed() };
+    const loop = await runLoop({
+      ctx,
+      config,
+      facts,
+      day: tashkentDay(t),
+      canary,
+      callModel,
+      now,
+      instruction: input.instruction,
+      priceArmed: act.priceArmed,
+      lessons: taught.lessons,
+    });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
       cacheReadTokens: loop.usage.cacheReadTokens,
       cacheWriteTokens: loop.usage.cacheWriteTokens,
-      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text })),
+      toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
+    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
     }
-    const memory = memoryFor(ctx, loop, facts, canary);
+    const answer = input.answer ?? null;
+    const memory = memoryFor(ctx, loop, facts, canary, answer?.text ?? null);
     const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: drafted.replyText, memory, strip: stripFor(ctx) });
     const c = withAviaGuard(drafted, policy, loop, ctx);
     const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
     const rail = railNote(ctx, c);
     if (rail) notes.push(rail);
-    const written = await writeDraft({ runId, ctx, compose: c, policy, memory, actions, notes, kind: input.trigger === 'hand_back' ? 'hand_back' : 'reply' });
-    settle = { ...settle, outcome: written.kind === 'editing' ? 'stood_down' : 'draft', error: written.kind === 'editing' ? 'editing' : null };
-    return written.kind === 'editing'
-      ? { outcome: 'stood_down', reason: 'editing' }
-      : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
+    // A forcing rule turned his answer's redraft back into a question (§2.2): said on the card, never a loop.
+    if (answer && c.forcedQuestion) notes.push(ANSWER_STILL_HIS);
+    const fromAnswer = answer
+      ? {
+          questionDraftId: answer.questionDraftId,
+          questionAnchor: String(answer.questionAnchor),
+          // The question's OWN edit stamp, never this redraft's: the redraft anchors on the line as it is NOW, so an
+          // edit made while he answered is its own stamp and no later check of the redraft could see it.
+          questionAnchorEditedAt: answer.questionAnchorEditedAt?.toISOString() ?? null,
+          // …and when the question was drafted: the burst it was asked about is every line since our last message,
+          // and an edit or a delete of ANY of them after this moment is a wording he never saw (fix pass 3).
+          questionDraftedAt: answer.questionDraftedAt?.toISOString() ?? null,
+          // Asked of his words (his Q2 a ⭐) — a figure of his that the customer or a tool also carries is theirs
+          // in the ledger, and the reply made of it must still come back to him.
+          figures: answerHoldsFigure(answer.text),
+          personal: await ownerPersonalOf({
+            text: answer.text,
+            ownCodes: ctx.identity.codes.map((x) => x.clientCode),
+            ownNames: [
+              ...(await knownNamesFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, clientId: ctx.identity.clientId, leadId: ctx.identity.leadId })),
+              ...(ctx.identity.customerName ? [ctx.identity.customerName] : []),
+            ],
+            cargoAllowed: ctx.identity.cargoAllowed,
+          }),
+        }
+      : null;
+    const lesson = input.lesson ?? null;
+    const draftInput = {
+      runId,
+      ctx,
+      compose: c,
+      policy,
+      memory,
+      actions,
+      notes,
+      kind: input.trigger === 'hand_back' ? ('hand_back' as const) : ('reply' as const),
+      fromAnswer,
+      fromLesson: lesson,
+      lessonSet: taught.mark,
+    };
+    // His answer's redraft alone carries a plan (§2.2) — judged on the very row about to be written, as the inbound
+    // run's. A lesson's rewrite carries none (§3.4), and neither does a hand-back's question.
+    const autoPlan = answer ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
+    const written = await writeDraft({
+      ...draftInput,
+      autoPlan,
+      answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
+      redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
+    });
+    const stood = written.kind === 'editing' ? 'editing' : written.kind === 'question_gone' ? 'question_gone' : null;
+    settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };
+    return stood !== null ? { outcome: 'stood_down', reason: stood } : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
   } catch (err) {
     logger.error({ err, runId }, '[agent] owner-triggered run failed');
     settle = { ...settle, outcome: 'error', error: err instanceof Error ? err.message.slice(0, 300) : 'error' };

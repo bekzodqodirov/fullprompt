@@ -5,8 +5,10 @@ import type { PriceRefusal } from '@/modules/wms/agent/calc-loop';
 import type { AgentConfigRefusal } from '@/modules/wms/agent/config';
 import type { DecideRefusal } from '@/modules/wms/agent/decide';
 import type { KbRefusal } from '@/modules/wms/agent/kb';
+import type { LessonRefusal } from '@/modules/wms/agent/lessons';
 import type { CancelRefusal } from '@/modules/wms/agent/web-thread';
 import type { RetireRefusal } from '@/modules/wms/agent/web-kb';
+import type { TariffConfirmRefusal } from '@/modules/wms/agent/tariff-watch';
 import type { ClearRefusal } from '@/modules/wms/crm/account-guard';
 import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
 
@@ -19,13 +21,15 @@ import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
  * bundles under `agentAi`.
  */
 
-export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'bilimlar', 'sozlamalar'] as const;
+export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'bilimlar', 'saboqlar', 'sozlamalar'] as const;
 export type AgentSection = (typeof AGENT_SECTIONS)[number];
 
 export const SECTION_KEYS: Record<AgentSection, string> = {
   kutilmoqda: 'section.kutilmoqda',
   savollar: 'section.savollar',
   bilimlar: 'section.bilimlar',
+  // «📝 Tuzatish» — what he taught the AI (0148, spec SPEC-P1-v2 §3.6).
+  saboqlar: 'section.saboqlar',
   sozlamalar: 'section.sozlamalar',
 };
 
@@ -42,6 +46,8 @@ export type AgentErrorCode =
   | CancelRefusal
   | RetireRefusal
   | PriceRefusal
+  // «✅ Tarif to'g'ri» (0148, tariff-watch `confirmTariff`).
+  | TariffConfirmRefusal
   // `superseded` as the press found it (decide `redraftNewest`) — web-actions `SUPERSEDED_ERROR`.
   | 'superseded_no_draft'
   | 'superseded_capped'
@@ -52,8 +58,15 @@ export type AgentErrorCode =
   // «O'zi yuborish»'s doors (web-actions `agentAuto…`): their OWN codes, because the services share
   // words like `not_found` with the draft decisions and a switch is not a draft.
   | `auto_${AutoConfigRefusal}`
+  // A number out of bounds in the daily-count box and in the account-limit boxes (web-actions): each its own
+  // sentence, naming its bounds — `auto_bad_value` is the kinds form's «tick at least one».
+  | 'auto_bad_per_day'
+  | 'auto_bad_caps'
   | `auto_stop_${Exclude<StopAutoRefusal, 'not_ready'>}`
   | `auto_fb_${Exclude<AutoFeedbackRefusal, 'not_ready'>}`
+  // «📝 Tuzatish» (web-actions `agentLesson…`, lessons.ts): their own codes too — «empty» and «too long» there
+  // speak of a lesson, not of a reply or a fact.
+  | `lesson_${LessonRefusal}`
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
@@ -86,6 +99,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_pressed: 'errors.auto_pressed',
   auto_sending: 'errors.auto_sending',
   auto_sent: 'errors.auto_sent',
+  estimate_moved: 'errors.estimate_moved',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',
@@ -96,6 +110,8 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   owner_not_connected: 'errors.owner_not_connected',
   turn_off_first: 'errors.turn_off_first',
   bad_value: 'errors.bad_value',
+  // «✅ Tarif to'g'ri»: the column changed since the page was drawn (tariff-watch `confirmTariff`).
+  tariff_changed: 'errors.tariff_changed',
   // writeKbFact
   money: 'errors.money',
   money_context: 'errors.money_context',
@@ -121,6 +137,8 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_agent_off: 'errors.auto_agent_off',
   auto_not_work_account: 'errors.auto_not_work_account',
   auto_bad_value: 'errors.auto_bad_value',
+  auto_bad_per_day: 'errors.auto_bad_per_day',
+  auto_bad_caps: 'errors.auto_bad_caps',
   auto_stop_not_found: 'errors.auto_stop_not_found',
   auto_stop_not_account_holder: 'errors.auto_stop_not_account_holder',
   auto_stop_pressed: 'errors.auto_stop_pressed',
@@ -131,6 +149,17 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_fb_not_account_holder: 'errors.auto_fb_not_account_holder',
   auto_fb_not_sent: 'errors.auto_fb_not_sent',
   auto_fb_already: 'errors.auto_fb_already',
+  // «📝 Tuzatish» (web-actions `agentLesson…`)
+  lesson_not_ready: 'errors.not_ready',
+  lesson_forbidden: 'errors.forbidden',
+  lesson_not_found: 'errors.lesson_not_found',
+  lesson_not_teachable: 'errors.lesson_not_teachable',
+  lesson_empty: 'errors.lesson_empty',
+  lesson_too_long: 'errors.lesson_too_long',
+  lesson_money: 'errors.lesson_money',
+  lesson_personal: 'errors.lesson_personal',
+  lesson_already: 'errors.lesson_already',
+  lesson_confirmed: 'errors.lesson_confirmed',
   unknown: 'errors.unknown',
 };
 

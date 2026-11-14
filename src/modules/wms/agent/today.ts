@@ -87,11 +87,14 @@ export const OUTBOX_GOING = ['agent', 'sending', 'sent', 'unknown'] as const;
 /**
  * Today's AI sends on an account against the day's ceiling (fit-8, his Q11 ⭐):
  * what a ✅ beyond the ceiling is refused by, and what the page prints.
+ * `dayCap` is the EFFECTIVE day cap (`send-caps.ts`) — required, the number the
+ * send step and the gate use too (spec §5.2).
  */
 export async function sendsToday(
   managerUserId: string,
   startedAt: Date | null,
   now: Date,
+  dayCap: number,
 ): Promise<{ used: number; ceiling: number }> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
   const [used] = await db.execute<{ n: number }>(sql`
@@ -103,7 +106,7 @@ export async function sendsToday(
        )})
        AND queued_at >= ${dayStart}::timestamptz`);
   // His own average daily sends over the 30 days before the agent started (his Q11 ⭐).
-  let ownAverage: number = AGENT_LIMITS.perDay;
+  let ownAverage: number = dayCap;
   if (startedAt) {
     const from = new Date(startedAt.getTime() - 30 * 86_400_000);
     const [own] = await db.execute<{ n: number }>(sql`
@@ -113,5 +116,5 @@ export async function sendsToday(
          AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id)`);
     ownAverage = Number(own?.n ?? 0) / 30;
   }
-  return { used: Number(used?.n ?? 0), ceiling: dailySendCeiling({ startedAt, ownAverage, now }) };
+  return { used: Number(used?.n ?? 0), ceiling: dailySendCeiling({ startedAt, ownAverage, now, dayCap }) };
 }

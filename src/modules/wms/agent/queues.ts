@@ -15,6 +15,11 @@ export const JOB_AGENT_HUMAN_REPLY = 'agent.human_reply';
 export const JOB_AGENT_SWEEP = 'agent.sweep';
 /** The VED handed a linked calculation back — the customer's question is drafted off the VED's button (regression-3). */
 export const JOB_AGENT_HAND_BACK = 'agent.hand_back';
+/**
+ * His «✍️ Savolga javob» answer — the customer's reply is drafted from it off the bot's sequential poller (spec
+ * SPEC-P1-v2 §2.2; round 101, #706: a model run is never awaited on the poller).
+ */
+export const JOB_AGENT_OWNER_ANSWER = 'agent.owner_answer';
 
 /** A customer's message landed on the agent owner's account. */
 export interface AgentInboundJob {
@@ -89,6 +94,27 @@ export interface AgentHandBackJob {
   reason: string;
   /** 0 (absent) from the VED's button; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
   attempt?: number;
+}
+
+/**
+ * His answer to the AI's question, to redraft from. The words are NOT in the job: they are stored on the question
+ * draft (`policy.ownerAnswer`) and read from there, with the bot message they were — a job for an answer since
+ * replaced finds another message there and stands down. The run's source key is
+ * `answer:<draftId>:<messageId>`, so a job delivered twice drafts once.
+ */
+export interface AgentOwnerAnswerJob {
+  managerUserId: string;
+  peerId: string;
+  draftId: string;
+  messageId: number;
+  /** 0 (absent) from the bot; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
+  attempt?: number;
+  /**
+   * Set: the job is no answer's but a LESSON's rewrite of `draftId` («📝 Tuzatish» on a card still waiting, spec
+   * §3.4 — «through the same queued job»): the worker hands it to the lesson's own handler, whose run is keyed
+   * `lesson:<lessonId>` — never the key an answer on the same draft takes. `messageId` is then 0 and unread.
+   */
+  lessonId?: string;
 }
 
 /** Seconds of quiet before the worker looks (AGENT_LIMITS.debounceMs). */

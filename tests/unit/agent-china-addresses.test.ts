@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
@@ -7,6 +8,7 @@ import { airMentionIn, namesMode, PHONE_RE, pricedRoadOf, roadChoiceIn } from '@
 import {
   addressAnchorsOf,
   checkAgentReply,
+  EXCLUSION_SENTENCE,
   isReceivingAddressFact,
   statesChinaAddress,
   withoutQuotedHan,
@@ -21,6 +23,7 @@ import {
   memoryFor,
   railChat,
   shipmentWeightIn,
+  talksDelivery,
   withAviaGuard,
   withAviaRule,
   type ComposeReply,
@@ -117,9 +120,16 @@ const said = (body: string, n: number, direction: 'in' | 'out' = 'in'): ChatMess
   tgMessageId: BigInt(n),
   direction,
 });
-type ToolCall = { name: string; ok: boolean; text: string };
-/** The avia rule over a run's tools and outcomes, as `runOnce` calls it. */
-const rule = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) => withAviaRule(c, { outcomes, tools }, ctx);
+type ToolCall = { name: string; ok: boolean; text: string; estimate: boolean };
+/**
+ * The avia rule over a run's tools and outcomes, as `runOnce` calls it — with his price act OFF, the state every
+ * case below was written for (spec SPEC-P1-v2 §1.2: off, the rule is today's byte for byte). `ruleArmed` is the
+ * same rule with «Narx» ticked and the layer armed.
+ */
+const rule = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) =>
+  withAviaRule(c, { outcomes, tools }, ctx, { priceArmed: false });
+const ruleArmed = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) =>
+  withAviaRule(c, { outcomes, tools }, ctx, { priceArmed: true });
 /** The flight he approved a draft for, as `loadContext` reads it back. */
 const AIR_QUOTE: AgentContext['lastQuote'] = { road: 'air', air: { kg: 30, origin: 'Shenzhen' }, at: new Date(0), text: null, tgMessageId: null, edited: false };
 const ROAD_QUOTE: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(0), text: null, tgMessageId: null, edited: false };
@@ -131,7 +141,7 @@ function judge(
   language: AgentLocale,
   reply: string,
   outcomes: ToolOutcome[] = [],
-  tools: { name: string; ok: boolean; text: string }[] = [],
+  tools: ToolCall[] = [],
 ) {
   return verdict(customer, script, language, reply, outcomes, tools).blocks.map((b) => b.code);
 }
@@ -142,7 +152,7 @@ function verdict(
   language: AgentLocale,
   reply: string,
   outcomes: ToolOutcome[] = [],
-  tools: { name: string; ok: boolean; text: string }[] = [],
+  tools: ToolCall[] = [],
 ) {
   const ctx = typeof customer === 'string' ? ctxOf(customer, script) : customer;
   const mem = memoryFor(ctx, { compose: compose(language), tools, outcomes, usage }, FACTS, 'gsr-t');
@@ -323,7 +333,7 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
   });
 
   it('a truck quote asked in the same run — even one the tool refused — may give the truck\'s warehouse (review D5)', () => {
-    const refused = [{ name: 'yolkira_estimate', ok: false, text: 'hajm kerak' }];
+    const refused = [{ name: 'yolkira_estimate', ok: false, text: 'hajm kerak', estimate: false }];
     expect(judge('Shenzhendan avia 30 kg, fura bilan ham', 'latin', 'uz', `${quoted} ${answer('china_address_yiwu@1')}`, [air], refused)).not.toContain(
       'avia_address',
     );
@@ -359,6 +369,210 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
   it('…but never in a rail chat: no machine figure goes out there, so no flight was quoted — the question is the rail one', () => {
     const rail = ctxOf("Temir yo'l bilan 40 kg qancha?", 'latin');
     expect(rule(compose('uz'), [air], rail)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+  });
+
+  describe('his price act ARMED (spec SPEC-P1-v2 §1.2) — the paired cases: the PRICE may go by itself, the address never', () => {
+    const line = aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' });
+
+    it('D8 armed: a price-only reply asks him nothing — the model’s own question is left exactly as it set it', () => {
+      expect(ruleArmed(compose('uz', { replyText: quoted }), [air], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+      for (const asked of ['Kairat aka chair buyurtma qilyapti', 'Avia narxini tasdiqlang']) {
+        // Never cleared, never lengthened: its own needs_owner stands as it set it.
+        expect(ruleArmed(compose('uz', { replyText: quoted, ownerQuestion: asked, needsOwner: true }), [air], aviaChat)).toMatchObject({
+          needsOwner: true,
+          ownerQuestion: asked,
+        });
+      }
+    });
+
+    it('«asks HIM with the cargo» armed: only a reply that names a warehouse, sending or an address — then with the same line', () => {
+      for (const reply of [
+        `${quoted} Ivu omborimizga yuboring.`,
+        `${quoted} Manzilni keyin yozaman.`,
+        "Avia bilan yuborsangiz taxminan 510 $ bo'ladi. Boj va QQS alohida hisoblanadi.",
+        'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Адрес склада пришлю.',
+        'Air freight is about $510. Ship it to our warehouse.',
+        '空运大约510美元。关税和增值税另行计算。请发到我们的仓库。',
+      ]) {
+        expect(ruleArmed(compose('uz', { replyText: reply }), [air], aviaChat), reply).toMatchObject({ needsOwner: true, ownerQuestion: line });
+      }
+    });
+
+    // 0148 fix — the reply is read with lists of its OWN. The armed rule read it with the customer's asking stems:
+    // «пошл» is inside «Пошлина», so the exclusion sentence the prompt dictates in Russian made every Russian
+    // flight quote his question (the price act did nothing in Russian); «ship» is inside «shipment», «ارسال» the
+    // noun of «هزینه ارسال هوایی». Each language's price-only quote, carrying its own mandated sentence:
+    const PRICE_ONLY: readonly (readonly [AgentLocale, string])[] = [
+      ['uz', `30 kg yukingiz uchun Toshkentgacha avia taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz}`],
+      // Where the cargo STARTS is no direction: «from Guangzhou», in each language.
+      ['uz', `Guanchjoudan Toshkentgacha avia 30 kg uchun taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz}`],
+      ['uz_cyrl', `Гуанчжоудан Тошкентгача авиа 30 кг учун тахминан 510 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`],
+      ['ru', `Из Гуанчжоу до Ташкента авиа 30 кг — примерно 510 $. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', `From Guangzhou to Tashkent, air freight for 30 kg is about $510. ${EXCLUSION_SENTENCE.en}`],
+      ['zh', `30公斤从广州空运到塔什干大约510美元。${EXCLUSION_SENTENCE.zh}`],
+      ['fa', `هزینه هوایی ۳۰ کیلو از گوانگژو تا تاشکند حدود ۵۱۰ دلار است. ${EXCLUSION_SENTENCE.fa}`],
+      ['uz_cyrl', `30 кг юкингиз учун Тошкентгача авиа тахминан 510 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`],
+      ['ru', `30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', `Air freight for your 30 kg shipment to Tashkent is about $510. ${EXCLUSION_SENTENCE.en}`],
+      ['fa', `هزینه ارسال هوایی ۳۰ کیلو تا تاشکند حدود ۵۱۰ دلار است. ${EXCLUSION_SENTENCE.fa}`],
+      ['zh', `30公斤空运到塔什干大约510美元。${EXCLUSION_SENTENCE.zh}`],
+      // …and the ordinary wordings beside them: our own sending, a noun, a verb that only looks like one.
+      ['uz', `Avia bilan 30 kg yukni Toshkentgacha taxminan 510 $ ga yetkazamiz. ${EXCLUSION_SENTENCE.uz}`],
+      ['ru', `Доставка авиа до Ташкента — примерно 510 $ за 30 кг, цена складывается из веса. ${EXCLUSION_SENTENCE.ru}`],
+      ['ru', `Авиа до Ташкента примерно 510 $ за 30 кг, отправим ближайшим рейсом. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', `We ship your 30 kg to Tashkent by air for about $510. ${EXCLUSION_SENTENCE.en}`],
+      ['zh', `30公斤空运大约510美元，送到塔什干。${EXCLUSION_SENTENCE.zh}`],
+    ];
+
+    it.each(PRICE_ONLY)('armed: a price-only quote in %s asks him nothing — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(false);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    });
+
+    it.each(PRICE_ONLY)('off: the same quote in %s asks him with its cargo, as it always has — «%s»', (language, reply) => {
+      expect(rule(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
+    // …and the reply's own way of sending him somewhere — a place of ours, an address, the hand-over asked of HIM —
+    // which the asking stems did not hold either: «…qabul punktimizga olib boring» went by itself (the review's nit).
+    const DIRECTS: readonly (readonly [AgentLocale, string])[] = [
+      ['uz', `${quoted} Yukni Guanchjoudagi qabul punktimizga olib boring.`],
+      ['uz', `${quoted} Yukni olib keling.`],
+      ['uz', `${quoted} Yukni topshirishingiz mumkin.`],
+      ['uz', `${quoted} Yukni filialimizga yetkazib bering.`],
+      ['uz', `${quoted} Yukni jo'nating.`],
+      ['uz', `${quoted} Lokatsiyani yuboraman.`],
+      // A Chinese city as where the cargo GOES or STAYS — whatever the verb, listed or not.
+      ['uz', `${quoted} Tovarni Guanchjouda qoldirsangiz kifoya.`],
+      ['uz', `${quoted} Yuk Ivuga yetib borsa bo'ldi.`],
+      ['uz', "Guanchjoudan Toshkentgacha avia taxminan 510 $ bo'ladi. Boj va QQS alohida hisoblanadi. Yuk Guanchjouda tursa bo'ldi."],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Товарни Гуанчжоуда қолдирсангиз кифоя.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Груз оставьте в Гуанчжоу.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Leave it in Guangzhou.'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。货放在广州就可以。'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. بار را در گوانگژو بگذارید.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Юкни қабул пунктимизга олиб боринг.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Омборимизга топширинг.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Манзилни ёзаман.'],
+      ['uz_cyrl', 'Авиа билан тахминан 510 $ бўлади. Бож ва ҚҚС алоҳида ҳисобланади. Складимизга юборинг.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Сдайте груз в наш пункт приёма.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Можете привезти груз завтра.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Отправьте груз на наш склад в Гуанчжоу.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Доставьте в наш филиал.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Please drop it off at our branch.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. You can bring the cargo tomorrow.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. I will send you the address.'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。请送到我们的收货点。'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。您可以把货交到广州网点。'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。地址稍后发给您。'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. بار را به شعبه ما تحویل دهید.'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. بار را به انبار ما ارسال کنید.'],
+      ['fa', 'هزینه هوایی حدود ۵۱۰ دلار است. عوارض گمرکی و مالیات بر ارزش افزوده جداگانه محاسبه می‌شود. نشانی را می‌فرستم.'],
+    ];
+
+    it.each(DIRECTS)('armed: a reply in %s that directs the cargo asks HIM, with the cargo — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(true);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
+    it.each(DIRECTS)('off: the same reply in %s asks him too — «%s»', (language, reply) => {
+      expect(rule(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
+    // Fix pass 3 — the check of that fix: its lists turned ordinary replies in a flight chat into his «avia manzilini
+    // yozing» question, and ticking «Narx» took them from the layer — a request for INFORMATION read as a hand-over
+    // («пришлите фото», «og‘irligini yozib yuboring», «send the weight»), a question where the cargo IS («Груз в
+    // Гуанчжоу или в Иу?»), the Tashkent pickup, our own «we cannot hand it over». A hand-over has the CARGO as its
+    // object, never a photo or a figure; a place in a clause about Tashkent is the pickup; OUR sending sends him nowhere.
+    const ASKS_NOTHING: readonly (readonly [AgentLocale, string])[] = [
+      ['ru', 'Здравствуйте! Напишите вес груза (кг) и пришлите фото товара?'],
+      ['ru', 'Пришлите размеры коробок, пожалуйста.'],
+      ['ru', 'Груз в Гуанчжоу или в Иу?'],
+      ['uz', 'Assalomu alaykum! Avia narxini aytishim uchun yukning og‘irligini (kg) yozib yuboring'],
+      ['uz', 'Toshkentda yukni Chuqursoy skladimizdan olib ketasiz'],
+      ['uz', 'Tovar ro‘yxatini yuborsangiz, tekshirib beraman'],
+      ['uz', 'Tovar rasmini yuboring'],
+      ['uz', 'Kub va kg ni, shuningdek ikki-uch rasm yuboring.'],
+      ['uz', 'Yukingiz Guanchjoudami yoki Ivudami?'],
+      ['uz_cyrl', 'Товар расмини юборинг'],
+      ['en', 'Hello! Is your cargo in Guangzhou or Yiwu?'],
+      ['en', 'Please send a photo of the goods.'],
+      ['en', 'Hello! Please send the volume (m3) and weight (kg) of your cargo.'],
+      ['en', "Payment on arrival, before collection. If you can't pay in full, we cannot hand it over."],
+      ['en', 'Take your time — send the weight when you know it.'],
+      ['zh', '货在广州还是义乌？'],
+      ['zh', '请发一下货物的照片和尺寸。'],
+      ['fa', 'بار شما در گوانگژو است یا ایوو؟'],
+      ['fa', 'لطفاً عکس بار را بفرستید.'],
+      ['uz', `${quoted} Tovar rasmini yuboring.`],
+      ['en', `Air freight is about $510. Customs duty and VAT are calculated separately. Please send a photo of the goods.`],
+      // A place of ours as where the cargo LEAVES or IS, or in a sentence about Tashkent, or where he collects it.
+      ['uz', 'Toshkentdagi skladimiz — Chuqursoy, 5-uy.'],
+      ['uz', 'Avto narxi Xitoydagi omborlarimizdan hisoblanadi.'],
+      ['uz', 'Aeroport terminali orqali o‘zingiz olib ketasiz.'],
+      ['ru', 'Ваш груз на складе в Иу.'],
+    ];
+
+    it.each(ASKS_NOTHING)('armed: an ordinary reply in %s asks him nothing — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(false);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    });
+
+    // …while the hand-over in the third person — the supplier or the factory brings the cargo to us, in this trade —
+    // and the hand-over's other verbs («leave», «give») still direct it (the nit beside it).
+    const THIRD_PERSON: readonly (readonly [AgentLocale, string])[] = [
+      ['uz', `${quoted} Sotuvchingiz yukni bizga yuborsin.`],
+      ['uz', `${quoted} Zavod yukni bizga yuborsa bo‘ldi.`],
+      ['uz', `${quoted} Yukni kuryerimizga bering.`],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Ваш поставщик должен привезти груз к нам.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Пусть поставщик привезёт груз к нам в офис.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Пусть завод отправит груз нам.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Оставьте груз у нашего представителя.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Отдайте груз нашему курьеру.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Подвозите груз в любой день.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Your supplier should deliver the goods to us.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Have your supplier send the goods to our office.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. We receive cargo at Baiyun airport.'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。让供应商发货给我们。'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。供应商把货发给我们就行。'],
+    ];
+
+    it.each(THIRD_PERSON)('armed: a reply in %s that has the supplier hand the cargo over asks HIM — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(true);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
+    it('the customer’s asking lists are untouched — the reply got lists of its own (spec §1.2: «do not touch the guards’ word lists»)', () => {
+      const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
+      // The stems, byte for byte, where `asksWhereToSend` reads them.
+      expect(src).toContain("const ADDRESS_WORD = /manzil|адрес|address|地址|آدرس/iu;");
+      expect(src).toContain('const WAREHOUSE_WORD = /ombor|sklad|склад|warehouse|仓库|انبار/iu;');
+      expect(src).toContain("/yubor|jo['‘’ʻ`]?nat|yetkaz(?:sin|ay|sam|ib\\s+ber(?:ay|sin|sam))|olib\\s+kel(?:ay|sin|sam|aman|ishim)|отправ|вышл|пошл|доставить|привез|send|ship|deliver\\s+(?:it|them|the|our|my|cargo|goods)|寄|发|ارسال|بفرست|");
+      // …and the reply is never read with them.
+      const fn = src.slice(src.indexOf('export function talksDelivery'), src.indexOf('export function talksDelivery') + 400);
+      expect(fn).not.toMatch(/SEND_VERB|WAREHOUSE_WORD|ADDRESS_WORD/u);
+    });
+
+    it('…the customer’s own «where do I send it» asks him, armed or not (the burst, never the model’s question)', () => {
+      const ask = ctxOf('Qayerga yuboray?', 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)], [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }]);
+      expect(ruleArmed(compose('uz', { replyText: quoted }), [], ask).needsOwner).toBe(true);
+      expect(rule(compose('uz', { replyText: quoted }), [], ask).needsOwner).toBe(true);
+    });
+
+    it('…a truck’s chat naming its warehouse asks nothing — the rule is the flight’s; a rail chat stays the rail one', () => {
+      const road = ctxOf('Ivudan fura bilan 5 kub qancha?', 'latin');
+      expect(ruleArmed(compose('uz', { replyText: `Ivu omborimizga yuboring. ${quoted}` }), [truck], road)).toMatchObject({ needsOwner: false });
+      const rail = ctxOf("Temir yo'l bilan 40 kg qancha?", 'latin');
+      expect(ruleArmed(compose('uz', { replyText: 'Ombor manzilini yuboraman.' }), [air], rail)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    });
+
+    it('…and the guard after the policy is unchanged: an avia address in the reply still asks him', () => {
+      const held = { ok: false, blocks: [{ rule: 'G6' as const, code: 'avia_address' as const }], warnings: [], ledger: [] };
+      expect(withAviaGuard(compose('uz', { replyText: `${quoted} ${answer('china_address_yiwu@1')}` }), held, { outcomes: [air], tools: [] }, aviaChat)).toMatchObject({
+        needsOwner: true,
+        ownerQuestion: line,
+      });
+    });
   });
 });
 
@@ -439,7 +653,7 @@ describe('which chat is a flight\'s — the review of the follow-up (review R1-R
       sources: [],
       checklist: { section: 'podklyuch', facts: {} as never, complete: false, fromOurWarehouse: false },
     };
-    expect(judge(ctx, 'latin', 'uz', yiwu(), [checklist], [{ name: 'calc_checklist', ok: true, text: '' }])).not.toContain('avia_address');
+    expect(judge(ctx, 'latin', 'uz', yiwu(), [checklist], [{ name: 'calc_checklist', ok: true, text: '', estimate: false }])).not.toContain('avia_address');
   });
 
   it('R2: only «where do I send it» asks him — thanks, his own address, a pickup or an arrival never do', () => {
@@ -691,7 +905,7 @@ describe('the road is what we quoted, whatever the words name — the third revi
 describe('written down for the model', () => {
   it('the prompt gives the warehouse address as the fact has it, and never a flight\'s', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
-    const head = stableHead({ styleGuide: null, facts: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] });
     expect(head).toMatch(/bilimdagidek, xitoycha qismini o'zgartirmay va tarjima qilmay, GS kod eslatmasi bilan/u);
     expect(head).toMatch(/avia manzilini HECH QACHON aytma/u);
     expect(head).toContain('owner_question="Avia: <tovar>, <kg> kg, <qayerdan> — manzilni bering"');
@@ -704,7 +918,7 @@ describe('written down for the model', () => {
   it('nothing claims avia cargo is not received in China — he said only that he gives its address (review D7)', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
     const { readFileSync } = await import('node:fs');
-    const head = stableHead({ styleGuide: null, facts: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] });
     const tool = readFileSync('src/modules/wms/agent/tools.ts', 'utf8');
     for (const text of [head, tool, answer('china_points@4')]) {
       expect(text).not.toMatch(/YUBORILMAYDI|yuborilmaydi —|manzillar EMAS/u);
@@ -739,7 +953,8 @@ describe('written down for the model', () => {
   it('both run paths — a customer\'s message and his hand-back — draft through the avia rule, judge THAT draft, then let the guard ask him', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
-    const path = /const drafted = withAviaRule\(withRailRule\(loop\.compose, ctx\), loop, ctx\);[\s\S]*?body: drafted\.replyText,[\s\S]*?const c = withAviaGuard\(drafted, policy, loop, ctx\);\s*const \{ actions, notes \} = validateActions\(c,/gu;
+    // His price act is read once per run and given to the rule (spec SPEC-P1-v2 §1.2) — the same `act` on both paths.
+    const path = /const drafted = withAviaRule\(withRailRule\(loop\.compose, ctx\), loop, ctx, act\);[\s\S]*?body: drafted\.replyText,[\s\S]*?const c = withAviaGuard\(drafted, policy, loop, ctx\);\s*const \{ actions, notes \} = validateActions\(c,/gu;
     expect(src.match(path)?.length).toBe(2);
   });
 

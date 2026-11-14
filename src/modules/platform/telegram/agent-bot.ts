@@ -13,11 +13,11 @@ import { armWait, dropWait, flushWaitWrites, nowSec, readWait, waitVerdict, type
  * The AI sotuvchi in the staff bot — the grammY shell only. Every decision is
  * the wms side's (`wms/agent/bot-door.ts`, reached by dynamic import:
  * platform never imports wms statically, the startBoss crossing); this file
- * answers the press, arms and drops the three one-text waits, and sits in the
- * text ladder's ONE agent slot (review regression-6).
+ * answers the press, arms and drops the agent's one-text waits (`AGENT_WAITS`),
+ * and sits in the text ladder's ONE agent slot (review regression-6).
  */
 
-const AGENT_WAITS = ['agent_edit', 'agent_price', 'agent_code'] as const satisfies readonly WaitKind[];
+const AGENT_WAITS = ['agent_edit', 'agent_price', 'agent_code', 'agent_answer', 'agent_lesson'] as const satisfies readonly WaitKind[];
 type AgentWait = (typeof AGENT_WAITS)[number];
 
 /** A one-text wait lasts half an hour — long enough to think, short enough not to swallow tomorrow's text. */
@@ -50,12 +50,25 @@ function taskWaitWords(chatId: bigint): string | null {
   return task.kind === 'reply' ? BUSY_REPLY : BUSY_TASK;
 }
 
-/** One of the agent's three waits is on the screen (✏️ his text, 💵 his price, 👤 a stranger's code). */
-const BUSY_AGENT = 'Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi) — keyin qayta bosing.';
+/**
+ * One of the agent's waits is on the screen (✏️ his text, 💵 his price, 👤 a stranger's code, ✍️ his answer to its
+ * question, 📝 his lesson).
+ */
+const BUSY_AGENT =
+  'Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx, mijoz kodi, savolga javob yoki tuzatish) — keyin qayta bosing.';
+
+/** What each agent wait was waiting for — said when a new one closes it (spec SPEC-P1-v2 §2.2: one at a time, in words). */
+const WAIT_NAMES: Record<AgentWait, string> = {
+  agent_edit: '✏️ javob matni',
+  agent_price: '💵 narx',
+  agent_code: '👤 mijoz kodi',
+  agent_answer: '✍️ savolga javob',
+  agent_lesson: '📝 tuzatish',
+};
 
 /**
  * A one-text wait this chat's next text answers — a task's (a «Bajarildi»
- * result, «💬 Javob yozish», a ⏰ date) or one of the agent's three — in the
+ * result, «💬 Javob yozish», a ⏰ date) or one of the agent's own — in the
  * words naming it; null when none. The collector asks it before a press makes
  * a PARKED collection hold the chat again (calc-intake-sweep.ts
  * `otherCollectorLive`, review REG-2 / COMP-5): a holding collection is asked
@@ -91,6 +104,9 @@ function taskArmedSince(task: { armedAt: number; expiresAt: number }, agent: { p
   return task.expiresAt > Number(seen);
 }
 
+/** The presses that ARM a one-text wait — each refused while another question holds the chat (`busy`). */
+const ARMING_OPS: ReadonlySet<string> = new Set(['e', 'p', 'k', 'j', 'l']);
+
 /** One agent press: decided on the server, answered in words. */
 export async function handleAgentPress(
   ctx: Context,
@@ -104,18 +120,22 @@ export async function handleAgentPress(
   }
   // A press that ARMS a text wait must not compete with a live collector:
   // his next text would be filed by whichever reads first.
-  const occupied = parsed.op === 'e' || parsed.op === 'p' || parsed.op === 'k' ? busy(chatId) : null;
+  // 📝 (`l`) too — on a card and under 👎's answer alike (spec SPEC-P1-v2 §3.1, §3.5): its next text is a RULE for
+  // every chat's prompt, the last thing a collector's material or a task's result may be filed as.
+  const occupied = ARMING_OPS.has(parsed.op) ? busy(chatId) : null;
   if (occupied) {
     await answerPress(ctx, occupied);
     await ctx.reply(occupied);
     return;
   }
   try {
-    const { agentPress, recordCardCopies, releaseEdit } = await import('../../wms/agent/bot-door');
+    const { agentPress, recordCardCopies, releaseAnswer, releaseEdit } = await import('../../wms/agent/bot-door');
     const out = await agentPress(staff.id, parsed.op, parsed.id, parsed.digest);
     // The same target asked again keeps its earlier prompts answerable (a
     // swipe-reply to the FIRST ✏️ prompt is still this draft's text).
     let earlierPrompts: string[] = [];
+    // The other agent waits this arm closes (spec SPEC-P1-v2 §2.2) — said when a ✍️ is one of them.
+    const replaced: AgentWait[] = [];
     if (out.arm) {
       // One live agent wait at a time; a second ✏️ releases the first draft
       // in words rather than silently re-targeting it (leak-6).
@@ -123,25 +143,50 @@ export async function handleAgentPress(
       if (prev?.payload.draftId && prev.payload.draftId !== out.arm.payload.draftId) {
         await releaseEdit(staff.id, prev.payload.draftId);
       }
+      // …and a ✍️ armed for another draft hands that question back (its card says so; the lines that stood down
+      // for it are asked again). On the same draft the press itself decided it (✏️ took the mark, ✍️ re-asks).
+      const prevAnswer = readWait<{ draftId?: string }>(chatId, 'agent_answer');
+      if (prevAnswer?.payload.draftId && prevAnswer.payload.draftId !== out.arm.payload.draftId) {
+        await releaseAnswer(staff.id, prevAnswer.payload.draftId);
+      }
       const same = readWait<Record<string, string>>(chatId, out.arm.kind);
       const arm = out.arm;
       if (same && Object.entries(arm.payload).every(([k, v]) => same.payload[k] === v)) {
         earlierPrompts = (same.payload.promptMessageIds ?? same.payload.promptMessageId ?? '').split(',').filter(Boolean);
       }
-      for (const kind of AGENT_WAITS) if (kind !== out.arm.kind) dropWait(chatId, kind);
+      const at = nowSec();
+      for (const kind of AGENT_WAITS) {
+        if (kind === out.arm.kind) continue;
+        const live = readWait<unknown>(chatId, kind);
+        if (live && waitVerdict(live, at, false) === 'answers') replaced.push(kind);
+        dropWait(chatId, kind);
+      }
     }
     if (out.drop) dropWait(chatId, out.drop);
     let closed: string | null = null;
-    if (out.dropEditOf && readWait<{ draftId?: string }>(chatId, 'agent_edit')?.payload.draftId === out.dropEditOf) {
-      dropWait(chatId, 'agent_edit');
-      closed = out.editClosed ?? null;
+    // The ✏️ or ✍️ armed for THIS draft is over (C7, §2.2): a ✅, ❌ or 🙋 decided it.
+    for (const kind of ['agent_edit', 'agent_answer'] as const) {
+      if (out.dropEditOf && readWait<{ draftId?: string }>(chatId, kind)?.payload.draftId === out.dropEditOf) {
+        dropWait(chatId, kind);
+        if (kind === 'agent_edit') closed = out.editClosed ?? null;
+      }
     }
     await answerPress(ctx, out.toast);
+    // The message pressed has nothing left to press (a lesson's echo, saved or dropped): its buttons go. Best
+    // effort — a second press is refused by the lesson's own compare-and-set all the same.
+    if (out.closeButtons) {
+      await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }).catch((err: unknown) => logger.warn({ err }, '[agent] buttons not closed'));
+    }
     const prompt = out.reply
       ? await ctx.reply(out.reply, out.buttons ? { reply_markup: { inline_keyboard: out.buttons } } : undefined)
       : null;
     // The ✏️ he armed for this draft is over, and his next text goes elsewhere — said where it stays.
     if (closed && !prompt) await ctx.reply(closed);
+    // One agent wait at a time, closed in WORDS where a ✍️ or a 📝 is concerned (§2.2, §3.1): his next text answers
+    // the new one — and a text meant for the customer must never land as a lesson, nor a lesson as the reply.
+    if (out.arm && replaced.length > 0 && [out.arm.kind, ...replaced].some((k) => k === 'agent_answer' || k === 'agent_lesson')) {
+      await ctx.reply(`↩️ Oldingi kutish yopildi (${replaced.map((k) => WAIT_NAMES[k]).join(', ')}) — endi yozganingiz shu yangi so‘rovga boradi.`);
+    }
     // The draft's text on its own (✏️, C4), after the prompt: copied, changed and sent back —
     // as a reply to it too, so it is one of the prompts the wait names.
     const copy = out.followUp ? await ctx.reply(out.followUp) : null;
@@ -226,11 +271,18 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
   if (!plain && msg.replyToMessageId === null) return false;
   const staff = await staffForChat(chatId);
   if (!staff) return false;
-  const { agentCardFor, agentText, editStillLive } = await import('../../wms/agent/bot-door');
+  const { agentCardFor, agentText, answerStillLive, editStillLive } = await import('../../wms/agent/bot-door');
   let target: { kind: AgentWait; payload: Record<string, string> } | null = null;
   if (msg.replyToMessageId !== null) {
-    // A reply's target is the message it names — the agent prompt's too, newer task wait or not.
-    target = await agentCardFor(staff.id, chatId, msg.replyToMessageId);
+    // A reply's target is the message it names — the agent prompt's too, newer task wait or not. A swipe-reply to
+    // a draft's CARD is his verbatim ✏️ text, unless ✍️ — or 📝 — is armed for that very draft (spec SPEC-P1-v2
+    // §2.2, §3.1): then it is the answer, or the lesson, the press asked for. A lesson filed as the customer's
+    // reply would sit on the card one ✅ away from the customer.
+    const armedFor =
+      (waited?.kind === 'agent_answer' || waited?.kind === 'agent_lesson') && waited.payload.draftId
+        ? { kind: waited.kind, draftId: waited.payload.draftId }
+        : null;
+    target = await agentCardFor(staff.id, chatId, msg.replyToMessageId, armedFor);
     // A reply to a stranger or echo card is a CODE only while that rule's
     // code wait is armed (he pressed «👤 Mijoz — kod»): a reply alone opens no echo.
     if (target?.kind === 'agent_code' && !(waited?.kind === 'agent_code' && waited.payload.ruleId === target.payload.ruleId)) {
@@ -251,12 +303,42 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
     dropWait(chatId, 'agent_edit');
     return false;
   }
+  // A ✍️ wait whose question is no longer waiting (spec §2.2, the same rule): a plain text goes on down the ladder;
+  // a swipe-reply still names the question and is told its answer was not taken.
+  if (target.kind === 'agent_answer') {
+    const live = await answerStillLive(staff.id, target.payload.draftId);
+    if (!live && msg.replyToMessageId === null) {
+      dropWait(chatId, 'agent_answer');
+      return false;
+    }
+    // An address, a phone, Chinese text: refused in words and the wait KEPT — his next text is still the answer.
+    // The words name WHAT was read as one — a figure with no unit beside it is told how to say itself.
+    const { answerTextRefusal, answerContactWords } = await import('../../wms/agent/owner-answer');
+    const contact = live ? answerTextRefusal(msg.text) : null;
+    if (contact !== null) {
+      await markOnce(await messageKey(ctx, 'wait'));
+      await ctx.reply(answerContactWords(contact));
+      return true;
+    }
+  }
+  // A lesson the writer would refuse — money, a customer's name, code or phone, too long (§3.2) — is refused in words
+  // BEFORE the wait is consumed, like an answer's phone: his next text is still the lesson. No «still live» check:
+  // a lesson teaches whatever became of the card it was given on.
+  if (target.kind === 'agent_lesson') {
+    const { lessonRefusalFor } = await import('../../wms/agent/bot-door');
+    const refused = await lessonRefusalFor(staff.id, target.payload.draftId, msg.text);
+    if (refused !== null) {
+      await markOnce(await messageKey(ctx, 'wait'));
+      await ctx.reply(refused);
+      return true;
+    }
+  }
   // The wait is consumed before the effect (the redelivery rule): a kill after
   // the delete leaves nothing to answer twice.
   dropWait(chatId, target.kind);
   await flushWaitWrites();
   try {
-    const answer = await agentText(staff.id, target, msg.text);
+    const answer = await agentText(staff.id, target, msg.text, ctx.message?.message_id);
     // What this text did, so a crash redelivery of it hears «answered» and
     // never «send it again» (final review K23 — the task wait's own rule,
     // judge Q5H-2 a): with the wait already consumed, the redelivered text

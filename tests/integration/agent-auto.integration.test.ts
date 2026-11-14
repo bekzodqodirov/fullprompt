@@ -2,7 +2,8 @@ import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { and, eq, inArray, like, notInArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { dropDrainKicksSince } from './drain-kicks';
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -14,7 +15,9 @@ import {
   agentDrafts,
   agentOutbox,
   agentRuns,
+  agentSendCaps,
   auditLog,
+  calcFreightTariffs,
   clients,
   leadSources,
   leadStages,
@@ -32,7 +35,7 @@ import { __resetTelegramPause, sendPendingTelegram } from '@/modules/platform/no
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
-import { AUTO_BAD_DISARMED_TOAST, AUTO_BAD_TOAST, AUTO_STOPPED_TOAST, agentCommand, agentPress, autoStatusLine } from '@/modules/wms/agent/bot-door';
+import { AUTO_BAD_DISARMED_TOAST, AUTO_BAD_TOAST, AUTO_BAD_WHY, AUTO_STOPPED_TOAST, TARIFF_CONFIRM_WORDS, agentCommand, agentPress, autoStatusLine } from '@/modules/wms/agent/bot-door';
 import {
   AUTO_RECLAIM_MS,
   autoFeedback,
@@ -44,6 +47,7 @@ import {
   readAutoConfig,
   setAutoArmed,
   setAutoCategories,
+  setAutoPerDay,
   stopAuto,
   __restoreAutoConfig,
   AutoConfigError,
@@ -54,7 +58,9 @@ import {
   readAgentConfig,
   setAgentMode,
   __forgetAgentAutoReady,
+  __forgetAgentFullP1Ready,
   __pretendAgentAutoBehind,
+  __pretendAgentFullP1Behind,
   __restoreAgentConfig,
   type AgentConfig,
 } from '@/modules/wms/agent/config';
@@ -64,10 +70,26 @@ import { agentRowById, applyAgentOutcome, sendFactsFor } from '@/modules/wms/age
 import { agentSendVerdict } from '@/modules/wms/agent/send-step';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
-import { autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
+import { agentToday, autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { setWorkAccount } from '@/modules/wms/crm/telegram-accounts';
 import { CANCELLED_BY_HOLDER } from '@/modules/wms/agent/web-thread';
+import { DEFAULT_SEND_CAPS, __restoreSendCaps, readSendCaps, type SendCaps } from '@/modules/wms/agent/send-caps';
+import {
+  TariffConfirmError,
+  confirmTariff,
+  currentTariffFingerprint,
+  tariffChangedAt,
+  tariffExpiryNotice,
+  tariffNoticeFrom,
+  tariffNoticeOn,
+  tariffUnconfirmed,
+} from '@/modules/wms/agent/tariff-watch';
+import { saveTariffBand } from '@/modules/wms/calc/dictionaries';
+import { SITE_TARIFF } from '@/modules/wms/agent/site-estimate';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { EXCLUSION_SENTENCE } from '@/modules/wms/agent/policy';
+import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
 
 /**
  * A seam in the press (fix pass A): `sendWindowFor` is asked by the gate's facts AND by `decideDraft` before its
@@ -361,7 +383,10 @@ beforeEach(async () => {
   await stampAgentPump(accountId, true);
 });
 
+// The drain's kicks this file's notifications queued, from its own start (fix pass 5 — `drain-kicks.ts`).
+const KICKS_FROM = new Date().toISOString();
 afterAll(async () => {
+  await dropDrainKicksSince(KICKS_FROM);
   __forgetAgentAutoReady();
   seam.hook = null;
   __setTelegramTransport(null);
@@ -403,11 +428,15 @@ describe('the plan — written beside the draft by the inbound run', () => {
     expect(v!.reasons).toEqual(['money', 'category', 'language']);
   });
 
-  it('an owner-triggered draft writes no row — the inbound run alone plans', () => {
+  it('an owner-triggered draft writes no row — the inbound run plans, and of the owner-triggered ones his ✍️ answer’s redraft alone (spec SPEC-P1-v2 §2.2)', () => {
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
     const owner = src.slice(src.indexOf('export async function runOwnerTriggered'));
     expect(owner.length).toBeGreaterThan(100);
-    expect(owner).not.toMatch(/autoPlan/u);
+    // Every plan in the owner-triggered run is behind his answer: a hand-back's redraft never counts down (the
+    // behaviour is pinned in agent-owner-answer.integration: a hand-back run writes no verdict row).
+    const plans = owner.match(/autoPlanFor\(/gu) ?? [];
+    expect(plans).toHaveLength(1);
+    expect(owner).toMatch(/const autoPlan = answer \? await autoPlanFor\(/u);
     const inbound = src.slice(src.indexOf('export async function handleInbound'), src.indexOf('export async function runOwnerTriggered'));
     expect(inbound).toMatch(/autoPlanFor\(/u);
   });
@@ -534,6 +563,21 @@ describe('the press — the minute sweep, through the same ✅', () => {
     expect(await verdictOf(second.id)).toMatchObject({ eligible: false, reasons: ['daily_cap'] });
   });
 
+  it('per day NULL (0148, his «7 chegara qoyma»): no daily count — the second reply of the day counts down too', async () => {
+    await db.update(agentAutoConfig).set({ perDay: null }).where(eq(agentAutoConfig.id, 1));
+    expect((await readAutoConfig())!.perDay).toBeNull();
+    const first = await drafted();
+    expect(await verdictOf(first.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(first.id))!.state).toBe('pressed');
+    const second = await drafted({ now: new Date(DUE.getTime() + 60_000) });
+    expect(await verdictOf(second.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    // The bot says «no cap» as such — never «1/null», never «1/0».
+    const line = await autoStatusLine(ownerId, new Date(DUE.getTime() + 60_000));
+    expect(line).toContain('chegara yo‘q');
+    expect(line).not.toMatch(/\/null|\/0\b/u);
+  });
+
   it('the streak: two auto replies in a row, then he must speak — his own decision resets it', async () => {
     let at = T0;
     for (let i = 0; i < 2; i++) {
@@ -625,14 +669,51 @@ describe('arming and disarming', () => {
     expect(await refused(setAutoArmed(actorOf(ownerId), true, { actorId: ownerId }))).toBe('agent_off');
   });
 
-  it('the kinds: the holder chooses among the four, at least one, in the design’s order', async () => {
+  it('the kinds: the holder chooses among the five, at least one, in the design’s order — «Narx» only where 0148 admits it', async () => {
     const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
     expect(await refused(setAutoCategories(actorOf(ownerId), [], { actorId: ownerId }))).toBe('bad_value');
-    expect(await refused(setAutoCategories(actorOf(ownerId), ['price'], { actorId: ownerId }))).toBe('bad_value');
+    // DELIBERATE EDIT (0148, spec §1.5): «price» is the fifth kind now; complaint and other never are.
+    expect(await refused(setAutoCategories(actorOf(ownerId), ['complaint'], { actorId: ownerId }))).toBe('bad_value');
+    expect(await refused(setAutoCategories(actorOf(ownerId), ['other', 'faq'], { actorId: ownerId }))).toBe('bad_value');
     expect(await refused(setAutoCategories(actorOf(otherId), ['faq'], { actorId: otherId }))).toBe('not_account_holder');
+    expect((await setAutoCategories(actorOf(ownerId), ['price', 'faq'], { actorId: ownerId })).categories).toEqual(['faq', 'price']);
+    // One migration behind 0148 the CHECK refuses «price»: said in words, never a raw 23514 — the four still save.
+    __pretendAgentFullP1Behind();
+    try {
+      expect(await refused(setAutoCategories(actorOf(ownerId), ['price'], { actorId: ownerId }))).toBe('not_ready');
+      expect((await setAutoCategories(actorOf(ownerId), ['faq'], { actorId: ownerId })).categories).toEqual(['faq']);
+    } finally {
+      __forgetAgentFullP1Ready();
+    }
     expect((await setAutoCategories(actorOf(ownerId), ['status', 'greeting'], { actorId: ownerId })).categories).toEqual(['greeting', 'status']);
     // A kind he took out is refused at the scheduling.
     expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['category']);
+  });
+
+  it('the daily count (0148): the holder types a number or leaves it empty — bounded, audited, said in words one migration behind', async () => {
+    const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
+    for (const bad of [0, 1001, 1.5, Number.NaN, -3]) {
+      expect(await refused(setAutoPerDay(actorOf(ownerId), bad, { actorId: ownerId })), String(bad)).toBe('bad_value');
+    }
+    expect(await refused(setAutoPerDay(actorOf(otherId), 10, { actorId: otherId }))).toBe('not_account_holder');
+    expect((await setAutoPerDay(actorOf(ownerId), null, { actorId: ownerId })).perDay).toBeNull();
+    expect((await readAutoConfig())!.perDay).toBeNull();
+    expect((await setAutoPerDay(actorOf(ownerId), 1000, { actorId: ownerId })).perDay).toBe(1000);
+    const [audit] = await db
+      .select({ before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'agent_auto_config'), eq(auditLog.actorId, ownerId)))
+      .orderBy(sql`${auditLog.id} DESC`)
+      .limit(1);
+    expect(audit).toMatchObject({ before: { perDay: null }, after: { perDay: 1000 } });
+    __pretendAgentFullP1Behind();
+    try {
+      // One migration behind the column is NOT NULL and bounded 1-80: refused in words, never a 23502/23514.
+      expect(await refused(setAutoPerDay(actorOf(ownerId), null, { actorId: ownerId }))).toBe('not_ready');
+      expect(await refused(setAutoPerDay(actorOf(ownerId), 10, { actorId: ownerId }))).toBe('not_ready');
+    } finally {
+      __forgetAgentFullP1Ready();
+    }
   });
 
   it('«off» disarms in its own transaction and stops every waiting reply', async () => {
@@ -732,8 +813,10 @@ describe('the record and the purge', () => {
   it('a purged chat’s card of a reply the machine pressed offers nothing — no ❌, no 🙋, no 👎 (fix pass A)', async () => {
     const d = await drafted();
     expect(await pressDueAutos(DUE)).toBe(1);
-    expect(keys(await payloadOf(d.id))).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi']]);
+    // DELIBERATE EDIT (spec SPEC-P1-v2 §3.1): the machine's words carry «📝 Tuzatish» — and the purge takes it too.
+    expect(keys(await payloadOf(d.id))).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi'], ['📝 Tuzatish']]);
     await purgeAgentChat(ownerId, PEER);
+    expect(await payloadOf(d.id)).toMatchObject({ teach: false });
     expect(buttonsFor('AgentDraft', await payloadOf(d.id))).toBeNull();
   });
 
@@ -764,7 +847,9 @@ describe('the card he reads and presses (stage 2: the words, the payload, the ke
     expect(p.autoAt).toBe(new Date(T0.getTime() + HOLD_MS).toISOString());
     expect(p).toMatchObject({ live: true, blocked: false, autoSent: false, autoBad: false });
     expect(String(p.text)).toMatch(/⏱ \d\d:\d\d da o‘zi ketadi — to‘xtatish uchun ⏸ bosing\./u);
-    expect(keys(p)).toEqual([['⏸ To‘xtat', '✅ Hozir yubor'], ['✏️ O‘zgartirish'], ['❌ Kerak emas', '🙋 Suhbat meniki']]);
+    // DELIBERATE EDIT (§3.1): «📝 Tuzatish» on its own row, on every card whose words are the machine's.
+    expect(p).toMatchObject({ teach: true });
+    expect(keys(p)).toEqual([['⏸ To‘xtat', '✅ Hozir yubor'], ['✏️ O‘zgartirish'], ['📝 Tuzatish'], ['❌ Kerak emas', '🙋 Suhbat meniki']]);
   });
 
   it('an ineligible reply’s card is today’s card — no timer, no ⏸', async () => {
@@ -803,12 +888,21 @@ describe('the card he reads and presses (stage 2: the words, the payload, the ke
     await refreshAgentCard(d.id);
     p = await payloadOf(d.id);
     expect(String(p.text)).toContain('🤖 O‘zi yuborildi (AI). ✅ Yuborildi');
-    expect(keys(p)).toEqual([['👎 Xato edi']]);
-    expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: AUTO_BAD_TOAST });
+    // DELIBERATE EDIT (§3.1, §3.5): a sent card keeps «📝 Tuzatish»; 👎's answer is a message that offers to say
+    // WHY («📝 Sababini yozish», the same `ag:l`) — and arms nothing by itself.
+    expect(keys(p)).toEqual([['👎 Xato edi'], ['📝 Tuzatish']]);
+    const bad = await agentPress(ownerId, 'f', d.id, undefined);
+    expect(bad).toEqual({
+      toast: AUTO_BAD_TOAST,
+      reply: `${AUTO_BAD_TOAST}.\n${AUTO_BAD_WHY}`,
+      buttons: [[{ text: '📝 Sababini yozish', callback_data: `ag:l:${d.id}` }]],
+    });
+    expect(bad.arm).toBeUndefined();
     p = await payloadOf(d.id);
     expect(p).toMatchObject({ autoSent: true, autoBad: true });
     expect(String(p.text)).toContain('👎 Xato deb belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi.');
-    expect(buttonsFor('AgentDraft', p)).toBeNull();
+    // 👎 once, then no 👎 — the lesson stays.
+    expect(keys(p)).toEqual([['📝 Tuzatish']]);
     expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: 'Allaqachon belgilangan.' });
   });
 
@@ -816,8 +910,9 @@ describe('the card he reads and presses (stage 2: the words, the payload, the ke
     const a = await drafted();
     const b = await drafted({ peer: PEER2 });
     expect(await pressDueAutos(DUE)).toBe(2);
-    expect(await agentPress(ownerId, 'f', a.id, undefined)).toEqual({ toast: AUTO_BAD_TOAST });
-    expect(await agentPress(ownerId, 'f', b.id, undefined)).toEqual({ toast: AUTO_BAD_DISARMED_TOAST });
+    // DELIBERATE EDIT (§3.5): the toast is the answer this test pins; the message under it offers «📝 Sababini yozish».
+    expect(await agentPress(ownerId, 'f', a.id, undefined)).toMatchObject({ toast: AUTO_BAD_TOAST });
+    expect(await agentPress(ownerId, 'f', b.id, undefined)).toMatchObject({ toast: AUTO_BAD_DISARMED_TOAST });
   });
 
   it('refused at the press: the card says why in words and is his again', async () => {
@@ -1151,16 +1246,18 @@ describe('fix pass A — a person after the machine pressed (C3)', () => {
     const d = await drafted();
     expect(await pressDueAutos(DUE)).toBe(1);
     const p = await payloadOf(d.id);
-    expect(keys(p)).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi']]);
+    // DELIBERATE EDIT (§3.1): «📝 Tuzatish» (`ag:l`) rides every card whose words are the machine's.
+    expect(keys(p)).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi'], ['📝 Tuzatish']]);
     expect((buttonsFor('AgentDraft', p) ?? []).flat().map((b) => ('callback_data' in b ? b.callback_data : ''))).toEqual([
       `ag:r:${d.id}`,
       `ag:h:${d.id}`,
       `ag:f:${d.id}`,
+      `ag:l:${d.id}`,
     ]);
     await db.update(agentOutbox).set({ status: 'sent', sentAt: new Date() }).where(eq(agentOutbox.draftId, d.id));
     const { refreshAgentCard } = await import('@/modules/wms/agent/card-io');
     await refreshAgentCard(d.id);
-    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi']]);
+    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi'], ['📝 Tuzatish']]);
   });
 
   it('after a PERSON’s own ✅, ❌ and 🙋 still answer «faol emas» — the human path is today’s', async () => {
@@ -1248,6 +1345,59 @@ describe('fix pass A — the hold counts from the card reaching him (C4)', () =>
     expect(v!.dueAt!.getTime()).toBe(next.getTime() + HOLD_MS);
     expect(await pressDueAutos(new Date(next.getTime() + HOLD_MS + 1_000))).toBe(1);
     expect(await outboxOf(b.id)).toMatchObject({ status: 'agent' });
+  });
+});
+
+describe('the money clause by OUTCOME (0148, spec §1.1, §1.4) — on a real run, its stored tool calls and the press', () => {
+  const answers = async (question: string, steps: { name: string; input: Record<string, unknown> }[]) => {
+    const anchor = await inbound(question);
+    const out = await handleInbound(job(anchor), { callModel: scripted(steps), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, (out as { draftId: string }).draftId));
+    const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.id, d!.runId!));
+    return { d: d!, toolCalls: run!.toolCalls };
+  };
+
+  it('below the minimum is an ordinary reply: the tool’s own «no price» is stored with the run, read back at the press, and it goes', async () => {
+    const { d, toolCalls } = await answers('Yiwudan 0.5 kub 50 kg kiyim bor, narxi qancha?', [
+      { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+      compose('Kompaniya mashina bilan eng kamida 1 kub yoki 100 kg yuk qabul qiladi.', { category: 'qualification' }),
+    ]);
+    expect(toolCalls).toEqual([expect.objectContaining({ name: 'yolkira_estimate', ok: true, estimate: false })]);
+    expect(await verdictOf(d.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    await shownAt(d.id, T0);
+    // The press reads the run's STORED calls (`toolCallsOf`) — a flag the run did not store would read as a price.
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+  });
+
+  it('a priced truck estimate names its tool on the ledger and KEEPS its figure (§1.3) — with «Narx» ticked it is no longer «money»', async () => {
+    await db.update(agentAutoConfig).set({ categories: ['greeting', 'qualification', 'faq', 'status', 'price'] }).where(eq(agentAutoConfig.id, 1));
+    // DELIBERATE EDIT (K2, spec §1.3): the run now stores the figure it quoted, which K1's version of this test said
+    // it did not yet — so the money clause admits the quote, and what is left is whatever the tariff's ✅ says (the
+    // price that goes by itself is pinned below, «the price that goes by itself»).
+    const { d, toolCalls } = await answers("Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", [
+      { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+      compose("5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.", {
+        category: 'price',
+      }),
+    ]);
+    expect(toolCalls).toEqual([expect.objectContaining({ name: 'yolkira_estimate', ok: true, estimate: true })]);
+    const ledger = (d.policy as { ledger: Record<string, unknown>[] }).ledger;
+    expect(ledger).toContainEqual(expect.objectContaining({ kind: 'money', origin: 'tool', tool: 'yolkira_estimate', role: 'total' }));
+    const estimates = (d.policy as { memory: { estimates: unknown[] } }).memory.estimates;
+    expect(estimates).toEqual([expect.objectContaining({ tool: 'yolkira_estimate', kg: 1000, m3: 5, total: 800, rate: 160, unit: 'm3' })]);
+    expect((await verdictOf(d.id))!.reasons).not.toContain('money');
+  });
+
+  it('a REFUSED estimate makes the reply money, whatever it says (the model’s price after a refusal is nobody’s)', async () => {
+    // No weight reference: the tool refuses (`og'irlik havolasi yo'q`).
+    const { d, toolCalls } = await answers('Yiwudan yuk bor, narxi qancha?', [
+      { name: 'yolkira_estimate', input: { weight_ref: 'w9', volume_ref: 'v9' } },
+      compose('Yukingiz necha kub va necha kg?', { category: 'qualification' }),
+    ]);
+    expect(toolCalls).toEqual([expect.objectContaining({ name: 'yolkira_estimate', ok: false, estimate: false })]);
+    expect((await verdictOf(d.id))!.reasons).toEqual(['money']);
   });
 });
 
@@ -1362,10 +1512,11 @@ describe('fix pass B — what he sees and presses (C1 C6 C7 C9 C10)', () => {
     await db.update(agentOutbox).set({ status: 'sent', sentAt: new Date() }).where(eq(agentOutbox.draftId, d.id));
     const { refreshAgentCard } = await import('@/modules/wms/agent/card-io');
     await refreshAgentCard(d.id);
-    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi']]);
+    // DELIBERATE EDIT (§3.1): the sent card's «📝 Tuzatish» — gone with the purge, like 👎.
+    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi'], ['📝 Tuzatish']]);
     await purgeAgentChat(ownerId, PEER);
     const p = await payloadOf(d.id);
-    expect(p).toMatchObject({ live: false, autoSent: false, autoBad: false, autoAt: null });
+    expect(p).toMatchObject({ live: false, autoSent: false, autoBad: false, autoAt: null, teach: false });
     expect(buttonsFor('AgentDraft', p)).toBeNull();
     // A keyboard Telegram did not take back (the edit failed): its press says what is true.
     expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: 'Bu javob topilmadi.' });
@@ -1528,7 +1679,13 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
     });
 
     it('money the STORED policy carries — a money figure in its ledger, an estimate in its memory: refused «money» at the press', async () => {
-      for (const policyPatch of [{ ledger: [{ kind: 'money', raw: '110 $' }] }, { memory: { hasEstimate: true } }]) {
+      // An estimate with no figure of it in the reply is `money_unread` besides (0148 fix): the price was not said, or
+      // nothing could read it.
+      const cases: [Record<string, unknown>, string[]][] = [
+        [{ ledger: [{ kind: 'money', raw: '110 $' }] }, ['money']],
+        [{ memory: { hasEstimate: true } }, ['money', 'money_unread']],
+      ];
+      for (const [policyPatch, reasons] of cases) {
         await clearChats();
         const d = await drafted();
         await db
@@ -1536,7 +1693,7 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
           .set({ policy: { ...(d.policy as Record<string, unknown>), ...policyPatch } })
           .where(eq(agentDrafts.id, d.id));
         expect(await pressDueAutos(DUE), JSON.stringify(policyPatch)).toBe(0);
-        expect(await verdictOf(d.id), JSON.stringify(policyPatch)).toMatchObject({ state: 'refused', reasons: ['money'] });
+        expect(await verdictOf(d.id), JSON.stringify(policyPatch)).toMatchObject({ state: 'refused', reasons });
       }
     });
 
@@ -2207,5 +2364,904 @@ describe('the second check — a card that went silently in the night is no coun
     expect(await verdictOf(c!.id)).toMatchObject({ state: 'refused', reasons: ['night'] });
     expect(await outboxOf(c!.id)).toBeNull();
     expect(await draftStatus(c!.id)).toBe('pending');
+  });
+});
+
+describe('the price that goes by itself — the figure still stands (0148, spec SPEC-P1-v2 §1.3, §1.6, §1.8)', () => {
+  const PRICED = "5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.";
+  const QUESTION = ["Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", "Yiwudan Toshkentga 5 kub 1000 kg kiyim bor, narxi qancha?"];
+  let caps: SendCaps = DEFAULT_SEND_CAPS;
+  let noticeFor: string | null = null;
+  const madeTariffs: string[] = [];
+
+  /** His ✅ on the China column, as `agent_send_caps` keeps it — null: never. */
+  const vouch = (at: Date | null) => db.update(agentSendCaps).set({ tariffConfirmedAt: at }).where(eq(agentSendCaps.id, 1));
+
+  /**
+   * An /admin/tarif edit on the machine's day — a row of the China column dated that day, which `tariffFor` takes over
+   * the seeded one. CONFIGURATION on the shared database (#183): every row is deleted after its test, pass or fail.
+   */
+  async function editTariff(row: { minDensity: number; maxDensity: number | null; priceUsd: number }) {
+    const [r] = await db
+      .insert(calcFreightTariffs)
+      .values({
+        zone: 'cn',
+        minDensity: row.minDensity.toFixed(2),
+        maxDensity: row.maxDensity === null ? null : row.maxDensity.toFixed(2),
+        priceUsd: row.priceUsd.toFixed(4),
+        perKg: false,
+        effectiveDate: tashkentDay(T0),
+      })
+      .returning({ id: calcFreightTariffs.id });
+    madeTariffs.push(r!.id);
+  }
+
+  /** The customer's question, the tool's truck figure, the reply that quotes it — its card shown on the machine's clock. */
+  async function quoted(opts: { peer?: bigint; question?: string; reply?: string } = {}) {
+    const peer = opts.peer ?? PEER;
+    const anchor = await inbound(opts.question ?? QUESTION[0]!, peer);
+    const out = await handleInbound(job(anchor, peer), {
+      callModel: scripted([{ name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } }, compose(opts.reply ?? PRICED, { category: 'price' })]),
+      now: () => T0,
+    });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const draftId = (out as { draftId: string }).draftId;
+    await shownAt(draftId, T0);
+    const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+    return d!;
+  }
+
+  const stepCtx = () => ({ accountId, caughtUp: () => true, random: () => 0 });
+
+  beforeAll(async () => {
+    __forgetAgentFullP1Ready();
+    caps = await readSendCaps();
+    const [row] = await db.select({ noticeFor: agentSendCaps.tariffNoticeFor }).from(agentSendCaps).where(eq(agentSendCaps.id, 1));
+    noticeFor = row?.noticeFor ?? null;
+  });
+
+  beforeEach(async () => {
+    // «Narx» ticked, and the China column vouched for a moment ago — each test takes away what it is about.
+    await db.update(agentAutoConfig).set({ categories: ['greeting', 'qualification', 'faq', 'status', 'price'] }).where(eq(agentAutoConfig.id, 1));
+    await vouch(new Date());
+  });
+
+  afterEach(async () => {
+    if (madeTariffs.length) await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.id, madeTariffs.splice(0)));
+  });
+
+  afterAll(async () => {
+    await __restoreSendCaps(caps);
+    await db.update(agentSendCaps).set({ tariffNoticeFor: noticeFor }).where(eq(agentSendCaps.id, 1));
+  });
+
+  it('an estimate draft goes by itself: priced, its figure kept, priced again at the press, pressed', async () => {
+    const d = await quoted();
+    expect((d.policy as { memory: { estimates: unknown } }).memory.estimates).toEqual([
+      { tool: 'yolkira_estimate', kg: 1000, m3: 5, zone: 'cn', day: tashkentDay(T0), total: 800, rate: 160, unit: 'm3' },
+    ]);
+    const v = await verdictOf(d.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+    expect(await outboxOf(d.id)).toMatchObject({ status: 'agent' });
+    // …and the send step finds the figure standing.
+    const row = (await agentRowById((await outboxOf(d.id))!.id))!;
+    expect((await sendFactsFor(row, DUE, stepCtx())).offerStands).toBe('stands');
+  });
+
+  it('an /admin/tarif edit between the draft and the press: not pressed — `estimate_moved`', async () => {
+    const d = await quoted();
+    expect((await verdictOf(d.id))!.state).toBe('waiting');
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    expect(await pressDueAutos(DUE)).toBe(0);
+    const v = await verdictOf(d.id);
+    expect(v).toMatchObject({ state: 'refused' });
+    expect(v!.reasons).toContain('estimate_moved');
+    expect(await outboxOf(d.id)).toBeNull();
+  });
+
+  it('…at HIS ✅: refused in words, nothing queued', async () => {
+    const d = await quoted();
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    const r = await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId });
+    expect(r).toEqual({ ok: false, code: 'estimate_moved' });
+    expect(await outboxOf(d.id)).toBeNull();
+    expect(await draftStatus(d.id)).toBe('pending');
+  });
+
+  it('…and the remedy its words name works: HIS OWN figure («✏️ O‘zgartirish») is never priced again — approved, and let through at the send step', async () => {
+    // «Narx jadvali o‘zgardi … ✏️ O‘zgartirish bilan to‘g‘ri narxni yozing» (card-io) — unproven until the review:
+    // re-pricing his own words at either end would refuse the one thing the refusal tells him to do, for ever.
+    const d = await quoted();
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    expect(await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId })).toEqual({ ok: false, code: 'estimate_moved' });
+    const own = await submitOwnText(
+      actorOf(ownerId),
+      d.id,
+      "5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 850 $ bo'ladi. Boj va QQS alohida hisoblanadi.",
+      { actorId: ownerId },
+    );
+    expect(own, JSON.stringify(own)).toMatchObject({ ok: true });
+    // The stored estimates are still the machine's old ones — his words are simply not theirs to judge.
+    const [edited] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id));
+    expect((edited!.policy as { memory: { estimates: unknown[] } }).memory.estimates).toHaveLength(1);
+    expect(edited!.finalBody).toContain('850 $');
+    const r = await decideDraft(actorOf(ownerId), d.id, 'send', {}, { actorId: ownerId });
+    expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+    const row = (await agentRowById((await outboxOf(d.id))!.id))!;
+    const f = await sendFactsFor(row, new Date(), stepCtx());
+    expect(f.offerStands).toBeNull();
+    expect(agentSendVerdict(row, f)).not.toMatchObject({ final: true });
+  });
+
+  it('…and at the SEND STEP after an approval: the row is cancelled `estimate_moved`, never sent with the old figure', async () => {
+    const d = await quoted();
+    const r = await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId });
+    expect(r).toMatchObject({ ok: true });
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    const row = (await agentRowById((await outboxOf(d.id))!.id))!;
+    const f = await sendFactsFor(row, new Date(), stepCtx());
+    expect(f.offerStands).toBe('estimate_moved');
+    expect(agentSendVerdict(row, f)).toEqual({ ok: false, final: true, reason: 'estimate_moved' });
+  });
+
+  it('a re-price that REFUSES — a band his edit made ambiguous — is a figure that moved: not sent at either end', async () => {
+    const d = await quoted();
+    await editTariff({ minDensity: 160, maxDensity: 250, priceUsd: 160 });
+    // The machine's press first (a person's press stops the countdown before it asks anything).
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect((await verdictOf(d.id))!.reasons).toContain('estimate_moved');
+    expect(await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId })).toEqual({
+      ok: false,
+      code: 'estimate_moved',
+    });
+    expect(await outboxOf(d.id)).toBeNull();
+  });
+
+  it('the China column written after his last ✅: the estimate waits for him; HIS ✅ on that card vouches for it, and the next one goes', async () => {
+    await vouch(null);
+    const first = await quoted();
+    expect((await verdictOf(first.id))!.reasons).toEqual(['tariff_unconfirmed']);
+    const r = await decideDraft(actorOf(ownerId), first.id, 'send', { digest: await cardDigestOf(first.id) }, { actorId: ownerId });
+    expect(r).toMatchObject({ ok: true });
+    // The mark is the run's own start: the column the figure was priced on, never a write during the run.
+    const [run] = await db.select({ createdAt: agentRuns.createdAt }).from(agentRuns).where(eq(agentRuns.id, first.runId!));
+    expect((await readSendCaps()).tariffConfirmedAt?.getTime()).toBe(run!.createdAt.getTime());
+    const next = await quoted({ peer: PEER2, question: QUESTION[1] });
+    const v = await verdictOf(next.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting' });
+  });
+
+  it('…and the machine’s own press never vouches: only a person’s ✅ does', async () => {
+    // The mark `beforeEach` set, a moment BEFORE the run began: a vouch by this press would move it to the run's start.
+    const mark = (await readSendCaps()).tariffConfirmedAt!.getTime();
+    const d = await quoted();
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+    expect((await readSendCaps()).tariffConfirmedAt!.getTime()).toBe(mark);
+  });
+
+  /**
+   * The review of 0148 as built (tests lens): §1.6's vouch had two fail-OPEN fences and two of its three «the column
+   * changed» sources that nothing tested — each could be taken out with the whole suite green. Through the real
+   * doors: the run, his ✅, the dictionary's own writer (`saveTariffBand`), the press.
+   */
+  describe('the vouch for the China column — what does NOT vouch, and every way the column changes (§1.6)', () => {
+    const pause = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+    const mark = async () => (await readSendCaps()).tariffConfirmedAt;
+    const FLIGHT = "40 kg yukingiz uchun Toshkentgacha avia taxminan 680 $ bo'ladi. Boj va QQS alohida hisoblanadi.";
+
+    /** A flight quote — the price act asks him nothing (`quoted`'s twin for the avia tool). */
+    async function flightQuoted(peer = PEER) {
+      const anchor = await inbound('Guanchjoudan Toshkentga avia bilan 40 kg kiyim bor, narxi qancha?', peer);
+      const out = await handleInbound(job(anchor, peer), {
+        callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose(FLIGHT, { category: 'price' })]),
+        now: () => T0,
+      });
+      expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+      const draftId = (out as { draftId: string }).draftId;
+      await shownAt(draftId, T0);
+      const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+      return d!;
+    }
+
+    it('his ✅ on a FLIGHT quote vouches for nothing — the column prices only the truck — and the flight itself goes with the column unvouched', async () => {
+      await vouch(null);
+      const d = await flightQuoted();
+      expect((d.policy as { memory: { estimates: { tool: string }[] } }).memory.estimates.map((e) => e.tool)).toEqual(['avia_estimate']);
+      // The flight is his RATE (agent_config), never the China column: an unvouched column does not hold it.
+      const v = await verdictOf(d.id);
+      expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+      const r = await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId });
+      expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+      expect(await mark()).toBeNull();
+      // …so the next TRUCK quote still waits for him.
+      const truck = await quoted({ peer: PEER2, question: QUESTION[1] });
+      expect((await verdictOf(truck.id))!.reasons).toEqual(['tariff_unconfirmed']);
+    });
+
+    it('his ✅ on HIS OWN ✏️ words over a truck quote vouches for nothing — he may have typed the figure because the column is wrong', async () => {
+      await vouch(null);
+      const d = await quoted();
+      const own = await submitOwnText(
+        actorOf(ownerId),
+        d.id,
+        "5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 950 $ bo'ladi. Boj va QQS alohida hisoblanadi.",
+        { actorId: ownerId },
+      );
+      expect(own, JSON.stringify(own)).toMatchObject({ ok: true });
+      const r = await decideDraft(actorOf(ownerId), d.id, 'send', {}, { actorId: ownerId });
+      expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+      expect(await mark()).toBeNull();
+      const next = await quoted({ peer: PEER2, question: QUESTION[1] });
+      expect((await verdictOf(next.id))!.reasons).toEqual(['tariff_unconfirmed']);
+    });
+
+    it('the dictionary’s UPSERT on an existing dated row — `created_at` kept, only its audit row tells — un-vouches the column', async () => {
+      const day = tashkentDay(T0);
+      const id = await saveTariffBand({ zone: 'cn', minDensity: 151, maxDensity: 200, priceUsd: 160, perKg: false, effectiveDate: day }, { actorId: ownerId });
+      madeTariffs.push(id);
+      await pause();
+      await vouch(new Date());
+      expect(await tariffUnconfirmed(new Date())).toBe(false);
+      const [before] = await db.select({ at: calcFreightTariffs.createdAt }).from(calcFreightTariffs).where(eq(calcFreightTariffs.id, id));
+      await pause();
+      // 16 for 160 — the spec's own example — typed over the SAME (zone, band, date) row.
+      expect(await saveTariffBand({ zone: 'cn', minDensity: 151, maxDensity: 200, priceUsd: 16, perKg: false, effectiveDate: day }, { actorId: ownerId })).toBe(id);
+      const [row] = await db.select({ at: calcFreightTariffs.createdAt, price: calcFreightTariffs.priceUsd }).from(calcFreightTariffs).where(eq(calcFreightTariffs.id, id));
+      expect(Number(row!.price)).toBe(16);
+      expect(row!.at.getTime()).toBe(before!.at.getTime());
+      expect((await tariffChangedAt(day))!.getTime()).toBeGreaterThan(row!.at.getTime());
+      expect(await tariffUnconfirmed(new Date())).toBe(true);
+      // …and at the gate. (While the website table is valid the tool itself refuses a 16 $ band — its cross-check —
+      // so the row is typed back to 160: an upsert again, a write after his vouch all the same.)
+      await pause();
+      await saveTariffBand({ zone: 'cn', minDensity: 151, maxDensity: 200, priceUsd: 160, perKg: false, effectiveDate: day }, { actorId: ownerId });
+      const d = await quoted();
+      expect((await verdictOf(d.id))!.reasons).toEqual(['tariff_unconfirmed']);
+      expect(await pressDueAutos(DUE)).toBe(0);
+    });
+
+    it('a row dated TOMORROW un-vouches the column on its day — coming into force is a change — and not today', async () => {
+      const tomorrow = new Date(Date.now() + 86_400_000);
+      const id = await saveTariffBand(
+        { zone: 'cn', minDensity: 151, maxDensity: 200, priceUsd: 16, perKg: false, effectiveDate: tashkentDay(tomorrow) },
+        { actorId: ownerId },
+      );
+      madeTariffs.push(id);
+      await pause();
+      await vouch(new Date());
+      expect(await tariffUnconfirmed(new Date())).toBe(false);
+      expect(await tariffUnconfirmed(tomorrow)).toBe(true);
+    });
+
+    it('a ✅ on a card whose run began BEFORE his last vouch never moves the mark back', async () => {
+      const d = await quoted();
+      const [run] = await db.select({ at: agentRuns.createdAt }).from(agentRuns).where(eq(agentRuns.id, d.runId!));
+      await pause();
+      const later = new Date();
+      await vouch(later);
+      expect(later.getTime()).toBeGreaterThan(run!.at.getTime());
+      const r = await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId });
+      expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+      expect((await mark())!.getTime()).toBe(later.getTime());
+    });
+
+    it('«✅ Tarif to‘g‘ri» from somebody who is neither the holder nor a super_admin is `forbidden` — the service’s own door, and the bot’s', async () => {
+      await vouch(null);
+      const seen = await currentTariffFingerprint();
+      const sellerId = await makeUser(`Auto sotuvchi ${SUFFIX}`, 'sales_manager', '09');
+      try {
+        await expect(confirmTariff({ id: sellerId, roles: ['sales_manager'] }, seen, { actorId: sellerId })).rejects.toMatchObject({ code: 'forbidden' });
+        expect(await mark()).toBeNull();
+        // The bot's door as it can really happen: a notice that went to the holder of THAT day, pressed after the
+        // agent got another holder — the callback still carries the presser's own id.
+        const press = await agentPress(sellerId, 't', sellerId, seen);
+        expect(press.toast).toBe(TARIFF_CONFIRM_WORDS.forbidden);
+        expect(press.reply).toBeUndefined();
+        expect(await mark()).toBeNull();
+      } finally {
+        await db.update(users).set({ active: false }).where(eq(users.id, sellerId));
+      }
+    });
+
+    // Fix pass 5 (the check of pass 3): the repeated press was pinned only on an UNCHANGED column — answering
+    // «already» to any earlier ✅ left the whole suite green, and with it his ✅ on a column CHANGED since was a toast
+    // saying «tasdiqlandi» over a mark that never moved: every priced reply refused `tariff_unconfirmed` for ever.
+    it('«✅ Tarif to‘g‘ri» on a column CHANGED since his last ✅ confirms it again — the mark moves, once, audited', async () => {
+      const audits = async () =>
+        Number(
+          (
+            await db.execute<{ n: string }>(
+              sql`SELECT count(*)::text AS n FROM audit_log WHERE entity_type = 'agent_send_caps' AND after->>'via' = 'tarif_togri'`,
+            )
+          )[0]!.n,
+        );
+      await vouch(null);
+      const fp1 = await currentTariffFingerprint();
+      expect(await confirmTariff(actorOf(ownerId), fp1, { actorId: ownerId })).toBe('confirmed');
+      expect(await tariffUnconfirmed(new Date())).toBe(false);
+      const first = (await mark())!;
+      // Pressed again on the same column: said once, nothing moved (fix pass 3).
+      expect(await confirmTariff(actorOf(ownerId), fp1, { actorId: ownerId })).toBe('already');
+      expect((await mark())!.getTime()).toBe(first.getTime());
+      await pause();
+      // The China column edited after his ✅ — the new notice carries the new column's stamp.
+      await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 171 });
+      const fp2 = await currentTariffFingerprint();
+      expect(fp2).not.toBe(fp1);
+      expect(await tariffUnconfirmed(new Date())).toBe(true);
+      const before = await audits();
+      expect(await confirmTariff(actorOf(ownerId), fp2, { actorId: ownerId })).toBe('confirmed');
+      expect((await audits()) - before).toBe(1);
+      expect((await mark())!.getTime()).toBeGreaterThan(first.getTime());
+      expect(await tariffUnconfirmed(new Date())).toBe(false);
+      // …and the bot's door says it once more as «already», never a second mark.
+      expect(await confirmTariff(actorOf(ownerId), fp2, { actorId: ownerId })).toBe('already');
+      expect((await audits()) - before).toBe(1);
+    });
+  });
+
+  /**
+   * The review of 0148 as built (tests lens): the gate's money facts were proven on hand-built inputs only — the
+   * lines that READ them off a stored draft (auto-send `autoFactsFor`) could each be set to the value that lets a
+   * reply out («unnamed: false», «estimatesStored: true», «rail: false», a missing destination read as «not named»)
+   * with the whole suite green. On real runs and on the draft as the database holds it, at the scheduling and again
+   * at the press.
+   */
+  describe('the quote’s facts as `autoFactsFor` reads them off the stored draft (§1.1, §1.3, §1.8)', () => {
+    /** The stored memory of a waiting quote, rewritten as an older writer — or a broken one — would have left it. */
+    const rewriteMemory = (draftId: string, patch: string) =>
+      db.execute(sql`UPDATE agent_drafts SET policy = jsonb_set(policy, '{memory}', ${sql.raw(patch)}) WHERE id = ${draftId}::uuid`);
+
+    async function refusedAtThePress(draftId: string, reason: string) {
+      expect(await pressDueAutos(DUE)).toBe(0);
+      const v = await verdictOf(draftId);
+      expect(v).toMatchObject({ state: 'refused' });
+      expect(v!.reasons).toContain(reason);
+      expect(await outboxOf(draftId)).toBeNull();
+    }
+
+    it('a price that does not restate the load it was priced for (kub, kg) is his — `estimate_unnamed`, at the scheduling', async () => {
+      const d = await quoted({ reply: "Yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi." });
+      expect(d.blocked).toBe(false);
+      expect(await verdictOf(d.id)).toMatchObject({ eligible: false, reasons: ['estimate_unnamed'] });
+      expect(await pressDueAutos(DUE)).toBe(0);
+      expect(await outboxOf(d.id)).toBeNull();
+    });
+
+    it('…and one whose stored sources cannot be read names nothing — the press fails CLOSED', async () => {
+      const d = await quoted();
+      expect((await verdictOf(d.id))!.state).toBe('waiting');
+      await rewriteMemory(d.id, `(policy->'memory') || '{"sources": "buzilgan"}'::jsonb`);
+      await refusedAtThePress(d.id, 'estimate_unnamed');
+    });
+
+    it('a quote whose estimates were never stored (a draft from before 0148) is `money` at the press — nothing to price again', async () => {
+      const d = await quoted();
+      expect((await verdictOf(d.id))!.state).toBe('waiting');
+      await rewriteMemory(d.id, `(policy->'memory') - 'estimates'`);
+      await refusedAtThePress(d.id, 'money');
+    });
+
+    it('a rail chat’s price is his — `money` at the press, whatever the quote names', async () => {
+      const d = await quoted();
+      await rewriteMemory(d.id, `(policy->'memory') || '{"rail": true}'::jsonb`);
+      await refusedAtThePress(d.id, 'money');
+    });
+
+    it('a memory that does not SAY whether another city was named reads as named — `foreign_destination` at the press', async () => {
+      const d = await quoted();
+      expect((d.policy as { memory: { foreignDestination: unknown } }).memory.foreignDestination).toBe(false);
+      await rewriteMemory(d.id, `(policy->'memory') - 'foreignDestination'`);
+      await refusedAtThePress(d.id, 'foreign_destination');
+    });
+  });
+
+  /**
+   * The review of 0148 as built (tests lens), spec §5.2 «one number everywhere»: the account's day cap he types is
+   * read by FOUR doors — the send step (pinned in agent-outbox), his ✅, the gate's `budget_spent` and the page.
+   * The last three were asserted by a line that restated them inside the test: each could go back to the constant
+   * with the suite green — he types 5, the ✅ and the countdowns admit 80 and the step holds them till morning.
+   */
+  describe('the account’s day of sends is ONE number, through every door (§5.2)', () => {
+    const dayCap = (n: number | null) => db.update(agentSendCaps).set({ dayCap: n }).where(eq(agentSendCaps.id, 1));
+    // A cap typed here is CONFIGURATION for every test after it (#183): put back after each, pass or fail.
+    afterEach(() => dayCap(caps.stored.dayCap));
+
+    /** One AI send today: a plain reply he approved — its outbox row is what `sendsToday` counts. */
+    async function oneSendToday() {
+      const first = await drafted();
+      const r = await decideDraft(actorOf(ownerId), first.id, 'send', { digest: await cardDigestOf(first.id) }, { actorId: ownerId });
+      expect(r, JSON.stringify(r)).toMatchObject({ ok: true });
+    }
+
+    it('his ✅: a typed cap of 1 and one AI send today → `budget_spent`, nothing queued — and with the box empty the same ✅ goes', async () => {
+      await dayCap(1);
+      await oneSendToday();
+      const second = await drafted({ peer: PEER2 });
+      const digest = await cardDigestOf(second.id);
+      expect(await decideDraft(actorOf(ownerId), second.id, 'send', { digest }, { actorId: ownerId })).toEqual({ ok: false, code: 'budget_spent' });
+      expect(await outboxOf(second.id)).toBeNull();
+      await dayCap(null);
+      expect(await decideDraft(actorOf(ownerId), second.id, 'send', { digest }, { actorId: ownerId })).toMatchObject({ ok: true });
+    });
+
+    it('the gate: with that cap spent the next reply never counts down — `budget_spent` from its first second', async () => {
+      await dayCap(1);
+      await oneSendToday();
+      const next = await drafted({ peer: PEER2 });
+      expect(await verdictOf(next.id)).toMatchObject({ eligible: false, reasons: ['budget_spent'] });
+      expect((await payloadOf(next.id)).autoAt).toBeNull();
+    });
+
+    it('the page prints the ceiling he typed — 150, then 5 — with 0148 landed', async () => {
+      const config = (await readAgentConfig())!;
+      await dayCap(150);
+      expect((await agentToday(config, T0)).sendCeiling).toBe(150);
+      await dayCap(5);
+      expect((await agentToday(config, T0)).sendCeiling).toBe(5);
+      await dayCap(null);
+      expect((await agentToday(config, T0)).sendCeiling).toBe(DEFAULT_SEND_CAPS.dayCap);
+    });
+  });
+
+  it('another city named anywhere in what the customer wrote: the estimate is his — `foreign_destination`', async () => {
+    const d = await quoted({ question: "Yiwudan Andijonga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?" });
+    expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(true);
+    expect((await verdictOf(d.id))!.reasons).toEqual(['foreign_destination']);
+  });
+
+  it('the website table’s 14-day notice: once, by day, to the holder — and «✅ Tarif to‘g‘ri» vouches for the column it was sent with', async () => {
+    await vouch(null);
+    await db.update(agentSendCaps).set({ tariffNoticeFor: null }).where(eq(agentSendCaps.id, 1));
+    // The suites run with the notice OFF (vitest.config `AGENT_TARIFF_NOTICE`): this is the test it is on for. Its
+    // days are the TABLE's own — read off `validThrough`, never typed — so the test says the same on any date.
+    const first = tariffNoticeFrom(SITE_TARIFF.validThrough);
+    const at = (offsetDays: number, utcHour: number) => {
+      const d = new Date(`${first}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + offsetDays);
+      d.setUTCHours(utcHour);
+      return d;
+    };
+    expect(tariffNoticeOn()).toBe(false);
+    expect(await tariffExpiryNotice(at(3, 7))).toBe(false);
+    process.env.AGENT_TARIFF_NOTICE = 'on';
+    onTestFinished(() => {
+      process.env.AGENT_TARIFF_NOTICE = 'off';
+    });
+    // Before the fourteen days: nothing. In them, at night: nothing (its one chance would arrive in silence).
+    expect(await tariffExpiryNotice(at(-1, 7))).toBe(false);
+    expect(await tariffExpiryNotice(at(3, 20))).toBe(false);
+    // By day: once — two sweeps at the same minute send one (the claim's compare-and-set), and a later one none.
+    const both = await Promise.all([tariffExpiryNotice(at(3, 7)), tariffExpiryNotice(at(3, 7))]);
+    expect(both.filter(Boolean)).toHaveLength(1);
+    expect(await tariffExpiryNotice(at(4, 7))).toBe(false);
+    const cards = await db
+      .select({ payload: notifications.payload, userId: notifications.userId })
+      .from(notifications)
+      .where(and(eq(notifications.type, 'AgentTariffNotice'), eq(notifications.userId, ownerId)));
+    expect(cards).toHaveLength(1);
+    const payload = cards[0]!.payload as { fingerprint: string; holderId: string };
+    expect(payload.fingerprint).toBe(await currentTariffFingerprint());
+    // A press from a chat that is not the holder's confirms nothing.
+    expect((await agentPress(otherId, 't', payload.holderId, payload.fingerprint)).toast).toMatch(/sizga emas/u);
+    expect((await readSendCaps()).tariffConfirmedAt).toBeNull();
+    // The column written since the notice: refused, never confirmed unseen.
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    const changed = await agentPress(ownerId, 't', payload.holderId, payload.fingerprint);
+    expect(changed.toast).toMatch(/o‘zgardi/u);
+    // A two-step instruction («/admin/tarif»ni ko‘rib, sahifada tasdiqlang) is said where it STAYS — a toast is gone
+    // in seconds (review of 0148 as built). The button stays: the column typed back is the column it was sent with.
+    expect(changed.reply).toBe(TARIFF_CONFIRM_WORDS.tariff_changed);
+    expect(changed.closeButtons).toBeUndefined();
+    expect((await readSendCaps()).tariffConfirmedAt).toBeNull();
+    await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.id, madeTariffs.splice(0)));
+    // The column as sent: confirmed — said in the chat (what records it there), and the notice has nothing left to press.
+    const confirmed = await agentPress(ownerId, 't', payload.holderId, payload.fingerprint);
+    expect(confirmed.toast).toMatch(/tasdiqlandi/u);
+    expect(confirmed.reply).toMatch(/^✅ Xitoy tarifi tasdiqlandi/u);
+    expect(confirmed.closeButtons).toBe(true);
+    expect((await readSendCaps()).tariffConfirmedAt).not.toBeNull();
+    // The page's door is the same function: a stamp it did not draw is refused in words.
+    await expect(confirmTariff(actorOf(ownerId), '00000000', { actorId: ownerId })).rejects.toBeInstanceOf(TariffConfirmError);
+    await db.delete(notifications).where(and(eq(notifications.type, 'AgentTariffNotice'), eq(notifications.userId, ownerId)));
+  });
+});
+
+/**
+ * The review of 0148 as built — what goes by ITSELF, on real runs (the model scripted, everything else real: the
+ * tools, the policy, the plan `createDraft` writes, the sweep's press, the outbox). Each scenario is the review's own,
+ * reproduced as written and then closed; beside each, the ordinary reply that must keep going.
+ */
+describe('0148 fix — what goes by itself, on real runs', () => {
+  const PRICED = "5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.";
+  const FIVE = ['greeting', 'qualification', 'faq', 'status', 'price'];
+  /** A token of letters that makes each run's reply its own (never a figure, never the same text twice). */
+  const TAG = SUFFIX.split('').map((d) => 'abcdefghij'[Number(d)]).join('');
+  let caps: SendCaps = DEFAULT_SEND_CAPS;
+
+  /** One customer burst and the run that answers its last line; the card shown on the machine's clock. */
+  async function ran(lines: readonly string[], steps: { name: string; input: Record<string, unknown> }[], opts: { stored?: string } = {}) {
+    if (opts.stored) {
+      await db
+        .insert(agentConversations)
+        .values({ managerUserId: ownerId, peerId: PEER, locale: opts.stored })
+        .onConflictDoUpdate({ target: [agentConversations.managerUserId, agentConversations.peerId], set: { locale: opts.stored } });
+    }
+    let anchor = 0n;
+    for (const line of lines) anchor = await inbound(line);
+    const out = await handleInbound(job(anchor), { callModel: scripted(steps), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const draftId = (out as { draftId: string }).draftId;
+    await shownAt(draftId, T0);
+    const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+    return d!;
+  }
+  const truck = { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } };
+  const flight = { name: 'avia_estimate', input: { weight_ref: 'w1' } };
+  const tick = (categories: string[]) => db.update(agentAutoConfig).set({ categories }).where(eq(agentAutoConfig.id, 1));
+  /** Not pressed: the sweep finds nothing to press, no outbox row, the card still his. */
+  async function staysHis(d: { id: string }) {
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await outboxOf(d.id)).toBeNull();
+    expect(await draftStatus(d.id)).toBe('pending');
+  }
+  /** Pressed by the machine and queued. */
+  async function goes(d: { id: string }) {
+    const v = await verdictOf(d.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+    expect(await outboxOf(d.id)).toMatchObject({ status: 'agent' });
+  }
+
+  beforeAll(async () => {
+    __forgetAgentFullP1Ready();
+    caps = await readSendCaps();
+  });
+  beforeEach(async () => {
+    await db.update(agentSendCaps).set({ tariffConfirmedAt: new Date() }).where(eq(agentSendCaps.id, 1));
+  });
+  afterAll(async () => {
+    await __restoreSendCaps(caps);
+  });
+
+  describe('the blocker — a price in Chinese numerals', () => {
+    const ZH = { language: 'zh', gloss_uz: 'Toshkentgacha yo‘lkira taxminan to‘qqiz yuz, boj va QQS alohida.' };
+
+    it('(a) invented, no tool call, the four stored kinds: «到塔什干的运费大概九百左右» is blocked and never pressed', async () => {
+      const d = await ran(['你好，我有货从义乌发到塔什干，运费多少钱？'], [compose('到塔什干的运费大概九百左右，不含关税和增值税。', { ...ZH, category: 'faq' })]);
+      expect(d.blocked).toBe(true);
+      expect((d.policy as { blocks: { code: string; detail?: string }[] }).blocks).toContainEqual({ rule: 'G1', code: 'number_unverifiable', detail: 'han_numeral' });
+      const v = await verdictOf(d.id);
+      expect(v!.eligible).toBe(false);
+      expect(v!.reasons).toEqual(expect.arrayContaining(['blocked', 'numeral_unread']));
+      await staysHis(d);
+    });
+
+    it('(b) mis-copied, «Narx» ticked, the tool said 800 $: «…运费大概六百左右» is blocked, `money_unread`, never pressed', async () => {
+      await tick(FIVE);
+      const d = await ran(
+        ['你好，我有 5 m3 1000 kg 的货从义乌发到塔什干，运费多少钱？'],
+        [truck, compose('到塔什干的运费大概六百左右，不含关税和增值税。', { ...ZH, category: 'price' })],
+      );
+      // The tool priced it — and the reply holds no figure of that estimate.
+      expect((d.policy as { memory: { hasEstimate: boolean; estimates: { total: number }[] } }).memory).toMatchObject({ hasEstimate: true, estimates: [{ total: 800 }] });
+      expect((d.policy as { ledger: unknown[] }).ledger).toEqual([]);
+      const v = await verdictOf(d.id);
+      expect(v!.reasons).toEqual(expect.arrayContaining(['blocked', 'money_unread', 'numeral_unread']));
+      await staysHis(d);
+    });
+
+    it('…a Chinese numeral G1 has nothing to hold by keeps his ✅ and is still never the machine’s: `numeral_unread` alone', async () => {
+      const d = await ran(['你好，你们有工厂吗？'], [compose('您好！我们有三家合作工厂，可以帮您找货。', { language: 'zh', gloss_uz: 'Salom! Uchta hamkor zavodimiz bor, tovar topishda yordam beramiz.', category: 'faq' })]);
+      expect(d.blocked).toBe(false);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['numeral_unread']);
+      await staysHis(d);
+    });
+
+    it('…and an ordinary Chinese reply still goes by itself — the language is open, the numerals are not', async () => {
+      const d = await ran(
+        ['你好，从中国运货到塔什干可以吗？'],
+        [compose('您好！可以的。请告诉我货物的体积（立方米）和重量（公斤）。', { language: 'zh', gloss_uz: 'Salom! Ha, mumkin. Yukning hajmi (kub) va og‘irligini (kg) yozing.', category: 'qualification' })],
+      );
+      await goes(d);
+    });
+  });
+
+  describe('`money_unread` holds a price nobody read — never the currency word', () => {
+    const payment = SEED_FACTS.find((f) => f.key === 'payment@1')!.answer;
+
+    it('the seeded payment answer («…soʻmda qilinadi; narx dollarda kelishiladi») goes by itself, as at main', async () => {
+      expect(payment).toMatch(/dollarda/u);
+      const d = await ran(["To'lov qanday qilinadi?"], [compose(payment, { category: 'faq' })]);
+      expect((d.policy as { ledger: unknown[] }).ledger).toEqual([]);
+      await goes(d);
+    });
+
+    it('«Narxni dollarda aytaman. …» goes too — with «Narx» ticked as well as not', async () => {
+      await tick(FIVE);
+      const d = await ran(['Salom, narxlar qanday?'], [compose(`Narxni dollarda aytaman. Yukingiz necha kub va necha kg ${TAG}?`, { category: 'qualification' })]);
+      await goes(d);
+    });
+
+    it('a vague amount before its currency states a price no reader placed: the card is his', async () => {
+      const d = await ran(['Salom, narxlar qanday?'], [compose('Kilosiga bir necha dollar atrofida bo‘ladi.', { category: 'faq' })]);
+      const v = await verdictOf(d.id);
+      expect(v!.reasons).toContain('money_unread');
+      await staysHis(d);
+    });
+  });
+
+  describe('the language is the customer’s by his own WORDS, over his whole burst', () => {
+    const UZC = `Ассалому алайкум! Хитойдан юк олиб келишда ёрдам бераман. Юкингиз неча куб ва неча кг ${TAG}?`;
+
+    it('Uzbek typed on a Russian keyboard (no ў қ ғ ҳ) in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
+      const d = await ran(['Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      // An unconfident guess that leans on the conversation's own language (fix pass 4): only that language goes.
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
+      await goes(d);
+    });
+
+    it('a first-contact burst whose LAST line carries no mark — «5 куб 800 кг» — is read whole: Uzbek, and the reply goes', async () => {
+      const d = await ran(['Ассалому алайкум', 'Гуанчжоудан юк бор эди', '5 куб 800 кг'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })]);
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: true });
+      await goes(d);
+    });
+
+    it('«Hello» in an Uzbek chat is a loan word: the Uzbek reply goes', async () => {
+      const d = await ran(['Hello'], [compose(undefined, { category: 'greeting' })], { stored: 'uz' });
+      await goes(d);
+    });
+
+    // Fix pass 3: the burst is read whole, and a greeting of the OTHER language decided it «confidently» — the
+    // greeting is no mark of either language, the customer's own words are.
+    const RUQ = `Здравствуйте! Чтобы посчитать, напишите объём (куб) и вес (кг) груза ${TAG}?`;
+    it.each([
+      [['Ассалому алайкум', 'Сколько стоит доставка из Гуанчжоу в Ташкент?'], undefined],
+      [['Ассалому алайкум', 'Груз готов, когда заберёте?'], 'ru'],
+      [['хоп', 'тогда отправляйте, сколько будет стоить?'], 'ru'],
+    ] as const)('«%s» (stored %s): the Russian reply goes — «Ассалому алайкум» is every customer’s greeting', async (lines, stored) => {
+      const d = await ran(lines, [compose(RUQ, { language: 'ru', category: 'qualification' })], stored ? { stored } : {});
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'ru', confident: true });
+      await goes(d);
+    });
+
+    it('«Здравствуйте» on top of an unmarked Uzbek line in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
+      const d = await ran(['Здравствуйте', 'Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
+      await goes(d);
+    });
+
+    it('«Assalomu alaykum» on top of an English question: the English reply goes', async () => {
+      const d = await ran(
+        ['Assalomu alaykum', 'How much is shipping from Guangzhou to Tashkent?'],
+        [compose(`Hello! Please send the volume (m3) and weight (kg) of your cargo ${TAG}.`, { language: 'en', category: 'qualification' })],
+      );
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'en', confident: true });
+      await goes(d);
+    });
+
+    it('…while an Uzbek-worded BODY under a Russian greeting is still Uzbek: the Russian reply is his', async () => {
+      const d = await ran(['Здравствуйте', 'Гуанчжоудан юк бор эди, нархи қанча?'], [compose(RUQ, { language: 'ru', category: 'qualification' })]);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['language']);
+      await staysHis(d);
+    });
+
+    it('…while a customer whose words ARE Uzbek never gets a Russian reply by itself, nor a Russian one an Uzbek reply', async () => {
+      const ru = await ran(['Ассалому алайкум, Хитойдан юк борми, нархи қанча?'], [compose(`Здравствуйте! Напишите объём и вес груза ${TAG}?`, { language: 'ru', category: 'qualification' })]);
+      expect((await verdictOf(ru.id))!.reasons).toEqual(['language']);
+      await staysHis(ru);
+      await clearChats();
+      const uzc = await ran(['Здравствуйте, сколько стоит доставка из Китая?'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })]);
+      expect((await verdictOf(uzc.id))!.reasons).toEqual(['language']);
+    });
+  });
+
+  describe('an admitted quote never launders the model’s label', () => {
+    beforeEach(() => tick(FIVE));
+    const ANGRY = "Yiwudan Toshkentga 5 kub 1000 kg yuk bor, juda qimmat olyapsizlar, norozi man! Yo'lkira qancha?";
+
+    it.each(['complaint', 'other'])('a quote labelled «%s» is his — `category`, never pressed', async (category) => {
+      const d = await ran([ANGRY], [truck, compose(PRICED, { category })]);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['category']);
+      await staysHis(d);
+    });
+
+    it('a status claim riding the quote, with the cargo never read: `status_unbacked`', async () => {
+      const d = await ran(["Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha? Oldingi yukim qayerda?"], [truck, compose(PRICED, { category: 'status' })]);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['status_unbacked']);
+      await staysHis(d);
+    });
+
+    it('…and the same quote labelled «price» goes', async () => {
+      const d = await ran(["Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?"], [truck, compose(PRICED, { category: 'price' })]);
+      await goes(d);
+    });
+  });
+
+  describe('the Tashkent price never goes to a customer who named another city', () => {
+    beforeEach(() => tick(FIVE));
+
+    it.each([
+      "Yiwudan Qarshi shahriga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+      "Yiwudan Olmaotaga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+      "Yiwudan Osh shahriga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+      "Yiwudan Xivaga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+    ])('«%s» → `foreign_destination`', async (question) => {
+      const d = await ran([question], [truck, compose(PRICED, { category: 'price' })]);
+      expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(true);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['foreign_destination']);
+      await staysHis(d);
+    });
+
+    // Fix pass 3: the neighbours of those spellings in each language, and a destination no list holds — read off the
+    // customer's own grammar («…dan X-ga», «из … в X», «from … to X»). Each reply the mandated Tashkent quote in the
+    // customer's own language: everything else about it goes.
+    it.each([
+      ['uz', "Yiwudan O‘shga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", PRICED],
+      ['uz', "Yiwudan Tehronga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", PRICED],
+      ['uz_cyrl', 'Иудан Алматига 5 куб 1000 кг юк бор, нархи қанча?', `5 куб, 1000 кг юкингиз учун Тошкентгача йўлкира тахминан 800 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`],
+      ['ru', 'Здравствуйте, доставка из Иу в г. Карши, 5 куб 1000 кг, сколько стоит?', `5 куб, 1000 кг груза до Ташкента — доставка примерно 800 $. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', 'Hello, how much from Yiwu to Osh for 5 m3 1000 kg?', `For 5 m3, 1000 kg of cargo to Tashkent the freight is about $800. ${EXCLUSION_SENTENCE.en}`],
+    ] as const)('%s «%s» → `foreign_destination`', async (language, question, reply) => {
+      const d = await ran([question], [truck, compose(reply, { category: 'price', language })]);
+      expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(true);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['foreign_destination']);
+      await staysHis(d);
+    });
+
+    it('…while the same quote to a customer bound for Tashkent goes — in his grammar too («Yiwudan Toshkent shahriga»)', async () => {
+      const d = await ran(["Yiwudan Toshkent shahriga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?"], [truck, compose(PRICED, { category: 'price' })]);
+      expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(false);
+      await goes(d);
+    });
+  });
+
+  describe('the flight’s PRICE goes by itself in every language — its address never (the armed avia rule, the reply’s own lists)', () => {
+    beforeEach(() => tick(FIVE));
+    const GLOSS = 'Toshkentgacha avia 30 kg uchun taxminan 510 $. Boj va QQS alohida hisoblanadi.';
+    const QUOTES: readonly (readonly [string, string, string, Record<string, unknown>])[] = [
+      ['uz', 'Guanchjoudan Toshkentga avia bilan 30 kg kiyim bor, narxi qancha?', `30 kg yukingiz uchun Toshkentgacha avia taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz}`, {}],
+      ['uz_cyrl', 'Гуанчжоудан Тошкентга авиа билан 30 кг кийим бор, нархи қанча?', `30 кг юкингиз учун Тошкентгача авиа тахминан 510 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`, {}],
+      ['ru', 'Из Гуанчжоу в Ташкент авиа 30 кг одежды, сколько стоит?', `30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru}`, {}],
+      ['en', 'Hello, how much is air freight for 30 kg of clothes from Guangzhou to Tashkent?', `Air freight for your 30 kg shipment to Tashkent is about $510. ${EXCLUSION_SENTENCE.en}`, {}],
+      ['zh', '你好，我有 30 kg 的衣服，从广州空运到塔什干多少钱？', `30公斤空运到塔什干大约510美元。${EXCLUSION_SENTENCE.zh}`, { gloss_uz: GLOSS }],
+      ['fa', 'سلام، هزینه ارسال هوایی 30 kg لباس از گوانجو تا تاشکند چقدر است؟', `هزینه ارسال هوایی ۳۰ کیلو تا تاشکند حدود ۵۱۰ دلار است. ${EXCLUSION_SENTENCE.fa}`, { gloss_uz: GLOSS }],
+    ];
+
+    it.each(QUOTES)('%s: the mandated price-only quote asks him nothing and goes', async (language, question, reply, extra) => {
+      const d = await ran([question], [flight, compose(reply, { language, category: 'price', ...extra })]);
+      const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.id, d.runId!));
+      expect(d.blocked, JSON.stringify([(d.policy as { blocks: unknown }).blocks, run?.toolCalls])).toBe(false);
+      expect(d.needsOwner).toBe(false);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBeUndefined();
+      await goes(d);
+    });
+
+    it.each([
+      ['ru', 'Из Гуанчжоу в Ташкент авиа 30 кг одежды, сколько стоит?', `30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru} Сдайте груз в наш пункт приёма.`],
+      ['uz', 'Guanchjoudan Toshkentga avia bilan 30 kg kiyim bor, narxi qancha?', `30 kg yukingiz uchun Toshkentgacha avia taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz} Yukni Guanchjoudagi qabul punktimizga olib boring.`],
+    ] as const)('%s: a quote that directs the cargo is HIS question — forced, ✏️ only, never pressed', async (language, question, reply) => {
+      const d = await ran([question], [flight, compose(reply, { language, category: 'price' })]);
+      expect(d.needsOwner).toBe(true);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBe('avia');
+      expect(d.ownerQuestion).toMatch(/^Avia: 30 kg, qayerdan: Guangzhou/u);
+      expect((await verdictOf(d.id))!.reasons).toContain('needs_owner');
+      await staysHis(d);
+    });
+
+    // Fix pass 3: with «Narx» ticked the reply's own lists made ordinary replies in a flight chat his «avia manzilini
+    // yozing» question — a request for a photo or a weight, a question where the cargo is, a price followed by «send a
+    // photo». They go as they did with «Narx» unticked.
+    it.each([
+      ['ru', 'Здравствуйте, хочу отправить одежду авиа из Китая в Ташкент, сколько стоит?', `Здравствуйте! Напишите вес груза (кг) и пришлите фото товара ${TAG}?`, 'qualification'],
+      ['en', 'Hello, I want to send clothes by air from China to Tashkent, how much?', `Hello! Is your cargo in Guangzhou or Yiwu ${TAG}?`, 'qualification'],
+      [
+        'en',
+        'Hello, how much is air freight for 30 kg of clothes from Guangzhou to Tashkent?',
+        `Air freight for your 30 kg shipment to Tashkent is about $510. ${EXCLUSION_SENTENCE.en} Please send a photo of the goods ${TAG}.`,
+        'price',
+      ],
+    ] as const)('%s: «%s» answered «%s» asks him nothing and goes', async (language, question, reply, category) => {
+      const d = await ran([question], category === 'price' ? [flight, compose(reply, { language, category })] : [compose(reply, { language, category })]);
+      expect(d.needsOwner).toBe(false);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBeUndefined();
+      await goes(d);
+    });
+
+    it('with «Narx» unticked every quoted flight asks him, as it always has — the Russian one too', async () => {
+      await tick(['greeting', 'qualification', 'faq', 'status']);
+      const d = await ran(['Из Гуанчжоу в Ташкент авиа 30 кг одежды, сколько стоит?'], [flight, compose(`30 кг до Ташкента авиа примерно 510 $. ${EXCLUSION_SENTENCE.ru}`, { language: 'ru', category: 'price' })]);
+      expect(d.needsOwner).toBe(true);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBe('avia');
+    });
+
+    /**
+     * The review of 0148 as built (tests lens): the price act is `price` ticked AND the layer armed
+     * (auto-send `priceActArmedOf`), read ONCE per run — and every test handed `priceArmed` in by hand, so the one
+     * line that decides whether a flight's price goes without asking him could drop either half with everything
+     * green. Through a real run: what the run made of the quote, and the two sentences the MODEL was given — rule 9
+     * of the cached head and the avia tool's own answer — each the armed one or today's, never a mix.
+     */
+    describe('the price act is read through the run — «Narx» ticked AND the layer armed, or every word is today’s (§1.2)', () => {
+      const ARMED_HEAD = 'Avia narxini aytsang — faqat narxni ayt';
+      const TODAY_HEAD = "Avia narxini aytsang yoki mijoz avia bilan jo'natmoqchi bo'lsa";
+      const ARMED_TOOL = 'Faqat narxni ayt';
+      const TODAY_TOOL = 'Avia uchun manzilni AI aytmaydi —';
+
+      /** One flight quote through a real run, with what the model was shown. */
+      async function flightRun() {
+        const anchor = await inbound('Guanchjoudan Toshkentga avia bilan 30 kg kiyim bor, narxi qancha?');
+        const requests: ModelRequest[] = [];
+        const model = scripted([flight, compose(`30 kg yukingiz uchun Toshkentgacha avia taxminan 510 $ bo'ladi. ${EXCLUSION_SENTENCE.uz}`, { category: 'price' })]);
+        const out = await handleInbound(job(anchor), {
+          callModel: (async (req: ModelRequest) => {
+            requests.push(req);
+            return model(req);
+          }) as CallModel,
+          now: () => T0,
+        });
+        expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+        const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, (out as { draftId: string }).draftId));
+        const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.id, d!.runId!));
+        const tool = (run!.toolCalls as { name: string; text: string }[]).find((t) => t.name === 'avia_estimate')!;
+        return { d: d!, head: requests[0]!.systemCached ?? '', tool: tool.text };
+      }
+
+      it('ticked and armed: the price alone — no question, the armed rule 9 and the armed tool words', async () => {
+        const { d, head, tool } = await flightRun();
+        expect(d.needsOwner).toBe(false);
+        expect(d.ownerQuestion ?? '').toBe('');
+        expect(head).toContain(ARMED_HEAD);
+        expect(head).not.toContain(TODAY_HEAD);
+        expect(tool).toContain(ARMED_TOOL);
+        expect(tool).not.toContain(TODAY_TOOL);
+      });
+
+      it('ticked but the layer DISARMED: the quoted flight asks him with the cargo, and every word is today’s', async () => {
+        await db.update(agentAutoConfig).set({ armedAt: null, armedBy: null }).where(eq(agentAutoConfig.id, 1));
+        const { d, head, tool } = await flightRun();
+        expect(d.needsOwner).toBe(true);
+        expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBe('avia');
+        expect(d.ownerQuestion).toMatch(/^Avia: 30 kg, qayerdan: Guangzhou/u);
+        expect(head).toContain(TODAY_HEAD);
+        expect(head).not.toContain(ARMED_HEAD);
+        expect(tool).toContain(TODAY_TOOL);
+        expect(tool).not.toContain(ARMED_TOOL);
+      });
+
+      it('armed but «Narx» UNTICKED — the shipped state: the same, byte for byte as before 0148', async () => {
+        await tick(['greeting', 'qualification', 'faq', 'status']);
+        const { d, head, tool } = await flightRun();
+        expect(d.needsOwner).toBe(true);
+        expect(d.ownerQuestion).toMatch(/^Avia: 30 kg, qayerdan: Guangzhou/u);
+        expect(head).toContain(TODAY_HEAD);
+        expect(head).not.toContain(ARMED_HEAD);
+        expect(tool).toContain(TODAY_TOOL);
+        expect(tool).not.toContain(ARMED_TOOL);
+      });
+    });
+  });
+
+  describe('the six languages on real runs — the customer’s own, or the card is his (§4)', () => {
+    it('an Uzbek Latin customer answered in ENGLISH: the scripts agree (G5 passes) and the language does not — `language`, never pressed', async () => {
+      const d = await ran(['Assalomu alaykum, Xitoydan yuk olib kelasizlarmi?'], [compose(`Hello! Yes, we ship from China. What is your cargo ${TAG}?`, { language: 'en', category: 'qualification' })]);
+      expect(d.blocked).toBe(false);
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz', confident: true });
+      expect((await verdictOf(d.id))!.reasons).toEqual(['language']);
+      await staysHis(d);
+    });
+
+    it.each([
+      ['en', 'Hello, do you ship cargo from China to Tashkent?', (tag: string) => `Hello! Yes, we do. What is your cargo ${tag}?`, {}],
+      ['fa', 'سلام، آیا از چین به تاشکند بار می‌برید؟', (tag: string) => `سلام! بله، می‌بریم. بار شما چیست ${tag}؟`, { gloss_uz: 'Salom! Ha, olib kelamiz. Yukingiz nima?' }],
+    ] as const)('%s: a customer who writes it is answered in it, and the reply goes by itself', async (language, question, reply, extra) => {
+      const d = await ran([question], [compose(reply(TAG), { language, category: 'qualification', ...extra })]);
+      expect((d.policy as { memory: { customerLocale: { locale: string; confident: boolean } } }).memory.customerLocale).toEqual({ locale: language, confident: true });
+      await goes(d);
+    });
   });
 });

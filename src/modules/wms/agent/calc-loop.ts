@@ -254,8 +254,8 @@ export function handBackInstruction(reason: string): string {
 /** How long the one retry of a hand-back waits — a tg-listen rebuild is minutes. */
 export const HAND_BACK_RETRY_S = 300;
 
-/** Why the AI wrote no question — the 🔁 follow-up's words, one per refusal (exhaustive). */
-const NO_DRAFT_WORDS: Record<Ineligible, string> = {
+/** Why the AI wrote no question — the 🔁 follow-up's words, one per refusal (exhaustive); his ✍️ answer's too (owner-answer-job). */
+export const NO_DRAFT_WORDS: Record<Ineligible, string> = {
   agent_off: "AI o'chirilgan",
   session_not_confirmed: 'eski serverdagi sessiya tasdiqlanmagan',
   listener_behind: "Telegram tinglovchisi (tg-listen) yangilanmagan",

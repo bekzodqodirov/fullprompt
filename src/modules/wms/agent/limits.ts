@@ -12,7 +12,11 @@ import { DEFAULT_LIMITS } from '../crm/telegram-send';
  *
  * Every send cap is at or below the human queue's own (`DEFAULT_LIMITS`), and
  * `tests/unit/agent-limits.test.ts` says so: the agent may never be the reason
- * the account hits a ceiling the human bridge already respects.
+ * the account hits a ceiling the human bridge already respects. That holds for
+ * the two he may edit too (0148, his «4 … o'zgartirish imkoni»): `perDay` and
+ * `perHour` below are the DEFAULTS of `send-caps.ts`, whose stored numbers are
+ * bounded by the same human queue (`SEND_CAP_BOUNDS`), and every reader takes
+ * the effective one from there.
  *
  * Whose sends each queue counts (final review K5). The AGENT's two
  * account-wide fuses on Telegram's clock — `perHour` and the jittered gap
@@ -39,6 +43,13 @@ export const AGENT_LIMITS = {
   minShipment: { m3: 1, kg: 100 } as const,
   /** Avia has its own minimum and time (his 2026-10-24 «avia uchun 1kg minimum», «2-5 kun … reysimiz bolsa 2 kun»). */
   avia: { minKg: 1, daysMin: 2, daysMax: 5 } as const,
+  /**
+   * The truck's days once the website's table has run out (spec SPEC-P1-v2 §1.6, ⭐ Q5 a — asked of him): the
+   * snapshot's own 15-25 (site-estimate `SITE_TARIFF.truck.days`). Before its `validThrough` the website says
+   * them; after it the truck's price comes from /admin/tarif, which knows no days, and without these every
+   * «15-25 kun» in an estimate reply would have no source and block the card.
+   */
+  truckDays: [15, 25] as const,
   /** ≥ this long between two AI messages to one chat. */
   perChatGapMs: 20_000,
   /** A random gap between any two AI sends on the account, drawn from this range. */
@@ -153,16 +164,20 @@ export function typingMs(chars: number): number {
 /**
  * The day's AI send ceiling. For the first `rampDays` after the agent was
  * first switched on it is his own average daily sends from this account (the
- * human out rows of the 30 days before), never more than `perDay` and never
- * less than one; after the ramp, `perDay`. Computed, not typed (ban-11).
+ * human out rows of the 30 days before), never more than the day cap and never
+ * less than one; after the ramp, the day cap. Computed, not typed (ban-11).
+ *
+ * `dayCap` is the EFFECTIVE day cap (`send-caps.ts readSendCaps`: his stored
+ * number, else `AGENT_LIMITS.perDay`) — REQUIRED, so no caller can quietly use
+ * the constant while the others use his number (spec §5.2: one number everywhere).
  */
-export function dailySendCeiling(input: { startedAt: Date | null; ownAverage: number; now: Date }): number {
-  const { startedAt, ownAverage, now } = input;
+export function dailySendCeiling(input: { startedAt: Date | null; ownAverage: number; now: Date; dayCap: number }): number {
+  const { startedAt, ownAverage, now, dayCap } = input;
   if (!startedAt) return 0;
   const days = (now.getTime() - startedAt.getTime()) / 86_400_000;
-  if (days >= AGENT_LIMITS.rampDays) return AGENT_LIMITS.perDay;
+  if (days >= AGENT_LIMITS.rampDays) return dayCap;
   const own = Number.isFinite(ownAverage) ? Math.floor(ownAverage) : 0;
-  return Math.max(1, Math.min(AGENT_LIMITS.perDay, own));
+  return Math.max(1, Math.min(dayCap, own));
 }
 
 /** A jitter draw, injectable for tests. */

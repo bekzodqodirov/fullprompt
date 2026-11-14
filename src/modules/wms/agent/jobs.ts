@@ -11,6 +11,8 @@ import { canLogInSql } from '../../platform/users/login';
 import { officialPeerSql } from '../crm/chat-rules';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
+import { ANSWER_RUN_STALE_MS } from './owner-answer';
+import type { DraftPolicyJson } from './types';
 import {
   EDIT_ATTEMPT_BASE,
   INBOUND_START_AFTER_S,
@@ -18,11 +20,13 @@ import {
   JOB_AGENT_HAND_BACK,
   JOB_AGENT_HUMAN_REPLY,
   JOB_AGENT_INBOUND,
+  JOB_AGENT_OWNER_ANSWER,
   JOB_AGENT_SWEEP,
   REDRAFT_ATTEMPT_BASE,
   type AgentHandBackJob,
   type AgentHumanReplyJob,
   type AgentInboundJob,
+  type AgentOwnerAnswerJob,
 } from './queues';
 
 /**
@@ -115,6 +119,25 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
         // Sent with retryLimit 0, like the inbound run: a second delivery is a
         // second model bill, and the run's source_key keeps it once anyway.
         logger.error({ err }, '[agent] hand-back job failed');
+      }
+    }
+  });
+  await boss.createQueue(JOB_AGENT_OWNER_ANSWER);
+  await boss.work<AgentOwnerAnswerJob>(JOB_AGENT_OWNER_ANSWER, async (jobs) => {
+    const { handleOwnerAnswer } = await import('./owner-answer-job');
+    const { handleLessonRedraft } = await import('./lesson-job');
+    for (const job of jobs) {
+      try {
+        // «Through the same queued job» (spec SPEC-P1-v2 §3.4): a job that names a lesson is the lesson's rewrite.
+        const out = job.data.lessonId ? await handleLessonRedraft(job.data) : await handleOwnerAnswer(job.data);
+        logger.info(
+          { peer: job.data.peerId, draftId: job.data.draftId, ...(job.data.lessonId ? { lessonId: job.data.lessonId } : {}), ...(out ?? { outcome: 'none' }) },
+          job.data.lessonId ? '[agent] lesson rewrite' : '[agent] owner answer',
+        );
+      } catch (err) {
+        // Sent with retryLimit 0, like the hand-back: a second delivery is a second model bill. A job that died
+        // with the answer is the sweep's to hand back, in words (step 2c).
+        logger.error({ err }, '[agent] owner answer job failed');
       }
     }
   });
@@ -336,6 +359,26 @@ export async function agentSweep(
   // 2a. A question to him still unanswered after half an hour — reminded once (his 14, K30).
   const reminded = await remindOwnerQuestions(now);
 
+  // 2c. «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2), handed back when nothing will come of it: a press he forgot (the
+  //     wait ran out with no answer), or an answer whose worker died with it (a deploy, a kill — never drafted,
+  //     never said). Without it the question would sit `editing` until the 24-hour expiry and every line the
+  //     customer wrote meanwhile would stand down for it. Its own catch: never the sweep's other answers.
+  try {
+    await releaseForgottenAnswers(now);
+  } catch (err) {
+    logger.error({ err }, '[agent] forgotten answers not handed back');
+  }
+
+  // 2d. «📝 Tuzatish» (§3.4): a lesson's rewrite that never came — its worker died, or its job never queued. The
+  //     mark comes off the card (or it would say «AI qayta yozmoqda» until the 24-hour expiry) and he is told; the
+  //     lesson itself is kept. Its own catch too.
+  try {
+    const { releaseStaleLessonRedrafts } = await import('./lessons');
+    await releaseStaleLessonRedrafts(now);
+  } catch (err) {
+    logger.error({ err }, '[agent] stale lesson rewrites not handed back');
+  }
+
   // 2b. A run the process died inside (final review K24): `reserve` writes the
   //     row as 'reserved' and only the run's `finally` settles it — every
   //     deploy's container restart, the watchdog's kill and an OOM skip that
@@ -466,7 +509,55 @@ export async function agentSweep(
   } catch (err) {
     logger.error({ err }, '[agent] auto presses failed');
   }
+
+  // 8. The website table's 14-day notice (0148, spec SPEC-P1-v2 §1.6): once per `validThrough`, by day, to the
+  //    holder — after it the truck's price is /admin/tarif's, and «✅ Tarif to'g'ri» vouches for the column. Its
+  //    own catch: a notice must never cost the sweep's answers.
+  try {
+    const { tariffExpiryNotice } = await import('./tariff-watch');
+    await tariffExpiryNotice(now);
+  } catch (err) {
+    logger.error({ err }, '[agent] tariff notice failed');
+  }
   return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length, autoPressed };
+}
+
+/**
+ * The sweep's step 2c (spec §2.2): every question still `editing` for a ✍️ that will not end by itself — the wait
+ * ran out with no answer to THIS press (an answer older than the press was an earlier one's), or an answer stored
+ * `ANSWER_RUN_STALE_MS` ago that nothing drafted. Each goes back to `pending` with the lines that stood down asked
+ * again (decide `releaseAnswering`, a compare-and-set: a redraft that superseded it meanwhile wins), and a dead
+ * worker's is said, his answer quoted back. Returns how many it handed back.
+ */
+export async function releaseForgottenAnswers(now: Date): Promise<number> {
+  const at = now.toISOString();
+  const staleAt = new Date(now.getTime() - ANSWER_RUN_STALE_MS).toISOString();
+  const rows = await db.execute<{ id: string; dead: boolean }>(sql`
+    SELECT id::text, (policy ? 'ownerAnswer'
+                      AND (policy->'ownerAnswer'->>'at')::timestamptz >= (policy->'answering'->>'since')::timestamptz) AS dead
+      FROM agent_drafts
+     WHERE status = 'editing' AND policy ? 'answering'
+       AND (
+         ((policy->'answering'->>'until')::timestamptz <= ${at}::timestamptz
+           AND NOT (policy ? 'ownerAnswer'
+                    AND (policy->'ownerAnswer'->>'at')::timestamptz >= (policy->'answering'->>'since')::timestamptz))
+         OR (policy ? 'ownerAnswer'
+             AND (policy->'ownerAnswer'->>'at')::timestamptz >= (policy->'answering'->>'since')::timestamptz
+             AND (policy->'ownerAnswer'->>'at')::timestamptz <= ${staleAt}::timestamptz))`);
+  if (rows.length === 0) return 0;
+  const { releaseAnswering } = await import('./decide');
+  const { tellNoAnswerDraft } = await import('./owner-answer-job');
+  let released = 0;
+  for (const r of rows) {
+    const dead = r.dead === true;
+    const note = dead ? '✍️ AI javob yozolmadi (ish to‘xtab qoldi) — savol yana sizda.' : '✍️ Javob kutish tugadi — savol yana sizda: «✍️» yoki «✏️».';
+    const [before] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, r.id));
+    if (!(await releaseAnswering(r.id, { note, redraft: true }))) continue;
+    released += 1;
+    const answer = ((before?.policy ?? {}) as Partial<DraftPolicyJson>).ownerAnswer;
+    if (dead && before && answer) await tellNoAnswerDraft(before, answer, 'AI javob yozayotganda ish to‘xtab qoldi');
+  }
+  return released;
 }
 
 /**

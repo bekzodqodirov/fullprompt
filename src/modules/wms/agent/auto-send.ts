@@ -22,15 +22,21 @@ import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
-import { AUTO_SEND_CATEGORIES, autoVerdict, type AutoGateInput, type AutoRefusal } from './auto-gate';
+import { AUTO_SEND_CATEGORIES } from './auto-categories';
+import { estimateUnnamed, numeralUnread } from './auto-money';
+import { estimatesStand } from './estimate-check';
+import { tariffUnconfirmed } from './tariff-watch';
+import { autoVerdict, type AutoGateInput, type AutoLedgerLine, type AutoRefusal, type AutoToolCall } from './auto-gate';
 import { cardDigest, digestBody } from './card';
-import { agentAutoReady, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
+import { agentAutoReady, agentFullP1Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
+import { readSendCaps } from './send-caps';
 import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { CATEGORIES } from './tools';
-import type { DraftPolicyJson } from './types';
+import type { AnswerMark, DraftPolicyJson } from './types';
+import { answerStale } from './owner-answer';
 
 /**
  * «O'zi yuborish» — the impure side of auto-send (docs/AI-SOTUVCHI.md §18.3,
@@ -66,7 +72,8 @@ export interface AutoConfig {
   armedAt: Date | null;
   armedBy: string | null;
   holdSec: number;
-  perDay: number;
+  /** Auto presses a Tashkent day may hold — null = no cap (0148, his «7 chegara qoyma»). */
+  perDay: number | null;
   maxChars: number;
   minConfidence: number;
   categories: string[];
@@ -97,6 +104,20 @@ export async function readAutoConfig(handle: Db | Tx = db): Promise<AutoConfig |
   return row ? toAutoConfig(row) : null;
 }
 
+/**
+ * His price act (spec SPEC-P1-v2 §1.2): `price` ticked among the kinds AND the layer armed. While it holds, the
+ * flight's PRICE may go by itself — the run's avia rule stops asking him about every quoted flight, and the head
+ * and the avia tool tell the model to quote the price alone. Off (or 0145 not landed), every word is today's.
+ */
+export function priceActArmedOf(auto: Pick<AutoConfig, 'armed' | 'categories'> | null): boolean {
+  return auto?.armed === true && auto.categories.includes('price');
+}
+
+/** `priceActArmedOf` over the stored row — read once per run. */
+export async function priceActArmed(): Promise<boolean> {
+  return priceActArmedOf(await readAutoConfig());
+}
+
 // ── the facts ───────────────────────────────────────────────────────────────
 
 /** What the gate reads of a draft — a stored row, or the one the run is about to write. */
@@ -121,13 +142,31 @@ export interface AutoDraftShape {
   actions: unknown;
 }
 
-type ToolCall = { name: string; ok: boolean };
+type ToolCall = AutoToolCall;
 
-function toolCallsOf(raw: unknown): ToolCall[] {
+/**
+ * The run's stored tool calls as the gate reads them. The estimate flag is the one the run stored beside each call
+ * (spec §1.1); a call stored before 0148 carries none and reads as a PRICED estimate — failing closed: such a
+ * draft also has no stored estimates, and the money clause refuses it.
+ */
+export function toolCallsOf(raw: unknown): ToolCall[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((t): t is { name: unknown; ok: unknown } => typeof t === 'object' && t !== null)
-    .map((t) => ({ name: typeof t.name === 'string' ? t.name : '', ok: t.ok === true }));
+    .filter((t): t is { name: unknown; ok: unknown; estimate?: unknown } => typeof t === 'object' && t !== null)
+    .map((t) => ({
+      name: typeof t.name === 'string' ? t.name : '',
+      ok: t.ok === true,
+      estimate: typeof t.estimate === 'boolean' ? t.estimate : true,
+    }));
+}
+
+/** The stored ledger as the gate reads it: who vouched for each line — absent fields (a line before 0148) are null. */
+function ledgerLinesOf(raw: unknown): AutoLedgerLine[] {
+  if (!Array.isArray(raw)) return [];
+  const str = (v: unknown) => (typeof v === 'string' ? v : null);
+  return raw
+    .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
+    .map((e) => ({ kind: str(e.kind) ?? '', origin: str(e.origin), tool: str(e.tool), role: str(e.role) }));
 }
 
 function confidenceOf(raw: string | number | null): number | null {
@@ -182,8 +221,11 @@ export async function autoPressedToday(managerUserId: string, now: Date): Promis
 /**
  * Auto replies in a row in this chat (§18.3: at most 2): the presses since the
  * last thing a PERSON did here — a draft he decided himself (his ✅, ✏️, ❌,
- * 🙋; never one the machine pressed), or a message of his own (his phone, the
- * CRM; never the AI's send and never the account's Business robot, `auto_sent`).
+ * 🙋; never one the machine pressed), his ✍️ answer to the AI's question (spec
+ * SPEC-P1-v2 §2.2 — the redraft's plan is judged before `createDraft` stamps
+ * the question decided, so the answer itself is what counts), or a message of
+ * his own (his phone, the CRM; never the AI's send and never the account's
+ * Business robot, `auto_sent`).
  */
 async function autoStreak(managerUserId: string, peerId: bigint): Promise<number> {
   const rows = await db.execute<{ n: number }>(sql`
@@ -193,6 +235,9 @@ async function autoStreak(managerUserId: string, peerId: bigint): Promise<number
           WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
             AND d.decided_by IS NOT NULL
             AND NOT EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = d.id AND v.state = 'pressed')),
+        (SELECT max((d.policy->'ownerAnswer'->>'at')::timestamptz) FROM agent_drafts d
+          WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
+            AND d.policy ? 'ownerAnswer'),
         (SELECT max(m.sent_at) FROM tg_messages m
            LEFT JOIN tg_message_flags f ON f.message_id = m.id
           WHERE m.manager_user_id = ${managerUserId}::uuid AND m.peer_id = ${String(peerId)}::bigint
@@ -264,7 +309,9 @@ export async function autoFactsFor(
   const queued = opts.scheduling ? await autoQueued(d.managerUserId, d.peerId) : 0;
   // The ✅'s own refusals that are already facts at the scheduling (decide `decideDraft`): a card must never count
   // down to them. At the press the ✅ asks them itself.
-  const sends = opts.scheduling ? await sendsToday(d.managerUserId, agent?.startedAt ?? null, opts.now) : null;
+  const sends = opts.scheduling
+    ? await sendsToday(d.managerUserId, agent?.startedAt ?? null, opts.now, (await readSendCaps()).dayCap)
+    : null;
   const guard = opts.scheduling && acc ? await readGuard(acc.id) : null;
   const [off] = await db
     .select({ offUntil: agentAutoChats.offUntil })
@@ -276,13 +323,20 @@ export async function autoFactsFor(
     .select({ humanUntil: agentConversations.humanUntil, mutedAt: agentConversations.mutedAt })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, d.managerUserId), eq(agentConversations.peerId, d.peerId)));
+  const memory = policy.memory;
+  const fromAnswer = answerMarkOf(policy.fromAnswer);
+  const estimates = Array.isArray(memory?.estimates) ? memory.estimates : [];
+  // The machine's words carry the machine's figures; his own (✏️) are never auto-pressed anyway.
+  const quoted = estimates.length > 0 && d.finalBody === null;
   return {
     config: {
       armed: auto?.armed === true,
       categories: auto?.categories ?? [],
       maxChars: auto?.maxChars ?? 0,
       minConfidence: auto?.minConfidence ?? 1,
-      perDay: auto?.perDay ?? 0,
+      // NULL is «no cap» and stays NULL (0148): a fallback to a number here would refuse every reply for ever
+      // while typecheck stays green. No row at all is `not_armed` above.
+      perDay: auto ? auto.perDay : null,
     },
     agentOn: agentRunning(agent) && agent.ownerUserId === d.managerUserId,
     draft: {
@@ -298,10 +352,33 @@ export async function autoFactsFor(
       language: d.language,
       body: digestBody(d),
       confidence: confidenceOf(d.confidence),
-      moneyLedger: Array.isArray(policy.ledger) && policy.ledger.some((e) => e?.kind === 'money'),
-      hasEstimate: policy.memory?.hasEstimate === true,
+      ledger: ledgerLinesOf(policy.ledger),
+      hasEstimate: memory?.hasEstimate === true,
+      estimatesStored: Array.isArray(memory?.estimates) && memory.estimates.length > 0,
+      rail: memory?.rail === true,
+      customerLocale: memory?.customerLocale ?? null,
+      // A Chinese numeral the readers cannot tell from a word (0148 fix) — over the reply less its facts' quoted
+      // Chinese, as G1 reads it; a memory that cannot be read holds one (fails closed).
+      unreadNumeral: unreadOf(digestBody(d), memory),
     },
     tools,
+    money: {
+      unnamed: memory ? unnamedOf(digestBody(d), memory) : false,
+      // The stored figures priced again NOW (§1.3) — at the scheduling and again at the press, with the function the
+      // send step asks: a tariff edit or a new avia rate during the hold never lets the old figure out by itself.
+      moved: quoted ? (await estimatesStand(estimates, opts.now)) === 'estimate_moved' : false,
+      // The China column written since his last ✅ on it (§1.6) — asked of a TRUCK figure only: the flight is his rate.
+      tariffUnconfirmed: quoted && estimates.some((e) => e?.tool === 'yolkira_estimate') ? await tariffUnconfirmed(opts.now) : false,
+      // The customer named another city or region (§1.8), read by the run over the whole window. A memory that does
+      // not say (none such carries estimates) reads as named.
+      foreignDestination: quoted ? memory?.foreignDestination !== false : false,
+      // His ✍️ answer behind this redraft (spec §2.2, `policy.fromAnswer`): another customer named in it — read by the
+      // run that wrote the redraft — and the customer writing again after the line his question answered, read NOW.
+      ownerPersonal: (fromAnswer?.personal.length ?? 0) > 0,
+      answerStale: fromAnswer ? await answerStaleOf(d, fromAnswer) : false,
+      // …and a figure in his answer, whoever the ledger says vouched for it in the reply (his Q2 a ⭐).
+      ownerFigure: fromAnswer?.figures === true,
+    },
     burstMedia: await burstHadMedia(d),
     chat: {
       hasOwner: d.clientId !== null || d.leadId !== null,
@@ -319,6 +396,56 @@ export async function autoFactsFor(
     sendingEnabled: opts.scheduling ? (await getSetting('tg_sending_enabled')) === true : null,
     listenerCurrent: opts.scheduling ? listenerIsCurrent(guard, opts.now) : null,
   };
+}
+
+/**
+ * The stored `fromAnswer` as the gate reads it; a malformed one reads as personal, and one that does not say
+ * whether his answer held a figure reads as holding one (fails closed).
+ */
+function answerMarkOf(raw: unknown): AnswerMark | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const m = raw as Partial<AnswerMark>;
+  const personal = Array.isArray(m.personal) ? m.personal.filter((b): b is string => typeof b === 'string') : ['?'];
+  return {
+    questionDraftId: typeof m.questionDraftId === 'string' ? m.questionDraftId : '',
+    questionAnchor: typeof m.questionAnchor === 'string' && /^\d+$/u.test(m.questionAnchor) ? m.questionAnchor : '0',
+    questionAnchorEditedAt: typeof m.questionAnchorEditedAt === 'string' ? m.questionAnchorEditedAt : null,
+    questionDraftedAt: typeof m.questionDraftedAt === 'string' ? m.questionDraftedAt : null,
+    personal,
+    figures: m.figures !== false,
+  };
+}
+
+/** `answerStale` for a redraft — one that cannot be read is stale (fails closed): the redraft waits for his eye. */
+async function answerStaleOf(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId'>, mark: AnswerMark): Promise<boolean> {
+  try {
+    const edited = mark.questionAnchorEditedAt === null ? null : new Date(mark.questionAnchorEditedAt);
+    const drafted = mark.questionDraftedAt === null ? null : new Date(mark.questionDraftedAt);
+    return await answerStale(d.managerUserId, d.peerId, BigInt(mark.questionAnchor), edited, drafted);
+  } catch (err) {
+    logger.warn({ err }, '[agent] auto: the answered question’s chat not read');
+    return true;
+  }
+}
+
+/** `numeralUnread` over a stored memory — a reply whose memory cannot be read holds one (fails closed). */
+function unreadOf(body: string, memory: Partial<DraftPolicyJson>['memory'] | undefined): boolean {
+  try {
+    return numeralUnread(body, typeof memory?.quotableHan === 'string' ? memory.quotableHan : '');
+  } catch (err) {
+    logger.warn({ err }, '[agent] auto: the reply’s numerals not read');
+    return true;
+  }
+}
+
+/** `estimateUnnamed` over a stored memory — one a reader cannot parse names nothing (fails closed). */
+function unnamedOf(body: string, memory: NonNullable<Partial<DraftPolicyJson>['memory']>): boolean {
+  try {
+    return estimateUnnamed(body, { sources: memory.sources ?? [], estimates: memory.estimates ?? null, askedMode: memory.askedMode ?? null });
+  } catch (err) {
+    logger.warn({ err }, '[agent] auto: the quote’s load not read');
+    return true;
+  }
 }
 
 // ── the plan, at the scheduling ─────────────────────────────────────────────
@@ -858,8 +985,12 @@ export async function settleSupersededAuto(draftId: string): Promise<void> {
 
 // ── a person on the card ────────────────────────────────────────────────────
 
-/** Why a waiting auto stopped because of HIM: his own decision on the card, or ⏸. */
-export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause';
+/**
+ * Why a waiting auto stopped because of HIM: his own decision on the card, ⏸ — or «✍️ Savolga javob» (spec
+ * SPEC-P1-v2 §2.2: a question never counts down today, and the stop is the press's first act all the same) — or
+ * «📝 Tuzatish» (§3.1): a reply he is about to call wrong does not go by itself while he types why.
+ */
+export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause' | 'owner_answer' | 'owner_lesson';
 
 /**
  * His own decision on a draft stops its auto — every non-auto `decideDraft`
@@ -1246,11 +1377,15 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
   return out.config;
 }
 
-/** Which kinds of reply may go by themselves — the holder's choice among the four, at least one. Audited. */
+/**
+ * Which kinds of reply may go by themselves — the holder's choice among the five, at least one. Audited. The
+ * fifth, `price`, is admitted by 0148's CHECK alone: one migration behind it is refused in words, never a 23514.
+ */
 export async function setAutoCategories(actor: AutoActor, categories: readonly string[], ctx: AuditContext): Promise<AutoConfig> {
   const chosen = [...new Set(categories)];
   if (chosen.length === 0 || chosen.some((c) => !(AUTO_SEND_CATEGORIES as readonly string[]).includes(c))) throw new AutoConfigError('bad_value');
   if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
+  if (chosen.includes('price') && !(await agentFullP1Ready())) throw new AutoConfigError('not_ready');
   const pre = await readAgentConfig();
   if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
   // In the design's own order, so the stored list never depends on the order of the boxes.
@@ -1269,6 +1404,34 @@ export async function setAutoCategories(actor: AutoActor, categories: readonly s
       action: 'update',
       before: { categories: before.categories },
       after: { categories: ordered },
+    });
+    return toAutoConfig(row!);
+  });
+}
+
+/** The bounds a typed daily count keeps (0148's CHECK); null is «no cap». */
+export const AUTO_PER_DAY_MAX = 1000;
+
+/**
+ * The layer's daily count (spec §5.1, his «7 chegara qoyma»): null = no cap, or a whole number he types, 1 to
+ * `AUTO_PER_DAY_MAX`. The holder's alone, as the kinds are. One migration behind it is refused in words (the
+ * column is NOT NULL and bounded 1-80 there). Audited.
+ */
+export async function setAutoPerDay(actor: AutoActor, perDay: number | null, ctx: AuditContext): Promise<AutoConfig> {
+  if (perDay !== null && !(Number.isInteger(perDay) && perDay >= 1 && perDay <= AUTO_PER_DAY_MAX)) throw new AutoConfigError('bad_value');
+  if (!(await agentAutoReady()) || !(await agentFullP1Ready())) throw new AutoConfigError('not_ready');
+  const pre = await readAgentConfig();
+  if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
+  return db.transaction(async (tx) => {
+    const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
+    if (!before) throw new AutoConfigError('not_ready');
+    const [row] = await tx.update(agentAutoConfig).set({ perDay, updatedAt: new Date() }).where(eq(agentAutoConfig.id, 1)).returning();
+    await writeAudit(tx, ctx, {
+      entityType: 'agent_auto_config',
+      entityId: AUTO_AUDIT_ID,
+      action: 'update',
+      before: { perDay: before.perDay },
+      after: { perDay },
     });
     return toAutoConfig(row!);
   });

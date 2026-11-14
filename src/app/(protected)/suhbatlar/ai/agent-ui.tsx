@@ -8,20 +8,32 @@ import {
   agentAutoArmAction,
   agentAutoCategoriesAction,
   agentAutoFeedbackAction,
+  agentAutoPerDayAction,
   agentAutoStopAction,
   agentAviaRateAction,
   agentDecideAction,
   agentEditFactAction,
   agentEditOpenAction,
+  agentLessonActiveAction,
+  agentLessonDeleteAction,
+  agentLessonEditAction,
+  agentLessonOpenAction,
+  agentLessonSaveAction,
   agentModeAction,
   agentNumbersAction,
   agentOwnTextAction,
   agentOwnerAction,
   agentRememberAction,
   agentRetireFactAction,
+  agentSendCapsAction,
+  agentConfirmTariffAction,
   agentSessionAction,
   type AgentActionResult,
 } from '@/modules/wms/agent/web-actions';
+// The kinds' one home (a pure module): never the gate, which would pull the send step into this bundle.
+import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+// The lesson's limits — a pure module too (zero imports).
+import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { CATEGORY_KEYS, errorKey } from './labels';
 
 /**
@@ -33,7 +45,11 @@ import { CATEGORY_KEYS, errorKey } from './labels';
  * No `router.refresh()`: every action revalidates the page itself (#1242).
  */
 
-function useAction() {
+/**
+ * `errorValues`: what a refusal's sentence is filled with — a form whose refusal names its bounds hands them here
+ * (the daily count, the account limits), so no bundle types a constant a second time. Unused by every other key.
+ */
+function useAction(errorValues?: Record<string, number>) {
   const t = useTranslations('agentAi');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +63,7 @@ function useAction() {
         onOk?.(res);
       } else {
         setNote(null);
-        const words = t(errorKey(res.error) as 'errors.unknown');
+        const words = t(errorKey(res.error) as 'errors.unknown', errorValues);
         // A money refusal names the number it read as a price (F7) — never «a price» about a text with none.
         setError(res.detail ? `${words} ${t('errors.figureRead', { figure: res.detail })}` : words);
       }
@@ -659,15 +675,20 @@ export function AutoArmButtons({
   );
 }
 
-/** The four kinds of reply the layer may send — the order the design names them. */
-const AUTO_CATEGORIES = ['greeting', 'qualification', 'faq', 'status'] as const;
-
 /**
- * Which kinds go by themselves — a replace-all of the four boxes. Controlled,
- * posted as one list by the action (never a form whose disabled box posts
- * nothing, #171); a reader who may not change it sees the boxes and no save.
+ * Which kinds go by themselves — a replace-all of the boxes (the five of `AUTO_SEND_CATEGORIES`; the page drops
+ * «Narx» on a server one migration behind 0148, `kinds`). Controlled, posted as one list by the action (never a
+ * form whose disabled box posts nothing, #171); a reader who may not change it sees the boxes and no save.
  */
-export function AutoCategoriesForm({ current, editable }: { current: readonly string[]; editable: boolean }) {
+export function AutoCategoriesForm({
+  current,
+  editable,
+  kinds = AUTO_SEND_CATEGORIES,
+}: {
+  current: readonly string[];
+  editable: boolean;
+  kinds?: readonly (typeof AUTO_SEND_CATEGORIES)[number][];
+}) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
   const [chosen, setChosen] = useState<string[]>([...current]);
@@ -676,7 +697,7 @@ export function AutoCategoriesForm({ current, editable }: { current: readonly st
     <div className="space-y-2" data-testid="agent-auto-categories">
       <p className="text-sm font-semibold">{t('autoCategoriesTitle')}</p>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
-        {AUTO_CATEGORIES.map((c) => (
+        {kinds.map((c) => (
           <label key={c} className="flex min-h-11 items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -708,6 +729,136 @@ export function AutoCategoriesForm({ current, editable }: { current: readonly st
   );
 }
 
+/** A typed whole number, or null for an empty box — anything else is the action's own `bad_value`, said in words. */
+function typedCap(raw: string): number | null | 'bad' {
+  const s = raw.trim();
+  if (s === '') return null;
+  return /^\d+$/u.test(s) ? Number(s) : 'bad';
+}
+
+/**
+ * The layer's daily count (0148, his «7 chegara qoyma»): an empty box is «no cap», a number is a cap. The
+ * holder's alone, as the kinds are; a reader who may not change it sees the value and no save. Controlled — a
+ * refusal keeps what he typed (#463).
+ */
+export function AutoPerDayForm({ current, editable, max }: { current: number | null; editable: boolean; max: number }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ max });
+  const [value, setValue] = useState(current === null ? '' : String(current));
+  const typed = typedCap(value);
+  const changed = typed !== current;
+  return (
+    <div className="space-y-1" data-testid="agent-auto-per-day">
+      <label className="label" htmlFor="agent-auto-per-day-input">
+        {t('autoPerDayLabel')}
+      </label>
+      <input
+        id="agent-auto-per-day-input"
+        className="input"
+        inputMode="numeric"
+        value={value}
+        disabled={!editable || pending}
+        placeholder="—"
+        onChange={(event) => setValue(event.target.value)}
+        data-testid="agent-auto-per-day-input"
+      />
+      <p className="text-xs text-ink-500">{t('autoPerDayHint', { max })}</p>
+      {editable && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || !changed}
+          data-testid="agent-auto-per-day-save"
+          onClick={() => run(() => agentAutoPerDayAction(value))}
+        >
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * The account-protection limits (0148, his «4 hozircha qolsin … o'zgartirish imkoni»): the agent's day and hour
+ * caps, empty = today's default. The holder's or a super_admin's (`setSendCaps`). Controlled.
+ */
+export function SendCapsForm({
+  stored,
+  editable,
+  bounds,
+}: {
+  stored: { dayCap: number | null; hourCap: number | null };
+  editable: boolean;
+  /** The most each box takes (send-caps `SEND_CAP_BOUNDS`) — what a refused number is told. */
+  bounds: { dayMax: number; hourMax: number };
+}) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ dayMax: bounds.dayMax, hourMax: bounds.hourMax });
+  const [values, setValues] = useState({
+    dayCap: stored.dayCap === null ? '' : String(stored.dayCap),
+    hourCap: stored.hourCap === null ? '' : String(stored.hourCap),
+  });
+  const field = (key: keyof typeof values, label: string) => (
+    <div className="space-y-1">
+      <label className="label" htmlFor={`agent-caps-${key}`}>
+        {label}
+      </label>
+      <input
+        id={`agent-caps-${key}`}
+        className="input"
+        inputMode="numeric"
+        value={values[key]}
+        disabled={!editable || pending}
+        placeholder="—"
+        onChange={(event) => setValues((was) => ({ ...was, [key]: event.target.value }))}
+        data-testid={`agent-caps-${key}`}
+      />
+    </div>
+  );
+  return (
+    <div className="space-y-2" data-testid="agent-caps-form">
+      {field('dayCap', t('capsDay'))}
+      {field('hourCap', t('capsHour'))}
+      {editable && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending}
+          data-testid="agent-caps-save"
+          onClick={() => run(() => agentSendCapsAction(values))}
+        >
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * «✅ Tarif to'g'ri» (0148, spec §1.6) — vouches for the China column this page was drawn with (`seen`, its stamp):
+ * a column written since is refused in words. The bot's 14-day notice carries the same press.
+ */
+export function TariffConfirmButton({ seen }: { seen: string }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={pending || seen === ''}
+        data-testid="agent-tariff-confirm"
+        onClick={() => run(() => agentConfirmTariffAction(seen))}
+      >
+        {t('tariffConfirm')}
+      </button>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
 /** «👎 Xato edi» on a reply the machine sent — the bot's op `f`; asks first, because a second one in a week switches the layer off. */
 export function AutoBadButton({ draftId }: { draftId: string }) {
   const t = useTranslations('agentAi');
@@ -728,5 +879,152 @@ export function AutoBadButton({ draftId }: { draftId: string }) {
       </button>
       {error && <span className="text-xs font-semibold text-bad">{error}</span>}
     </span>
+  );
+}
+
+/**
+ * «📝 Tuzatish» on a row whose words are the machine's (0148, spec SPEC-P1-v2 §3): he says where the AI was wrong,
+ * and the save is itself the confirmation — the lesson is read by every chat's prompt from then on. Drawn for
+ * everybody the page admits (a super_admin may teach); only the account holder's lesson on a reply still waiting
+ * also rewrites that reply (`rewrites`, said before he types). The server FIRST, like ✏️: a reply counting down
+ * stops before the box opens. Controlled — a refusal keeps what he typed (#463).
+ */
+export function LessonButton({ draftId, teach, rewrites }: { draftId: string; teach: boolean; rewrites: boolean }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, note, run } = useAction();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  // `teach` false: the reply is being rewritten from the lesson just saved here — no second 📝, and the save's
+  // answer below stays (the page keeps this component mounted for exactly that).
+  return (
+    <div className="space-y-2">
+      {teach && (
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-open"
+          onClick={() => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            run(() => agentLessonOpenAction(draftId), () => setOpen(true));
+          }}
+        >
+          📝 {t('lessonTeach')}
+        </button>
+      )}
+      {teach && open && (
+        <div className="space-y-2" data-testid="agent-lesson-box">
+          <label className="label" htmlFor={`lesson-${draftId}`}>
+            {t('lessonBoxLabel')}
+          </label>
+          <textarea
+            id={`lesson-${draftId}`}
+            className="input h-28"
+            value={text}
+            maxLength={LESSON_LIMITS.maxChars}
+            onChange={(event) => setText(event.target.value)}
+            data-testid="agent-lesson-text"
+          />
+          <p className="text-xs text-ink-500">
+            {t('lessonBoxHint', { max: LESSON_LIMITS.maxChars })} {rewrites ? t('lessonBoxRewrites') : t('lessonBoxTeaches')}
+          </p>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={pending || text.trim() === ''}
+            data-testid="agent-lesson-save"
+            onClick={() =>
+              run(
+                () => agentLessonSaveAction(draftId, text),
+                () => {
+                  setOpen(false);
+                  setText('');
+                },
+              )
+            }
+          >
+            {t('lessonSave')}
+          </button>
+        </div>
+      )}
+      <Feedback error={error} note={note} />
+    </div>
+  );
+}
+
+/**
+ * One lesson on the «Saboqlar» tab: its words corrected (the add box's own refusals), switched off or on, deleted.
+ * Controlled — a refused edit keeps what he typed.
+ */
+export function LessonEditor({ lessonId, text, active, confirmed }: { lessonId: string; text: string; active: boolean; confirmed: boolean }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, note, run } = useAction();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(text);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-edit"
+          onClick={() => {
+            setValue(text);
+            setOpen((was) => !was);
+          }}
+        >
+          ✏️ {t('lessonEdit')}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-toggle"
+          onClick={() => run(() => agentLessonActiveAction(lessonId, !active))}
+        >
+          {active ? t('lessonSwitchOff') : t('lessonSwitchOn')}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost !min-h-8 !px-2 text-xs"
+          disabled={pending}
+          data-testid="agent-lesson-delete"
+          onClick={() => {
+            if (!window.confirm(t('lessonDeleteConfirm'))) return;
+            run(() => agentLessonDeleteAction(lessonId));
+          }}
+        >
+          {t('lessonDelete')}
+        </button>
+      </div>
+      {open && (
+        <div className="space-y-2" data-testid="agent-lesson-edit-box">
+          <textarea
+            className="input h-28"
+            value={value}
+            maxLength={LESSON_LIMITS.maxChars}
+            aria-label={t('lessonBoxLabel')}
+            onChange={(event) => setValue(event.target.value)}
+            data-testid="agent-lesson-edit-text"
+          />
+          <p className="text-xs text-ink-500">{t('lessonBoxHint', { max: LESSON_LIMITS.maxChars })}</p>
+          <button
+            type="button"
+            className="btn-primary"
+            // An unconfirmed lesson (typed in the bot, «✅ Saqlash» never pressed) is confirmed by this save as it stands.
+            disabled={pending || value.trim() === '' || (confirmed && value.trim() === text.trim())}
+            data-testid="agent-lesson-edit-save"
+            onClick={() => run(() => agentLessonEditAction(lessonId, value), () => setOpen(false))}
+          >
+            {t('save')}
+          </button>
+        </div>
+      )}
+      <Feedback error={error} note={note} />
+    </div>
   );
 }

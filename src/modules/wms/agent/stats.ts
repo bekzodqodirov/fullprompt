@@ -36,6 +36,13 @@ export interface StatsDraftRow {
    * gate would grade itself (§18.3). REQUIRED: every reader says.
    */
   autoSent: boolean;
+  /**
+   * Written by a run the OWNER's side started (`agent_runs.trigger` other than `inbound`, spec SPEC-P1-v2 §3.7): a
+   * reply made from his own ✍️ answer or after his «📝 Tuzatish», a hand-back's question. Such a draft is approved
+   * unchanged almost by construction — he has just told the AI what to write — so it is counted apart and never in
+   * the rate, or the «80 %» record would grade his own words. REQUIRED: every reader says.
+   */
+  ownerTriggered: boolean;
 }
 
 export interface StatsCounts {
@@ -62,6 +69,8 @@ export interface AgentStats extends StatsCounts {
   price: number;
   /** Replies the machine pressed by itself («o'zi yuborish») — never in the rate, never decided. */
   autoSent: number;
+  /** Drafts an owner-started run wrote (his answer, his lesson, a hand-back) — never in the rate (§3.7). */
+  ownerTriggered: number;
   byCategory: Record<string, StatsCounts>;
 }
 
@@ -88,6 +97,7 @@ export function agentStats(rows: readonly StatsDraftRow[]): AgentStats {
   let approvedNotSent = 0;
   let price = 0;
   let autoSent = 0;
+  let ownerTriggered = 0;
 
   const add = (row: StatsDraftRow, bucket: Bucket) => {
     total[bucket] += 1;
@@ -100,6 +110,11 @@ export function agentStats(rows: readonly StatsDraftRow[]): AgentStats {
     // First: whatever became of it, the machine pressed it — no decision of his to count.
     if (row.autoSent) {
       autoSent += 1;
+      continue;
+    }
+    // Next: a reply written to his own answer or lesson measures HIM, not the machine — whatever became of it.
+    if (row.ownerTriggered) {
+      ownerTriggered += 1;
       continue;
     }
     if (row.status === 'pending' || row.status === 'editing') {
@@ -136,6 +151,7 @@ export function agentStats(rows: readonly StatsDraftRow[]): AgentStats {
     approvedNotSent,
     price,
     autoSent,
+    ownerTriggered,
     byCategory: Object.fromEntries(Object.entries(byCategory).map(([key, c]) => [key, finish(c)])),
   };
 }

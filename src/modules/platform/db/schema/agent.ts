@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -465,7 +466,8 @@ export const agentAutoConfig = pgTable(
     armedBy: uuid('armed_by').references(() => users.id),
     /** The ⏸ window before a reply goes by itself (his Q3 ⭐ a: 2 minutes). */
     holdSec: integer('hold_sec').notNull().default(120),
-    perDay: integer('per_day').notNull().default(30),
+    /** The auto layer's daily count — NULL = no cap (0148, his «7 chegara qoyma»); a number he types stays bounded. */
+    perDay: integer('per_day'),
     maxChars: integer('max_chars').notNull().default(400),
     minConfidence: numeric('min_confidence', { precision: 3, scale: 2 }).notNull().default('0.80'),
     categories: text('categories').array().notNull().default(sql`'{greeting,qualification,faq,status}'`),
@@ -477,12 +479,13 @@ export const agentAutoConfig = pgTable(
     check('agent_auto_config_singleton_check', sql`${t.id} = 1`),
     check('agent_auto_config_armed_check', sql`(${t.armedAt} IS NULL) = (${t.armedBy} IS NULL)`),
     check('agent_auto_config_hold_check', sql`${t.holdSec} BETWEEN 30 AND 600`),
-    check('agent_auto_config_day_check', sql`${t.perDay} BETWEEN 1 AND 80`),
+    check('agent_auto_config_day_check', sql`${t.perDay} IS NULL OR ${t.perDay} BETWEEN 1 AND 1000`),
     check('agent_auto_config_chars_check', sql`${t.maxChars} BETWEEN 50 AND 1000`),
     check('agent_auto_config_confidence_check', sql`${t.minConfidence} >= 0.5 AND ${t.minConfidence} <= 1`),
     check(
       'agent_auto_config_categories_check',
-      sql`${t.categories} <@ ARRAY['greeting', 'qualification', 'faq', 'status']::text[] AND cardinality(${t.categories}) >= 1`,
+      // 'price' since 0148 (spec §1.5) — the fifth box, admitted here and unticked in the stored row.
+      sql`${t.categories} <@ ARRAY['greeting', 'qualification', 'faq', 'status', 'price']::text[] AND cardinality(${t.categories}) >= 1`,
     ),
   ],
 );
@@ -555,4 +558,63 @@ export const agentAutoChats = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.managerUserId, t.peerId] })],
+);
+
+/**
+ * His lessons (0148, spec §3, his «hato qilgan joyini men aytib ketay va u ozi
+ * organib boradgan bolsin»): an INSTRUCTION to every chat's prompt, never a
+ * number source. Written in the bot it waits for his «✅ Saqlash»
+ * (`confirmedAt` NULL — not in the prompt yet; `confirmToken` the one-time
+ * token that press carries); the page's save confirms at once. It carries no
+ * customer's details (refused at write), so it survives a chat's purge with
+ * `draftId` NULL.
+ */
+export const agentLessons = pgTable(
+  'agent_lessons',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    text: text('text').notNull(),
+    draftId: uuid('draft_id').references(() => agentDrafts.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    active: boolean('active').notNull().default(true),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    confirmToken: text('confirm_token'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('agent_lessons_text_check', sql`length(btrim(${t.text})) > 0 AND length(${t.text}) <= 500`),
+    check('agent_lessons_token_check', sql`${t.confirmToken} IS NULL OR ${t.confirmedAt} IS NULL`),
+    index('agent_lessons_prompt_idx')
+      .on(t.createdAt.desc(), t.id.desc())
+      .where(sql`${t.active} AND ${t.confirmedAt} IS NOT NULL`),
+  ],
+);
+
+/**
+ * The account-protection limits he may edit (0148, spec §5.2, his «4 hozircha
+ * qolsin … o'zgartirish imkoni») and his ✅ on the China tariff (§1.6) — a
+ * singleton SIDE table: a column on agent_config or agent_auto_config would be
+ * a 42703 in every whole-row reader one migration behind. NULL = today's
+ * constant; the bounds are the human queue's own (send-caps.ts says them).
+ */
+export const agentSendCaps = pgTable(
+  'agent_send_caps',
+  {
+    id: smallint('id').primaryKey().default(1),
+    dayCap: integer('day_cap'),
+    hourCap: integer('hour_cap'),
+    tariffConfirmedAt: timestamp('tariff_confirmed_at', { withTimezone: true }),
+    /** The website table's `validThrough` whose 14-day notice was claimed — once per expiry (§1.6). */
+    tariffNoticeFor: date('tariff_notice_for', { mode: 'string' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by').references(() => users.id),
+  },
+  (t) => [
+    check('agent_send_caps_singleton_check', sql`${t.id} = 1`),
+    check('agent_send_caps_day_check', sql`${t.dayCap} IS NULL OR ${t.dayCap} BETWEEN 1 AND 200`),
+    check('agent_send_caps_hour_check', sql`${t.hourCap} IS NULL OR ${t.hourCap} BETWEEN 1 AND 100`),
+  ],
 );

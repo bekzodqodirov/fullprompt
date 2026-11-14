@@ -25,7 +25,7 @@ import {
 import { AUTO_REFUSAL_WORDS } from '@/modules/wms/agent/auto-gate';
 import { FORCED_OFF_REASONS } from '@/modules/wms/agent/forced-off';
 import { AUTO_CONFIG_WORDS, AUTO_FEEDBACK_WORDS, STOP_AUTO_WORDS, copyRang, countdownMayRide, type AutoCardState } from '@/modules/wms/agent/auto-send';
-import { autoArmedWords } from '@/modules/wms/agent/bot-door';
+import { autoArmedWords, autoTodayWords } from '@/modules/wms/agent/bot-door';
 import { cardExtra, POLICY_WORDS } from '@/modules/wms/agent/card';
 import { renderDraftCardFull, type DraftRow } from '@/modules/wms/agent/card-io';
 
@@ -340,10 +340,28 @@ describe('words — every code said, never printed', () => {
     expect(uz.agentAi.errors.auto_fb_not_found).not.toBe(uz.agentAi.errors.auto_fb_not_sent);
   });
 
+  const FOUR = ['greeting', 'qualification', 'faq', 'status'];
+
   it('arming says the numbers the press keeps', () => {
-    expect(autoArmedWords({ holdSec: 120, perDay: 30 })).toContain('2 daqiqa');
-    expect(autoArmedWords({ holdSec: 90, perDay: 30 })).toContain('90 soniya');
-    expect(autoArmedWords({ holdSec: 120, perDay: 30 })).toContain('30 ta');
+    expect(autoArmedWords({ holdSec: 120, perDay: 30, categories: FOUR })).toContain('2 daqiqa');
+    expect(autoArmedWords({ holdSec: 90, perDay: 30, categories: FOUR })).toContain('90 soniya');
+    expect(autoArmedWords({ holdSec: 120, perDay: 30, categories: FOUR })).toContain('30 ta');
+  });
+
+  it('…and «no daily count» as such, never «at most null a day» (0148, his «7 chegara qoyma»)', () => {
+    const words = autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR });
+    expect(words).toContain('Kunlik chegara yo‘q');
+    expect(words).not.toMatch(/null|ko‘pi bilan\s+ta/u);
+    expect(autoTodayWords(7, null)).toBe('7, chegara yo‘q');
+    expect(autoTodayWords(7, 30)).toBe('7/30');
+  });
+
+  it('«the price stays yours» is said only while the price box is not ticked — never a promise the next reply breaks', () => {
+    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR })).toContain('narx, shikoyat va savolli javoblar har doim sizga qoladi');
+    const priced = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price'] });
+    expect(priced).not.toContain('narx, shikoyat');
+    expect(priced).toContain('shikoyat va savolli javoblar har doim sizga qoladi');
+    expect(priced).toContain('o‘zi ketadi');
   });
 });
 

@@ -15,6 +15,7 @@ const row = (over: Partial<StatsDraftRow>): StatsDraftRow => ({
   outboxStatus: 'sent',
   category: 'faq',
   autoSent: false,
+  ownerTriggered: false,
   ...over,
 });
 

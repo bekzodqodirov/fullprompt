@@ -316,6 +316,10 @@ export function cardExtra(draft: {
   live: boolean;
   kind: string;
   auto?: CardAutoPayload | null;
+  /** A question the MODEL put to him (`needs_owner`, no forcing rule): the card offers «✍️ Savolga javob». */
+  ask?: boolean;
+  /** The card's words are the machine's (`cardTeaches`): it offers «📝 Tuzatish» (spec SPEC-P1-v2 §3.1). */
+  teach?: boolean;
 }) {
   return {
     draftId: draft.id,
@@ -323,6 +327,12 @@ export function cardExtra(draft: {
     blocked: draft.blocked,
     live: draft.live,
     kind: draft.kind,
+    // Always written (spec SPEC-P1-v2 §2.2), like the auto keys: `createDraft` re-points an old card's row at a
+    // newer draft by merging the payload, and a key left out would keep the question's ✍️ under a reply.
+    ask: draft.live && draft.ask === true,
+    // Always written too (§3.1): 📝 is drawn on a card that is no longer live as well (a reply that went, the
+    // «remember this answer» card), so it is its own key and never read off `live`.
+    teach: draft.teach === true,
     autoAt: draft.auto?.autoAt ?? null,
     autoSent: draft.auto?.autoSent === true,
     autoBad: draft.auto?.autoBad === true,
@@ -330,6 +340,44 @@ export function cardExtra(draft: {
   };
 }
 
+
+/**
+ * Does the card offer «✍️ Savolga javob» (spec SPEC-P1-v2 §2.2)? A live question the model raised itself on a REPLY —
+ * never one a forcing rule put to him (rail's price, the flight's address: `policy.forcedQuestion`), whose answer is
+ * his ✏️ text verbatim; and never on a hand-back or a price draft: the redraft is written from his answer and the
+ * chat alone, and would lose the VED's reason (or his own figure) the draft it supersedes was made of. ONE rule for
+ * `createDraft`, `refreshAgentCard` and the press that answers it (decide `answerQuestion`).
+ */
+export function cardAsks(d: { status: string; kind: string; needsOwner: boolean; policy: unknown }): boolean {
+  const forced = ((d.policy ?? {}) as { forcedQuestion?: unknown }).forcedQuestion;
+  return (d.status === 'pending' || d.status === 'editing') && d.kind === 'reply' && d.needsOwner && (forced === undefined || forced === null);
+}
+
+/**
+ * Does the card offer «📝 Tuzatish» (spec SPEC-P1-v2 §3.1)? Wherever the words on it are the MACHINE's — a reply
+ * waiting for his ✅ (counting down or not), one that was approved and went as the machine wrote it — and on the
+ * card that offers to remember his answer to a question the machine should not have had to ask. Never on a 💵 price
+ * (his own figure, rendered by code), never where his ✏️ words replaced the machine's, and never while the AI is
+ * already rewriting: from his ✍️ answer (card-io `answeredNow`, asked by the card's writer) or from a lesson
+ * (`lessonRedraft`). ONE rule for `createDraft` and `refreshAgentCard`.
+ */
+/**
+ * Is the AI rewriting this reply from his lesson right now (§3.4) — the mark its rewrite must find, on a reply still
+ * waiting whose words are still the machine's? ONE rule for the card's «📝 Saboq saqlandi…» line (card-io
+ * `statusLine`) and for the page's row, which keeps the 📝's place mounted while it holds (web-page `lessonRewriting`).
+ */
+export function lessonRewritingNow(d: { status: string; finalBody: string | null; policy: unknown }): boolean {
+  return d.status === 'pending' && d.finalBody === null && Boolean(((d.policy ?? {}) as { lessonRedraft?: unknown }).lessonRedraft);
+}
+
+export function cardTeaches(d: { status: string; kind: string; finalBody: string | null; needsOwner: boolean; policy: unknown }): boolean {
+  if (d.kind === 'price') return false;
+  if (d.status === 'pending' || d.status === 'editing') {
+    return d.finalBody === null && !((d.policy ?? {}) as { lessonRedraft?: unknown }).lessonRedraft;
+  }
+  // Approved: the machine's words — or his own answer to the machine's question (the `kbAsk` card).
+  return d.status === 'approved' && (d.finalBody === null || d.needsOwner);
+}
 
 /** A card written later than this after the customer's message says how long he has waited. */
 export const LATE_CARD_MS = 3 * 60_000;
