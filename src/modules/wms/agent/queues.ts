@@ -121,6 +121,11 @@ export interface AgentCalcAnswerJob {
   sourceKey: string;
   /** 0 (absent) from the VED's press; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
   attempt?: number;
+  /**
+   * ISO — the price first waited behind another live reply in the chat (calc-loop `holdCalcAnswer`, fix pass 5): a
+   * RECHECK, re-queued until that reply is decided, under the same source key. Absent on the VED's own press.
+   */
+  heldSince?: string;
 }
 
 /** A sent agent reply to settle on the card (§2.4, §3.2) — the row is re-read; only `status = 'sent'` acts. */

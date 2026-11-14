@@ -187,9 +187,10 @@ const STALE_WORDS: Record<
   // His lesson was saved on this card and the AI rewrote the reply on a card of its own (§3.4, drafts `createDraft`
   // with `redrafts`) — never «↪️ Mijoz yana yozdi», which is false here.
   owner_lesson: '📝 Saboq bo‘yicha AI qayta yozdi (yangi kartada).',
-  // The VED's newer word on the same job priced it again (calc-loop `handleCalcAnswer`, drafts `calcChain`, fix pass 4)
-  // — the customer wrote nothing.
-  calc_answer: '🧮 VED yangi javob berdi — narx yangi kartada qayta yozildi.',
+  // The VED's word on the job was priced in this reply's place (calc-loop `handleCalcAnswer`, drafts `calcChain`): the
+  // chain's own earlier price card (fix pass 4), or the machine's reply drafted before the answer (fix pass 5) — the
+  // customer wrote nothing.
+  calc_answer: '🧮 VED javob berdi — AI narx bilan yangi javob yozdi (yangi kartada), bu javob yuborilmaydi.',
   // His 💵 took this card's place (calc-loop `priceDraftFromText`, fix pass 4) — the customer wrote nothing.
   owner_price: '💵 Narxni o‘zingiz berdingiz — bu javob yuborilmadi (narxingiz yangi kartada).',
 };

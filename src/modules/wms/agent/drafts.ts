@@ -71,10 +71,13 @@ export type WriteDraftResult =
    */
   | { kind: 'question_gone'; draftId: string }
   /**
-   * The VED answer's run (`calcChain`) found ANOTHER reply live in the chat — an ordinary reply waiting for his ✅,
-   * another job's price — and wrote nothing over it (fix pass 4): the caller tells him, with the 💵 door.
+   * The VED answer's run (`calcChain`) found ANOTHER reply live in the chat that it may not take over (fix pass 4;
+   * `calcAnswerOverLive` 'held'): nothing written over it. The caller re-queues the price for when that reply is
+   * decided (fix pass 5) and tells him once, with the 💵 door.
    */
-  | { kind: 'other_live'; draftId: string };
+  | { kind: 'other_live'; draftId: string }
+  /** …or a live reply that already states this very anchor's price (fix pass 5): nothing written, nothing to say. */
+  | { kind: 'already_priced'; draftId: string };
 
 /** Everything a new draft row carries — the machine's reply, a price, a hand-back question. */
 export interface NewDraft {
@@ -124,14 +127,14 @@ export interface NewDraft {
    */
   redrafts?: { draftId: string; lessonId: string; decidedBy: string } | null;
   /**
-   * The VED answer's run (SPEC-P2-v2 §2.3; fix pass 4): the requests of the chain it prices. Nothing the customer
-   * wrote started this run, so it supersedes NO reply the chat holds — only the machine's own earlier price card of
-   * this very chain (`calcAnswerMaySupersede`), with words of its own (`stale: 'calc_answer'`). Any other live reply
-   * — an ordinary one waiting for his ✅, another job's price — and nothing is written (`other_live`): taken over, it
-   * would never go and its card would say «Mijoz yana yozdi», which nobody wrote. Asked under the chat's lock, so a
-   * reply drafted while the model worked is seen too.
+   * The VED answer's run (SPEC-P2-v2 §2.3; fix passes 4-5): the chain it prices, the anchor and the moment the VED
+   * answered. Nothing the customer wrote started this run, so the chat's live reply is asked `calcAnswerOverLive`
+   * under the chat's lock (a reply drafted while the model worked is seen too): the chain's own earlier price card, or
+   * the machine's ordinary reply drafted BEFORE the answer, is replaced with words of its own (`stale: 'calc_answer'`)
+   * — never «Mijoz yana yozdi», which nobody wrote; a reply already stating this anchor's price, and nothing is
+   * written (`already_priced`); anything else, and nothing is written (`other_live`) — the caller re-queues.
    */
-  calcChain?: readonly string[] | null;
+  calcChain?: CalcChainOver | null;
   /**
    * Why the live reply this one supersedes stopped standing, when the CUSTOMER did not write again (fix pass 4): his
    * 💵 (`owner_price`, calc-loop `priceDraftFromText`) — its card then says he priced it, never «Mijoz yana yozdi».
@@ -139,15 +142,67 @@ export interface NewDraft {
   supersedeStale?: 'owner_price' | null;
 }
 
+/** The run's key for one standing anchor of a chain (§2.3): a later seal is its own key, a redelivery is the same. */
+export function calcAnswerSourceKey(mark: { requestId: string; anchor: 'seal' | 'answer'; anchorId: string }): string {
+  return `calc:${mark.requestId}:${mark.anchor === 'seal' ? mark.anchorId : 'answer'}`;
+}
+
+/** What the VED answer's run prices, as `calcAnswerOverLive` and the draft's own transaction ask it (fix pass 5). */
+export interface CalcChainOver {
+  /** Every request of the chain. */
+  members: readonly string[];
+  /** The standing anchor's key (`calcAnswerSourceKey`, the job's own): a reply that states it already prices it. */
+  anchorKey: string | null;
+  /** When the VED answered or sealed (the request's `completed_at`); null = unknown — no ordinary reply is taken over. */
+  answeredAt: Date | null;
+}
+
+/** The live reply as `calcAnswerOverLive` reads it — the columns the draft's transaction selects. */
+export interface LiveReplyShape {
+  kind: string | null;
+  policy: unknown;
+  finalBody?: string | null;
+  actions?: unknown;
+  needsOwner?: boolean | null;
+  offerId?: string | null;
+  createdAt?: Date | null;
+}
+
+/** The marks a run that ASKED for something of his leaves on the draft — his answer, his lesson, a question to him. */
+const HIS_MARKS = ['answering', 'ownerAnswer', 'fromAnswer', 'lessonRedraft', 'fromLesson', 'forcedQuestion'] as const;
+
 /**
- * May the VED answer's run replace this live reply (fix pass 4)? Only the machine's own earlier price card of the same
- * chain — a reply marked `policy.calcAnswer` for one of its requests, still in the machine's words. Pure.
+ * What the VED answer's run may do with the chat's live reply (SPEC-P2-v2 §2.3; check send-0 — fix pass 4 held every
+ * other reply, and the price was then never written at all once that reply was decided). Pure; asked before the model
+ * is paid AND inside the draft's transaction under the chat's lock:
+ *
+ *   already_priced — it already states THIS anchor's price (`memory.calcPrices`, an inbound run's `calc_price`):
+ *                    nothing to write, and nothing to tell him — never «💵 bering» over a price already on its way;
+ *   own_card       — the machine's own earlier price card of the same chain (`policy.calcAnswer`): replaced;
+ *   takes_over     — the machine's ORDINARY reply drafted before the VED answered («javob kelishi bilan aytaman»):
+ *                    the run reads the same burst and answers it with the price, so it takes that reply's place. Only
+ *                    while it is plainly the machine's words: no ✏️ text, no act, no question to him, no offer, no
+ *                    truck figure, no other job's price, no mark of his answer or his lesson;
+ *   held           — anything else (his 💵, a hand-back, another job's price, a reply drafted after the answer — its run
+ *                    was offered `calc_price` and answered otherwise): the caller waits for it to be decided.
  */
-export function calcAnswerMaySupersede(live: { kind: string | null; policy: unknown; finalBody?: string | null }, chain: readonly string[]): boolean {
-  if (live.kind !== 'reply' || (live.finalBody ?? null) !== null) return false;
-  const mark = live.policy !== null && typeof live.policy === 'object' ? (live.policy as { calcAnswer?: unknown }).calcAnswer : undefined;
-  const requestId = mark !== null && typeof mark === 'object' ? (mark as { requestId?: unknown }).requestId : undefined;
-  return typeof requestId === 'string' && chain.includes(requestId);
+export function calcAnswerOverLive(live: LiveReplyShape, over: CalcChainOver): 'already_priced' | 'own_card' | 'takes_over' | 'held' {
+  const policy = live.policy !== null && typeof live.policy === 'object' ? (live.policy as Record<string, unknown>) : {};
+  const memory = policy.memory !== null && typeof policy.memory === 'object' ? (policy.memory as Record<string, unknown>) : {};
+  const marks = (Array.isArray(memory.calcPrices) ? memory.calcPrices : []).filter(
+    (m): m is { requestId: string; anchor: 'seal' | 'answer'; anchorId: string } =>
+      m !== null && typeof m === 'object' && typeof (m as { requestId?: unknown }).requestId === 'string',
+  );
+  if (over.anchorKey !== null && marks.some((m) => calcAnswerSourceKey(m) === over.anchorKey)) return 'already_priced';
+  if (live.kind !== 'reply' || (live.finalBody ?? null) !== null) return 'held';
+  const own = policy.calcAnswer !== null && typeof policy.calcAnswer === 'object' ? (policy.calcAnswer as { requestId?: unknown }).requestId : undefined;
+  if (typeof own === 'string') return over.members.includes(own) ? 'own_card' : 'held';
+  if (over.answeredAt === null || !live.createdAt || !(live.createdAt.getTime() < over.answeredAt.getTime())) return 'held';
+  if ((Array.isArray(live.actions) && live.actions.length > 0) || live.needsOwner === true || (live.offerId ?? null) !== null) return 'held';
+  if (HIS_MARKS.some((k) => policy[k] !== undefined && policy[k] !== null)) return 'held';
+  if (marks.some((m) => !over.members.includes(m.requestId))) return 'held';
+  if (Array.isArray(memory.estimates) && memory.estimates.length > 0) return 'held';
+  return 'takes_over';
 }
 
 const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
@@ -164,7 +219,17 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
   let closeOld = false as boolean;
   const out = await db.transaction(async (tx): Promise<WriteDraftResult> => {
     const [live] = await tx
-      .select({ id: agentDrafts.id, status: agentDrafts.status, kind: agentDrafts.kind, policy: agentDrafts.policy, finalBody: agentDrafts.finalBody })
+      .select({
+        id: agentDrafts.id,
+        status: agentDrafts.status,
+        kind: agentDrafts.kind,
+        policy: agentDrafts.policy,
+        finalBody: agentDrafts.finalBody,
+        actions: agentDrafts.actions,
+        needsOwner: agentDrafts.needsOwner,
+        offerId: agentDrafts.offerId,
+        createdAt: agentDrafts.createdAt,
+      })
       .from(agentDrafts)
       .where(
         and(
@@ -174,6 +239,8 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
         ),
       )
       .for('update');
+    // The VED answer's run: what it may do with the live reply, asked here under the chat's lock (fix pass 5).
+    const calcOver = live && n.calcChain ? calcAnswerOverLive(live, n.calcChain) : null;
     if (n.answers) {
       // The question waits for THIS answer, or the redraft writes nothing: a ✅, ❌ or 🙋 on it, his ✏️ words, a
       // newer answer, the sweep handing it back — each decided it first.
@@ -238,10 +305,13 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       closeOld = true;
     } else if (live?.status === 'editing') {
       return { kind: 'editing', draftId: live.id };
-    } else if (live && n.calcChain && !calcAnswerMaySupersede(live, n.calcChain)) {
+    } else if (live && calcOver === 'already_priced') {
+      return { kind: 'already_priced', draftId: live.id };
+    } else if (live && calcOver === 'held') {
       return { kind: 'other_live', draftId: live.id };
     } else if (live) {
-      // A reason of its own when the customer did not write: the VED's newer word on the same chain, or his 💵.
+      // A reason of its own when the customer did not write: the VED's word on the chain (its own earlier card, or the
+      // machine's reply drafted before the answer, which the price takes the place of — fix pass 5), or his 💵.
       const stale = n.calcChain ? 'calc_answer' : (n.supersedeStale ?? null);
       await tx
         .update(agentDrafts)
@@ -438,7 +508,7 @@ export async function writeDraft(
     answers?: NewDraft['answers'];
     /** His lesson's rewrite: the reply it replaces (`NewDraft.redrafts`). */
     redrafts?: NewDraft['redrafts'];
-    /** The VED answer's run: the chain it prices — it takes over no other reply (`NewDraft.calcChain`). */
+    /** The VED answer's run: the chain it prices — what it may take over (`NewDraft.calcChain`). */
     calcChain?: NewDraft['calcChain'];
   },
 ): Promise<WriteDraftResult> {

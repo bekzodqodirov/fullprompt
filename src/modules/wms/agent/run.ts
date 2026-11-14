@@ -26,7 +26,7 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecs
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
+import { draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
 import type { ForcedQuestion } from './types';
@@ -1829,11 +1829,12 @@ export async function runOwnerTriggered(
      */
     calcAnswer?: { requestId: string } | null;
     /**
-     * The VED answer's own run (`trigger: 'calc_answer'`): every request of the chain it prices. The draft then takes
-     * over NO other reply the chat holds (drafts `NewDraft.calcChain`, fix pass 4) — only this chain's own earlier
-     * price card. Absent on a rewrite of such a card (his ✍️ answer, his 📝 lesson), which replaces its own card by id.
+     * The VED answer's own run (`trigger: 'calc_answer'`): the chain it prices, its anchor and the answer's moment. The
+     * draft then takes over only what `calcAnswerOverLive` allows (drafts `NewDraft.calcChain`, fix passes 4-5) — this
+     * chain's own earlier price card, or the machine's ordinary reply drafted before the answer. Absent on a rewrite of
+     * such a card (his ✍️ answer, his 📝 lesson), which replaces its own card by id.
      */
-    calcChain?: readonly string[] | null;
+    calcChain?: CalcChainOver | null;
   },
   deps: RunDeps = {},
 ): Promise<RunResult> {
@@ -2009,9 +2010,10 @@ export async function runOwnerTriggered(
       redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
       calcChain: input.calcChain ?? null,
     });
-    const stood =
-      written.kind === 'editing' ? 'editing' : written.kind === 'question_gone' ? 'question_gone' : written.kind === 'other_live' ? 'other_live' : null;
-    settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };
+    const stood = written.kind === 'written' ? null : written.kind;
+    // A VED answer's price held behind another live reply gives its source key back (fix pass 5): the price is re-queued
+    // until that reply is decided, under the same key — still one draft per standing anchor. The bill stays on the row.
+    settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood, ...(stood === 'other_live' ? { sourceKey: null } : {}) };
     return stood !== null ? { outcome: 'stood_down', reason: stood } : { outcome: 'draft', draftId: written.draftId, blocked: !policy.ok };
   } catch (err) {
     logger.error({ err, runId }, '[agent] owner-triggered run failed');

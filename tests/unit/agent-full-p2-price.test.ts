@@ -5,6 +5,7 @@ import { autoVerdict, AUTO_REFUSALS, type AutoGateInput } from '@/modules/wms/ag
 import { cardLineOf, centsOf, markupPrice, ruleString, ruleWords, workedExample, type MarkupRule } from '@/modules/wms/agent/calc-markup';
 import { CALC_PRICE_REFUSAL_WORDS, markupRuleOf, statedCalcMarks, storedMarksOf, type CalcPriceMark } from '@/modules/wms/agent/calc-price';
 import { calcAnswerSourceKey, calcAnswerWhy } from '@/modules/wms/agent/calc-loop';
+import { calcAnswerOverLive } from '@/modules/wms/agent/drafts';
 import { checkAgentReply, WAREHOUSE_SENTENCES, type PolicyInput } from '@/modules/wms/agent/policy';
 import { CALC_PRICE_RULE, chatBlock, stableHead } from '@/modules/wms/agent/prompt';
 import { calcCardLineOf, memoryFor, type ComposeReply } from '@/modules/wms/agent/run';
@@ -459,5 +460,60 @@ describe('the VED answer’s run (§2.3)', () => {
     expect(calcAnswerWhy({ outcome: 'stood_down', reason: 'editing' })).toMatch(/✏️/u);
     expect(calcAnswerWhy({ outcome: 'stood_down', reason: 'duplicate' })).toBeNull();
     expect(calcAnswerWhy({ outcome: 'draft', draftId: 'd', blocked: false })).toBeNull();
+  });
+});
+
+describe('fix pass 5 — what the VED answer’s run does beside a reply the chat already holds (check send-0)', () => {
+  const answeredAt = new Date('2026-11-10T10:00:00Z');
+  const before = new Date('2026-11-10T09:50:00Z');
+  const after = new Date('2026-11-10T10:00:05Z');
+  const over = { members: ['r1', 'r0'], anchorKey: 'calc:r1:answer', answeredAt };
+  const machine = (p: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+    kind: 'reply',
+    policy: { memory: { calcPrices: [], estimates: [] }, ...p },
+    finalBody: null,
+    actions: [],
+    needsOwner: false,
+    offerId: null,
+    createdAt: before,
+    ...extra,
+  });
+  const mark = (requestId: string, anchor: 'answer' | 'seal', anchorId: string) => ({ requestId, section: 'rastamojka', anchor, anchorId, rule: 'percent:10', total: 1359 });
+
+  it('a reply that already states THIS anchor’s price is «already priced» — whatever else it is', () => {
+    expect(calcAnswerOverLive(machine({ memory: { calcPrices: [mark('r1', 'answer', 'r1')] } }, { createdAt: after }), over)).toBe('already_priced');
+    expect(calcAnswerOverLive(machine({ memory: { calcPrices: [mark('r1', 'answer', 'r1')] } }, { finalBody: 'o‘zim' }), over)).toBe('already_priced');
+    // The same chain at another anchor (an older seal) is not this price.
+    expect(calcAnswerOverLive(machine({ memory: { calcPrices: [mark('r0', 'seal', 'v1')] } }), over)).toBe('takes_over');
+  });
+
+  it('the chain’s own earlier price card is replaced; another job’s price card never', () => {
+    expect(calcAnswerOverLive(machine({ calcAnswer: { requestId: 'r0' } }, { createdAt: after }), over)).toBe('own_card');
+    expect(calcAnswerOverLive(machine({ calcAnswer: { requestId: 'rX' } }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({ memory: { calcPrices: [mark('rX', 'answer', 'rX')] } }), over)).toBe('held');
+  });
+
+  it('an ordinary machine reply drafted BEFORE the VED answered is taken over; after it, or with the moment unknown, it is held', () => {
+    expect(calcAnswerOverLive(machine(), over)).toBe('takes_over');
+    expect(calcAnswerOverLive(machine({}, { createdAt: after }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({}, { createdAt: answeredAt }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine(), { ...over, answeredAt: null })).toBe('held');
+  });
+
+  it('never his words, his 💵, a hand-back, an act, a question to him, an offer, a truck figure or a rewrite of his', () => {
+    expect(calcAnswerOverLive(machine({}, { finalBody: 'o‘zim yozdim' }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({}, { kind: 'price' }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({}, { kind: 'hand_back' }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({}, { actions: [{ type: 'calc_submit' }] }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({}, { needsOwner: true }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({}, { offerId: '00000000-0000-0000-0000-000000000001' }), over)).toBe('held');
+    expect(calcAnswerOverLive(machine({ memory: { calcPrices: [], estimates: [{ total: 900 }] } }), over)).toBe('held');
+    for (const key of ['answering', 'ownerAnswer', 'fromAnswer', 'lessonRedraft', 'fromLesson', 'forcedQuestion']) {
+      expect(calcAnswerOverLive(machine({ [key]: { x: 1 } }), over), key).toBe('held');
+    }
+  });
+
+  it('«already priced» is said to nobody — the waiting card already carries the price, never «💵 bering»', () => {
+    expect(calcAnswerWhy({ outcome: 'stood_down', reason: 'already_priced' })).toBeNull();
   });
 });

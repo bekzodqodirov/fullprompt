@@ -84,7 +84,7 @@ import { AGENT_SEAT_KEY, agentSeatUserId } from '@/modules/platform/settings/age
 import { getSetting, setSetting, SETTINGS_AUDIT_ID } from '@/modules/platform/settings/service';
 import { handleAfterSent } from '@/modules/wms/agent/after-sent';
 import { pressDueAutos, readAutoConfig, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
-import { announceAgentCalc, handleCalcAnswer, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
+import { announceAgentCalc, CALC_HELD_RECHECK_S, handleCalcAnswer, priceDraftFromText } from '@/modules/wms/agent/calc-loop';
 import { CALC_PRICE_FACTS_UNREAD, calcPriceFor, calcPriceGateFacts, calcPricesStand, MARKUP_CONFIRMED_KEY } from '@/modules/wms/agent/calc-price';
 import { renderDraftCard } from '@/modules/wms/agent/card-io';
 import { AgentConfigError, confirmCalcMarkup, readAgentConfig, setCalcMarkup, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
@@ -92,7 +92,7 @@ import { decideDraft } from '@/modules/wms/agent/decide';
 import { draftOfferStands } from '@/modules/wms/agent/drafts';
 import { agentRowById, applyAgentOutcome, sendFactsFor } from '@/modules/wms/agent/outbox-store';
 import { handleInbound, CALC_PRICE_UNSAID } from '@/modules/wms/agent/run';
-import { agentSendVerdict, runAgentStep, type AgentTelegram, type HeadMessage } from '@/modules/wms/agent/send-step';
+import { agentSendVerdict, nextTashkentMorning, runAgentStep, type AgentTelegram, type HeadMessage } from '@/modules/wms/agent/send-step';
 import { isNudge } from '@/modules/wms/agent/worthy';
 import { JOB_AGENT_CALC_ANSWER, type AgentCalcAnswerJob } from '@/modules/wms/agent/queues';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
@@ -1718,7 +1718,9 @@ describe('fix pass 4 — the VED answer’s run never takes over another reply; 
     expect(after.status).toBe('pending');
     expect(renderDraftCard(after, null)).not.toContain('Mijoz yana yozdi');
     const said = await sayingOf(c.requestId);
-    expect(said.at(-1)!.text).toContain('VED narxini yozmadi');
+    // Held, not dropped (fix pass 5): said once, and the price re-queued for when that reply is decided.
+    expect(said.at(-1)!.text).toContain('VED narxini hali yozmadi');
+    expect(queued.filter((x) => x.name === JOB_AGENT_CALC_ANSWER)).toHaveLength(1);
     expect(said.at(-1)!.text).toContain('✅ kutayotgan boshqa javob');
     expect(said.at(-1)!.priceable).toBe(true);
     // His ✅ on the ordinary reply still goes, as at be4c5978.
@@ -1781,7 +1783,7 @@ describe('fix pass 4 — the VED answer’s run never takes over another reply; 
     expect(old.status).toBe('superseded');
     expect((old.policy as { stale?: string }).stale).toBe('calc_answer');
     const card = renderDraftCard(old, null);
-    expect(card).toContain('VED yangi javob berdi');
+    expect(card).toContain('VED javob berdi');
     expect(card).not.toContain('mijoz yana yozdi');
   });
 
@@ -1975,5 +1977,235 @@ describe('fix pass 4 — the VED answer’s run never takes over another reply; 
     const card = renderDraftCard(old, null);
     expect(card).toContain('Narxni o‘zingiz berdingiz');
     expect(card).not.toContain('mijoz yana yozdi');
+  });
+});
+
+describe('fix pass 5 — the VED answer’s price is never dropped for good beside a reply the chat holds (check send-0)', () => {
+  const status = (text: string) => ({ ...compose(text), input: { ...compose(text).input, category: 'status' } });
+  const faq = (text: string) => ({ ...compose(text), input: { ...compose(text).input, category: 'faq' } });
+  const calcJobs = () => queued.filter((x) => x.name === JOB_AGENT_CALC_ANSWER);
+  const told = async (requestId: string) =>
+    (
+      await db
+        .select({ p: notifications.payload })
+        .from(notifications)
+        .where(and(eq(notifications.userId, holderId), eq(notifications.type, 'AgentCalcAnswered'), sql`${notifications.payload}->>'requestId' = ${requestId}`))
+    ).map((r) => r.p as { text: string; priceable?: boolean });
+  const jobOf = (requestId: string, peer: bigint): AgentCalcAnswerJob => ({
+    managerUserId: holderId,
+    peerId: String(peer),
+    requestId,
+    sourceKey: `calc:${requestId}:answer`,
+  });
+  /** An answered chain whose customer asked «where is your warehouse?» AFTER the answer, the machine’s reply waiting. */
+  async function heldChain() {
+    const c = await answeredChain();
+    const q = await customerSays(c.chat, 'Ombor manzilingiz qayerda?', new Date(T0.getTime() - 5 * 60_000));
+    const inb = await handleInbound(
+      { managerUserId: holderId, peerId: String(c.chat.peer), anchorTgMessageId: String(q), origin: 'live' },
+      { callModel: scripted([faq(`Omborimiz Ivuda, ${letters(Number(SUFFIX))}${letters(++replySeq)}.`)]), now: () => new Date(T0.getTime() - 4 * 60_000) },
+    );
+    expect(inb, JSON.stringify(inb)).toMatchObject({ outcome: 'draft' });
+    return { ...c, held: (inb as { draftId: string }).draftId };
+  }
+
+  it('the machine’s «javob kelishi bilan aytaman», drafted BEFORE the VED answered: the price run takes its place, answering the same burst (MAIN)', async () => {
+    const leadId = await freshLead();
+    const chat = await chatOn(leadId);
+    const requestId = await request(leadId, 'rastamojka', chat);
+    await submitted(chat, requestId);
+    const q = await customerSays(chat, 'Hisob qachon chiqadi?', new Date(T0.getTime() - 10 * 60_000));
+    const inb = await handleInbound(
+      { managerUserId: holderId, peerId: String(chat.peer), anchorTgMessageId: String(q), origin: 'live' },
+      { callModel: scripted([status(`VEDda hisoblanyapti, javob kelishi bilan aytaman, ${letters(Number(SUFFIX))}${letters(++replySeq)}.`)]), now: () => new Date(T0.getTime() - 9 * 60_000) },
+    );
+    expect(inb, JSON.stringify(inb)).toMatchObject({ outcome: 'draft' });
+    const promise = (inb as { draftId: string }).draftId;
+    // The promise was drafted five minutes before the VED pressed «Готово».
+    await db.update(agentDrafts).set({ createdAt: new Date(Date.now() - 5 * 60_000) }).where(eq(agentDrafts.id, promise));
+    await answered(requestId, '1234.56', { ago: 60_000 });
+    queued.length = 0;
+    expect(await announceAgentCalc(requestId, 'done', { amountText: '1 234,56 $' }, { now: T0 })).toBe(true);
+    expect(calcJobs()).toHaveLength(1);
+    const seen: ModelRequest[] = [];
+    const out = await handleCalcAnswer(calcJobs()[0]!.data as AgentCalcAnswerJob, { callModel: scripted(PRICED('1359'), seen), now: () => T0 });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const priced = await draftOf((out as { draftId: string }).draftId);
+    expect(priced.proposedBody).toContain('1359');
+    expect((priced.policy as { calcAnswer?: { requestId: string } }).calcAnswer?.requestId).toBe(requestId);
+    // The run read the customer’s question and was told to answer it too — the promise it replaces answered it.
+    expect(JSON.stringify(seen[0])).toContain('Hisob qachon chiqadi?');
+    expect(JSON.stringify(seen[0])).toContain('javobsiz xabarlariga ham javob ber');
+    const old = await draftOf(promise);
+    expect(old.status).toBe('superseded');
+    expect((old.policy as { stale?: string }).stale).toBe('calc_answer');
+    const card = renderDraftCard(old, null);
+    expect(card).toContain('VED javob berdi');
+    expect(card).not.toMatch(/mijoz yana yozdi/iu);
+    expect((await told(requestId)).some((s) => s.text.includes('yozmadi'))).toBe(false);
+  });
+
+  it('a waiting reply that already states THIS job’s price: the run stands down quietly — never «💵 bering» over a price already on its way (P4)', async () => {
+    const c = await answeredChain();
+    const q = await customerSays(c.chat, 'Narx qancha bo‘ldi?', new Date(T0.getTime() - 5 * 60_000));
+    const inb = await handleInbound(
+      { managerUserId: holderId, peerId: String(c.chat.peer), anchorTgMessageId: String(q), origin: 'live' },
+      { callModel: scripted(PRICED('1359')), now: () => new Date(T0.getTime() - 4 * 60_000) },
+    );
+    expect(inb, JSON.stringify(inb)).toMatchObject({ outcome: 'draft' });
+    const x = (inb as { draftId: string }).draftId;
+    queued.length = 0;
+    const seen: ModelRequest[] = [];
+    const out = await handleCalcAnswer(jobOf(c.requestId, c.chat.peer), { callModel: scripted(PRICED('1359'), seen), now: () => T0 });
+    expect(out).toEqual({ outcome: 'stood_down', reason: 'already_priced' });
+    expect(seen).toHaveLength(0);
+    expect((await draftOf(x)).status).toBe('pending');
+    expect(await told(c.requestId)).toHaveLength(0);
+    expect(calcJobs()).toHaveLength(0);
+  });
+
+  it('held behind his waiting reply: re-queued and said once, rechecked while it waits, and priced after his ✅ — never dropped (PP10b kept)', async () => {
+    const c = await heldChain();
+    queued.length = 0;
+    const seen: ModelRequest[] = [];
+    const out = await handleCalcAnswer(jobOf(c.requestId, c.chat.peer), { callModel: scripted(PRICED('1359'), seen), now: () => T0 });
+    expect(out).toEqual({ outcome: 'stood_down', reason: 'other_live' });
+    expect(seen).toHaveLength(0);
+    expect((await draftOf(c.held)).status).toBe('pending');
+    expect(calcJobs()).toHaveLength(1);
+    const again = calcJobs()[0]!;
+    expect(again.data).toMatchObject({ requestId: c.requestId, sourceKey: `calc:${c.requestId}:answer`, heldSince: T0.toISOString() });
+    expect(again.options).toMatchObject({ startAfter: CALC_HELD_RECHECK_S, retryLimit: 0 });
+    const said = await told(c.requestId);
+    expect(said).toHaveLength(1);
+    expect(said[0]!.text).toContain('✅ kutayotgan boshqa javob');
+    expect(said[0]!.text).toContain('hal bo‘lgach AI narxni o‘zi yozadi');
+    expect(said[0]!.priceable).toBe(true);
+    // The recheck while it still waits: re-queued again, said nothing more.
+    queued.length = 0;
+    const later = new Date(T0.getTime() + 5 * 60_000);
+    expect(await handleCalcAnswer(again.data as AgentCalcAnswerJob, { callModel: scripted(PRICED('1359'), seen), now: () => later })).toEqual({ outcome: 'stood_down', reason: 'other_live' });
+    expect(seen).toHaveLength(0);
+    expect(calcJobs()).toHaveLength(1);
+    expect(calcJobs()[0]!.data).toMatchObject({ heldSince: T0.toISOString() });
+    expect(await told(c.requestId)).toHaveLength(1);
+    // His ✅ on the waiting reply — it goes as it was; the next recheck prices the job.
+    expect(await decideDraft(person(), c.held, 'send', { digest: await digestOf(c.held) }, { actorId: holderId })).toMatchObject({ ok: true });
+    await wentOut(c.held, new Date(T0.getTime() + 6 * 60_000));
+    const job = calcJobs()[0]!.data as AgentCalcAnswerJob;
+    queued.length = 0;
+    const done = await handleCalcAnswer(job, { callModel: scripted(PRICED('1359'), seen), now: () => new Date(T0.getTime() + 10 * 60_000) });
+    expect(done, JSON.stringify(done)).toMatchObject({ outcome: 'draft' });
+    expect((await draftOf((done as { draftId: string }).draftId)).proposedBody).toContain('1359');
+    expect((await draftOf(c.held)).status).toBe('approved');
+    expect(calcJobs()).toHaveLength(0);
+    // Said once — the hold; never a «narx yozilmadi» after it.
+    expect(await told(c.requestId)).toHaveLength(1);
+  });
+
+  it('a reply drafted WHILE the model worked: nothing written over it, the run’s key handed back, priced once that reply is decided', async () => {
+    const c = await answeredChain();
+    const q = await customerSays(c.chat, 'Ombor manzilingiz qayerda?', new Date(T0.getTime() - 5 * 60_000));
+    let raced: string | null = null;
+    const steps = PRICED('1359');
+    let i = 0;
+    const racing = (async (_req: ModelRequest): Promise<ModelResponse> => {
+      if (raced === null) {
+        const [d] = await db
+          .insert(agentDrafts)
+          .values({ managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, anchorTgMessageId: q, status: 'pending', kind: 'reply', proposedBody: 'Omborimiz Ivuda.' })
+          .returning({ id: agentDrafts.id });
+        raced = d!.id;
+      }
+      const step = steps[Math.min(i, steps.length - 1)]!;
+      i += 1;
+      return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: `r${i}`, name: step.name, input: step.input }], usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+    }) as CallModel;
+    queued.length = 0;
+    const out = await handleCalcAnswer(jobOf(c.requestId, c.chat.peer), { callModel: racing, now: () => T0 });
+    expect(out).toEqual({ outcome: 'stood_down', reason: 'other_live' });
+    expect((await draftOf(raced!)).status).toBe('pending');
+    // The run paid for the model and wrote nothing: its row keeps the bill and gives the key back.
+    const runs = await db.select().from(agentRuns).where(and(eq(agentRuns.peerId, c.chat.peer), eq(agentRuns.trigger, 'calc_answer')));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.sourceKey).toBeNull();
+    expect(runs[0]!.error).toBe('other_live');
+    expect(calcJobs()).toHaveLength(1);
+    expect(calcJobs()[0]!.data).toMatchObject({ sourceKey: `calc:${c.requestId}:answer` });
+    // His ❌ on the raced reply; the recheck prices it — one draft, never «duplicate».
+    expect(await decideDraft(person(), raced!, 'reject', {}, { actorId: holderId })).toMatchObject({ ok: true, status: 'rejected' });
+    const job = calcJobs()[0]!.data as AgentCalcAnswerJob;
+    queued.length = 0;
+    const done = await handleCalcAnswer(job, { callModel: scripted(PRICED('1359')), now: () => new Date(T0.getTime() + 5 * 60_000) });
+    expect(done, JSON.stringify(done)).toMatchObject({ outcome: 'draft' });
+    // …and a second delivery of the same anchor drafts nothing more.
+    const twice = await handleCalcAnswer(job, { callModel: scripted(PRICED('1359')), now: () => new Date(T0.getTime() + 6 * 60_000) });
+    expect(twice).toMatchObject({ outcome: 'stood_down' });
+    expect((await told(c.requestId)).filter((s) => s.text.includes('✅ kutayotgan boshqa javob'))).toHaveLength(1);
+  });
+
+  it('a reply stating THIS job’s price drafted while the model worked: the draft’s own transaction writes nothing over it, says nothing', async () => {
+    const c = await answeredChain();
+    const q = await customerSays(c.chat, 'Narx qancha bo‘ldi?', new Date(T0.getTime() - 5 * 60_000));
+    let raced: string | null = null;
+    const steps = PRICED('1359');
+    let i = 0;
+    const racing = (async (_req: ModelRequest): Promise<ModelResponse> => {
+      if (raced === null) {
+        const mark = { requestId: c.requestId, section: 'rastamojka', anchor: 'answer', anchorId: c.requestId, rule: 'percent:10', total: 1359 };
+        const [d] = await db
+          .insert(agentDrafts)
+          .values({
+            managerUserId: holderId,
+            peerId: c.chat.peer,
+            leadId: c.chat.leadId,
+            anchorTgMessageId: q,
+            status: 'pending',
+            kind: 'reply',
+            proposedBody: 'Rastamojka narxi 1359 $ bo‘ladi.',
+            policy: { memory: { calcPrices: [mark] } },
+          })
+          .returning({ id: agentDrafts.id });
+        raced = d!.id;
+      }
+      const step = steps[Math.min(i, steps.length - 1)]!;
+      i += 1;
+      return { stopReason: 'tool_use', content: [{ type: 'tool_use', id: `p${i}`, name: step.name, input: step.input }], usage: { inputTokens: 1000, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+    }) as CallModel;
+    queued.length = 0;
+    const out = await handleCalcAnswer(jobOf(c.requestId, c.chat.peer), { callModel: racing, now: () => T0 });
+    expect(out).toEqual({ outcome: 'stood_down', reason: 'already_priced' });
+    const x = await draftOf(raced!);
+    expect(x.status).toBe('pending');
+    expect((x.policy as { stale?: string }).stale).toBeUndefined();
+    expect(calcJobs()).toHaveLength(0);
+    expect(await told(c.requestId)).toHaveLength(0);
+  });
+
+  it('a recheck in the night waits for 08:30; a hold that never clears gives up after the week, said with the 💵 door', async () => {
+    const c = await heldChain();
+    // The night: nothing read, nothing priced — the recheck moves to the morning.
+    const night = new Date(T0);
+    night.setUTCHours(19, 30, 0, 0); // 00:30 Tashkent
+    queued.length = 0;
+    const seen: ModelRequest[] = [];
+    const job = { ...jobOf(c.requestId, c.chat.peer), heldSince: T0.toISOString() };
+    const out = await handleCalcAnswer(job, { callModel: scripted(PRICED('1359'), seen), now: () => night });
+    expect(out).toMatchObject({ outcome: 'rescheduled' });
+    expect(seen).toHaveLength(0);
+    expect(calcJobs()).toHaveLength(1);
+    const startAfter = (calcJobs()[0]!.options as { startAfter: number }).startAfter;
+    expect(startAfter).toBeGreaterThan(CALC_HELD_RECHECK_S);
+    expect(new Date(night.getTime() + startAfter * 1000).toISOString()).toBe(nextTashkentMorning(night).toISOString());
+    // A week of waiting behind the same reply: no more rechecks, and he is told to give the price himself.
+    queued.length = 0;
+    const stale = { ...jobOf(c.requestId, c.chat.peer), heldSince: new Date(T0.getTime() - 8 * DAY).toISOString() };
+    expect(await handleCalcAnswer(stale, { callModel: scripted(PRICED('1359'), seen), now: () => T0 })).toEqual({ outcome: 'stood_down', reason: 'other_live' });
+    expect(seen).toHaveLength(0);
+    expect(calcJobs()).toHaveLength(0);
+    const said = (await told(c.requestId)).at(-1)!;
+    expect(said.text).toContain('VED narxini yozmadi');
+    expect(said.text).toContain('Narxni o‘zingiz bering: 💵');
+    expect(said.priceable).toBe(true);
   });
 });
