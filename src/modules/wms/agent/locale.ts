@@ -58,7 +58,7 @@ export function dominantScript(text: string): ScriptName {
 /** Letters only Uzbek Cyrillic has. */
 const UZ_CYRL_LETTERS = /[ўқғҳЎҚҒҲ]/u;
 /** Everyday Uzbek Cyrillic words that are not Russian. */
-const UZ_CYRL_WORDS = /(?:^|[^\p{L}])(?:ва|учун|керак|канча|қанча|рахмат|раҳмат|салом|ассалому|борми|нима|қачон|качон|юк|нарх|йўқ|йук|ха|хоп|бўлади|булади)(?=$|[^\p{L}])/iu;
+const UZ_CYRL_WORDS = /(?:^|[^\p{L}])(?:ва|учун|керак|канча|қанча|борми|нима|қачон|качон|юк|нарх|йўқ|йук|бўлади|булади)(?=$|[^\p{L}])/iu;
 
 /**
  * What makes a Cyrillic line RUSSIAN by its own words (0148 fix): the everyday words Uzbek does not have, and the
@@ -69,8 +69,25 @@ const UZ_CYRL_WORDS = /(?:^|[^\p{L}])(?:ва|учун|керак|канча|қа
  * word as well.
  */
 const RU_LETTERS = /[ыщЫЩ]/u;
+// …and the everyday Russian a request is made of (fix pass 3), now that «пожалуйста» and «здравствуйте» are greetings:
+// «Отправьте фото груза сегодня, пожалуйста» is Russian by «отправьте» and «сегодня».
 const RU_WORDS =
-  /(?:^|[^\p{L}])(?:здравствуйте|привет|добрый|спасибо|пожалуйста|сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до|сегодня|завтра|вчера|сейчас|потом|тогда|тоже|очень|только|здесь|напишите|скиньте|отправьте|пришлите|подскажите|скажите|который|которая|которые)(?=$|[^\p{L}])/iu;
+
+/**
+ * The greetings, thanks and «yes» every customer here says in BOTH languages (fix pass 3): «Ассалому алайкум»,
+ * «салом», «рахмат», «хоп», «ха» from a Russian speaker, «Здравствуйте», «Привет», «спасибо», «пожалуйста» from an
+ * Uzbek one. The run reads the customer's whole burst (0148 fix), and one such word ON TOP of a question in the other
+ * language decided «confidently» — «Ассалому алайкум» / «Сколько стоит доставка…?» refused the Russian reply,
+ * «Здравствуйте» / «Кийим-кечак, Гуанчжоудан жунатаман» the Uzbek one. So a greeting is no MARK of either language:
+ * it says its language only of a text that is nothing else, with no conversation of the same script to keep.
+ */
+const CYRL_GREETING_UZ = /(?<![\p{L}])(?:ассалому|ассалом|алайкум|алейкум|салом|рахмат|раҳмат|хоп|ха)(?![\p{L}])/giu;
+const CYRL_GREETING_RU = /(?<![\p{L}])(?:здравствуйте|здравствуй|привет|добрый|доброе|спасибо|пожалуйста)(?![\p{L}])/giu;
+const LATIN_GREETING_UZ = /(?<![\p{L}])(?:assalomu|assalom|alaykum|aleykum|salom|rahmat|raxmat|xop|hop)(?![\p{L}])/giu;
+const LATIN_GREETING_EN = /(?<![\p{L}])(?:hello|hi|hey|thanks|thank)(?![\p{L}])/giu;
+/** Fewer letters than this left when the greetings are out: the text was a greeting, and the greeting may speak. */
+const GREETING_ONLY = 6;
 
 /** A line of fewer letters than this cannot turn an Uzbek conversation into another language's. */
 const SHORT_LINE = 12;
@@ -79,10 +96,33 @@ const SHORT_LINE = 12;
 const UZ_LATIN_LETTERS = /[og]['ʻʼ‘’`]/iu;
 /** Everyday Uzbek Latin words that are not English. */
 const UZ_LATIN_WORDS =
-  /(?:^|[^\p{L}])(?:salom|assalomu|alaykum|rahmat|raxmat|qancha|kancha|nechpul|necha|kerak|bormi|yoq|yo'q|xop|hop|yuk|yukim|narx|narxi|qayerda|qachon|kachon|keldimi|ketdimi|bo'ladi|boladi|aka|opa|uka|iltimos|mumkinmi|qilib|berasiz|bering|kub|kubi|xitoydan|toshkentga)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:qancha|kancha|nechpul|necha|kerak|bormi|yoq|yo'q|yuk|yukim|narx|narxi|qayerda|qachon|kachon|keldimi|ketdimi|bo'ladi|boladi|aka|opa|uka|iltimos|mumkinmi|qilib|berasiz|bering|kub|kubi|xitoydan|toshkentga)(?=$|[^\p{L}])/iu;
 /** Everyday English words that are not Uzbek. */
 const EN_WORDS =
-  /(?:^|[^\p{L}])(?:hello|hi|the|is|are|what|how|much|price|cost|cargo|shipping|please|thanks|thank|when|where|my|your|can|you|need|delivery|from|to)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:the|is|are|what|how|much|price|cost|cargo|shipping|please|when|where|my|your|can|you|need|delivery|from|to)(?=$|[^\p{L}])/iu;
+
+/**
+ * One script's two languages, read as MARKS: each language's own words or letters (`uz`, `other`) — never a
+ * greeting. Where neither has any, its greetings: they decide a text that is nothing but greetings
+ * (`greetingOnly`), and beside other unmarked words they are a GUESS (`guess`), never confident.
+ */
+function marksOf(
+  text: string,
+  strong: { uz: (t: string) => boolean; other: (t: string) => boolean },
+  greeting: { uz: RegExp; other: RegExp },
+  letters: RegExp,
+): { uz: boolean; other: boolean; greetingOnly: boolean; guess: 'uz' | 'other' | null } {
+  const words = text.replace(greeting.uz, ' ').replace(greeting.other, ' ');
+  const uz = strong.uz(words);
+  const other = strong.other(words);
+  if (uz || other) return { uz, other, greetingOnly: false, guess: null };
+  const uzGreet = new RegExp(greeting.uz.source, 'iu').test(text);
+  const otherGreet = new RegExp(greeting.other.source, 'iu').test(text);
+  const guess = uzGreet === otherGreet ? null : uzGreet ? 'uz' : 'other';
+  // No word of either language's own: a greeting speaks only for a text that holds nothing else.
+  if (count(words, letters) >= GREETING_ONLY) return { uz: false, other: false, greetingOnly: false, guess };
+  return { uz: uzGreet, other: otherGreet, greetingOnly: true, guess };
+}
 
 /**
  * The customer's language, from what they just wrote.
@@ -97,35 +137,51 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
   if (script === 'han') return { locale: 'zh', confident: true, script };
   if (script === 'arabic') return { locale: 'fa', confident: true, script };
   if (script === 'cyrillic') {
-    if (UZ_CYRL_LETTERS.test(text) || UZ_CYRL_WORDS.test(text)) return { locale: 'uz_cyrl', confident: true, script };
-    if (RU_LETTERS.test(text) || RU_WORDS.test(text)) {
+    const m = marksOf(
+      text,
+      { uz: (t) => UZ_CYRL_LETTERS.test(t) || UZ_CYRL_WORDS.test(t), other: (t) => RU_LETTERS.test(t) || RU_WORDS.test(t) },
+      { uz: CYRL_GREETING_UZ, other: CYRL_GREETING_RU },
+      CYRILLIC,
+    );
+    const keep = previous === 'uz_cyrl' || previous === 'ru';
+    // A greeting alone never turns the conversation's own Cyrillic language into the other one.
+    if (m.greetingOnly && keep && (m.uz ? 'uz_cyrl' : 'ru') !== previous) return { locale: previous, confident: false, script };
+    if (m.uz && !m.other) return { locale: 'uz_cyrl', confident: true, script };
+    if (m.other && !m.uz) {
       // Russian by its own words — unless the conversation is Uzbek Cyrillic
       // already and this line is too short to say otherwise.
       if (previous === 'uz_cyrl' && count(text, CYRILLIC) < SHORT_LINE) return { locale: previous, confident: false, script };
       return { locale: 'ru', confident: true, script };
     }
-    // No mark of either language (0148 fix): the conversation keeps its
-    // Cyrillic language; with none, Russian is the guess — and is SAID to be
-    // one. It was «ru, confident», and the auto layer's language clause then
-    // refused every correct Uzbek Cyrillic reply to such a line.
-    if (previous === 'uz_cyrl' || previous === 'ru') return { locale: previous, confident: false, script };
-    return { locale: 'ru', confident: false, script };
+    // Both languages' own words, or no mark of either (0148 fix): the conversation keeps its Cyrillic language;
+    // with none, a guess — the greeting's language if one was said — and SAID to be one. «Cyrillic with no Uzbek
+    // mark» was «ru, confident», and the auto layer's language clause then refused every correct Uzbek Cyrillic reply.
+    if (keep) return { locale: previous, confident: false, script };
+    return { locale: m.uz || m.guess === 'uz' ? 'uz_cyrl' : 'ru', confident: false, script };
   }
   if (script === 'latin') {
-    const uz = UZ_LATIN_LETTERS.test(text) || UZ_LATIN_WORDS.test(text);
-    const en = EN_WORDS.test(text);
-    if (uz && !en) return { locale: 'uz', confident: true, script };
-    if (en && !uz) {
+    const m = marksOf(
+      text,
+      { uz: (t) => UZ_LATIN_LETTERS.test(t) || UZ_LATIN_WORDS.test(t), other: (t) => EN_WORDS.test(t) },
+      { uz: LATIN_GREETING_UZ, other: LATIN_GREETING_EN },
+      LATIN,
+    );
+    if (m.uz && !m.other) return { locale: 'uz', confident: true, script };
+    if (m.other && !m.uz) {
       // «Hello», «ok price?» in an Uzbek conversation is an Uzbek customer's
       // loan word, not a switch to English — the Cyrillic rule's twin.
-      if (previous === 'uz' && count(text, LATIN) < SHORT_LINE) return { locale: previous, confident: false, script };
+      if (previous === 'uz' && (m.greetingOnly || count(text, LATIN) < SHORT_LINE)) return { locale: previous, confident: false, script };
       return { locale: 'en', confident: true, script };
     }
     // Both or neither: the conversation keeps its language — a Russian
     // customer's «ok» is still a Russian conversation; with no history,
-    // Uzbek, the company's own language and the commoner customer.
+    // Uzbek, the company's own language and the commoner customer. A Latin
+    // conversation keeps its own; a greeting beside unmarked words is a guess
+    // of its language for any other («Assalomu alaykum! Qanday yordam…»).
+    if (previous === 'uz' || previous === 'en') return { locale: previous, confident: false, script };
+    if (m.guess) return { locale: m.guess === 'uz' ? 'uz' : 'en', confident: false, script };
     if (previous) return { locale: previous, confident: false, script };
-    return { locale: uz ? 'uz' : null, confident: false, script };
+    return { locale: m.uz ? 'uz' : null, confident: false, script };
   }
   return { locale: previous, confident: false, script };
 }

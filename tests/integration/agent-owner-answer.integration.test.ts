@@ -57,6 +57,22 @@ vi.mock('@/modules/wms/agent/owner-answer', async (original) => {
   };
 });
 
+/**
+ * The gate's numeral reader with a failure a test may arm (fix pass 3, the check's nit): `unreadOf` must fail CLOSED
+ * on a memory it cannot read, as `answerStaleOf` does. A pass-through otherwise.
+ */
+const unreadHook = vi.hoisted(() => ({ fail: false }));
+vi.mock('@/modules/wms/agent/auto-money', async (original) => {
+  const real = await original<typeof import('@/modules/wms/agent/auto-money')>();
+  return {
+    ...real,
+    numeralUnread: (...args: Parameters<typeof real.numeralUnread>) => {
+      if (unreadHook.fail) throw new Error('memory not read');
+      return real.numeralUnread(...args);
+    },
+  };
+});
+
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -540,6 +556,7 @@ describe('the redraft from his answer (spec §2.2)', () => {
       questionDraftId: q.id,
       questionAnchor: String(q.anchorTgMessageId),
       questionAnchorEditedAt: null,
+      questionDraftedAt: q.createdAt.toISOString(),
       figures: false,
       personal: [],
     });
@@ -756,6 +773,36 @@ describe('the redraft from his answer (spec §2.2)', () => {
     expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, r.id))).toHaveLength(0);
   });
 
+  // Fix pass 3 (the check's nit): two fail-closed defaults fix pass 1 added with no test of their own.
+  it('a stored mark that does not SAY whether his answer held a figure reads as holding one — `owner_figure` at the press', async () => {
+    const { r } = await answeredWith({ answer: 'Ha, olamiz', reply: `Ha, suyuq atir ham olib kelamiz ${TAG}.` });
+    expect(await verdictOf(r.id)).toMatchObject({ eligible: true, state: 'waiting' });
+    await db
+      .update(agentDrafts)
+      .set({ policy: sql`jsonb_set(${agentDrafts.policy}, '{fromAnswer}', (${agentDrafts.policy}->'fromAnswer') - 'figures')` })
+      .where(eq(agentDrafts.id, r.id));
+    expect(await pressDueAutos(DUE)).toBe(0);
+    const v = await verdictOf(r.id);
+    expect(v).toMatchObject({ state: 'refused' });
+    expect(v!.reasons).toContain('owner_figure');
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, r.id))).toHaveLength(0);
+  });
+
+  it('a reply whose numerals cannot be READ at the press holds one — `numeral_unread`, the press fails closed', async () => {
+    const { r } = await answeredWith({ answer: 'Ha, olamiz', reply: `Ha, suyuq atir ham olib kelamiz ${TAG}.` });
+    expect(await verdictOf(r.id)).toMatchObject({ eligible: true, state: 'waiting' });
+    unreadHook.fail = true;
+    try {
+      expect(await pressDueAutos(DUE)).toBe(0);
+    } finally {
+      unreadHook.fail = false;
+    }
+    const v = await verdictOf(r.id);
+    expect(v).toMatchObject({ state: 'refused' });
+    expect(v!.reasons).toContain('numeral_unread');
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, r.id))).toHaveLength(0);
+  });
+
   it('a redraft whose answer mark cannot be read never goes by itself — the press fails closed', async () => {
     const q = await question();
     const job = await answered(q.id, 'Ha, suyuqlik olmaymiz');
@@ -839,6 +886,32 @@ describe('the redraft from his answer (spec §2.2)', () => {
     await comesBack(r, 'owner_figure');
   });
 
+  // Fix pass 3: the same figure written as a WORD. «Bir kubdan kam yukni olmaymiz» is the truck minimum in his own
+  // words, and «Bitta karobkani olmaymiz» the same refusal — both redrafts turned his meaning round and were pressed.
+  it.each([
+    [`Salom, 1 kub yukim bor, olasizlarmi ${TAG}?`, 'Bir kubdan kam yukni olmaymiz', `Ha, 1 kub yukingizni bemalol olib kelamiz ${TAG}.`, 'measure'],
+    [`Salom, 1 ta karobka yukim bor, olasizlarmi ${TAG}?`, 'Bitta karobkani olmaymiz', `Ha, 1 ta karobkangizni bemalol olib kelamiz ${TAG}.`, 'count'],
+  ] as const)('«%s» / his «%s» — the figure in words comes back to him too (`owner_figure`)', async (ask, answer, reply, kind) => {
+    const { r } = await answeredWith({ ask, answer, reply });
+    expect(r.blocked).toBe(false);
+    expect((r.policy as { ledger: { kind: string; origin?: string }[] }).ledger).toEqual([expect.objectContaining({ kind, origin: 'customer' })]);
+    expect((r.policy as { fromAnswer: { figures: boolean } }).fromAnswer.figures).toBe(true);
+    await comesBack(r, 'owner_figure');
+  });
+
+  // Fix pass 3 (the check's nit): his date with «da» on one side and «kuni» on the other — the reader took «15.11.2026
+  // kuni» for 15.11 and 2026 days, so the redraft came back ⛔ naming «2026» as a number with no source.
+  it.each([
+    ['Yuk 15.11.2026 da keladi', `Yukingiz taxminan 15.11.2026 kuni yetib keladi ${TAG}.`],
+    ['Yuk 15.11.2026 kuni keladi', `Yukingiz taxminan 15.11.2026 da yetib keladi ${TAG}.`],
+    ['Yuk 20.11.2026-25.11.2026 orasida keladi', `Yukingiz taxminan 20.11.2026 – 25.11.2026 kunlari yetib keladi ${TAG}.`],
+  ] as const)('his date «%s», said back as «%s»: no block — HIS line, and his card (`owner_figure`)', async (answer, reply) => {
+    const { r } = await answeredWith({ ask: `Salom, yukim qachon keladi ${TAG}?`, answer, reply });
+    expect((r.policy as { blocks: unknown[] }).blocks, JSON.stringify((r.policy as { blocks: unknown }).blocks)).toEqual([]);
+    expect((r.policy as { ledger: { kind: string; origin?: string }[] }).ledger.filter((l) => l.kind === 'date').every((l) => l.origin === 'owner')).toBe(true);
+    await comesBack(r, 'owner_figure');
+  });
+
   it('…and a redraft that quotes the TOOL’s price where he gave another: no line of his at all — still his card', async () => {
     // The review's (2): «Narx» ticked, he said 700 $, the redraft's run priced 800 $ and wrote that.
     await db.update(agentAutoConfig).set({ categories: ['greeting', 'qualification', 'faq', 'status', 'price'] }).where(eq(agentAutoConfig.id, 1));
@@ -895,6 +968,62 @@ describe('the redraft from his answer (spec §2.2)', () => {
     });
     expect(r.anchorTgMessageId).not.toBe(q.anchorTgMessageId);
     await comesBack(r, 'answer_stale');
+  });
+
+  // Fix pass 3: the question was asked about the customer's whole BURST, and only its last line was read — the
+  // customer editing the FIRST line («…suyuq atir va litiy batareya ham…») while he answered got his «Ha, olamiz»
+  // rewritten for the new wording and pressed. The listener re-thinks only an edit of the newest line, so nothing
+  // else ever looks at it.
+  describe('a line of the question’s BURST other than its last, edited or deleted while he answered', () => {
+    const FIRST = `Salom, suyuq atir ham olib kelasizlarmi ${TAG}?`;
+    const LAST = `Toshkentga olib kelish kerak ${TAG}`;
+
+    it('edited: `answer_stale`, never pressed', async () => {
+      const first = await inbound(FIRST);
+      const { q, r } = await answeredWith({
+        ask: LAST,
+        answer: 'Ha, olamiz',
+        reply: `Ha, suyuq atir va litiy batareyani ham Toshkentga olib kelamiz ${TAG}.`,
+        meanwhile: async () => {
+          expect(await applyEdit({ managerUserId: ownerId, peerId: PEER, tgMessageId: first, body: `Salom, suyuq atir va litiy batareya ham olib kelasizlarmi ${TAG}?` })).toBe(true);
+        },
+      });
+      expect(q.anchorTgMessageId).not.toBe(first);
+      expect(r.anchorTgMessageId).toBe(q.anchorTgMessageId);
+      await comesBack(r, 'answer_stale');
+    });
+
+    it('deleted: `answer_stale`, never pressed', async () => {
+      const first = await inbound(FIRST);
+      const { r } = await answeredWith({
+        ask: LAST,
+        answer: 'Ha, olamiz',
+        reply: `Ha, Toshkentga olib kelamiz ${TAG}.`,
+        meanwhile: async () => {
+          expect(await markDeleted(ownerId, [first])).toBe(1);
+        },
+      });
+      await comesBack(r, 'answer_stale');
+    });
+
+    it('…while a burst line edited BEFORE the question, or a line before our last message edited now, is what his card showed: not stale', async () => {
+      const before = await inbound(`Avval: kiyim olib kelasizmi ${TAG}?`, new Date(T0.getTime() - 2 * 86_400_000));
+      msgSeq += 1n;
+      await db.insert(tgMessages).values({ clientId, managerUserId: ownerId, peerId: PEER, tgMessageId: msgSeq, direction: 'out', body: `Ha, olib kelamiz ${TAG}.`, sentAt: new Date(T0.getTime() - 2 * 86_400_000) });
+      const first = await inbound(`Salom, atir olasizlarmi ${TAG}?`);
+      await applyEdit({ managerUserId: ownerId, peerId: PEER, tgMessageId: first, body: FIRST });
+      const { r } = await answeredWith({
+        ask: LAST,
+        answer: 'Ha, suyuqlik olmaymiz',
+        reply: `Afsuski, suyuq yuk olmaymiz ${TAG}.`,
+        meanwhile: async () => {
+          expect(await applyEdit({ managerUserId: ownerId, peerId: PEER, tgMessageId: before, body: `Avval: poyabzal olib kelasizmi ${TAG}?` })).toBe(true);
+        },
+      });
+      expect((r.policy as { fromAnswer: { questionDraftedAt?: string | null } }).fromAnswer.questionDraftedAt).toEqual(expect.any(String));
+      const v = await verdictOf(r.id);
+      expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, reasons: [] });
+    });
   });
 
   it('…while a line he edited BEFORE the question was asked is the line his card showed: not stale', async () => {
@@ -1214,6 +1343,12 @@ describe('the redraft from his answer (spec §2.2)', () => {
     const [answering] = await cardRows(q.id);
     expect((answering!.payload as { teach?: unknown; text: string }).text).toContain(ANSWER_TAKEN_LINE);
     expect((answering!.payload as { teach?: unknown }).teach).toBe(false);
+    // …and the page's own rows say the same (fix pass 3, the check's nit: the page's twin of the card's rule was
+    // removable with every test green).
+    const lists = await webDrafts(actorOf(ownerId));
+    const row = [...lists.questions, ...lists.pending].find((w) => w.id === q.id);
+    expect(row, 'the question is on the page while his answer is written').toBeDefined();
+    expect(row!.teach).toBe(false);
   });
 
   it('his answer is a person in the chat: two machine presses before it do not refuse the redraft as a streak', async () => {

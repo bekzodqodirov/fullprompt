@@ -64,6 +64,49 @@ describe('detectLocale', () => {
     expect(detectLocale('Hello', 'ru')).toMatchObject({ locale: 'en', confident: true });
   });
 
+  // Fix pass 3 (the check of the language fix): the run reads the customer's whole BURST, and a greeting, a thanks or
+  // a «yes» of the OTHER language decided «confidently» — «Ассалому алайкум» on top of a Russian question refused the
+  // Russian reply, «Здравствуйте» on top of an Uzbek line refused the Uzbek one. A greeting is no mark of either
+  // language: it decides only a text that is nothing else, and never against the conversation's own language.
+  it('a greeting of the other language beside the customer’s own words decides nothing — his words do', () => {
+    for (const stored of [null, 'ru'] as const) {
+      expect(detectLocale('Ассалому алайкум\nСколько стоит доставка из Гуанчжоу в Ташкент?', stored), String(stored)).toEqual({
+        locale: 'ru',
+        confident: true,
+        script: 'cyrillic',
+      });
+      expect(detectLocale('Ассалому алайкум\nГруз готов, когда заберёте?', stored)).toMatchObject({ locale: 'ru', confident: true });
+      expect(detectLocale('хоп\nтогда отправляйте, сколько будет стоить?', stored)).toMatchObject({ locale: 'ru', confident: true });
+      expect(detectLocale('Салом\nЗдравствуйте, есть груз', stored)).toMatchObject({ locale: 'ru', confident: true });
+      expect(detectLocale('Рахмат, сколько стоит?', stored)).toMatchObject({ locale: 'ru', confident: true });
+    }
+    // An unmarked Uzbek line under a Russian greeting is a guess: the conversation keeps its language.
+    for (const burst of ['Здравствуйте\nКийим-кечак, Гуанчжоудан жунатаман', 'Привет\nГуанчжоудан 5 куб 800 кг', 'Здравствуйте, мебель олиб келасизларми', 'Добрый день\nИву шахридан']) {
+      expect(detectLocale(burst, 'uz_cyrl'), burst).toEqual({ locale: 'uz_cyrl', confident: false, script: 'cyrillic' });
+      expect(detectLocale(burst), burst).toMatchObject({ confident: false });
+    }
+    // …and the customer's own words still decide against the greeting: an Uzbek-worded body is Uzbek.
+    expect(detectLocale('Здравствуйте\nГуанчжоудан юк бор эди, нархи қанча?')).toEqual({ locale: 'uz_cyrl', confident: true, script: 'cyrillic' });
+    expect(detectLocale('Ассалому алайкум\nГуанчжоудан юк бор эди\n5 куб 800 кг')).toEqual({ locale: 'uz_cyrl', confident: true, script: 'cyrillic' });
+    // A greeting ALONE still says its language — with no conversation to keep.
+    expect(detectLocale('Ассалому алайкум')).toEqual({ locale: 'uz_cyrl', confident: true, script: 'cyrillic' });
+    expect(detectLocale('Привет')).toEqual({ locale: 'ru', confident: true, script: 'cyrillic' });
+    // …never against the conversation's own language in the same script.
+    expect(detectLocale('Здравствуйте', 'uz_cyrl')).toEqual({ locale: 'uz_cyrl', confident: false, script: 'cyrillic' });
+    expect(detectLocale('Ассалому алайкум', 'ru')).toEqual({ locale: 'ru', confident: false, script: 'cyrillic' });
+    // Both languages' own words: nothing is confident.
+    expect(detectLocale('Сколько стоит?\nюк бор')).toMatchObject({ confident: false });
+  });
+
+  it('…in Latin too: «Assalomu alaykum» on top of an English question is English; English stays strict on its own words', () => {
+    expect(detectLocale('Assalomu alaykum\nHow much is shipping from Guangzhou to Tashkent?')).toEqual({ locale: 'en', confident: true, script: 'latin' });
+    expect(detectLocale('Salom\nHello, how much is shipping from China?', 'uz')).toMatchObject({ locale: 'en', confident: true });
+    expect(detectLocale('Hello\nYuk bor, narxi qancha?')).toEqual({ locale: 'uz', confident: true, script: 'latin' });
+    expect(detectLocale('Assalomu alaykum')).toEqual({ locale: 'uz', confident: true, script: 'latin' });
+    expect(detectLocale('Hello')).toEqual({ locale: 'en', confident: true, script: 'latin' });
+    expect(detectLocale('Rahmat\nThanks', null)).toMatchObject({ confident: false });
+  });
+
   it('every locale names the script its reply must be written in', () => {
     expect(scriptOf('fa')).toBe('arabic');
     expect(scriptOf('zh')).toBe('han');

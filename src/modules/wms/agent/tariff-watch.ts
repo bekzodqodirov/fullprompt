@@ -99,22 +99,28 @@ export class TariffConfirmError extends Error {
  * (`seen`, the stamp the button carries): a column written since is refused in words, never confirmed unseen. The
  * mark is the moment the column was read, so a write landing between the read and the stamp stays unconfirmed.
  * Audited.
+ *
+ * Says it ONCE (fix pass 3): a column already vouched for since its last change is `already` — no second mark, no
+ * second audit row — so a press delivered again, or tapped again, answers with a toast and never a second message.
  */
 export async function confirmTariff(
   actor: { id: string; roles: readonly string[] },
   seen: string,
   ctx: AuditContext,
-): Promise<void> {
+): Promise<'confirmed' | 'already'> {
   if (!(await agentFullP1Ready())) throw new TariffConfirmError('not_ready');
   if (!mayRunAgent(actor, await readAgentConfig())) throw new TariffConfirmError('forbidden');
   const readAt = new Date();
   if ((await currentTariffFingerprint(readAt)) !== seen) throw new TariffConfirmError('tariff_changed');
-  await db.transaction(async (tx) => {
+  // On the pool, before the transaction (#714): when the column as it stands today last changed.
+  const changed = await tariffChangedAt(tashkentDay(readAt));
+  return db.transaction(async (tx) => {
     const before = await tx.execute<{ at_ms: number | null }>(
       sql`SELECT (extract(epoch FROM tariff_confirmed_at) * 1000)::float8 AS at_ms FROM agent_send_caps WHERE id = 1 FOR UPDATE`,
     );
-    await confirmTariffInTx(tx, readAt, actor.id);
     const was = before[0]?.at_ms;
+    if (was !== null && was !== undefined && (changed === null || Number(was) >= changed.getTime())) return 'already';
+    await confirmTariffInTx(tx, readAt, actor.id);
     await writeAudit(tx, ctx, {
       entityType: 'agent_send_caps',
       entityId: SEND_CAPS_AUDIT_ID,
@@ -122,6 +128,7 @@ export async function confirmTariff(
       before: { tariffConfirmedAt: was === null || was === undefined ? null : new Date(Number(was)).toISOString() },
       after: { tariffConfirmedAt: readAt.toISOString(), via: 'tarif_togri', fingerprint: seen },
     });
+    return 'confirmed';
   });
 }
 

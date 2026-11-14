@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gt, lt, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { tgMessageFlags, tgMessages } from '../../platform/db/schema';
 import { holdsNumeral, normalizeDigits } from './digits';
@@ -142,7 +142,11 @@ export function answerHoldsFigure(text: string): boolean {
  *    `editedSince`): an edit keeps the message id, the edit's own run stands down while the question is `editing`,
  *    and the redraft anchors on the edited line with the edit as its OWN stamp — so «…suyuq atir va litiy batareya
  *    ham…» was answered with his «Ha, olamiz» to the wording his card showed, and went by itself;
- *  - he DELETED it: the redraft anchors on an older line, and answers a question that is no longer there.
+ *  - he DELETED it: the redraft anchors on an older line, and answers a question that is no longer there;
+ *  - he edited or deleted ANOTHER line of the burst the question was asked about (fix pass 3) — every line since our
+ *    last message, as the run's `ctx.burst` has it — after the question was drafted (`questionDraftedAt`): «Salom,
+ *    suyuq atir ham…» / «Toshkentga olib kelish kerak» asked about both, the listener re-thinks only an edit of the
+ *    NEWEST line, and his «Ha, olamiz» was rewritten for «…suyuq atir va litiy batareya ham…» and went by itself.
  * Then the redraft waits for his eye.
  */
 export async function answerStale(
@@ -150,7 +154,22 @@ export async function answerStale(
   peerId: bigint,
   questionAnchor: bigint,
   anchorEditedAt: Date | null = null,
+  questionDraftedAt: Date | null = null,
 ): Promise<boolean> {
+  // Where the question's burst starts: after our newest message before its line (a deleted one included — what the
+  // question saw is decided by the stamps below, never by what is left now).
+  const before = await db
+    .select({ id: sql<string | null>`max(${tgMessages.tgMessageId})::text` })
+    .from(tgMessages)
+    .where(
+      and(
+        eq(tgMessages.managerUserId, managerUserId),
+        eq(tgMessages.peerId, peerId),
+        eq(tgMessages.direction, 'out'),
+        lt(tgMessages.tgMessageId, questionAnchor),
+      ),
+    );
+  const burstAfter = before[0]?.id ? BigInt(before[0].id) : null;
   const rows = await db
     .select({
       tgMessageId: tgMessages.tgMessageId,
@@ -166,12 +185,15 @@ export async function answerStale(
         eq(tgMessages.managerUserId, managerUserId),
         eq(tgMessages.peerId, peerId),
         eq(tgMessages.direction, 'in'),
-        gte(tgMessages.tgMessageId, questionAnchor),
+        burstAfter === null ? undefined : gt(tgMessages.tgMessageId, burstAfter),
       ),
     );
   const anchor = rows.find((m) => m.tgMessageId === questionAnchor);
   // The line the question was asked about is gone, or is no longer the line he saw.
   if (!anchor || anchor.deletedAt !== null) return true;
   if (anchor.editedAt !== null && (anchorEditedAt === null || anchor.editedAt.getTime() > anchorEditedAt.getTime())) return true;
-  return rows.some((m) => m.tgMessageId !== questionAnchor && m.deletedAt === null && asksAnew({ text: m.body ?? '', media: m.kept }, isNudge));
+  // Another line of the burst it was asked about, changed after the question was drafted (no stamp: any change).
+  const since = (at: Date | null) => at !== null && (questionDraftedAt === null || at.getTime() > questionDraftedAt.getTime());
+  if (rows.some((m) => m.tgMessageId < questionAnchor && (since(m.deletedAt) || since(m.editedAt)))) return true;
+  return rows.some((m) => m.tgMessageId > questionAnchor && m.deletedAt === null && asksAnew({ text: m.body ?? '', media: m.kept }, isNudge));
 }

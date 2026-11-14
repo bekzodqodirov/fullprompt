@@ -1,7 +1,6 @@
 import {
   CURRENCY_AFTER_SRC,
   CURRENCY_BEFORE_SRC,
-  PRICE_NAME_SRC,
   CURRENCY_LABEL,
   currenciesNamed,
   currencyOf,
@@ -800,17 +799,64 @@ const TOTAL_BEFORE =
   /(?:(?<![\p{L}])(?:jami|жами|итого|total|hammasi\s+bo['‘’ʻ`]?lib|ҳаммаси\s+бўлиб|in\s+total|altogether|all\s+in)(?:\s+(?:bo['‘’ʻ`]?ladi|bo['‘’ʻ`]?lib|chiqadi|бўлади|получается|получится|выйдет|выходит|составит|составляет|comes\s+to|is|will\s+be|of|amounts?\s+to))?|(?<![\p{L}])(?:всего|в\s+сумме|в\s+итоге)(?:\s+(?:получается|получится|выйдет|выходит|составит|составляет|будет)|\s*[:：]))\s*[:：—–=-]?\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly)\s+|[~≈]\s*)?$/iu;
 
 /**
- * A price NAME right before a bare figure — «narxi 17», «narx: 160», «tarif taxminan 160», «kubiga 160», «цена 17»
- * — and the words after a figure that make it a count of TIMES or years, never an amount: «narxni 2 marta aytma»,
- * «цену называй 1 раз», «5 yillik tajriba». Asked only where a figure must be a price by its OWN words
- * (`ownMoneyOnly`, a lesson): everywhere else a text that names money makes every bare figure money.
+ * What makes a figure a COUNT in a lesson (fix pass 3): an occurrence or a list word right after it — «narxni 2
+ * marta aytma», «цену называй 1 раз», «5 yillik tajriba», «2-3 jumladan», «3 ta savol», «2 строк», «4 qatordan». A
+ * lesson is an INSTRUCTION, never a source: in a text that names money every other bare figure is money, as a fact's
+ * («Narx: avia 17, avto 160», «Цену называй 17», «Avia narxi 1 kg uchun 17»); only what a count is is taken away.
  */
-const PRICE_NAME_BEFORE = new RegExp(
-  `(?<![\\p{L}])(?:${PRICE_NAME_SRC})\\s*[:：=—–-]?\\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly|is|are)\\s+|[~≈]\\s*)?$`,
+const LESSON_COUNT_AFTER = new RegExp(
+  `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:(?:ta|та)\\s+)?(?:${[
+    'marta(?![\\p{L}])',
+    'марта(?:ба)?(?![\\p{L}])',
+    'раз(?:а|у)?(?![\\p{L}])',
+    'times?(?![\\p{L}])',
+    'karra(?![\\p{L}])',
+    'yil\\p{L}*',
+    'йил\\p{L}*',
+    'год(?:а|у|ов)?(?![\\p{L}])',
+    'лет(?![\\p{L}])',
+    'years?(?![\\p{L}])',
+    'jumla\\p{L}*',
+    'жумла\\p{L}*',
+    'gap\\p{L}*',
+    'гап\\p{L}*',
+    'qator\\p{L}*',
+    'қатор\\p{L}*',
+    'строк\\p{L}*',
+    'строчк\\p{L}*',
+    'lines?(?![\\p{L}])',
+    'предложени\\p{L}*',
+    'sentences?(?![\\p{L}])',
+    'savol\\p{L}*',
+    'савол\\p{L}*',
+    'вопрос\\p{L}*',
+    'questions?(?![\\p{L}])',
+    'xabar\\p{L}*',
+    'хабар\\p{L}*',
+    'сообщени\\p{L}*',
+    'messages?(?![\\p{L}])',
+    `so${"['‘’ʻ`]"}?z(?:lar)?\\p{L}*`,
+    'сўз\\p{L}*',
+    'слов\\p{L}*',
+    'words?(?![\\p{L}])',
+    'narsa\\p{L}*',
+    'нарса\\p{L}*',
+    'вещ\\p{L}*',
+    'things?(?![\\p{L}])',
+    'band\\p{L}*',
+    'пункт\\p{L}*',
+    'points?(?![\\p{L}])',
+    'abzas\\p{L}*',
+    'абзац\\p{L}*',
+    'paragraphs?(?![\\p{L}])',
+    'variant\\p{L}*',
+    'вариант\\p{L}*',
+    'options?(?![\\p{L}])',
+    'xil\\p{L}*',
+    'хил\\p{L}*',
+  ].join('|')})`,
   'iu',
 );
-const OCCURRENCE_AFTER =
-  /^\s*-?\s*(?:marta(?![\p{L}])|марта(?:ба)?(?![\p{L}])|раз(?:а|у)?(?![\p{L}])|times?(?![\p{L}])|karra(?![\p{L}])|yil\p{L}*|йил\p{L}*|год(?:а|у|ов)?(?![\p{L}])|лет(?![\p{L}])|years?(?![\p{L}]))/iu;
 
 /**
  * Figures whose FORM says what they are, so a money word elsewhere in the text never makes them money:
@@ -1092,13 +1138,10 @@ export function namesMoney(text: string): boolean {
 export function extractNumbers(
   text: string,
   removeWhole: readonly string[] = [],
-  opts: { moneyContext?: boolean; ownMoneyOnly?: boolean } = {},
+  opts: { moneyContext?: boolean; lesson?: boolean } = {},
 ): FoundNumber[] {
   const t = blanked(text, removeWhole);
-  // `ownMoneyOnly` (a lesson — an INSTRUCTION, never a source): a figure is money only by its own words — a
-  // currency or a scale word beside it, a price verb, a total's heading or a price NAME right before it. A text
-  // about how to speak of the price («Narx haqida 1 marta ayt») names money and holds no price.
-  const moneyText = opts.ownMoneyOnly === true ? false : opts.moneyContext === true || MONEY_WORD.test(t);
+  const moneyText = opts.moneyContext === true || MONEY_WORD.test(t);
   // A figure that is money because its TEXT names money takes the one currency the text names — «Narx
   // (yuanda): 480» is yuan — dollars when it names none, and no currency at all when it names two (K16).
   let textCurrency: Currency | null | undefined;
@@ -1115,8 +1158,9 @@ export function extractNumbers(
     if (taken.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
     const day = Number(m[1]);
     const month = Number(m[2]);
-    // «1.50 kg», «12.50 $» are figures with a unit, not the first of May.
-    if (kindAt(t, m.index, m.index + m[0].length) !== 'plain') continue;
+    // «1.50 kg», «12.50 $» are figures with a unit, not the first of May — never a whole dd.mm.yyyy (fix pass 3):
+    // «15.11.2026 kuni» is a day, and read as 15.11 and «2026 kun» it was a duration of 2026 days.
+    if (m[3]?.length !== 4 && kindAt(t, m.index, m.index + m[0].length) !== 'plain') continue;
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
       out.push({ raw: m[0], value: day * 100 + month, kind: 'date', index: m.index });
       taken.push([m.index, m.index + m[0].length]);
@@ -1154,11 +1198,13 @@ export function extractNumbers(
     }
     const before = t.slice(Math.max(0, start - 24), start);
     const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before) || ID_BEFORE.test(before) || ID_AFTER.test(after);
-    const named = opts.ownMoneyOnly === true && PRICE_NAME_BEFORE.test(before) && !OCCURRENCE_AFTER.test(after);
-    const priced = PRICE_VERB_BEFORE.test(before) || TOTAL_BEFORE.test(before) || named;
+    // `lesson` (a lesson — an INSTRUCTION, never a source): a count of times, sentences or questions is no price,
+    // whatever the text names — «Narx haqida 1 marta ayt» (fix pass 3 restored the rest of the fact's rule).
+    const counted = opts.lesson === true && LESSON_COUNT_AFTER.test(after);
+    const priced = PRICE_VERB_BEFORE.test(before) || TOTAL_BEFORE.test(before);
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
     const kind: NumberKind =
-      glued || (read.kind === 'plain' && !fixed && (moneyText || priced)) ? 'money' : read.kind;
+      glued || (read.kind === 'plain' && !fixed && !counted && (moneyText || priced)) ? 'money' : read.kind;
     const token = read.token ?? gluedAfter?.[0] ?? gluedBefore?.[0] ?? null;
     const perUnit = PER_UNIT_AFTER.test(read.rest) || PER_UNIT_BEFORE.test(t.slice(Math.max(0, start - 40), start));
     out.push({

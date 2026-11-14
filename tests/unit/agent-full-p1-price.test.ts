@@ -322,6 +322,88 @@ describe('the destination (spec §1.8): any city or region other than Tashkent, 
     expect(namesForeignPlace([line])).toBe(false);
   });
 
+  // Fix pass 3 — the check of that fix: the neighbours of its two spellings («O‘sh», «to Osh», «в г. Карши», «на Ош»,
+  // «Qarshi uchun», «Алматига») and the class no list ends: a destination FORM after the origin whose place is not
+  // Tashkent — «…dan X-ga», «из … в X», «from … to X», «Иу — Ош», «从义乌到X», «از ایوو به X».
+  it.each([
+    "Yiwudan O‘sh shahriga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+    "Yiwudan O‘shga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?",
+    "Yiwudan O'shga yuk bor",
+    // …and with no origin named — the list alone.
+    'O‘shga yuk bor',
+    'O‘sh shahrida turaman',
+    'I need delivery to Osh',
+    'Доставка на Ош нужна',
+    'Need it in Qarshi city, to Qarshi',
+    'Hello, how much from Yiwu to Osh for 5 m3 1000 kg?',
+    'доставка из Иу в г. Карши, 5 куб 1000 кг, сколько стоит?',
+    'сколько стоит доставка на Ош из Иу, 5 куб 1000 кг?',
+    'Иудан Алматига 5 куб 1000 кг юк бор, нархи қанча?',
+    'Олматига юк бор',
+    "Yiwudan Qarshi uchun 5 kub yuk bor",
+    'Qarshi sh.ga yuk bor',
+    'Доставка в г. Ош',
+    'Иу — Ош, 5 куб',
+    'Yiwu-Qarshi 5 kub',
+    'Shimkentga yuk bor',
+    // …and the class: a destination after the origin that no list holds.
+    "Yiwudan Tehronga 5 kub 1000 kg yuk bor, yo'lkira qancha?",
+    "Guanchjoudan 2 tonna yuk Mashhadga kerak",
+    'Xitoydan Istanbulga yuk bor',
+    'Иудан Теҳронга юк бор',
+    'Доставка из Гуанчжоу в Казань, 5 куб',
+    'How much from China to Dubai?',
+    'Yiwu → Tehron, 5 kub',
+    '从义乌运到德黑兰多少钱？',
+    'هزینه حمل از گوانگژو به اصفهان چقدر است؟',
+    'هزینه حمل از گوانگژو به تهران چقدر است؟',
+    'Istanbulga ham olib borasizmi?',
+    'Dubayga ham yetkazasizmi?',
+  ])('«%s» names one (the check’s neighbours, and the destination form)', (line) => {
+    expect(namesForeignPlace([line])).toBe(true);
+  });
+
+  it.each([
+    "Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha?",
+    "Yiwudan Toshkent shahriga 5 kub yuk bor",
+    "Guanchjoudan 5 kub yuk Toshkentgacha qanchaga tushadi?",
+    'Xitoydan O‘zbekistonga yuk olib kelasizmi?',
+    'Xitoydan bizga yuk kerak, qanchaga?',
+    'Yiwudan omboringizga qachon keladi?',
+    'Yiwudan yukni olib kelishga necha pul?',
+    'Yiwudan 5 kubga qancha?',
+    'Yiwudan qayerga yuborasiz?',
+    'Yiwudan avtoga qancha, aviaga qancha?',
+    "Yiwudan Chilonzorga olib kelasizmi?",
+    'Иудан Тошкентга юк бор',
+    'Иудан бизга юк керак',
+    'Доставка из Гуанчжоу в Ташкент, 5 куб',
+    'из Иу до Ташкента сколько?',
+    'из Китая в течение недели доставите?',
+    'из Иу на склад когда?',
+    'How much from Yiwu to Tashkent?',
+    'From China to Uzbekistan, how much?',
+    'Send it from Yiwu to our warehouse',
+    'Yiwu-Toshkent 5 kub',
+    'Guanchjou - yuk tayyor',
+    '从义乌到塔什干多少钱？',
+    '从义乌发货到了吗？',
+    'هزینه حمل از گوانگژو به تاشکند چقدر است؟',
+    'از گوانگژو به ما بفرستید',
+    'O‘sha yukni olib kelasizmi?',
+    'O‘shanda aytgan edingiz',
+    'Olma sharbati olib kelasizmi?',
+    'Xitoydan rastamojka kerak: 3 kub 500 kg, kurtka 100 dona',
+    'yana Guanchjoudan 5 kub 800 kg bor, ikkalasiga narx?',
+    "Guanchjoudan yuborganimga 10 kun bo'ldi",
+    'Xitoydan kelishiga qancha vaqt ketadi?',
+    'Xitoydan zakazga qancha olasiz?',
+    'Guanchjoudan fabrikaga borib olasizmi?',
+    'Xitoydan Alibabaga buyurtma berdim',
+  ])('«%s» still names none — Tashkent, a pronoun, a place of ours, a unit, a verb', (line) => {
+    expect(namesForeignPlace([line])).toBe(false);
+  });
+
   it('the run reads the whole inbound window and the burst — never our own lines', () => {
     const ctx = ctxWith('5 kub 800 kg', []);
     const earlier: ChatMessage = { ...msg('Andijonga kerak', 2) };

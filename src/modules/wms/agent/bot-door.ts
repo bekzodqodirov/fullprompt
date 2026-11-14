@@ -449,9 +449,11 @@ export const TARIFF_CONFIRM_WORDS: Record<TariffConfirmRefusal | 'ok' | 'not_you
 async function tariffPress(actor: { id: string; roles: readonly string[] }, holderId: string, stamp: string | undefined): Promise<PressAnswer> {
   if (actor.id !== holderId || !stamp) return { toast: TARIFF_CONFIRM_WORDS.not_yours };
   try {
-    await confirmTariff(actor, stamp, { actorId: actor.id });
+    const done = await confirmTariff(actor, stamp, { actorId: actor.id });
     // Said where it STAYS (review of 0148 as built): a toast is gone in seconds, and nothing in the chat would
-    // record that the column was vouched for. The notice has nothing left to press.
+    // record that the column was vouched for. The notice has nothing left to press. Said ONCE (fix pass 3): a column
+    // already vouched for — this press delivered again, a second tap, the page's ✅ before it — is the toast alone.
+    if (done === 'already') return { toast: TARIFF_CONFIRM_WORDS.ok, closeButtons: true };
     return { toast: TARIFF_CONFIRM_WORDS.ok, reply: `${TARIFF_CONFIRM_WORDS.ok}.`, closeButtons: true };
   } catch (err) {
     if (!(err instanceof TariffConfirmError)) throw err;

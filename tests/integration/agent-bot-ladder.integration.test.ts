@@ -882,6 +882,15 @@ describe('«📝 Tuzatish» — his lesson for the AI, never the customer’s wo
  */
 describe('«✅ Tarif to‘g‘ri» is answered where it stays (spec SPEC-P1-v2 §1.6)', () => {
   let caps: SendCaps = DEFAULT_SEND_CAPS;
+  /** How many «✅ Tarif to‘g‘ri» confirmations the audit holds. */
+  const tariffAudits = async () =>
+    Number(
+      (
+        await db.execute<{ n: string }>(
+          sql`SELECT count(*)::text AS n FROM audit_log WHERE entity_type = 'agent_send_caps' AND after->>'via' = 'tarif_togri'`,
+        )
+      )[0]!.n,
+    );
   beforeAll(async () => {
     caps = await readSendCaps();
   });
@@ -899,6 +908,26 @@ describe('«✅ Tarif to‘g‘ri» is answered where it stays (spec SPEC-P1-v2 
     expect(h.textsTo(me.chat, m).some((t) => t.startsWith('✅ Xitoy tarifi tasdiqlandi'))).toBe(true);
     expect(h.since(m).api.some((c) => c.method === 'editMessageReplyMarkup')).toBe(true);
     expect((await readSendCaps()).tariffConfirmedAt).not.toBeNull();
+  });
+
+  // Fix pass 3 (the check's nit): the confirmation became a MESSAGE and nothing kept it once — the same update
+  // delivered again, or another tap on the same notice, said «tasdiqlandi» again and wrote another audit row for one
+  // decision. A column already vouched for since its last change answers the toast alone.
+  it('a repeated press — the update delivered again, or another tap — says it once and writes one audit row', async () => {
+    const { me } = await owner();
+    await db.update(agentSendCaps).set({ tariffConfirmedAt: null }).where(eq(agentSendCaps.id, 1));
+    const stamp = await currentTariffFingerprint();
+    const notice = await sentCopy(me, 'AgentTariffNotice', { holderId: me.id, fingerprint: stamp });
+    const auditsBefore = await tariffAudits();
+    const m = h.mark();
+    const press = tg.callback(me.chat, notice, `ag:t:${me.id}:${stamp}`);
+    await h.handle(press);
+    const first = (await readSendCaps()).tariffConfirmedAt;
+    await h.handle(tg.again(press));
+    await h.handle(tg.callback(me.chat, notice, `ag:t:${me.id}:${stamp}`));
+    expect(h.textsTo(me.chat, m).filter((t) => t.startsWith('✅ Xitoy tarifi tasdiqlandi'))).toHaveLength(1);
+    expect((await readSendCaps()).tariffConfirmedAt).toEqual(first);
+    expect((await tariffAudits()) - auditsBefore).toBe(1);
   });
 
   it('a column written since the notice: the instruction is a MESSAGE too, nothing is confirmed and the button stays', async () => {

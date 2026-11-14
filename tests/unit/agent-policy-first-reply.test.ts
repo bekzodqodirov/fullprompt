@@ -2176,6 +2176,52 @@ describe('0148 fix — a figure in Chinese numerals is never read as a word: G1 
     expect(gate(ZH, 'han', 'zh', reply)).toContain('numeral_unread');
   });
 
+  // Fix pass 3 — the check of that fix: what the reader did not keep went by itself, and with a currency word it was
+  // the narrowed `money_unread` that let it — traditional numerals («兩萬», «貳萬», «一萬»), a lone «一» before a
+  // currency the list lacked («一欧元»), a rate in characters («一成», «对折», «一半»), «俩/仨», and «一千克» (the
+  // truck minimum) read as «a» because the ordinary «千克» was blanked BEFORE the «一» was asked what it counts.
+  it.each([
+    '到塔什干的運費大概兩萬美元，不含關稅和增值稅。',
+    '到塔什干的運費大約一萬。',
+    '大概貳萬。',
+    '運費大概兩萬蘇姆左右，不含關稅。',
+    '運費大概參仟。',
+    '每公斤一欧元。',
+    '每公斤一卢布。',
+    '可以便宜一成。',
+    '运费可以打对折。',
+    '运费便宜一半。',
+    '运费半价。',
+    '大概俩月到。',
+    '仨星期左右到。',
+    '卡车运输最低一千克起收。',
+    '卡车最低一千克起运，不含关税和增值税。',
+    '运费按每一千克计算。',
+    '您的货物一千克也可以发。',
+    '运输距离一千米。',
+    '卡车运输最低一公斤起收。',
+  ])('«%s» is a figure nothing can read — blocked, and never pressed (fix pass 3)', (reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBe('han_numeral');
+    const r = verdict(ZH, 'han', 'zh', reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r)).toContain('number_unverifiable:han_numeral');
+    expect(gate(ZH, 'han', 'zh', reply)).toEqual(expect.arrayContaining(['blocked', 'numeral_unread']));
+  });
+
+  it.each([
+    // «上» ends 早上 / 晚上 / 马上 — the vague «上万» is its own word, never the tail of another.
+    '您好！仓库早上十点开门，请告诉我货物的体积和重量。',
+    '您好！我们的仓库营业时间是早上八点到晚上十点，欢迎随时联系。',
+    '晚上十点以后我们也可以回复您的消息。',
+    '我们马上十分钟内回复您。',
+  ])('«%s» states no figure G1 holds — its ✅ stays (the machine still never presses a Chinese numeral)', (reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBeNull();
+    expect(blockCodes(verdict(ZH, 'han', 'zh', reply, FACTS, { hasGloss: true }))).toEqual([]);
+  });
+
+  it.each(['我们有上千家客户。', '运费上万。', '每年运输上百个集装箱。', '上万家工厂和我们合作。'])('«%s» — the vague scale as its own word is still a figure', (reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBe('han_numeral');
+  });
+
   it('a Chinese address quoted from a fact is the fact’s spelling, never a figure (the gate reads the reply less its quotes)', () => {
     const horgos = SEED_FACTS.find((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED) && /金亿/u.test(f.answer))!;
     const quoted = /[\p{Script=Han}]*金亿[\p{Script=Han}]*/u.exec(horgos.answer)![0];
@@ -2303,5 +2349,38 @@ describe('0148 fix — a number in words keeps being a number with its ending, i
     const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
     expect(blockCodes(r)).toEqual([]);
     expect(r.ok).toBe(true);
+  });
+
+  // Fix pass 3 — the check of that fix. Persian «عدد» is «number» as often as «piece»: «این دو عدد را بنویسید» asks for
+  // two NUMBERS, the volume and the weight. And «one» beside a currency is no price when it is negated — «bir so‘m ham
+  // to‘lamaysiz», «ни одного рубля», «not a single dollar» are how «free» is said.
+  it.each([
+    [FA, 'arabic', 'fa', 'سلام! برای محاسبه قیمت، این دو عدد را بنویسید: حجم بار و وزن آن.'],
+    [FA, 'arabic', 'fa', 'لطفاً دو عدد را بفرستید: حجم (متر مکعب) و وزن (کیلو).'],
+    [FA, 'arabic', 'fa', 'هزینه بر اساس حجم و وزن محاسبه می‌شود. این دو عدد را بفرستید.'],
+    [UZ, 'latin', 'uz', 'Hisob-kitob bepul — buning uchun bir so‘m ham to‘lamaysiz. Yukingiz necha kub va necha kg?'],
+    [UZ, 'latin', 'uz', 'Narxni hisoblash bepul, bir dollar ham olmaymiz. Yuk necha kub?'],
+    [UZ, 'latin', 'uz', 'Bir so‘m ham oldindan to‘lamaysiz — to‘lov yuk kelganda.'],
+    [RU, 'cyrillic', 'ru', 'Расчёт бесплатный, это не стоит вам ни одного рубля.'],
+    [UZC, 'cyrillic', 'uz_cyrl', 'Ҳисоб-китоб бепул — бир сўм ҳам тўламайсиз.'],
+    [EN, 'latin', 'en', 'The calculation is free — you do not pay a single dollar for it. How many m3 and kg?'],
+    [EN, 'latin', 'en', 'The calculation is free, not one dollar. How many m3 and kg?'],
+    [FA, 'arabic', 'fa', 'برای محاسبه حتی یک دلار هم لازم نیست؛ حجم و وزن بار را بنویسید.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» holds no figure and keeps its ✅ (fix pass 3)', (lines, script, language, reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBeNull();
+    const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
+    expect(blockCodes(r)).toEqual([]);
+  });
+
+  it.each([
+    [FA, 'arabic', 'fa', 'دو عدد کارتن داریم.'],
+    [FA, 'arabic', 'fa', 'پنج عدد جعبه رسید.'],
+    [UZ, 'latin', 'uz', 'Kilosiga bir dollar.'],
+    [UZ, 'latin', 'uz', 'Bir dollar ham emas, ikki dollar bo‘ladi.'],
+    [RU, 'cyrillic', 'ru', 'Один доллар за кило.'],
+    [EN, 'latin', 'en', 'About one dollar per kilo.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» is still a figure spelled out', (lines, script, language, reply) => {
+    expect(unverifiableNumeral(normalizeDigits(reply)), reply).toBe('word_numeral');
+    expect(blockCodes(verdict(lines, script, language, reply, FACTS, { hasGloss: true }))).toContain('number_unverifiable:word_numeral');
   });
 });

@@ -479,6 +479,69 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
       expect(rule(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
     });
 
+    // Fix pass 3 — the check of that fix: its lists turned ordinary replies in a flight chat into his «avia manzilini
+    // yozing» question, and ticking «Narx» took them from the layer — a request for INFORMATION read as a hand-over
+    // («пришлите фото», «og‘irligini yozib yuboring», «send the weight»), a question where the cargo IS («Груз в
+    // Гуанчжоу или в Иу?»), the Tashkent pickup, our own «we cannot hand it over». A hand-over has the CARGO as its
+    // object, never a photo or a figure; a place in a clause about Tashkent is the pickup; OUR sending sends him nowhere.
+    const ASKS_NOTHING: readonly (readonly [AgentLocale, string])[] = [
+      ['ru', 'Здравствуйте! Напишите вес груза (кг) и пришлите фото товара?'],
+      ['ru', 'Пришлите размеры коробок, пожалуйста.'],
+      ['ru', 'Груз в Гуанчжоу или в Иу?'],
+      ['uz', 'Assalomu alaykum! Avia narxini aytishim uchun yukning og‘irligini (kg) yozib yuboring'],
+      ['uz', 'Toshkentda yukni Chuqursoy skladimizdan olib ketasiz'],
+      ['uz', 'Tovar ro‘yxatini yuborsangiz, tekshirib beraman'],
+      ['uz', 'Tovar rasmini yuboring'],
+      ['uz', 'Kub va kg ni, shuningdek ikki-uch rasm yuboring.'],
+      ['uz', 'Yukingiz Guanchjoudami yoki Ivudami?'],
+      ['uz_cyrl', 'Товар расмини юборинг'],
+      ['en', 'Hello! Is your cargo in Guangzhou or Yiwu?'],
+      ['en', 'Please send a photo of the goods.'],
+      ['en', 'Hello! Please send the volume (m3) and weight (kg) of your cargo.'],
+      ['en', "Payment on arrival, before collection. If you can't pay in full, we cannot hand it over."],
+      ['en', 'Take your time — send the weight when you know it.'],
+      ['zh', '货在广州还是义乌？'],
+      ['zh', '请发一下货物的照片和尺寸。'],
+      ['fa', 'بار شما در گوانگژو است یا ایوو؟'],
+      ['fa', 'لطفاً عکس بار را بفرستید.'],
+      ['uz', `${quoted} Tovar rasmini yuboring.`],
+      ['en', `Air freight is about $510. Customs duty and VAT are calculated separately. Please send a photo of the goods.`],
+      // A place of ours as where the cargo LEAVES or IS, or in a sentence about Tashkent, or where he collects it.
+      ['uz', 'Toshkentdagi skladimiz — Chuqursoy, 5-uy.'],
+      ['uz', 'Avto narxi Xitoydagi omborlarimizdan hisoblanadi.'],
+      ['uz', 'Aeroport terminali orqali o‘zingiz olib ketasiz.'],
+      ['ru', 'Ваш груз на складе в Иу.'],
+    ];
+
+    it.each(ASKS_NOTHING)('armed: an ordinary reply in %s asks him nothing — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(false);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    });
+
+    // …while the hand-over in the third person — the supplier or the factory brings the cargo to us, in this trade —
+    // and the hand-over's other verbs («leave», «give») still direct it (the nit beside it).
+    const THIRD_PERSON: readonly (readonly [AgentLocale, string])[] = [
+      ['uz', `${quoted} Sotuvchingiz yukni bizga yuborsin.`],
+      ['uz', `${quoted} Zavod yukni bizga yuborsa bo‘ldi.`],
+      ['uz', `${quoted} Yukni kuryerimizga bering.`],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Ваш поставщик должен привезти груз к нам.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Пусть поставщик привезёт груз к нам в офис.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Пусть завод отправит груз нам.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Оставьте груз у нашего представителя.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Отдайте груз нашему курьеру.'],
+      ['ru', 'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Подвозите груз в любой день.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Your supplier should deliver the goods to us.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. Have your supplier send the goods to our office.'],
+      ['en', 'Air freight is about $510. Customs duty and VAT are calculated separately. We receive cargo at Baiyun airport.'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。让供应商发货给我们。'],
+      ['zh', '空运大约510美元。关税和增值税另行计算。供应商把货发给我们就行。'],
+    ];
+
+    it.each(THIRD_PERSON)('armed: a reply in %s that has the supplier hand the cargo over asks HIM — «%s»', (language, reply) => {
+      expect(talksDelivery(reply), reply).toBe(true);
+      expect(ruleArmed(compose(language, { replyText: reply }), [air], aviaChat)).toMatchObject({ needsOwner: true, ownerQuestion: line });
+    });
+
     it('the customer’s asking lists are untouched — the reply got lists of its own (spec §1.2: «do not touch the guards’ word lists»)', () => {
       const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
       // The stems, byte for byte, where `asksWhereToSend` reads them.

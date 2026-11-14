@@ -101,6 +101,7 @@ export async function handleOwnerAnswer(job: AgentOwnerAnswerJob, deps: OwnerAns
         questionDraftId: q.id,
         questionAnchor: q.anchorTgMessageId,
         questionAnchorEditedAt: q.anchorEditedAt,
+        questionDraftedAt: q.createdAt,
         messageId: job.messageId,
         text: answer.text,
       },

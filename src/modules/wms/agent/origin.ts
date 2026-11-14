@@ -103,6 +103,18 @@ export function originMentions(text: string | null): { place: string; index: num
   );
 }
 
+/**
+ * Where the text names China itself or a Chinese place — every mention, as written: what the destination reader
+ * (destination.ts) looks AFTER for the place the cargo goes to («Yiwudan X-ga», «из Китая в X»).
+ */
+export function chinaMentions(text: string | null): { index: number; match: string }[] {
+  const t = text ?? '';
+  return [
+    ...originMentions(t).map(({ index, match }) => ({ index, match })),
+    ...[...t.matchAll(new RegExp(CHINA.source, 'giu'))].map((m) => ({ index: m.index, match: m[0] })),
+  ].sort((a, b) => a.index - b.index);
+}
+
 /** Every named place in the text, each once, in the list's order. */
 export function namedOrigins(text: string | null): { place: string; zone: OriginZone | null }[] {
   const t = text ?? '';

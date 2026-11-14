@@ -129,11 +129,11 @@ export function lessonShapeRefusal(text: string): { code: 'empty' | 'too_long' |
   const body = text.trim();
   if (!body) return { code: 'empty' };
   if ([...body].length > LESSON_LIMITS.maxChars) return { code: 'too_long' };
-  // A lesson's price is a figure that says so ITSELF (numbers `ownMoneyOnly`): a currency or a scale word beside it,
-  // a per-unit or a price word right before it. A fact's reader (`moneyIn`) calls every bare figure money in a text
-  // that names money — right for a source, and «Narx haqida 1 marta ayt» was refused as the price «1» (review of
-  // 0148 as built): lessons about HOW to speak of the price are the likeliest ones.
-  const money = extractNumbers(body, [], { ownMoneyOnly: true }).find((f) => f.kind === 'money');
+  // A fact's reader (`moneyIn`): in a text that names money a bare figure is money — «Narx: avia 17, avto 160», «Цену
+  // называй 17» — less a COUNT (numbers `lesson`): «Narx haqida 1 marta ayt» was refused as the price «1» (review of
+  // 0148 as built), and demanding the price word RIGHT before the figure instead let every usual way of stating a
+  // price through (fix pass 3). Lessons about HOW to speak of the price are the likeliest ones.
+  const money = extractNumbers(body, [], { lesson: true }).find((f) => f.kind === 'money');
   if (money) return { code: 'money', detail: money.raw };
   return null;
 }

@@ -112,6 +112,11 @@ export interface AnswerMark {
    * edit later than it — made while he was answering — is a line he never answered (`answer_stale`).
    */
   questionAnchorEditedAt: string | null;
+  /**
+   * When the QUESTION was drafted (`agent_drafts.created_at`, ISO; null = a mark written before fix pass 3 — any edit
+   * reads as later): a line of the question's burst edited or deleted after it is a line he never answered.
+   */
+  questionDraftedAt: string | null;
   /** What `ownerPersonalOf` found in his answer — another customer, or this chat's code to a chat not proven. */
   personal: string[];
   /**

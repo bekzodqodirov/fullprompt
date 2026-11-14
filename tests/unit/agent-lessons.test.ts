@@ -260,6 +260,36 @@ describe('what a lesson’s text is refused for before any name is read (spec §
     expect(lessonShapeRefusal(text)).toEqual({ code: 'money', detail: figure });
   });
 
+  // Fix pass 3 — the check of that fix: demanding the price word RIGHT before the figure let the usual ways of stating a
+  // price through — the price word elsewhere in the sentence, a per-unit around the figure — and «📝» saved them, so a
+  // price he believes he set sat in every chat's prompt. In a text that names money a bare figure is money (the old
+  // rule, a fact's), and what a COUNT is is subtracted: a figure followed by an occurrence or a list word.
+  it.each([
+    ['Narx: avia 17, avto 160', '17'],
+    ['Avia narxi 1 kg uchun 17', '17'],
+    ['Цена на авиа — 17 за кг', '17'],
+    ['Kubiga narxni doim 160 deb ayt', '160'],
+    ['Tarifni 1 kub uchun 160 deb ayt', '160'],
+    ['Narx avia uchun 17', '17'],
+    ['Цену называй 17', '17'],
+    ['Price for air is 17 per kg', '17'],
+    ['Narxlar: 1 kub 160, 1 kg 17', '160'],
+    ['Avia tarif kg ga 17', '17'],
+  ])('a price stated the usual way is refused: «%s»', (text, figure) => {
+    expect(lessonShapeRefusal(text)).toEqual({ code: 'money', detail: figure });
+  });
+
+  it.each([
+    'Narxni 2-3 jumladan ko‘p yozma',
+    'Narx haqida 3 ta savoldan ortiq berma',
+    'Цену пиши не больше 2 строк',
+    'About the price, write no more than 2 sentences',
+    'Narx so‘ralsa 1 ta savol ber: necha kub?',
+    'To‘lov haqida 2 xabardan ko‘p yozma',
+  ])('…while a count beside the price word, in every form, stays a count: «%s»', (text) => {
+    expect(lessonShapeRefusal(text)).toBeNull();
+  });
+
   it('the refusal’s words give the way out for a number that is no price — in the bot and in all four bundles', () => {
     expect(LESSON_WORDS.money).toContain('so‘z bilan yozing');
     for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {

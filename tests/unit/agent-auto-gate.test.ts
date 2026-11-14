@@ -473,8 +473,10 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
       "Ikki yo'l bor: avia va avto, narxi dollarda.",
       'Есть два варианта: авто и авиа. Цена в долларах.',
       'Hi! Prices are in US dollars. Which of our three warehouses will your supplier deliver to?',
-      '价格以美元计算，请告诉我货物的体积和重量。',
       'قیمت به دلار محاسبه می‌شود.',
+      'Narxni kubiga dollarda aytaman. Yukingiz necha kub?',
+      'Цена в долларах, оплата по прибытии.',
+      'We quote in US dollars, per kilo for air and per cube for the truck.',
     ]) {
       const input = eligible();
       input.draft.category = 'faq';
@@ -496,6 +498,24 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
       '运费九百美元',
       '大概几美元一公斤。',
       'Kilosiga bir dollar.',
+      // Fix pass 3: a CHINESE sentence that names a currency is held as the fence was built — the narrowing was for
+      // «narx dollarda kelishiladi»; Chinese writes its amounts in characters («兩萬美元», «一欧元») a reader may miss.
+      '价格以美元计算，请告诉我货物的体积和重量。',
+      '到塔什干的運費大概兩萬美元，不含關稅和增值稅。',
+      '每公斤一欧元。',
+      // …and a currency that IS its own amount (the check's nit): the article, the distributive «-dan», the half, the
+      // slang noun, the per-unit right after it — no numeral at all, and a price all the same.
+      'Hello! It is about a dollar per kilo.',
+      'It is a dollar a kilo.',
+      'Roughly a buck per kilo.',
+      'Assalomu alaykum! Kilosi taxminan dollardan tushadi.',
+      'Kilosi dollar-dollar yarim atrofida.',
+      'Kilosiga dollar yarimdan.',
+      'Здравствуйте! Выйдет примерно доллар за кило.',
+      'Выйдет доллар с половиной за кило.',
+      'Выйдет полтинник долларов.',
+      'Выйдет стольник баксов.',
+      'کیلویی حدود یه دلار.',
     ]) {
       const input = eligible();
       input.draft.body = body;

@@ -188,7 +188,44 @@ describe('«javobingizda raqam bo‘lsa — karta» is asked of HIS words, never
     expect(answerHoldsFigure(text)).toBe(true);
   });
 
-  it.each(['Ha, suyuqlik olmaymiz', 'Yo‘q, batareya olmaymiz', 'Ha, olamiz', 'Да, принимаем', 'Hozircha yo‘q, keyinroq aytaman'])(
+  // Fix pass 3: the number ONE in words — every language leaves «one» out of its numerals (beside a cube it is the
+  // article as often as a count), and his «Bir kubdan kam yukni olmaymiz» is the company's truck minimum: the redraft
+  // «Ha, 1 kub yukingizni bemalol olib kelamiz» turned it round and went by itself. In HIS answer one beside what it
+  // counts is a figure, and the half too.
+  it.each([
+    'Bir kubdan kam yukni olmaymiz',
+    'Bitta karobkani olmaymiz',
+    'Bittadan ortiq olmaymiz',
+    'Bir tonnagacha olamiz',
+    'Бир кубдан кам юк олмаймиз',
+    'Битта коробкани олмаймиз',
+    'Меньше одного куба не берём',
+    'Нет, один не берём',
+    'Одну коробку не берём',
+    'Полкуба берём',
+    'We do not take less than one cube',
+    'Less than a single box we do not take',
+    'کمتر از یک متر مکعب نمی‌گیریم',
+    'Yarimta',
+    'Yarim kub ham olamiz',
+    'Half a cube is fine',
+  ])('«%s» holds a figure — one, or a half, in words', (text) => {
+    expect(answerHoldsFigure(text)).toBe(true);
+  });
+
+  it.each([
+    'Ha, suyuqlik olmaymiz',
+    'Yo‘q, batareya olmaymiz',
+    'Ha, olamiz',
+    'Да, принимаем',
+    'Hozircha yo‘q, keyinroq aytaman',
+    // «bir» as the article, beside nothing it counts.
+    'Bir narsa aytaman: suyuqlik olmaymiz',
+    'Bir oz kuting, aniqlab aytaman',
+    'Да, это одна из наших услуг',
+    'Yes, one of our managers will call',
+    'Полностью согласен, принимаем',
+  ])(
     '«%s» holds none — such an answer may go by itself',
     (text) => {
       expect(answerHoldsFigure(text)).toBe(false);
@@ -201,6 +238,9 @@ describe('«javobingizda raqam bo‘lsa — karta» is asked of HIS words, never
     expect(src).toMatch(/questionAnchorEditedAt: answer\.questionAnchorEditedAt\?\.toISOString\(\) \?\? null/u);
     // …and the job hands the QUESTION draft's stamp, never the redraft's.
     expect(readFileSync('src/modules/wms/agent/owner-answer-job.ts', 'utf8')).toMatch(/questionAnchorEditedAt: q\.anchorEditedAt/u);
+    // …and when the QUESTION was drafted — what the rest of its burst is compared with (fix pass 3).
+    expect(src).toMatch(/questionDraftedAt: answer\.questionDraftedAt\?\.toISOString\(\) \?\? null/u);
+    expect(readFileSync('src/modules/wms/agent/owner-answer-job.ts', 'utf8')).toMatch(/questionDraftedAt: q\.createdAt/u);
   });
 });
 
@@ -320,6 +360,18 @@ describe('what the bot refuses to take as an answer (§2.2 — an address or a p
       ['15.11.2026', 'date'],
       ['10:00', 'plain'],
     ]);
+    // A whole dd.mm.yyyy is a date whatever word follows (fix pass 3): «15.11.2026 kuni» read as 15.11 and a duration
+    // of 2026 days — «kuni» is «day» — so his answer lent no date and the reply naming it was blocked «2026».
+    for (const said of ['Yuk 15.11.2026 kuni keladi', 'Yuk 20.11.2026 – 25.11.2026 kunlari keladi', 'Груз будет 15.11.2026 дня', 'Arrives on 15.11.2026 day one']) {
+      expect(
+        extractNumbers(said)
+          .filter((f) => f.kind === 'date')
+          .map((f) => f.raw),
+        said,
+      ).toEqual(said.match(/\d{2}\.\d{2}\.\d{4}/gu));
+    }
+    // …while «1.50 kg» stays a weight, never the first of May.
+    expect(extractNumbers('Yukingiz 1.50 kg').map((f) => f.kind)).toEqual(['measure']);
     // …and to G6: a reply that repeats his range is not «another's phone» — its figures are G1's to hold.
     expect(foreignPhones("Rastamojka taxminan 10000-12000 dollar bo'ladi", [])).toEqual([]);
     expect(foreignPhones('Yuk 20.11.2026-25.11.2026 orasida keladi', [])).toEqual([]);
@@ -418,7 +470,7 @@ describe('«✍️ Savolga javob» on the card (§2.2)', () => {
   });
 
   it('the reply the AI wrote from his answer says so on its card — until his own words replace it', () => {
-    const fromAnswer = { questionDraftId: ID, questionAnchor: '1', questionAnchorEditedAt: null, personal: [], figures: false };
+    const fromAnswer = { questionDraftId: ID, questionAnchor: '1', questionAnchorEditedAt: null, questionDraftedAt: null, personal: [], figures: false };
     const redraft = draft({ needsOwner: false, ownerQuestion: null, proposedBody: 'Afsuski, suyuq yuk olmaymiz.', policy: { ...(draft().policy as object), fromAnswer } as never });
     expect(renderDraftCard(redraft, null)).toContain(FROM_ANSWER_LINE);
     expect(renderDraftCard({ ...redraft, finalBody: 'O‘zim yozdim.' }, null)).not.toContain(FROM_ANSWER_LINE);

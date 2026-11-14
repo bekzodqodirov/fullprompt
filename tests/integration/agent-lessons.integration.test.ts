@@ -552,6 +552,18 @@ describe('the lesson: typed, echoed, confirmed (spec §3.2)', () => {
       return words;
     };
     expect(await refused('Avia narxini 17 $ deb ayt')).toBe(`«17» — ${LESSON_WORDS.money}`);
+    // Fix pass 3: a price stated the usual way — the price word anywhere in the sentence, a per-unit around the figure
+    // — was echoed «Saqlaymi?» and saved; refused at the bot's door and the page's alike.
+    for (const [price, figure] of [
+      ['Narx: avia 17, avto 160', '17'],
+      ['Цена на авиа — 17 за кг', '17'],
+      ['Price for air is 17 per kg', '17'],
+    ] as const) {
+      expect(await refused(price)).toBe(`«${figure}» — ${LESSON_WORDS.money}`);
+      expect(await lessonFromPage(actorOf(ownerId), { draftId: d.id, text: price }, ctxOf(ownerId))).toMatchObject({ ok: false, code: 'money' });
+    }
+    // …while a count beside the price word is no price, at either door.
+    expect(await lessonRefusalFor(ownerId, d.id, 'Narx haqida 1 marta ayt, takrorlama')).toBeNull();
     expect(await refused(`${otherClientCode} ga doim rus tilida yoz`)).toBe(`«${otherClientCode}» — ${LESSON_WORDS.personal}`);
     expect(await refused('Savol bo‘lsa +998 90 123 45 67 ga yo‘naltir')).toContain(LESSON_WORDS.personal);
     // The chat's own customer, by ONE word of the name.

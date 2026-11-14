@@ -2975,6 +2975,40 @@ describe('0148 fix — what goes by itself, on real runs', () => {
       await goes(d);
     });
 
+    // Fix pass 3: the burst is read whole, and a greeting of the OTHER language decided it «confidently» — the
+    // greeting is no mark of either language, the customer's own words are.
+    const RUQ = `Здравствуйте! Чтобы посчитать, напишите объём (куб) и вес (кг) груза ${TAG}?`;
+    it.each([
+      [['Ассалому алайкум', 'Сколько стоит доставка из Гуанчжоу в Ташкент?'], undefined],
+      [['Ассалому алайкум', 'Груз готов, когда заберёте?'], 'ru'],
+      [['хоп', 'тогда отправляйте, сколько будет стоить?'], 'ru'],
+    ] as const)('«%s» (stored %s): the Russian reply goes — «Ассалому алайкум» is every customer’s greeting', async (lines, stored) => {
+      const d = await ran(lines, [compose(RUQ, { language: 'ru', category: 'qualification' })], stored ? { stored } : {});
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'ru', confident: true });
+      await goes(d);
+    });
+
+    it('«Здравствуйте» on top of an unmarked Uzbek line in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
+      const d = await ran(['Здравствуйте', 'Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false });
+      await goes(d);
+    });
+
+    it('«Assalomu alaykum» on top of an English question: the English reply goes', async () => {
+      const d = await ran(
+        ['Assalomu alaykum', 'How much is shipping from Guangzhou to Tashkent?'],
+        [compose(`Hello! Please send the volume (m3) and weight (kg) of your cargo ${TAG}.`, { language: 'en', category: 'qualification' })],
+      );
+      expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'en', confident: true });
+      await goes(d);
+    });
+
+    it('…while an Uzbek-worded BODY under a Russian greeting is still Uzbek: the Russian reply is his', async () => {
+      const d = await ran(['Здравствуйте', 'Гуанчжоудан юк бор эди, нархи қанча?'], [compose(RUQ, { language: 'ru', category: 'qualification' })]);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['language']);
+      await staysHis(d);
+    });
+
     it('…while a customer whose words ARE Uzbek never gets a Russian reply by itself, nor a Russian one an Uzbek reply', async () => {
       const ru = await ran(['Ассалому алайкум, Хитойдан юк борми, нархи қанча?'], [compose(`Здравствуйте! Напишите объём и вес груза ${TAG}?`, { language: 'ru', category: 'qualification' })]);
       expect((await verdictOf(ru.id))!.reasons).toEqual(['language']);
@@ -3021,6 +3055,28 @@ describe('0148 fix — what goes by itself, on real runs', () => {
       expect((await verdictOf(d.id))!.reasons).toEqual(['foreign_destination']);
       await staysHis(d);
     });
+
+    // Fix pass 3: the neighbours of those spellings in each language, and a destination no list holds — read off the
+    // customer's own grammar («…dan X-ga», «из … в X», «from … to X»). Each reply the mandated Tashkent quote in the
+    // customer's own language: everything else about it goes.
+    it.each([
+      ['uz', "Yiwudan O‘shga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", PRICED],
+      ['uz', "Yiwudan Tehronga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", PRICED],
+      ['uz_cyrl', 'Иудан Алматига 5 куб 1000 кг юк бор, нархи қанча?', `5 куб, 1000 кг юкингиз учун Тошкентгача йўлкира тахминан 800 $ бўлади. ${EXCLUSION_SENTENCE.uz_cyrl}`],
+      ['ru', 'Здравствуйте, доставка из Иу в г. Карши, 5 куб 1000 кг, сколько стоит?', `5 куб, 1000 кг груза до Ташкента — доставка примерно 800 $. ${EXCLUSION_SENTENCE.ru}`],
+      ['en', 'Hello, how much from Yiwu to Osh for 5 m3 1000 kg?', `For 5 m3, 1000 kg of cargo to Tashkent the freight is about $800. ${EXCLUSION_SENTENCE.en}`],
+    ] as const)('%s «%s» → `foreign_destination`', async (language, question, reply) => {
+      const d = await ran([question], [truck, compose(reply, { category: 'price', language })]);
+      expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(true);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['foreign_destination']);
+      await staysHis(d);
+    });
+
+    it('…while the same quote to a customer bound for Tashkent goes — in his grammar too («Yiwudan Toshkent shahriga»)', async () => {
+      const d = await ran(["Yiwudan Toshkent shahriga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?"], [truck, compose(PRICED, { category: 'price' })]);
+      expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(false);
+      await goes(d);
+    });
   });
 
   describe('the flight’s PRICE goes by itself in every language — its address never (the armed avia rule, the reply’s own lists)', () => {
@@ -3054,6 +3110,25 @@ describe('0148 fix — what goes by itself, on real runs', () => {
       expect(d.ownerQuestion).toMatch(/^Avia: 30 kg, qayerdan: Guangzhou/u);
       expect((await verdictOf(d.id))!.reasons).toContain('needs_owner');
       await staysHis(d);
+    });
+
+    // Fix pass 3: with «Narx» ticked the reply's own lists made ordinary replies in a flight chat his «avia manzilini
+    // yozing» question — a request for a photo or a weight, a question where the cargo is, a price followed by «send a
+    // photo». They go as they did with «Narx» unticked.
+    it.each([
+      ['ru', 'Здравствуйте, хочу отправить одежду авиа из Китая в Ташкент, сколько стоит?', `Здравствуйте! Напишите вес груза (кг) и пришлите фото товара ${TAG}?`, 'qualification'],
+      ['en', 'Hello, I want to send clothes by air from China to Tashkent, how much?', `Hello! Is your cargo in Guangzhou or Yiwu ${TAG}?`, 'qualification'],
+      [
+        'en',
+        'Hello, how much is air freight for 30 kg of clothes from Guangzhou to Tashkent?',
+        `Air freight for your 30 kg shipment to Tashkent is about $510. ${EXCLUSION_SENTENCE.en} Please send a photo of the goods ${TAG}.`,
+        'price',
+      ],
+    ] as const)('%s: «%s» answered «%s» asks him nothing and goes', async (language, question, reply, category) => {
+      const d = await ran([question], category === 'price' ? [flight, compose(reply, { language, category })] : [compose(reply, { language, category })]);
+      expect(d.needsOwner).toBe(false);
+      expect((d.policy as { forcedQuestion?: unknown }).forcedQuestion).toBeUndefined();
+      await goes(d);
     });
 
     it('with «Narx» unticked every quoted flight asks him, as it always has — the Russian one too', async () => {

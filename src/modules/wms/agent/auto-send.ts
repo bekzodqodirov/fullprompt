@@ -410,6 +410,7 @@ function answerMarkOf(raw: unknown): AnswerMark | null {
     questionDraftId: typeof m.questionDraftId === 'string' ? m.questionDraftId : '',
     questionAnchor: typeof m.questionAnchor === 'string' && /^\d+$/u.test(m.questionAnchor) ? m.questionAnchor : '0',
     questionAnchorEditedAt: typeof m.questionAnchorEditedAt === 'string' ? m.questionAnchorEditedAt : null,
+    questionDraftedAt: typeof m.questionDraftedAt === 'string' ? m.questionDraftedAt : null,
     personal,
     figures: m.figures !== false,
   };
@@ -419,7 +420,8 @@ function answerMarkOf(raw: unknown): AnswerMark | null {
 async function answerStaleOf(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId'>, mark: AnswerMark): Promise<boolean> {
   try {
     const edited = mark.questionAnchorEditedAt === null ? null : new Date(mark.questionAnchorEditedAt);
-    return await answerStale(d.managerUserId, d.peerId, BigInt(mark.questionAnchor), edited);
+    const drafted = mark.questionDraftedAt === null ? null : new Date(mark.questionDraftedAt);
+    return await answerStale(d.managerUserId, d.peerId, BigInt(mark.questionAnchor), edited, drafted);
   } catch (err) {
     logger.warn({ err }, '[agent] auto: the answered question’s chat not read');
     return true;
