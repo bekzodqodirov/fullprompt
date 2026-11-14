@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dropDrainKicksSince } from './drain-kicks';
 import type { CallModel } from '@/modules/platform/ai/model';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -161,7 +162,10 @@ beforeAll(async () => {
       ownerUserId: ownerId,
       sessionExclusiveAt: new Date(),
       sessionExclusiveBy: ownerId,
-      startedAt: new Date(Date.now() - 30 * 86_400_000),
+      // A literal, before every clock this file fakes: a start counted back from the REAL clock moved closer to
+      // them every day, and once it stood within the ramp's 14 days of a probe moment the day's ceiling fell to
+      // one send and the second ✅ read `budget_spent` (it failed from 2026-11-14 ~15:00 UTC, on main too).
+      startedAt: new Date('2026-09-01T00:00:00Z'),
       dailyDraftCap: 150,
       dailyTokenCap: 3_000_000,
     })
@@ -178,7 +182,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// The drain's kicks this file's notifications queued, from its own start (fix pass 5 — `drain-kicks.ts`).
+const KICKS_FROM = new Date().toISOString();
 afterAll(async () => {
+  await dropDrainKicksSince(KICKS_FROM);
   await clearChat();
   await db.delete(notifications).where(eq(notifications.userId, ownerId));
   await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));

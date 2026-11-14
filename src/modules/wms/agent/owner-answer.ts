@@ -144,9 +144,11 @@ export function answerHoldsFigure(text: string): boolean {
  *    ham…» was answered with his «Ha, olamiz» to the wording his card showed, and went by itself;
  *  - he DELETED it: the redraft anchors on an older line, and answers a question that is no longer there;
  *  - he edited or deleted ANOTHER line of the burst the question was asked about (fix pass 3) — every line since our
- *    last message, as the run's `ctx.burst` has it — after the question was drafted (`questionDraftedAt`): «Salom,
- *    suyuq atir ham…» / «Toshkentga olib kelish kerak» asked about both, the listener re-thinks only an edit of the
- *    NEWEST line, and his «Ha, olamiz» was rewritten for «…suyuq atir va litiy batareya ham…» and went by itself.
+ *    last message, as the run's `ctx.burst` has it — after the question's run READ it (`questionDraftedAt`, the newest
+ *    edit it saw, owner-answer-job `questionSeenAt` — never the question's INSERT, which a line corrected during the
+ *    model call is older than, fix pass 5): «Salom, suyuq atir ham…» / «Toshkentga olib kelish kerak» asked about
+ *    both, the listener re-thinks only an edit of the NEWEST line, and his «Ha, olamiz» was rewritten for «…suyuq atir
+ *    va litiy batareya ham…» and went by itself.
  * Then the redraft waits for his eye.
  */
 export async function answerStale(

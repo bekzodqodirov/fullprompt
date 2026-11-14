@@ -804,8 +804,13 @@ const TOTAL_BEFORE =
  * lesson is an INSTRUCTION, never a source: in a text that names money every other bare figure is money, as a fact's
  * («Narx: avia 17, avto 160», «Цену называй 17», «Avia narxi 1 kg uchun 17»); only what a count is is taken away.
  */
-const LESSON_COUNT_AFTER = new RegExp(
-  `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:(?:ta|та)\\s+)?(?:${[
+export const LESSON_COUNT_AFTER = new RegExp(
+  // «3 ta savol» needs no prefix of its own: the classifier alone counts (fix pass 5 — the «ta» prefix pass 3 put here
+  // could be deleted with every test green, because «ta» below already reads it).
+  `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:${[
+    // The classifier itself, whatever follows it (fix pass 4): «1 tadan ortiq emoji qo‘yma», «2 tadan ko‘p savol berma»
+    // were refused as the price «1», «2». A price is never counted in «ta».
+    '(?:ta|та)(?:dan|дан)?(?![\\p{L}])',
     'marta(?![\\p{L}])',
     'марта(?:ба)?(?![\\p{L}])',
     'раз(?:а|у)?(?![\\p{L}])',
@@ -854,6 +859,11 @@ const LESSON_COUNT_AFTER = new RegExp(
     'options?(?![\\p{L}])',
     'xil\\p{L}*',
     'хил\\p{L}*',
+    // …and the parts a reply is cut into: «javobni 3 qismga bo‘lib yoz» (fix pass 4).
+    'qism\\p{L}*',
+    'қисм\\p{L}*',
+    'част(?:и|ей|ям|ями)(?![\\p{L}])',
+    'parts?(?![\\p{L}])',
   ].join('|')})`,
   'iu',
 );

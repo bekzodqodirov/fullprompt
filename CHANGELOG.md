@@ -1,5 +1,152 @@
 # CHANGELOG
 
+## 2026-11-14 kechqurun — To'liq AI sotuvchi, 1b: oxirgi tekshiruvlar, til bo'yicha tuzatishlar va «AI egasi uzilgan» ogohlantirishi
+
+**Migratsiya yo'q** — son **149** bo'lib qoladi. Kod o'zgargani uchun `/api/version` bugungi kechki vaqtni ko'rsatishi
+kerak. Qadamlar: `docs/UPDATE.md` → «To‘liq AI sotuvchi, 1b (2026-11-14, migratsiyasiz)».
+
+### Serveringizda topilgan muammo
+- AI egasi sifatida «Bekzod (Super admin)» tanlangan edi, uning Telegrami esa 11-noyabrda uzilgan. Ishlab turgan
+  +998902405077 hech kimning AI akkaunti emas edi. Shuning uchun AI **29-oktyabrdan beri bitta ham javob yozmagan**.
+- Bunda `/agent` «ishlayapti» der, sahifa esa «tinglovchi yangilanmagan» deb chalg'itar edi. Endi ikkalasi ham
+  aniq aytadi: **«AI egasining Telegram akkaunti uzilgan — AI xabarlarga javob yozmaydi»** va nima qilish kerakligini
+  yozadi.
+
+### Til bo'yicha (o'zi yuborish uchun)
+- **Tili aniq bo'lmagan yangi chatda faqat birinchi javob ✅ingizni kutadi.** Masalan mijoz faqat «GS777», «5 куб
+  800 кг», «👍» yoki «Ok» deb yozganda. ✅ bosganingizda chat shu tilni eslab qoladi va keyingi javoblar o'zi ketadi.
+- O'zbekcha xabarda bitta ruscha so'z («понял», «ясно») bo'lsa ham, javob ruscha bo'lib ketib qolmaydi.
+- Lotincha so'zlashuv uslubi («Narxlari qanaqa?», «Ish vaqti?») o'zbekcha deb tanildi — javobi o'zi ketadi.
+- Mijoz avval aytgan til keyingi qisqa xabarlarda ham hisobga olinadi.
+
+### Narx va avia (1-qismdagi «Hali qolgani» tuzatildi)
+- Avia chatda yukni Xitoydagi joyga yuborishni **har qanday shaklda** aytgan javob («Шлите», «opkeling», «运», «в Иу»,
+  «bazamizga») endi sizga keladi. Tizim bilmagan shaklni ham «xavfli» deb hisoblaydi.
+- Shahar nomining boshqacha yozilishi («Qarshi ga», «Osh-ga», «Manzil: Osh»), Eron, Turkiya, Mozori Sharif va
+  boshqalar tanildi.
+- So'z bilan yozilgan narx va muddat, ✍️ javobingizdagi kun («ertaga», «juma»), «yuklanadi» kabi va'dalar — sizga.
+- Saboqda yolg'iz raqam narx deb hisoblanadi (masalan «emojini 2 dan ko'p qo'yma» ham rad etiladi — raqamni so'z
+  bilan yozing).
+
+### «Narx» katagi
+1b deploy qilingach **«Narx» katagini belgilashingiz mumkin.** Doimiy test to'plamida: **898 ta xavfli javobdan bittasi
+ham o'zi ketmaydi**, 585 ta oddiy javobdan 563 tasi o'zi ketadi (22 tasi ataylab sizni kutadi). Deploydan keyingi birinchi
+mashina narxi baribir ✅ingizni (yoki «✅ Tarif to'g'ri» ni) kutadi.
+
+### Hali qolgani (kam uchraydi)
+- Oxiri o'zbekchaga o'xshagan inglizcha so'zli xabar («dollar», «Xiaomi», «Honda») ga o'zbekcha javob ketishi mumkin.
+- Ruscha gapda bitta o'zbekcha so'z («яхши», «хозир») bo'lsa, javob o'zbek kirillida ketishi mumkin.
+- «Yuk ertaga uchadi» kabi uchish fe'li bilan aytilgan kun, «kechqurun» kabi vaqt.
+Bular xavfli emas (narx yoki manzil emas), keyingi tuzatishda qo'shiladi.
+
+### Qanday tekshirildi
+1b uchun uchta tuzatish va ikkita mustaqil tekshiruv o'tkazildi. Har bir topilma avval doimiy test to'plamiga qo'shildi,
+keyin tuzatildi. To'liq sinov CI tartibida (toza baza): barcha testlar va brauzer testlari.
+
+## 2026-11-13 → 11-14 — To'liq AI sotuvchi, 1-qism: narxni o'zi aytadi, bilmasa sizdan so'raydi, xatosidan o'rganadi, olti tilda yozadi
+
+Sizning so'zingiz: «bularni hammasini qur bir boshdan ful ai sotuvchi kerak menga ozi sotuv qilsin bilmagan savollar
+kelganda botdan habar jonatsin shu savolga javobni bilmayabman deb va sotuvchi javob bersa ushani olsin».
+
+Ish uch qismga bo'lindi. Bu — **1-qism**. 2-qism (hisoblatishni o'zi yuborish, VED javobiga ustama qo'shib narx
+aytish, lid bosqichlari) va 3-qism (juma kungi tabrik, AI alohida hodim) keyin keladi.
+
+**Migratsiya bor: 0148.** Deploydan keyin baza hisobi **149** bo'lishi kerak, `/api/version` bugungi vaqtni
+ko'rsatishi kerak. **tg-listen ham qayta qurilishi shart** (yuborish qadami narxni yuborish oldidan qayta
+hisoblaydi). Qadamlar: `docs/UPDATE.md` → «To'liq AI sotuvchi, 1-qism (2026-11-14, 0148)».
+
+### Deploy kuni nima o'zgaradi
+- **Narxli javoblar hali ham sizning ✅ingizni kutadi.** Narx o'zi ketishi uchun «Suhbatlar → AI sotuvchi»
+  sahifasida «Narx» katagini o'zingiz belgilaysiz.
+- O'zi yuborishning **kunlik soni endi chegarasiz** (sizning «chegara qoyma» so'zingiz). Sahifada istalgan payt son
+  qo'ysa bo'ladi.
+- «✍️ Savolga javob» va «📝 Tuzatish» tugmalari kartalarda darhol chiqadi.
+- Deploydan keyingi **birinchi mashina narxi** baribir sizning ✅ingizni kutadi (yoki sahifada «✅ Tarif to'g'ri»
+  ni bosasiz) — tizim jadvalni siz tasdiqlaganingizni bilishi kerak.
+- **«Narx» katagini hozircha belgilamang.** Oxirgi mustaqil tekshiruv avia chatlarda va boshqa shahar nomlarida yana
+  bir nechta holat topdi (pastda, «Hali qolgani»). Ular **1b** tuzatishida keladi; ungacha narxli javoblarni ✅ bilan
+  o'zingiz yuborasiz — bu xavfsiz.
+
+### 1. Narxni o'zi aytadi
+- «Narx» belgilangan va o'zi yuborish yoqilgan bo'lsa: mashina yo'lkirasi jadvaldan, avia esa kg × sizning narxingiz
+  (17 $) bo'yicha **o'zi ketadi**.
+- Faqat **tizim hisoblagan narx** ketadi. AI o'ylab topgan, balansdan olingan yoki boshqa joydan ko'chirilgan raqam
+  bo'lsa — karta sizga keladi.
+- Javobda mijozning kub va kg'i, «Toshkentgacha» degan so'z bo'lishi shart. Mijoz Toshkentdan boshqa shaharni
+  (Andijon, Olmaota, Osh…) aytgan bo'lsa — sizga. Ro'yxatda yo'q shahar bo'lsa ham javobda «Toshkentgacha» deb aniq
+  yoziladi, mijoz narx qayergacha ekanini ko'radi.
+- **Narx yuborilish paytida qayta hisoblanadi.** Shu orada jadval yoki avia narxi o'zgargan bo'lsa, eski raqam
+  ketmaydi — karta sizga qaytadi, ✏️ bilan to'g'ri raqamni yozasiz.
+- **/admin/tarif'da Xitoy narxi o'zgarsa,** shundan keyingi birinchi narxli javob ✅ingizni kutadi (yoki sahifada
+  «✅ Tarif to'g'ri»). Keyin narxlar yana o'zi ketadi.
+- **Saytdagi narx jadvali 31.12.2026 da tugaydi.** 14 kun oldin botga eslatma keladi. Undan keyin narx /admin/tarif
+  dan olinadi, mashina muddati 15-25 kun deb aytiladi.
+- Temir yo'l narxi hech qachon o'zi aytilmaydi. Avia chatda mijozga yukni qayerga olib kelishni aytadigan javob —
+  sizga (manzilni o'zingiz berasiz).
+
+### 2. Bilmasa sizdan so'raydi — «✍️ Savolga javob»
+- AI bilmagan savolda karta savol bilan keladi: «❓ Sizdan savol: …».
+- **«✍️ Savolga javob»** ni bosasiz va javobingizni yozasiz (yoki kartaga «reply» qilib yozasiz).
+- AI sizning javobingizdan foydalanib mijozga javob yozadi va **yangi karta** keladi: «✍️ Sizning javobingiz asosida
+  yozildi».
+- **Javobingizda raqam bo'lsa** (narx, kun, foiz, kg), AI yozgan javob har doim karta bo'lib keladi — ✅ ni o'zingiz
+  bosasiz. Raqamsiz javob («Ha, suyuqlik olmaymiz») qoidalar ruxsat bersa o'zi ketadi.
+- **Raqamni raqam bilan yozing** («15 kun», «2 hafta»). So'z bilan yozilgan sonning ayrim shakllarini («o'n beshta»,
+  «haftasiga bir marta») tizim hali tanimaydi — 1b gacha javob o'zi ketib qolishi mumkin.
+- Mijoz shu orada savolini o'zgartirsa yoki o'chirsa, eski javob ketmaydi — sizga qaytadi.
+- Javobda telefon, havola yoki xitoycha matn bo'lsa, qabul qilinmaydi (javobni ularsiz qayta yozing).
+  Narx oralig'i («10 000-12 000 $») va sana («15.11.2026») qabul qilinadi.
+- **Temir yo'l narxi va avia manzili** so'ralganda ✍️ chiqmaydi — ✏️ bilan o'zingiz yozasiz (AI manzil va telefonni
+  qayta yozmaydi: bitta harf xatosi yukni boshqa joyga yuboradi).
+
+### 3. Xatosidan o'rganadi — «📝 Tuzatish»
+- AI yozgan har bir kartada **«📝 Tuzatish»** bor. Bosasiz va AI qayerda xato qilganini yozasiz, masalan: «Mijozga
+  har doim yukning rasmini so'ra».
+- Bot yozganingizni qaytaradi: «📝 Saboq: «…» Saqlaymi?» — **«✅ Saqlash»** yoki «✖ Bekor».
+- Saqlangan saboq **hamma chatlar uchun** qoida bo'ladi, AI keyingi hamma javoblarda hisobga oladi.
+- Kartadagi javob hali yuborilmagan bo'lsa, AI uni saboq bo'yicha **qayta yozadi** va yangi karta keladi.
+- «👎 Xato edi» dan keyin ham «📝 Sababini yozish» tugmasi chiqadi.
+- Saboqda **narx, mijoz ismi, kodi va telefoni** yozilmaydi (narx faqat jadvaldan va sizning ✅ingizdan keladi).
+- Sahifada yangi **«Saboqlar»** bo'limi: hammasi ro'yxatda, tahrirlash, o'chirib qo'yish, o'chirish. Ko'pi bilan 40 ta
+  saboq va 6 000 belgi; sig'magani «sig'madi» deb ko'rsatiladi.
+
+### 4. Olti tilda yozadi
+- O'zbek (lotin va kirill), rus, ingliz, fors, xitoy — mijoz qaysi tilda yozsa, o'sha tilda. Kirill yozganga kirill,
+  lotin yozganga lotin.
+- Ingliz, fors va xitoy tilidagi javob **mijozning tili aniq bo'lsagina** o'zi ketadi.
+- Xitoycha javobda ierogliflar bilan yozilgan son bo'lsa («两万»), tizim uni ishonchli o'qiy olmaydi — javob o'zi
+  ketmaydi, karta sizga keladi.
+
+### 5. Chegaralar
+- O'zi yuborishning kunlik soni — **chegarasiz** (sahifada istasangiz qo'yasiz).
+- Akkaunt himoyasi (AI kuniga va soatiga nechta xabar yuboradi) — sahifadagi yangi «Akkauntni himoya chegaralari»
+  kartasida o'zgartirasiz. Ko'pi bilan **kuniga 200 ta, soatiga 100 ta**.
+
+### Muhim (orqaga qaytarish haqida)
+0148 migratsiyasidan keyin ilovani ESKI versiyaga qaytarsangiz, «o'zi yuborish» hech qanday xabarsiz ishlamay qoladi —
+har bir javob «kunlik chegara tugadi» deb to'xtaydi. Qaytarishdan oldin botda `/agent auto off` yozing.
+
+### Qanday tekshirildi
+Har bir tuzatishdan keyin uni yozmagan mustaqil tekshiruvchilar qaradi, topilgan har bir holat sinov bilan
+takrorlandi. Oxirida hamma topilgan holatlar bitta doimiy test to'plamiga yig'ildi: **656 ta xavfli javob — bittasi
+ham o'zi ketmaydi; 377 ta oddiy javob o'zi ketadi, 8 tasi ataylab sizni kutadi**. Avvalgi versiya (hozir serveringizda
+ishlayotgani) shu to'plamda 90 ta xavfli javobni o'tkazib yuborardi.
+
+### Hali qolgani (1b tuzatishi)
+To'plam tayyor bo'lgach yana bir mustaqil tekshiruv o'tdi va yangi holatlar topdi. Ular to'plamga qo'shilib, **1b**
+da tuzatiladi:
+- avia chatda yukni Xitoydagi joyga yuborishni boshqa so'zlar bilan aytgan javob («Шлите», «opkeling», «运»,
+  «в Иу»…);
+- shahar nomi boshqacha yozilgani («Qarshi-ga», «Manzil: Osh») yoki butun mamlakat (Eron, Turkiya);
+- ў/қ/ғ/ҳ harflarisiz kirill o'zbekcha yozuvni ruscha deb o'qish;
+- so'z bilan yozilgan narx, muddat va sizning ✍️ javobingizdagi ayrim son shakllari;
+- narxni pul so'zisiz aytgan saboq.
+«Narx» katagini 1b gacha belgilamang. Raqamlarni raqam bilan yozing.
+
+### Bu yerda tekshirib bo'lmagani
+Haqiqiy Telegram va haqiqiy AI modeli bu yerda yo'q. Birinchi «✍️», birinchi «📝» va birinchi o'zi ketgan javobni
+kuzatib turing.
+
 ## 2026-11-12 → 11-13 — Prixod javoblari: yuk qayta tortilsa mijozga savol o'zi boradi; xodimning ✅ i ham kg va kubni eslaydi; sotuvchi kartada fayl qo'shadi
 
 Sizning javobingiz «Prixod xabari» bilan yuborilgan yetti savolga: «1 b / 2 b / 4 b / 7 egasz yuk hech kimga habari

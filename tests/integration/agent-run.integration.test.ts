@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { dropDrainKicksSince } from './drain-kicks';
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -200,7 +201,10 @@ beforeEach(async () => {
   await stampAgentPump(accountId, true);
 });
 
+// The drain's kicks this file's notifications queued, from its own start (fix pass 5 — `drain-kicks.ts`).
+const KICKS_FROM = new Date().toISOString();
 afterAll(async () => {
+  await dropDrainKicksSince(KICKS_FROM);
   await clearChat();
   await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));

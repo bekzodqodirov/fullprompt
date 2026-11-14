@@ -539,6 +539,13 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
       'Narxni kubiga dollarda aytaman. Yukingiz necha kub?',
       'Цена в долларах, оплата по прибытии.',
       'We quote in US dollars, per kilo for air and per cube for the truck.',
+      // Fix pass 4: the currency OF a price per a unit states no amount («в долларах за куб», «in dollars per kg»), and a
+      // Chinese sentence naming its currency with no amount is the same sentence in Chinese — pass 3 held every one.
+      'Здравствуйте! Цены указаны в долларах за куб. Напишите объём и вес груза?',
+      'Hello! Our rates are in dollars per kg for air. What is the weight?',
+      '价格以美元计算，请告诉我货物的体积和重量。',
+      '您好！运费在货物到达塔什干后、取货前以苏姆支付；价格以美元商定。',
+      '我们收美元和人民币。',
     ]) {
       const input = eligible();
       input.draft.category = 'faq';
@@ -560,11 +567,17 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
       '运费九百美元',
       '大概几美元一公斤。',
       'Kilosiga bir dollar.',
-      // Fix pass 3: a CHINESE sentence that names a currency is held as the fence was built — the narrowing was for
-      // «narx dollarda kelishiladi»; Chinese writes its amounts in characters («兩萬美元», «一欧元») a reader may miss.
-      '价格以美元计算，请告诉我货物的体积和重量。',
+      // Fix pass 3 held every CHINESE sentence naming a currency; fix pass 4 narrows it to an amount beside the currency
+      // — a run of numerals («兩萬美元», «一欧元») or an amount in characters that holds none: the half, the vague, the
+      // approximators, a per-unit word right before it.
       '到塔什干的運費大概兩萬美元，不含關稅和增值稅。',
       '每公斤一欧元。',
+      '每公斤半美元。',
+      '每公斤美元出头。',
+      '每公斤美元左右。',
+      '每公斤若干美元。',
+      '每公斤一些美元。',
+      '运费多少美元都可以商量。',
       // …and a currency that IS its own amount (the check's nit): the article, the distributive «-dan», the half, the
       // slang noun, the per-unit right after it — no numeral at all, and a price all the same.
       'Hello! It is about a dollar per kilo.',
@@ -706,12 +719,19 @@ describe('six languages (spec §4): the customer’s, never the model’s label'
     expect(lang('en', { locale: 'uz', confident: true })).toEqual(['language']);
   });
 
-  it('Uzbek and Russian keep today’s rule unless a confident guess says otherwise', () => {
-    // Today's rule: an unconfident (or absent) guess lets uz / uz_cyrl / ru through.
+  it('Uzbek and Russian go on a confident guess of that very language, or an unconfident one that LEANS on it', () => {
+    // Fix pass 6 (the hunt #3) — corrected expectation: «today's rule» let an unconfident (or absent) guess pass every
+    // uz / uz_cyrl / ru reply, and «Иудан Тошкентгача неча пул?» (an unconfident «ru») took a Russian reply by itself.
+    // Where the rule cannot tell, it holds; a lean admits its own language only.
     for (const l of ['uz', 'uz_cyrl', 'ru']) {
-      expect(lang(l, null), `${l} no guess`).toEqual([]);
-      expect(lang(l, { locale: 'en', confident: false }), `${l} unconfident`).toEqual([]);
+      expect(lang(l, null), `${l} no guess`).toEqual(['language']);
+      expect(lang(l, { locale: null, confident: false }), `${l} names no language`).toEqual(['language']);
+      expect(lang(l, { locale: 'en', confident: false }), `${l} unconfident, other`).toEqual(['language']);
+      expect(lang(l, { locale: l, confident: false }), `${l} unconfident, no lean`).toEqual(['language']);
+      expect(lang(l, { locale: l, confident: false, leans: true }), `${l} leans on it`).toEqual([]);
+      expect(lang(l, { locale: l, confident: true }), `${l} confident`).toEqual([]);
     }
+    expect(lang('ru', { locale: 'uz_cyrl', confident: false, leans: true })).toEqual(['language']);
     // An Uzbek Cyrillic customer and a Russian reply: one script, refused on the confident guess.
     expect(lang('ru', { locale: 'uz_cyrl', confident: true })).toEqual(['language']);
     expect(lang('uz', { locale: 'en', confident: true })).toEqual(['language']);

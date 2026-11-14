@@ -2,12 +2,14 @@ import 'dotenv/config';
 import { createHash, randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { dropDrainKicksSince } from './drain-kicks';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   clients,
   crmActivities,
   crmPeople,
+  events,
   leadIntakes,
   leadSources,
   leadStages,
@@ -319,7 +321,10 @@ beforeAll(async () => {
   await db.update(clients).set({ personId: people[0]!.id }).where(eq(clients.id, clientsMade[0]!));
 });
 
+// The drain's kicks this file's notifications queued, from its own start (fix pass 5 — `drain-kicks.ts`).
+const KICKS_FROM = new Date().toISOString();
 afterAll(async () => {
+  await dropDrainKicksSince(KICKS_FROM);
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) await db.delete(settings).where(eq(settings.key, key));
     else await db.update(settings).set({ value }).where(eq(settings.key, key));
@@ -339,10 +344,14 @@ afterAll(async () => {
     // tg_message_flags follows its message (ON DELETE CASCADE).
     await db.delete(tgMessages).where(inArray(tgMessages.leadId, leadIds));
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, leadIds));
+    // The landings' own events (`LeadStageChanged` …) name these leads: left unprocessed, the next file's drain acts
+    // on a lead that is gone (fix pass 5, the check of pass 3's leftovers).
+    await db.delete(events).where(inArray(events.entityId, leadIds));
     await db.delete(leads).where(inArray(leads.id, leadIds));
   }
   if (clientsMade.length) {
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, clientsMade));
+    await db.delete(events).where(inArray(events.entityId, clientsMade));
     await db.delete(clients).where(inArray(clients.id, clientsMade));
   }
   if (peopleMade.length) await db.delete(crmPeople).where(inArray(crmPeople.id, peopleMade));

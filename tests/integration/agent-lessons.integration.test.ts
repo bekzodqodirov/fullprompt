@@ -87,6 +87,9 @@ import { webDrafts, webStats } from '@/modules/wms/agent/web-page';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
 const SUFFIX = String(Date.now()).slice(-6);
+/** The run's token in LETTERS — a name carries no figure (fix pass 7: every bare figure in a lesson is a price, so a
+ * name made unique by digits was refused as money before it could be refused as a person). */
+const NAME_TAG = SUFFIX.split('').map((d) => 'abcdefghij'[Number(d)]).join('');
 const PEER = BigInt(`84${SUFFIX}`);
 let ownerId = '';
 /** A colleague — a super_admin the page admits, and neither the draft's account nor the agent's owner. */
@@ -316,7 +319,7 @@ beforeAll(async () => {
     .returning({ id: clients.id });
   clientId = c!.id;
   otherClientCode = `LT${SUFFIX}`;
-  await db.insert(clients).values({ clientCode: otherClientCode, name: `Shohruhmirzo Valiyev ${SUFFIX}`, phones: [`+99899${SUFFIX}22`] });
+  await db.insert(clients).values({ clientCode: otherClientCode, name: `Shohruhmirzo Valiyev ${NAME_TAG}`, phones: [`+99899${SUFFIX}22`] });
   await setSetting('tg_sending_enabled', true, ownerId);
 });
 
@@ -569,7 +572,7 @@ describe('the lesson: typed, echoed, confirmed (spec §3.2)', () => {
     // The chat's own customer, by ONE word of the name.
     expect(await refused('Dilshodbek bilan doim rus tilida gaplash')).toContain(LESSON_WORDS.personal);
     // Another client, by the whole name the book holds.
-    expect(await refused(`Shohruhmirzo Valiyev ${SUFFIX} kabi mijozlarga qisqa yoz`)).toContain(LESSON_WORDS.personal);
+    expect(await refused(`Shohruhmirzo Valiyev ${NAME_TAG} kabi mijozlarga qisqa yoz`)).toContain(LESSON_WORDS.personal);
     expect(await refused('x'.repeat(LESSON_LIMITS.maxChars + 1))).toBe(LESSON_WORDS.too_long);
     expect(await refused('   ')).toBe(LESSON_WORDS.empty);
     expect(await myLessons()).toHaveLength(0);
