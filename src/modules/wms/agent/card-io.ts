@@ -375,6 +375,16 @@ export function quotesCalcPrice(d: Pick<DraftRow, 'policy' | 'finalBody'>): bool
   return d.finalBody === null && Array.isArray(m?.calcPrices) && m.calcPrices.length > 0;
 }
 
+/**
+ * The «💳» lines the after-sent job recorded (SPEC-P2-v2 §2.4) — drawn on an approved card only, and only what was
+ * stored: a list of strings, each already in his words (after-sent `offerLines`). Anything else stored there is none.
+ */
+export function afterSentLines(d: Pick<DraftRow, 'status' | 'policy'>): string[] {
+  if (d.status !== 'approved') return [];
+  const lines = ((d.policy ?? {}) as Partial<DraftPolicyJson>).afterSent?.offer;
+  return Array.isArray(lines) ? lines.filter((l): l is string => typeof l === 'string' && l.length > 0) : [];
+}
+
 /** Its card's title (§2.3): the holder sees at a glance it is the VED's figure with his markup. */
 export const CALC_PRICE_TITLE = '🧮 VED narxi + ustama';
 
@@ -485,7 +495,8 @@ export function renderDraftCardFull(
     blocks: live ? (p.blocks ?? []) : [],
     warnings: p.warnings ?? [],
     // The VED price's own line (§2.2) — the holder's card only, and never one of the notes the gate counts.
-    notes: [...(card.calcLine ? [card.calcLine] : []), ...(p.notes ?? []), ...extraNotes],
+    // …and once the reply WENT, what it settled on the card (§2.4): «💳 Kartaga yozildi: 1 359 $», or why not.
+    notes: [...(card.calcLine ? [card.calcLine] : []), ...afterSentLines(d), ...(p.notes ?? []), ...extraNotes],
     reply: d.finalBody ?? d.proposedBody ?? '',
     gloss: d.finalBody ? null : d.glossUz,
     ledger: d.finalBody ? [] : (p.ledger ?? []),

@@ -138,7 +138,7 @@ describe('the upsale scales on the cube the lines state', () => {
     // 2.1 m³ arrives, at the quoted 400 kg — so a kilos ratio would read 1.
     madeReceipts.push(await arriveOnDeal({ dealId: deal!.id, clientId, actorId, m3: 2.1, kg: 400 }));
     const rows = await db.execute<{ cargo_factor: string; upsale_usd: string }>(
-      sql`SELECT * FROM (${payableOffersSql()}) p WHERE p.entity_id = ${deal!.id}::uuid`,
+      sql`SELECT * FROM (${payableOffersSql({ machineOffers: true })}) p WHERE p.entity_id = ${deal!.id}::uuid`,
     );
     expect(rows).toHaveLength(1);
     expect(Number(rows[0]!.cargo_factor)).toBe(0.75);

@@ -202,6 +202,11 @@ export default async function PriceHistoryPage({
                     <span className="font-mono font-semibold tabular-nums">
                       ${row.clientPriceUsd.toFixed(2)}
                     </span>
+                    {row.offerByAi ? (
+                      <span className="ml-1 chip" data-testid="history-offer-ai">
+                        {t('offerByAi')}
+                      </span>
+                    ) : null}
                     {row.belowFloor ? (
                       <span className="ml-1 chip chip-warn">{t('belowFloorChip')}</span>
                     ) : null}

@@ -66,7 +66,8 @@ describe('the amount is the server’s', () => {
 
   it('and the service derives it from the payable rule itself', () => {
     const body = code(SERVICE).slice(code(SERVICE).indexOf('export async function payUpsale'));
-    expect(body).toContain('payableOffersSql()');
+    // `machineOffers` is REQUIRED (SPEC-P2-v2 §2.4a): the claim leaves the AI seller's offers out like every read.
+    expect(body).toContain('payableOffersSql({ machineOffers })');
     expect(body).toContain('payout_expense_id IS NULL');
   });
 

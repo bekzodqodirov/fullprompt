@@ -3035,7 +3035,16 @@
     "pauseAlreadyCleared": "暂停已解除",
     "pauseClearRefused": "只有账号持有人或超级管理员可以解除暂停",
     "bridgePaused": "发送已停止 — Telegram 限制了该账号",
-    "bridgePausedCount": "已暂停：{n}"
+    "bridgePausedCount": "已暂停：{n}",
+    "aiStagesTitle": "AI 销售的阶段",
+    "aiStagesOrder": "顺序：「AI 首次回复」→「报价」→「AI 已报价」。AI 只把线索向前移动，只在开放阶段之间，且只移动您的或无人负责的线索。「成交」和「失败」只由人设置。",
+    "aiContactedStage": "AI 首次回复",
+    "aiContactedStageHint": "AI 销售的回复发给客户后，线索移到该阶段。选「—」表示 AI 不移动线索。",
+    "aiQuotedStage": "AI 已报价",
+    "aiQuotedStageHint": "带价格的回复发给客户后（卡车价格、VED 价格或您的 💵），线索移到该阶段。VED 有未完成的计算时，卡车价格不移动线索。该阶段必须在「AI 首次回复」之后。",
+    "stageSettingBad": "没有这个设置。",
+    "stageSettingNotOpen": "只能选择启用的开放阶段。",
+    "stageSettingOrder": "「AI 已报价」必须在「AI 首次回复」之后。"
   },
   "navShort": {
     "home": "首页",
@@ -4389,7 +4398,8 @@
     "sellerGuess": "销售填写的估价",
     "importConflict": "不可用 {unit}：法规按 {law} 计",
     "freightWatchTitle": "{column}——运费按此列价目的比例分摊，但此列不完整：目前任何费用都不会按价目表分摊。",
-    "freightWatchFrom": "自 {date} 起："
+    "freightWatchFrom": "自 {date} 起：",
+    "offerByAi": "🤖 AI"
   },
   "partners": {
     "title": "合作方",

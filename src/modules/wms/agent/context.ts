@@ -117,6 +117,12 @@ export interface AgentContext {
    * the goods as often as the truck. Null = nothing quoted in the week.
    */
   lastQuote: LastQuote | null;
+  /**
+   * The LEAD's funnel stage, for a lead chat only (SPEC-P2-v2 §3.4) — read here by its own query, never in
+   * `chatIdentity` (the listener's send step calls that every tick). Printed only on the chat block's lead line;
+   * never the lost reason. Absent/null: a client chat, or no lead. Optional, so a context built by hand is today's.
+   */
+  leadStage?: { name: string; kind: string } | null;
 }
 
 /** A road a run priced or asked: the flight, the truck, or both in one reply. */
@@ -671,6 +677,8 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
   // never «answered» off the request it replaces.
   const calcs = await chatCalcChains(managerUserId, peerId, CONTEXT_CHAINS);
   const lastQuote = await lastQuoteFor(managerUserId, peerId);
+  // A lead chat's stage (§3.4): a client chat prints none — its lead is the won one.
+  const leadStage = identity.clientId === null && identity.leadId !== null ? await leadStageOf(identity.leadId) : null;
   return {
     managerUserId,
     peerId,
@@ -693,6 +701,15 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
     })),
     ruleDecision: identity.ruleDecision,
     lastQuote,
+    leadStage,
   };
+}
+
+/** The lead's stage — its name and kind, nothing else (never the lost reason). Null for a lead that is gone. */
+export async function leadStageOf(leadId: string): Promise<{ name: string; kind: string } | null> {
+  const rows = (await db.execute(sql`
+    SELECT s.name, s.kind FROM leads l JOIN lead_stages s ON s.id = l.stage_id WHERE l.id = ${leadId}::uuid
+  `)) as unknown as { name: string; kind: string }[];
+  return [...rows][0] ?? null;
 }
 

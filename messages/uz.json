@@ -3035,7 +3035,16 @@
     "pauseAlreadyCleared": "Pauza allaqachon olingan",
     "pauseClearRefused": "Pauzani akkaunt egasi yoki super admin oladi",
     "bridgePaused": "Yuborish to‘xtatilgan — Telegram akkauntni cheklagan",
-    "bridgePausedCount": "To‘xtatilgan: {n}"
+    "bridgePausedCount": "To‘xtatilgan: {n}",
+    "aiStagesTitle": "AI sotuvchining bosqichlari",
+    "aiStagesOrder": "Tartib: «AI birinchi javob berdi» → «Hisoblatish» → «AI narx aytdi». AI lidni faqat oldinga, faqat ochiq bosqichlar orasida va faqat sizniki yoki egasiz lidni ko'chiradi. «Yutildi» va «Yo'qotildi»ni faqat odam qo'yadi.",
+    "aiContactedStage": "AI birinchi javob berdi",
+    "aiContactedStageHint": "AI sotuvchining javobi mijozga ketganda lid shu bosqichga o'tadi. «—» tanlansa AI lidni ko'chirmaydi.",
+    "aiQuotedStage": "AI narx aytdi",
+    "aiQuotedStageHint": "Narx aytilgan javob mijozga ketganda (mashina narxi, VED narxi yoki sizning 💵 narxingiz) lid shu bosqichga o'tadi. VEDda ochiq hisob turganda mashina narxi lidni ko'chirmaydi. «AI birinchi javob berdi»dan keyingi bosqich bo'lishi kerak.",
+    "stageSettingBad": "Bunday sozlama yo'q.",
+    "stageSettingNotOpen": "Faqat faol, ochiq bosqichni tanlash mumkin.",
+    "stageSettingOrder": "«AI narx aytdi» bosqichi «AI birinchi javob berdi»dan keyin turishi kerak."
   },
   "navShort": {
     "home": "Bosh",
@@ -4389,7 +4398,8 @@
     "sellerGuess": "Sotuvchi yozgan taxmin",
     "importConflict": "{unit} bo‘lmaydi: qonun {law} bo‘yicha",
     "freightWatchTitle": "{column} — yo‘lkira hisoblari shu ustun narxlari nisbatida bo‘linadi, lekin ustun to‘liq emas: shu holatda hisoblar tarif bo‘yicha bo‘linmaydi.",
-    "freightWatchFrom": "{date} dan:"
+    "freightWatchFrom": "{date} dan:",
+    "offerByAi": "🤖 AI"
   },
   "partners": {
     "title": "Kontragentlar",

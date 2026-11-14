@@ -13,7 +13,7 @@ import { AGENT_LIMITS, dailySendCeiling, sendJitterMs } from './limits';
 import { readSendCaps } from './send-caps';
 import { asksAnew, type AgentOutboxRow, type AgentStepStore, type SendFacts, type StepOutcome } from './send-step';
 import { sendWindowFor } from './send-window';
-import { offerStandsFor, onAgentOutboxSettled } from './settle-hooks';
+import { offerStandsFor, onAgentOutboxSettled, onAgentReplySent } from './settle-hooks';
 import { isNudge } from './worthy';
 
 /**
@@ -584,6 +584,10 @@ export async function applyAgentOutcome(
           sentAt: now,
         });
       }
+      // What the reply settles on the card — the machine's VED price as the card's offer, the lead's stage
+      // (SPEC-P2-v2 §2.4, §3.2) — queued HERE and nowhere else: only this branch means the customer has it. After
+      // the thread's copy, so a replay of this outcome re-queues the same job id (one job). Never throws.
+      await onAgentReplySent(row.id);
       await settled(row);
       return { final: true, markUnread: false, sessionDead: null };
     }

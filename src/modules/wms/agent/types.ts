@@ -102,6 +102,20 @@ export interface DraftPolicyJson {
    * forgiven head read it (anchor-clock, outbox-store `chatFacts`). Absent = an ordinary reply.
    */
   calcAnswer?: { requestId: string };
+  /**
+   * What the reply settled on the card once it was SENT (SPEC-P2-v2 §2.4, §3.2; after-sent.ts) — written once, by the
+   * after-sent job's last step: its absence on a sent row is what the sweep's net re-queues. `offer` = the holder's
+   * card lines («💳 Kartaga yozildi: 1 359 $» or why not), `stage` = the stage step's outcome code (for the record).
+   */
+  afterSent?: AfterSentMark;
+}
+
+/** The after-sent job's record on its draft (§2.4, §3.2). */
+export interface AfterSentMark {
+  /** ISO — when the job finished. */
+  at: string;
+  offer: string[];
+  stage: string;
 }
 
 export type ForcedQuestion = 'rail' | 'avia';

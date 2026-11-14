@@ -3035,7 +3035,16 @@
     "pauseAlreadyCleared": "The pause is already cleared",
     "pauseClearRefused": "The account holder or a super admin clears the pause",
     "bridgePaused": "Sending stopped — Telegram restricted the account",
-    "bridgePausedCount": "Paused: {n}"
+    "bridgePausedCount": "Paused: {n}",
+    "aiStagesTitle": "AI seller's stages",
+    "aiStagesOrder": "Order: «AI replied first» → «Quote» → «AI named a price». The AI moves a lead forward only, only between open stages, and only a lead that is yours or nobody's. «Won» and «Lost» are set by a person only.",
+    "aiContactedStage": "AI replied first",
+    "aiContactedStageHint": "When the AI seller's reply reaches the customer, the lead moves to this stage. «—» means the AI does not move the lead.",
+    "aiQuotedStage": "AI named a price",
+    "aiQuotedStageHint": "When a reply with a price reaches the customer (the truck price, the VED price or your 💵), the lead moves to this stage. While a VED calculation is open, a truck price does not move the lead. It must come after «AI replied first».",
+    "stageSettingBad": "No such setting.",
+    "stageSettingNotOpen": "Only an active, open stage can be chosen.",
+    "stageSettingOrder": "«AI named a price» must come after «AI replied first»."
   },
   "navShort": {
     "home": "Home",
@@ -4389,7 +4398,8 @@
     "sellerGuess": "Seller's own estimate",
     "importConflict": "{unit} not allowed: the law counts in {law}",
     "freightWatchTitle": "{column} — freight bills are split in proportion to this column’s prices, but it is incomplete: as it stands, no bill is split by the tariff.",
-    "freightWatchFrom": "From {date}:"
+    "freightWatchFrom": "From {date}:",
+    "offerByAi": "🤖 AI"
   },
   "partners": {
     "title": "Counterparties",

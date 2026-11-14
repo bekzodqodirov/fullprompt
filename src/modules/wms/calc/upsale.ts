@@ -103,7 +103,17 @@ export function upsaleOf(input: { clientPriceUsd: number; totalUsd: number }): n
  * - **eligible and positive** — `upsaleEligible`'s two clauses restated in
  *   SQL, and a loss is not a commission.
  */
-export function payableOffersSql(): SQL {
+export function payableOffersSql(opts: {
+  /**
+   * Leave out the offers the AI SELLER wrote (SPEC-P2-v2 §2.4a, his §7 Q6 ⭐: «bu narxdan hech kimga sotuvchi ulushi
+   * hisoblanmaydi») — REQUIRED, so every consumer names it; each passes `agentFullP2Ready()`. True: an unpaid row
+   * whose offer carries an `agent_offers` mark is never payable, never in the liability, never claimed by
+   * `payUpsale`. The exclusion sits AFTER the per-request rank, never in `base`: there it would promote an OLDER
+   * person's offer on the same job to rn = 1 and pay a seller on a promise the AI's replaced. False (a database one
+   * migration behind, which holds no machine offers): today's fragment, byte for byte.
+   */
+  machineOffers: boolean;
+}): SQL {
   // Phase 4: the LEFT JOIN carries the second anchor. Every version-only
   // clause is GUARDED by `o.version_id IS NOT NULL` — unguarded, each
   // evaluates NULL on a request-anchored row and silently drops it (the
@@ -279,7 +289,13 @@ export function payableOffersSql(): SQL {
      WHERE ranked.payout_expense_id IS NOT NULL
         OR (
           ranked.stands
-          AND ranked.rn = 1
+          AND ranked.rn = 1${
+            opts.machineOffers
+              ? sql`
+          -- The AI seller's offer is no seller's promise (§2.4a): after the rank, so it still displaces an older one.
+          AND NOT EXISTS (SELECT 1 FROM agent_offers ao WHERE ao.offer_id = ranked.id)`
+              : sql``
+          }
           AND (NOT ranked.below_floor OR ranked.approved_at IS NOT NULL)
           AND (ranked.version_id IS NULL OR ranked.discount_usd <= ${MONEY_EPSILON})
           AND (ranked.version_id IS NULL OR NOT (
