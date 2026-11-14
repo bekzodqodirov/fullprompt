@@ -1423,7 +1423,16 @@ tolerance for a dangerous case; where a rule cannot tell, it holds. At b0f2559b:
 `locale.ts`, `digits.ts`, `numbers.ts`, `auto-money.ts`, `auto-gate.ts`, `lessons.ts` or the owner-answer readers runs
 the whole corpus first, and a new find becomes a case before it becomes a fix.
 
-**Owed to part 1b (#1784).** An independent hunt AFTER the corpus reproduced more: hand-over verbs and Chinese places
-outside the avia lists, city spellings and whole countries the destination list lacks, Uzbek Cyrillic with no
-ў/қ/ғ/ҳ read as Russian, spelled numerals in his ✍️ answer and in replies, a lesson stating a price with no money
-word. The price act ships unticked and he was told to leave it unticked until 1b; he writes figures in digits.
+**Part 1b, as built (#1785-#1790; no migration).** The hunt after the corpus (fix pass 6) made the armed avia rule
+FAIL-CLOSED (`sendsUnread`: a sending stem in any form directs unless its form reads as harmless; a Chinese place in a
+statement directs; `addressDirects`, `sendsOnlyInfo`) and widened the figure, lesson and destination readers. Its
+language gate then held 142 of 308 ordinary replies — measured by the check on 314 ordinary pairs through the real run,
+a shape the corpus lacked — and fix passes 7-8 answered: the chat remembers what its burst decided
+(`localeToRemember`, `customerLocaleOf`), an unmarked burst leans on what was said earlier (`windowLocale`), anything
+of Uzbek outweighs a Russian word, a Latin ending lean, and **his own ✅ teaches a chat that said no language its
+language** (`approvedLocale`, written in the approval's transaction, a person's press only) — so such a chat costs one
+press, then flows. Corpus at e5050040: 1,483 cases, 898 dangerous held / 0 let through, 563 ordinary go / 22 on the
+ratchet. The rare wrong-language sends the last check named (English words ending like Uzbek, a Russian sentence with one
+Uzbek interjection, Latin Russian, a forwarded Uzbek message in the window) are stated in #1788 and owed. «Narx» may be
+ticked after 1b. **And `agentOwnerConnected`**: a signed-out owner is said in words on the page and in `/agent` — on his
+server the owner was a signed-out account and the AI had drafted nothing since 10-29 under «ishlayapti» (#1789).

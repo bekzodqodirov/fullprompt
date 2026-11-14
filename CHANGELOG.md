@@ -1,5 +1,48 @@
 # CHANGELOG
 
+## 2026-11-14 kechqurun — To'liq AI sotuvchi, 1b: oxirgi tekshiruvlar, til bo'yicha tuzatishlar va «AI egasi uzilgan» ogohlantirishi
+
+**Migratsiya yo'q** — son **149** bo'lib qoladi. Kod o'zgargani uchun `/api/version` bugungi kechki vaqtni ko'rsatishi
+kerak. Qadamlar: `docs/UPDATE.md` → «To‘liq AI sotuvchi, 1b (2026-11-14, migratsiyasiz)».
+
+### Serveringizda topilgan muammo
+- AI egasi sifatida «Bekzod (Super admin)» tanlangan edi, uning Telegrami esa 11-noyabrda uzilgan. Ishlab turgan
+  +998902405077 hech kimning AI akkaunti emas edi. Shuning uchun AI **29-oktyabrdan beri bitta ham javob yozmagan**.
+- Bunda `/agent` «ishlayapti» der, sahifa esa «tinglovchi yangilanmagan» deb chalg'itar edi. Endi ikkalasi ham
+  aniq aytadi: **«AI egasining Telegram akkaunti uzilgan — AI xabarlarga javob yozmaydi»** va nima qilish kerakligini
+  yozadi.
+
+### Til bo'yicha (o'zi yuborish uchun)
+- **Tili aniq bo'lmagan yangi chatda faqat birinchi javob ✅ingizni kutadi.** Masalan mijoz faqat «GS777», «5 куб
+  800 кг», «👍» yoki «Ok» deb yozganda. ✅ bosganingizda chat shu tilni eslab qoladi va keyingi javoblar o'zi ketadi.
+- O'zbekcha xabarda bitta ruscha so'z («понял», «ясно») bo'lsa ham, javob ruscha bo'lib ketib qolmaydi.
+- Lotincha so'zlashuv uslubi («Narxlari qanaqa?», «Ish vaqti?») o'zbekcha deb tanildi — javobi o'zi ketadi.
+- Mijoz avval aytgan til keyingi qisqa xabarlarda ham hisobga olinadi.
+
+### Narx va avia (1-qismdagi «Hali qolgani» tuzatildi)
+- Avia chatda yukni Xitoydagi joyga yuborishni **har qanday shaklda** aytgan javob («Шлите», «opkeling», «运», «в Иу»,
+  «bazamizga») endi sizga keladi. Tizim bilmagan shaklni ham «xavfli» deb hisoblaydi.
+- Shahar nomining boshqacha yozilishi («Qarshi ga», «Osh-ga», «Manzil: Osh»), Eron, Turkiya, Mozori Sharif va
+  boshqalar tanildi.
+- So'z bilan yozilgan narx va muddat, ✍️ javobingizdagi kun («ertaga», «juma»), «yuklanadi» kabi va'dalar — sizga.
+- Saboqda yolg'iz raqam narx deb hisoblanadi (masalan «emojini 2 dan ko'p qo'yma» ham rad etiladi — raqamni so'z
+  bilan yozing).
+
+### «Narx» katagi
+1b deploy qilingach **«Narx» katagini belgilashingiz mumkin.** Doimiy test to'plamida: **898 ta xavfli javobdan bittasi
+ham o'zi ketmaydi**, 585 ta oddiy javobdan 563 tasi o'zi ketadi (22 tasi ataylab sizni kutadi). Deploydan keyingi birinchi
+mashina narxi baribir ✅ingizni (yoki «✅ Tarif to'g'ri» ni) kutadi.
+
+### Hali qolgani (kam uchraydi)
+- Oxiri o'zbekchaga o'xshagan inglizcha so'zli xabar («dollar», «Xiaomi», «Honda») ga o'zbekcha javob ketishi mumkin.
+- Ruscha gapda bitta o'zbekcha so'z («яхши», «хозир») bo'lsa, javob o'zbek kirillida ketishi mumkin.
+- «Yuk ertaga uchadi» kabi uchish fe'li bilan aytilgan kun, «kechqurun» kabi vaqt.
+Bular xavfli emas (narx yoki manzil emas), keyingi tuzatishda qo'shiladi.
+
+### Qanday tekshirildi
+1b uchun uchta tuzatish va ikkita mustaqil tekshiruv o'tkazildi. Har bir topilma avval doimiy test to'plamiga qo'shildi,
+keyin tuzatildi. To'liq sinov CI tartibida (toza baza): barcha testlar va brauzer testlari.
+
 ## 2026-11-13 → 11-14 — To'liq AI sotuvchi, 1-qism: narxni o'zi aytadi, bilmasa sizdan so'raydi, xatosidan o'rganadi, olti tilda yozadi
 
 Sizning so'zingiz: «bularni hammasini qur bir boshdan ful ai sotuvchi kerak menga ozi sotuv qilsin bilmagan savollar

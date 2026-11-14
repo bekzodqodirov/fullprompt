@@ -369,6 +369,22 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## To‘liq AI sotuvchi, 1b (2026-11-14, migratsiyasiz) — tekshiruv tartibi
+
+Migratsiya **yo‘q** — son **149** bo‘lib qoladi. Shuning uchun sanash bu deployni tekshirmaydi: **`/api/version`
+bugungi kechki vaqtni** ko‘rsatishi shart (to‘rtinchi deploy tuzog‘i). tg-listen’ni ham qayta quring (bir buyruq).
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+3. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt. Son — 149.
+4. «Suhbatlar → AI sotuvchi» sahifasi: agar AI egasining Telegrami uzilgan bo‘lsa, endi sariq yozuv buni aniq aytadi
+   («AI egasining Telegram akkaunti uzilgan …»). Egasi ulangan akkaunt bo‘lishi kerak (+998902405077).
+5. Botga +998902405077 dan `/agent` — «🤖 AI sotuvchi ishlayapti» chiqishi kerak (uzilgan bo‘lsa — «⚠ … uzilgan»).
+6. Endi «Narx» katagini belgilash mumkin. Birinchi mashina narxi ✅ ingizni yoki «✅ Tarif to‘g‘ri» ni kutadi.
+7. Yangi chatda tili aniq bo‘lmagan birinchi xabarning javobi ✅ ni kutadi; ✅ bosganingizdan keyin shu chatdagi keyingi
+   javoblar o‘zi ketadi.
+
 ## To‘liq AI sotuvchi, 1-qism (2026-11-14, 0148) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0148** — deploydan keyin son **149** bo‘ladi (repo’dagi fayllar soni:
