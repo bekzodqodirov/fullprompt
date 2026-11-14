@@ -56,6 +56,11 @@ export interface DraftPolicyJson {
   ledger: PolicyResult['ledger'];
   memory: PolicyMemory;
   card: CardMemory;
+  /**
+   * The newest edit of a burst line the run READ (drafts `burstSeenAt`, ISO; null = none edited then; absent = a draft
+   * written before fix pass 5): what `answer_stale` measures the question's burst with when his ✍️ answer comes.
+   */
+  burstSeenAt?: string | null;
   notes: string[];
   /**
    * A forcing rule put this question to him — rail's price, or the flight's address (spec SPEC-P1-v2 §2.2, run
@@ -113,8 +118,10 @@ export interface AnswerMark {
    */
   questionAnchorEditedAt: string | null;
   /**
-   * When the QUESTION was drafted (`agent_drafts.created_at`, ISO; null = a mark written before fix pass 3 — any edit
-   * reads as later): a line of the question's burst edited or deleted after it is a line he never answered.
+   * How far the QUESTION's run had seen its burst (owner-answer-job `questionSeenAt`: the newest edit of a burst line
+   * it read, ISO — its `created_at` for a question written before fix pass 5; null = no line edited when read, or a
+   * mark written before fix pass 3 — any edit reads as later): a line of the question's burst edited or deleted after
+   * it is a line he never answered.
    */
   questionDraftedAt: string | null;
   /** What `ownerPersonalOf` found in his answer — another customer, or this chat's code to a chat not proven. */

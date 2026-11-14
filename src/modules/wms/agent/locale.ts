@@ -75,7 +75,25 @@ const RU_LETTERS = /[ыщЫЩ]/u;
 // Груз из Гуанчжоу, 5 кубов, 800 кг. Цена?» carried no mark once the greeting was none, and an Uzbek reply went by
 // itself. «Груз», «куб», «товар», «доставка» stay unmarked: an Uzbek says them too.
 const RU_WORDS =
-  /(?:^|[^\p{L}])(?:сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до|сегодня|завтра|вчера|сейчас|потом|тогда|тоже|очень|только|здесь|напишите|скиньте|отправьте|пришлите|подскажите|скажите|который|которая|которые|кубов|куба|кубы|кубах|кубами|груза|грузов|грузы|грузом|товара|товаров|товары|цена|цену|цены|ценой|вес|веса|весом|стоимость|стоимости|объём|объем|объёма|объема|доставку|доставки|килограмм|килограммов)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до|напишите|скиньте|отправьте|пришлите|подскажите|скажите|который|которая|которые|кубов|куба|кубы|кубах|кубами|груза|грузов|грузы|грузом|товара|товаров|товары|цена|цену|цены|ценой|вес|веса|весом|стоимость|стоимости|объём|объем|объёма|объема|доставку|доставки|килограмм|килограммов)(?=$|[^\p{L}])/iu;
+
+/**
+ * Russian's everyday adverbs — «сегодня», «сейчас», «потом», «тогда», «тоже», «очень», «только», «здесь» — are a mark of
+ * Russian only in a line that carries no Uzbek word ENDING (fix pass 5, the check of pass 3): an Uzbek speaker mixes them
+ * into his Cyrillic — «Ака хоп, тогда жунатаман», «Гуанчжоудан юкимни потом жунатаман», «Мебель олиб келасизларми,
+ * очень срочно керакмиди» — and pass 3 made each «ru, confident»: the right Uzbek reply was refused and a Russian one
+ * went by itself. Beside «-аман», «-асизми», «-ларми», «-миди» they mark nothing, and the line leans Uzbek.
+ */
+const RU_FILLER = /(?:^|[^\p{L}])(?:сегодня|завтра|вчера|сейчас|потом|тогда|тоже|очень|только|здесь)(?=$|[^\p{L}])/iu;
+const UZ_CYRL_ENDING =
+  /\p{L}{2,}(?:аман|яман|амиз|ямиз|(?:а|я)сиз(?:лар)?(?:ми)?|ларми|сизми|япман|япмиз|япти|ганман|ганмиз|мо[кқ]чиман|миди|мизми|дими)(?=$|[^\p{L}])/iu;
+/**
+ * The Uzbek a Cyrillic text leans to by its word endings alone (fix pass 5) — never a confident mark («шаман» ends in
+ * «-аман» too): what an unconfident guess LEANS on, beside the greetings (`greetingLean`, run `memoryFor`).
+ */
+export function uzbekEndingLean(text: string): AgentLocale | null {
+  return dominantScript(text) === 'cyrillic' && UZ_CYRL_ENDING.test(text) && !RU_LETTERS.test(text) && !RU_WORDS.test(text) ? 'uz_cyrl' : null;
+}
 
 /**
  * The greetings, thanks and «yes» every customer here says in BOTH languages (fix pass 3): «Ассалому алайкум»,
@@ -169,7 +187,10 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
   if (script === 'cyrillic') {
     const m = marksOf(
       text,
-      { uz: (t) => UZ_CYRL_LETTERS.test(t) || UZ_CYRL_WORDS.test(t), other: (t) => RU_LETTERS.test(t) || RU_WORDS.test(t) },
+      {
+        uz: (t) => UZ_CYRL_LETTERS.test(t) || UZ_CYRL_WORDS.test(t),
+        other: (t) => RU_LETTERS.test(t) || RU_WORDS.test(t) || (RU_FILLER.test(t) && !UZ_CYRL_ENDING.test(t)),
+      },
       { uz: CYRL_GREETING_UZ, other: CYRL_GREETING_RU },
       CYRILLIC,
     );
@@ -187,7 +208,7 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
     // with none, a guess — the greeting's language if one was said — and SAID to be one. «Cyrillic with no Uzbek
     // mark» was «ru, confident», and the auto layer's language clause then refused every correct Uzbek Cyrillic reply.
     if (keep) return { locale: previous, confident: false, script };
-    return { locale: m.uz || m.guess === 'uz' ? 'uz_cyrl' : 'ru', confident: false, script };
+    return { locale: m.uz || m.guess === 'uz' || (m.guess === null && UZ_CYRL_ENDING.test(text)) ? 'uz_cyrl' : 'ru', confident: false, script };
   }
   if (script === 'latin') {
     const m = marksOf(
@@ -208,6 +229,9 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
     // Uzbek, the company's own language and the commoner customer. A Latin
     // conversation keeps its own; a greeting beside unmarked words is a guess
     // of its language for any other («Assalomu alaykum! Qanday yordam…»).
+    // An English conversation greeted in English, with nothing of Uzbek beside it, is English (fix pass 5): «Hello,
+    // good morning», «Thanks, received» once greetings were no marks held every English reply in an English chat.
+    if (previous === 'en' && m.guess === 'other') return { locale: 'en', confident: true, script };
     if (previous === 'uz' || previous === 'en') return { locale: previous, confident: false, script };
     if (m.guess) return { locale: m.guess === 'uz' ? 'uz' : 'en', confident: false, script };
     if (previous) return { locale: previous, confident: false, script };

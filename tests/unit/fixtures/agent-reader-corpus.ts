@@ -179,6 +179,33 @@ const AVIA_DANGEROUS: readonly Row[] = [
   ['av083', `${Q_UZ} Yukni hujjatlari bilan yuboring.`, 'check2#1 neighbour'],
   ['av084', `${Q_RU} Отправьте фото, а груз привезите на склад.`, 'check2#1 neighbour'],
   ['av085', `${Q_EN} Please send the goods and the photos.`, 'check2#1 neighbour'],
+  // Fix pass 5 (the check of pass 3, tests lens #6): the replies pass 3's narrowing let go by themselves.
+  ['av086', `${Q_RU} Везите груз в Иу.`, 'check2:tests#6'],
+  ['av087', `${Q_RU} Груз везите в Гуанчжоу, там примем.`, 'check2:tests#6'],
+  ['av088', `${Q_ZH}在义乌交货就行。`, 'check2:tests#6'],
+  ['av089', `${Q_EN} Please send the goods together with the invoice to us.`, 'check2:tests#6'],
+  ['av090', `${Q_RU} Груз с инвойсом отправьте нам.`, 'check2:tests#6'],
+  ['av091', `${Q_UZ} Yukingiz Guanchjoudagi omborimizga tushadi, Toshkentda esa Chuqursoydan olib ketasiz.`, 'check2:tests#6'],
+  ['av092', `${Q_RU} Груз поступает на наш склад в Гуанчжоу, в Ташкенте заберёте сами.`, 'check2:tests#6'],
+  ['av093', `${Q_ZH}货物进我们广州仓库，到塔什干自提。`, 'check2:tests#6'],
+  ['av094', `${Q_RU} Отвезите груз на склад в Иу.`, 'check2:tests#6 neighbour'],
+  ['av095', `${Q_RU} Груз в Гуанчжоу примем на нашем складе.`, 'check2:tests#6 neighbour'],
+  ['av096', `${Q_ZH}请在广州交货。`, 'check2:tests#6 neighbour'],
+  // …and the street with its house number (pass 3's REPLY_ADDRESS, no test went red without it — #8, R07).
+  ['av097', `${Q_UZ} Yiwu qabul punktidan — Futian ko‘chasi 88.`, 'check2:tests#8 R07'],
+  ['av098', `${Q_EN} Our Guangzhou point: Shijing road 12.`, 'check2:tests#8 R07'],
+  // Every hand-over form pass 3 added, alone in its sentence — each was tested only beside «to us» (#8, R08*), and
+  // the partitive and the split into sentences and clauses (R04, R14, R15).
+  ['av099', `${Q_UZ} Uch omborimizdan qaysi biri sizga yaqin?`, 'check2:tests#8 R04'],
+  ['av100', `${Q_UZ} Sotuvchingiz yukni yuborsin.`, 'check2:tests#8 R08a'],
+  ['av101', `${Q_UZC} Сотувчингиз юкни юборсин.`, 'check2:tests#8 R08c'],
+  ['av102', `${Q_RU} Поставщик должен отправить груз.`, 'check2:tests#8 R08e'],
+  ['av103', `${Q_RU} Пусть поставщик отправит товар.`, 'check2:tests#8 R08f'],
+  ['av104', `${Q_EN} Have your supplier send the goods.`, 'check2:tests#8 R08g'],
+  ['av105', `${Q_EN} Your supplier should send the goods.`, 'check2:tests#8 R08h'],
+  ['av106', `${Q_ZH}让供应商发货。`, 'check2:tests#8 R08j'],
+  ['av107', `${Q_RU} Мы посчитаем цену, а вы отправьте груз.`, 'check2:tests#8 R14'],
+  ['av108', `${Q_RU} Мы посчитаем цену. Отправьте груз.`, 'check2:tests#8 R15'],
 ];
 
 const AVIA_ORDINARY: readonly Row[] = [
@@ -265,6 +292,16 @@ const AVIA_ORDINARY: readonly Row[] = [
   ['av264', `${Q_UZ} Avia yuklarni ham qabul qilamiz.`, 'check2#2 neighbour'],
   ['av265', `${Q_RU} Принимаем грузы от 1 кг.`, 'check2#2 neighbour'],
   ['av266', 'Toshkentda yukingizni Chuqursoy omborimizda qabul qilib olasiz.', 'check2#2 neighbour'],
+  // Fix pass 5: our own carriage and our acceptance with no place are no hand-over.
+  ['av267', `${Q_RU} Мы везём груз до Ташкента 3-5 дней.`, 'check2:tests#6 neighbour'],
+  ['av268', `${Q_RU} Оплату примем в Ташкенте.`, 'check2:tests#6 neighbour'],
+  ['av269', `${Q_ZH}我们在塔什干交货，您自提。`, 'check2:tests#6 neighbour'],
+  // Where the cargo LEAVES ours, «take your time», a «stay» about no cargo (#8: R06, R08i, R12).
+  ['av270', `${Q_RU} Груз отправляем из склада самолётом.`, 'check2:tests#8 R06'],
+  ['av271', `${Q_EN} We ship from our warehouse by air.`, 'check2:tests#8 R06'],
+  ['av272', `${Q_EN} Take your time, we will wait.`, 'check2:tests#8 R08i'],
+  ['av273', `${Q_UZ} Telefon yoqilgan tursin.`, 'check2:tests#8 R12'],
+  ['av274', `${Q_EN} Leave it with the neighbours if nobody is home.`, 'check2:tests#8 R12'],
 ];
 
 // ── destination: what the customer wrote, under an admitted Tashkent quote ──
@@ -361,6 +398,9 @@ const DESTINATION_DANGEROUS: readonly Row[] = [
   ['ds087', 'Abudabiga yuk bor', 'check2#18'],
   ['ds088', 'Moldovaga yuk bor', 'check2#18'],
   ['ds089', 'Temirtauga yuk bor', 'check2#18'],
+  // The places pass 3's grammar forms found and pass 4's list must hold (#8: E12, E14).
+  ['ds090', 'بار من به تهران می‌رود', 'check2:tests#8 E12'],
+  ['ds091', 'How much from Yiwu to Kazan?', 'check2:tests#8 E14'],
 ];
 
 const DESTINATION_ORDINARY: readonly Row[] = [
@@ -466,6 +506,15 @@ const DESTINATION_ORDINARY: readonly Row[] = [
   ['ds297', 'از چین به من قیمت بگویید', 'check2#11'],
   ['ds298', '我的货从义乌发出到现在还没到', 'check2#11'],
   ['ds299', '义乌到明天能发货吗？', 'check2#11'],
+  // Goods in the dative — never a city (fix pass 5, the check of pass 3, tests lens #3).
+  ['ds300', "Xitoydan mebelga yo'lkira qancha?", 'check2:tests#3'],
+  ['ds301', 'Хитойдан мебелга қанча?', 'check2:tests#3'],
+  ['ds302', 'Xitoydan keladigan mahsulotga bojxona qancha?', 'check2:tests#3'],
+  ['ds303', 'Guanchjoudan kelgan partiyaga qancha to‘laymiz?', 'check2:tests#3'],
+  ['ds304', "Guanchjoudan 5 kub 1000 kg mebelga yo'lkira qancha bo'ladi?", 'check2:tests#3'],
+  ['ds305', "Xitoydan elektronikaga yo'lkira qancha?", 'check2:tests#3'],
+  ['ds306', "Yiwudan kafelga yo'lkira qancha?", 'check2:tests#3'],
+  ['ds307', "Xitoydan o'yinchoqqa yo'lkira qancha?", 'check2:tests#3'],
 ];
 
 // ── language: the customer's lines, the conversation's stored language, the reply's ──
@@ -495,6 +544,21 @@ const LANGUAGE_DANGEROUS: readonly Row[] = [
   ['lg017', 'Ассалому алайкум\nГуанчжоудан юк бор эди\n5 куб 800 кг', 'check1:language', lg(null, 'ru')],
   ['lg018', 'Assalomu alaykum\nHow much is shipping from Guangzhou to Tashkent?', 'check1:language', lg(null, 'uz')],
   ['lg019', 'Hello, how much is shipping from China?', P_LG, lg(null, 'uz')],
+  // An Uzbek speaker's Russian adverbs beside his own word endings: a Russian reply went (fix pass 5, tests lens #4).
+  ['lg020', 'Ака хоп, тогда жунатаман', 'check2:tests#4', lg('uz_cyrl', 'ru')],
+  ['lg021', 'Ака сейчас жунатаман, Гуанчжоудан', 'check2:tests#4', lg('uz_cyrl', 'ru')],
+  ['lg022', 'Гуанчжоудан юкимни потом жунатаман', 'check2:tests#4', lg('uz_cyrl', 'ru')],
+  ['lg023', 'Мебель олиб келасизларми, очень срочно керакмиди', 'check2:tests#4', lg('uz_cyrl', 'ru')],
+  ['lg024', 'Ака сейчас жунатаман, Гуанчжоудан', 'check2:tests#4', lg(null, 'ru')],
+  ['lg025', 'Гуанчжоудан юкимни потом жунатаман', 'check2:tests#4', lg(null, 'ru')],
+  // Russian by its adverb alone: the Uzbek reply never goes.
+  ['lg026', 'Привет, сегодня сможете забрать?', 'check2:tests#4 neighbour', lg(null, 'uz_cyrl')],
+  // An English chat greeted in English: never an Uzbek reply (tests lens #5).
+  ['lg027', 'Hello, good morning', 'check2:tests#5', lg('en', 'uz')],
+  ['lg028', 'Thanks, received', 'check2:tests#5', lg('en', 'uz')],
+  // The Cyrillic greeting's guess, over unmarked words (#8, L07b); Russian by its adverb alone, nothing stored.
+  ['lg029', 'Ассалому алайкум\nдиван 5 куб 800 кг', 'check2:tests#8 L07b', lg(null, 'ru')],
+  ['lg030', 'Сегодня сможете забрать?', 'check2:tests#4 neighbour', lg(null, 'uz_cyrl')],
 ];
 
 const LANGUAGE_ORDINARY: readonly Row[] = [
@@ -530,6 +594,25 @@ const LANGUAGE_ORDINARY: readonly Row[] = [
   ['lg230', 'Ассалому алайкум\nГруз готов, когда заберёте?', 'check1:language', lg(null, 'ru')],
   ['lg231', 'Рахмат, сколько стоит?', 'pinned:agent-locale', lg(null, 'ru')],
   ['lg232', 'Добрый день. Груз из Иу, 3 куба, 400 кг', 'check2#5', lg(null, 'ru')],
+  // Fix pass 5 (tests lens #4): the Uzbek reply to an Uzbek speaker's Russian adverbs.
+  ['lg233', 'Ака хоп, тогда жунатаман', 'check2:tests#4', lg('uz_cyrl', 'uz_cyrl')],
+  ['lg234', 'Ака сейчас жунатаман, Гуанчжоудан', 'check2:tests#4', lg('uz_cyrl', 'uz_cyrl')],
+  ['lg235', 'Гуанчжоудан юкимни потом жунатаман', 'check2:tests#4', lg('uz_cyrl', 'uz_cyrl')],
+  ['lg236', 'Мебель олиб келасизларми, очень срочно керакмиди', 'check2:tests#4', lg('uz_cyrl', 'uz_cyrl')],
+  ['lg237', 'Ака сейчас жунатаман, Гуанчжоудан', 'check2:tests#4', lg(null, 'uz_cyrl')],
+  ['lg238', 'Гуанчжоудан юкимни потом жунатаман', 'check2:tests#4', lg(null, 'uz_cyrl')],
+  ['lg239', 'Привет, сегодня сможете забрать?', 'check2:tests#4 neighbour', lg(null, 'ru')],
+  ['lg240', 'Отправьте фото груза сегодня, пожалуйста', 'pinned:agent-locale', lg(null, 'ru')],
+  // …and the English reply in an English chat greeted in English (tests lens #5).
+  ['lg241', 'Hello, good morning', 'check2:tests#5', lg('en', 'en')],
+  ['lg242', 'Hi! Good afternoon', 'check2:tests#5', lg('en', 'en')],
+  ['lg243', 'Hello sir, good evening', 'check2:tests#5', lg('en', 'en')],
+  ['lg244', 'Hello friend', 'check2:tests#5', lg('en', 'en')],
+  ['lg245', 'Thanks, received', 'check2:tests#5', lg('en', 'en')],
+  // An Uzbek conversation keeps its language under an English greeting over unmarked words (#8, L06).
+  ['lg246', 'Hello, sofa 5 cbm 800 kg', 'check2:tests#8 L06', lg('uz', 'uz')],
+  ['lg247', 'Ассалому алайкум\nдиван 5 куб 800 кг', 'check2:tests#8 L07b', lg(null, 'uz_cyrl')],
+  ['lg248', 'Сегодня сможете забрать?', 'check2:tests#4 neighbour', lg(null, 'ru')],
 ];
 
 // ── his ✍️ answer: does it hold a figure? ───────────────────────────────────
@@ -570,6 +653,9 @@ const OWNER_DANGEROUS: readonly Row[] = [
   ['of033', 'Yuk 15.11.2026 da keladi', 'pinned:agent-owner-answer.integration date'],
   ['of034', 'Yuk 15.11.2026 kuni keladi', 'check1:date'],
   ['of035', 'Yuk 20.11.2026-25.11.2026 orasida keladi', 'review:bot#1'],
+  // «one» two words before its measure (#8, D21).
+  ['of036', 'Ha, bir katta karobka qo‘shamiz', 'check2:tests#8 D21'],
+  ['of037', 'Yes, one big box is fine', 'check2:tests#8 D21'],
 ];
 
 const OWNER_ORDINARY: readonly Row[] = [
@@ -590,6 +676,11 @@ const OWNER_ORDINARY: readonly Row[] = [
   ['of215', 'Да, это одно и то же', 'check2#16'],
   ['of216', 'Да, одна и та же цена', 'check2#16'],
   ['of217', 'Один и тот же склад', 'check2#16'],
+  // «har bir», «every one» — each, never a count (#8, D19); «one moment» in Uzbek (D20).
+  ['of218', 'Ha, har bir karobkaga kodingizni yozamiz', 'check2:tests#8 D19'],
+  ['of219', 'Ҳа, ҳар бир қутига ёзамиз', 'check2:tests#8 D19'],
+  ['of220', 'Yes, every one box gets a label', 'check2:tests#8 D19'],
+  ['of221', 'Bir daqiqa, hozir aniqlab aytaman', 'check2:tests#8 D20'],
 ];
 
 // ── money: a reply through the policy and the gate ─────────────────────────
@@ -646,6 +737,21 @@ const MONEY_DANGEROUS: readonly Row[] = [
   ['mn045', 'صدها دلار می‌شود.', P_WORDS, r('fa')],
   ['mn046', 'Bir dollar ham emas, ikki dollar bo‘ladi.', P_WORDS, r('uz')],
   ['mn047', 'Narxi bir necha ming so‘m.', 'check2#14 neighbour', r('uz')],
+  // «ham» is «also» as often as «even» (fix pass 5, tests lens #1 — the blocker): one dollar ADDED, spelled out.
+  ['mn048', 'Rastamojkadan tashqari kilosiga yana bir dollar ham qo‘shiladi.', 'check2:tests#1', r('uz')],
+  ['mn049', 'Sug‘urta uchun bir dollar ham olinadi.', 'check2:tests#1', r('uz')],
+  ['mn050', 'Ҳар кило учун яна бир доллар ҳам қўшилади.', 'check2:tests#1', r('uz_cyrl')],
+  ['mn051', 'برای هر کیلو یک دلار هم اضافه می‌شود.', 'check2:tests#1', r('fa')],
+  ['mn052', 'Bir dollar ham qo‘shiladi, boshqa to‘lov yo‘q.', 'check2:tests#1 neighbour', r('uz')],
+  // The guards no test went red without (tests lens #8): the article (D13a), the Cyrillic «-дан» (D13b2), «一苏姆», «一圆» (D03d).
+  ['mn053', 'It is about a dollar.', 'check2:tests#8 D13a', r('en')],
+  ['mn054', 'Roughly a buck.', 'check2:tests#8 D13a', r('en')],
+  ['mn055', 'Килоси тахминан доллардан тушади.', 'check2:tests#8 D13b2', r('uz_cyrl')],
+  ['mn056', '每公斤一苏姆。', 'check2:tests#8 D03d', r('zh')],
+  ['mn057', '运费一圆。', 'check2:tests#8 D03d', r('zh')],
+  // A traditional Chinese currency the reader folds to read (#8, D15).
+  ['mn058', '每公斤半歐元。', 'check2:tests#8 D15', r('zh')],
+  ['mn059', '運費若干歐元左右。', 'check2:tests#8 D15', r('zh')],
 ];
 
 const MONEY_ORDINARY: readonly Row[] = [
@@ -693,6 +799,10 @@ const MONEY_ORDINARY: readonly Row[] = [
   ['mn239', 'هزینه بر اساس حجم و وزن محاسبه می‌شود. این دو عدد را بفرستید.', 'check1:money', r('fa')],
   ['mn240', 'Narxni dollarda aytishim uchun kub va kg ni yozing.', P_WORDS, r('uz')],
   ['mn241', 'One of our managers will check it. How many m3 and kg?', P_WORDS, r('en')],
+  // «Even one», denied in its own clause (fix pass 5): still how «free» is said.
+  ['mn242', 'Hisoblash uchun bir dollar ham qo‘shilmaydi. Yuk necha kub?', 'check2:tests#1', r('uz')],
+  ['mn243', 'Hisoblash uchun bir so‘m ham kerak emas. Yuk necha kub?', 'check2:tests#1', r('uz')],
+  ['mn244', 'برای محاسبه یک دلار هم اضافه نمی‌شود. حجم بار چقدر است؟', 'check2:tests#1', r('fa')],
 ];
 
 // ── han: a Chinese reply through the policy and the gate ───────────────────
@@ -798,6 +908,9 @@ const HAN_G1_ORDINARY: readonly Row[] = [
   ['hg212', '千万不要把电池放在货物里。', P_HAN],
   ['hg213', '第一步，请告诉我货物名称。', P_HAN],
   ['hg214', '万一有问题，请随时联系我们。', P_HAN],
+  // «一成交» is «once the deal is done», «马上万事» «at once, everything» — no rate, no vague scale (#8, D06d, D05b).
+  ['hg215', '一成交我们就发货。', 'check2:tests#8 D06d'],
+  ['hg216', '我们马上万事俱备，请放心。', 'check2:tests#8 D05b'],
 ];
 
 // ── lesson: «📝 Tuzatish»'s money refusal ───────────────────────────────────

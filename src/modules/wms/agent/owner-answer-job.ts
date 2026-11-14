@@ -27,6 +27,17 @@ export interface OwnerAnswerDeps extends RunDeps {
   requeue?: (job: AgentOwnerAnswerJob, startAfterS: number) => Promise<void>;
 }
 
+/**
+ * How far the question's run had seen its burst (drafts `burstSeenAt`, fix pass 5) — what `answer_stale` measures a
+ * later edit or deletion of a burst line with. A question written before it carries no stamp and keeps the INSERT's
+ * (`created_at`), which a line corrected while the model was writing the question is older than.
+ */
+export function questionSeenAt(q: Pick<typeof agentDrafts.$inferSelect, 'policy' | 'createdAt'>): Date | null {
+  const seen = ((q.policy ?? {}) as Partial<DraftPolicyJson>).burstSeenAt;
+  if (seen === undefined) return q.createdAt;
+  return seen === null ? null : new Date(seen);
+}
+
 /** The question was decided after his answer — ✅, ❌, 🙋, his ✏️, a newer answer, the sweep handing it back. */
 export const QUESTION_DECIDED_WORDS = 'savol kartasi javobingizdan keyin boshqacha hal qilingan (✅, ✏️, ❌ yoki 🙋)';
 
@@ -101,7 +112,7 @@ export async function handleOwnerAnswer(job: AgentOwnerAnswerJob, deps: OwnerAns
         questionDraftId: q.id,
         questionAnchor: q.anchorTgMessageId,
         questionAnchorEditedAt: q.anchorEditedAt,
-        questionDraftedAt: q.createdAt,
+        questionDraftedAt: questionSeenAt(q),
         messageId: job.messageId,
         text: answer.text,
       },

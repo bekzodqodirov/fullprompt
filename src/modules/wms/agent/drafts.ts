@@ -321,6 +321,18 @@ export interface RunDraftInput {
 }
 
 /**
+ * How far the run had seen its burst when it READ it (fix pass 5): the newest edit of a burst line it read, ISO — or
+ * null, no line of it edited then. `answer_stale` measures a later edit or deletion of the question's burst against it
+ * (owner-answer-job `questionSeenAt`): the question's own `created_at` is the INSERT after the model call, and a line
+ * the customer corrected WHILE the model was writing the question was older than it — his answer to the old wording
+ * went by itself. Both stamps are the listener's own (`applyEdit`), so the comparison never crosses two clocks.
+ */
+export function burstSeenAt(ctx: Pick<AgentContext, 'burst'>): string | null {
+  const at = Math.max(...ctx.burst.map((m) => m.editedAt?.getTime() ?? Number.NEGATIVE_INFINITY));
+  return Number.isFinite(at) ? new Date(at).toISOString() : null;
+}
+
+/**
  * The row a run's reply becomes — ONE builder for the writer and for the
  * «o'zi yuborish» plan the inbound run computes before writing (auto-send
  * `autoShapeOf`), so the gate judges the very draft that is stored.
@@ -349,6 +361,7 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       ledger: policy.ledger,
       memory: input.memory,
       card: cardMemory(ctx),
+      burstSeenAt: burstSeenAt(ctx),
       notes: input.notes,
       // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
       ...(compose.forcedQuestion ? { forcedQuestion: compose.forcedQuestion } : {}),

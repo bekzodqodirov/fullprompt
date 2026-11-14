@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectLocale, dominantScript, scriptOf } from '@/modules/wms/agent/locale';
+import { detectLocale, dominantScript, scriptOf, uzbekEndingLean } from '@/modules/wms/agent/locale';
 
 describe('detectLocale', () => {
   it('reads the six languages he answered for (his 13)', () => {
@@ -33,11 +33,38 @@ describe('detectLocale', () => {
   // refused every correct Uzbek Cyrillic reply to such a line. `confident` means a MARK in the text decided.
   it('Cyrillic that carries no mark of either language is a guess, and says so — the conversation keeps its language', () => {
     for (const line of ['Кийим-кечак, Гуанчжоудан жунатаман', '5 куб 800 кг', 'Иву шахридан', 'Гуанчжоудан юборилади']) {
-      expect(detectLocale(line), line).toEqual({ locale: 'ru', confident: false, script: 'cyrillic' });
+      // With nothing to keep, the guess: Uzbek where a word ENDS as only Uzbek ends («жунат-аман», fix pass 5), else Russian.
+      const guess = line.includes('жунатаман') ? 'uz_cyrl' : 'ru';
+      expect(detectLocale(line), line).toEqual({ locale: guess, confident: false, script: 'cyrillic' });
       expect(detectLocale(line, 'uz_cyrl'), line).toEqual({ locale: 'uz_cyrl', confident: false, script: 'cyrillic' });
       expect(detectLocale(line, 'ru'), line).toEqual({ locale: 'ru', confident: false, script: 'cyrillic' });
       // A conversation in another script has no Cyrillic language to keep.
-      expect(detectLocale(line, 'uz'), line).toEqual({ locale: 'ru', confident: false, script: 'cyrillic' });
+      expect(detectLocale(line, 'uz'), line).toEqual({ locale: guess, confident: false, script: 'cyrillic' });
+    }
+  });
+
+  // Fix pass 5 (the check of pass 3): Russian's everyday adverbs mark Russian only in a line with no Uzbek word ending —
+  // an Uzbek speaker's «тогда», «сейчас», «потом», «очень» beside his own «-аман», «-асизларми», «-миди» mark nothing.
+  it('Russian adverbs beside Uzbek word endings decide nothing; alone, they are Russian', () => {
+    for (const line of ['Ака хоп, тогда жунатаман', 'Ака сейчас жунатаман, Гуанчжоудан', 'Гуанчжоудан юкимни потом жунатаман', 'Мебель олиб келасизларми, очень срочно керакмиди']) {
+      expect(detectLocale(line, 'uz_cyrl'), line).toEqual({ locale: 'uz_cyrl', confident: false, script: 'cyrillic' });
+      expect(uzbekEndingLean(line), line).toBe('uz_cyrl');
+    }
+    for (const line of ['Сегодня сможете забрать?', 'Привет, сегодня сможете забрать?', 'Тогда завтра заберу']) {
+      expect(detectLocale(line, 'uz_cyrl'), line).toEqual({ locale: 'ru', confident: true, script: 'cyrillic' });
+      expect(uzbekEndingLean(line), line).toBeNull();
+    }
+    // A Russian word that ends like Uzbek leans no way beside a Russian mark.
+    expect(uzbekEndingLean('Это шаман, что ли?')).toBeNull();
+  });
+
+  // Fix pass 5: an English conversation greeted in English is English — «Hello, good morning» held every English reply.
+  it('an English greeting in an English conversation, with nothing of Uzbek beside it, is confident English', () => {
+    for (const line of ['Hello, good morning', 'Hi! Good afternoon', 'Hello sir, good evening', 'Hello friend', 'Thanks, received']) {
+      expect(detectLocale(line, 'en'), line).toEqual({ locale: 'en', confident: true, script: 'latin' });
+      // …never in an Uzbek one, and never with nothing stored: a guess there.
+      expect(detectLocale(line, 'uz'), line).toEqual({ locale: 'uz', confident: false, script: 'latin' });
+      expect(detectLocale(line).confident, line).toBe(false);
     }
   });
 

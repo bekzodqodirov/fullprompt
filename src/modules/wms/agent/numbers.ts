@@ -805,7 +805,9 @@ const TOTAL_BEFORE =
  * («Narx: avia 17, avto 160», «Цену называй 17», «Avia narxi 1 kg uchun 17»); only what a count is is taken away.
  */
 const LESSON_COUNT_AFTER = new RegExp(
-  `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:(?:ta|та)\\s+)?(?:${[
+  // «3 ta savol» needs no prefix of its own: the classifier alone counts (fix pass 5 — the «ta» prefix pass 3 put here
+  // could be deleted with every test green, because «ta» below already reads it).
+  `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:${[
     // The classifier itself, whatever follows it (fix pass 4): «1 tadan ortiq emoji qo‘yma», «2 tadan ko‘p savol berma»
     // were refused as the price «1», «2». A price is never counted in «ta».
     '(?:ta|та)(?:dan|дан)?(?![\\p{L}])',

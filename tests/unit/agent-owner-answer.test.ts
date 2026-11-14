@@ -6,7 +6,8 @@ import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, FROM_ANSWER_LINE, answeredNow, r
 import { extractNumbers, numberLedger, ownerAnswerSources, phonesIn, type NumberSource } from '@/modules/wms/agent/numbers';
 import { ANSWER_CONTACT_WORDS, answerContactWords, answerHoldsFigure, answerTextRefusal, ownerAnswerInstruction } from '@/modules/wms/agent/owner-answer';
 import { foreignPhones } from '@/modules/wms/agent/policy';
-import { answerNoDraftWhy } from '@/modules/wms/agent/owner-answer-job';
+import { answerNoDraftWhy, questionSeenAt } from '@/modules/wms/agent/owner-answer-job';
+import { burstSeenAt } from '@/modules/wms/agent/drafts';
 import { stableHead } from '@/modules/wms/agent/prompt';
 import { memoryFor, withAviaGuard, withRailRule, type ComposeReply, type RunResult } from '@/modules/wms/agent/run';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
@@ -238,9 +239,29 @@ describe('«javobingizda raqam bo‘lsa — karta» is asked of HIS words, never
     expect(src).toMatch(/questionAnchorEditedAt: answer\.questionAnchorEditedAt\?\.toISOString\(\) \?\? null/u);
     // …and the job hands the QUESTION draft's stamp, never the redraft's.
     expect(readFileSync('src/modules/wms/agent/owner-answer-job.ts', 'utf8')).toMatch(/questionAnchorEditedAt: q\.anchorEditedAt/u);
-    // …and when the QUESTION was drafted — what the rest of its burst is compared with (fix pass 3).
+    // …and how far the QUESTION's run had seen its burst — what the rest of it is compared with (fix passes 3, 5).
     expect(src).toMatch(/questionDraftedAt: answer\.questionDraftedAt\?\.toISOString\(\) \?\? null/u);
-    expect(readFileSync('src/modules/wms/agent/owner-answer-job.ts', 'utf8')).toMatch(/questionDraftedAt: q\.createdAt/u);
+    expect(readFileSync('src/modules/wms/agent/owner-answer-job.ts', 'utf8')).toMatch(/questionDraftedAt: questionSeenAt\(q\)/u);
+    // …a stamp every run's draft carries, from the burst it READ (drafts `draftFromRun`).
+    expect(readFileSync('src/modules/wms/agent/drafts.ts', 'utf8')).toMatch(/burstSeenAt: burstSeenAt\(ctx\),/u);
+  });
+
+  // Fix pass 5 (the check of pass 3): the question's `created_at` is its INSERT, after the model call — a burst line
+  // the customer corrected WHILE the model wrote the question was older than it, and his answer to the old wording
+  // went by itself. The stamp is the newest edit the run READ.
+  it('the burst is measured from what the question’s run READ — never from the question’s INSERT', () => {
+    const at = (iso: string | null) => (iso === null ? null : new Date(iso));
+    const line = (editedAt: string | null) => ({ editedAt: at(editedAt) });
+    expect(burstSeenAt({ burst: [] })).toBeNull();
+    expect(burstSeenAt({ burst: [line(null), line(null)] } as never)).toBeNull();
+    expect(burstSeenAt({ burst: [line('2026-11-11T06:00:00.000Z'), line(null), line('2026-11-11T06:00:05.000Z')] } as never)).toBe(
+      '2026-11-11T06:00:05.000Z',
+    );
+    const created = new Date('2026-11-11T06:01:00.000Z');
+    // A question written before the stamp keeps its INSERT; one with it, what its run saw — null: no line edited then.
+    expect(questionSeenAt({ policy: {}, createdAt: created })).toEqual(created);
+    expect(questionSeenAt({ policy: { burstSeenAt: null }, createdAt: created })).toBeNull();
+    expect(questionSeenAt({ policy: { burstSeenAt: '2026-11-11T06:00:05.000Z' }, createdAt: created })).toEqual(new Date('2026-11-11T06:00:05.000Z'));
   });
 });
 

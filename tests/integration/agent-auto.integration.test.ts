@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { and, eq, inArray, like, notInArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { dropDrainKicksSince } from './drain-kicks';
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -382,7 +383,10 @@ beforeEach(async () => {
   await stampAgentPump(accountId, true);
 });
 
+// The drain's kicks this file's notifications queued, from its own start (fix pass 5 — `drain-kicks.ts`).
+const KICKS_FROM = new Date().toISOString();
 afterAll(async () => {
+  await dropDrainKicksSince(KICKS_FROM);
   __forgetAgentAutoReady();
   seam.hook = null;
   __setTelegramTransport(null);
@@ -2660,6 +2664,42 @@ describe('the price that goes by itself — the figure still stands (0148, spec 
       } finally {
         await db.update(users).set({ active: false }).where(eq(users.id, sellerId));
       }
+    });
+
+    // Fix pass 5 (the check of pass 3): the repeated press was pinned only on an UNCHANGED column — answering
+    // «already» to any earlier ✅ left the whole suite green, and with it his ✅ on a column CHANGED since was a toast
+    // saying «tasdiqlandi» over a mark that never moved: every priced reply refused `tariff_unconfirmed` for ever.
+    it('«✅ Tarif to‘g‘ri» on a column CHANGED since his last ✅ confirms it again — the mark moves, once, audited', async () => {
+      const audits = async () =>
+        Number(
+          (
+            await db.execute<{ n: string }>(
+              sql`SELECT count(*)::text AS n FROM audit_log WHERE entity_type = 'agent_send_caps' AND after->>'via' = 'tarif_togri'`,
+            )
+          )[0]!.n,
+        );
+      await vouch(null);
+      const fp1 = await currentTariffFingerprint();
+      expect(await confirmTariff(actorOf(ownerId), fp1, { actorId: ownerId })).toBe('confirmed');
+      expect(await tariffUnconfirmed(new Date())).toBe(false);
+      const first = (await mark())!;
+      // Pressed again on the same column: said once, nothing moved (fix pass 3).
+      expect(await confirmTariff(actorOf(ownerId), fp1, { actorId: ownerId })).toBe('already');
+      expect((await mark())!.getTime()).toBe(first.getTime());
+      await pause();
+      // The China column edited after his ✅ — the new notice carries the new column's stamp.
+      await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 171 });
+      const fp2 = await currentTariffFingerprint();
+      expect(fp2).not.toBe(fp1);
+      expect(await tariffUnconfirmed(new Date())).toBe(true);
+      const before = await audits();
+      expect(await confirmTariff(actorOf(ownerId), fp2, { actorId: ownerId })).toBe('confirmed');
+      expect((await audits()) - before).toBe(1);
+      expect((await mark())!.getTime()).toBeGreaterThan(first.getTime());
+      expect(await tariffUnconfirmed(new Date())).toBe(false);
+      // …and the bot's door says it once more as «already», never a second mark.
+      expect(await confirmTariff(actorOf(ownerId), fp2, { actorId: ownerId })).toBe('already');
+      expect((await audits()) - before).toBe(1);
     });
   });
 

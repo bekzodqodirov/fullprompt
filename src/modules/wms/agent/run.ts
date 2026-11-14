@@ -16,7 +16,7 @@ import { generalFacts, kbSearch, type KbHit } from './kb';
 import type { PromptLesson } from './lesson-rules';
 import { promptLessons } from './lessons';
 import { AGENT_LIMITS } from './limits';
-import { detectLocale, dominantScript, greetingLean, type AgentLocale } from './locale';
+import { detectLocale, dominantScript, greetingLean, uzbekEndingLean, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
 import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
@@ -659,13 +659,14 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // customer's language as the message the draft answers says it — read once here, so the scheduling and the
     // press judge the same thing.
     rail,
-    // An unconfident guess that LEANS — on the conversation's own stored language, or on the one language its greetings
-    // said — admits only that language (fix pass 4, auto-gate `languageAdmits`): «Здравствуйте» over unmarked words let an
-    // Uzbek reply go to a Russian customer, and it was no mark of Russian either.
+    // An unconfident guess that LEANS — on the conversation's own stored language, on the one language its greetings
+    // said, or on its Uzbek Cyrillic word endings (fix pass 5, locale `uzbekEndingLean`) — admits only that language
+    // (fix pass 4, auto-gate `languageAdmits`): «Здравствуйте» over unmarked words let an Uzbek reply go to a Russian
+    // customer, and it was no mark of Russian either.
     customerLocale: {
       locale: guess.locale,
       confident: guess.confident,
-      ...(!guess.confident && guess.locale !== null && (guess.locale === ctx.storedLocale || guess.locale === greetingLean(said))
+      ...(!guess.confident && guess.locale !== null && (guess.locale === ctx.storedLocale || guess.locale === greetingLean(said) || guess.locale === uzbekEndingLean(said))
         ? { leans: true }
         : {}),
     },
@@ -955,7 +956,7 @@ function placeDirects(sentence: string): boolean {
  * Never a receive verb with no place («Avia orqali 1 kg dan qabul qilamiz»), never one in Tashkent alone.
  */
 const RECEIVE =
-  /(?<![\p{L}])(?:qabul\s+qil\p{L}*|қабул\s+қил\p{L}*|кабул\s+кил\p{L}*|приним\p{L}*|принят\p{L}*|receiv\p{L}*|accept\p{L}*)|收货|收件|接收|签收|(?<![\p{L}])(?:تحویل\s+می\S*\s*گیر|دریافت\s+می\S*\s*کن)\p{L}*/iu;
+  /(?<![\p{L}])(?:qabul\s+qil\p{L}*|қабул\s+қил\p{L}*|кабул\s+кил\p{L}*|приним\p{L}*|принят\p{L}*|прим(?:ем|ут|ет|ете)(?![\p{L}])|receiv\p{L}*|accept\p{L}*)|收货|收件|接收|签收|(?<![\p{L}])(?:تحویل\s+می\S*\s*گیر|دریافت\s+می\S*\s*کن)\p{L}*/iu;
 function receivesThere(sentence: string): boolean {
   if (!RECEIVE.test(sentence)) return false;
   const chinese = originMentions(sentence).length > 0;
@@ -984,7 +985,7 @@ const REPLY_HANDOVER = new RegExp(
     `(?<![\\p{L}])\\p{L}+imizga\\s+(?:\\p{L}+\\s+)?(?:bering|beravering|topshiring)(?![\\p{L}])`,
     `${WRITE_BEFORE}(?<![\\p{L}])(?:юбор|жўнат|жунат|етказ|топшир|келтир)(?:${UZ_CYRL_YOU}|син(?:лар)?|иб\\s+(?:бер|қўй|куй)${UZ_CYRL_YOU})(?![\\p{L}])`,
     `(?<![\\p{L}])(?:олиб\\s+(?:кел|бор)|элтиб\\s+бер|ташлаб\\s+кет)(?:${UZ_CYRL_YOU}|син(?:лар)?)(?![\\p{L}])`,
-    '(?<![\\p{L}])(?:отправ(?:ьте|ляйте|ите|ляете)|вышлите|пришлите|привез(?:ите|[её]те)|привозите|принес(?:ите|[её]те)|сда(?:йте|дите|вайте)|достав(?:ьте|ляйте)|переда(?:йте|дите)|завез(?:ите|[её]те)|подвез(?:ите|[её]те)|подвозите|завозите|отда(?:йте|дите|вайте))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:отправ(?:ьте|ляйте|ите|ляете)|вышлите|пришлите|привез(?:ите|[её]те)|привозите|принес(?:ите|[её]те)|сда(?:йте|дите|вайте)|достав(?:ьте|ляйте)|переда(?:йте|дите)|завез(?:ите|[её]те)|подвез(?:ите|[её]те)|подвозите|завозите|отда(?:йте|дите|вайте)|(?:от|у|до)?вез(?:и|ите|[её]те)|(?:от|до)?возите)(?![\\p{L}])',
     '(?<![\\p{L}])(?:можете|сможете|можно|нужно|надо|необходимо|следует|должен|должна|должны|может|могут)\\s+(?:\\p{L}+\\s+){0,2}?(?:отправ(?:ить|лять)|привезти|привозить|сдать|сдавать|принести|доставить|передать|выслать|завезти)(?![\\p{L}])',
     '(?<![\\p{L}])пусть\\s+(?:\\p{L}+\\s+){0,3}?(?:отправ|привез|достав|сда|переда|вышл)\\p{L}*',
     '(?<![\\p{L}])(?:please|kindly|just|you\\s+(?:can|may|could|should|must|need\\s+to|have\\s+to|will\\s+need\\s+to)|if\\s+you|once\\s+you|when\\s+you)\\s+(?:\\p{L}+\\s+)?(?:send|ship|bring|deliver|drop|hand|take)(?![\\p{L}])',
@@ -1099,11 +1100,21 @@ function sendsToChina(replyText: string): boolean {
   });
 }
 
+/**
+ * …and the cargo HANDED IN at a Chinese place (fix pass 5, the check of pass 3): «在义乌交货就行» — «hand it over in
+ * Yiwu» — names no place of ours, no «to», no «please», and went by itself once pass 3 dropped «在» from `TO_BEFORE`.
+ * Never ours: «我们在义乌交货» is where WE deliver.
+ */
+const HAN_HAND_IN = /(?<!我们|我方|我司|我)在([^，。！？；]{1,10}?)(?:交货|交付|送货|入库|进仓)/gu;
+function handsInAtChina(sentence: string): boolean {
+  return [...sentence.matchAll(HAN_HAND_IN)].some((m) => originMentions(m[1]!).length > 0);
+}
+
 /** The reply directs the cargo: a place of ours, an address, where we receive it, or a hand-over asked of the customer (§1.2, armed only). */
 export function talksDelivery(replyText: string): boolean {
   return replyText.split(SENTENCE).some((said) => {
     const sentence = said.trim().replace(POLITE_COMMAS, ' ').replace(POLITE_TAIL, '');
-    if (REPLY_ADDRESS.test(sentence) || sendsToChina(sentence) || receivesThere(sentence)) return true;
+    if (REPLY_ADDRESS.test(sentence) || sendsToChina(sentence) || receivesThere(sentence) || handsInAtChina(sentence)) return true;
     // A place of ours in a sentence about Tashkent, naming no Chinese place, is the pickup (fix pass 3).
     if (placeDirects(sentence) && !(TASHKENT.test(sentence) && originMentions(sentence).length === 0)) return true;
     return sentence.split(SUB_CLAUSE).some(handsOver);
@@ -1476,7 +1487,7 @@ export interface OwnerAnswerInput {
   questionAnchor: bigint;
   /** The edit of that line the question was drafted over (`agent_drafts.anchor_edited_at`) — what `answer_stale` compares a later edit with. */
   questionAnchorEditedAt: Date | null;
-  /** When the question was drafted (`agent_drafts.created_at`) — what `answer_stale` compares the rest of its burst with. */
+  /** How far the question's run had seen its burst (owner-answer-job `questionSeenAt`) — what `answer_stale` compares the rest of its burst with. */
   questionDraftedAt: Date | null;
   messageId: number;
   text: string;

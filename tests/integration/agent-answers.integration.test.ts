@@ -257,6 +257,9 @@ afterAll(async () => {
     await db.delete(calcRequests).where(inArray(calcRequests.id, requestIds));
   }
   if (taskIds.length) {
+    // The calc landings' TaskAssigned went to the VED the rota picked — a SEEDED person, outside this file's own
+    // people: found by the task it names (fix pass 5, the check of pass 3's leftovers).
+    await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join(taskIds.map((t) => sql`${t}`), sql`, `)})`);
     await db.delete(events).where(inArray(events.entityId, taskIds));
     await db.delete(tasks).where(inArray(tasks.id, taskIds));
   }

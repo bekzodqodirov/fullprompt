@@ -556,10 +556,13 @@ describe('the redraft from his answer (spec §2.2)', () => {
       questionDraftId: q.id,
       questionAnchor: String(q.anchorTgMessageId),
       questionAnchorEditedAt: null,
-      questionDraftedAt: q.createdAt.toISOString(),
+      // How far the question's run had seen its burst (fix pass 5): no line of it edited when read — any later
+      // change reads as one he never answered (never the question's INSERT, `created_at`).
+      questionDraftedAt: null,
       figures: false,
       personal: [],
     });
+    expect((q.policy as { burstSeenAt?: unknown }).burstSeenAt).toBeNull();
     // The question: superseded by HIS answer — decided by him, its own line, the wait's mark gone.
     const closed = await draftOf(q.id);
     expect(closed.status).toBe('superseded');
@@ -1003,6 +1006,34 @@ describe('the redraft from his answer (spec §2.2)', () => {
           expect(await markDeleted(ownerId, [first])).toBe(1);
         },
       });
+      await comesBack(r, 'answer_stale');
+    });
+
+    // Fix pass 5 (the check of pass 3): the question's run reads its burst BEFORE the model call and writes the
+    // question after it — a line the customer corrected DURING the call is older than the question's INSERT, and
+    // pass 3 compared with that INSERT: the model read the old wording, his «Ha, olamiz» answered it, and the
+    // redraft for the new wording went by itself.
+    it('edited WHILE the model was writing the question: `answer_stale`, never pressed', async () => {
+      const NEW = `Salom, suyuq atir va litiy batareya ham olib kelasizlarmi ${TAG}?`;
+      const first = await inbound(FIRST);
+      const anchor = await inbound(LAST);
+      const seen: string[] = [];
+      const inner = scripted([compose('Aniqlab aytaman.', { needs_owner: true, owner_question: 'Suyuqlik olamizmi?', category: 'other' })]);
+      const model = (async (req: ModelRequest) => {
+        seen.push(JSON.stringify(req));
+        expect(await applyEdit({ managerUserId: ownerId, peerId: PEER, tgMessageId: first, body: NEW })).toBe(true);
+        return inner(req);
+      }) as CallModel;
+      const out = await handleInbound({ managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(anchor), origin: 'live' }, { callModel: model, now: () => T0 });
+      expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+      // The model wrote the question over the OLD wording — the edit landed after the run read the chat.
+      expect(seen.join('')).toContain('suyuq atir ham olib');
+      expect(seen.join('')).not.toContain('litiy');
+      const q = await draftOf((out as { draftId: string }).draftId);
+      const job = await answered(q.id, 'Ha, olamiz');
+      const re = await redraft(job, `Ha, suyuq atir va litiy batareyani ham Toshkentga olib kelamiz ${TAG}.`);
+      const r = await draftOf((re as { draftId: string }).draftId);
+      await shownAt(r.id, T1);
       await comesBack(r, 'answer_stale');
     });
 

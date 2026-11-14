@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { dropDrainKicksSince } from './drain-kicks';
 
 /**
  * The website table's 14-day notice THROUGH THE SWEEP, on a day inside its window (spec SPEC-P1-v2 §1.6; the review
@@ -93,7 +94,10 @@ beforeEach(async () => {
   await db.update(agentSendCaps).set({ tariffNoticeFor: null }).where(eq(agentSendCaps.id, 1));
 });
 
+// The drain's kicks this file's notifications queued, from its own start (fix pass 5 — `drain-kicks.ts`).
+const KICKS_FROM = new Date().toISOString();
 afterAll(async () => {
+  await dropDrainKicksSince(KICKS_FROM);
   await db.delete(notifications).where(and(eq(notifications.type, 'AgentTariffNotice'), eq(notifications.userId, holderId)));
   if (hadCapsRow) await db.update(agentSendCaps).set({ tariffNoticeFor: noticeForBefore }).where(eq(agentSendCaps.id, 1));
   await __restoreAgentConfig(snapshot);

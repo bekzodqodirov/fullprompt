@@ -1000,11 +1000,28 @@ const ONE_BESIDE_CURRENCY = new RegExp(
  */
 const NEGATED_BEFORE = /(?:^|[^\p{L}])(?:ни|not(?:\s+even)?|حتی)\s+$/iu;
 const EVEN_AFTER = /^\s+(?:ham|ҳам|хам|هم)(?![\p{L}])/iu;
+/**
+ * …but «ham», «ҳам», «هم» is «also» at least as often as «even» (fix pass 5, the check of pass 3): «kilosiga yana bir
+ * dollar ham qo‘shiladi», «یک دلار هم اضافه می‌شود» add one dollar — a price spelled out, and pass 3's exemption let it
+ * go by itself. «Even one» is a NEGATION's: the clause it stands in must deny — «to‘lamaysiz», «olmaymiz», «kerak
+ * emas», «тўламайсиз», «не», «نیست», «نمی‌…».
+ */
+const CLAUSE_EDGE = /[.!?;,\n—–:。！？؟；，]/u;
+const CLAUSE_DENIES =
+  /(?<![\p{L}])(?:emas|эмас|kerakmas|керакмас|yo['‘’ʻ`]?q|йўқ|йук|hech|ҳеч|хеч|не|нет|ни|not|no|never|نیست|نه|نمی\S*|ن(?:دار|گیر|خواه|کن|باش|شو|پرداز|می)\p{L}*)(?![\p{L}])|\p{L}{2,}(?:ma(?:y(?:di|siz|miz|man|san)(?:lar)?|gan|sdan|sin|ng(?:iz)?)|ма(?:й(?:ди|сиз|миз|ман|сан)(?:лар)?|ган|сдан|син|нг(?:из)?))(?![\p{L}])|n['’]t(?![\p{L}])/iu;
+function clauseAround(text: string, from: number, to: number): string {
+  let start = from;
+  while (start > 0 && !CLAUSE_EDGE.test(text[start - 1]!)) start -= 1;
+  let end = to;
+  while (end < text.length && !CLAUSE_EDGE.test(text[end]!)) end += 1;
+  return text.slice(start, end);
+}
 function oneBesideCurrency(normalized: string): boolean {
   return [...normalized.matchAll(ONE_BESIDE_CURRENCY)].some((m) => {
     const before = normalized.slice(Math.max(0, m.index - 12), m.index);
     const after = normalized.slice(m.index + m[0].length, m.index + m[0].length + 8);
-    return !NEGATED_BEFORE.test(before) && !EVEN_AFTER.test(after);
+    if (NEGATED_BEFORE.test(before)) return false;
+    return !(EVEN_AFTER.test(after) && CLAUSE_DENIES.test(clauseAround(normalized, m.index, m.index + m[0].length)));
   });
 }
 /**
