@@ -1302,9 +1302,17 @@ export function autoTodayWords(today: number, perDay: number | null): string {
 export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categories'>): string {
   const hold = c.holdSec % 60 === 0 ? `${c.holdSec / 60} daqiqa` : `${c.holdSec} soniya`;
   const day = c.perDay === null ? 'Kunlik chegara yo‘q' : `Kuniga ko‘pi bilan ${c.perDay} ta`;
-  const kept = c.categories.includes('price')
-    ? 'shikoyat va savolli javoblar har doim sizga qoladi; taxminiy yo‘lkira va avia narxi qoidalar ruxsat bersa o‘zi ketadi'
-    : 'narx, shikoyat va savolli javoblar har doim sizga qoladi';
+  const price = c.categories.includes('price');
+  const vedPrice = c.categories.includes('calc_price');
+  // What stays his and what may go, from the stored kinds (SPEC-P2-v2 §4.4): «narx» is said to stay only while
+  // neither price box is ticked — the truck/avia estimate and the VED's answer with his markup are two boxes.
+  const stays = price && vedPrice ? 'shikoyat va savolli javoblar' : price ? 'VED narxi, shikoyat va savolli javoblar' : vedPrice ? 'yo‘lkira va avia narxi, shikoyat va savolli javoblar' : 'narx, shikoyat va savolli javoblar';
+  const goes = [
+    ...(price ? ['taxminiy yo‘lkira va avia narxi qoidalar ruxsat bersa o‘zi ketadi'] : []),
+    ...(vedPrice ? ['VED javobiga ustama qo‘shilgan narx qoidalar ruxsat bersa o‘zi ketadi'] : []),
+    ...(c.categories.includes('calc') ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi'] : []),
+  ];
+  const kept = [`${stays} har doim sizga qoladi`, ...goes].join('; ');
   return (
     `🤖 O‘zi yuborish yoqildi: mos javob kartasi ${hold} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing. ` +
     `${day}, tunda yo‘q; ${kept}.`

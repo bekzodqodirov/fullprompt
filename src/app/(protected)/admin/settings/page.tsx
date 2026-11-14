@@ -1,5 +1,13 @@
 import { getTranslations } from 'next-intl/server';
-import { getAllSettings, SETTING_DEFAULTS, type SettingKey } from '@/modules/platform/settings/service';
+import Link from 'next/link';
+import {
+  getAllSettings,
+  isOwnDoorKey,
+  OWN_DOOR_KEYS,
+  OWN_DOOR_PAGES,
+  SETTING_DEFAULTS,
+  type SettingKey,
+} from '@/modules/platform/settings/service';
 import { updateSettingAction } from './actions';
 import { redirect } from 'next/navigation';
 import { getActor } from '@/modules/platform/rbac/authorize';
@@ -11,13 +19,25 @@ import { companyMoneySight } from '@/modules/wms/finance/scope';
  * unpriced-cargo ban and asks for a DATE — under the agent's reason list that
  * sentence would send the owner looking for a calendar.
  */
-const BAD_VALUE_TEXT: Partial<Record<SettingKey, 'badValueReasons' | 'badValueWhole' | 'badValueOrigins'>> = {
+const BAD_VALUE_TEXT: Partial<
+  Record<
+    SettingKey,
+    'badValueReasons' | 'badValueWhole' | 'badValueOrigins' | 'badValueMarkupKind' | 'badValueMarkup' | 'badValueOpenLimit' | 'badValueStage'
+  >
+> = {
   agent_no_contact_reasons: 'badValueReasons',
   // A list of web addresses refused with «write a date» (the as-built review
   // found it on this door; it predates the round).
   lead_assign_origins: 'badValueOrigins',
   tnved_ai_daily_limit: 'badValueWhole',
   tarkib_ai_daily_limit: 'badValueWhole',
+  // The full AI seller's own-door keys (SPEC-P2-v2 K5): drawn read-only here, but their shapes keep words of their
+  // own for whichever door says them.
+  agent_calc_markup_kind: 'badValueMarkupKind',
+  agent_calc_markup_value: 'badValueMarkup',
+  agent_calc_open_limit: 'badValueOpenLimit',
+  crm_ai_contacted_stage: 'badValueStage',
+  crm_ai_quoted_stage: 'badValueStage',
 };
 
 /** The two pressed-AI ceilings and the kind each one caps (0144). */
@@ -29,9 +49,9 @@ const PRESS_KIND: Partial<Record<SettingKey, PressKind>> = {
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ bad?: string }>;
+  searchParams: Promise<{ bad?: string; own?: string }>;
 }) {
-  const { bad } = await searchParams;
+  const { bad, own } = await searchParams;
   // Own gate, not just the layout's: the section is now reachable by roles
   // that only hold FX or audit rights.
   const actor = await getActor();
@@ -62,6 +82,28 @@ export default async function SettingsPage({
           const defaultValue = SETTING_DEFAULTS[key];
           const isBool = typeof defaultValue === 'boolean';
           const isObject = typeof defaultValue === 'object';
+          // A key with a door of its own (SPEC-P2-v2 K5): its value, read-only, and the page that changes it.
+          if (isOwnDoorKey(key)) {
+            const door = OWN_DOOR_KEYS[key];
+            return (
+              <div key={key} className="card" data-testid={`setting-own-${key}`}>
+                <p className="label font-mono">{key}</p>
+                <p className="mb-2 text-xs text-ink-500">{t(`descriptions.${key}`)}</p>
+                <p className="font-mono text-sm [overflow-wrap:anywhere]">{String(value) === '' ? '—' : String(value)}</p>
+                <p className="mt-1 text-xs text-ink-500">
+                  {t('ownDoor')}{' '}
+                  <Link href={OWN_DOOR_PAGES[door]} className="font-semibold text-brand-700 underline">
+                    {t(`ownDoorPage.${door}`)}
+                  </Link>
+                </p>
+                {own === key && (
+                  <p role="alert" className="mt-1 text-sm font-semibold text-bad" data-testid="setting-own-refused">
+                    {t('ownDoorRefused')}
+                  </p>
+                )}
+              </div>
+            );
+          }
           return (
             <form key={key} action={updateSettingAction} className="card">
               <input type="hidden" name="key" value={key} />

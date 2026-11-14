@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
 import { AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
@@ -21,6 +22,7 @@ import {
   ownerAccountState,
   ownerCandidates,
   pageDrawsSend,
+  seatPanel,
   tariffMismatchSeen,
   userName,
   webDrafts,
@@ -48,7 +50,9 @@ import {
   LessonEditor,
   ModeSwitch,
   NumbersForm,
+  OpenLimitForm,
   OwnerPicker,
+  SeatButtons,
   RememberButtons,
   RetireButton,
   SendCapsForm,
@@ -479,7 +483,7 @@ async function SettingsSection({
   owner: Awaited<ReturnType<typeof ownerAccountState>>;
 }) {
   const superAdmin = actor.roles.includes('super_admin');
-  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps] = await Promise.all([
+  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps, seat] = await Promise.all([
     agentToday(config),
     openCalcsFor(config.ownerUserId),
     tariffMismatchSeen(),
@@ -490,6 +494,8 @@ async function SettingsSection({
     autoPanel(actor, config.ownerUserId),
     // Today's constants one migration behind 0148 (`ready` false: no form).
     readSendCaps(),
+    // The AI seat (SPEC-P2-v2 K4) — a settings row, so it reads on any server.
+    seatPanel(),
   ]);
   // Asked only where 0148 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
   const tariff = caps.ready
@@ -573,6 +579,24 @@ async function SettingsSection({
               current={config.ownerUserId}
             />
           )}
+          {/* «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4): the seat is the account the AI speaks from,
+              named by a super_admin; re-pointing the holder leaves it naming the old one and every seat-only act
+              stops (the 100-request cap, the AI's price on a card) until he names it again. */}
+          <div className="space-y-1 border-t border-line pt-2" data-testid="agent-seat" data-seat={seat.state}>
+            <p className="text-sm font-semibold">{t('seatTitle')}</p>
+            <p
+              className={`text-sm [overflow-wrap:anywhere] ${seat.state === 'elsewhere' ? 'font-semibold text-warn' : ''}`}
+              data-testid="agent-seat-state"
+            >
+              {seat.state === 'holds'
+                ? `✅ ${t('seatHolds', { name: seat.seatName ?? '—' })}`
+                : seat.state === 'elsewhere'
+                  ? `⚠ ${t('seatElsewhere', { name: seat.seatName ?? '—' })}`
+                  : t('seatNone')}
+            </p>
+            <p className="text-xs text-ink-500">{t('seatHint')}</p>
+            {config.ownerUserId && <SeatButtons holderId={config.ownerUserId} holds={seat.state === 'holds'} named={seat.state !== 'none'} />}
+          </div>
         </section>
       )}
 
@@ -597,6 +621,15 @@ async function SettingsSection({
           value={<span data-testid="agent-open-calcs">{`${calcs.open} / ${calcs.cap}`}</span>}
           tone={calcs.open >= calcs.cap ? 'text-bad' : ''}
         />
+        {/* The AI seat's own cap (SPEC-P2-v2 §1.3, his §7 Q11 ⭐ a) — a super_admin's alone: raising it is a widening. */}
+        {superAdmin && (
+          <div className="space-y-1 border-t border-line pt-2">
+            <p className="text-xs text-ink-500">
+              {t('openLimitHint', { min: OPEN_CALC_LIMIT_BOUNDS.min, max: OPEN_CALC_LIMIT_BOUNDS.max })}
+            </p>
+            <OpenLimitForm current={seat.openLimit ?? OPEN_CALC_CAP_SEAT_DEFAULT} />
+          </div>
+        )}
         {mismatch && (
           <p className="text-sm font-semibold text-warn" data-testid="agent-tariff-mismatch">
             ⚠ {t('tariffMismatch')}
@@ -794,11 +827,14 @@ function AutoSection({
       )}
       <AutoArmButtons armed={c.armed} canArm={holder} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
       <div className="border-t border-line pt-2">
-        {/* «Narx» is a box only where 0148's CHECK admits it — one migration behind, the four. */}
+        {/* «Narx» is a box only where 0148's CHECK admits it, «Hisoblatish» and «VED narxi» only where 0149's does —
+            one migration behind, the boxes that server can store. */}
         <AutoCategoriesForm
           current={c.categories}
           editable={holder}
-          kinds={auto.fullReady ? AUTO_SEND_CATEGORIES : AUTO_SEND_CATEGORIES.filter((k) => k !== 'price')}
+          kinds={AUTO_SEND_CATEGORIES.filter(
+            (k) => (auto.fullReady || k !== 'price') && (auto.p2Ready || !(P2_CATEGORIES as readonly string[]).includes(k)),
+          )}
         />
       </div>
       {auto.fullReady && (

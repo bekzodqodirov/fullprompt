@@ -33,7 +33,7 @@ import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { AFTER_AUTO, keptFileSql } from './outbox-store';
 import { CANCELLED_BY_HOLDER } from './web-thread';
-import { AGENT_LIMITS } from './limits';
+import { anchorMaxAgeMsFor } from './anchor-clock';
 import { estimatesStand } from './estimate-check';
 import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
@@ -1043,7 +1043,8 @@ export async function decideDraft(
   const sendAt = releaseAt(now, await lastInboundAt(d), chatWindow);
   if (chatWindow === 'agent_lead') {
     const asked = await anchorSentAt(d);
-    if (asked && sendAt.getTime() - asked.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return { ok: false, code: 'window_closed' };
+    // The draft's own clock (SPEC-P2-v2 K2): a 💵 or a VED answer's reply may answer a line up to a week old.
+    if (asked && sendAt.getTime() - asked.getTime() > anchorMaxAgeMsFor(d)) return { ok: false, code: 'window_closed' };
   }
   // The machine's figures priced again at THIS press (spec §1.3) — his ✅ and the machine's alike, before anything
   // is landed or queued: asked at one end only, the door queued a reply the send step was certain to cancel (the

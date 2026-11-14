@@ -270,10 +270,19 @@ describe('the gate', () => {
     expect(autoVerdict(label)).toEqual({ eligible: true, reasons: [] });
   });
 
-  it('the kinds have ONE home: the gate re-exports the pure module the page reads, and 0148’s CHECK says the same five', () => {
+  it('«calc» and «calc_price» are never a model’s label (SPEC-P2-v2 §1.1): ticked, a reply LABELLED so still refuses', () => {
+    for (const category of ['calc', 'calc_price']) {
+      const input = eligible();
+      input.draft.category = category;
+      input.config.categories = [...AUTO_SEND_CATEGORIES];
+      expect(autoVerdict(input).reasons, category).toEqual(['category']);
+    }
+  });
+
+  it('the kinds have ONE home: the gate re-exports the pure module the page reads, and the LAST CHECK re-maker (0149) says the same seven', () => {
     expect(AUTO_SEND_CATEGORIES).toBe(ONE_HOME);
-    expect([...AUTO_SEND_CATEGORIES]).toEqual(['greeting', 'qualification', 'faq', 'status', 'price']);
-    const sql = readFileSync('src/modules/platform/db/migrations/0148_agent_full_p1.sql', 'utf8');
+    expect([...AUTO_SEND_CATEGORIES]).toEqual(['greeting', 'qualification', 'faq', 'status', 'price', 'calc', 'calc_price']);
+    const sql = readFileSync('src/modules/platform/db/migrations/0149_agent_full_p2.sql', 'utf8');
     const check = /"categories" <@ ARRAY\[([^\]]+)\]::text\[\]/u.exec(sql)?.[1];
     expect(check?.split(',').map((x) => x.trim().replace(/'/gu, ''))).toEqual([...AUTO_SEND_CATEGORIES]);
     // The page's file names the one home and never the gate (it would pull the send step into the browser).
@@ -708,7 +717,8 @@ describe('a reply the machine pressed is nobody’s decision — the gate never 
     const greeting = categoryVerdicts(rows).find((v) => v.category === 'greeting')!;
     expect(greeting.decided).toBe(1);
     expect(greeting.proven).toBe(false);
-    // The MEASURED four (calibration.ts): price is gated by the money clause, never measured as clean (0148).
-    expect([...AUTO_CATEGORIES, 'price'].sort()).toEqual([...AUTO_SEND_CATEGORIES].sort());
+    // The MEASURED four (calibration.ts): price is gated by the money clause, never measured as clean (0148) — and
+    // so are the calculation and the VED price (0149, SPEC-P2-v2 §1.1): gated by what the reply does, not measured.
+    expect([...AUTO_CATEGORIES, 'price', 'calc', 'calc_price'].sort()).toEqual([...AUTO_SEND_CATEGORIES].sort());
   });
 });

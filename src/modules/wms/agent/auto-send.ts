@@ -22,13 +22,13 @@ import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
-import { AUTO_SEND_CATEGORIES } from './auto-categories';
+import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from './auto-categories';
 import { estimateUnnamed, numeralUnread } from './auto-money';
 import { estimatesStand } from './estimate-check';
 import { tariffUnconfirmed } from './tariff-watch';
 import { autoVerdict, type AutoGateInput, type AutoLedgerLine, type AutoRefusal, type AutoToolCall } from './auto-gate';
 import { cardDigest, digestBody } from './card';
-import { agentAutoReady, agentFullP1Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
+import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
 import { readSendCaps } from './send-caps';
@@ -1386,6 +1386,11 @@ export async function setAutoCategories(actor: AutoActor, categories: readonly s
   if (chosen.length === 0 || chosen.some((c) => !(AUTO_SEND_CATEGORIES as readonly string[]).includes(c))) throw new AutoConfigError('bad_value');
   if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
   if (chosen.includes('price') && !(await agentFullP1Ready())) throw new AutoConfigError('not_ready');
+  // `calc` and `calc_price` exist since 0149 (SPEC-P2-v2 §4.2): ticked one migration behind, the CHECK would refuse
+  // the write with a raw 23514 — refused here in words instead.
+  if (chosen.some((c) => (P2_CATEGORIES as readonly string[]).includes(c)) && !(await agentFullP2Ready())) {
+    throw new AutoConfigError('not_ready');
+  }
   const pre = await readAgentConfig();
   if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
   // In the design's own order, so the stored list never depends on the order of the boxes.

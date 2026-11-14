@@ -1,4 +1,4 @@
-import { AUTO_SEND_CATEGORIES } from './auto-categories';
+import { LABEL_CATEGORIES, type AutoCategory } from './auto-categories';
 import { isEstimateTool, saysTashkent } from './auto-money';
 import { currencyBesideQuantity } from './digits';
 import { isTashkentNight } from './send-step';
@@ -324,10 +324,12 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // only because he ticked it. But only a label that is itself one of the kinds that ever go: a quote the model
   // labelled «complaint» or «other» stays his whatever it prices (the arming words promise it: «shikoyat va
   // savolli javoblar har doim sizga qoladi»). Refused, the label the model gave is judged as it always was.
+  // `calc` and `calc_price` are never a model's label (SPEC-P2-v2 §1.1, auto-categories `OUTCOME_CATEGORIES`): they are
+  // decided by what the reply DOES, so a label naming one is judged as no kind at all.
   const label = draft.category ?? '';
-  const goes = (AUTO_SEND_CATEGORIES as readonly string[]).includes(label);
+  const goes = LABEL_CATEGORIES.includes(label as AutoCategory);
   const category = money.present && !money.refused && goes ? 'price' : label;
-  if (!(AUTO_SEND_CATEGORIES as readonly string[]).includes(category) || !config.categories.includes(category)) hit.add('category');
+  if (!LABEL_CATEGORIES.includes(category as AutoCategory) || !config.categories.includes(category)) hit.add('category');
   // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess —
   // asked of the model's OWN label, so a status claim riding an admitted quote is still asked for its reading.
   if (label === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');

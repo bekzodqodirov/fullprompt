@@ -157,6 +157,47 @@ export function __pretendAgentFullP1Behind(): void {
   fullP1Ready = false;
 }
 
+let fullP2Ready = false;
+let fullP2Behind = false;
+
+/**
+ * Does 0149 exist — the full AI seller's part 2 (SPEC-P2-v2 §4.2)? The side table of the machine's offers, and the
+ * categories CHECK that admits `calc` and `calc_price`: a server whose table is there but whose CHECK is not would
+ * refuse the very ticks this asks for. Cached TRUE only (the `agentFullP1Ready` idiom). Asked by `setAutoCategories`
+ * (ticking either box one migration behind is refused in words), the offer step's writer and the four
+ * `payableOffersSql` consumers; everything else part 2 keeps lives in settings rows and tables that always exist.
+ */
+export async function agentFullP2Ready(): Promise<boolean> {
+  if (fullP2Behind) return false;
+  if (fullP2Ready) return true;
+  if (!(await agentFullP1Ready())) return false;
+  try {
+    const rows = await db.execute<{ ok: boolean }>(sql`
+      SELECT to_regclass('public.agent_offers') IS NOT NULL
+         AND coalesce((SELECT pg_get_constraintdef(oid) LIKE '%''calc''%' AND pg_get_constraintdef(oid) LIKE '%''calc_price''%'
+                         FROM pg_constraint
+                        WHERE conname = 'agent_auto_config_categories_check'
+                          AND conrelid = 'public.agent_auto_config'::regclass), false) AS ok`);
+    fullP2Ready = rows[0]?.ok === true;
+  } catch (err) {
+    logger.warn({ err }, '[agent] 0149 not checked');
+    return false;
+  }
+  return fullP2Ready;
+}
+
+/** Tests: forget the cached answer (and any pretence below). */
+export function __forgetAgentFullP2Ready(): void {
+  fullP2Ready = false;
+  fullP2Behind = false;
+}
+
+/** Tests: a server one migration behind 0149 — the probe answers «no» until forgotten (the P1 idiom). */
+export function __pretendAgentFullP2Behind(): void {
+  fullP2Behind = true;
+  fullP2Ready = false;
+}
+
 /** Why the layer was disarmed — the person's press, the agent's «off», or a step-down (§18.3). */
 export type AutoDisarmReason =
   | 'manual'
@@ -278,6 +319,8 @@ export function mayRunAgent(
 export type AgentConfigRefusal =
   | 'not_ready'
   | 'forbidden'
+  /** The AI seat names the account the AI speaks from, and no one else (SPEC-P2-v2 K4). */
+  | 'seat_not_holder'
   | 'not_account_holder'
   | 'auto_not_in_phase1'
   | 'no_owner'
@@ -552,6 +595,67 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
     await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
   }
   return out.config;
+}
+
+/**
+ * «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4): the super_admin names the account the AI speaks from as
+ * the AI's own seat — a settings row (`agent_seat_user_id`, platform/settings/agent-seat.ts), never a column on
+ * agent_config. The named user must BE the current holder at the press: the config row is taken FOR UPDATE first,
+ * so a `setAgentOwner` racing it cannot slip a different holder in between the check and the write. Null clears it
+ * (the row goes). Audited under the settings' one entity id with the key in before/after, like every settings
+ * write. Re-pointing the holder later does NOT clear it: the page says «AI o'rni boshqa foydalanuvchida», and every
+ * seat-only act stops (`holderIsSeat` is false) until he names the seat again.
+ */
+export async function setAgentSeat(actor: AgentActor, userId: string | null, ctx: AuditContext): Promise<string | null> {
+  if (!actor.roles.includes('super_admin')) throw new AgentConfigError('forbidden');
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const { AGENT_SEAT_KEY, agentSeatUserId } = await import('../../platform/settings/agent-seat');
+  const { SETTINGS_AUDIT_ID } = await import('../../platform/settings/service');
+  return db.transaction(async (tx) => {
+    const config = await lockConfig(tx);
+    if (userId !== null && config.ownerUserId !== userId) throw new AgentConfigError('seat_not_holder');
+    const before = await agentSeatUserId(tx);
+    if (before === userId) return userId;
+    if (userId === null) {
+      await tx.execute(sql`DELETE FROM settings WHERE key = ${AGENT_SEAT_KEY}`);
+    } else {
+      await tx.execute(sql`
+        INSERT INTO settings (key, value, updated_by, updated_at)
+        VALUES (${AGENT_SEAT_KEY}, to_jsonb(${userId}::text), ${actor.id}::uuid, now())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`);
+    }
+    await writeAudit(tx, ctx, {
+      entityType: 'settings',
+      entityId: SETTINGS_AUDIT_ID,
+      action: 'update',
+      before: { [AGENT_SEAT_KEY]: before },
+      after: { [AGENT_SEAT_KEY]: userId },
+    });
+    return userId;
+  });
+}
+
+/**
+ * The AI seat's open-calc cap on /suhbatlar/ai (SPEC-P2-v2 §1.3, his §7 Q11 ⭐ a) — a super_admin's alone: raising
+ * it widens what a machine with no daily count may open at the VED, so it is no brake the holder pulls. A whole
+ * number 1..200 (`readOpenCalcLimit`), never 0. Audited under the settings' entity id with the key in before/after.
+ */
+export async function setCalcOpenLimit(actor: AgentActor, raw: string, ctx: AuditContext): Promise<number> {
+  if (!actor.roles.includes('super_admin')) throw new AgentConfigError('forbidden');
+  const { OPEN_CALC_LIMIT_KEY, readOpenCalcLimit } = await import('../../platform/settings/calc-cap');
+  const value = readOpenCalcLimit(raw.trim());
+  if (value === null) throw new AgentConfigError('bad_value');
+  const { SETTINGS_AUDIT_ID, getSetting, setSetting } = await import('../../platform/settings/service');
+  const before = await getSetting(OPEN_CALC_LIMIT_KEY);
+  await setSetting(OPEN_CALC_LIMIT_KEY, value, actor.id);
+  await writeAudit(db, ctx, {
+    entityType: 'settings',
+    entityId: SETTINGS_AUDIT_ID,
+    action: 'update',
+    before: { [OPEN_CALC_LIMIT_KEY]: before },
+    after: { [OPEN_CALC_LIMIT_KEY]: value },
+  });
+  return value;
 }
 
 /**

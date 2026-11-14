@@ -64,6 +64,11 @@ export const AGENT_LIMITS = {
   rampDays: 14,
   /** The customer's newest message must be at most this old for a run AND for the send (§17.4, ban-3). */
   anchorMaxAgeMs: 24 * 60 * 60_000,
+  /**
+   * …and for a reply the OWNER's side started on a VED answer — his 💵, the machine's VED-answer reply — a week
+   * (SPEC-P2-v2 K2, his §7 Q9 ⭐ a): the VED answers when it answers. Which clock a draft keeps is anchor-clock.ts's.
+   */
+  calcAnswerMaxAgeMs: 7 * 24 * 60 * 60_000,
   /** An approval older than this is not sent — the conversation has moved on (ban-3). */
   approvalMaxAgeMs: 6 * 60 * 60_000,
   /** Quiet after the newest inbound before a run (regression-13: no singletonKey; this + the stand-down). */
@@ -120,7 +125,10 @@ export const AGENT_LIMITS = {
   floodRepeatWindowMs: 24 * 60 * 60_000,
   /** Two blocks within this many days of an AI message switch the agent off (map P13). */
   blockWindowDays: 7,
-  /** A pending draft lives as long as its anchor's reply window (fit-3). */
+  /**
+   * A pending draft lives as long as its anchor's reply window (fit-3) — the anchor clock's own two ages
+   * (anchor-clock.ts `anchorMaxAgeMsSqlText`, SPEC-P2-v2 K2); this is the ordinary reply's.
+   */
   draftTtlMs: 24 * 60 * 60_000,
   /** The listener's agent pump must have stamped within this, or ✅ is refused (regression-3). */
   pumpFreshMs: 2 * 60_000,

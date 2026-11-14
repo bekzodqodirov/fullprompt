@@ -3,6 +3,7 @@ import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
 import { auditLog, users } from '@/modules/platform/db/schema';
 import {
+  auditByAi,
   auditFieldLabel,
   formatAuditValue,
   collectAuditRefs,
@@ -82,7 +83,12 @@ export async function HistoryTab({
       {groups.map((group) => (
         <li key={group.id} className="card !p-3 text-sm" data-testid="history-entry">
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className="font-semibold">{group.actorName ?? t('system')}</span>
+            {/* No actor: the system — or the AI seller, whose own move says so (`via: 'ai'`, SPEC-P2-v2 §3.3). A row
+                with no actor is never merged with another, so the group is that one row. */}
+            <span className="font-semibold" data-testid="history-actor">
+              {group.actorName ??
+                (group.rows.every((row) => auditByAi({ actorId: row.actorId ?? null, after: row.after })) ? t('aiSeller') : t('system'))}
+            </span>
             <span>{t(`actions.${group.action}`)}</span>
             {group.rows.length > 1 && (
               <span className="rounded bg-brand-50 px-1.5 py-0.5 text-xs font-semibold text-brand-700">

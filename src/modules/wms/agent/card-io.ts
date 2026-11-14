@@ -10,10 +10,11 @@ import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
 import type { AutoCardState } from './auto-send';
 import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, cardTeaches, CardTooLong, digestBody, lessonRewritingNow, type CardInput } from './card';
 import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
+import { anchorAgeWords, anchorMaxAgeMsFor } from './anchor-clock';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import type { ComposedAction, DraftPolicyJson } from './types';
 import { CANCELLED_BY_HOLDER } from './web-thread';
-import { MAX_OPEN_PER_REQUESTER } from '../calc/service';
+import { openCalcCapFor } from '../../platform/settings/calc-cap';
 
 /**
  * The card's IO: render a draft's card from its STORED row and put it where
@@ -61,6 +62,11 @@ export interface CardRenderOptions {
    * seam the card's auto lines read. Absent or null: the ordinary card.
    */
   auto?: AutoCardState | null;
+  /**
+   * The holder's open-calc cap (`openCalcCapFor`, SPEC-P2-v2 §1.3) — read by the renderer that has a refusal to
+   * name it in; absent, the words say the cap was reached without a figure (never a second constant).
+   */
+  openCalcCap?: number | null;
 }
 
 /** «2 soat» for whole hours, «90 daqiqa» otherwise — the config is minutes, he reads time. */
@@ -182,7 +188,9 @@ export const LANDING_CLAIM = 'landing';
  * answered from his own Telegram.
  */
 const CALC_QUEUE_WORDS: Record<string, string> = {
-  too_many_open: `sizda ${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov bor — VED birortasiga javob bergach ✅ ni qayta bosing`,
+  // The figure is the requester's own (`openCalcCapFor`, §1.3) — the seat's number while it holds, else 20 — and
+  // is put in by `calcQueueWords` when the renderer read it; these are the words without it.
+  too_many_open: 'ochiq so‘rovlaringiz chegarasiga yetdi — VED birortasiga javob bergach ✅ ni qayta bosing',
   too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq) — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
   not_found: 'karta topilmadi — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
   // The chat's lead was won or lost after it was bound (calc `leadTakesJobs`).
@@ -195,8 +203,14 @@ const CALC_QUEUE_WORDS: Record<string, string> = {
   server_behind: 'server yangilanmoqda — biroz keyin ✅ ni qayta bosing',
 };
 
-/** A queue refusal code in words; an unknown one says so plainly, never as a code. */
-export function calcQueueWords(code: string | null | undefined): string {
+/**
+ * A queue refusal code in words; an unknown one says so plainly, never as a code. `cap`: the requester's open-calc
+ * cap (`openCalcCapFor`) — the one figure «too many open» names.
+ */
+export function calcQueueWords(code: string | null | undefined, cap: number | null = null): string {
+  if (code === 'too_many_open' && cap !== null) {
+    return `sizda ${cap} ta ochiq so‘rov bor — VED birortasiga javob bergach ✅ ni qayta bosing`;
+  }
   return (code && CALC_QUEUE_WORDS[code]) ?? 'sababi noma’lum — biroz keyin ✅ ni qayta bosing';
 }
 
@@ -226,8 +240,8 @@ export function sendFailWords(lastError: string | null | undefined): string {
 }
 
 /** Why an approved draft's actions did not all run, in words (K34): the calc queue's codes, else plainly. */
-function actionFailWords(code: string | null | undefined): string {
-  if (code && CALC_QUEUE_WORDS[code]) return `hisoblatish navbatga tushmadi — ${CALC_QUEUE_WORDS[code]}`;
+function actionFailWords(code: string | null | undefined, cap: number | null): string {
+  if (code && CALC_QUEUE_WORDS[code]) return `hisoblatish navbatga tushmadi — ${calcQueueWords(code, cap)}`;
   return 'amal bajarilmadi — kartani tekshiring';
 }
 
@@ -243,7 +257,9 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       // A ✅ whose calculation the queue refused (K26): the draft waits, and says why, for as long as it stands.
       // A press landing it right now (decide `claimLanding`) says so, never «did not reach the queue».
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
-      if (d.actionStatus === 'failed') return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.`;
+      if (d.actionStatus === 'failed') {
+        return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError, opts.openCalcCap ?? null)}. Javob yuborilmadi.`;
+      }
       // His lesson is rewriting this reply (§3.4) — until the rewrite lands, or his own words replace it (✏️).
       if (lessonRewritingNow(d)) return LESSON_REDRAFT_LINE;
       // The AI's rewrite after his lesson, and its reply to his ✍️ answer, each say where they came from — until
@@ -283,7 +299,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       return `✋ Siz mijozga Telegramda o‘zingiz yozdingiz (${clock(opts.humanWroteAt ?? d.updatedAt)}) — AI javobi bekor qilindi.${pause}`;
     }
     case 'approved': {
-      if (!o) return d.actionStatus === 'failed' ? `⚠️ Bajarilmadi: ${actionFailWords(d.actionError)}.` : '✅ Tasdiqlandi.';
+      if (!o) return d.actionStatus === 'failed' ? `⚠️ Bajarilmadi: ${actionFailWords(d.actionError, opts.openCalcCap ?? null)}.` : '✅ Tasdiqlandi.';
       switch (o.status) {
         case 'agent':
         case 'sending':
@@ -297,6 +313,8 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
         case 'cancelled':
         case 'expired': {
           const why = (o.lastError ?? '').split(':')[0]!.trim();
+          // «Too old» in the age THIS draft's clock kept (SPEC-P2-v2 K2): a week for his 💵, never «24 soat» about it.
+          if (why === 'anchor_too_old') return `✖ Yuborilmadi — xabar ${anchorAgeWords(anchorMaxAgeMsFor(d))} eski.`;
           return `✖ Yuborilmadi — ${CANCEL_WORDS[why] ?? 'bekor qilindi'}.`;
         }
         case 'unknown':
@@ -495,7 +513,9 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   // «O'zi yuborish»'s state — every redraw keeps the timer, the reason or the 👎 (null one migration behind).
   const { autoCardStateFor } = await import('./auto-send');
   const auto = await autoCardStateFor(draftId);
-  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, auto });
+  // The open-calc cap is read only for the one refusal that names it — the holder's own (§1.3).
+  const openCalcCap = d.actionError === 'too_many_open' ? await openCalcCapFor(d.managerUserId) : null;
+  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, openCalcCap, auto });
   const live = d.status === 'pending' || d.status === 'editing';
   const body = digestBody(d);
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;

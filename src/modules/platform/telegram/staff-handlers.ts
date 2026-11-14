@@ -1,6 +1,7 @@
 import type { Bot } from 'grammy';
 import { bugunReply } from '../tasks/digest';
 import { logger } from '../logger';
+import { openCalcCapFor } from '../settings/calc-cap';
 import { keyboardOf, staffTextHtml } from '../notifications/staff-html';
 import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
@@ -1918,7 +1919,8 @@ export async function handleCalcCallback(
       // A job too big for the queue never fits; twenty open requests clear
       // when the VED answers, so that collection waits for the next press.
       if (refused === 'too_many_items' || refused === 'note_taken') endIntake(chatId);
-      await ctx.reply(`⚠️ Saqlanmadi: ${queueRefusal(refused)}`, { reply_markup: await replyKeyboardFor(chatId) });
+      const cap = refused === 'too_many_open' ? await openCalcCapFor(staff.id).catch(() => null) : null;
+      await ctx.reply(`⚠️ Saqlanmadi: ${queueRefusal(refused, cap)}`, { reply_markup: await replyKeyboardFor(chatId) });
       return;
     }
     // The card and its note are one commit and a retry finds them through the
@@ -1952,7 +1954,8 @@ export async function handleCalcCallback(
   // has a model. Read off the ROW the landing wrote, as the sweep's resume
   // reads it (as-built review DOORS-2, DOORS-3): the collection's own door
   // was said even where the row — and so the pass — had none.
-  await ctx.reply(landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable }), {
+  const openCap = target.queued ? null : await openCalcCapFor(staff.id).catch(() => null);
+  await ctx.reply(landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable, openCap }), {
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
     reply_markup: landedReplyMarkup(target) ?? (await replyKeyboardFor(chatId)),

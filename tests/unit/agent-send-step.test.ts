@@ -49,6 +49,8 @@ const facts: SendFacts = {
   floodUntil: null,
   caughtUp: true,
   anchorSentAt: new Date(now.getTime() - 10 * 60_000),
+  anchorMaxAgeMs: AGENT_LIMITS.anchorMaxAgeMs,
+  forgivenOut: new Set<bigint>(),
   anchorDeleted: false,
   anchorEditedSinceDraft: false,
   humanReplied: false,
@@ -343,49 +345,52 @@ describe('agentSendVerdict', () => {
 describe('the live head (ban-3)', () => {
   const head = (msgs: [bigint, boolean, string, boolean?][]) =>
     msgs.map(([id, out, text, media]) => ({ id, out, text, media: media ?? false }));
+  /** Nothing forgiven: an inbound reply's draft (SPEC-P2-v2 K1 — the set is empty for every draft not owner-started). */
+  const NONE: ReadonlySet<bigint> = new Set();
+  const LIMIT = AGENT_LIMITS.headMessages;
 
   it('passes when nothing newer than the anchor, or only a nudge', () => {
-    expect(liveHeadVerdict(head([[50n, false, 'yukim?']]), 50n, isNudge)).toEqual({ ok: true });
-    expect(liveHeadVerdict(head([[51n, false, '??'], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({ ok: true });
+    expect(liveHeadVerdict(head([[50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toEqual({ ok: true });
+    expect(liveHeadVerdict(head([[51n, false, '??'], [50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toEqual({ ok: true });
   });
 
   it('stops when he answered himself, or the customer asked something new', () => {
-    expect(liveHeadVerdict(head([[51n, true, 'keldi'], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({
+    expect(liveHeadVerdict(head([[51n, true, 'keldi'], [50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toEqual({
       ok: false,
       reason: 'human_replied',
     });
-    expect(liveHeadVerdict(head([[51n, false, 'narxi qancha?'], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({
+    expect(liveHeadVerdict(head([[51n, false, 'narxi qancha?'], [50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toEqual({
       ok: false,
       reason: 'anchor_superseded',
     });
   });
 
   it('a photo, a voice note or a file after the question asks anew — its text is empty, not a nudge (S4)', () => {
-    expect(liveHeadVerdict(head([[51n, false, '', true], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({
+    expect(liveHeadVerdict(head([[51n, false, '', true], [50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toEqual({
       ok: false,
       reason: 'anchor_superseded',
     });
     // «??» with a photo is still a photo.
-    expect(liveHeadVerdict(head([[51n, false, '??', true], [50n, false, 'yukim?']]), 50n, isNudge)).toMatchObject({
+    expect(liveHeadVerdict(head([[51n, false, '??', true], [50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toMatchObject({
       reason: 'anchor_superseded',
     });
     // A sticker reaches the head as no media (the adapter's rule): the «👍» it stands for.
-    expect(liveHeadVerdict(head([[51n, false, ''], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({ ok: true });
+    expect(liveHeadVerdict(head([[51n, false, ''], [50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toEqual({ ok: true });
   });
 
   it('a deleted anchor is noticed when the head reaches back to its place (S6)', () => {
     // Only older lines, or nothing at all: the question is gone.
-    expect(liveHeadVerdict(head([[49n, true, 'salom']]), 50n, isNudge)).toEqual({ ok: false, reason: 'anchor_gone' });
-    expect(liveHeadVerdict([], 50n, isNudge)).toEqual({ ok: false, reason: 'anchor_gone' });
+    expect(liveHeadVerdict(head([[49n, true, 'salom']]), 50n, isNudge, LIMIT, NONE)).toEqual({ ok: false, reason: 'anchor_gone' });
+    expect(liveHeadVerdict([], 50n, isNudge, LIMIT, NONE)).toEqual({ ok: false, reason: 'anchor_gone' });
     // Gone behind a nudge: «??» newer, the older line present, the anchor between them missing.
-    expect(liveHeadVerdict(head([[52n, false, '??'], [49n, true, 'salom']]), 50n, isNudge)).toEqual({
+    expect(liveHeadVerdict(head([[52n, false, '??'], [49n, true, 'salom']]), 50n, isNudge, LIMIT, NONE)).toEqual({
       ok: false,
       reason: 'anchor_gone',
     });
     // A short head that holds it is fine.
-    expect(liveHeadVerdict(head([[51n, false, '??'], [50n, false, 'yukim?']]), 50n, isNudge)).toEqual({ ok: true });
+    expect(liveHeadVerdict(head([[51n, false, '??'], [50n, false, 'yukim?']]), 50n, isNudge, LIMIT, NONE)).toEqual({ ok: true });
     // A FULL head of newer nudges cannot see that far back — the newer lines decide.
-    expect(liveHeadVerdict(head([[53n, false, '??'], [52n, false, '!!'], [51n, false, '??']]), 50n, isNudge, 3)).toEqual({
+    expect(liveHeadVerdict(head([[53n, false, '??'], [52n, false, '!!'], [51n, false, '??']]), 50n, isNudge, 3, NONE)).toEqual({
       ok: true,
     });
   });
@@ -687,6 +692,7 @@ describe('eligibleForRun (§17.4)', () => {
     humanActive: false,
     anchorIsNewest: true,
     anchorSentAt: new Date(now.getTime() - 60_000),
+    anchorMaxAgeMs: AGENT_LIMITS.anchorMaxAgeMs,
     anchorAutoSent: false,
     lastOutAt: null,
     anchorRepeats: false,

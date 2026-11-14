@@ -757,7 +757,12 @@
       "client_confirm_on_receipt": "Whether the customer's «your cargo was received» message carries the ✅ / ❌ buttons (off: the message goes out as before; «Ask the client» on the card still works)",
       "client_reask_on_reweigh": "When cargo is re-weighed (its weight, volume or box count changes) and the question the client holds is out of date — send the client a new question by itself (10 minutes after the last correction; off: «Ask the client» on the card still works)",
       "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)",
-      "staff_rating_goal_m3": "The team’s weekly goal in m³ for the team group, groupage (LTL) cargo only (0 = no goal). Easier to change on the «Team group» page."
+      "staff_rating_goal_m3": "The team’s weekly goal in m³ for the team group, groupage (LTL) cargo only (0 = no goal). Easier to change on the «Team group» page.",
+      "crm_ai_contacted_stage": "When the AI seller has sent its first reply, the lead moves to this stage (forward only, between open stages; empty — not moved). Changed on /crm/settings",
+      "crm_ai_quoted_stage": "When the AI seller has stated a price, the lead moves to this stage (forward only; empty — not moved). Changed on /crm/settings",
+      "agent_calc_markup_kind": "The kind of markup the AI adds to the customs desk's answer: percent or fixed ($). Changed on /suhbatlar/ai",
+      "agent_calc_markup_value": "The markup the AI adds to the customs desk's answer; empty — the AI states no calculation price (you give it with 💵). Changed on /suhbatlar/ai",
+      "agent_calc_open_limit": "How many calculations the AI seller may have open at once (customs desk jobs and AI estimate calls); applies only once «This account is the AI seller» is set — people keep 20. 1 to 200; changed by a super admin only, on /suhbatlar/ai"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -768,7 +773,17 @@
     "aiSpentToday": "Today: {used} / {limit}",
     "aiSpentUsd": "≈ ${usd}",
     "aiSpentMonth": "30 days ≈ ${usd}",
-    "aiSpentUnpriced": "{n} calls have no known price"
+    "aiSpentUnpriced": "{n} calls have no known price",
+    "ownDoor": "This setting is changed on its own page only:",
+    "ownDoorRefused": "This setting is not changed here — change it on its own page. Nothing was saved.",
+    "ownDoorPage": {
+      "agentAi": "Chats → AI seller",
+      "crmSettings": "CRM → Settings"
+    },
+    "badValueMarkupKind": "Invalid value — write percent or fixed. Nothing was saved.",
+    "badValueMarkup": "Invalid value — a percent 0.01 to 100 (at most 2 decimals) or whole dollars 1 to 5000. Nothing was saved.",
+    "badValueOpenLimit": "Invalid value — a whole number 1 to 200. Nothing was saved.",
+    "badValueStage": "Invalid value — pick a stage from the list. Nothing was saved."
   },
   "audit": {
     "title": "Audit log",
@@ -896,8 +911,11 @@
       "number": "Number",
       "destBeforeDeparture": "Receiving warehouse (before departure)",
       "fileAdded": "File added",
-      "fileName": "File removed"
-    }
+      "fileName": "File removed",
+      "via": "Via",
+      "holder": "AI account"
+    },
+    "aiSeller": "AI seller"
   },
   "profile": {
     "title": "Profile",
@@ -6657,7 +6675,9 @@
       "qualification": "Clarifying",
       "price": "Price",
       "complaint": "Complaint",
-      "other": "Other"
+      "other": "Other",
+      "calc": "Calculation (to the customs desk)",
+      "calc_price": "Customs price (with markup)"
     },
     "styleTitle": "Reply style",
     "styleApprovedAt": "Approved: {when}",
@@ -6746,7 +6766,9 @@
       "lesson_money": "A price cannot be a lesson — prices come from the tools and the settings. If this number is not a price, write it as a word (for example: “once”).",
       "lesson_personal": "The text carries customer details (name, code, phone) — a lesson is read in every chat.",
       "lesson_already": "Already saved.",
-      "lesson_confirmed": "The lesson is already saved."
+      "lesson_confirmed": "The lesson is already saved.",
+      "seat_not_holder": "The AI seat is set only on the account the AI speaks from — pick the account first.",
+      "bad_open_limit": "Invalid limit — a whole number 1 to 200."
     },
     "sendNow": "Send now",
     "autoStop": "Stop",
@@ -6831,7 +6853,16 @@
     "lessonSwitchOn": "Switch on",
     "lessonDelete": "Delete",
     "lessonDeleteConfirm": "Delete this lesson for good? The AI will no longer read it.",
-    "statsOwnerTriggered": "Written from your own answer or lesson (not graded)"
+    "statsOwnerTriggered": "Written from your own answer or lesson (not graded)",
+    "seatTitle": "AI seat",
+    "seatHolds": "This account is the AI seller (a staff member of its own): {name}",
+    "seatElsewhere": "The AI seat names another user ({name}) — the AI now speaks from another account; until you set it again, the 100 cap and the price on the card are stopped.",
+    "seatNone": "No AI seat set — the AI's calculations are capped at 20 like a person's, and the AI's price is not written onto a card.",
+    "seatHint": "Mark the account the AI seller speaks from as a staff member of its own. If the AI's account is changed later, the mark does not move by itself.",
+    "seatSet": "This account is the AI seller",
+    "seatClear": "Remove the mark",
+    "openLimitLabel": "AI open calculations limit",
+    "openLimitHint": "Applies once the AI seat is set (people keep 20). {min} to {max}; raising it widens what a machine may open, so a super admin only."
   },
   "invoys": {
     "title": "Goods under one HS code",

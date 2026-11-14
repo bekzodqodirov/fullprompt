@@ -12,6 +12,7 @@ import { lateNote } from './card';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
 import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
+import { anchorMaxAgeMsForTrigger, type OwnerTrigger } from './anchor-clock';
 import { generalFacts, kbSearch, type KbHit } from './kb';
 import type { PromptLesson } from './lesson-rules';
 import { promptLessons } from './lessons';
@@ -360,6 +361,8 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     humanActive: Boolean(humanActive),
     anchorIsNewest: true,
     anchorSentAt: anchor.sentAt,
+    // The inbound run's clock (SPEC-P2-v2 K2); an owner-triggered run puts its trigger's in.
+    anchorMaxAgeMs: anchorMaxAgeMsForTrigger('inbound'),
     anchorAutoSent: anchor.autoSent,
     lastOutAt: ctx.lastOut?.sentAt ?? null,
     anchorRepeats: anchor.body.trim() !== '' && prevInbound.some((m) => norm(m.body) === norm(anchor.body)),
@@ -1423,7 +1426,7 @@ export const ANSWER_STILL_HIS =
  */
 export async function runOwnerTriggered(
   input: {
-    trigger: 'hand_back' | 'calc_answer' | 'owner_edit';
+    trigger: OwnerTrigger;
     managerUserId: string;
     peerId: bigint;
     sourceKey: string;
@@ -1447,7 +1450,11 @@ export async function runOwnerTriggered(
   if (!callModel) return { outcome: 'skipped', reason: 'ai_not_configured' };
   const ctx = await loadContext(input.managerUserId, input.peerId, null);
   const t = now();
-  if (!ctx.anchor || t.getTime() - ctx.anchor.sentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) {
+  // ONE clock (SPEC-P2-v2 K2): a VED answer's run may answer a line up to a week old, every other run 24 hours —
+  // asked here AND by the eligibility rule below, with the same number, or the rule refused what this let through
+  // and took the source key with it.
+  const maxAgeMs = anchorMaxAgeMsForTrigger(input.trigger);
+  if (!ctx.anchor || t.getTime() - ctx.anchor.sentAt.getTime() > maxAgeMs) {
     return { outcome: 'skipped', reason: 'no_fresh_inbound' };
   }
   // The same chat rules an inbound run asks (review leak-nit): a chat he took
@@ -1457,6 +1464,7 @@ export async function runOwnerTriggered(
   // the newest», «an auto-reply», «an echo of ours», «a repeat» do not apply.
   const elig = eligibleForRun({
     ...(await eligibilityFacts(ctx, config, t)),
+    anchorMaxAgeMs: maxAgeMs,
     anchorIsNewest: true,
     anchorAutoSent: false,
     lastOutAt: null,

@@ -15,14 +15,15 @@ import {
 } from '../../platform/db/schema';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
-import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
+import { openRequests } from '../calc/service';
+import { openCalcCapFor } from '../../platform/settings/calc-cap';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
 import { cardDigest, cardDrawsSend, cardTeaches, digestBody, lessonRewritingNow } from './card';
 import { answeredNow, renderDraftCardFull } from './card-io';
 import { autoCountingDown } from './auto-card';
 import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
-import { agentAutoReady, agentFullP1Ready, agentTablesReady, type AgentConfig } from './config';
+import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
 import { readSendCaps } from './send-caps';
@@ -397,14 +398,40 @@ export function agentRules(config: Pick<AgentConfig, 'aviaUsdPerKg' | 'aviaRateS
   };
 }
 
-/** «Ochiq hisoblar N/20» — the owner's open calculation requests against the queue's per-requester cap (his Q10 ⭐). */
+/**
+ * The AI seat as the page says it (SPEC-P2-v2 K4): nobody named, the seat IS the account the AI speaks from, or it
+ * names somebody else since the holder was re-pointed — then every seat-only act is stopped until he names it again.
+ */
+export interface SeatPanel {
+  state: 'none' | 'holds' | 'elsewhere';
+  seatName: string | null;
+  /** The seat's open-calc cap as stored (`agent_calc_open_limit`) — the number the super_admin's box shows. */
+  openLimit: number | null;
+}
+
+export async function seatPanel(): Promise<SeatPanel> {
+  const { seatAndHolder } = await import('../../platform/settings/agent-seat');
+  const { readOpenCalcLimit } = await import('../../platform/settings/calc-cap');
+  const { getSetting } = await import('../../platform/settings/service');
+  const { seat, holder } = await seatAndHolder();
+  const openLimit = readOpenCalcLimit(await getSetting('agent_calc_open_limit'));
+  if (seat === null) return { state: 'none', seatName: null, openLimit };
+  return { state: seat === holder ? 'holds' : 'elsewhere', seatName: await userName(seat), openLimit };
+}
+
+/**
+ * «Ochiq hisoblar N/cap» — the owner's open calculation requests against the queue's per-requester cap (his Q10 ⭐):
+ * the AI seat's own number while it holds, else 20 (`openCalcCapFor`, SPEC-P2-v2 §1.3 — the figure the queue
+ * refuses at and the card and the bot print).
+ */
 export async function openCalcsFor(ownerUserId: string | null): Promise<{ open: number; cap: number }> {
-  if (!ownerUserId) return { open: 0, cap: MAX_OPEN_PER_REQUESTER };
+  const cap = await openCalcCapFor(ownerUserId);
+  if (!ownerUserId) return { open: 0, cap };
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(calcRequests)
     .where(and(eq(calcRequests.requestedBy, ownerUserId), openRequests));
-  return { open: Number(row?.n ?? 0), cap: MAX_OPEN_PER_REQUESTER };
+  return { open: Number(row?.n ?? 0), cap };
 }
 
 /**
@@ -568,6 +595,8 @@ export interface AutoPanel {
   sent: AutoSentRow[];
   /** 0148 has landed: the «Narx» box and the daily count's own field are offered (one migration behind they are not). */
   fullReady: boolean;
+  /** 0149 has landed: the «Hisoblatish» and «VED narxi» boxes are offered (SPEC-P2-v2 §4.2). */
+  p2Ready: boolean;
 }
 
 /** An outbox status as the panel's delivery — null: the reply never left (or, one migration behind, nothing). */
@@ -631,6 +660,7 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
   ]);
   const c = counts[0];
   const fullReady = await agentFullP1Ready();
+  const p2Ready = fullReady && (await agentFullP2Ready());
   const n = (x: number | undefined) => Number(x ?? 0);
   const today = { sent: n(c?.sent), going: n(c?.going), unclear: n(c?.unclear), paused: n(c?.paused), waiting: n(c?.waiting) };
   return {
@@ -638,6 +668,7 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
     armedByName,
     workAccount: account[0]?.work === true,
     fullReady,
+    p2Ready,
     today: {
       ...today,
       left: Math.max(0, n(c?.total) - today.sent - today.going - today.unclear - today.paused - today.waiting),

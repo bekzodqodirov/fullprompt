@@ -23,6 +23,8 @@ import { priceReplyText } from './price-reply';
 import { editAgentCopies } from './purge';
 import { JOB_AGENT_HAND_BACK, type AgentHandBackJob } from './queues';
 import { calcFromOurWarehouse } from './types';
+import { anchorAgeWords, anchorMaxAgeMsForTrigger } from './anchor-clock';
+import { AGENT_LIMITS } from './limits';
 import type { Ineligible } from './eligibility';
 import type { RunDeps, RunResult } from './run';
 
@@ -267,7 +269,8 @@ export const NO_DRAFT_WORDS: Record<Ineligible, string> = {
   muted: "bu chatda AI o'chirilgan",
   human_active: "bu chatda o'zingiz yozayapsiz",
   not_newest: 'mijoz yangi xabar yozdi',
-  too_old: 'mijozning oxirgi xabari 24 soatdan eski',
+  // The ordinary run's clock; a run on another clock says ITS age (`noQuestionWhy`'s `maxAgeMs`, SPEC-P2-v2 K2).
+  too_old: tooOldWords(AGENT_LIMITS.anchorMaxAgeMs),
   auto_sent: 'mijozning avto-javobi',
   echo: 'aks-sado',
   repeat: 'takror xabar',
@@ -307,20 +310,26 @@ export async function handleHandBack(job: AgentHandBackJob, deps: HandBackDeps =
     await send(next, HAND_BACK_RETRY_S);
     return out;
   }
-  const why = noQuestionWhy(out);
+  const why = noQuestionWhy(out, anchorMaxAgeMsForTrigger('hand_back'));
   if (why) await tellNoQuestion(job, why);
   return out;
+}
+
+/** «mijozning oxirgi xabari 24 soatdan eski» — in the age the run's own clock used (SPEC-P2-v2 K2). */
+export function tooOldWords(maxAgeMs: number): string {
+  return `mijozning oxirgi xabari ${anchorAgeWords(maxAgeMs)} eski`;
 }
 
 /**
  * Why a hand-back run left no question for the customer, in his words — or
  * null when there is nothing to tell: a draft, a duplicate delivery, the agent
- * switched off or not configured (no 🔁 reaches him then either).
+ * switched off or not configured (no 🔁 reaches him then either). `maxAgeMs`:
+ * the clock the run kept (`anchorMaxAgeMsForTrigger`) — «too old» says its age.
  */
-export function noQuestionWhy(out: RunResult): string | null {
+export function noQuestionWhy(out: RunResult, maxAgeMs: number = AGENT_LIMITS.anchorMaxAgeMs): string | null {
   switch (out.outcome) {
     case 'refused':
-      return NO_DRAFT_WORDS[out.reason];
+      return out.reason === 'too_old' ? tooOldWords(maxAgeMs) : NO_DRAFT_WORDS[out.reason];
     case 'capped':
       return 'bugungi AI byudjeti tugadi';
     case 'error':
@@ -328,7 +337,7 @@ export function noQuestionWhy(out: RunResult): string | null {
     case 'no_reply':
       return 'AI savol kerak emas deb topdi';
     case 'skipped':
-      return out.reason === 'no_fresh_inbound' ? 'mijozning oxirgi xabari 24 soatdan eski' : null;
+      return out.reason === 'no_fresh_inbound' ? tooOldWords(maxAgeMs) : null;
     case 'draft':
     case 'stood_down':
     case 'rescheduled':

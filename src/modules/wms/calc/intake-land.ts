@@ -22,6 +22,7 @@ import { queueCalcPrefill } from './prefill-queue';
 import { sectionParts } from './pricing';
 import { dealTitleFor } from './deal-title';
 import { CalcError, calcOpenRefusal, leadTakesJobs, rootOfNoteSql } from './service';
+import { forwardTarget } from '../crm/forward-stage';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -415,12 +416,9 @@ async function calcStageMove(
   const rows = await db
     .select({ id: table.id, sortOrder: table.sortOrder, kind: table.kind, active: table.active })
     .from(table);
-  const target = rows.find((row) => row.id === wanted);
-  if (!target || !target.active || target.kind !== 'open') return null;
-  if (!currentStageId) return target.id;
-  if (currentStageId === target.id) return null;
-  const current = rows.find((row) => row.id === currentStageId);
-  return current && current.sortOrder < target.sortOrder ? target.id : null;
+  // The rule itself is `forwardTarget`'s (crm/forward-stage.ts, SPEC-P2-v2 §3.2) — the very body this function had,
+  // so the person path moves exactly as before and the AI's machine mover asks the same rule.
+  return forwardTarget(rows, currentStageId, wanted);
 }
 
 /**

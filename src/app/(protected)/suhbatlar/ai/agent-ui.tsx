@@ -21,8 +21,10 @@ import {
   agentLessonSaveAction,
   agentModeAction,
   agentNumbersAction,
+  agentOpenLimitAction,
   agentOwnTextAction,
   agentOwnerAction,
+  agentSeatAction,
   agentRememberAction,
   agentRetireFactAction,
   agentSendCapsAction,
@@ -474,6 +476,79 @@ export function ModeSwitch({ running }: { running: boolean }) {
 }
 
 /** Whose account the agent speaks from — the super_admin's choice, while it is off. */
+/**
+ * «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4) — a super_admin's press naming the account the AI
+ * speaks from as the AI's own seat, and its undo. The service asks the role and that the user is the holder.
+ */
+export function SeatButtons({ holderId, holds, named }: { holderId: string; holds: boolean; named: boolean }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-2">
+        {!holds && (
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={pending}
+            data-testid="agent-seat-set"
+            onClick={() => run(() => agentSeatAction(holderId))}
+          >
+            🤖 {t('seatSet')}
+          </button>
+        )}
+        {named && (
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={pending}
+            data-testid="agent-seat-clear"
+            onClick={() => run(() => agentSeatAction(null))}
+          >
+            {t('seatClear')}
+          </button>
+        )}
+      </div>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** The AI seat's open-calc cap (SPEC-P2-v2 §1.3) — a super_admin's box; a whole number, refused out of bounds. */
+export function OpenLimitForm({ current }: { current: number }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [value, setValue] = useState(String(current));
+  return (
+    <div className="space-y-1" data-testid="agent-open-limit">
+      <label className="label" htmlFor="agent-open-limit-input">
+        {t('openLimitLabel')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="agent-open-limit-input"
+          className="input min-w-0 flex-1"
+          inputMode="numeric"
+          value={value}
+          disabled={pending}
+          onChange={(event) => setValue(event.target.value)}
+          data-testid="agent-open-limit-input"
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || value.trim() === String(current)}
+          data-testid="agent-open-limit-save"
+          onClick={() => run(() => agentOpenLimitAction(value))}
+        >
+          {t('save')}
+        </button>
+      </div>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
 export function OwnerPicker({
   options,
   current,
@@ -676,8 +751,8 @@ export function AutoArmButtons({
 }
 
 /**
- * Which kinds go by themselves — a replace-all of the boxes (the five of `AUTO_SEND_CATEGORIES`; the page drops
- * «Narx» on a server one migration behind 0148, `kinds`). Controlled, posted as one list by the action (never a
+ * Which kinds go by themselves — a replace-all of the boxes (the seven of `AUTO_SEND_CATEGORIES`; the page drops
+ * «Narx» on a server one migration behind 0148 and «Hisoblatish» / «VED narxi» one behind 0149, `kinds`). Controlled, posted as one list by the action (never a
  * form whose disabled box posts nothing, #171); a reader who may not change it sees the boxes and no save.
  */
 export function AutoCategoriesForm({

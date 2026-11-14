@@ -25,6 +25,7 @@ import { logger } from '@/modules/platform/logger';
 import { violatedUnique } from '@/modules/platform/db/errors';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { clipText } from '@/modules/platform/telegram/format';
+import { OPEN_CALC_CAP_PEOPLE, openCalcCapFor } from '@/modules/platform/settings/calc-cap';
 import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
 import { insertActivityTx } from '../crm/service';
 import { itemNameNorm } from './memory';
@@ -98,9 +99,11 @@ export const MAX_CALC_ITEMS = 1000;
  * Not a security fence — twenty trusted people — but a runaway guard: the bot
  * mints a fresh LEAD for every stranger with no phone, so a stuck loop would
  * otherwise open a request (and a lead, and a model call) per press with
- * nothing in the schema to stop it.
+ * nothing in the schema to stop it. The constant moved to its one home
+ * (platform/settings/calc-cap.ts, SPEC-P2-v2 §1.3), beside the AI seat's own
+ * number: every reader asks `openCalcCapFor(requester)` for the figure.
  */
-export const MAX_OPEN_PER_REQUESTER = 20;
+export const MAX_OPEN_PER_REQUESTER = OPEN_CALC_CAP_PEOPLE;
 
 /**
  * The owner's scale, verbatim: «1 dona TNVED kod bo'lsa yarim soat; 2, 3, 10
@@ -337,7 +340,9 @@ export async function calcOpenRefusal(
     .select({ n: sql<number>`count(*)::int` })
     .from(calcRequests)
     .where(and(eq(calcRequests.requestedBy, requestedBy), openRequests));
-  return Number(mine[0]?.n ?? 0) >= MAX_OPEN_PER_REQUESTER ? 'too_many_open' : null;
+  // The seat's own number while it holds, everybody else's 20 (§1.3) — the one function the card, the bot and the
+  // page print the figure from.
+  return Number(mine[0]?.n ?? 0) >= (await openCalcCapFor(requestedBy)) ? 'too_many_open' : null;
 }
 
 /**

@@ -11,6 +11,7 @@ import { canLogInSql } from '../../platform/users/login';
 import { officialPeerSql } from '../crm/chat-rules';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
+import { anchorMaxAgeMsSqlText } from './anchor-clock';
 import { ANSWER_RUN_STALE_MS } from './owner-answer';
 import type { DraftPolicyJson } from './types';
 import {
@@ -316,6 +317,24 @@ export async function retireOnHumanReply(managerUserId: string, peerId: bigint, 
   return retired.length;
 }
 
+/**
+ * The sweep's step 1: a draft lives as long as its anchor's reply window (fit-3) — the anchor clock's (SPEC-P2-v2
+ * K2, anchor-clock `anchorMaxAgeMsSqlText`): a week for his 💵 and the machine's VED-answer reply, 24 hours for every
+ * other. Without the draft's own clock a price card born two days after the request read «⌛ Muddati o'tdi» at the
+ * next minute. Its cards are redrawn. Exported for the clock's tests.
+ */
+export async function expireStaleDrafts(now: Date = new Date()): Promise<{ id: string }[]> {
+  const expired = await db.execute<{ id: string }>(sql`
+    UPDATE agent_drafts d SET status = 'expired', updated_at = now()
+      FROM tg_messages m
+     WHERE d.status IN ('pending', 'editing')
+       AND m.manager_user_id = d.manager_user_id AND m.peer_id = d.peer_id AND m.tg_message_id = d.anchor_tg_message_id
+       AND m.sent_at < ${now.toISOString()}::timestamptz - ${sql.raw(anchorMaxAgeMsSqlText('d'))} * interval '1 millisecond'
+    RETURNING d.id`);
+  for (const r of expired) await refreshCardOf(r.id);
+  return [...expired];
+}
+
 export async function agentSweep(
   now: Date = new Date(),
 ): Promise<{
@@ -333,14 +352,7 @@ export async function agentSweep(
   }
 
   // 1. A draft lives as long as its anchor's reply window (fit-3).
-  const expired = await db.execute<{ id: string }>(sql`
-    UPDATE agent_drafts d SET status = 'expired', updated_at = now()
-      FROM tg_messages m
-     WHERE d.status IN ('pending', 'editing')
-       AND m.manager_user_id = d.manager_user_id AND m.peer_id = d.peer_id AND m.tg_message_id = d.anchor_tg_message_id
-       AND m.sent_at < ${new Date(now.getTime() - AGENT_LIMITS.draftTtlMs).toISOString()}::timestamptz
-    RETURNING d.id`);
-  for (const r of expired) await refreshCardOf(r.id);
+  const expired = await expireStaleDrafts(now);
 
   // 2. His own reply the hook did not carry (a CRM reply is recorded by the
   //    pump, not by NewMessage) — the human-reply fallback.

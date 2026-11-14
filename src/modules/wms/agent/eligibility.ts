@@ -32,6 +32,11 @@ export interface EligibilityFacts {
   /** The anchor is still the newest live (not deleted) inbound in the chat. */
   anchorIsNewest: boolean;
   anchorSentAt: Date;
+  /**
+   * How old the anchor may be for THIS run (SPEC-P2-v2 K2, anchor-clock.ts) — REQUIRED: the inbound run's 24 hours,
+   * a VED answer's week. An optional one would fail open on exactly the run the week was given to.
+   */
+  anchorMaxAgeMs: number;
   anchorAutoSent: boolean;
   /** Our newest out message's time, for the echo window. */
   lastOutAt: Date | null;
@@ -69,7 +74,7 @@ export function eligibleForRun(f: EligibilityFacts): { ok: true } | { ok: false;
   if (f.muted) return no('muted');
   if (f.humanActive) return no('human_active');
   if (!f.anchorIsNewest) return no('not_newest');
-  if (f.now.getTime() - f.anchorSentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return no('too_old');
+  if (f.now.getTime() - f.anchorSentAt.getTime() > f.anchorMaxAgeMs) return no('too_old');
   if (f.anchorAutoSent) return no('auto_sent');
   if (f.lastOutAt && f.anchorSentAt.getTime() - f.lastOutAt.getTime() < AGENT_LIMITS.echoWindowMs &&
       f.anchorSentAt.getTime() >= f.lastOutAt.getTime()) {

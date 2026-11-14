@@ -7,6 +7,7 @@ import { accountFlooded, accountRestricted, agentBlocked, type AlarmAccount } fr
 import { readGuard } from '../crm/account-guard';
 import { recordSent } from '../crm/outbox';
 import { floodEnds } from '../crm/telegram-guard';
+import { anchorMaxAgeMsFor, ownerStartedDraft } from './anchor-clock';
 import { agentRunning, readAgentConfig } from './config';
 import { AGENT_LIMITS, dailySendCeiling, sendJitterMs } from './limits';
 import { readSendCaps } from './send-caps';
@@ -131,6 +132,12 @@ type ChatFactsRow = {
   anchor_deleted: boolean;
   anchor_edited: boolean;
   human_replied: boolean;
+  /** The row's draft — its kind and its two marks, for the anchor clock and the live head's forgiveness (K1, K2). */
+  draft_kind: string | null;
+  calc_answer_request: string | null;
+  price_request: string | null;
+  /** Our own agent sends in this chat newer than the anchor, as text ids (bigint in JSON is not a number). */
+  own_sent: string[] | null;
   peer_has_written: boolean;
   last_inbound_ms: number | null;
   human_until_ms: number | null;
@@ -213,6 +220,17 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
               WHERE x.manager_user_id = o.manager_user_id AND x.peer_id = o.peer_id
                 AND x.tg_message_id = o.tg_message_id)
       ) AS human_replied,
+      d.kind AS draft_kind,
+      CASE WHEN jsonb_typeof(d.policy -> 'calcAnswer' -> 'requestId') = 'string'
+           THEN d.policy -> 'calcAnswer' ->> 'requestId' END AS calc_answer_request,
+      CASE WHEN jsonb_typeof(d.policy -> 'priceRequestId') = 'string' THEN d.policy ->> 'priceRequestId' END AS price_request,
+      -- The very set human_replied forgives, newer than the anchor (SPEC-P2-v2 K1): the live head skips these for an
+      -- owner-started draft only (sendFactsFor), whose anchor is the customer's newest inbound line.
+      ARRAY(
+        SELECT x.tg_message_id::text FROM agent_outbox x
+         WHERE x.manager_user_id = ${m} AND x.peer_id = ${p}
+           AND x.tg_message_id IS NOT NULL AND x.tg_message_id > ${anchor}
+      ) AS own_sent,
       EXISTS (
         SELECT 1 FROM tg_messages i
          WHERE i.manager_user_id = ${m} AND i.peer_id = ${p} AND i.direction = 'in'
@@ -362,6 +380,19 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
   // The press's own question (`sendWindowFor`), asked again at every step.
   const sendWindow = await sendWindowFor(row);
 
+  // The draft's marks as the one clock and the one «who started it» rule read them (anchor-clock.ts, K1/K2). The
+  // stored keys are rebuilt into the shape those functions take, so the SQL above names a mark and never decides.
+  const clocked = {
+    kind: chat.draft_kind,
+    policy: {
+      ...(chat.calc_answer_request !== null ? { calcAnswer: { requestId: chat.calc_answer_request } } : {}),
+      ...(chat.price_request !== null ? { priceRequestId: chat.price_request } : {}),
+    },
+  };
+  const forgivenOut: ReadonlySet<bigint> = ownerStartedDraft(clocked)
+    ? new Set((chat.own_sent ?? []).map((id) => BigInt(id)))
+    : new Set<bigint>();
+
   return {
     now,
     agentOn: agentRunning(config),
@@ -371,6 +402,8 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
     floodUntil: later(guard.floodUntil, ctx.memoryFloodUntil?.() ?? null),
     caughtUp: ctx.caughtUp(),
     anchorSentAt: dateOf(chat.anchor_sent_ms),
+    anchorMaxAgeMs: anchorMaxAgeMsFor(clocked),
+    forgivenOut,
     anchorDeleted: chat.anchor_deleted,
     anchorEditedSinceDraft: chat.anchor_edited,
     humanReplied: chat.human_replied,

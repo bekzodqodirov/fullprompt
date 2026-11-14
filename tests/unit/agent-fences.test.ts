@@ -81,6 +81,8 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
     const SURVIVES: Record<string, string> = {
       agent_lessons:
         'his instruction to EVERY chat, refused personal details at write — it survives the purge with draft_id NULL (0148)',
+      agent_offers:
+        'a money fact: the offer row survives every chat purge, and so must its «the machine wrote it» mark, or the machine’s offer becomes payable (0149, SPEC-P2-v2 §2.4a)',
     };
     const pointing: string[] = [];
     for (const value of Object.values(schema)) {

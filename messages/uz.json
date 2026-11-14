@@ -757,7 +757,12 @@
       "client_confirm_on_receipt": "Mijozga boradigan «yukingiz qabul qilindi» xabarida ✅ / ❌ tugmalari chiqsinmi (o‘chirilsa, xabar avvalgidek boradi; kartadagi «Mijozdan so‘rash» ishlayveradi)",
       "client_reask_on_reweigh": "Yuk qayta tortilganda (og‘irlik, hajm yoki quti soni o‘zgarganda) mijozga yuborilgan savol eskirgan bo‘lsa — mijozga yangi savol o‘zi borsinmi (oxirgi tuzatishdan 10 daqiqa keyin; o‘chirilsa, kartadagi «Mijozdan so‘rash» ishlayveradi)",
       "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)",
-      "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda, faqat sborniy (LTL) yuk (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq."
+      "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda, faqat sborniy (LTL) yuk (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq.",
+      "crm_ai_contacted_stage": "AI sotuvchi mijozga birinchi javobni yuborganda lid shu bosqichga o‘tadi (faqat oldinga, faqat ochiq bosqichlar orasida; bo‘sh — ko‘chirilmaydi). /crm/settings da o‘zgartiriladi",
+      "crm_ai_quoted_stage": "AI sotuvchi narx aytganda lid shu bosqichga o‘tadi (faqat oldinga; bo‘sh — ko‘chirilmaydi). /crm/settings da o‘zgartiriladi",
+      "agent_calc_markup_kind": "VED javobiga AI qo‘shadigan ustama turi: percent (foiz) yoki fixed (qat’iy summa, $). /suhbatlar/ai da o‘zgartiriladi",
+      "agent_calc_markup_value": "VED javobiga AI qo‘shadigan ustama qiymati; bo‘sh — AI hisob-kitob narxini aytmaydi (narxni o‘zingiz 💵 bilan berasiz). /suhbatlar/ai da o‘zgartiriladi",
+      "agent_calc_open_limit": "AI sotuvchining bir vaqtda ochiq hisoblatishlari chegarasi (VED ishlari va AI-VED chaqiruvlari); faqat «Bu akkaunt — AI sotuvchi» belgilanganda amal qiladi, odamlarda 20 ta. 1 dan 200 gacha; faqat super admin /suhbatlar/ai da o‘zgartiradi"
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
@@ -768,7 +773,17 @@
     "aiSpentToday": "Bugun: {used} / {limit} marta",
     "aiSpentUsd": "≈ ${usd}",
     "aiSpentMonth": "30 kun ≈ ${usd}",
-    "aiSpentUnpriced": "{n} ta chaqiruv narxi noma’lum"
+    "aiSpentUnpriced": "{n} ta chaqiruv narxi noma’lum",
+    "ownDoor": "Bu sozlama faqat o‘z sahifasida o‘zgartiriladi:",
+    "ownDoorRefused": "Bu sozlama bu yerda o‘zgartirilmaydi — o‘z sahifasida o‘zgartiring. Hech narsa saqlanmadi.",
+    "ownDoorPage": {
+      "agentAi": "Suhbatlar → AI sotuvchi",
+      "crmSettings": "CRM → Sozlamalar"
+    },
+    "badValueMarkupKind": "Qiymat noto‘g‘ri — percent yoki fixed yozing. Hech narsa saqlanmadi.",
+    "badValueMarkup": "Qiymat noto‘g‘ri — foiz 0,01 dan 100 gacha (verguldan keyin ko‘pi bilan 2 raqam) yoki 1 dan 5000 gacha butun dollar. Hech narsa saqlanmadi.",
+    "badValueOpenLimit": "Qiymat noto‘g‘ri — 1 dan 200 gacha butun son yozing. Hech narsa saqlanmadi.",
+    "badValueStage": "Qiymat noto‘g‘ri — bosqichni ro‘yxatdan tanlang. Hech narsa saqlanmadi."
   },
   "audit": {
     "title": "Audit jurnali",
@@ -896,8 +911,11 @@
       "number": "Raqam",
       "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)",
       "fileAdded": "Fayl qo'shildi",
-      "fileName": "Fayl o'chirildi"
-    }
+      "fileName": "Fayl o'chirildi",
+      "via": "Kim orqali",
+      "holder": "AI akkaunti"
+    },
+    "aiSeller": "AI sotuvchi"
   },
   "profile": {
     "title": "Profil",
@@ -6657,7 +6675,9 @@
       "qualification": "Aniqlashtirish",
       "price": "Narx",
       "complaint": "Shikoyat",
-      "other": "Boshqa"
+      "other": "Boshqa",
+      "calc": "Hisoblatish (VEDga)",
+      "calc_price": "VED narxi (ustama bilan)"
     },
     "styleTitle": "Javob uslubi",
     "styleApprovedAt": "Tasdiqlangan: {when}",
@@ -6746,7 +6766,9 @@
       "lesson_money": "Narx saboq bo‘lmaydi — narx vositalar va sozlamalardan keladi. Bu son narx bo‘lmasa — uni so‘z bilan yozing (masalan: «bir marta»).",
       "lesson_personal": "Matnda mijoz ma’lumoti bor (ism, kod, telefon) — saboq hamma chatga boradi.",
       "lesson_already": "Allaqachon saqlangan.",
-      "lesson_confirmed": "Saboq allaqachon saqlangan."
+      "lesson_confirmed": "Saboq allaqachon saqlangan.",
+      "seat_not_holder": "AI o‘rni faqat AI gapiradigan akkauntga belgilanadi — avval akkauntni tanlang.",
+      "bad_open_limit": "Chegara noto‘g‘ri — 1 dan 200 gacha butun son yozing."
     },
     "sendNow": "Hozir yubor",
     "autoStop": "To‘xtat",
@@ -6831,7 +6853,16 @@
     "lessonSwitchOn": "Yoqish",
     "lessonDelete": "O‘chirish",
     "lessonDeleteConfirm": "Bu saboq butunlay o‘chirilsinmi? AI uni endi o‘qimaydi.",
-    "statsOwnerTriggered": "Sizning javobingiz yoki saboqingiz bo‘yicha yozilgan (bahoga kirmaydi)"
+    "statsOwnerTriggered": "Sizning javobingiz yoki saboqingiz bo‘yicha yozilgan (bahoga kirmaydi)",
+    "seatTitle": "AI o‘rni",
+    "seatHolds": "Bu akkaunt — AI sotuvchi (alohida hodim): {name}",
+    "seatElsewhere": "AI o‘rni boshqa foydalanuvchida ({name}) — AI hozir boshqa akkauntdan gapiradi; qayta belgilamaguningizcha 100 talik chegara va kartaga narx yozish to‘xtatilgan.",
+    "seatNone": "AI o‘rni belgilanmagan — AI hisoblatishlari odamlardek 20 ta bilan cheklanadi, AI aytgan narx kartaga yozilmaydi.",
+    "seatHint": "AI sotuvchi gapiradigan akkauntni alohida hodim deb belgilang. AI egasi keyin boshqa akkauntga o‘zgartirilsa, belgi o‘z-o‘zidan ko‘chmaydi.",
+    "seatSet": "Bu akkaunt — AI sotuvchi",
+    "seatClear": "Belgini olib tashlash",
+    "openLimitLabel": "AI ochiq hisoblatishlari chegarasi",
+    "openLimitHint": "AI o‘rni belgilangan bo‘lsa amal qiladi (odamlarda 20 ta). {min} dan {max} gacha; oshirish — kengaytirish, shuning uchun faqat super admin."
   },
   "invoys": {
     "title": "Bir xil TNVED kodli tovarlar",

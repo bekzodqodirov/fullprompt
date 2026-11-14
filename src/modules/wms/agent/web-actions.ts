@@ -15,7 +15,9 @@ import {
   setAgentMode,
   setAgentNumbers,
   setAgentOwner,
+  setAgentSeat,
   setAviaRate,
+  setCalcOpenLimit,
 } from './config';
 import { decideDraft, submitOwnText, type DraftDecision, type SupersededDetail } from './decide';
 import { KbError } from './kb';
@@ -241,6 +243,31 @@ export async function agentOwnerAction(userId: string | null): Promise<AgentActi
   return run(async ({ actor, ctx }) => {
     await setAgentOwner(actor, userId && /^[0-9a-f-]{36}$/iu.test(userId) ? userId : null, ctx);
     revalidatePath('/', 'layout');
+  });
+}
+
+/**
+ * «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4) — a super_admin names the account the AI speaks from as
+ * the AI's own seat, or clears it (`null`). The service asks the role and that the user IS the holder at the press.
+ */
+export async function agentSeatAction(userId: string | null): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    await setAgentSeat(actor, userId && /^[0-9a-f-]{36}$/iu.test(userId) ? userId : null, ctx);
+  });
+}
+
+/**
+ * The AI seat's open-calc cap (SPEC-P2-v2 §1.3, his §7 Q11 ⭐ a) — a super_admin's alone (the service asks); a value
+ * out of 1..200 is this box's own code, never the generic «noto'g'ri qiymat».
+ */
+export async function agentOpenLimitAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setCalcOpenLimit(actor, typeof raw === 'string' ? raw : '', ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_open_limit' };
+      throw err;
+    }
   });
 }
 
