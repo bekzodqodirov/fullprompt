@@ -1185,6 +1185,17 @@ export async function decideDraft(
     requestId = landed.requestId;
   }
 
+  // His 💵 approved: his OWN earlier 💵 on the same chain, approved and still WAITING to go (a night hold), is taken back
+  // inside this approval (fix pass 3) — exactly one of his figures goes. Taken back at the drafting instead, a 💵 he then
+  // ❌-ed, that expired or that the customer's next line superseded left the customer with neither figure. The chain's
+  // members are read here, on the pool, before the transaction (#714).
+  const priced = d.kind === 'price' ? ((d.policy ?? {}) as { priceRequestId?: unknown }).priceRequestId : undefined;
+  const priceMembers =
+    typeof priced === 'string'
+      ? ((await chatCalcChains(d.managerUserId, d.peerId)).find((c) => c.memberIds.includes(priced))?.memberIds ?? [priced])
+      : [];
+  let replacedPrices: string[] = [];
+
   // The approval — one transaction. The machine's press (fix pass A, C2/C5) takes the layer's row FOR SHARE
   // as its FIRST statement and requires it armed and the account a work number (`autoPressStandsInTx`), and
   // moves its verdict 'pressing' → 'pressed' as its LAST (`settleAutoPressInTx`): a ⏸, a person's own
@@ -1247,12 +1258,51 @@ export async function decideDraft(
         .values({ requestId, rootRequestId: requestId, managerUserId: d.managerUserId, peerId: d.peerId, draftId })
         .onConflictDoNothing();
     }
+    // His older 💵 still waiting (above): the compare-and-set every withdraw uses — a row the listener already claimed is
+    // in flight and goes; `priceDraftFromText` asked about it before this one was drafted.
+    replacedPrices =
+      priceMembers.length === 0
+        ? []
+        : (
+            await tx
+              .update(agentOutbox)
+              .set({ status: 'cancelled', lastError: 'owner_price_again: his newer 💵 on the same request' })
+              .where(
+                and(
+                  eq(agentOutbox.status, 'agent'),
+                  inArray(
+                    agentOutbox.draftId,
+                    tx
+                      .select({ id: agentDrafts.id })
+                      .from(agentDrafts)
+                      .where(
+                        and(
+                          eq(agentDrafts.managerUserId, d.managerUserId),
+                          eq(agentDrafts.peerId, d.peerId),
+                          eq(agentDrafts.kind, 'price'),
+                          eq(agentDrafts.status, 'approved'),
+                          sql`${agentDrafts.id} <> ${draftId}::uuid`,
+                          sql`${agentDrafts.policy}->>'priceRequestId' IN (${sql.join(priceMembers.map((id) => sql`${id}`), sql`, `)})`,
+                        ),
+                      ),
+                  ),
+                ),
+              )
+              .returning({ draftId: agentOutbox.draftId })
+          ).map((r) => r.draftId);
     await writeAudit(tx, ctx, {
       entityType: 'agent_draft',
       entityId: draftId,
       action: 'status_change',
       before: { status: d.status },
-      after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId, ...(opts.auto ? { via: 'auto' } : {}) },
+      after: {
+        status: 'approved',
+        edited: d.finalBody !== null,
+        sendAt: sendAt.toISOString(),
+        requestId,
+        ...(opts.auto ? { via: 'auto' } : {}),
+        ...(replacedPrices.length > 0 ? { replacedPrices: replacedPrices.length } : {}),
+      },
     });
     if (vouchesTariff) await confirmTariffInTx(tx, vouchesTariff, actor.id);
     // Through the transaction's own handle, never `setSetting` on the pool (#714).
@@ -1275,6 +1325,8 @@ export async function decideDraft(
   }
   await runDraftActions(draftId, actor).catch((err: unknown) => logger.error({ err, draftId }, '[agent] actions failed'));
   await refreshDraftCard(draftId);
+  // Each 💵 this one replaced says so on its own card (card-io's CANCEL_WORDS `owner_price_again`).
+  for (const replaced of replacedPrices) await refreshDraftCard(replaced);
   return { ok: true, status: 'approved', sendAt, requestId };
 }
 

@@ -7,7 +7,7 @@ import { moveLeadByMachine, type MachineMoveResult } from '../crm/service';
 import { CalcError } from '../calc/service';
 import { recordOffer } from '../calc/workspace';
 import { dollarsWords } from './calc-markup';
-import { CALC_PRICE_REFUSAL_WORDS, calcPriceFor, statedCalcMarks, storedMarksOf, type CalcPriceMark } from './calc-price';
+import { CALC_PRICE_REFUSAL_WORDS, calcPriceFor, newestReleasedOfferOn, statedCalcMarks, storedMarksOf, type CalcPriceMark } from './calc-price';
 import { agentFullP2Ready, agentTablesReady } from './config';
 import { chatCalcChains } from './context';
 import { machineMayTouch } from './machine-owner';
@@ -148,24 +148,17 @@ async function markedBefore(draftId: string, requestId: string): Promise<number 
 }
 
 /**
- * The card already carries this very promise (fix pass 1, finding 3): the newest offer on the mark's anchor is the
- * AI's own, at this price — a later reply that says the same figure again is no new promise, and a second row would
- * only list it twice. Where a person's offer is the newest instead, the re-price below refuses it (`person_offer`,
- * review crm 1): the machine never writes an older figure of its own back over a price a person gave. Never throws a
- * refusal: a read is a read.
+ * The card already carries this very promise (fix pass 1, finding 3): the card's offer on the mark's anchor is the AI's
+ * own, at this price — a later reply that says the same figure again is no new promise, and a second row would only list
+ * it twice. Where a person's offer is the card's instead, the re-price below refuses it (`person_offer`, review crm 1):
+ * the machine never writes an older figure of its own back over a price a person gave. The card's offer is ONE reading
+ * with the price's own (calc-price `newestReleasedOfferOn`, fix pass 3): a seller's promise still waiting for approval is
+ * no price on the card, and one approved after the AI's figure is the card's newest word. A read is a read: never a
+ * refusal.
  */
 async function sameOfferStands(m: CalcPriceMark): Promise<boolean> {
-  const anchor = m.anchor === 'seal' ? sql`o.version_id = ${m.anchorId}::uuid` : sql`o.request_id = ${m.requestId}::uuid AND o.version_id IS NULL`;
-  const rows = (await db.execute(sql`
-    SELECT o.client_price_usd::text AS price, (a.offer_id IS NOT NULL) AS ai
-      FROM calc_offers o
-      LEFT JOIN agent_offers a ON a.offer_id = o.id
-     WHERE ${anchor}
-     ORDER BY o.offered_at DESC, o.id DESC
-     LIMIT 1
-  `)) as unknown as { price: string; ai: boolean }[];
-  const row = [...rows][0];
-  return row !== undefined && row.ai && Math.abs(Number(row.price) - m.total) < 0.005;
+  const card = await newestReleasedOfferOn(m.anchor === 'seal' ? { versionId: m.anchorId } : { requestId: m.requestId });
+  return card !== null && card.ai && Math.abs(card.price - m.total) < 0.005;
 }
 
 /** One mark written as the card's offer — or the words why not. Throws only what is no refusal (a database error). */

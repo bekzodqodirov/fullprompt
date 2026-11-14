@@ -65,6 +65,8 @@ export const AUTO_REFUSALS = [
   'calc_price_moved',
   // His own 💵 for the quoted job arrived while the machine's price counted down (fix pass 1): his figure outranks it.
   'calc_owner_priced',
+  // A person's offer became the card's newest word on the quoted job (review crm 1; fix pass 3): his or a seller's price.
+  'calc_person_offer',
   'owner_figure',
   'owner_personal',
   'answer_stale',
@@ -117,6 +119,7 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   markup_unconfirmed: 'ustama o‘zgargan — birinchi VED narxini o‘zingiz tasdiqlang',
   calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi',
   calc_owner_priced: 'bu ishga narxni 💵 bilan o‘zingiz bergansiz — sizning narxingiz ustun',
+  calc_person_offer: 'kartada sotuvchining yangiroq narxi turibdi — o‘sha narx ustun',
   owner_figure: 'javobda sizning raqamingiz bor — ko‘rib yuboring',
   owner_personal: 'javobingizda boshqa mijoz ma’lumoti bor — ko‘rib yuboring',
   answer_stale: 'savolingizdan keyin mijoz yana yozdi',
@@ -209,7 +212,7 @@ export interface CalcSubmitFacts {
 }
 
 /** Every fact refusing — a VED-price draft whose facts were not read (fails closed; calc-price's own constant, restated pure). */
-const CALC_PRICE_FACTS_ALL: CalcPriceGateFacts = { unconfirmed: true, moved: true, ownerPriced: true, foreign: true, media: true };
+const CALC_PRICE_FACTS_ALL: CalcPriceGateFacts = { unconfirmed: true, moved: true, ownerPriced: true, personOffer: true, foreign: true, media: true };
 
 /** Every fact refusing — what a calc draft whose facts were not read is judged on (fails closed). */
 export const CALC_FACTS_UNREAD: CalcSubmitFacts = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
@@ -404,6 +407,7 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (cp?.unconfirmed) hit.add('markup_unconfirmed');
   if (cp?.moved) hit.add('calc_price_moved');
   if (cp?.ownerPriced) hit.add('calc_owner_priced');
+  if (cp?.personOffer) hit.add('calc_person_offer');
   if (cp?.foreign) hit.add('calc_foreign');
   // A figure from HIS answer always comes back to him (§2.2, law 4): the AI never relays his number by itself.
   // Asked of his ANSWER as well as of the ledger: a figure of his that the customer, a tool or a fact also carries

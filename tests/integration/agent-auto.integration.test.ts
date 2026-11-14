@@ -69,6 +69,7 @@ import { agentRowById, applyAgentOutcome, sendFactsFor } from '@/modules/wms/age
 import { agentSendVerdict } from '@/modules/wms/agent/send-step';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
+import { JOB_AGENT_AFTER_SENT } from '@/modules/wms/agent/queues';
 import { agentToday, autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { setWorkAccount } from '@/modules/wms/crm/telegram-accounts';
@@ -292,6 +293,15 @@ async function cardDigestOf(draftId: string): Promise<string> {
 const ALL_PEERS = [PEER, PEER2, ...OTHERS];
 
 async function clearChats() {
+  // Each `sent` outcome queues the after-sent job on pg-boss's REAL table, named by its row (settle-hooks
+  // `onAgentReplySent`): it goes with the rows it names — left behind, the browser suite's worker runs it on a row that
+  // no longer exists (#154; fix pass 3). By the row each job names, before the rows go.
+  await db
+    .execute(
+      sql`DELETE FROM pgboss.job WHERE name = ${JOB_AGENT_AFTER_SENT}
+            AND data->>'outboxId' IN (SELECT id::text FROM agent_outbox WHERE peer_id IN (${sql.join(ALL_PEERS.map((p) => sql`${String(p)}::bigint`), sql`, `)}))`,
+    )
+    .catch(() => undefined);
   await db.delete(agentOutbox).where(inArray(agentOutbox.peerId, ALL_PEERS));
   // The verdicts follow their drafts (ON DELETE CASCADE).
   await db.delete(agentDrafts).where(inArray(agentDrafts.peerId, ALL_PEERS));

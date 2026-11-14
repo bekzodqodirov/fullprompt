@@ -462,7 +462,7 @@ async function calcPriceFactsOf(d: AutoDraftShape, marks: unknown, now: Date): P
     return await calcPriceGateFacts(marks, { managerUserId: d.managerUserId, peerId: d.peerId }, now);
   } catch (err) {
     logger.warn({ err, peer: String(d.peerId) }, '[agent] auto: the VED price’s facts not read');
-    return { unconfirmed: true, moved: true, ownerPriced: true, foreign: true, media: true };
+    return { unconfirmed: true, moved: true, ownerPriced: true, personOffer: true, foreign: true, media: true };
   }
 }
 

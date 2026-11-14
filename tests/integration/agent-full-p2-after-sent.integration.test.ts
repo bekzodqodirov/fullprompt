@@ -44,7 +44,7 @@ import { __forgetAgentFullP2Ready, __pretendAgentFullP2Behind, __restoreAgentCon
 import { loadContext } from '@/modules/wms/agent/context';
 import { agentRowById, applyAgentOutcome } from '@/modules/wms/agent/outbox-store';
 import { AFTER_SENT_RETRY_LIMIT, JOB_AGENT_AFTER_SENT } from '@/modules/wms/agent/queues';
-import { offersFor, recordOffer } from '@/modules/wms/calc/workspace';
+import { offersFor, recordOffer, releaseOffer } from '@/modules/wms/calc/workspace';
 import { quoteHistoryFor } from '@/modules/wms/calc/history';
 import { payableOffersSql } from '@/modules/wms/calc/upsale';
 import { payUpsale, upsaleRows } from '@/modules/wms/calc/upsale-service';
@@ -69,6 +69,18 @@ import { arriveOnDeal, removeArrived } from '../fixtures/deal-cargo';
  * a passthrough otherwise. The retry must find everything or nothing, never an offer whose card was not written.
  */
 const fault = vi.hoisted(() => ({ auditOnce: false }));
+/** The card's price itself refused ONCE by the database (fix pass 3): a trigger on that one lead, dropped after. */
+async function cardWriteFailsOnce(leadId: string): Promise<() => Promise<void>> {
+  const fn = `zp4_card_fault_${SUFFIX}`;
+  await db.execute(
+    sql.raw(`CREATE OR REPLACE FUNCTION ${fn}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Connection terminated unexpectedly' USING ERRCODE = '57P01'; END $$`),
+  );
+  await db.execute(sql.raw(`CREATE TRIGGER ${fn} BEFORE UPDATE OF quoted_amount ON leads FOR EACH ROW WHEN (NEW.id = '${leadId}'::uuid) EXECUTE FUNCTION ${fn}()`));
+  return async () => {
+    await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fn} ON leads`));
+    await db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fn}()`));
+  };
+}
 vi.mock('@/modules/platform/audit/service', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/modules/platform/audit/service')>();
   return {
@@ -84,6 +96,12 @@ vi.mock('@/modules/platform/audit/service', async (importOriginal) => {
 });
 
 const SUFFIX = String(Date.now()).slice(-6);
+/**
+ * A below-floor promise's reason: its approvers' «CalcBelowFloor» alarm (the seeded admins and accountant) prints it and
+ * names no offer — this file finds its own alarms by it in cleanup, never leaving rows on people the browser suite logs
+ * in as (#154).
+ */
+const FLOOR_REASON = `eski mijoz P4-${SUFFIX}`;
 let seq = BigInt(`86${SUFFIX}`) * 1000n;
 const next = () => ++seq;
 const DAY = 86_400_000;
@@ -431,6 +449,8 @@ afterAll(async () => {
       await db.delete(tgMessages).where(inArray(tgMessages.peerId, peers));
     }
     await db.delete(notifications).where(inArray(notifications.userId, [holderId, colleagueId, sellerId]));
+    // The below-floor alarms this file's promises sent to the seeded approvers (fix pass 3): by the reason they print.
+    await db.delete(notifications).where(and(eq(notifications.type, 'CalcBelowFloor'), sql`${notifications.payload}->>'text' LIKE ${`%${FLOOR_REASON}%`}`));
     await db.delete(telegramLinks).where(eq(telegramLinks.userId, holderId));
     if (madeRequests.length) await db.delete(calcRequests).where(inArray(calcRequests.id, madeRequests));
     await removeArrived(madeReceipts);
@@ -581,6 +601,29 @@ describe('the offer — written onto the card after the price WENT (§2.4)', () 
     expect(audits).toHaveLength(1);
   });
 
+  it('a database error on the card’s PRICE itself: the first attempt leaves nothing, the retry writes all of it (review crm 0; fix pass 3)', async () => {
+    const c = await pricedChain();
+    const { outboxId, draftId } = await reply(c.chat, { memory: calcMemory(c.marks) });
+    const drop = await cardWriteFailsOnce(c.leadId);
+    try {
+      await expect(handleAfterSent({ outboxId })).rejects.toThrow(/Connection terminated/u);
+    } finally {
+      await drop();
+    }
+    // Nothing of the offer stands while the card has no price: no offer, no mark, no audit, no recorded outcome.
+    expect(await offersOn(c.requestId)).toHaveLength(0);
+    expect(await marksOn(c.requestId)).toHaveLength(0);
+    expect((await leadOf(c.leadId)).quotedAmount).toBeNull();
+    expect(((await draftOf(draftId)).policy as { afterSent?: unknown }).afterSent).toBeUndefined();
+    // The redelivery writes it whole: «yozildi» is said over a card that holds the price.
+    expect(await handleAfterSent({ outboxId })).toMatchObject({ outcome: 'done', offer: ['💳 Kartaga yozildi: 1 359 $'] });
+    const offers = await offersOn(c.requestId);
+    expect(offers.map((o) => o.clientPriceUsd)).toEqual(['1359.00']);
+    expect(await marksOn(c.requestId)).toHaveLength(1);
+    expect((await leadOf(c.leadId)).quotedAmount).toBe('1359.00');
+    expect(await db.select().from(auditLog).where(and(eq(auditLog.entityType, 'calc_offer'), eq(auditLog.entityId, offers[0]!.id)))).toHaveLength(1);
+  });
+
   it('a person’s newer offer on the card is never written over — the restatement says so; one AI offer, his price on the card (review crm 1)', async () => {
     // A lead nobody owns (K3 admits it): the AI's price went and was written.
     const c = await pricedChain({ owner: null });
@@ -611,7 +654,7 @@ describe('the offer — written onto the card after the price WENT (§2.4)', () 
     expect(await calcPriceFor({ managerUserId: holderId, peerId: own.chat.peer })).toEqual({ ok: false, reason: 'person_offer' });
     // A below-floor offer waiting for approval reached no customer and no card: the machine's price still stands.
     const pending = await pricedChain({ owner: null });
-    await recordOffer({ requestId: pending.requestId }, { clientPriceUsd: 1000, locale: 'uz', belowFloorReason: 'eski mijoz', mayApprove: false }, { actorId: sellerId });
+    await recordOffer({ requestId: pending.requestId }, { clientPriceUsd: 1000, locale: 'uz', belowFloorReason: FLOOR_REASON, mayApprove: false }, { actorId: sellerId });
     expect(await calcPriceFor({ managerUserId: holderId, peerId: pending.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ total: 1359 })] });
     // An older person's offer under the AI's own newer one: the newest is the machine's, its price stands.
     const older = await pricedChain({ owner: null });
@@ -958,5 +1001,64 @@ describe('the model learns the stage of a LEAD chat (§3.4)', () => {
     madeClients.push(cl!.id);
     const clientChat = await chatOn({ clientId: cl!.id });
     expect((await loadContext(holderId, clientChat.peer, null)).leadStage).toBeNull();
+  });
+});
+
+describe('the card’s offer is ONE reading — the price’s own and the offer step’s (fix pass 3)', () => {
+  it('a seller’s promise below the floor, still waiting: the AI’s restatement of its own figure writes NO second row (check hands-1 A)', async () => {
+    const c = await pricedChain({ owner: null });
+    const first = await reply(c.chat, { memory: calcMemory(c.marks) });
+    expect(await handleAfterSent({ outboxId: first.outboxId })).toMatchObject({ offer: ['💳 Kartaga yozildi: 1 359 $'] });
+    await new Promise((r) => setTimeout(r, 5));
+    await recordOffer({ requestId: c.requestId }, { clientPriceUsd: 1000, locale: 'uz', belowFloorReason: FLOOR_REASON, mayApprove: false }, { actorId: sellerId });
+    // The promise reached nobody: the machine's price still stands, and the card still shows it.
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ total: 1359 })] });
+    expect((await leadOf(c.leadId)).quotedAmount).toBe('1359.00');
+    const again = await reply(c.chat, { memory: calcMemory(c.marks) });
+    expect(await handleAfterSent({ outboxId: again.outboxId })).toMatchObject({ outcome: 'done', offer: ['💳 Kartaga yozildi: 1 359 $'] });
+    expect(await marksOn(c.requestId)).toHaveLength(1);
+    const ai = (await offersFor('lead', c.leadId)).filter((o) => o.byAi);
+    expect(ai.map((o) => o.clientPriceUsd)).toEqual(['1359.00']);
+    expect(await db.select().from(auditLog).where(and(eq(auditLog.entityType, 'calc_offer'), sql`${auditLog.after}->>'via' = 'ai'`, sql`${auditLog.after}->>'requestId' = ${c.requestId}`))).toHaveLength(1);
+  });
+
+  it('a seller’s promise offered BEFORE the AI’s figure and approved AFTER it is the card’s newest word: refused, never «yozildi» (check hands-1 B)', async () => {
+    const c = await pricedChain({ owner: null });
+    const promise = await recordOffer(
+      { requestId: c.requestId },
+      { clientPriceUsd: 1000, locale: 'uz', belowFloorReason: FLOOR_REASON, mayApprove: false },
+      { actorId: sellerId },
+    );
+    await new Promise((r) => setTimeout(r, 5));
+    const first = await reply(c.chat, { memory: calcMemory(c.marks) });
+    expect(await handleAfterSent({ outboxId: first.outboxId })).toMatchObject({ offer: ['💳 Kartaga yozildi: 1 359 $'] });
+    // A restatement goes; before its job runs, the approver releases the seller's promise — the card now holds HIS.
+    const again = await reply(c.chat, { memory: calcMemory(c.marks) });
+    await new Promise((r) => setTimeout(r, 5));
+    await releaseOffer(promise.id, { actorId: holderId });
+    expect((await leadOf(c.leadId)).quotedAmount).toBe('1000.00');
+    // Ordered by the moment each reached the card (the approval), never by the offer's own stamp.
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'person_offer' });
+    expect(await handleAfterSent({ outboxId: again.outboxId })).toMatchObject({ offer: [OFFER_WORDS.notWritten(CALC_PRICE_REFUSAL_WORDS.person_offer)] });
+    expect((await leadOf(c.leadId)).quotedAmount).toBe('1000.00');
+    expect(await marksOn(c.requestId)).toHaveLength(1);
+  });
+
+  it('one migration behind 0149 the card’s offer is read without `agent_offers` — a person’s offer still refuses, no statement names the table', async () => {
+    const c = await pricedChain({ owner: null });
+    await recordOffer({ requestId: c.requestId }, { clientPriceUsd: 1450, locale: 'uz' }, { actorId: sellerId });
+    const clean = await pricedChain({ owner: null });
+    __pretendAgentFullP2Behind();
+    const dialect = new PgDialect();
+    const seen: string[] = [];
+    const real = db.execute.bind(db);
+    vi.spyOn(db, 'execute').mockImplementation(((query: Parameters<typeof db.execute>[0]) => {
+      seen.push(typeof query === 'string' ? query : dialect.sqlToQuery(query.getSQL()).sql);
+      return real(query);
+    }) as typeof db.execute);
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'person_offer' });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: clean.chat.peer })).toMatchObject({ ok: true });
+    expect(seen.some((q) => q.includes('calc_offers'))).toBe(true);
+    expect(seen.filter((q) => q.includes('agent_offers'))).toEqual([]);
   });
 });

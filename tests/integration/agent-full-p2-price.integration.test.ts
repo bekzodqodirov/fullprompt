@@ -87,12 +87,11 @@ import { decideDraft } from '@/modules/wms/agent/decide';
 import { draftOfferStands } from '@/modules/wms/agent/drafts';
 import { agentRowById, applyAgentOutcome, sendFactsFor } from '@/modules/wms/agent/outbox-store';
 import { handleInbound, CALC_PRICE_UNSAID } from '@/modules/wms/agent/run';
-import { agentSendVerdict, liveHeadVerdict, runAgentStep, type AgentTelegram, type HeadMessage } from '@/modules/wms/agent/send-step';
-import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
+import { agentSendVerdict, runAgentStep, type AgentTelegram, type HeadMessage } from '@/modules/wms/agent/send-step';
 import { isNudge } from '@/modules/wms/agent/worthy';
 import { JOB_AGENT_CALC_ANSWER, type AgentCalcAnswerJob } from '@/modules/wms/agent/queues';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
-import { armWait, dropWait, flushWaitWrites, nowSec } from '@/modules/platform/telegram/waits';
+import { __forgetWaitMemory, armWait, dropWait, flushWaitWrites, nowSec, setDurableWaits } from '@/modules/platform/telegram/waits';
 import { tgErrorKind } from '@/modules/wms/crm/telegram-guard';
 import { recordOffer } from '@/modules/wms/calc/workspace';
 
@@ -788,12 +787,13 @@ describe('the price stops standing — at the press, at his ✅ and at the send 
   };
 
   it.each([
-    ['a later seal on the same card', later],
-    ['a newer answer on the same card', newer],
-    ['the quote’s clock', expired],
-    ['a markup edit', markupEdit],
-    ['a person’s offer on the card', personOffer],
-  ] as const)('%s: refused at the press, at his ✅ and at the send step', async (_name, change) => {
+    ['a later seal on the same card', later, 'calc_price_moved'],
+    ['a newer answer on the same card', newer, 'calc_price_moved'],
+    ['the quote’s clock', expired, 'calc_price_moved'],
+    ['a markup edit', markupEdit, 'calc_price_moved'],
+    // The press names a person's price in its own words (fix pass 3) — neither the VED answer nor the markup moved.
+    ['a person’s offer on the card', personOffer, 'calc_person_offer'],
+  ] as const)('%s: refused at the press, at his ✅ and at the send step', async (_name, change, atPressCode) => {
     // At the press.
     const a = await answeredChain();
     const atPress = await priceDraft(a);
@@ -801,7 +801,9 @@ describe('the price stops standing — at the press, at his ✅ and at the send 
     await change(a);
     expect(await pressDueAutos(DUE)).toBe(0);
     expect(await outboxOf(atPress)).toHaveLength(0);
-    expect((await verdictOf(atPress))!.outcome).toMatch(/calc_price_moved/u);
+    const atPressReasons = (await verdictOf(atPress))!.reasons;
+    expect(atPressReasons).toContain(atPressCode);
+    expect(atPressReasons).not.toContain(atPressCode === 'calc_price_moved' ? 'calc_person_offer' : 'calc_price_moved');
     await markup('percent', '10', 'percent:10');
     // At his ✅.
     const b = await answeredChain();
@@ -1237,14 +1239,29 @@ describe('fix pass 1 — what goes by itself (the VED price)', () => {
     expect(await db.select().from(agentOffers).where(eq(agentOffers.requestId, twice.requestId))).toHaveLength(1);
   });
 
-  it('his second 💵 while his first still waits: the first is taken back, ONE price goes (finding 4)', async () => {
+  it('his second 💵 while his first still waits: the first is taken back when the second is APPROVED, ONE price goes (finding 4; fix pass 3)', async () => {
     const c = await answeredChain();
     const first = await ownPrice(c.requestId, '1300');
     expect((await outboxOf(first))[0]!.status).toBe('agent');
-    expect(await priceDraftFromText(holderId, c.requestId, '1250')).toMatchObject({ ok: true });
+    const second = await priceDraftFromText(holderId, c.requestId, '1250');
+    expect(second).toMatchObject({ ok: true });
+    // Drafted is not decided: his first still goes until he approves the second.
+    expect((await outboxOf(first))[0]!.status).toBe('agent');
+    const secondId = (second as { draftId: string }).draftId;
+    expect(await decideDraft(person(), secondId, 'send', { digest: await digestOf(secondId) }, { actorId: holderId })).toMatchObject({ ok: true });
     const [o] = await outboxOf(first);
     expect(o).toMatchObject({ status: 'cancelled' });
-    expect(o!.lastError).toMatch(/^owner_price/u);
+    expect(o!.lastError).toMatch(/^owner_price_again/u);
+    expect((await outboxOf(secondId))[0]!.status).toBe('agent');
+    // Its own card says so (card-io CANCEL_WORDS), and the approval's audit names it.
+    expect(renderDraftCard(await draftOf(first), o!)).toContain('yangi narxingiz (💵) bilan almashtirildi');
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'agent_draft'), eq(auditLog.entityId, secondId)))
+      .orderBy(sql`${auditLog.createdAt} DESC`)
+      .limit(1);
+    expect(audit!.after).toMatchObject({ status: 'approved', replacedPrices: 1 });
     // His first already in flight (claimed by the pump): asked first, never a second sent past it.
     const f = await answeredChain();
     const flying = await ownPrice(f.requestId, '1300');
@@ -1266,7 +1283,7 @@ describe('fix pass 1 — what goes by itself (the VED price)', () => {
     expect(await priceDraftFromText(holderId, b.requestId, '1100')).toMatchObject({ ok: true });
   });
 
-  it('the «yubordim» went in HIS ✏️ words: no machine price on that chain, and the live head never forgives his message (finding 5)', async () => {
+  it('the «yubordim» went in HIS ✏️ words: no machine price on that chain — a stored one fails its re-price at the send step (finding 5; fix pass 3)', async () => {
     const c = await answeredChain();
     const own = 'Hisoblatishga yubordim. Narxni o‘zim aytaman, taxminan 1500 $ atrofida bo‘ladi.';
     const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, c.requestId));
@@ -1277,28 +1294,36 @@ describe('fix pass 1 — what goes by itself (the VED price)', () => {
     const sent: unknown[] = [];
     await announceAgentCalc(c.requestId, 'done', { amountText: '1234.56 USD' }, { enqueue: async (_n, d) => void sent.push(d), now: T0 });
     expect(sent).toHaveLength(0);
-    // An owner-started reply on this chat (a VED answer's, written by any door): his ✏️ line after the anchor is HIS.
+    // A machine price on this chain that exists anyway (a VED answer's reply, written by any door, its figure stored):
+    // K1 forgives our own sends, his ✏️ «yubordim» too (fix pass 3) — the price itself is what refuses it. The send step
+    // re-prices it: `owner_words`, read as `calc_price_moved`, and the row is cancelled at the verify step.
+    const mark = { requestId: c.requestId, section: 'rastamojka', anchor: 'answer', anchorId: c.requestId, rule: 'percent:10', total: 1359 };
     const [d] = await db
       .insert(agentDrafts)
-      .values({ managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, anchorTgMessageId: c.chat.anchor, status: 'approved', kind: 'reply', proposedBody: 'Rastamojka narxi 1359 $ bo‘ladi.', policy: { calcAnswer: { requestId: c.requestId } } })
+      .values({
+        managerUserId: holderId,
+        peerId: c.chat.peer,
+        leadId: c.chat.leadId,
+        anchorTgMessageId: c.chat.anchor,
+        status: 'approved',
+        kind: 'reply',
+        proposedBody: 'Rastamojka narxi 1359 $ bo‘ladi.',
+        policy: { calcAnswer: { requestId: c.requestId }, memory: { calcPrices: [mark] } },
+      })
       .returning({ id: agentDrafts.id });
-    const [row] = await db
+    await db
       .insert(agentOutbox)
-      .values({ draftId: d!.id, managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, body: 'Rastamojka narxi 1359 $ bo‘ladi.', randomId: next(), answersTgMessageId: c.chat.anchor, status: 'agent', step: 'send', nextStepAt: T0, queuedBy: holderId })
+      .values({ draftId: d!.id, managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, body: 'Rastamojka narxi 1359 $ bo‘ladi.', randomId: next(), answersTgMessageId: c.chat.anchor, status: 'agent', step: 'verify', nextStepAt: T0, queuedBy: holderId })
       .returning({ id: agentOutbox.id });
-    const facts = await sendFactsFor((await agentRowById(row!.id))!, STEP_NOW(), stepCtx());
-    expect([...facts.forgivenOut]).not.toContain(c.ours);
-    // …while the machine's own «yubordim» stays forgiven.
-    await db.update(agentDrafts).set({ finalBody: null }).where(eq(agentDrafts.id, link!.draftId!));
-    expect([...(await sendFactsFor((await agentRowById(row!.id))!, STEP_NOW(), stepCtx())).forgivenOut]).toContain(c.ours);
-    await db.update(agentDrafts).set({ finalBody: own }).where(eq(agentDrafts.id, link!.draftId!));
-    // The live head as Telegram shows it: his ✏️ line after the customer's — the machine's reply never goes past it.
-    const head = [
+    const facts = await sendFactsFor((await agentRowById((await outboxOf(d!.id))[0]!.id))!, STEP_NOW(), stepCtx());
+    expect([...facts.forgivenOut]).toContain(c.ours);
+    expect(facts.offerStands).toBe('calc_price_moved');
+    const step = await stepThrough(d!.id, [
       { id: c.ours, out: true, text: own, media: false },
       { id: c.chat.anchor, out: false, text: 'Rastamojka qancha bo‘ladi?', media: false },
-    ];
-    const facts2 = await sendFactsFor((await agentRowById(row!.id))!, STEP_NOW(), stepCtx());
-    expect(liveHeadVerdict(head, c.chat.anchor, isNudge, AGENT_LIMITS.headMessages, facts2.forgivenOut)).toEqual({ ok: false, reason: 'human_replied' });
+    ]);
+    expect(step.out).toMatchObject({ kind: 'cancel', reason: 'calc_price_moved' });
+    expect(step.sent).toBe(0);
   });
 
   it('a chain whose «yubordim» never went (his ❌ after a lost race): no machine price on it, even when the customer asks (finding 6)', async () => {
@@ -1425,5 +1450,224 @@ describe('a read that FAILS is a price that does not stand — every fail-closed
     }
     expect(await outboxOf(draftId)).toHaveLength(0);
     expect((await verdictOf(draftId))!.reasons).toEqual(expect.arrayContaining(['markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'calc_foreign', 'media']));
+  });
+});
+
+/**
+ * The send step as the listener runs it on this draft's row: the verify step against `head` (Telegram's live head), and
+ * — when it advanced — the send step; the outcome written as the listener writes it. Its first outcome, its last, and
+ * how many messages reached the customer.
+ */
+async function stepThrough(draftId: string, head: HeadMessage[]) {
+  const [o] = await outboxOf(draftId);
+  expect(o, 'an outbox row').toBeDefined();
+  const row = (await agentRowById(o!.id))!;
+  const tg = fakeTg(head);
+  const store = {
+    // The account's gap is no subject here: this file dates other replies' sends at the real now, after STEP_NOW.
+    facts: async (r: typeof row, now: Date) => ({
+      ...(await sendFactsFor(r, now, stepCtx())),
+      agentOn: true,
+      ownerUserId: holderId,
+      sendingEnabled: true,
+      lastAccountSendAt: null,
+    }),
+    claimSend: async (id: string) =>
+      (await db.update(agentOutbox).set({ status: 'sending' }).where(and(eq(agentOutbox.id, id), eq(agentOutbox.status, 'agent'))).returning({ id: agentOutbox.id })).length > 0,
+  };
+  const deps = { tg, store, classify: tgErrorKind, isNudge, now: STEP_NOW };
+  const out = await runAgentStep(row, deps);
+  const last = out.kind === 'advance' ? await runAgentStep({ ...row, step: 'send' }, deps) : out;
+  await applyAgentOutcome(row, last, { id: accountId, managerUserId: holderId, managerName: 'P3' }, STEP_NOW());
+  const [after] = await db.select().from(agentOutbox).where(eq(agentOutbox.id, o!.id));
+  return { out, last, sent: tg.sent, after: after! };
+}
+
+/** The real ✏️ shape of the AI's «yubordim»: approved with HIS text (final_body), the outbox body and Telegram's copy his words. */
+async function editedSubmit(c: { chat: Chat; requestId: string; ours: bigint }, own: string) {
+  const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, c.requestId));
+  await db.update(agentDrafts).set({ finalBody: own }).where(eq(agentDrafts.id, link!.draftId!));
+  await db.update(agentOutbox).set({ body: own }).where(eq(agentOutbox.draftId, link!.draftId!));
+  await db.update(tgMessages).set({ body: own }).where(and(eq(tgMessages.peerId, c.chat.peer), eq(tgMessages.tgMessageId, c.ours)));
+}
+
+describe('fix pass 3 — K1 forgives every own send; his 💵 outranks the machine in every state and in every process', () => {
+  it('his ✏️ «yubordim», the VED answers, the bot sends him to 💵 — and his 💵 GOES past his own ✏️ line (K1, check send-0)', async () => {
+    const c = await answeredChain();
+    const own = 'Hisoblatishga yubordim, aka. Javob kelsa yozaman.';
+    await editedSubmit(c, own);
+    const jobs: unknown[] = [];
+    await announceAgentCalc(c.requestId, 'done', { amountText: '1234.56 USD' }, { enqueue: async (_n, d) => void jobs.push(d), now: T0 });
+    expect(jobs).toHaveLength(0);
+    const [said] = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, holderId), eq(notifications.type, 'AgentCalcAnswered'), sql`${notifications.payload}->>'requestId' = ${c.requestId}`))
+      .orderBy(sql`${notifications.createdAt} DESC`)
+      .limit(1);
+    expect((said!.payload as { text: string }).text).toContain('narx ham qo‘lda beriladi');
+    // He does what the bot asked: his 💵, his ✅ — anchored on the customer's request line, his ✏️ «yubordim» after it.
+    const ownId = await ownPrice(c.requestId, '1500');
+    expect((await draftOf(ownId)).anchorTgMessageId).toBe(c.chat.anchor);
+    const step = await stepThrough(ownId, [
+      { id: c.ours, out: true, text: own, media: false },
+      { id: c.chat.anchor, out: false, text: 'Rastamojka qancha bo‘ladi? Kurtka 100 dona.', media: false },
+    ]);
+    expect(step.out).toMatchObject({ kind: 'advance', step: 'read' });
+    expect(step.last).toMatchObject({ kind: 'sent' });
+    expect(step.sent).toBe(1);
+    expect(step.after.status).toBe('sent');
+  });
+
+  it('the VED hands the job back after his ✏️ «yubordim»: the machine’s question goes past his own ✏️ line (K1)', async () => {
+    const c = await answeredChain();
+    const own = 'Hisoblatishga yubordim, aka.';
+    await editedSubmit(c, own);
+    const question = 'Kurtkalaringiz og‘irligi qancha?';
+    const [d] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, anchorTgMessageId: c.chat.anchor, status: 'approved', kind: 'hand_back', proposedBody: question })
+      .returning({ id: agentDrafts.id });
+    await db.insert(agentOutbox).values({ draftId: d!.id, managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, body: question, randomId: next(), answersTgMessageId: c.chat.anchor, status: 'agent', step: 'verify', nextStepAt: T0, queuedBy: holderId });
+    const step = await stepThrough(d!.id, [
+      { id: c.ours, out: true, text: own, media: false },
+      { id: c.chat.anchor, out: false, text: 'Rastamojka qancha bo‘ladi? Kurtka 100 dona.', media: false },
+    ]);
+    expect(step.out).toMatchObject({ kind: 'advance', step: 'read' });
+    expect(step.last).toMatchObject({ kind: 'sent' });
+    expect(step.sent).toBe(1);
+  });
+
+  it('an ordinary reply he ✏️-tweaked, then the VED answers: the machine’s price is pressed AND goes (K1, check A3)', async () => {
+    const c = await answeredChain();
+    const q = await customerSays(c.chat, 'Qachon bo‘ladi narx?', new Date(T0.getTime() - 20 * 60_000));
+    const tweak = 'Bugun kechgacha aytamiz, xavotir olmang.';
+    const [td] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, anchorTgMessageId: q, status: 'approved', kind: 'reply', proposedBody: 'Javob kelishi bilan aytaman.', finalBody: tweak })
+      .returning({ id: agentDrafts.id });
+    const tweakTg = next();
+    const at = new Date(T0.getTime() - 15 * 60_000);
+    await db.insert(agentOutbox).values({ draftId: td!.id, managerUserId: holderId, peerId: c.chat.peer, leadId: c.chat.leadId, body: tweak, randomId: next(), answersTgMessageId: q, status: 'sent', step: 'send', nextStepAt: at, queuedBy: holderId, sentAt: at, tgMessageId: tweakTg });
+    await db.insert(tgMessages).values({ leadId: c.chat.leadId, managerUserId: holderId, peerId: c.chat.peer, tgMessageId: tweakTg, direction: 'out', body: tweak, sentAt: at });
+    const draftId = await priceDraft(c);
+    expect((await draftOf(draftId)).anchorTgMessageId).toBe(q);
+    expect(await pressDueAutos(DUE)).toBe(1);
+    const step = await stepThrough(draftId, [
+      { id: tweakTg, out: true, text: tweak, media: false },
+      { id: q, out: false, text: 'Qachon bo‘ladi narx?', media: false },
+      { id: c.ours, out: true, text: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', media: false },
+      { id: c.chat.anchor, out: false, text: 'Rastamojka qancha bo‘ladi? Kurtka 100 dona.', media: false },
+    ]);
+    expect(step.out).toMatchObject({ kind: 'advance', step: 'read' });
+    expect(step.last).toMatchObject({ kind: 'sent' });
+    expect(step.sent).toBe(1);
+  });
+
+  it('his 💵 still waiting for his ✅ when the customer writes: superseded, it still outranks — the machine prices nothing, presses nothing (check send-1)', async () => {
+    const c = await answeredChain();
+    const own = await priceDraftFromText(holderId, c.requestId, '1500');
+    expect(own).toMatchObject({ ok: true });
+    const ownId = (own as { draftId: string }).draftId;
+    await db.update(agentDrafts).set({ createdAt: new Date(T0.getTime() - 10 * 60_000) }).where(eq(agentDrafts.id, ownId));
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'owner_priced' });
+    // The customer's next line: the inbound run drafts over his card — his 💵 is superseded, nobody decided it.
+    const hello = await customerSays(c.chat, 'Assalomu alaykum, javob bormi?', new Date(T0.getTime() - 5 * 60_000));
+    const first = await handleInbound(
+      { managerUserId: holderId, peerId: String(c.chat.peer), anchorTgMessageId: String(hello), origin: 'live' },
+      { callModel: scripted([compose(`Hozir aniqlab aytaman, ${letters(Number(SUFFIX))}${letters(++replySeq)}.`)]), now: () => T0 },
+    );
+    expect(first, JSON.stringify(first)).toMatchObject({ outcome: 'draft' });
+    expect(await draftOf(ownId)).toMatchObject({ status: 'superseded', decidedBy: null });
+    // His figure was typed, and only the customer's line took his card: it still outranks the machine's.
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'owner_priced' });
+    const ask = await customerSays(c.chat, 'Narxi qancha bo‘ldi?', new Date(T0.getTime() - 2 * 60_000));
+    const seen: ModelRequest[] = [];
+    const second = await handleInbound(
+      { managerUserId: holderId, peerId: String(c.chat.peer), anchorTgMessageId: String(ask), origin: 'live' },
+      { callModel: scripted(PRICED('1359'), seen), now: () => T0 },
+    );
+    expect(second, JSON.stringify(second)).toMatchObject({ outcome: 'draft' });
+    expect(toolTextOf(seen)).toContain('Narx AYTMA');
+    const d = await draftOf((second as { draftId: string }).draftId);
+    await shown(d.id, T0);
+    expect((d.policy as { memory: { calcPrices?: unknown[] } }).memory.calcPrices ?? []).toEqual([]);
+    expect(d.blocked).toBe(true);
+    expect(await pressDueAutos(DUE)).toBe(0);
+    // The control: a 💵 he took back himself (❌) is no figure of his — the machine prices that chain.
+    const n = await answeredChain();
+    const withdrawn = await priceDraftFromText(holderId, n.requestId, '1500');
+    const withdrawnId = (withdrawn as { draftId: string }).draftId;
+    expect(await decideDraft(person(), withdrawnId, 'reject', {}, { actorId: holderId })).toMatchObject({ ok: true, status: 'rejected' });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: n.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ total: 1359 })] });
+  });
+
+  it('his 💵 still waiting when the VED recalculates: retired as no longer standing — the corrected answer is the machine’s to price', async () => {
+    const c = await answeredChain();
+    const own = await priceDraftFromText(holderId, c.requestId, '1500');
+    const ownId = (own as { draftId: string }).draftId;
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toEqual({ ok: false, reason: 'owner_priced' });
+    const fix = await request(c.chat.leadId, 'rastamojka', null, { supersedes: c.requestId, requestedAt: new Date() });
+    expect(await announceAgentCalc(fix, 'recalc')).toBe(true);
+    const retired = await draftOf(ownId);
+    expect(retired).toMatchObject({ status: 'superseded', decidedBy: null });
+    expect((retired.policy as { stale?: string }).stale).toBe('recalc');
+    await answered(fix, '1300', { ago: 0 });
+    expect(await calcPriceFor({ managerUserId: holderId, peerId: c.chat.peer })).toMatchObject({ ok: true, prices: [expect.objectContaining({ requestId: fix, total: 1430 })] });
+  });
+
+  it('his «💵 Narx yozaman» pressed after the machine’s price was: the LISTENER, holding no wait in memory, does not send it (check send-3)', async () => {
+    const c = await answeredChain();
+    const draftId = await priceDraft(c);
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await outboxOf(draftId))[0]!.status).toBe('agent');
+    const botChat = 7_970_000_000 + Number(SUFFIX);
+    setDurableWaits(true);
+    try {
+      // The bot (this process) arms the wait and writes it to its table.
+      armWait(botChat, 'agent_price', { requestId: c.requestId }, 600_000, nowSec());
+      await flushWaitWrites();
+      // The listener is another process: it holds no wait in memory, only the table.
+      __forgetWaitMemory();
+      expect(await draftOfferStands(draftId)).toBe('calc_price_moved');
+      const step = await stepThrough(draftId, [
+        { id: c.ours, out: true, text: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', media: false },
+        { id: c.chat.anchor, out: false, text: 'Rastamojka qancha bo‘ladi? Kurtka 100 dona.', media: false },
+      ]);
+      expect(step.out).toMatchObject({ kind: 'cancel', reason: 'calc_price_moved' });
+      expect(step.sent).toBe(0);
+      expect(step.after.status).toBe('cancelled');
+    } finally {
+      setDurableWaits(false);
+      await db.execute(sql`DELETE FROM telegram_chat_waits WHERE chat_id = ${String(botChat)}::bigint`);
+    }
+    // The control: no wait in the table and none in memory — the same row of another chain goes.
+    const n = await answeredChain();
+    const other = await priceDraft(n);
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect(await draftOfferStands(other)).toBe('stands');
+  });
+
+  it('his second 💵 drafted and then ❌: his first, approved and waiting, still goes — the customer is never left with neither (check regress-1)', async () => {
+    const c = await answeredChain();
+    const first = await ownPrice(c.requestId, '1300');
+    const second = await priceDraftFromText(holderId, c.requestId, '1250');
+    expect(second).toMatchObject({ ok: true });
+    const secondId = (second as { draftId: string }).draftId;
+    expect((await outboxOf(first))[0]!.status).toBe('agent');
+    expect(await decideDraft(person(), secondId, 'reject', {}, { actorId: holderId })).toMatchObject({ ok: true, status: 'rejected' });
+    expect((await outboxOf(first))[0]!.status).toBe('agent');
+    const step = await stepThrough(first, [
+      { id: c.ours, out: true, text: 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', media: false },
+      { id: c.chat.anchor, out: false, text: 'Rastamojka qancha bo‘ladi? Kurtka 100 dona.', media: false },
+    ]);
+    expect(step.last).toMatchObject({ kind: 'sent' });
+    expect(step.sent).toBe(1);
+    // …and the AI's own price still waiting IS taken back the moment he types his (§2.3) — unchanged.
+    const a = await answeredChain();
+    const machine = await priceDraft(a);
+    expect(await decideDraft(person(), machine, 'send', { digest: await digestOf(machine) }, { actorId: holderId })).toMatchObject({ ok: true });
+    expect(await priceDraftFromText(holderId, a.requestId, '1300')).toMatchObject({ ok: true });
+    expect((await outboxOf(machine))[0]).toMatchObject({ status: 'cancelled', lastError: 'owner_price: his 💵 on the request the AI priced' });
   });
 });

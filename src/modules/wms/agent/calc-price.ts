@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentCalcLinks, agentDrafts } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
@@ -177,14 +177,21 @@ async function chainSubmitDraft(chat: { managerUserId: string; peerId: bigint },
 }
 
 /**
- * His own figure is on this chain (judge money 11, hands 5; fix pass 1): a 💵 draft of his naming any member — live,
- * approved, sent, or approved and then cancelled before it went (a night hold the customer's morning line overtook) —
- * or his «💵 Narx yozaman» armed for one of them. The machine then prices the chain nowhere: not the VED answer's job,
- * not the inbound tool, not at the press or the send step. The wait is read from the bot's own memory (waits.ts: memory
- * stays the reader — the bot and the app's worker are one process; the listener holds none and reads only the drafts).
+ * His own figure is on this chain (judge money 11, hands 5; fix passes 1 and 3): a 💵 draft of his naming any member —
+ * live, approved, sent, approved and then cancelled before it went (a night hold the customer's morning line
+ * overtook), or still waiting for his ✅ when the customer's next line superseded it (status `superseded` with nobody's
+ * decision — the newer line took his card, not his figure; fix pass 3) — or his «💵 Narx yozaman» armed for one of
+ * them. The machine then prices the chain nowhere: not the VED answer's job, not the inbound tool, not at the press or
+ * the send step. Only his ❌ or 🙋 on that 💵 itself, or its expiry, takes it back off the chain.
+ *
+ * The wait is read where it lives in BOTH processes (fix pass 3, waits `waitLiveFor`): the bot's memory (the bot and
+ * the app's worker are one process — memory stays the reader there), and the waits' own table (0130), because the send
+ * step runs in the LISTENER, which holds no wait in memory — read from memory alone, a machine price pressed before he
+ * pressed «💵 Narx yozaman» went to the customer while he was typing his own.
  */
 export async function ownerPricedChain(managerUserId: string, peerId: bigint, memberIds: readonly string[]): Promise<boolean> {
   if (memberIds.length === 0) return false;
+  const members = sql.join(memberIds.map((id) => sql`${id}`), sql`, `);
   const [drafted] = await db
     .select({ id: agentDrafts.id })
     .from(agentDrafts)
@@ -193,17 +200,23 @@ export async function ownerPricedChain(managerUserId: string, peerId: bigint, me
         eq(agentDrafts.managerUserId, managerUserId),
         eq(agentDrafts.peerId, peerId),
         eq(agentDrafts.kind, 'price'),
-        inArray(agentDrafts.status, ['pending', 'editing', 'approved']),
-        sql`${agentDrafts.policy}->>'priceRequestId' IN (${sql.join(memberIds.map((id) => sql`${id}`), sql`, `)})`,
+        or(
+          inArray(agentDrafts.status, ['pending', 'editing', 'approved']),
+          // Superseded by the customer's next line — never by a VED recalculation (`retirePricesOf`'s `stale: 'recalc'`):
+          // that one retired his figure as no longer standing, and the corrected answer is the machine's to price.
+          and(
+            eq(agentDrafts.status, 'superseded'),
+            isNull(agentDrafts.decidedBy),
+            sql`coalesce(${agentDrafts.policy}->>'stale', '') <> 'recalc'`,
+          ),
+        ),
+        sql`${agentDrafts.policy}->>'priceRequestId' IN (${members})`,
       ),
     )
     .limit(1);
   if (drafted) return true;
-  const { nowSec, waitsOfKind } = await import('../../platform/telegram/waits');
-  const at = nowSec();
-  return waitsOfKind<{ requestId?: unknown }>('agent_price').some(
-    (w) => w.entry.expiresAt > at && typeof w.entry.payload.requestId === 'string' && memberIds.includes(w.entry.payload.requestId),
-  );
+  const { waitLiveFor } = await import('../../platform/telegram/waits');
+  return waitLiveFor('agent_price', 'requestId', memberIds);
 }
 
 /** The job's goods as the customer named them — its first lines, newest member first; never an amount. */
@@ -333,26 +346,50 @@ async function priceChain(
   };
 }
 
+/** What the card shows of an anchor's offers — the newest one that reached it, and whose it is. */
+export interface CardOffer {
+  /** Its client price in dollars (the card's `quoted_amount` — never the floor). */
+  price: number;
+  /** The machine's own (an `agent_offers` mark), else a person's. */
+  ai: boolean;
+}
+
 /**
- * A PERSON's price is the newest word on this anchor (review crm 1): the newest RELEASED offer on it — in the order it
- * reached the card (`lastReleasedOfferFor`'s order: the approval for a below-floor promise, else the offer) — carries no
- * AI mark (`agent_offers`). A seller's or the holder's own hand offer outranks the machine's VED price exactly as his 💵
- * does: the tool, the VED answer's job, the press, his ✅, every send step and the offer step refuse it in words. A
- * below-floor promise still waiting for approval reached nobody and is no price yet; an offer on an anchor the machine is
- * not pricing (an answer a later seal outranked) is not this anchor's word. Reads no amount (law 4 stays this file's).
+ * The newest RELEASED offer on an anchor — the one the card shows (review crm 1; fix pass 3): in the order it reached
+ * the card (`lastReleasedOfferFor`'s order: the approval for a below-floor promise, else the offer), and whose it is.
+ * ONE reading for both questions asked of it: «a person's price stands here» (`personOfferOn`, every door that prices)
+ * and «the machine's own figure already stands here» (after-sent `sameOfferStands`, the offer step) — asked two ways,
+ * a pending below-floor promise read as the newest word made the AI write its own restatement twice, and a seller's
+ * promise approved after the AI's figure left the offer step saying «yozildi» over a card holding his. A below-floor
+ * promise still waiting for approval reached nobody and is no price yet; an offer on an anchor the machine is not
+ * pricing (an answer a later seal outranked) is not this anchor's word. One migration behind 0149 there is no
+ * `agent_offers` and no machine offer — every offer on the card is a person's, read without the table (never a 42P01 on
+ * the tool, the VED answer's job or a send step).
  */
-async function personOfferOn(anchor: { versionId: string } | { requestId: string }): Promise<boolean> {
+export async function newestReleasedOfferOn(anchor: { versionId: string } | { requestId: string }): Promise<CardOffer | null> {
   const on = 'versionId' in anchor ? sql`o.version_id = ${anchor.versionId}::uuid` : sql`o.request_id = ${anchor.requestId}::uuid AND o.version_id IS NULL`;
+  const { agentFullP2Ready } = await import('./config');
+  const ai = (await agentFullP2Ready()) ? sql`EXISTS (SELECT 1 FROM agent_offers a WHERE a.offer_id = o.id)` : sql`false`;
   const rows = (await db.execute(sql`
-    SELECT (a.offer_id IS NULL) AS person
+    SELECT o.client_price_usd::text AS price, ${ai} AS ai
       FROM calc_offers o
-      LEFT JOIN agent_offers a ON a.offer_id = o.id
      WHERE ${on}
        AND (NOT o.below_floor OR o.approved_at IS NOT NULL)
      ORDER BY coalesce(o.approved_at, o.offered_at) DESC, o.id DESC
      LIMIT 1
-  `)) as unknown as { person: boolean }[];
-  return [...rows][0]?.person === true;
+  `)) as unknown as { price: string; ai: boolean }[];
+  const row = [...rows][0];
+  return row ? { price: Number(row.price), ai: row.ai === true } : null;
+}
+
+/**
+ * A PERSON's price is the newest word on this anchor (review crm 1): the card's offer (`newestReleasedOfferOn`) carries
+ * no AI mark. A seller's or the holder's own hand offer outranks the machine's VED price exactly as his 💵 does: the
+ * tool, the VED answer's job, the press, his ✅, every send step and the offer step refuse it. Reads no amount of the
+ * calculation (law 4 stays this file's).
+ */
+async function personOfferOn(anchor: { versionId: string } | { requestId: string }): Promise<boolean> {
+  return (await newestReleasedOfferOn(anchor))?.ai === false;
 }
 
 /** Did the chain's submitting reply say the job was priced from our China warehouses (the link draft's own action)? */
@@ -436,16 +473,22 @@ export function storedMarksOf(raw: unknown): CalcPriceMark[] | null {
 
 /**
  * Does every price a draft quoted still stand — priced again NOW for each stored request, the same anchor, the same rule
- * and the same total (≥ 0.005 apart = moved)? `owner_priced` when his own 💵 now stands on a quoted job (the gate says
- * so in his words); any other refusal, a difference, a mark that cannot be read, or a throw: `moved`.
+ * and the same total (≥ 0.005 apart = moved)? `owner_priced` when his own 💵 now stands on a quoted job, `person_offer`
+ * when a person's offer is the card's newest word on it (the gate says each in its own words — fix pass 3: a person's
+ * price read at the press as «VED javobi yoki ustama o‘zgardi», which neither had); any other refusal, a difference, a
+ * mark that cannot be read, or a throw: `moved`.
  */
-async function calcPricesStanding(raw: unknown, chat: { managerUserId: string; peerId: bigint }, now: Date): Promise<'stands' | 'owner_priced' | 'moved'> {
+async function calcPricesStanding(
+  raw: unknown,
+  chat: { managerUserId: string; peerId: bigint },
+  now: Date,
+): Promise<'stands' | 'owner_priced' | 'person_offer' | 'moved'> {
   try {
     const marks = storedMarksOf(raw);
     if (marks === null) return 'moved';
     for (const m of marks) {
       const again = await calcPriceFor({ managerUserId: chat.managerUserId, peerId: chat.peerId, requestId: m.requestId, now });
-      if (!again.ok) return again.reason === 'owner_priced' ? 'owner_priced' : 'moved';
+      if (!again.ok) return again.reason === 'owner_priced' || again.reason === 'person_offer' ? again.reason : 'moved';
       const same = again.prices.find((p) => p.anchorId === m.anchorId && p.rule === m.rule && Math.abs(p.total - m.total) < 0.005);
       if (!same) return 'moved';
     }
@@ -465,7 +508,7 @@ export async function calcPricesStand(raw: unknown, chat: { managerUserId: strin
   return (await calcPricesStanding(raw, chat, now)) === 'stands';
 }
 
-/** The gate's five facts of a draft quoting a VED price (§2.3) — each TRUE where it refuses. */
+/** The gate's six facts of a draft quoting a VED price (§2.3) — each TRUE where it refuses. */
 export interface CalcPriceGateFacts {
   /** `markup_unconfirmed`: the rule differs from the one he last vouched for (or none was ever stamped). */
   unconfirmed: boolean;
@@ -473,6 +516,8 @@ export interface CalcPriceGateFacts {
   moved: boolean;
   /** `calc_owner_priced`: his own 💵 now stands on a quoted job — given, waiting or being typed (fix pass 1). */
   ownerPriced: boolean;
+  /** `calc_person_offer`: a person's offer is the card's newest word on a quoted job (review crm 1; fix pass 3). */
+  personOffer: boolean;
   /** `calc_foreign`: a priced request's card is a colleague's (K3). */
   foreign: boolean;
   /** `media`: the customer sent a file after the job landed (the request burst's own files went to the VED). */
@@ -480,9 +525,16 @@ export interface CalcPriceGateFacts {
 }
 
 /** Every fact refusing — what a calc-price draft whose facts could not be read is judged on (fails closed). */
-export const CALC_PRICE_FACTS_UNREAD: CalcPriceGateFacts = { unconfirmed: true, moved: true, ownerPriced: true, foreign: true, media: true };
+export const CALC_PRICE_FACTS_UNREAD: CalcPriceGateFacts = {
+  unconfirmed: true,
+  moved: true,
+  ownerPriced: true,
+  personOffer: true,
+  foreign: true,
+  media: true,
+};
 
-/** The five facts, read now — at the scheduling and again at the press. Never throws (a read that fails refuses all). */
+/** The six facts, read now — at the scheduling and again at the press. Never throws (a read that fails refuses all). */
 export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: string; peerId: bigint }, now: Date): Promise<CalcPriceGateFacts> {
   try {
     const marks = storedMarksOf(raw);
@@ -493,6 +545,7 @@ export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: st
     const standing = await calcPricesStanding(marks, chat, now);
     const moved = standing === 'moved';
     const ownerPriced = standing === 'owner_priced';
+    const personOffer = standing === 'person_offer';
     const ids = [...new Set(marks.map((m) => m.requestId))];
     const cards = (await db.execute(sql`
       SELECT r.id::text AS id, r.entity_type, l.owner_id::text AS lead_owner, d.owner_id::text AS deal_owner, c.sales_manager_id::text AS seller
@@ -515,7 +568,7 @@ export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: st
     const chains = (await chatCalcChains(chat.managerUserId, chat.peerId)).filter((c) => c.memberIds.some((id) => ids.includes(id)));
     const since = chains.length === 0 ? null : new Date(Math.min(...chains.map((c) => c.linkedAt.getTime())));
     const media = since === null ? true : await mediaSince(chat, since);
-    return { unconfirmed, moved, ownerPriced, foreign, media };
+    return { unconfirmed, moved, ownerPriced, personOffer, foreign, media };
   } catch (err) {
     logger.warn({ err, peer: String(chat.peerId) }, '[agent] auto: the calc price’s facts not read');
     return CALC_PRICE_FACTS_UNREAD;

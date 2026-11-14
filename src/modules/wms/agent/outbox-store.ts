@@ -224,15 +224,17 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
       CASE WHEN jsonb_typeof(d.policy -> 'calcAnswer' -> 'requestId') = 'string'
            THEN d.policy -> 'calcAnswer' ->> 'requestId' END AS calc_answer_request,
       CASE WHEN jsonb_typeof(d.policy -> 'priceRequestId') = 'string' THEN d.policy ->> 'priceRequestId' END AS price_request,
-      -- Our own sends newer than the anchor (SPEC-P2-v2 K1): the live head skips these for an owner-started draft only
-      -- (sendFactsFor), whose anchor is the customer's newest inbound line. Only the MACHINE's own words (fix pass 1,
-      -- finding 5): a row that went in his ✏️ text (its draft's final_body) is a message he wrote — «narxni o'zim
-      -- aytaman» — and cancels the machine's reply after it as any hand-typed line of his does.
+      -- The very set human_replied forgives, newer than the anchor (SPEC-P2-v2 K1): the live head skips these for an
+      -- owner-started draft only (sendFactsFor), whose anchor is the customer's newest inbound line. EVERY own send, his
+      -- ✏️ words included (fix pass 3): his 💵 and the hand-back question — the very replies K1 exists for — answer the
+      -- customer's line past his own ✏️ «yubordim», and the machine's reply to a VED answer goes past an ordinary ✏️
+      -- tweak as it went before. A «yubordim» in his ✏️ words that promised the price himself is refused where the
+      -- price is made, not here: the chain is owner_words at every door that prices it (calc-price priceChain) —
+      -- no VED-answer job is queued for it, and a stored machine price on it fails the send step's re-price.
       ARRAY(
         SELECT x.tg_message_id::text FROM agent_outbox x
          WHERE x.manager_user_id = ${m} AND x.peer_id = ${p}
            AND x.tg_message_id IS NOT NULL AND x.tg_message_id > ${anchor}
-           AND NOT EXISTS (SELECT 1 FROM agent_drafts fd WHERE fd.id = x.draft_id AND fd.final_body IS NOT NULL)
       ) AS own_sent,
       EXISTS (
         SELECT 1 FROM tg_messages i

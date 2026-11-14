@@ -185,7 +185,7 @@ function eligible(): AutoGateInput {
     money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
     burstMedia: false,
     calc: null,
-    calcPrice: { unconfirmed: false, moved: false, foreign: false, media: false, ownerPriced: false },
+    calcPrice: { unconfirmed: false, moved: false, foreign: false, media: false, ownerPriced: false, personOffer: false },
     chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
     at: new Date('2026-11-12T07:00:00Z'),
@@ -256,7 +256,7 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     expect(autoVerdict(i)).toEqual({ eligible: true, reasons: [] });
   });
 
-  it('its own five facts — each refuses alone; facts not read refuse all (fails closed)', () => {
+  it('its own six facts — each refuses alone; facts not read refuse all (fails closed)', () => {
     const one = (patch: Partial<NonNullable<AutoGateInput['calcPrice']>>) => {
       const i = ticked(eligible(), 'calc_price');
       i.calcPrice = { ...i.calcPrice!, ...patch };
@@ -268,10 +268,12 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     expect(one({ media: true })).toEqual(['media']);
     // His 💵 for the job came while the machine's price counted down (finding 1) — its own words, never «moved».
     expect(one({ ownerPriced: true })).toEqual(['calc_owner_priced']);
+    // A person's offer became the card's newest word (fix pass 3) — its own words, never «VED javobi yoki ustama o‘zgardi».
+    expect(one({ personOffer: true })).toEqual(['calc_person_offer']);
     const unread = ticked(eligible(), 'calc_price');
     unread.calcPrice = null;
     expect(autoVerdict(unread).reasons).toEqual(
-      AUTO_REFUSALS.filter((r) => ['calc_foreign', 'markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'media'].includes(r)),
+      AUTO_REFUSALS.filter((r) => ['calc_foreign', 'markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'calc_person_offer', 'media'].includes(r)),
     );
   });
 

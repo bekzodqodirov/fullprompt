@@ -801,15 +801,18 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
     .orderBy(desc(tgMessages.sentAt))
     .limit(1);
   if (!anchor) return { ok: false, code: 'no_anchor' };
-  // A price approved and still WAITING to go — the AI's, or his own earlier 💵 (fix pass 1, finding 4: K1 forgives our
-  // own sends for an owner-started reply, so his first 💵 no longer cancels his second at the live head) — is taken back
-  // by the compare-and-set every withdraw uses: a row the listener already claimed is the one in flight, asked above.
-  // Only once every refusal is behind (his reply being typed, no line to answer): a 💵 that drafts nothing takes back
-  // nothing.
-  for (const w of ai.filter((x) => x.outbox === 'agent')) {
+  // The AI's price approved and still WAITING to go is taken back the moment he types his (SPEC-P2-v2 §2.3 — his figure
+  // outranks the machine's), by the compare-and-set every withdraw uses: a row the listener already claimed is the one in
+  // flight, asked above. Only once every refusal is behind (his reply being typed, no line to answer): a 💵 that drafts
+  // nothing takes back nothing. His OWN earlier 💵 still waiting is NOT taken back here (fix pass 3): a draft is not his
+  // decision — he may ❌ it, it may expire, the customer's next line may supersede it — and taken back at the drafting,
+  // the customer then had neither figure. It is taken back when THIS one is approved (decide `decideDraft`, inside the
+  // approval), so exactly one of his figures goes (fix pass 1, finding 4: K1 forgives our own sends for an owner-started
+  // reply, so his first 💵 no longer cancels his second at the live head).
+  for (const w of ai.filter((x) => x.outbox === 'agent' && x.by === 'ai')) {
     const [gone] = await db
       .update(agentOutbox)
-      .set({ status: 'cancelled', lastError: w.by === 'ai' ? 'owner_price: his 💵 on the request the AI priced' : 'owner_price_again: his newer 💵 on the same request' })
+      .set({ status: 'cancelled', lastError: 'owner_price: his 💵 on the request the AI priced' })
       .where(and(eq(agentOutbox.draftId, w.draftId), eq(agentOutbox.status, 'agent')))
       .returning({ id: agentOutbox.id });
     if (gone) {
