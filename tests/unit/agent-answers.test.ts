@@ -68,6 +68,7 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   chinaPlaces: async () => new Set(['Yiwu', 'Guangzhou', 'Qashqar']),
   priceArmed: false,
   calcArmed: false,
+  calcPricing: false,
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {
@@ -244,7 +245,7 @@ describe('rail is his question', () => {
   });
 
   it('the prompt says it too — the AI never quotes rail', () => {
-    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] })).toContain(RAIL_OWNER_QUESTION);
+    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] })).toContain(RAIL_OWNER_QUESTION);
   });
 });
 
@@ -267,7 +268,7 @@ describe('the certificate is the company’s (his 9)', () => {
     expect(actions).toHaveLength(1);
     // Nothing reads it since his «9» — and a stored «certificate: null» would only say the AI asked.
     expect(actions[0]).not.toHaveProperty('certificate');
-    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, lessons: [] })).toMatch(/sertifikatini HECH QACHON so'rama/u);
+    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] })).toMatch(/sertifikatini HECH QACHON so'rama/u);
   });
 });
 

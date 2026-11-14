@@ -5,6 +5,7 @@ import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import type { StoredEstimate } from './auto-money';
+import type { CalcPriceMark } from './calc-price';
 import type { AviaCargo, QuotedRoad } from './context';
 import type { AgentLocale, ScriptName } from './locale';
 import { airMentionIn, customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
@@ -85,6 +86,11 @@ export interface PolicyMemory {
    * and is refused `money` anyway.
    */
   foreignDestination?: boolean;
+  /**
+   * Every VED answer the run's `calc_price` priced (SPEC-P2-v2 §2.3) — the CLIENT price only (law 4): what the press,
+   * his ✅ and every send step price again (calc-price `calcPricesStand`). Absent or empty = the reply quotes none.
+   */
+  calcPrices?: CalcPriceMark[];
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;

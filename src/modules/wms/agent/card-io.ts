@@ -100,6 +100,10 @@ const CANCEL_WORDS: Record<string, string> = {
   offer_gone: 'VED qayta hisobladi — bu narx endi amal qilmaydi',
   // The machine's estimate priced again at the send gave another figure, or could not be priced (drafts `draftOfferStands`, §1.3).
   estimate_moved: 'narx jadvali o‘zgardi — bu narx yuborilmadi',
+  // A VED answer's price priced again at the send no longer stood as quoted (drafts `draftOfferStands`, SPEC-P2-v2 §2.5).
+  calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi',
+  // His own 💵 on the request the AI priced, while the AI's approved price still waited (calc-loop `priceDraftFromText`).
+  owner_price: 'narxni o‘zingiz berdingiz (💵) — AI narxi yuborilmadi',
   // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
   // a reworded value still has its word and never prints raw.
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',
@@ -152,8 +156,10 @@ export function answeredNow(d: Pick<DraftRow, 'status' | 'policy'>): boolean {
  * approved a reply to as answered. Each said as itself — «Mijoz yana yozdi»
  * would send him looking for a message that is not there.
  */
-const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answered' | 'owner_lesson', string> = {
+const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'markup' | 'owner_answered' | 'owner_lesson', string> = {
   recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
+  // His markup changed while the AI's VED price waited (config `setCalcMarkup`, SPEC-P2-v2 §2.1).
+  markup: '💱 Ustama o‘zgardi — bu narx yuborilmaydi. Kerak bo‘lsa narxni 💵 bilan bering.',
   avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
   // ✅ found the customer's newer message and no run will draft it:
   // «— yangi qoralama» would promise a card that never comes.
@@ -304,7 +310,11 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
     case 'rejected':
       return d.actionError === LANDED_UNSENT ? `❌ Rad etildi. ${landedUnsentLine(opts.landedLabel, true)}` : '❌ Rad etildi.';
     case 'superseded':
-      return STALE_WORDS[(((d.policy ?? {}) as { stale?: string }).stale ?? '') as keyof typeof STALE_WORDS] ?? '↪️ Mijoz yana yozdi — yangi qoralama.';
+      return (
+        STALE_WORDS[(((d.policy ?? {}) as { stale?: string }).stale ?? '') as keyof typeof STALE_WORDS] ??
+        // A VED price the customer wrote past (SPEC-P2-v2 §2.3): the figure did not go — the next reply restates it, or says why.
+        (quotesCalcPrice(d) ? CALC_PRICE_SUPERSEDED_LINE : '↪️ Mijoz yana yozdi — yangi qoralama.')
+      );
     case 'expired':
       return '⌛ Muddati o‘tdi.';
     case 'taken_over': {
@@ -358,6 +368,18 @@ export function actionLines(actions: ComposedAction[]): string[] {
     return '🔕 Bu chatda AI o‘chiriladi';
   });
 }
+
+/** A reply quoting a VED answer's price (`memory.calcPrices`, SPEC-P2-v2 §2.3) — in the machine's words. */
+export function quotesCalcPrice(d: Pick<DraftRow, 'policy' | 'finalBody'>): boolean {
+  const m = ((d.policy ?? {}) as Partial<DraftPolicyJson>).memory;
+  return d.finalBody === null && Array.isArray(m?.calcPrices) && m.calcPrices.length > 0;
+}
+
+/** Its card's title (§2.3): the holder sees at a glance it is the VED's figure with his markup. */
+export const CALC_PRICE_TITLE = '🧮 VED narxi + ustama';
+
+/** …and its card once the customer wrote past it. */
+export const CALC_PRICE_SUPERSEDED_LINE = '↪️ VED narxi yuborilmadi — mijoz yana yozdi (yangi qoralama).';
 
 const TITLES: Record<string, string> = {
   reply: '🤖 Javob qoralamasi',
@@ -456,13 +478,14 @@ export function renderDraftCardFull(
   const live = d.status === 'pending' || d.status === 'editing';
   const input = (sendable: boolean): CardInput => ({
     customerLabel: card.customerLabel,
-    title: TITLES[d.kind] ?? TITLES.reply!,
+    title: d.kind === 'reply' && quotesCalcPrice(d) ? CALC_PRICE_TITLE : (TITLES[d.kind] ?? TITLES.reply!),
     // «O'zi yuborish» folded in (auto-card `withAutoLine`): the timer while it counts down, the reason it
     // did not go, ⏸, the layer's «off», «🤖 O‘zi yuborildi» on the approved line and his 👎.
     statusLine: withAutoLine(statusLine(d, o, opts, sendable), opts.auto, d, sendable, o?.status ?? null),
     blocks: live ? (p.blocks ?? []) : [],
     warnings: p.warnings ?? [],
-    notes: [...(p.notes ?? []), ...extraNotes],
+    // The VED price's own line (§2.2) — the holder's card only, and never one of the notes the gate counts.
+    notes: [...(card.calcLine ? [card.calcLine] : []), ...(p.notes ?? []), ...extraNotes],
     reply: d.finalBody ?? d.proposedBody ?? '',
     gloss: d.finalBody ? null : d.glossUz,
     ledger: d.finalBody ? [] : (p.ledger ?? []),

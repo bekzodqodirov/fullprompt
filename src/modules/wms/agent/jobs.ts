@@ -18,12 +18,14 @@ import {
   EDIT_ATTEMPT_BASE,
   INBOUND_START_AFTER_S,
   isFirstAsk,
+  JOB_AGENT_CALC_ANSWER,
   JOB_AGENT_HAND_BACK,
   JOB_AGENT_HUMAN_REPLY,
   JOB_AGENT_INBOUND,
   JOB_AGENT_OWNER_ANSWER,
   JOB_AGENT_SWEEP,
   REDRAFT_ATTEMPT_BASE,
+  type AgentCalcAnswerJob,
   type AgentHandBackJob,
   type AgentHumanReplyJob,
   type AgentInboundJob,
@@ -120,6 +122,20 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
         // Sent with retryLimit 0, like the inbound run: a second delivery is a
         // second model bill, and the run's source_key keeps it once anyway.
         logger.error({ err }, '[agent] hand-back job failed');
+      }
+    }
+  });
+  await boss.createQueue(JOB_AGENT_CALC_ANSWER);
+  await boss.work<AgentCalcAnswerJob>(JOB_AGENT_CALC_ANSWER, async (jobs) => {
+    const { handleCalcAnswer } = await import('./calc-loop');
+    for (const job of jobs) {
+      try {
+        const out = await handleCalcAnswer(job.data);
+        logger.info({ peer: job.data.peerId, requestId: job.data.requestId, ...out }, '[agent] calc answer');
+      } catch (err) {
+        // Sent with retryLimit 0, like the hand-back: a second delivery is a second model bill, and the run's
+        // source_key keeps one standing anchor one draft anyway.
+        logger.error({ err }, '[agent] calc answer job failed');
       }
     }
   });

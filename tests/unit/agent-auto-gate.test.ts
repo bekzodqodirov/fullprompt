@@ -52,6 +52,7 @@ function eligible(): AutoGateInput {
       ledger: [],
       hasEstimate: false,
       estimatesStored: false,
+      calcPricesStored: false,
       rail: false,
       customerLocale: { locale: 'uz', confident: true },
       unreadNumeral: false,
@@ -60,6 +61,7 @@ function eligible(): AutoGateInput {
     money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
     burstMedia: false,
     calc: null,
+    calcPrice: null,
     chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
     at: NOON,
@@ -108,6 +110,24 @@ function calcSubmit(i: AutoGateInput): AutoGateInput {
   return i;
 }
 
+/**
+ * A VED answer's price the money clause admits (SPEC-P2-v2 §2.3): «VED narxi» ticked, the run's `calc_price` answered,
+ * the ledger's money line is that tool's total, the prices are stored, and its four facts clear.
+ */
+function calcQuote(i: AutoGateInput): AutoGateInput {
+  i.config.categories = [...FOUR, 'calc_price'];
+  i.draft.category = 'price';
+  i.draft.body = 'VED javobi keldi: rastamojka 1 359 $ bo‘ladi.';
+  i.draft.ledger = [{ kind: 'money', origin: 'tool', tool: 'calc_price', role: 'total' }];
+  i.draft.calcPricesStored = true;
+  i.tools = [{ name: 'calc_price', ok: true, estimate: false }];
+  i.calcPrice = { unconfirmed: false, moved: false, foreign: false, media: false };
+  return i;
+}
+
+/** The refusals only a VED price can meet. */
+const CALC_PRICE_ONLY: ReadonlySet<AutoRefusal> = new Set(['markup_unconfirmed', 'calc_price_moved']);
+
 /** The refusals only a calc draft can meet. */
 const CALC_ONLY: ReadonlySet<AutoRefusal> = new Set(['calc_identity', 'calc_foreign', 'calc_refused', 'calc_recent', 'calc_file_missing']);
 
@@ -146,6 +166,8 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   tariff_unconfirmed: (i) => (quote(i).money.tariffUnconfirmed = true),
   foreign_destination: (i) => (quote(i).money.foreignDestination = true),
   destination_unsaid: (i) => (quote(i).draft.body = '5 kub, 800 kg yukingiz uchun taxminan 960 $. Boj va QQS alohida hisoblanadi.'),
+  markup_unconfirmed: (i) => (calcQuote(i).calcPrice!.unconfirmed = true),
+  calc_price_moved: (i) => (calcQuote(i).calcPrice!.moved = true),
   // A day count from HIS ✍️ answer — no money in it, and it still comes back to him.
   owner_figure: (i) => (i.draft.ledger = [{ kind: 'duration', origin: 'owner', tool: null, role: null }]),
   owner_personal: (i) => (i.money.ownerPersonal = true),
@@ -192,17 +214,17 @@ describe('the gate', () => {
     for (const code of [...AUTO_REFUSALS].reverse()) {
       // The quote's own facts are asked of a quote the money clause admitted — the second input below;
       // status_unbacked, category and the two body-reading refusals are set by hand at the end.
-      if (QUOTE_ONLY.has(code) || CALC_ONLY.has(code) || ['category', 'status_unbacked', 'money_unread', 'too_long'].includes(code)) continue;
+      if (QUOTE_ONLY.has(code) || CALC_ONLY.has(code) || CALC_PRICE_ONLY.has(code) || ['category', 'status_unbacked', 'money_unread', 'too_long'].includes(code)) continue;
       ONE_CHANGE[code](input);
     }
     input.draft.category = 'status';
     input.draft.body = `Narxi bir necha dollar. ${'x'.repeat(400)}`;
     const out = autoVerdict(input);
     expect(out.eligible).toBe(false);
-    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => r !== 'category' && !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r)));
+    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => r !== 'category' && !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r)));
     // …and a category outside the chosen set is the category's own refusal beside it.
     input.config.categories = ['greeting'];
-    expect(autoVerdict(input).reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r)));
+    expect(autoVerdict(input).reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r)));
     // A calculation's own five, all at once, in the same order (SPEC-P2-v2 §1.1).
     const c = calcSubmit(eligible());
     c.calc = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };

@@ -60,6 +60,7 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   chinaPlaces: async () => new Set(['Yiwu', 'Guangzhou', 'Qashqar']),
   priceArmed: false,
   calcArmed: false,
+  calcPricing: false,
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {

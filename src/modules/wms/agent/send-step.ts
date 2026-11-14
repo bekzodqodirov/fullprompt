@@ -110,7 +110,7 @@ export interface SendFacts {
    * The draft's figure (drafts `draftOfferStands`): a 💵's request or offer, or the machine's estimates priced again
    * on today's tariff (spec SPEC-P1-v2 §1.3); null when the draft carries none.
    */
-  offerStands: 'stands' | 'offer_gone' | 'estimate_moved' | null;
+  offerStands: 'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved' | null;
   /**
    * Caps, counted over agent_outbox rows handed to Telegram — 'sent' AND 'unknown' (S5). The hour and the
    * account's last send count the account's sent CRM replies as well (K5); the day and the chat's two are
@@ -150,7 +150,9 @@ export type FinalRefusal =
   | 'identity_changed'
   | 'offer_gone'
   /** A machine estimate priced again today gives another figure, or the re-price refused (spec §1.3). */
-  | 'estimate_moved';
+  | 'estimate_moved'
+  /** A VED answer's price priced again today gives another anchor, rule or figure, or is refused (SPEC-P2-v2 §2.5). */
+  | 'calc_price_moved';
 
 export type WaitReason =
   | 'flood_wait'
@@ -212,6 +214,7 @@ export function agentSendVerdict(
   if (f.identityChanged) return fin('identity_changed');
   if (f.offerStands === 'offer_gone') return fin('offer_gone');
   if (f.offerStands === 'estimate_moved') return fin('estimate_moved');
+  if (f.offerStands === 'calc_price_moved') return fin('calc_price_moved');
 
   if (f.floodUntil && f.floodUntil.getTime() > now) return wait('flood_wait', f.floodUntil);
   // The night rule at the SEND, not only at the ✅ (his Q14 ⭐, review S3): a row a flood wait, the hour cap

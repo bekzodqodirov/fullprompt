@@ -545,6 +545,8 @@ export interface CalcChain {
   dealClientId: string | null;
   /** The newest member's card label — a deal's code or a lead's name (the card's «B-…/lid» words). */
   cardLabel: string | null;
+  /** Every member of the chain — what «is this request one of this chat's» is asked against (calc-price `calcPriceFor`). */
+  memberIds: string[];
 }
 
 /**
@@ -578,7 +580,8 @@ export async function chatCalcChains(managerUserId: string, peerId: bigint, limi
            n.completed_at, n.return_reason, n.entity_type, n.entity_id::text AS entity_id,
            d.client_id::text AS deal_client_id,
            coalesce(d.code, l.name) AS card_label,
-           EXISTS (SELECT 1 FROM tree t JOIN calc_requests c ON c.id = t.id WHERE t.root = r.root AND c.completed_at IS NULL) AS any_open
+           EXISTS (SELECT 1 FROM tree t JOIN calc_requests c ON c.id = t.id WHERE t.root = r.root AND c.completed_at IS NULL) AS any_open,
+           ARRAY(SELECT DISTINCT t.id::text FROM tree t WHERE t.root = r.root) AS member_ids
       FROM roots r
       CROSS JOIN LATERAL (
         SELECT c.* FROM tree t JOIN calc_requests c ON c.id = t.id
@@ -600,6 +603,7 @@ export async function chatCalcChains(managerUserId: string, peerId: bigint, limi
     deal_client_id: string | null;
     card_label: string | null;
     any_open: boolean;
+    member_ids: string[] | null;
   }[];
   return rows.map((r) => ({
     root: r.root,
@@ -612,6 +616,7 @@ export async function chatCalcChains(managerUserId: string, peerId: bigint, limi
     entityId: r.entity_id,
     dealClientId: r.deal_client_id,
     cardLabel: r.card_label,
+    memberIds: [...new Set(r.member_ids ?? [])],
   }));
 }
 

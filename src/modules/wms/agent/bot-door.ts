@@ -145,6 +145,9 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   auto_sent: STOP_AUTO_WORDS.sent,
   // The figure priced again at the press moved (spec §1.3): /admin/tarif or the avia rate changed since the draft.
   estimate_moved: 'Narx jadvali o‘zgardi — bu narx eskirdi, javob yuborilmadi. «✏️ O‘zgartirish» bilan to‘g‘ri narxni yozing yoki mijozga o‘zingiz javob bering.',
+  // His 💵's request was replaced by a VED correction, or the AI's VED price no longer stands as quoted (SPEC-P2-v2 §2.5).
+  offer_gone: '🔄 VED bu hisobni qayta hisoblayapti — bu narx endi amal qilmaydi, javob yuborilmadi. Yangi javob kelganda narx bering.',
+  calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi. Yangi narxni «💵 Narx yozaman» bilan bering yoki mijozga o‘zingiz javob bering.',
   empty: "Javob bo'sh.",
 };
 
@@ -187,7 +190,7 @@ export const PRICE_RETYPE = "Qaytadan: «💵 Narx yozaman» turgan kartaga javo
  * so none of them speaks of an offer, a floor or a deal card). The ambiguous
  * figure's sentence is built from its two readings (`priceRefusalText`).
  */
-const PRICE_WORDS: Record<Exclude<Exclude<PriceDraftResult, { ok: true }>['code'], 'ambiguous_number'>, string> = {
+const PRICE_WORDS: Record<Exclude<Exclude<PriceDraftResult, { ok: true }>['code'], 'ambiguous_number' | 'ai_price_sent'>, string> = {
   not_linked: "Bu hisob AI sotuvchi orqali yuborilmagan — narx javobi yozilmadi.",
   not_account_holder: 'Bu suhbat sizning akkauntingizda emas.',
   bad_number: `Narxni dollarda son bilan yozing, masalan: 1250. ${PRICE_RETYPE}`,
@@ -198,6 +201,11 @@ const PRICE_WORDS: Record<Exclude<Exclude<PriceDraftResult, { ok: true }>['code'
 
 /** What a refused «💵» says — an ambiguous figure asks back with both readings (his B4 a), never guesses. */
 export function priceRefusalText(r: Exclude<PriceDraftResult, { ok: true }>, typed: string): string {
+  // The AI already sent its price for this job (SPEC-P2-v2 §2.3): asked, never drafted on the first press.
+  if (r.code === 'ai_price_sent') {
+    const sent = r.by === 'ai' ? `Mijozga AI narxi (${r.total} $) ketgan` : `Mijozga narxingiz (${r.total} $) allaqachon ketgan`;
+    return `${sent}; sizning narxingiz yuborilsinmi? Yuborilsin desangiz — «💵 Narx yozaman»ni qayta bosib, narxni yana bir marta yozing.`;
+  }
   if (r.code !== 'ambiguous_number') return PRICE_WORDS[r.code];
   const { thousands, decimal } = r.readings;
   const shown = typed.trim();

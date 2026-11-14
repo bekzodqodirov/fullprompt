@@ -11,6 +11,7 @@ import { needWhatUz, type NeedLaw } from '../calc/needs';
 import { normalizeRowUnit } from '../calc/units';
 import { tariffFor } from '../calc/tariff-read';
 import type { StoredEstimate } from './auto-money';
+import type { CalcPriceMark } from './calc-price';
 import { AVIA_RATE_LABEL } from './config';
 import { aviaEstimate, TRUCK_ZONE, truckEstimate, YOLKIRA_GUARDS } from './estimate';
 import { AGENT_LIMITS } from './limits';
@@ -57,6 +58,12 @@ export interface ToolEnv {
    * the checklist is today's, byte for byte. Read once per run.
    */
   calcArmed: boolean;
+  /**
+   * The AI quotes the VED's answer with his markup (SPEC-P2-v2 §2.3): the markup can be read (an EMPTY one is «no
+   * markup», his §00 A1) AND this chat holds a linked chain the VED answered — `calcPricingFor`, read once per run. Only
+   * then is `calc_price` offered (`toolSpecsFor`); off, the tools are today's list, byte for byte.
+   */
+  calcPricing: boolean;
 }
 
 /**
@@ -110,6 +117,15 @@ export interface ToolOutcome {
   priced?: StoredEstimate;
   checklist?: ChecklistState;
   volume?: MeasureCandidate;
+  /**
+   * The VED answers `calc_price` priced — the CLIENT price only (calc-price `CalcPriceMark`, law 4): what the draft's
+   * memory keeps (`memory.calcPrices`) and the press, his ✅ and every send step price again (`calcPricesStand`).
+   * Never `estimate`/`priced`: those mean the truck table's figure and would make G11 ask «boj va QQS alohida» of a
+   * customs price, which includes them.
+   */
+  calcPrices?: CalcPriceMark[];
+  /** …and the holder's card line for them (calc-price `cardLine`) — kept on `policy.card`, never shown to the model. */
+  calcCardLine?: string;
 }
 
 const obj = (properties: Record<string, unknown>, required: string[] = Object.keys(properties)) => ({
@@ -120,6 +136,8 @@ const obj = (properties: Record<string, unknown>, required: string[] = Object.ke
 });
 
 export const SECTIONS = ['yolkira', 'rastamojka', 'podklyuch'] as const;
+/** The tool that states a VED answer's client price (§2.3) — offered only while the run quotes them (`toolSpecsFor`). */
+export const CALC_PRICE_TOOL = 'calc_price';
 export const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'] as const;
 export const NEXT_STEPS = ['qualify', 'quote', 'calc', 'address', 'close', 'wait'] as const;
 export const ACTION_TYPES = ['calc_submit', 'set_followup', 'mute'] as const;
@@ -185,6 +203,12 @@ export const TOOL_SPECS: ModelToolSpec[] = [
     }),
   },
   {
+    name: CALC_PRICE_TOOL,
+    description:
+      "VED javob bergan hisoblatishning MIJOZ narxi (VED javobi asosida, ustama bilan) — faqat shu chatning hisoblari. Kirish yo'q. Narxni faqat shu vositadan ayt, o'zgartirma, boshqa raqam qo'shma; rad etsa — narx aytma.",
+    input_schema: obj({}),
+  },
+  {
     name: 'compose_reply',
     description:
       "YAKUNIY javob — har run shu bilan tugaydi. reply_needed=false bo'lsa hech narsa yozilmaydi. Har bir son vositalardan yoki mijozning \"Suhbat\" qismidagi xabaridan bo'lsin. actions — faqat tasdiqlanganda bajariladi. " +
@@ -218,6 +242,14 @@ export const TOOL_SPECS: ModelToolSpec[] = [
     }),
   },
 ];
+
+/**
+ * The tools a run offers (SPEC-P2-v2 §2.3): `TOOL_SPECS` — the closed list the leak-11 fence pins — less `calc_price`
+ * unless the run quotes VED answers (`calcPricing`). Off, exactly today's list, byte for byte.
+ */
+export function toolSpecsFor(act: { calcPricing: boolean }): ModelToolSpec[] {
+  return act.calcPricing ? TOOL_SPECS : TOOL_SPECS.filter((t) => t.name !== CALC_PRICE_TOOL);
+}
 
 /** The customer's own figures — every number they wrote, as values a tool input must match. */
 function customerFigures(ctx: AgentContext): number[] {
@@ -409,9 +441,35 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
       return avia(input, env);
     case 'calc_checklist':
       return checklist(input, env);
+    case CALC_PRICE_TOOL:
+      return calcPrice(env);
     default:
       return { ok: false, text: `Noma'lum vosita: ${name}`, sources: [] };
   }
+}
+
+/**
+ * `calc_price` (§2.3): the client price of this chat's answered VED jobs, computed by CODE (calc-price, law 4) — never
+ * offered to a run that does not quote them, and refused there if the model names it anyway. The text carries the
+ * CLIENT total only; a refusal carries no digit and is no money.
+ */
+async function calcPrice(env: ToolEnv): Promise<ToolOutcome> {
+  if (!env.calcPricing) return { ok: false, text: `Noma'lum vosita: ${CALC_PRICE_TOOL}`, sources: [] };
+  const { CALC_PRICE_REFUSAL_WORDS, calcPriceFor } = await import('./calc-price');
+  const r = await calcPriceFor({ managerUserId: env.ctx.managerUserId, peerId: env.ctx.peerId });
+  if (!r.ok) return { ok: false, text: `VED narxini aytib bo'lmaydi: ${CALC_PRICE_REFUSAL_WORDS[r.reason]}. Narx AYTMA.`, sources: [] };
+  const words: Record<string, string> = { yolkira: "yo'lkira", rastamojka: 'rastamojka', podklyuch: 'podklyuch' };
+  const lines = r.prices.map((p) => `${words[p.section] ?? p.section}: ${p.total} $`);
+  return {
+    ok: true,
+    text:
+      `VED javobi asosida, ustama bilan — ${lines.join('; ')}. Mijozga shu narxni ayt (umumiy narx), boshqa raqam qo'shma.` +
+      (r.fromOurWarehouse ? ` Narx Xitoydagi omborimizdan: ikkala jumla ham bo'lsin — ${warehouseSentencesText()}.` : ''),
+    sources: r.prices.map((p) => ({ value: p.total, kind: 'money', label: 'VED narxi (ustama bilan)', origin: 'tool', currency: 'USD', role: 'total', tool: CALC_PRICE_TOOL })),
+    calcPrices: r.prices,
+    calcCardLine: r.cardLine,
+    fromOurWarehouse: r.fromOurWarehouse,
+  };
 }
 
 /**

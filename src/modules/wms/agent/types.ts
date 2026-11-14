@@ -48,6 +48,12 @@ export interface CardMemory {
   customerLabel: string;
   lastOut: string | null;
   customerLines: string[];
+  /**
+   * A VED answer's price on the HOLDER's card (SPEC-P2-v2 §2.2, judge hands 11): «🧮 rastamojka: VED 1 234,56 $ ·
+   * ustama 10 % → mijozga 1 359 $» — the one place the floor and the rule are printed (law 4: never the ledger, the
+   * chat block or any prompt part). Absent = the reply quotes no VED price.
+   */
+  calcLine?: string;
 }
 
 export interface DraftPolicyJson {
@@ -91,6 +97,11 @@ export interface DraftPolicyJson {
    * before and after a lesson can be read off the drafts. Absent = the run read none.
    */
   lessons?: LessonSetMark;
+  /**
+   * The reply a `calc_answer` run wrote on the VED's answer (SPEC-P2-v2 §2.3) — K2's week-long anchor clock and K1's
+   * forgiven head read it (anchor-clock, outbox-store `chatFacts`). Absent = an ordinary reply.
+   */
+  calcAnswer?: { requestId: string };
 }
 
 export type ForcedQuestion = 'rail' | 'avia';

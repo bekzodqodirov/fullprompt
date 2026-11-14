@@ -1,6 +1,7 @@
 import { LABEL_CATEGORIES, type AutoCategory } from './auto-categories';
 import { isEstimateTool, saysTashkent } from './auto-money';
 import { currencyBesideQuantity } from './digits';
+import type { CalcPriceGateFacts } from './calc-price';
 import { isTashkentNight } from './send-step';
 
 export { AUTO_SEND_CATEGORIES, type AutoCategory } from './auto-categories';
@@ -59,6 +60,9 @@ export const AUTO_REFUSALS = [
   'tariff_unconfirmed',
   'foreign_destination',
   'destination_unsaid',
+  // A VED answer's price (SPEC-P2-v2 §2.3, §2.5) — asked of a calc-price line only.
+  'markup_unconfirmed',
+  'calc_price_moved',
   'owner_figure',
   'owner_personal',
   'answer_stale',
@@ -108,6 +112,8 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   tariff_unconfirmed: 'Xitoy tarifi o‘zgargan — birinchi narxni o‘zingiz tasdiqlang',
   foreign_destination: 'mijoz Toshkentdan boshqa shaharni aytgan',
   destination_unsaid: 'javobda «Toshkentgacha» deyilmagan',
+  markup_unconfirmed: 'ustama o‘zgargan — birinchi VED narxini o‘zingiz tasdiqlang',
+  calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi',
   owner_figure: 'javobda sizning raqamingiz bor — ko‘rib yuboring',
   owner_personal: 'javobingizda boshqa mijoz ma’lumoti bor — ko‘rib yuboring',
   answer_stale: 'savolingizdan keyin mijoz yana yozdi',
@@ -153,6 +159,12 @@ export const AUTO_STRICT_LANGUAGES = ['en', 'fa', 'zh'] as const;
  */
 export const MONEY_TOOLS = ['own_balance', 'yolkira_estimate', 'avia_estimate'] as const;
 
+/**
+ * The tool that states a VED answer's CLIENT price (SPEC-P2-v2 §2.3, tools `CALC_PRICE_TOOL`). Its own branch of the
+ * money clause: never an estimate (no «boj va QQS alohida» — a customs price includes them), its refusals no money.
+ */
+export const CALC_PRICE_TOOL_NAME = 'calc_price';
+
 /** A tool call as the gate reads it — `estimate` is the tool's own flag (a priced answer), stored with the run. */
 export interface AutoToolCall {
   name: string;
@@ -192,6 +204,9 @@ export interface CalcSubmitFacts {
   /** `calc_file_missing`: a line in the job's window carried a medium this system did not keep. */
   fileMissing: boolean;
 }
+
+/** Every fact refusing — a VED-price draft whose facts were not read (fails closed; calc-price's own constant, restated pure). */
+const CALC_PRICE_FACTS_ALL: CalcPriceGateFacts = { unconfirmed: true, moved: true, foreign: true, media: true };
 
 /** Every fact refusing — what a calc draft whose facts were not read is judged on (fails closed). */
 export const CALC_FACTS_UNREAD: CalcSubmitFacts = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
@@ -237,6 +252,8 @@ export interface AutoGateInput {
     estimatesStored: boolean;
     /** A chat about rail (`memory.rail`): its price is his (§18.5). */
     rail: boolean;
+    /** The run's VED answer prices are stored on the draft (`memory.calcPrices`, SPEC-P2-v2 §2.3) — what the press re-prices. */
+    calcPricesStored: boolean;
     /** The customer's language as the run read the message the draft answers (`memory.customerLocale`); null = not stored. */
     customerLocale: { locale: string | null; confident: boolean } | null;
     /**
@@ -279,6 +296,12 @@ export interface AutoGateInput {
    * whose facts are null is judged as if every one refused (fails closed).
    */
   calc: CalcSubmitFacts | null;
+  /**
+   * The four facts of a reply quoting a VED answer's price (SPEC-P2-v2 §2.3, calc-price `calcPriceGateFacts`) — read
+   * only for a draft with stored `memory.calcPrices` and the machine's words; null otherwise. A calc-price line judged
+   * with null facts refuses every one (fails closed).
+   */
+  calcPrice: CalcPriceGateFacts | null;
   chat: {
     /** Bound to a client or a lead. */
     hasOwner: boolean;
@@ -358,8 +381,9 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (money.refused) hit.add('money');
   // A price nobody read (spec §1.1, narrowed and widened by the 0148 fix): a currency named beside a quantity no
   // reader placed — never the currency word alone, «narx dollarda kelishiladi» states no price — or a priced run
-  // whose reply holds no figure of its estimate at all: it states no price, or one no reader could read.
-  if ((!money.lines && currencyBesideQuantity(draft.body)) || money.unquoted) hit.add('money_unread');
+  // whose reply holds no figure of its estimate at all: it states no price, or one no reader could read. A VED price
+  // the tool answered and the reply did not quote is the same (SPEC-P2-v2 §2.3, the `unquoted` analog).
+  if ((!money.lines && currencyBesideQuantity(draft.body)) || money.unquoted || money.calcUnquoted) hit.add('money_unread');
   // …and a numeral no reader reads reliably, wherever it stands: the machine never presses a guess.
   if (draft.unreadNumeral) hit.add('numeral_unread');
   // The quote's own facts — asked of a priced reply the money clause admitted (a refused one is `money` already).
@@ -370,6 +394,13 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (quote && input.money.foreignDestination) hit.add('foreign_destination');
   // The table is China → Tashkent (§1.8): a reply with an estimate says so, in addition to the city check.
   if (quote && !saysTashkent(draft.body)) hit.add('destination_unsaid');
+  // A VED answer's price the clause admitted (SPEC-P2-v2 §2.3): its own facts — never the truck's (a customs price is
+  // no table figure and names no destination). Facts not read refuse every one.
+  const calcQuote = money.calcPriced && !money.refused;
+  const cp = calcQuote ? (input.calcPrice ?? CALC_PRICE_FACTS_ALL) : null;
+  if (cp?.unconfirmed) hit.add('markup_unconfirmed');
+  if (cp?.moved) hit.add('calc_price_moved');
+  if (cp?.foreign) hit.add('calc_foreign');
   // A figure from HIS answer always comes back to him (§2.2, law 4): the AI never relays his number by itself.
   // Asked of his ANSWER as well as of the ledger: a figure of his that the customer, a tool or a fact also carries
   // is vouched for by them, and a redraft may quote the tool's figure where he gave another.
@@ -384,16 +415,21 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // decided by what the reply DOES, so a label naming one is judged as no kind at all.
   const label = draft.category ?? '';
   const goes = LABEL_CATEGORIES.includes(label as AutoCategory);
-  const category = money.present && !money.refused && goes ? 'price' : label;
+  // A reply whose only money is a VED answer's price is judged as `calc_price` (SPEC-P2-v2 §2.3) — the box of its own
+  // he ticks for it; one that also quotes the truck table is `price` (the money clause asked `calc_price` already).
+  const category = money.present && !money.refused && goes ? (money.estimateMoney ? 'price' : money.calcPriced ? 'calc_price' : 'price') : label;
+  const admitted = (LABEL_CATEGORIES as readonly string[]).includes(category) || (category === 'calc_price' && calcQuote);
   // A calc draft is its own kind whatever the label (§1.1) — it passes because he ticked it, never by its label.
-  if (!calc && (!LABEL_CATEGORIES.includes(category as AutoCategory) || !config.categories.includes(category))) hit.add('category');
+  if (!calc && (!admitted || !config.categories.includes(category))) hit.add('category');
   // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess —
   // asked of the model's OWN label, so a status claim riding an admitted quote is still asked for its reading.
   if (label === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
   if (!languageAdmits(draft.language, draft.customerLocale)) hit.add('language');
   // Not asked of a calculation (§1.1, judge regress 8): the burst's invoice IS the material — it goes to the VED with
   // the job (calc-files), and the reply («yubordim») claims nothing about reading it.
-  if (input.burstMedia && !calc) hit.add('media');
+  // A VED answer's price asks it over the lines newer than the job's LANDING instead (§2.3): the request burst's own
+  // files went to the VED with the job, so they are no file the reply ignores.
+  if ((calcQuote ? cp!.media : input.burstMedia) && !calc) hit.add('media');
   if (draft.body.length > config.maxChars) hit.add('too_long');
   if (draft.confidence === null || !Number.isFinite(draft.confidence) || draft.confidence < config.minConfidence) hit.add('low_confidence');
   if (!input.chat.hasOwner) hit.add('stranger');
@@ -419,36 +455,56 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
 
 /**
  * The money clause by OUTCOME (spec §1.1, §1.4). A draft carries money when its ledger holds a money line, a tool
- * estimate stands behind it, or the run made a money call other than an estimate that answered with no price
- * (`below_minimum` — «1 kub yoki 100 kg dan kam»: no money at all). Such a draft passes only when ALL hold:
- *  - he ticked the price act (`price` among the stored categories);
+ * estimate stands behind it, a VED price was answered, or the run made a money call other than an estimate that
+ * answered with no price (`below_minimum` — «1 kub yoki 100 kg dan kam»: no money at all). Such a draft passes only
+ * when ALL hold:
  *  - every money call is a yo'lkira or avia estimate that ANSWERED — never `own_balance` (the customer's debt is
- *    his, ⭐ MAP Q2), never an estimate that refused (a reply after a refusal is the model's own price);
- *  - every money line was vouched for by such a tool, as a total or a rate — never a balance, a fact, his answer,
- *    or a line stored before 0148 with nobody named (fails closed);
- *  - the run's priced estimates are stored on the draft (what the press re-prices, §1.3);
+ *    his, ⭐ MAP Q2), never an estimate that refused (a reply after a refusal is the model's own price); a
+ *    `calc_price` call is no such call (its refusals are no money, SPEC-P2-v2 §2.3);
+ *  - every money line was vouched for by such a tool, as a total or a rate — or by `calc_price`, as a total; never a
+ *    balance, a fact, his answer, or a line stored before 0148 with nobody named (fails closed);
+ *  - an estimate's money: he ticked the price act (`price`), and the run's priced estimates are stored (§1.3);
+ *  - a VED price: he ticked «VED narxi» (`calc_price`), and the run's VED prices are stored (`memory.calcPrices`);
  *  - the chat is not about rail (his price, §18.5).
- * `priced`: the money is an estimate's — the facts that concern only a quoted price (the tariff confirmed, the
- * destination) are asked of it alone. `unquoted`: priced, and no line of the reply is an estimate's figure.
+ * `priced`: the money is an estimate's — the facts that concern only a quoted truck price (the tariff confirmed, the
+ * destination) are asked of it alone. `calcPriced`: a VED price stands behind the reply (its own facts, §2.3).
+ * `unquoted` / `calcUnquoted`: priced, and no line of the reply is that tool's figure.
  */
-function moneyVerdict(input: AutoGateInput): { present: boolean; refused: boolean; priced: boolean; lines: boolean; unquoted: boolean } {
+function moneyVerdict(input: AutoGateInput): {
+  present: boolean;
+  refused: boolean;
+  priced: boolean;
+  calcPriced: boolean;
+  estimateMoney: boolean;
+  lines: boolean;
+  unquoted: boolean;
+  calcUnquoted: boolean;
+} {
   const { draft, tools, config } = input;
   const calls = tools.filter((t) => (MONEY_TOOLS as readonly string[]).includes(t.name));
   const noPrice = (t: AutoToolCall) => isEstimateTool(t.name) && t.ok && !t.estimate;
   const lines = draft.ledger.filter((l) => l.kind === 'money');
+  const calcLine = (l: AutoLedgerLine) => l.origin === 'tool' && l.tool === CALC_PRICE_TOOL_NAME && l.role === 'total';
+  const estimateLine = (l: AutoLedgerLine) => l.origin === 'tool' && isEstimateTool(l.tool) && (l.role === 'total' || l.role === 'rate');
   const priced = draft.hasEstimate || calls.some((t) => t.ok && t.estimate);
-  const present = lines.length > 0 || priced || calls.some((t) => !noPrice(t));
-  if (!present) return { present, refused: false, priced: false, lines: false, unquoted: false };
+  const calcPriced = tools.some((t) => t.name === CALC_PRICE_TOOL_NAME && t.ok) || lines.some(calcLine);
+  const present = lines.length > 0 || priced || calcPriced || calls.some((t) => !noPrice(t));
+  if (!present) return { present, refused: false, priced: false, calcPriced: false, estimateMoney: false, lines: false, unquoted: false, calcUnquoted: false };
+  // Everything that is not a VED price: the truck table, the avia rate, a balance, a line nobody vouched for.
+  const estimateMoney = priced || calls.some((t) => !noPrice(t)) || lines.some((l) => !calcLine(l));
   const refused =
-    !config.categories.includes('price') ||
+    (estimateMoney && !config.categories.includes('price')) ||
+    (calcPriced && !config.categories.includes('calc_price')) ||
     !calls.every((t) => isEstimateTool(t.name) && t.ok) ||
-    !lines.every((l) => l.origin === 'tool' && isEstimateTool(l.tool) && (l.role === 'total' || l.role === 'rate')) ||
+    !lines.every((l) => estimateLine(l) || calcLine(l)) ||
     (priced && !draft.estimatesStored) ||
+    (calcPriced && !draft.calcPricesStored) ||
     draft.rail;
   // A priced run whose reply carries no figure of an estimate (0148 fix): «到塔什干的运费大概六百左右» after a tool
   // that said 800 $ holds no money line at all — every clause above passes on an empty list.
   const unquoted = priced && !lines.some((l) => l.origin === 'tool' && isEstimateTool(l.tool));
-  return { present, refused, priced, lines: lines.length > 0, unquoted };
+  const calcUnquoted = calcPriced && !lines.some(calcLine);
+  return { present, refused, priced, calcPriced, estimateMoney, lines: lines.length > 0, unquoted, calcUnquoted };
 }
 
 /**

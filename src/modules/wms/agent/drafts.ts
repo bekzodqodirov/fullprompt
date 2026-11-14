@@ -318,6 +318,10 @@ export interface RunDraftInput {
   fromLesson?: { lessonId: string; draftId: string } | null;
   /** The lessons this run read (§3.7, lessons `promptLessons`) — null when it read none. */
   lessonSet?: LessonSetMark | null;
+  /** The VED answered the job this reply is about (SPEC-P2-v2 §2.3) — kept as `policy.calcAnswer` (K2's clock, K1's head). */
+  calcAnswer?: { requestId: string } | null;
+  /** The holder's card line for the VED prices the run's `calc_price` quoted (§2.2) — `policy.card.calcLine`. */
+  calcCardLine?: string | null;
 }
 
 /**
@@ -348,13 +352,14 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       warnings: policy.warnings,
       ledger: policy.ledger,
       memory: input.memory,
-      card: cardMemory(ctx),
+      card: input.calcCardLine ? { ...cardMemory(ctx), calcLine: input.calcCardLine } : cardMemory(ctx),
       notes: input.notes,
       // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
       ...(compose.forcedQuestion ? { forcedQuestion: compose.forcedQuestion } : {}),
       ...(input.fromAnswer ? { fromAnswer: input.fromAnswer } : {}),
       ...(input.fromLesson ? { fromLesson: input.fromLesson } : {}),
       ...(input.lessonSet ? { lessons: input.lessonSet } : {}),
+      ...(input.calcAnswer ? { calcAnswer: input.calcAnswer } : {}),
     },
     blocked: !policy.ok,
     needsOwner: compose.needsOwner,
@@ -443,8 +448,11 @@ export async function requestRecalculated(requestId: string): Promise<boolean> {
   return newer !== undefined;
 }
 
-/** What the send step, his ✅ and the press hear of a draft's figure: it stands, a VED recalculation took it, its table moved. */
-export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved';
+/**
+ * What the send step, his ✅ and the press hear of a draft's figure: it stands, a VED recalculation took it, its table
+ * moved, or a VED answer's price no longer stands as it was quoted (SPEC-P2-v2 §2.5).
+ */
+export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved';
 
 /**
  * A draft's figure still stands; null when the draft carries none — a REASON, never a boolean (spec SPEC-P1-v2
@@ -465,7 +473,14 @@ export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved';
  */
 export async function draftOfferStands(draftId: string, now: Date = new Date()): Promise<OfferStanding | null> {
   const [draft] = await db
-    .select({ offerId: agentDrafts.offerId, kind: agentDrafts.kind, policy: agentDrafts.policy, finalBody: agentDrafts.finalBody })
+    .select({
+      offerId: agentDrafts.offerId,
+      kind: agentDrafts.kind,
+      policy: agentDrafts.policy,
+      finalBody: agentDrafts.finalBody,
+      managerUserId: agentDrafts.managerUserId,
+      peerId: agentDrafts.peerId,
+    })
     .from(agentDrafts)
     .where(eq(agentDrafts.id, draftId));
   const priced = draft?.kind === 'price' ? ((draft.policy ?? {}) as { priceRequestId?: unknown }).priceRequestId : undefined;
@@ -482,7 +497,26 @@ export async function draftOfferStands(draftId: string, now: Date = new Date()):
   }
   if (!draft || draft.finalBody !== null) return null;
   const memory = ((draft.policy ?? {}) as Partial<DraftPolicyJson>).memory;
+  // A VED answer's price the machine quoted (SPEC-P2-v2 §2.5), whatever the draft's kind: priced again for each stored
+  // request — the same anchor, the same rule, the same total — or `calc_price_moved`. A later seal or a newer answer on
+  // the card, the quote's clock, a concession, a markup edit: each stops it here. Never a throw (the listener).
+  if (Array.isArray(memory?.calcPrices) && memory.calcPrices.length > 0) {
+    const stands = await calcPricesStandFor(draft, memory.calcPrices, now);
+    if (!stands) return 'calc_price_moved';
+    if (!Array.isArray(memory.estimates) || memory.estimates.length === 0) return 'stands';
+  }
   return estimatesStand(memory?.estimates, now);
+}
+
+/** `calcPricesStand` by dynamic import — a load or a read that fails answers «moved», never a throw in the send step. */
+async function calcPricesStandFor(draft: { managerUserId: string; peerId: bigint }, marks: unknown, now: Date): Promise<boolean> {
+  try {
+    const { calcPricesStand } = await import('./calc-price');
+    return await calcPricesStand(marks, { managerUserId: draft.managerUserId, peerId: draft.peerId }, now);
+  } catch (err) {
+    logger.warn({ err, peer: String(draft.peerId) }, '[agent] calc price not re-priced at the send');
+    return false;
+  }
 }
 
 /**

@@ -37,6 +37,7 @@ import {
   type CalcSubmitFacts,
 } from './auto-gate';
 import type { CalcSubmitAction } from './calc-submit';
+import type { CalcPriceGateFacts } from './calc-price';
 import { cardDigest, digestBody } from './card';
 import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
@@ -362,6 +363,7 @@ export async function autoFactsFor(
   const estimates = Array.isArray(memory?.estimates) ? memory.estimates : [];
   // The machine's words carry the machine's figures; his own (✏️) are never auto-pressed anyway.
   const quoted = estimates.length > 0 && d.finalBody === null;
+  const calcQuoted = Array.isArray(memory?.calcPrices) && memory.calcPrices.length > 0 && d.finalBody === null;
   return {
     config: {
       armed: auto?.armed === true,
@@ -390,6 +392,7 @@ export async function autoFactsFor(
       hasEstimate: memory?.hasEstimate === true,
       estimatesStored: Array.isArray(memory?.estimates) && memory.estimates.length > 0,
       rail: memory?.rail === true,
+      calcPricesStored: Array.isArray(memory?.calcPrices) && memory.calcPrices.length > 0,
       customerLocale: memory?.customerLocale ?? null,
       // A Chinese numeral the readers cannot tell from a word (0148 fix) — over the reply less its facts' quoted
       // Chinese, as G1 reads it; a memory that cannot be read holds one (fails closed).
@@ -415,6 +418,9 @@ export async function autoFactsFor(
     },
     burstMedia: await burstHadMedia(d),
     calc: calcRead?.facts ?? null,
+    // A reply quoting a VED answer's price (SPEC-P2-v2 §2.3): its four facts, read NOW — at the scheduling and again
+    // at the press. Only the machine's words (his ✏️ text is his own figure, and never auto-pressed anyway).
+    calcPrice: calcQuoted ? await calcPriceFactsOf(d, memory!.calcPrices, opts.now) : null,
     chat: {
       hasOwner: d.clientId !== null || d.leadId !== null,
       prospect: (await sendWindowFor(d)) === 'agent_lead',
@@ -446,6 +452,17 @@ async function calcFactsOf(d: AutoDraftShape, action: CalcSubmitAction, now: Dat
   } catch (err) {
     logger.warn({ err, peer: String(d.peerId) }, '[agent] auto: the calculation’s facts not read');
     return { facts: CALC_FACTS_UNREAD, cardNotes: [] };
+  }
+}
+
+/** The VED price's facts (calc-price `calcPriceGateFacts`) — reached by dynamic import; one that cannot be read refuses all. */
+async function calcPriceFactsOf(d: AutoDraftShape, marks: unknown, now: Date): Promise<CalcPriceGateFacts> {
+  try {
+    const { calcPriceGateFacts } = await import('./calc-price');
+    return await calcPriceGateFacts(marks, { managerUserId: d.managerUserId, peerId: d.peerId }, now);
+  } catch (err) {
+    logger.warn({ err, peer: String(d.peerId) }, '[agent] auto: the VED price’s facts not read');
+    return { unconfirmed: true, moved: true, foreign: true, media: true };
   }
 }
 

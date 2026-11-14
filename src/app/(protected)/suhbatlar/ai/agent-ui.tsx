@@ -21,6 +21,8 @@ import {
   agentLessonSaveAction,
   agentModeAction,
   agentNumbersAction,
+  agentMarkupAction,
+  agentMarkupConfirmAction,
   agentOpenLimitAction,
   agentOwnTextAction,
   agentOwnerAction,
@@ -509,6 +511,71 @@ export function SeatButtons({ holderId, holds, named }: { holderId: string; hold
           </button>
         )}
       </div>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * His markup on the VED's answer (SPEC-P2-v2 §2.1): percent or a fixed sum, and the value — EMPTY means «no markup», the
+ * AI quotes the VED's own figure (his §00 A1). Refused out of bounds in words, never rounded.
+ */
+export function MarkupForm({ kind, value }: { kind: string; value: string }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [k, setK] = useState(kind === 'fixed' ? 'fixed' : 'percent');
+  const [v, setV] = useState(value);
+  const changed = k !== kind || v.trim() !== value;
+  return (
+    <div className="space-y-1" data-testid="agent-markup-form">
+      <label className="label" htmlFor="agent-markup-value">
+        {t('markupValueLabel')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <select
+          className="input w-auto"
+          aria-label={t('markupKindLabel')}
+          value={k}
+          disabled={pending}
+          onChange={(event) => setK(event.target.value)}
+          data-testid="agent-markup-kind"
+        >
+          <option value="percent">{t('markupKindPercent')}</option>
+          <option value="fixed">{t('markupKindFixed')}</option>
+        </select>
+        <input
+          id="agent-markup-value"
+          className="input min-w-0 flex-1"
+          inputMode="decimal"
+          value={v}
+          disabled={pending}
+          onChange={(event) => setV(event.target.value)}
+          data-testid="agent-markup-value"
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || !changed}
+          data-testid="agent-markup-save"
+          onClick={() => run(() => agentMarkupAction(k, v))}
+        >
+          {t('save')}
+        </button>
+      </div>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** «✅ Ustama to'g'ri» (§2.1, his §7 Q5 ⭐): he vouches for the rule as it stands — the next VED price may go by itself. */
+export function MarkupConfirmButton() {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  return (
+    <div className="space-y-1">
+      <button type="button" className="btn-secondary" disabled={pending} data-testid="agent-markup-confirm" onClick={() => run(() => agentMarkupConfirmAction())}>
+        {t('markupConfirm')}
+      </button>
       <Feedback error={error} note={null} />
     </div>
   );

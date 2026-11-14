@@ -14,10 +14,14 @@ export async function onAgentOutboxSettled(outboxId: string): Promise<void> {
 /**
  * A reply's figure still stands — a 💵's request not superseded by a recalculation (his 6 b: a 💵 has no offer
  * row), or its offer released and not superseded; a machine estimate priced again on today's tariff and avia rate
- * (spec SPEC-P1-v2 §1.3). null when the draft carries none. `offer_gone` or `estimate_moved` cancels the row at its
- * next step, each in its own words. Never throws on a re-price (`draftOfferStands`).
+ * (spec SPEC-P1-v2 §1.3); a VED answer's price priced again (SPEC-P2-v2 §2.5). null when the draft carries none.
+ * `offer_gone`, `estimate_moved` or `calc_price_moved` cancels the row at its next step, each in its own words. Never
+ * throws on a re-price (`draftOfferStands`).
  */
-export async function offerStandsFor(draftId: string, now: Date = new Date()): Promise<'stands' | 'offer_gone' | 'estimate_moved' | null> {
+export async function offerStandsFor(
+  draftId: string,
+  now: Date = new Date(),
+): Promise<'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved' | null> {
   const { draftOfferStands } = await import('./drafts');
   return draftOfferStands(draftId, now);
 }

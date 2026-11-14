@@ -111,6 +111,7 @@ describe('the hand-back loop’s card (§1.5)', () => {
     entityId: 'd1',
     dealClientId: 'c1',
     cardLabel: 'B-00001',
+    memberIds: ['r1', 'q1'],
     ...over,
   });
 
@@ -231,6 +232,7 @@ describe('the checklist with the act off is today’s, byte for byte (§1.6, §4
     chinaPlaces: async () => new Set(['Yiwu']),
     priceArmed: false,
     calcArmed: false,
+  calcPricing: false,
   });
 
   it('a complete line with no unit: the very text and facts the checklist wrote before the unit existed', async () => {

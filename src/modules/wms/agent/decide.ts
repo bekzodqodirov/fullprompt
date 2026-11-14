@@ -43,7 +43,6 @@ import { ownerPolicyFor, policyFor } from './policy-input';
 import { AFTER_AUTO, keptFileSql } from './outbox-store';
 import { CANCELLED_BY_HOLDER } from './web-thread';
 import { anchorMaxAgeMsFor } from './anchor-clock';
-import { estimatesStand } from './estimate-check';
 import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
 import { readSendCaps } from './send-caps';
@@ -130,6 +129,13 @@ export type DecideRefusal =
    * only cancel it. His own words (✏️) carry his own figure and are never asked.
    */
   | 'estimate_moved'
+  /**
+   * His 💵 answers a request a VED correction has since replaced (drafts `draftOfferStands`, SPEC-P2-v2 §2.5 — asked
+   * at his ✅ now, not only at the send step, which would only cancel it).
+   */
+  | 'offer_gone'
+  /** A VED answer's price no longer stands as it was quoted — a later seal, a newer answer, its clock, a concession, a markup edit (§2.5). */
+  | 'calc_price_moved'
   | 'empty';
 
 export type DecideResult =
@@ -901,6 +907,25 @@ async function tariffVouchOf(d: Pick<typeof agentDrafts.$inferSelect, 'runId'>, 
   return run?.createdAt ?? null;
 }
 
+/** The rule a draft's VED prices were made on — one run, one rule; null when it quotes none (or they disagree). */
+function markupRuleOfMarks(raw: unknown): string | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const rules = new Set(raw.map((m) => (typeof (m as { rule?: unknown })?.rule === 'string' ? (m as { rule: string }).rule : '')));
+  const [only] = [...rules];
+  return rules.size === 1 && only ? only : null;
+}
+
+/**
+ * «He vouched for this markup» (SPEC-P2-v2 §2.1, `markup_unconfirmed`): the settings row `agent_calc_markup_confirmed`
+ * holds the rule string — written in the caller's transaction (his ✅) or alone (the page's «✅ Ustama to'g'ri»).
+ */
+export async function stampMarkupConfirmedInTx(tx: Tx, rule: string, actorId: string): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO settings (key, value, updated_by, updated_at)
+    VALUES ('agent_calc_markup_confirmed', to_jsonb(${rule}::text), ${actorId}::uuid, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`);
+}
+
 /**
  * `auto`: «o'zi yuborish»'s machine press (§18.3, auto-send `pressDueAutos`) —
  * the same ✅, stricter: only 'send', only a strictly 'pending' machine reply
@@ -1115,12 +1140,17 @@ export async function decideDraft(
     // The draft's own clock (SPEC-P2-v2 K2): a 💵 or a VED answer's reply may answer a line up to a week old.
     if (asked && sendAt.getTime() - asked.getTime() > anchorMaxAgeMsFor(d)) return { ok: false, code: 'window_closed' };
   }
-  // The machine's figures priced again at THIS press (spec §1.3) — his ✅ and the machine's alike, before anything
-  // is landed or queued: asked at one end only, the door queued a reply the send step was certain to cancel (the
-  // 💵 precedent). His own words (`finalBody`) are his own figure.
+  // The draft's figure asked again at THIS press — his ✅ and the machine's alike, before anything is landed or queued:
+  // asked at one end only, the door queued a reply the send step was certain to cancel. ONE question, the send step's
+  // own (`draftOfferStands`, SPEC-P2-v2 §2.5): the machine's estimates priced again (spec §1.3), a VED answer's price
+  // priced again, his 💵's request not replaced by a correction. His own words (`finalBody`) are his own figure.
   const memory = p.memory;
-  const standing = d.finalBody === null ? await estimatesStand(memory?.estimates, now) : null;
-  if (standing === 'estimate_moved') return { ok: false, code: 'estimate_moved' };
+  const { draftOfferStands } = await import('./drafts');
+  const standing = await draftOfferStands(d.id, now);
+  if (standing === 'estimate_moved' || standing === 'calc_price_moved' || standing === 'offer_gone') return { ok: false, code: standing };
+  // His ✅ on the machine's VED price (§2.1, his §7 Q5 ⭐): the rule it was priced on is the one he vouched for — the
+  // next machine price on it may go by itself. Stamped inside the approval below; never by the machine's own press.
+  const markupVouched = !opts.auto && d.finalBody === null && standing === 'stands' ? markupRuleOfMarks(memory?.calcPrices) : null;
   // A PERSON's ✅ on a truck figure priced on today's China column vouches for that column (§1.6
   // `tariff_unconfirmed`) — as of the moment its run began, so a tariff write during the run stays unconfirmed.
   const vouchesTariff = !opts.auto && standing === 'stands' ? await tariffVouchOf(d, memory?.estimates) : null;
@@ -1222,6 +1252,8 @@ export async function decideDraft(
       after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId, ...(opts.auto ? { via: 'auto' } : {}) },
     });
     if (vouchesTariff) await confirmTariffInTx(tx, vouchesTariff, actor.id);
+    // Through the transaction's own handle, never `setSetting` on the pool (#714).
+    if (markupVouched) await stampMarkupConfirmedInTx(tx, markupVouched, actor.id);
     if (opts.auto && !(await settleAutoPressInTx(tx, draftId, opts.autoAt ?? now))) throw new AutoPressLost('auto_stopped');
     return true;
   }).catch((err: unknown) => {

@@ -659,6 +659,118 @@ export async function setCalcOpenLimit(actor: AgentActor, raw: string, ctx: Audi
 }
 
 /**
+ * His markup on the VED's answer (SPEC-P2-v2 §2.1, his «foiz yokida fix summa qoshib ayitshni belgilash»; §00 A1: an
+ * EMPTY value is «no markup» — the AI quotes the VED's own figure). ONE writer for the two own-door keys: the AI's
+ * holder or a super_admin (`mayRunAgent`), the whole rule validated (`calcMarkupRuleValid` — a percent 0.01..100 with
+ * at most two decimals, a fixed sum 1..5 000 whole dollars), both keys and their audit row in ONE transaction under the
+ * settings' entity id.
+ *
+ * A change retires what was priced on the old rule (the `setAviaRate` precedent): pending machine VED-price drafts are
+ * superseded (`stale: 'markup'`, their cards say so), and approved ones still waiting to go are cancelled by the
+ * 'agent' compare-and-set (a row the listener has claimed is the one in flight). The confirmed stamp is NOT touched: a
+ * rule other than the one he vouched for is `markup_unconfirmed` by comparison — `none` is a rule like any other.
+ */
+export async function setCalcMarkup(
+  actor: AgentActor,
+  input: { kind: string; value: string },
+  ctx: AuditContext,
+): Promise<{ kind: string; value: string; retired: number }> {
+  const { SETTINGS_AUDIT_ID, calcMarkupRuleValid, getSetting } = await import('../../platform/settings/service');
+  const kind = input.kind.trim();
+  const value = input.value.trim().replace(',', '.');
+  if (!calcMarkupRuleValid(kind, value)) throw new AgentConfigError('bad_value');
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const config = await readAgentConfig();
+  if (!mayRunAgent(actor, config)) throw new AgentConfigError('forbidden');
+  const before = { kind: await getSetting('agent_calc_markup_kind'), value: await getSetting('agent_calc_markup_value') };
+  const { markupRuleOf } = await import('./calc-price');
+  const { ruleString } = await import('./calc-markup');
+  const rule = markupRuleOf(kind, value);
+  if (rule === null) throw new AgentConfigError('bad_value');
+  const ruleText = ruleString(rule);
+  const now = new Date();
+  // Drafts whose stored VED prices were made on another rule — read by the marks themselves (SPEC-P2-v2 §2.5).
+  const otherRule = sql`jsonb_typeof(${agentDrafts.policy}->'memory'->'calcPrices') = 'array'
+    AND EXISTS (SELECT 1 FROM jsonb_array_elements(${agentDrafts.policy}->'memory'->'calcPrices') e WHERE e->>'rule' IS DISTINCT FROM ${ruleText})`;
+  const out = await db.transaction(async (tx) => {
+    for (const [key, v] of [
+      ['agent_calc_markup_kind', kind],
+      ['agent_calc_markup_value', value],
+    ] as const) {
+      await tx.execute(sql`
+        INSERT INTO settings (key, value, updated_by, updated_at) VALUES (${key}, to_jsonb(${v}::text), ${actor.id}::uuid, now())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`);
+    }
+    await writeAudit(tx, ctx, {
+      entityType: 'settings',
+      entityId: SETTINGS_AUDIT_ID,
+      action: 'update',
+      before: { agent_calc_markup_kind: before.kind, agent_calc_markup_value: before.value },
+      after: { agent_calc_markup_kind: kind, agent_calc_markup_value: value },
+    });
+    const stale = await tx
+      .update(agentDrafts)
+      .set({ status: 'superseded', policy: sql`${agentDrafts.policy} || ${JSON.stringify({ stale: 'markup' })}::jsonb`, updatedAt: now })
+      .where(and(eq(agentDrafts.status, 'pending'), sql`${agentDrafts.finalBody} IS NULL`, otherRule))
+      .returning({ id: agentDrafts.id });
+    const cancelled = await tx
+      .update(agentOutbox)
+      .set({ status: 'cancelled', lastError: 'calc_price_moved: the markup changed' })
+      .where(
+        and(
+          eq(agentOutbox.status, 'agent'),
+          inArray(
+            agentOutbox.draftId,
+            tx
+              .select({ id: agentDrafts.id })
+              .from(agentDrafts)
+              .where(and(eq(agentDrafts.status, 'approved'), sql`${agentDrafts.finalBody} IS NULL`, otherRule)),
+          ),
+        ),
+      )
+      .returning({ draftId: agentOutbox.draftId });
+    return { stale: stale.map((r) => r.id), cancelled: cancelled.map((r) => r.draftId) };
+  });
+  const { settleSupersededAuto } = await import('./auto-send');
+  for (const id of out.stale) await settleSupersededAuto(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] superseded auto not settled'));
+  const { refreshAgentCard } = await import('./card-io');
+  for (const id of [...out.stale, ...out.cancelled]) {
+    await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
+  }
+  return { kind, value, retired: out.stale.length + out.cancelled.length };
+}
+
+/**
+ * «✅ Ustama to'g'ri» on /suhbatlar/ai (SPEC-P2-v2 §2.1, his §7 Q5 ⭐): he vouches for the rule as it stands — the next
+ * machine VED price on it may go by itself. Stamped with the same writer his ✅ on a VED-price card uses. A rule that
+ * cannot be read is refused (`bad_value`) — there is nothing to vouch for.
+ */
+export async function confirmCalcMarkup(actor: AgentActor, ctx: AuditContext): Promise<string> {
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const config = await readAgentConfig();
+  if (!mayRunAgent(actor, config)) throw new AgentConfigError('forbidden');
+  const { markupConfirmed, readMarkupRule, MARKUP_CONFIRMED_KEY } = await import('./calc-price');
+  const { ruleString } = await import('./calc-markup');
+  const rule = await readMarkupRule();
+  if (rule === null) throw new AgentConfigError('bad_value');
+  const text = ruleString(rule);
+  const before = await markupConfirmed();
+  const { SETTINGS_AUDIT_ID } = await import('../../platform/settings/service');
+  const { stampMarkupConfirmedInTx } = await import('./decide');
+  await db.transaction(async (tx) => {
+    await stampMarkupConfirmedInTx(tx, text, actor.id);
+    await writeAudit(tx, ctx, {
+      entityType: 'settings',
+      entityId: SETTINGS_AUDIT_ID,
+      action: 'update',
+      before: { [MARKUP_CONFIRMED_KEY]: before },
+      after: { [MARKUP_CONFIRMED_KEY]: text },
+    });
+  });
+  return text;
+}
+
+/**
  * Tests: put the singleton back the way a file found it (#183 — a
  * configuration row is the next file's input on the one shared database).
  */

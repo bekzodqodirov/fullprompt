@@ -9,6 +9,7 @@ import { GuardError, clearAccountPause } from '../crm/account-guard';
 import { agentPress } from './bot-door';
 import {
   AgentConfigError,
+  confirmCalcMarkup,
   confirmSessionExclusive,
   mayRunAgent,
   readAgentConfig,
@@ -17,6 +18,7 @@ import {
   setAgentOwner,
   setAgentSeat,
   setAviaRate,
+  setCalcMarkup,
   setCalcOpenLimit,
 } from './config';
 import { decideDraft, submitOwnText, type DraftDecision, type SupersededDetail } from './decide';
@@ -266,6 +268,34 @@ export async function agentOpenLimitAction(raw: string): Promise<AgentActionResu
       await setCalcOpenLimit(actor, typeof raw === 'string' ? raw : '', ctx);
     } catch (err) {
       if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_open_limit' };
+      throw err;
+    }
+  });
+}
+
+/**
+ * His markup on the VED's answer (SPEC-P2-v2 §2.1): a percent or a fixed sum, or EMPTY — «no markup», the AI quotes the
+ * VED's own figure (his §00 A1). The service asks the door (`mayRunAgent`) and the whole rule; a value it refuses is
+ * this box's own code, naming the bounds.
+ */
+export async function agentMarkupAction(kind: string, value: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setCalcMarkup(actor, { kind: typeof kind === 'string' ? kind : '', value: typeof value === 'string' ? value : '' }, ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_markup' };
+      throw err;
+    }
+  });
+}
+
+/** «✅ Ustama to'g'ri» (§2.1, his §7 Q5 ⭐): he vouches for the rule as it stands. */
+export async function agentMarkupConfirmAction(): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await confirmCalcMarkup(actor, ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_markup' };
       throw err;
     }
   });

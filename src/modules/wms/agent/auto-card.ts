@@ -57,6 +57,8 @@ export const AUTO_PRESS_WORDS: Record<DecideRefusal, string> = {
   auto_sending: 'javob yuborilmoqda',
   auto_sent: 'javob yuborilgan',
   estimate_moved: 'narx jadvali o‘zgargan — narx qayta tekshirilmagan',
+  offer_gone: 'VED qayta hisoblayapti — narx endi amal qilmaydi',
+  calc_price_moved: 'VED javobi yoki ustama o‘zgardi — narx endi amal qilmaydi',
   empty: 'javob bo‘sh',
 };
 

@@ -258,8 +258,9 @@ export const SETTING_DEFAULTS = {
   /**
    * The markup the AI adds to the VED's answer before it tells the customer (SPEC-P2-v2 §2.1, his «foiz yokida fix
    * summa qoshib ayitshni belgilash»): `percent` or `fixed` dollars, and the value as a decimal STRING — empty =
-   * the AI states no calculation price (his own 💵 path, exactly as before). OWN-DOOR: written on /suhbatlar/ai by
-   * the AI's holder or a super_admin, audited, and a change retires what was priced on the old rule.
+   * NO markup, the AI quotes the VED's own figure (his answer of 2026-11-14, «bosh tursa usha yer ustama qoymasdan ozi
+   * narx beraversin» — SPEC-P2-v2 §00 A1; a value that cannot be read fails closed). OWN-DOOR: written on /suhbatlar/ai
+   * by the AI's holder or a super_admin, audited, and a change retires what was priced on the old rule.
    */
   agent_calc_markup_kind: 'percent' as 'percent' | 'fixed',
   agent_calc_markup_value: '',
@@ -455,14 +456,14 @@ export function fixedDollars(raw: string): number | null {
 }
 
 /**
- * The value alone, as `SETTING_VALIDATORS` sees it (no kind beside it): empty («off»), or a shape one of the two
- * kinds takes. Its own writer asks the whole rule (`calcMarkupRuleValid`).
+ * The value alone, as `SETTING_VALIDATORS` sees it (no kind beside it): empty («no markup», §00 A1), or a shape one of
+ * the two kinds takes. Its own writer asks the whole rule (`calcMarkupRuleValid`).
  */
 export function calcMarkupValueValid(raw: string): boolean {
   return raw === '' || percentHundredths(raw) !== null || fixedDollars(raw) !== null;
 }
 
-/** The whole rule: the kind, and a value that kind takes — or an empty value («off»). */
+/** The whole rule: the kind, and a value that kind takes — or an empty value («no markup», §00 A1). */
 export function calcMarkupRuleValid(kind: string, value: string): boolean {
   if (!calcMarkupKindValid(kind)) return false;
   if (value === '') return true;

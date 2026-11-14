@@ -9,6 +9,7 @@ import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { webLessons } from '@/modules/wms/agent/lessons';
 import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
+import { calcMarkupView, type CalcMarkupView } from '@/modules/wms/agent/calc-price';
 import { readSendCaps, SEND_CAP_BOUNDS } from '@/modules/wms/agent/send-caps';
 import { SITE_TARIFF } from '@/modules/wms/agent/site-estimate';
 import { currentTariffFingerprint, tariffUnconfirmed } from '@/modules/wms/agent/tariff-watch';
@@ -48,6 +49,8 @@ import {
   FactForm,
   LessonButton,
   LessonEditor,
+  MarkupConfirmButton,
+  MarkupForm,
   ModeSwitch,
   NumbersForm,
   OpenLimitForm,
@@ -366,12 +369,54 @@ function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
   );
 }
 
+/**
+ * «VED javobiga ustama» (SPEC-P2-v2 §2.1, his «foiz yokida fix summa»; §00 A1): the rule, an example worked by the same
+ * pure function the price is (`workedExample` — on a non-round figure, so the rounding shows), the empty case said in
+ * one line, whether he vouched for the rule (the first VED price on a new rule waits for his ✅ or this press), and what
+ * it cost today (§2.7).
+ */
+function MarkupCard({ t, view }: { t: T; view: CalcMarkupView }) {
+  return (
+    <section className="card space-y-2" data-testid="agent-markup">
+      <h2 className="section-title">{t('markupTitle')}</h2>
+      <p className="text-xs text-ink-500">{t('markupHint')}</p>
+      <ul className="space-y-1.5 text-sm [overflow-wrap:anywhere]">
+        <li data-testid="agent-markup-rule">
+          🧮 {t('markupRule')}:{' '}
+          <span className="font-semibold">{view.ruleWords ?? t('markupUnreadable')}</span>
+          {view.readable && (
+            <span className={view.confirmed ? 'text-xs text-good' : 'text-xs text-warn'} data-testid="agent-markup-confirmed">
+              {' '}
+              · {view.confirmed ? t('markupConfirmed') : t('markupUnconfirmed')}
+            </span>
+          )}
+        </li>
+        {view.example && <li data-testid="agent-markup-example">🔢 {view.example}</li>}
+        <li className="text-xs text-ink-500" data-testid="agent-markup-empty">
+          {t('markupEmptyLine', { example: view.emptyExample })}
+        </li>
+        <li className="text-xs text-ink-500" data-testid="agent-markup-cost">
+          {t('markupCost', {
+            offers: view.offersToday,
+            jobs: view.submittedToday,
+            calls: view.aiVedToday,
+            limit: view.aiVedLimit === null ? '∞' : String(view.aiVedLimit),
+          })}
+        </li>
+      </ul>
+      <MarkupForm kind={view.kind} value={view.value} />
+      {view.readable && !view.confirmed && <MarkupConfirmButton />}
+    </section>
+  );
+}
+
 async function KnowledgeSection({ t, config, viewer }: { t: T; config: AgentConfig; viewer: WebViewer }) {
   // A customer's fact is seen by whoever may read that chat (K10, `factSeenBySql`).
   const { facts, retired } = await webKbFacts(viewer);
   return (
     <>
       <RulesCard t={t} config={config} />
+      <MarkupCard t={t} view={await calcMarkupView()} />
       <p className="text-sm text-ink-500">{t('knowledgeHint')}</p>
       <FactForm />
       <section className="space-y-2" data-testid="agent-facts">

@@ -707,7 +707,7 @@ describe('the law’s figure is asked before the job goes, while the act is arme
     const lead = await freshLead();
     for (const body of lines) await inbound(peer, { leadId: lead }, body);
     const ctx = await loadContext(holderId, peer, null);
-    const env: ToolEnv = { ctx, day: '2026-11-14', aviaUsdPerKg: null, kb: async () => [], chinaPlaces: async () => new Set(), priceArmed: false, calcArmed };
+    const env: ToolEnv = { ctx, day: '2026-11-14', aviaUsdPerKg: null, kb: async () => [], chinaPlaces: async () => new Set(), priceArmed: false, calcArmed, calcPricing: false };
     return runTool('calc_checklist', { section: 'rastamojka', goods }, env);
   }
 

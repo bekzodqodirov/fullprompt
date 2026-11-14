@@ -428,11 +428,16 @@ describe('the plan — written beside the draft by the inbound run', () => {
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
     const owner = src.slice(src.indexOf('export async function runOwnerTriggered'));
     expect(owner.length).toBeGreaterThan(100);
-    // Every plan in the owner-triggered run is behind his answer: a hand-back's redraft never counts down (the
-    // behaviour is pinned in agent-owner-answer.integration: a hand-back run writes no verdict row).
+    // Every plan in the owner-triggered run is behind his answer — or the VED answer's price (SPEC-P2-v2 §2.3, a
+    // `calcAnswer` only `handleCalcAnswer` passes): a hand-back's redraft never counts down (the behaviour is pinned in
+    // agent-owner-answer.integration: a hand-back run writes no verdict row).
     const plans = owner.match(/autoPlanFor\(/gu) ?? [];
     expect(plans).toHaveLength(1);
-    expect(owner).toMatch(/const autoPlan = answer \? await autoPlanFor\(/u);
+    expect(owner).toMatch(/const autoPlan = answer \|\| calcAnswer \? await autoPlanFor\(/u);
+    const loop = readFileSync('src/modules/wms/agent/calc-loop.ts', 'utf8');
+    const handBack = loop.slice(loop.indexOf('export async function handleHandBack'), loop.indexOf('export function tooOldWords'));
+    expect(handBack.length, 're-anchor: handleHandBack').toBeGreaterThan(200);
+    expect(handBack).not.toMatch(/calcAnswer/u);
     const inbound = src.slice(src.indexOf('export async function handleInbound'), src.indexOf('export async function runOwnerTriggered'));
     expect(inbound).toMatch(/autoPlanFor\(/u);
   });

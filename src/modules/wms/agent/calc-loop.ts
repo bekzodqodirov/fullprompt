@@ -21,9 +21,10 @@ import { WAREHOUSE_SENTENCES } from './policy';
 import { ownerPolicyFor } from './policy-input';
 import { priceReplyText } from './price-reply';
 import { editAgentCopies } from './purge';
-import { JOB_AGENT_HAND_BACK, type AgentHandBackJob } from './queues';
+import { JOB_AGENT_CALC_ANSWER, JOB_AGENT_HAND_BACK, type AgentCalcAnswerJob, type AgentHandBackJob } from './queues';
 import { calcFromOurWarehouse } from './types';
 import { anchorAgeWords, anchorMaxAgeMsForTrigger } from './anchor-clock';
+import { isTashkentNight, nextTashkentMorning } from './send-step';
 import { AGENT_LIMITS } from './limits';
 import type { Ineligible } from './eligibility';
 import type { RunDeps, RunResult } from './run';
@@ -106,8 +107,10 @@ function labelOf(identity: Awaited<ReturnType<typeof chatIdentity>>): string {
 }
 
 export interface AnnounceDeps {
-  /** Tests: the hand-back job's sender (pg-boss's `enqueue` otherwise). */
-  enqueue?: (name: string, data: AgentHandBackJob, options: { retryLimit: number }) => Promise<void>;
+  /** Tests: the hand-back's and the VED answer's job sender (pg-boss's `enqueue` otherwise). */
+  enqueue?: (name: string, data: AgentHandBackJob | AgentCalcAnswerJob, options: { retryLimit: number; startAfter?: number }) => Promise<void>;
+  /** Tests: the moment the VED answered — the night rule's clock (SPEC-P2-v2 §2.3). */
+  now?: Date;
 }
 
 /**
@@ -139,14 +142,32 @@ export async function announceAgentCalc(
           return [];
         })
       : [];
+  // The VED's answer priced for the customer by the machine (SPEC-P2-v2 §2.3) — on «Готово» and a seal only, never the
+  // AI-VED estimate («rasmiy emas»), a recalculation or a hand-back. The line says what the AI will say, or why not;
+  // the job is QUEUED, never run inside the VED's request.
+  // A failure here must not cost him the announcement itself: he still gets the figure and the 💵 door.
+  const price =
+    event === 'done' || event === 'sealed'
+      ? await queueCalcAnswer(link, requestId, config, deps).catch((err: unknown) => {
+          logger.error({ err, requestId }, '[agent] calc answer not priced');
+          return null;
+        })
+      : null;
+  const priceLine = price ?? "Narx bersangiz bo'ladi.";
   const lines: Record<CalcEvent, string> = {
-    done: `💵 Hisob javobi keldi — ${who}\n${section}: ${detail.amountText ?? '—'}\nNarx bersangiz bo'ladi.`,
-    sealed: `💵 Hisob muhrlandi — ${who}\n${section}: ${detail.amountText ?? '—'}\nNarx bersangiz bo'ladi.`,
+    done: `💵 Hisob javobi keldi — ${who}\n${section}: ${detail.amountText ?? '—'}\n${priceLine}`,
+    sealed: `💵 Hisob muhrlandi — ${who}\n${section}: ${detail.amountText ?? '—'}\n${priceLine}`,
     estimate: `🤖 AI-VED taxmini (rasmiy emas) — ${who}\n${section}: ${detail.amountText ?? '—'}\nVED javobini kuting yoki shu bilan narx bering.`,
     returned: `🔁 VED hisobni qaytardi — ${who}\n${detail.reason ?? ''}`,
     recalc:
       `🔄 Qayta hisoblanmoqda — ${who}\n${section}: eski narx endi amal qilmaydi.` +
-      held.map((h) => `\n⚠️ Siz bergan narx hali ketmagan edi — endi yuborilmaydi: «${h.body}». Yangi javob kelganda narx bering.`).join(''),
+      held
+        .map((h) =>
+          h.ai
+            ? `\n⚠️ AI aytgan narx hali ketmagan edi — endi yuborilmaydi: «${h.body}». Yangi javob kelganda narx yana yoziladi.`
+            : `\n⚠️ Siz bergan narx hali ketmagan edi — endi yuborilmaydi: «${h.body}». Yangi javob kelganda narx bering.`,
+        )
+        .join(''),
   };
   await notifyStaffTelegram({
     userIds: [link.managerUserId],
@@ -209,11 +230,17 @@ export const REPLACED_ANSWER_LINE = '🔄 VED qayta hisoblayapti — bu javobga 
 async function retirePricesOf(
   link: { managerUserId: string; peerId: bigint },
   requestId: string,
-): Promise<{ body: string }[]> {
+): Promise<{ body: string; ai: boolean }[]> {
   const replaced = await chainAncestors(requestId);
   if (replaced.length === 0) return [];
-  const priced = sql`${agentDrafts.policy}->>'priceRequestId' IN (${sql.join(replaced.map((id) => sql`${id}`), sql`, `)})`;
-  const mine = and(eq(agentDrafts.managerUserId, link.managerUserId), eq(agentDrafts.peerId, link.peerId), eq(agentDrafts.kind, 'price'), priced);
+  const ids = sql.join(replaced.map((id) => sql`${id}`), sql`, `);
+  // His 💵 (`priceRequestId`) and the machine's VED price (`memory.calcPrices`, SPEC-P2-v2 §2.5) — whatever the
+  // draft's kind: a reply that quoted a request the correction replaces is retired as his figure is.
+  const priced = sql`(${agentDrafts.policy}->>'priceRequestId' IN (${ids})
+    OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${agentDrafts.policy}->'memory'->'calcPrices') = 'array'
+                                                       THEN ${agentDrafts.policy}->'memory'->'calcPrices' ELSE '[]'::jsonb END) e
+                WHERE e->>'requestId' IN (${ids})))`;
+  const mine = and(eq(agentDrafts.managerUserId, link.managerUserId), eq(agentDrafts.peerId, link.peerId), priced);
   const retired = await db
     .update(agentDrafts)
     .set({ status: 'superseded', policy: sql`${agentDrafts.policy} || ${JSON.stringify({ stale: 'recalc' })}::jsonb`, updatedAt: new Date() })
@@ -232,6 +259,9 @@ async function retirePricesOf(
       ),
     )
     .returning({ draftId: agentOutbox.draftId, body: agentOutbox.body });
+  const kinds = withdrawn.length
+    ? await db.select({ id: agentDrafts.id, kind: agentDrafts.kind }).from(agentDrafts).where(inArray(agentDrafts.id, withdrawn.map((w) => w.draftId)))
+    : [];
   const { refreshAgentCard } = await import('./card-io');
   for (const id of [...retired.map((r) => r.id), ...withdrawn.map((w) => w.draftId)]) {
     await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
@@ -258,7 +288,7 @@ async function retirePricesOf(
   await editAgentCopies(closed.map((c) => ({ ...c, payload: c.payload as Record<string, unknown> }))).catch((err: unknown) =>
     logger.warn({ err, requestId }, '[agent] replaced answer cards not edited'),
   );
-  return withdrawn.map((w) => ({ body: w.body }));
+  return withdrawn.map((w) => ({ body: w.body, ai: kinds.find((k) => k.id === w.draftId)?.kind !== 'price' }));
 }
 
 /** The hand-back run's instruction — the VED's reason is for the model, never for the customer word for word. */
@@ -370,6 +400,158 @@ async function tellNoQuestion(job: AgentHandBackJob, why: string): Promise<void>
   });
 }
 
+/**
+ * The VED answered a job the AI submitted (SPEC-P2-v2 §2.3): queue the customer's price — the VED figure plus his
+ * markup, computed by code (calc-price) and said by the model through `calc_price` — and return the line his
+ * announcement carries. Null: the announcement keeps today's «Narx bersangiz bo'ladi».
+ *
+ * Only when the markup can be read (an EMPTY one is «no markup», his §00 A1; garbage in the row is said and nothing is
+ * queued), the agent runs from this account, and the chain's SUBMITTING reply went (`calcLinkReplySent`, §1.2): «javob
+ * kelishi bilan aytaman» was said there and nowhere else. The «💵 Narx yozaman» door stays on the card whatever this
+ * says (judge regress 4). An answer in the night is queued for the next 08:30 Tashkent (judge regress 15): the run
+ * and its scheduling happen in the day.
+ */
+async function queueCalcAnswer(
+  link: { managerUserId: string; peerId: bigint },
+  requestId: string,
+  config: Awaited<ReturnType<typeof readAgentConfig>>,
+  deps: AnnounceDeps,
+): Promise<string | null> {
+  const { CALC_PRICE_REFUSAL_WORDS, calcPriceFor, readMarkupRule } = await import('./calc-price');
+  if ((await readMarkupRule()) === null) return `⚠️ AI narx aytmaydi: ${CALC_PRICE_REFUSAL_WORDS.markup_unreadable}. Narx bersangiz bo'ladi.`;
+  if (!agentRunning(config) || config.ownerUserId !== link.managerUserId) return null;
+  if (!(await calcLinkReplySent(requestId))) return null;
+  const now = deps.now ?? new Date();
+  const priced = await calcPriceFor({ managerUserId: link.managerUserId, peerId: link.peerId, requestId, now });
+  if (!priced.ok) return `🤖 AI narx aytmaydi: ${CALC_PRICE_REFUSAL_WORDS[priced.reason]}. Narx bersangiz bo'ladi.`;
+  const mark = priced.prices.find((p) => p.requestId === requestId) ?? priced.prices[0]!;
+  const job: AgentCalcAnswerJob = {
+    managerUserId: link.managerUserId,
+    peerId: String(link.peerId),
+    requestId: mark.requestId,
+    sourceKey: calcAnswerSourceKey(mark),
+  };
+  const startAfter = isTashkentNight(now) ? Math.max(1, Math.round((nextTashkentMorning(now).getTime() - now.getTime()) / 1000)) : undefined;
+  const send = deps.enqueue ?? (async (name, data, options) => (await import('../../platform/jobs/boss')).enqueue(name, data, options));
+  try {
+    await send(JOB_AGENT_CALC_ANSWER, job, { retryLimit: 0, ...(startAfter !== undefined ? { startAfter } : {}) });
+  } catch (err) {
+    logger.error({ err, requestId }, '[agent] calc answer not queued');
+    return "Narx bersangiz bo'ladi.";
+  }
+  const when = startAfter !== undefined ? ' (ertalab 08:30 dan keyin)' : '';
+  return `🤖 AI mijozga ustama bilan narx aytadi${when}:\n${priced.cardLine}\nO‘zingiz bermoqchi bo‘lsangiz — 💵.`;
+}
+
+/** The run's key for one standing anchor of a chain (§2.3): a later seal is its own key, a redelivery is the same. */
+export function calcAnswerSourceKey(mark: { requestId: string; anchor: 'seal' | 'answer'; anchorId: string }): string {
+  return `calc:${mark.requestId}:${mark.anchor === 'seal' ? mark.anchorId : 'answer'}`;
+}
+
+/** The VED answer run's instruction (§2.3) — the price is the tool's; the model adds no figure of its own. */
+export function calcAnswerInstruction(section: string | null): string {
+  return `VED javob berdi (${SECTION_WORDS[section ?? ''] ?? section ?? 'hisob'}). calc_price vositasini chaqir va mijozga shu narxni ayt; boshqa raqam qo'shma.`;
+}
+
+/**
+ * His own figure outranks the machine's (judge money 11, hands 5): the chat holds a 💵 draft for this chain — live,
+ * approved, or sent — or his «💵 Narx yozaman» is armed for one of its requests. The VED answer's run then stands down.
+ * The wait is read from the bot's own memory (waits.ts: memory stays the reader — the bot and this worker are one
+ * process; the table only survives a restart).
+ */
+export async function ownerPriceOnChain(managerUserId: string, peerId: bigint, memberIds: readonly string[]): Promise<boolean> {
+  if (memberIds.length === 0) return false;
+  const [drafted] = await db
+    .select({ id: agentDrafts.id })
+    .from(agentDrafts)
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, managerUserId),
+        eq(agentDrafts.peerId, peerId),
+        eq(agentDrafts.kind, 'price'),
+        inArray(agentDrafts.status, ['pending', 'editing', 'approved']),
+        sql`${agentDrafts.policy}->>'priceRequestId' IN (${sql.join(memberIds.map((id) => sql`${id}`), sql`, `)})`,
+      ),
+    )
+    .limit(1);
+  if (drafted) return true;
+  const { nowSec, waitsOfKind } = await import('../../platform/telegram/waits');
+  const at = nowSec();
+  return waitsOfKind<{ requestId?: unknown }>('agent_price').some(
+    (w) => w.entry.expiresAt > at && typeof w.entry.payload.requestId === 'string' && memberIds.includes(w.entry.payload.requestId),
+  );
+}
+
+export interface CalcAnswerDeps extends RunDeps {
+  /** Tests: the retry's sender (pg-boss's `enqueue` otherwise). */
+  requeue?: (job: AgentCalcAnswerJob, startAfterS: number) => Promise<void>;
+}
+
+/**
+ * The worker's side of `JOB_AGENT_CALC_ANSWER` (§2.3): the owner-triggered run, keyed by the standing anchor, marked
+ * `policy.calcAnswer` (K2's week, K1's forgiven head) and carrying an «o'zi yuborish» plan. His own 💵 on the chain
+ * stands it down; a refusal that passes by itself is tried once more; every outcome that leaves no draft is said to
+ * him beside the announcement, with the 💵 door.
+ */
+export async function handleCalcAnswer(job: AgentCalcAnswerJob, deps: CalcAnswerDeps = {}): Promise<RunResult> {
+  const peerId = BigInt(job.peerId);
+  const { chatCalcChains } = await import('./context');
+  const chain = (await chatCalcChains(job.managerUserId, peerId)).find((c) => c.memberIds.includes(job.requestId)) ?? null;
+  if (await ownerPriceOnChain(job.managerUserId, peerId, chain?.memberIds ?? [job.requestId])) {
+    await tellCalcAnswer(job, 'narxni o‘zingiz yozgansiz (💵) — sizning narxingiz ustun');
+    return { outcome: 'stood_down', reason: 'owner_price' };
+  }
+  const { passesByItself, runOwnerTriggered } = await import('./run');
+  const out = await runOwnerTriggered(
+    {
+      trigger: 'calc_answer',
+      managerUserId: job.managerUserId,
+      peerId,
+      sourceKey: job.sourceKey,
+      instruction: calcAnswerInstruction(chain?.section ?? null),
+      calcAnswer: { requestId: job.requestId },
+    },
+    deps,
+  );
+  if (out.outcome === 'refused' && passesByItself(out.reason) && (job.attempt ?? 0) < 1) {
+    const next: AgentCalcAnswerJob = { ...job, attempt: (job.attempt ?? 0) + 1 };
+    const send =
+      deps.requeue ??
+      (async (data: AgentCalcAnswerJob, startAfterS: number) =>
+        (await import('../../platform/jobs/boss')).enqueue(JOB_AGENT_CALC_ANSWER, data, { startAfter: startAfterS, retryLimit: 0 }));
+    await send(next, HAND_BACK_RETRY_S);
+    return out;
+  }
+  const why = calcAnswerWhy(out);
+  if (why) await tellCalcAnswer(job, why);
+  return out;
+}
+
+/**
+ * Why the VED answer's run left no price for the customer, in his words — or null when there is nothing to tell: a
+ * draft (its card says the rest), a duplicate delivery, the agent switched off. The «too old» age is the run's own
+ * clock (K2: a week).
+ */
+export function calcAnswerWhy(out: RunResult): string | null {
+  if (out.outcome === 'stood_down') {
+    if (out.reason === 'editing') return 'siz bu chatga javob yozayapsiz (✏️)';
+    return null;
+  }
+  if (out.outcome === 'no_reply') return 'AI javob kerak emas deb topdi';
+  return noQuestionWhy(out, anchorMaxAgeMsForTrigger('calc_answer'));
+}
+
+/** The VED answer's follow-up: no price was drafted for the customer, and why — with the 💵 door (`priceable`). */
+async function tellCalcAnswer(job: AgentCalcAnswerJob, why: string): Promise<void> {
+  const identity = await chatIdentity(job.managerUserId, BigInt(job.peerId));
+  await notifyStaffTelegram({
+    userIds: [job.managerUserId],
+    type: 'AgentCalcAnswered',
+    text: `🤖 AI mijozga VED narxini yozmadi — ${labelOf(identity)}\nSabab: ${why}.\nNarxni o‘zingiz bering: 💵.`,
+    extra: { requestId: job.requestId, priceable: true, event: 'done' },
+  });
+}
+
 /** `announceAgentCalc`, never throwing — the shape every calc hook calls. */
 export async function announceAgentCalcSafe(
   requestId: string,
@@ -408,7 +590,12 @@ export type PriceRefusal =
   | 'ambiguous_number'
   | 'editing_open'
   | 'no_anchor'
-  | 'recalculated';
+  | 'recalculated'
+  /**
+   * The AI already SENT the customer its price for this chain (SPEC-P2-v2 §2.3): asked first — «Mijozga AI narxi
+   * (1 359 $) ketgan; sizning narxingiz yuborilsinmi?» — and his figure drafts only on the next 💵 (`total` = the AI's).
+   */
+  | 'ai_price_sent';
 
 /** The two ways an ambiguous figure reads — `decimal` null when that reading is more than cents (no price). */
 export interface PriceReadings {
@@ -419,8 +606,9 @@ export interface PriceReadings {
 
 export type PriceDraftResult =
   | { ok: true; draftId: string }
-  | { ok: false; code: Exclude<PriceRefusal, 'ambiguous_number'> }
-  | { ok: false; code: 'ambiguous_number'; readings: PriceReadings };
+  | { ok: false; code: Exclude<PriceRefusal, 'ambiguous_number' | 'ai_price_sent'> }
+  | { ok: false; code: 'ambiguous_number'; readings: PriceReadings }
+  | { ok: false; code: 'ai_price_sent'; total: number; by: 'ai' | 'owner' };
 
 /** Above this a typed «price» is a slip, not a quote — and past it the grouping would print an exponent. */
 const PRICE_MAX_USD = 1_000_000_000;
@@ -450,6 +638,57 @@ export function typedPriceUsd(text: string): number | null {
   if (amount === null || !(amount > 0) || amount >= PRICE_MAX_USD) return null;
   if (Math.abs(Math.round(amount * 100) - amount * 100) > 1e-6) return null;
   return amount;
+}
+
+/** How long his first 💵 after the AI's sent price counts as asked (§2.3): the next one within it drafts. */
+export const OWNER_PRICE_ASK_MS = 30 * 60_000;
+
+function askedRecently(at: string | null): boolean {
+  if (!at) return false;
+  const t = Date.parse(at);
+  return Number.isFinite(t) && Date.now() - t <= OWNER_PRICE_ASK_MS;
+}
+
+/**
+ * The prices already approved for this chain (§2.3) — the machine's VED-price replies and his own 💵 — with where
+ * their outbox row stands and the client total each quoted (the AI's figure or his, never the floor). Newest send first.
+ */
+async function aiPricesOnChain(
+  managerUserId: string,
+  peerId: bigint,
+  requestId: string,
+): Promise<{ draftId: string; outbox: string | null; total: number; asked: string | null; by: 'ai' | 'owner' }[]> {
+  const { chatCalcChains } = await import('./context');
+  const members = (await chatCalcChains(managerUserId, peerId)).find((c) => c.memberIds.includes(requestId))?.memberIds ?? [requestId];
+  const ids = sql.join(members.map((id) => sql`${id}`), sql`, `);
+  const rows = (await db.execute(sql`
+    SELECT d.id::text AS draft_id, o.status AS outbox, d.policy->>'ownerPriceAsked' AS asked, d.kind,
+           CASE WHEN d.kind = 'price' THEN (d.policy->'memory'->'sources'->0->>'value')::numeric
+                ELSE (SELECT (e->>'total')::numeric FROM jsonb_array_elements(d.policy->'memory'->'calcPrices') e
+                       WHERE e->>'requestId' IN (${ids}) LIMIT 1) END AS total
+      FROM agent_drafts d
+      LEFT JOIN agent_outbox o ON o.draft_id = d.id
+     WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
+       AND d.status = 'approved'
+       AND (
+         (d.kind = 'price' AND d.policy->>'priceRequestId' IN (${ids}))
+         OR (d.final_body IS NULL AND jsonb_typeof(d.policy->'memory'->'calcPrices') = 'array'
+             AND EXISTS (SELECT 1 FROM jsonb_array_elements(d.policy->'memory'->'calcPrices') e WHERE e->>'requestId' IN (${ids})))
+       )
+     ORDER BY o.sent_at DESC NULLS LAST
+  `)) as unknown as { draft_id: string; outbox: string | null; asked: string | null; total: string | null; kind: string }[];
+  return [...rows].map((r) => ({ draftId: r.draft_id, outbox: r.outbox, total: Number(r.total ?? 0), asked: r.asked, by: r.kind === 'price' ? ('owner' as const) : ('ai' as const) }));
+}
+
+/** An AI offer stands on the card for this job (`agent_offers`, 0149 — written by the after-sent step). Never throws. */
+async function aiOfferOnRequest(requestId: string): Promise<boolean> {
+  try {
+    const rows = (await db.execute(sql`SELECT EXISTS (SELECT 1 FROM agent_offers WHERE request_id = ${requestId}::uuid) AS ok`)) as unknown as { ok: boolean }[];
+    return [...rows][0]?.ok === true;
+  } catch {
+    // One migration behind there is no table — and no AI offer.
+    return false;
+  }
 }
 
 /**
@@ -494,6 +733,31 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
   }
   const amount = typedPriceUsd(text);
   if (amount === null) return { ok: false, code: 'bad_number' };
+  // The AI's price for this chain (SPEC-P2-v2 §2.3): his figure outranks it — a live one is superseded by the draft
+  // below (one live draft per chat), an approved one still waiting is taken back; one already SENT is asked about
+  // first, and his figure drafts on the next press.
+  const ai = await aiPricesOnChain(link.managerUserId, link.peerId, requestId);
+  // A price already SENT for this chain — the AI's, or his own earlier 💵 (a second 💵 on one line would otherwise go
+  // too: the live head forgives our own sends for an owner-started reply, K1) — is asked about first.
+  const aiSent = ai.find((x) => x.outbox === 'sent');
+  if (aiSent && !askedRecently(aiSent.asked)) {
+    await db
+      .update(agentDrafts)
+      .set({ policy: sql`${agentDrafts.policy} || ${JSON.stringify({ ownerPriceAsked: new Date().toISOString() })}::jsonb` })
+      .where(eq(agentDrafts.id, aiSent.draftId));
+    return { ok: false, code: 'ai_price_sent', total: aiSent.total, by: aiSent.by };
+  }
+  for (const w of ai.filter((x) => x.outbox === 'agent' && x.by === 'ai')) {
+    const [gone] = await db
+      .update(agentOutbox)
+      .set({ status: 'cancelled', lastError: 'owner_price: his 💵 on the request the AI priced' })
+      .where(and(eq(agentOutbox.draftId, w.draftId), eq(agentOutbox.status, 'agent')))
+      .returning({ id: agentOutbox.id });
+    if (gone) {
+      const { refreshAgentCard } = await import('./card-io');
+      await refreshAgentCard(w.draftId).catch((err: unknown) => logger.warn({ err, draftId: w.draftId }, '[agent] card not refreshed'));
+    }
+  }
   const [editing] = await db
     .select({ id: agentDrafts.id })
     .from(agentDrafts)
@@ -574,7 +838,9 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
       canary: '',
     },
     card: { customerLabel: labelOf(identity), lastOut: null, customerLines: [] },
-    notes: ['Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi.'],
+    // An AI offer already on the card for this job (SPEC-P2-v2 §2.4) stays there — said, so «nothing is written» is
+    // never read as «the card is empty».
+    notes: [(await aiOfferOnRequest(requestId)) ? 'Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi; AI yozgan narx kartada qoladi.' : 'Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi.'],
     priceRequestId: requestId,
   };
   const written = await createDraft({

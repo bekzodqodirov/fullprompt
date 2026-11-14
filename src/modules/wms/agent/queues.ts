@@ -20,6 +20,11 @@ export const JOB_AGENT_HAND_BACK = 'agent.hand_back';
  * SPEC-P1-v2 §2.2; round 101, #706: a model run is never awaited on the poller).
  */
 export const JOB_AGENT_OWNER_ANSWER = 'agent.owner_answer';
+/**
+ * The VED answered (Готово) or sealed a job the AI submitted, whose submitting reply went (SPEC-P2-v2 §2.3): the
+ * customer's price — the VED figure plus his markup — is drafted off the VED's button, never inside its request.
+ */
+export const JOB_AGENT_CALC_ANSWER = 'agent.calc_answer';
 
 /** A customer's message landed on the agent owner's account. */
 export interface AgentInboundJob {
@@ -93,6 +98,19 @@ export interface AgentHandBackJob {
   requestId: string;
   reason: string;
   /** 0 (absent) from the VED's button; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
+  attempt?: number;
+}
+
+/**
+ * A VED answer to price for the customer (§2.3). `sourceKey` is the run's key — `calc:<requestId>:<versionId|answer>`,
+ * one draft per standing anchor of a chain: a correction's later seal is its own key, a redelivery is not a second bill.
+ */
+export interface AgentCalcAnswerJob {
+  managerUserId: string;
+  peerId: string;
+  requestId: string;
+  sourceKey: string;
+  /** 0 (absent) from the VED's press; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
   attempt?: number;
 }
 

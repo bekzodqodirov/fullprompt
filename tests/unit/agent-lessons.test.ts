@@ -94,7 +94,7 @@ describe('which lessons the prompt carries (spec §3.3 — the cap, binding)', (
 
 describe('where the lessons sit: the cached head, and nowhere else (spec §3.3 — placement)', () => {
   const lessons = [lesson(2, 'Mijoz «salom» desa, darrov narx so‘rama.'), lesson(1, 'Tovar nomini bilmay turib hisoblatishga yuborma.')];
-  const base = { styleGuide: null, facts: [], priceArmed: false } as const;
+  const base = { styleGuide: null, facts: [], priceArmed: false, calcPricing: false } as const;
   const bare = stableHead({ ...base, lessons: [] });
   const taught = stableHead({ ...base, lessons });
 
@@ -615,8 +615,10 @@ describe('the wiring (spec §3.1, §3.2, §3.5, §6)', () => {
     expect(job).toMatch(/sourceKey: `lesson:\$\{lesson\.id\}`/u);
     expect(job).toMatch(/trigger: 'owner_edit'/u);
     const run = strip(readFileSync('src/modules/wms/agent/run.ts', 'utf8'));
-    // The plan is the ANSWER's alone: a lesson's rewrite and a hand-back's question get null.
-    expect(run).toMatch(/const autoPlan = answer \? await autoPlanFor\(/u);
+    // The plan is the ANSWER's and the VED answer's price's (SPEC-P2-v2 §2.3) alone: a lesson's rewrite and a hand-back's
+    // question get null — neither passes a `calcAnswer`.
+    expect(run).toMatch(/const autoPlan = answer \|\| calcAnswer \? await autoPlanFor\(/u);
+    expect(job).not.toMatch(/calcAnswer/u);
     const jobs = strip(readFileSync('src/modules/wms/agent/jobs.ts', 'utf8'));
     expect(jobs).toMatch(/job\.data\.lessonId \? await handleLessonRedraft\(job\.data\) : await handleOwnerAnswer\(job\.data\)/u);
   });

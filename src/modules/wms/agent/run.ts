@@ -22,7 +22,8 @@ import { askedLocation, customerNumberSources, policyFor, splitUrls, type Policy
 import { chatBlock, runTail, stableHead } from './prompt';
 import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { capReached, dayRunCounts } from './today';
-import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
+import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecsFor, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
+import { calcPricingFor } from './calc-price';
 import { namedOrigins, originMentions } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
@@ -207,6 +208,11 @@ export async function runLoop(input: {
    */
   calcArmed: boolean;
   /**
+   * The run quotes VED answers with his markup (SPEC-P2-v2 §2.3, calc-price `calcPricingFor`), read ONCE: `calc_price`
+   * is offered, rule 11 and the chat's calc line say the price is the tool's. Off, the tools and both lines are today's.
+   */
+  calcPricing: boolean;
+  /**
    * His lessons (spec §3.3, lessons `promptLessons`), read ONCE for the run beside the general facts: every round's
    * head is then the same bytes — an edit on the page mid-run cannot move the cache between two rounds.
    */
@@ -214,7 +220,8 @@ export async function runLoop(input: {
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
-  const opening = input.instruction ? `${chatBlock(ctx)}\n\nVAZIFA: ${input.instruction}` : chatBlock(ctx);
+  const chat = chatBlock(ctx, { calcPricing: input.calcPricing });
+  const opening = input.instruction ? `${chat}\n\nVAZIFA: ${input.instruction}` : chat;
   // The chat is the same bytes in every round of this run: cached once, read at a tenth of the price after
   // (#1622 — a hundred messages re-billed per tool round is what would have made the wider window expensive).
   const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: opening, cache: true }] }];
@@ -235,6 +242,7 @@ export async function runLoop(input: {
     chinaPlaces: () => (places ??= ourChinaPlaces()),
     priceArmed: input.priceArmed,
     calcArmed: input.calcArmed,
+    calcPricing: input.calcPricing,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
@@ -244,11 +252,12 @@ export async function runLoop(input: {
         styleGuide: input.config.styleApprovedAt ? input.config.styleGuide : null,
         facts: input.facts,
         priceArmed: input.priceArmed,
+        calcPricing: input.calcPricing,
         lessons: input.lessons,
       }),
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
-      tools: TOOL_SPECS,
+      tools: toolSpecsFor({ calcPricing: input.calcPricing }),
       maxTokens: 1_500,
     });
     if (res.usage) {
@@ -506,7 +515,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     // his calculation act beside it (SPEC-P2-v2 §1.6).
     const act = { priceArmed: await priceActArmed() };
     const calcArmed = await calcActArmed();
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, lessons: taught.lessons });
+    // …and whether it quotes the VED's answers with his markup (SPEC-P2-v2 §2.3): a chat with an answered linked job.
+    const calcPricing = await calcPricingFor(ctx);
+    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, calcPricing, lessons: taught.lessons });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -540,7 +551,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
     if (late) notes.unshift(late);
 
-    const input = { runId, ctx, compose: c, policy, memory, actions, notes, lessonSet: taught.mark };
+    const input = { runId, ctx, compose: c, policy, memory, actions, notes, lessonSet: taught.mark, calcCardLine: calcCardLineOf(loop.outcomes) };
     // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
@@ -649,7 +660,10 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     hasEstimate: !rail && loop.outcomes.some((o) => o.estimate === true),
     // …and a truck figure priced FROM our China warehouses asks for the
     // condition and the factory leg too (his third set «3»).
-    fromOurWarehouse: !rail && loop.outcomes.some((o) => o.estimate === true && o.fromOurWarehouse === true),
+    // A VED answer's price (SPEC-P2-v2 §2.3) priced a job submitted from our warehouses: the same two sentences — the
+    // condition the VED priced on reaches the customer by the rule that already holds a truck estimate to it.
+    fromOurWarehouse:
+      !rail && loop.outcomes.some((o) => o.fromOurWarehouse === true && (o.estimate === true || (o.ok && (o.calcPrices?.length ?? 0) > 0))),
     // The chat is the flight's and no truck's (his fourth set «2»): the reply
     // may state no China address — the flight's is his to give. The one road
     // rule the card's question asks too (`chatRoadOf`, review D4, R1-R2).
@@ -664,6 +678,8 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // Every figure this run QUOTED (spec §1.3): what the send step, his ✅ and the machine's press price again with
     // the same function (estimate.ts `reprice`). Never in a rail chat — there no machine figure goes out at all.
     estimates: rail ? [] : loop.outcomes.flatMap((o) => (o.priced ? [o.priced] : [])),
+    // …and every VED answer `calc_price` priced (SPEC-P2-v2 §2.3) — the CLIENT price only (law 4). Never in a rail chat.
+    calcPrices: rail ? [] : loop.outcomes.flatMap((o) => (o.ok && o.calcPrices ? o.calcPrices : [])),
     // The table is China → Tashkent (spec §1.8): the customer named another city or region anywhere in what he
     // wrote — the window and the burst — and an estimate reply then waits for his ✅ (a gate fact, never a block).
     foreignDestination: namesForeignPlace([...ctx.messages.filter((m) => m.direction === 'in'), ...ctx.burst].map((m) => m.body)),
@@ -1418,6 +1434,14 @@ export interface OwnerAnswerInput {
   text: string;
 }
 
+/** The holder's card line of the run's last answered `calc_price` call (SPEC-P2-v2 §2.2) — null when it made none. */
+export function calcCardLineOf(outcomes: readonly ToolOutcome[]): string | null {
+  return [...outcomes].reverse().find((o) => o.ok && (o.calcPrices?.length ?? 0) > 0 && o.calcCardLine)?.calcCardLine ?? null;
+}
+
+/** The card's note on a VED answer's reply that quotes no `calc_price` figure (SPEC-P2-v2 §2.3) — a note refuses the press. */
+export const CALC_PRICE_UNSAID = 'AI narxni aytmadi — 💵 bilan o‘zingiz bering.';
+
 /** The card's line on a redraft his answer could not make a reply of (a forcing rule asked him again). */
 export const ANSWER_STILL_HIS =
   '✍️ Javobingiz olindi, lekin bu savolni AI o‘zi yozmaydi (temir yo‘l narxi yoki avia manzili) — «✏️ O‘zgartirish» bilan o‘zingiz yozing.';
@@ -1451,6 +1475,13 @@ export async function runOwnerTriggered(
      * just judged wrong comes back as an ordinary card.
      */
     lesson?: { draftId: string; lessonId: string } | null;
+    /**
+     * The VED answered a job this chat submitted (SPEC-P2-v2 §2.3, calc-loop `handleCalcAnswer`): the draft is marked
+     * `policy.calcAnswer` (K2's week-long clock, K1's forgiven head) and carries an «o'zi yuborish» plan — the price
+     * goes by itself only once he ticked «VED narxi» and every fact passes. A run that made no ok `calc_price` call
+     * leaves a note on the card, which refuses the machine's press.
+     */
+    calcAnswer?: { requestId: string } | null;
   },
   deps: RunDeps = {},
 ): Promise<RunResult> {
@@ -1542,6 +1573,7 @@ export async function runOwnerTriggered(
       instruction: input.instruction,
       priceArmed: act.priceArmed,
       calcArmed: await calcActArmed(),
+      calcPricing: await calcPricingFor(ctx),
       lessons: taught.lessons,
     });
     settle = {
@@ -1565,6 +1597,9 @@ export async function runOwnerTriggered(
     if (rail) notes.push(rail);
     // A forcing rule turned his answer's redraft back into a question (§2.2): said on the card, never a loop.
     if (answer && c.forcedQuestion) notes.push(ANSWER_STILL_HIS);
+    const calcAnswer = input.calcAnswer ?? null;
+    // The VED's answer, and the reply states no price the tool made (§2.3): his 💵, never the machine's press.
+    if (calcAnswer && !loop.outcomes.some((o) => o.ok && (o.calcPrices?.length ?? 0) > 0)) notes.push(CALC_PRICE_UNSAID);
     const fromAnswer = answer
       ? {
           questionDraftId: answer.questionDraftId,
@@ -1602,10 +1637,13 @@ export async function runOwnerTriggered(
       fromAnswer,
       fromLesson: lesson,
       lessonSet: taught.mark,
+      calcAnswer,
+      calcCardLine: calcCardLineOf(loop.outcomes),
     };
-    // His answer's redraft alone carries a plan (§2.2) — judged on the very row about to be written, as the inbound
-    // run's. A lesson's rewrite carries none (§3.4), and neither does a hand-back's question.
-    const autoPlan = answer ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
+    // His answer's redraft carries a plan (§2.2), and the VED answer's price (SPEC-P2-v2 §2.3) — judged on the very row
+    // about to be written, as the inbound run's. A lesson's rewrite carries none (§3.4), and neither does a hand-back's
+    // question.
+    const autoPlan = answer || calcAnswer ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
     if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
     const written = await writeDraft({
       ...draftInput,
