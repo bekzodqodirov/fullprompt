@@ -126,7 +126,10 @@ beforeAll(async () => {
       ownerUserId: ownerId,
       sessionExclusiveAt: new Date(),
       sessionExclusiveBy: ownerId,
-      startedAt: new Date(Date.now() - 30 * 86_400_000),
+      // A literal, before every clock this file fakes: a start counted back from the REAL clock moved closer to
+      // them every day, and once it stood within the ramp's 14 days of a probe moment the day's ceiling fell to
+      // one send and the second ✅ read `budget_spent` (it failed from 2026-11-14 ~15:00 UTC, on main too).
+      startedAt: T('2026-09-01T00:00:00'),
       dailyDraftCap: 150,
       dailyTokenCap: 3_000_000,
     })
