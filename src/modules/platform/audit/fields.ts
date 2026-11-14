@@ -168,6 +168,11 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // prices (zone and date unchanged) is a visible change, not an empty one.
   tariffBands: 'tariffBands',
 
+  // The AI seller's own stage move (SPEC-P2-v2 §3.3): the row has no actor, and says so — the machine (`via`) and
+  // the account it spoke from (`holder`, a person, so named).
+  via: 'via',
+  holder: 'holder',
+
   // Housekeeping
   note: 'note',
   notes: 'note',
@@ -253,7 +258,21 @@ export const AUDIT_FIELD_REFS: Record<string, AuditRefKind> = {
   cargoStampedTo: 'user',
   // Who took a calculation off the queue — a person, so named.
   calcTakenBy: 'user',
+  // The account the AI seller spoke from when it moved a lead (§3.3).
+  holder: 'user',
 };
+
+/**
+ * The `via` an audit row carries when the AI seller wrote it with no actor (SPEC-P2-v2 §3.3) — the stage mover
+ * (crm/service `moveLeadByMachine`) writes it, the History names such a row «AI sotuvchi» (`auditByAi`), and part 3
+ * counts «leads moved» by it.
+ */
+export const AUDIT_VIA_AI = 'ai';
+
+/** Was this row written by the AI seller — no actor, and `via: 'ai'` in what it recorded? */
+export function auditByAi(row: { actorId: string | null; after: Record<string, unknown> | null }): boolean {
+  return row.actorId === null && row.after !== null && row.after.via === AUDIT_VIA_AI;
+}
 
 /** Only a uuid is looked up; codes and names in the same columns pass through. */
 export function isUuidShaped(value: unknown): value is string {

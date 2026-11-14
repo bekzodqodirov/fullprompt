@@ -369,6 +369,23 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## To‘liq AI sotuvchi, 2-qism (2026-11-15, 0149) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0149** — deploydan keyin son **150** bo‘ladi. Ikkita yangi jadval (AI yozgan narxlar belgisi va
+qaytarilgan hisob vazifalari), «o‘zi yuborish» turlariga «Hisoblatish» va «VED narxi» qo‘shiladi (**belgilanmagan**).
+Mavjud jadvalga ustun qo‘shilmaydi. **tg-listen QAYTA QURILISHI SHART.**
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+3. Sonni o‘qing — **150**. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+4. «Suhbatlar → AI sotuvchi» sahifasi:
+   - **Ustama**: foiz yoki qat’iy summa yozing, «✅ Ustama to‘g‘ri» ni bosing (bo‘sh qolsa — ustamasiz).
+   - **«Bu akkaunt — AI sotuvchi»** (super admin, bir marta) — AI egasi +998902405077 bo‘lganda.
+   - «Hisoblatish» va «VED narxi» kataklari — xohlaganingizda belgilaysiz.
+5. «CRM → Sozlamalar»: «AI birinchi javob berdi» va «AI narx aytdi» bosqichlarini tanlang (ixtiyoriy).
+6. Kuzating: `docker compose logs -f app | grep -E "\[agent\]"` — birinchi o‘zi yuborilgan hisoblatish va birinchi VED narxi.
+
 ## To‘liq AI sotuvchi, 1b (2026-11-14, migratsiyasiz) — tekshiruv tartibi
 
 Migratsiya **yo‘q** — son **149** bo‘lib qoladi. Shuning uchun sanash bu deployni tekshirmaydi: **`/api/version`

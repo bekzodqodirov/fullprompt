@@ -9785,3 +9785,85 @@ within 14 days of the probe moments the second ✅ read `budget_spent` — red f
 the date alone. The start is a literal before every faked clock (722f2356). (2) m9zzzg's lesson carried the run id as
 digits, and pass 7 reads a bare uncounted figure in a lesson as a price; the tag is spelled in letters (7f1dfd1c).
 RULE (#1063's again): a test that fakes the clock fakes EVERY clock it compares against, or uses literals on both sides.
+## To'liq AI sotuvchi, 2-qism — the calculation sent by itself, the VED's answer quoted with his markup, the card and the funnel (2026-11-14 → 11-15; migration 0149 `agent_full_p2`, `when` …128, ledger 150; numbered #1791-#1799; spec `SPEC-P2-v2` §00 binding, as built in `docs/AI-SOTUVCHI.md` §18.8)
+
+**#1791 — His part 2, and his two answers that changed the design.** Part 2 of his «ful ai sotuvchi»: the AI submits
+the calculation to the VED by itself, quotes the VED's answer to the customer with HIS markup, writes that price onto
+the card and moves the lead through the funnel. The spec was judged by four lenses before code (57 objections), and
+his answers of 2026-11-14 were written into it as a binding §00 while the build ran: **A1** «agarda bo'sh tursa usha yer
+ustama qoymasdan ozi narx beraversin» — an EMPTY markup is a live rule `none` (the VED's own figure, rounded up to
+whole dollars), not «off»; only an unreadable stored value fails closed (`markup_unreadable`); **A2** «buni javobini 2
+da aytdim» — the markup goes on the WHOLE VED figure in every section (a podklyuch seal's whole total, a podklyuch
+«Готово», a yolkira job the VED answered); the refusals `markup_off`, `podklyuch_answer`, `yolkira_job` were retired
+before they were built; **A3** every other question as its ⭐ (both boxes unticked, the 100 open-calc cap for the AI
+seat, the 7-day clock, the 2-message streak rule unchanged). Built as four sequential packages on `full-p2`.
+
+**#1792 — P1, the kernel (494821e1): 0149 adds no column to an existing table.** The kinds CHECK of
+`agent_auto_config` admits `calc` and `calc_price` (the stored row unchanged — both boxes ship unticked);
+`agent_offers` marks every offer the MACHINE wrote, in the offer's own transaction (a machine offer is never
+commission); `calc_return_tasks` (fix pass 4) binds a «↩️ Ma'lumot to'ldiring» task to its returned request. Probe
+`agentFullP2Ready()`. The AI SEAT is a settings row (`agent_seat_user_id`, super_admin only, the holder only) — read by
+`holderIsSeat`; ONE open-calc cap `openCalcCapFor` (the seat's 100, everyone else 20) read by the queue, the card, the
+bot and the page; ONE anchor clock (`anchor-clock.ts`: a week for his 💵 and a VED-answer reply, 24 hours otherwise)
+asked by every door including the sweep's SQL; K1: the live head forgives our OWN sends for an owner-started draft (his
+💵, the hand-back question, a VED-answer reply) — our «yubordim» no longer cancels the price he typed after it; the
+machine's stage mover `moveLeadByMachine` (forward only, a closed list of three stage settings, never won or lost).
+
+**#1793 — P2, the calculation sent by itself (a3a8b062).** A draft whose only act is a calc submit is judged as `calc`
+by its ACTION, never the model's label, and only while «Hisoblatish» is ticked. Five facts refuse it, each read at the
+scheduling AND at the press (`calcSubmitFacts`): `calc_identity`, `calc_foreign`, `calc_refused`, `calc_recent` (any
+request of the section within 14 days, any member still open), `calc_file_missing`. The landing race is closed (the
+press re-asks immediately before landing; the link is written by the landing; a lost press after a landing is
+`landed_unsent`, never a second job). The chat's files since its last job (newest ten) are COPIED onto the intake note.
+The hand-back loop: a submit whose chat holds a RETURNED job of the section lands on THAT card and closes its ↩️ task.
+Checklist goods carry their unit through the door's own `normalizeRowUnit`; armed, each line is coded from memory and
+the book, and the law's figure is asked in the unit's words.
+
+**#1794 — P3, the VED's answer quoted with his markup (0f97ebc3).** `calc-markup.ts` (pure, integer cents, BigInt,
+⌈⌉ to whole dollars; percent, fixed, or `none`); `calc-price.ts` is the ONE agent file that reads a calculation's money
+— only this chat's linked chains, each by its newest member's own anchor (a current unsuperseded seal with no
+concession, or a standing positive USD «Готово» within its validity). The model says it through ONE closed tool
+`calc_price` and never sees the floor; the job `agent.calc_answer` is queued off the VED's press (never a model run in
+the VED's request; night answers at 08:30); every press, his ✅ and every send step re-price it (`calc_price_moved`).
+`setCalcMarkup` (holder or super_admin, audited) and «✅ Ustama to'g'ri» — a changed rule waits for his ✅ once.
+
+**#1795 — P4, the card and the funnel (8a2c67af).** What a reply settles once it REACHED the customer (the after-sent
+job, keyed by the outbox row): the machine's VED price written as the card's offer through `recordOffer` (only while
+the account is the AI seat and still the holder, on a card the machine may touch, the price still standing), marked in
+`agent_offers` and excluded from `payableOffersSql` AFTER the per-request rank; the lead moved to «AI birinchi javob
+berdi» / «AI narx aytdi» (two new /crm/settings stages, his Q12 ⭐: a truck estimate while a VED job is open moves
+nothing). The model reads the lead's stage name on the chat block.
+
+**#1796 — Reviewed as built and fixed three times (c35e0d60, 51a51c09, 95d833b6).** Four lenses (send, regress, crm,
+tests — 34 findings, 2 blockers) then a check of the fixes (13 more, 35 of 36 upheld across both). The rules that came
+out of them: **his 💵 outranks the machine everywhere** (`ownerPricedChain` — given, waiting, superseded by the customer's
+line, night-held, or being typed, read from the waits' table in the listener too); the chain is priced only where its
+submitting reply went in the machine's own words; the draft keeps only the prices its words STATE; **a person's newer
+offer on the card stands** (`calc_person_offer`); the machine's offer, its mark, its audit and the card's price are ONE
+transaction; a second 💵 replaces the first only when approved; two calendar time bombs defused (the same ramp clock as
+#1790, found independently).
+
+**#1797 — Merged with part 1b, checked, fix passes 4-5 and two more (d44bb4c2 → d66a58db).** Main (part 1 + 1b) merged
+in with four conflicts, each keeping both sides; the reader corpus ran at 0 dangerous let through with part 2 in. The
+merged tree's check (send / seams / regress; 6 of 7 upheld): the VED answer's run superseded whatever reply the chat
+held; a «Готово» carrying the VED's note to the seller was priced as the whole price; the hand-back loop closed EVERY ↩️
+task on the card; a ✍️/📝 rewrite of a VED-price card lost its marks; the words said «ustama» over an empty markup. Fix
+pass 4 (47507ee9) — and its own check found its stand-down dropped the price for good beside any waiting reply: fix pass
+5 (60ce2142) gives the decision one pure home (`calcAnswerOverLive`: already priced / own card / takes over the
+machine's plain reply drafted before the answer / held and RE-QUEUED until that reply is decided, a week at most).
+Then (d66a58db): **any** non-blank seller note keeps the machine from quoting (`answer_noted`, fail-closed — the note may
+make the figure conditional), so the VED is now told at the box itself; and the note reaches him clipped by code points
+(`clipText` — a halved emoji had lost the whole announcement). STATED: a ↩️ task opened before 0149 has no binding row,
+so on deploy day such a job is never looped (it waits for his ✅); a VED who habitually writes «👍» turns the machine
+price off for every answer they give.
+
+**#1798 — Deploy day, as he will see it.** Ledger 150; tg-listen MUST be rebuilt (the send step re-prices and forgives
+our own sends). Ships OFF: «Hisoblatish» and «VED narxi» unticked, no AI seat named (every cap 20), the two AI stages
+empty. **The markup ships EMPTY = no markup**: from the deploy a VED answer to an AI-submitted job becomes a PRICE card
+at the VED's own figure («ustamasiz») for his ✅ — it was the bare 💵 card — so he writes his markup first thing. His
+💵 is accepted up to 7 days after the request (was 24 hours) and is no longer cancelled by our own «yubordim».
+
+**#1799 — Verification.** The local CI-order run at 47507ee9 (fix pass 4) on a fresh gsr_ci: migrate 150, typecheck 0,
+lint 0, vitest 949 files / 19,476 tests, build 0, e2e 527 + 1 skipped; fix pass 5 and d66a58db ran their gates (the
+agent suites and the whole tests/unit — 14,726 tests — and the price file fresh); the run at d66a58db and GitHub's CI on
+the PR head decide the merge. Part 1b's own run, for the record: b3986e60, vitest 940 / 19,138, e2e 527 + 1 skipped.

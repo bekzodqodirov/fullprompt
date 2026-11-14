@@ -157,6 +157,50 @@ export function __pretendAgentFullP1Behind(): void {
   fullP1Ready = false;
 }
 
+let fullP2Ready = false;
+let fullP2Behind = false;
+
+/**
+ * Does 0149 exist — the full AI seller's part 2 (SPEC-P2-v2 §4.2)? The side table of the machine's offers, and the
+ * categories CHECK that admits `calc` and `calc_price`: a server whose table is there but whose CHECK is not would
+ * refuse the very ticks this asks for. Cached TRUE only (the `agentFullP1Ready` idiom). Asked by `setAutoCategories`
+ * (ticking either box one migration behind is refused in words), the offer step's writer and the four
+ * `payableOffersSql` consumers; everything else part 2 keeps lives in settings rows and tables that always exist.
+ * And the ↩️ task's request (`calc_return_tasks`, fix pass 4): its writer (`returnCalcRequest`) and its two readers (the
+ * hand-back loop's `returnTaskOpen`, `closeReturnTasks`) — one migration behind, no task is bound and no loop is taken.
+ */
+export async function agentFullP2Ready(): Promise<boolean> {
+  if (fullP2Behind) return false;
+  if (fullP2Ready) return true;
+  if (!(await agentFullP1Ready())) return false;
+  try {
+    const rows = await db.execute<{ ok: boolean }>(sql`
+      SELECT to_regclass('public.agent_offers') IS NOT NULL
+         AND to_regclass('public.calc_return_tasks') IS NOT NULL
+         AND coalesce((SELECT pg_get_constraintdef(oid) LIKE '%''calc''%' AND pg_get_constraintdef(oid) LIKE '%''calc_price''%'
+                         FROM pg_constraint
+                        WHERE conname = 'agent_auto_config_categories_check'
+                          AND conrelid = 'public.agent_auto_config'::regclass), false) AS ok`);
+    fullP2Ready = rows[0]?.ok === true;
+  } catch (err) {
+    logger.warn({ err }, '[agent] 0149 not checked');
+    return false;
+  }
+  return fullP2Ready;
+}
+
+/** Tests: forget the cached answer (and any pretence below). */
+export function __forgetAgentFullP2Ready(): void {
+  fullP2Ready = false;
+  fullP2Behind = false;
+}
+
+/** Tests: a server one migration behind 0149 — the probe answers «no» until forgotten (the P1 idiom). */
+export function __pretendAgentFullP2Behind(): void {
+  fullP2Behind = true;
+  fullP2Ready = false;
+}
+
 /** Why the layer was disarmed — the person's press, the agent's «off», or a step-down (§18.3). */
 export type AutoDisarmReason =
   | 'manual'
@@ -278,13 +322,17 @@ export function mayRunAgent(
 export type AgentConfigRefusal =
   | 'not_ready'
   | 'forbidden'
+  /** The AI seat names the account the AI speaks from, and no one else (SPEC-P2-v2 K4). */
+  | 'seat_not_holder'
   | 'not_account_holder'
   | 'auto_not_in_phase1'
   | 'no_owner'
   | 'session_not_confirmed'
   | 'owner_not_connected'
   | 'turn_off_first'
-  | 'bad_value';
+  | 'bad_value'
+  /** «✅ Ustama to'g'ri» pressed on a page that showed another rule than the one stored now (fix pass 1, finding 9). */
+  | 'markup_changed';
 
 export class AgentConfigError extends Error {
   constructor(public readonly code: AgentConfigRefusal) {
@@ -561,6 +609,183 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
     await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
   }
   return out.config;
+}
+
+/**
+ * «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4): the super_admin names the account the AI speaks from as
+ * the AI's own seat — a settings row (`agent_seat_user_id`, platform/settings/agent-seat.ts), never a column on
+ * agent_config. The named user must BE the current holder at the press: the config row is taken FOR UPDATE first,
+ * so a `setAgentOwner` racing it cannot slip a different holder in between the check and the write. Null clears it
+ * (the row goes). Audited under the settings' one entity id with the key in before/after, like every settings
+ * write. Re-pointing the holder later does NOT clear it: the page says «AI o'rni boshqa foydalanuvchida», and every
+ * seat-only act stops (`holderIsSeat` is false) until he names the seat again.
+ */
+export async function setAgentSeat(actor: AgentActor, userId: string | null, ctx: AuditContext): Promise<string | null> {
+  if (!actor.roles.includes('super_admin')) throw new AgentConfigError('forbidden');
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const { AGENT_SEAT_KEY, agentSeatUserId } = await import('../../platform/settings/agent-seat');
+  const { SETTINGS_AUDIT_ID } = await import('../../platform/settings/service');
+  return db.transaction(async (tx) => {
+    const config = await lockConfig(tx);
+    if (userId !== null && config.ownerUserId !== userId) throw new AgentConfigError('seat_not_holder');
+    const before = await agentSeatUserId(tx);
+    if (before === userId) return userId;
+    if (userId === null) {
+      await tx.execute(sql`DELETE FROM settings WHERE key = ${AGENT_SEAT_KEY}`);
+    } else {
+      await tx.execute(sql`
+        INSERT INTO settings (key, value, updated_by, updated_at)
+        VALUES (${AGENT_SEAT_KEY}, to_jsonb(${userId}::text), ${actor.id}::uuid, now())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`);
+    }
+    await writeAudit(tx, ctx, {
+      entityType: 'settings',
+      entityId: SETTINGS_AUDIT_ID,
+      action: 'update',
+      before: { [AGENT_SEAT_KEY]: before },
+      after: { [AGENT_SEAT_KEY]: userId },
+    });
+    return userId;
+  });
+}
+
+/**
+ * The AI seat's open-calc cap on /suhbatlar/ai (SPEC-P2-v2 §1.3, his §7 Q11 ⭐ a) — a super_admin's alone: raising
+ * it widens what a machine with no daily count may open at the VED, so it is no brake the holder pulls. A whole
+ * number 1..200 (`readOpenCalcLimit`), never 0. Audited under the settings' entity id with the key in before/after.
+ */
+export async function setCalcOpenLimit(actor: AgentActor, raw: string, ctx: AuditContext): Promise<number> {
+  if (!actor.roles.includes('super_admin')) throw new AgentConfigError('forbidden');
+  const { OPEN_CALC_LIMIT_KEY, readOpenCalcLimit } = await import('../../platform/settings/calc-cap');
+  const value = readOpenCalcLimit(raw.trim());
+  if (value === null) throw new AgentConfigError('bad_value');
+  const { SETTINGS_AUDIT_ID, getSetting, setSetting } = await import('../../platform/settings/service');
+  const before = await getSetting(OPEN_CALC_LIMIT_KEY);
+  await setSetting(OPEN_CALC_LIMIT_KEY, value, actor.id);
+  await writeAudit(db, ctx, {
+    entityType: 'settings',
+    entityId: SETTINGS_AUDIT_ID,
+    action: 'update',
+    before: { [OPEN_CALC_LIMIT_KEY]: before },
+    after: { [OPEN_CALC_LIMIT_KEY]: value },
+  });
+  return value;
+}
+
+/**
+ * His markup on the VED's answer (SPEC-P2-v2 §2.1, his «foiz yokida fix summa qoshib ayitshni belgilash»; §00 A1: an
+ * EMPTY value is «no markup» — the AI quotes the VED's own figure). ONE writer for the two own-door keys: the AI's
+ * holder or a super_admin (`mayRunAgent`), the whole rule validated (`calcMarkupRuleValid` — a percent 0.01..100 with
+ * at most two decimals, a fixed sum 1..5 000 whole dollars), both keys and their audit row in ONE transaction under the
+ * settings' entity id.
+ *
+ * A change retires what was priced on the old rule (the `setAviaRate` precedent): pending machine VED-price drafts are
+ * superseded (`stale: 'markup'`, their cards say so), and approved ones still waiting to go are cancelled by the
+ * 'agent' compare-and-set (a row the listener has claimed is the one in flight). The confirmed stamp is NOT touched: a
+ * rule other than the one he vouched for is `markup_unconfirmed` by comparison — `none` is a rule like any other.
+ */
+export async function setCalcMarkup(
+  actor: AgentActor,
+  input: { kind: string; value: string },
+  ctx: AuditContext,
+): Promise<{ kind: string; value: string; retired: number }> {
+  const { SETTINGS_AUDIT_ID, calcMarkupRuleValid, getSetting } = await import('../../platform/settings/service');
+  const kind = input.kind.trim();
+  const value = input.value.trim().replace(',', '.');
+  if (!calcMarkupRuleValid(kind, value)) throw new AgentConfigError('bad_value');
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const config = await readAgentConfig();
+  if (!mayRunAgent(actor, config)) throw new AgentConfigError('forbidden');
+  const before = { kind: await getSetting('agent_calc_markup_kind'), value: await getSetting('agent_calc_markup_value') };
+  const { markupRuleOf } = await import('./calc-price');
+  const { ruleString } = await import('./calc-markup');
+  const rule = markupRuleOf(kind, value);
+  if (rule === null) throw new AgentConfigError('bad_value');
+  const ruleText = ruleString(rule);
+  const now = new Date();
+  // Drafts whose stored VED prices were made on another rule — read by the marks themselves (SPEC-P2-v2 §2.5).
+  const otherRule = sql`jsonb_typeof(${agentDrafts.policy}->'memory'->'calcPrices') = 'array'
+    AND EXISTS (SELECT 1 FROM jsonb_array_elements(${agentDrafts.policy}->'memory'->'calcPrices') e WHERE e->>'rule' IS DISTINCT FROM ${ruleText})`;
+  const out = await db.transaction(async (tx) => {
+    for (const [key, v] of [
+      ['agent_calc_markup_kind', kind],
+      ['agent_calc_markup_value', value],
+    ] as const) {
+      await tx.execute(sql`
+        INSERT INTO settings (key, value, updated_by, updated_at) VALUES (${key}, to_jsonb(${v}::text), ${actor.id}::uuid, now())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`);
+    }
+    await writeAudit(tx, ctx, {
+      entityType: 'settings',
+      entityId: SETTINGS_AUDIT_ID,
+      action: 'update',
+      before: { agent_calc_markup_kind: before.kind, agent_calc_markup_value: before.value },
+      after: { agent_calc_markup_kind: kind, agent_calc_markup_value: value },
+    });
+    const stale = await tx
+      .update(agentDrafts)
+      .set({ status: 'superseded', policy: sql`${agentDrafts.policy} || ${JSON.stringify({ stale: 'markup' })}::jsonb`, updatedAt: now })
+      .where(and(eq(agentDrafts.status, 'pending'), sql`${agentDrafts.finalBody} IS NULL`, otherRule))
+      .returning({ id: agentDrafts.id });
+    const cancelled = await tx
+      .update(agentOutbox)
+      .set({ status: 'cancelled', lastError: 'calc_price_moved: the markup changed' })
+      .where(
+        and(
+          eq(agentOutbox.status, 'agent'),
+          inArray(
+            agentOutbox.draftId,
+            tx
+              .select({ id: agentDrafts.id })
+              .from(agentDrafts)
+              .where(and(eq(agentDrafts.status, 'approved'), sql`${agentDrafts.finalBody} IS NULL`, otherRule)),
+          ),
+        ),
+      )
+      .returning({ draftId: agentOutbox.draftId });
+    return { stale: stale.map((r) => r.id), cancelled: cancelled.map((r) => r.draftId) };
+  });
+  const { settleSupersededAuto } = await import('./auto-send');
+  for (const id of out.stale) await settleSupersededAuto(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] superseded auto not settled'));
+  const { refreshAgentCard } = await import('./card-io');
+  for (const id of [...out.stale, ...out.cancelled]) {
+    await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed'));
+  }
+  return { kind, value, retired: out.stale.length + out.cancelled.length };
+}
+
+/**
+ * «✅ Ustama to'g'ri» on /suhbatlar/ai (SPEC-P2-v2 §2.1, his §7 Q5 ⭐): he vouches for the rule his page SHOWED — the
+ * next machine VED price on it may go by itself. Stamped with the same writer his ✅ on a VED-price card uses. A rule
+ * that cannot be read is refused (`bad_value`) — there is nothing to vouch for; and one that is no longer the rule his
+ * page drew (`seen`, its canonical string) is refused `markup_changed` (fix pass 1, finding 9 — the shape of
+ * «✅ Tarif to'g'ri», tariff-watch `confirmTariff`): another writer — a second super_admin, his own second tab — moved
+ * it since, and a press never vouches for a rule nobody looked at.
+ */
+export async function confirmCalcMarkup(actor: AgentActor, seen: string, ctx: AuditContext): Promise<string> {
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const config = await readAgentConfig();
+  if (!mayRunAgent(actor, config)) throw new AgentConfigError('forbidden');
+  const { markupConfirmed, readMarkupRule, MARKUP_CONFIRMED_KEY } = await import('./calc-price');
+  const { ruleString } = await import('./calc-markup');
+  const rule = await readMarkupRule();
+  if (rule === null) throw new AgentConfigError('bad_value');
+  const text = ruleString(rule);
+  if (text !== seen) throw new AgentConfigError('markup_changed');
+  const before = await markupConfirmed();
+  const { SETTINGS_AUDIT_ID } = await import('../../platform/settings/service');
+  const { stampMarkupConfirmedInTx } = await import('./decide');
+  await db.transaction(async (tx) => {
+    await stampMarkupConfirmedInTx(tx, text, actor.id);
+    await writeAudit(tx, ctx, {
+      entityType: 'settings',
+      entityId: SETTINGS_AUDIT_ID,
+      action: 'update',
+      before: { [MARKUP_CONFIRMED_KEY]: before },
+      after: { [MARKUP_CONFIRMED_KEY]: text },
+    });
+  });
+  return text;
 }
 
 /**

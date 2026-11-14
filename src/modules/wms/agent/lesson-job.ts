@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentDrafts, agentLessons } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
+import { calcAnswerMarkOf } from './anchor-clock';
 import { HAND_BACK_RETRY_S } from './calc-loop';
 import { clearLessonRedraft, lessonInstruction, tellNoLessonDraft } from './lessons';
 import { answerNoDraftWhy, type OwnerAnswerDeps } from './owner-answer-job';
@@ -55,6 +56,9 @@ export async function handleLessonRedraft(job: AgentOwnerAnswerJob, deps: OwnerA
       sourceKey: `lesson:${lesson.id}`,
       instruction: lessonInstruction(lesson.text, d.proposedBody),
       lesson: { draftId: d.id, lessonId: lesson.id },
+      // The VED answer's price card rewritten keeps its mark (fix pass 4): K1's forgiven head, K2's week. No countdown
+      // still (§3.4, run `runOwnerTriggered`).
+      calcAnswer: calcAnswerMarkOf(d),
     },
     deps,
   ).catch((err: unknown): RunResult => {

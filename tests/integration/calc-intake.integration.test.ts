@@ -248,6 +248,7 @@ describe('where a confirmed intake lands', () => {
 
     const noteId = uuidv4();
     const first = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId,
       section: 'podklyuch',
@@ -278,6 +279,7 @@ describe('where a confirmed intake lands', () => {
     // A second request from the same client is a NEW job and a new deal (his
     // 2026-10-27, «har so'rovga yangi bitim» — they used to pile into one).
     const second = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'rastamojka',
@@ -298,6 +300,7 @@ describe('where a confirmed intake lands', () => {
     // The SAME note again (a retried «Saqlash»): its own card, no third deal,
     // and the job it already queued is answered, not opened twice (conc-1/13).
     const retried = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId,
       section: 'podklyuch',
@@ -333,6 +336,7 @@ describe('where a confirmed intake lands', () => {
     madeOwnedClients.push(client!.id);
     const land = (noteId: string) =>
       landIntake({
+        machine: false,
         intakeDoor: null,
         noteId,
         section: 'rastamojka',
@@ -381,6 +385,7 @@ describe('where a confirmed intake lands', () => {
       .returning();
     madeOwnedClients.push(client!.id);
     const about = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'rastamojka',
@@ -397,6 +402,7 @@ describe('where a confirmed intake lands', () => {
     const [aboutLead] = await db.select().from(leads).where(eq(leads.id, about.id));
     expect(aboutLead!.phone).toBe(phone);
     const stranger = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',
@@ -417,6 +423,7 @@ describe('where a confirmed intake lands', () => {
   it('a stranger gets a LEAD, and their second request joins it', async () => {
     const phone = `+99894${STAMP}1`;
     const target = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',
@@ -432,6 +439,7 @@ describe('where a confirmed intake lands', () => {
     expect(target.kind).toBe('lead');
 
     const again = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',
@@ -469,6 +477,7 @@ describe('where a confirmed intake lands', () => {
     try {
       const phone = `+99897${STAMP}3`;
       const landed = await landIntake({
+        machine: false,
         intakeDoor: null,
         noteId: uuidv4(),
         section: 'rastamojka',
@@ -493,6 +502,7 @@ describe('where a confirmed intake lands', () => {
       if (ahead.id !== calc.id) {
         await db.update(leads).set({ stageId: ahead.id }).where(eq(leads.id, landed.id));
         await landIntake({
+          machine: false,
           intakeDoor: null,
           noteId: uuidv4(),
           section: 'rastamojka',
@@ -512,6 +522,7 @@ describe('where a confirmed intake lands', () => {
       // And with nothing configured the card stays where the funnel puts it.
       await setSetting('crm_calc_stage', '', actorId);
       const plain = await landIntake({
+        machine: false,
         intakeDoor: null,
         noteId: uuidv4(),
         section: 'rastamojka',
@@ -610,6 +621,7 @@ describe('the cube the landing stores', () => {
   it('…and the bot’s landing carries that to the INSERT', async () => {
     const land = async (facts: CalcFacts) => {
       const target = await landIntake({
+        machine: false,
         intakeDoor: null,
         noteId: uuidv4(),
         section: 'yolkira',

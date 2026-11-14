@@ -10,10 +10,11 @@ import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
 import type { AutoCardState } from './auto-send';
 import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, cardTeaches, CardTooLong, digestBody, lessonRewritingNow, type CardInput } from './card';
 import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
+import { anchorAgeWords, anchorMaxAgeMsFor } from './anchor-clock';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import type { ComposedAction, DraftPolicyJson } from './types';
 import { CANCELLED_BY_HOLDER } from './web-thread';
-import { MAX_OPEN_PER_REQUESTER } from '../calc/service';
+import { openCalcCapFor } from '../../platform/settings/calc-cap';
 
 /**
  * The card's IO: render a draft's card from its STORED row and put it where
@@ -61,6 +62,16 @@ export interface CardRenderOptions {
    * seam the card's auto lines read. Absent or null: the ordinary card.
    */
   auto?: AutoCardState | null;
+  /**
+   * The holder's open-calc cap (`openCalcCapFor`, SPEC-P2-v2 §1.3) — read by the renderer that has a refusal to
+   * name it in; absent, the words say the cap was reached without a figure (never a second constant).
+   */
+  openCalcCap?: number | null;
+  /**
+   * The card a calculation landed on while its reply did not go (`LANDED_UNSENT`, SPEC-P2-v2 §1.2) — a deal's code or
+   * «lid …», read by the renderer that draws that line; absent, the line names no card.
+   */
+  landedLabel?: string | null;
 }
 
 /** «2 soat» for whole hours, «90 daqiqa» otherwise — the config is minutes, he reads time. */
@@ -89,6 +100,15 @@ const CANCEL_WORDS: Record<string, string> = {
   offer_gone: 'VED qayta hisobladi — bu narx endi amal qilmaydi',
   // The machine's estimate priced again at the send gave another figure, or could not be priced (drafts `draftOfferStands`, §1.3).
   estimate_moved: 'narx jadvali o‘zgardi — bu narx yuborilmadi',
+  // A VED answer's price priced again at the send no longer stood as quoted (drafts `draftOfferStands`, SPEC-P2-v2 §2.5).
+  calc_price_moved: 'VED javobi yoki ustama o‘zgardi — bu narx yuborilmadi',
+  // …refused because his own 💵 now stands on the job, or a person's newer offer on the card (fix pass 4: the gate's words).
+  calc_owner_priced: 'bu ishga narxni 💵 bilan o‘zingiz bergansiz — AI narxi yuborilmadi',
+  calc_person_offer: 'kartada sotuvchining yangiroq narxi turibdi — AI narxi yuborilmadi',
+  // His own 💵 on the request the AI priced, while the AI's approved price still waited (calc-loop `priceDraftFromText`).
+  owner_price: 'narxni o‘zingiz berdingiz (💵) — AI narxi yuborilmadi',
+  // His newer 💵 on the same request while this one of his still waited (calc-loop `priceDraftFromText`, fix pass 1).
+  owner_price_again: 'yangi narxingiz (💵) bilan almashtirildi',
   // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
   // a reworded value still has its word and never prints raw.
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',
@@ -141,8 +161,13 @@ export function answeredNow(d: Pick<DraftRow, 'status' | 'policy'>): boolean {
  * approved a reply to as answered. Each said as itself — «Mijoz yana yozdi»
  * would send him looking for a message that is not there.
  */
-const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answered' | 'owner_lesson', string> = {
+const STALE_WORDS: Record<
+  SupersededStale | 'recalc' | 'avia_rate' | 'markup' | 'owner_answered' | 'owner_lesson' | 'calc_answer' | 'owner_price',
+  string
+> = {
   recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
+  // His markup changed while the AI's VED price waited (config `setCalcMarkup`, SPEC-P2-v2 §2.1).
+  markup: '💱 Ustama o‘zgardi — bu narx yuborilmaydi. Kerak bo‘lsa narxni 💵 bilan bering.',
   avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
   // ✅ found the customer's newer message and no run will draft it:
   // «— yangi qoralama» would promise a card that never comes.
@@ -162,6 +187,12 @@ const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answ
   // His lesson was saved on this card and the AI rewrote the reply on a card of its own (§3.4, drafts `createDraft`
   // with `redrafts`) — never «↪️ Mijoz yana yozdi», which is false here.
   owner_lesson: '📝 Saboq bo‘yicha AI qayta yozdi (yangi kartada).',
+  // The VED's word on the job was priced in this reply's place (calc-loop `handleCalcAnswer`, drafts `calcChain`): the
+  // chain's own earlier price card (fix pass 4), or the machine's reply drafted before the answer (fix pass 5) — the
+  // customer wrote nothing.
+  calc_answer: '🧮 VED javob berdi — AI narx bilan yangi javob yozdi (yangi kartada), bu javob yuborilmaydi.',
+  // His 💵 took this card's place (calc-loop `priceDraftFromText`, fix pass 4) — the customer wrote nothing.
+  owner_price: '💵 Narxni o‘zingiz berdingiz — bu javob yuborilmadi (narxingiz yangi kartada).',
 };
 
 /**
@@ -170,6 +201,21 @@ const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate' | 'owner_answ
  * words, so the card and the claim share one constant.
  */
 export const LANDING_CLAIM = 'landing';
+
+/**
+ * …and the marker a press leaves when it LOST after its calculation landed (SPEC-P2-v2 §1.2: ⏸, 🙋 or a disarm
+ * between the landing and the approval): the job is at the VED, linked, and the customer was told nothing. A later ✅
+ * reuses the job (decide `noteIdFor`); ❌ leaves it at the VED.
+ */
+export const LANDED_UNSENT = 'landed_unsent';
+
+/** The card's line for `LANDED_UNSENT` — on a live card, and on one he then ❌'d. */
+export function landedUnsentLine(label: string | null | undefined, rejected = false): string {
+  const where = label ? ` (${label})` : '';
+  return rejected
+    ? `🧮 Hisoblatish VEDda qoldi${where} — mijozga javob ketmadi.`
+    : `🧮 VEDga tushdi${where} — mijozga javob ketmadi: ✅ bilan yuboring yoki ❌ (VED ishi qoladi).`;
+}
 
 /**
  * Why the VED queue did not take a calculation, in words (final review K26)
@@ -182,7 +228,9 @@ export const LANDING_CLAIM = 'landing';
  * answered from his own Telegram.
  */
 const CALC_QUEUE_WORDS: Record<string, string> = {
-  too_many_open: `sizda ${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov bor — VED birortasiga javob bergach ✅ ni qayta bosing`,
+  // The figure is the requester's own (`openCalcCapFor`, §1.3) — the seat's number while it holds, else 20 — and
+  // is put in by `calcQueueWords` when the renderer read it; these are the words without it.
+  too_many_open: 'ochiq so‘rovlaringiz chegarasiga yetdi — VED birortasiga javob bergach ✅ ni qayta bosing',
   too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq) — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
   not_found: 'karta topilmadi — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
   // The chat's lead was won or lost after it was bound (calc `leadTakesJobs`).
@@ -195,8 +243,14 @@ const CALC_QUEUE_WORDS: Record<string, string> = {
   server_behind: 'server yangilanmoqda — biroz keyin ✅ ni qayta bosing',
 };
 
-/** A queue refusal code in words; an unknown one says so plainly, never as a code. */
-export function calcQueueWords(code: string | null | undefined): string {
+/**
+ * A queue refusal code in words; an unknown one says so plainly, never as a code. `cap`: the requester's open-calc
+ * cap (`openCalcCapFor`) — the one figure «too many open» names.
+ */
+export function calcQueueWords(code: string | null | undefined, cap: number | null = null): string {
+  if (code === 'too_many_open' && cap !== null) {
+    return `sizda ${cap} ta ochiq so‘rov bor — VED birortasiga javob bergach ✅ ni qayta bosing`;
+  }
   return (code && CALC_QUEUE_WORDS[code]) ?? 'sababi noma’lum — biroz keyin ✅ ni qayta bosing';
 }
 
@@ -226,8 +280,8 @@ export function sendFailWords(lastError: string | null | undefined): string {
 }
 
 /** Why an approved draft's actions did not all run, in words (K34): the calc queue's codes, else plainly. */
-function actionFailWords(code: string | null | undefined): string {
-  if (code && CALC_QUEUE_WORDS[code]) return `hisoblatish navbatga tushmadi — ${CALC_QUEUE_WORDS[code]}`;
+function actionFailWords(code: string | null | undefined, cap: number | null): string {
+  if (code && CALC_QUEUE_WORDS[code]) return `hisoblatish navbatga tushmadi — ${calcQueueWords(code, cap)}`;
   return 'amal bajarilmadi — kartani tekshiring';
 }
 
@@ -243,7 +297,10 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       // A ✅ whose calculation the queue refused (K26): the draft waits, and says why, for as long as it stands.
       // A press landing it right now (decide `claimLanding`) says so, never «did not reach the queue».
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
-      if (d.actionStatus === 'failed') return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.`;
+      if (d.actionError === LANDED_UNSENT) return landedUnsentLine(opts.landedLabel);
+      if (d.actionStatus === 'failed') {
+        return `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError, opts.openCalcCap ?? null)}. Javob yuborilmadi.`;
+      }
       // His lesson is rewriting this reply (§3.4) — until the rewrite lands, or his own words replace it (✏️).
       if (lessonRewritingNow(d)) return LESSON_REDRAFT_LINE;
       // The AI's rewrite after his lesson, and its reply to his ✍️ answer, each say where they came from — until
@@ -265,9 +322,13 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
         ? '✏️ Matnni shu botga yozing (mijozning chatiga emas) — yoki AI matnini ✅ bilan yuboring.'
         : '✏️ Matnni shu botga yozing (mijozning chatiga emas) — keyin ✅ chiqadi.';
     case 'rejected':
-      return '❌ Rad etildi.';
+      return d.actionError === LANDED_UNSENT ? `❌ Rad etildi. ${landedUnsentLine(opts.landedLabel, true)}` : '❌ Rad etildi.';
     case 'superseded':
-      return STALE_WORDS[(((d.policy ?? {}) as { stale?: string }).stale ?? '') as keyof typeof STALE_WORDS] ?? '↪️ Mijoz yana yozdi — yangi qoralama.';
+      return (
+        STALE_WORDS[(((d.policy ?? {}) as { stale?: string }).stale ?? '') as keyof typeof STALE_WORDS] ??
+        // A VED price the customer wrote past (SPEC-P2-v2 §2.3): the figure did not go — the next reply restates it, or says why.
+        (quotesCalcPrice(d) ? CALC_PRICE_SUPERSEDED_LINE : '↪️ Mijoz yana yozdi — yangi qoralama.')
+      );
     case 'expired':
       return '⌛ Muddati o‘tdi.';
     case 'taken_over': {
@@ -283,7 +344,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
       return `✋ Siz mijozga Telegramda o‘zingiz yozdingiz (${clock(opts.humanWroteAt ?? d.updatedAt)}) — AI javobi bekor qilindi.${pause}`;
     }
     case 'approved': {
-      if (!o) return d.actionStatus === 'failed' ? `⚠️ Bajarilmadi: ${actionFailWords(d.actionError)}.` : '✅ Tasdiqlandi.';
+      if (!o) return d.actionStatus === 'failed' ? `⚠️ Bajarilmadi: ${actionFailWords(d.actionError, opts.openCalcCap ?? null)}.` : '✅ Tasdiqlandi.';
       switch (o.status) {
         case 'agent':
         case 'sending':
@@ -297,6 +358,8 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
         case 'cancelled':
         case 'expired': {
           const why = (o.lastError ?? '').split(':')[0]!.trim();
+          // «Too old» in the age THIS draft's clock kept (SPEC-P2-v2 K2): a week for his 💵, never «24 soat» about it.
+          if (why === 'anchor_too_old') return `✖ Yuborilmadi — xabar ${anchorAgeWords(anchorMaxAgeMsFor(d))} eski.`;
           return `✖ Yuborilmadi — ${CANCEL_WORDS[why] ?? 'bekor qilindi'}.`;
         }
         case 'unknown':
@@ -319,6 +382,38 @@ export function actionLines(actions: ComposedAction[]): string[] {
     return '🔕 Bu chatda AI o‘chiriladi';
   });
 }
+
+/** A reply quoting a VED answer's price (`memory.calcPrices`, SPEC-P2-v2 §2.3) — in the machine's words. */
+export function quotesCalcPrice(d: Pick<DraftRow, 'policy' | 'finalBody'>): boolean {
+  const m = ((d.policy ?? {}) as Partial<DraftPolicyJson>).memory;
+  return d.finalBody === null && Array.isArray(m?.calcPrices) && m.calcPrices.length > 0;
+}
+
+/**
+ * The «💳» lines the after-sent job recorded (SPEC-P2-v2 §2.4) — drawn on an approved card only, and only what was
+ * stored: a list of strings, each already in his words (after-sent `offerLines`). Anything else stored there is none.
+ */
+export function afterSentLines(d: Pick<DraftRow, 'status' | 'policy'>): string[] {
+  if (d.status !== 'approved') return [];
+  const lines = ((d.policy ?? {}) as Partial<DraftPolicyJson>).afterSent?.offer;
+  return Array.isArray(lines) ? lines.filter((l): l is string => typeof l === 'string' && l.length > 0) : [];
+}
+
+/** Its card's title (§2.3): the holder sees at a glance it is the VED's figure with his markup. */
+export const CALC_PRICE_TITLE = '🧮 VED narxi + ustama';
+
+/** …and with the markup EMPTY (his §00 A1: «ustama qo'ymasdan»): a card he is about to ✅ never says a markup was added. */
+export const CALC_PRICE_TITLE_NONE = '🧮 VED narxi (ustamasiz)';
+
+/** The title by the rule the stored prices were made on (`CalcPriceMark.rule`): `none` on every one — «ustamasiz». */
+export function calcPriceTitle(d: Pick<DraftRow, 'policy'>): string {
+  const marks = ((d.policy ?? {}) as Partial<DraftPolicyJson>).memory?.calcPrices;
+  const none = Array.isArray(marks) && marks.length > 0 && marks.every((m) => (m as { rule?: unknown }).rule === 'none');
+  return none ? CALC_PRICE_TITLE_NONE : CALC_PRICE_TITLE;
+}
+
+/** …and its card once the customer wrote past it. */
+export const CALC_PRICE_SUPERSEDED_LINE = '↪️ VED narxi yuborilmadi — mijoz yana yozdi (yangi qoralama).';
 
 const TITLES: Record<string, string> = {
   reply: '🤖 Javob qoralamasi',
@@ -417,13 +512,15 @@ export function renderDraftCardFull(
   const live = d.status === 'pending' || d.status === 'editing';
   const input = (sendable: boolean): CardInput => ({
     customerLabel: card.customerLabel,
-    title: TITLES[d.kind] ?? TITLES.reply!,
+    title: d.kind === 'reply' && quotesCalcPrice(d) ? calcPriceTitle(d) : (TITLES[d.kind] ?? TITLES.reply!),
     // «O'zi yuborish» folded in (auto-card `withAutoLine`): the timer while it counts down, the reason it
     // did not go, ⏸, the layer's «off», «🤖 O‘zi yuborildi» on the approved line and his 👎.
     statusLine: withAutoLine(statusLine(d, o, opts, sendable), opts.auto, d, sendable, o?.status ?? null),
     blocks: live ? (p.blocks ?? []) : [],
     warnings: p.warnings ?? [],
-    notes: [...(p.notes ?? []), ...extraNotes],
+    // The VED price's own line (§2.2) — the holder's card only, and never one of the notes the gate counts.
+    // …and once the reply WENT, what it settled on the card (§2.4): «💳 Kartaga yozildi: 1 359 $», or why not.
+    notes: [...(card.calcLine ? [card.calcLine] : []), ...afterSentLines(d), ...(p.notes ?? []), ...extraNotes],
     reply: d.finalBody ?? d.proposedBody ?? '',
     gloss: d.finalBody ? null : d.glossUz,
     ledger: d.finalBody ? [] : (p.ledger ?? []),
@@ -474,6 +571,36 @@ async function humanReplyAt(d: DraftRow): Promise<Date | null> {
   return first?.sentAt ?? null;
 }
 
+/** The card the draft's landed job sits on, through its link (`agent_calc_links.draft_id`): «B-…» or «lid …». */
+async function landedCardLabel(draftId: string): Promise<string | null> {
+  const rows = (await db.execute(sql`
+    SELECT r.entity_type, d.code, l.name
+      FROM agent_calc_links k
+      JOIN calc_requests r ON r.id = k.request_id
+      LEFT JOIN deals d ON r.entity_type = 'deal' AND d.id = r.entity_id
+      LEFT JOIN leads l ON r.entity_type = 'lead' AND l.id = r.entity_id
+     WHERE k.draft_id = ${draftId}::uuid
+     ORDER BY k.created_at DESC
+     LIMIT 1
+  `)) as unknown as { entity_type: string; code: string | null; name: string | null }[];
+  const row = rows[0];
+  if (!row) return null;
+  return row.entity_type === 'deal' ? row.code : row.name ? `lid «${row.name}»` : 'lid';
+}
+
+/**
+ * The two facts a card reads only for the one line that names them (SPEC-P2-v2 §1.3, §1.2) — the holder's open-calc
+ * cap on «too many open», and the card a landed-but-unsent job sits on. ONE reader for the bot's copy
+ * (`refreshAgentCard`) and the page's (web-page `webDrafts`): the figure the card names is the same on both (fix pass
+ * 1 — the page printed the figure-less words).
+ */
+export async function cardReadsFor(d: Pick<DraftRow, 'id' | 'managerUserId' | 'actionError'>): Promise<{ openCalcCap: number | null; landedLabel: string | null }> {
+  return {
+    openCalcCap: d.actionError === 'too_many_open' ? await openCalcCapFor(d.managerUserId) : null,
+    landedLabel: d.actionError === LANDED_UNSENT ? await landedCardLabel(d.id) : null,
+  };
+}
+
 /**
  * Re-render the draft's card and put it everywhere it is: the notification
  * row's payload (so an unsent copy goes out current) and the sent Telegram
@@ -495,7 +622,9 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   // «O'zi yuborish»'s state — every redraw keeps the timer, the reason or the 👎 (null one migration behind).
   const { autoCardStateFor } = await import('./auto-send');
   const auto = await autoCardStateFor(draftId);
-  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, auto });
+  // The open-calc cap and a landed job's card — read only for the one line that names each (§1.3, §1.2).
+  const { openCalcCap, landedLabel } = await cardReadsFor(d);
+  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, openCalcCap, landedLabel, auto });
   const live = d.status === 'pending' || d.status === 'editing';
   const body = digestBody(d);
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;

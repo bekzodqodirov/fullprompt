@@ -52,6 +52,7 @@ function eligible(): AutoGateInput {
       ledger: [],
       hasEstimate: false,
       estimatesStored: false,
+      calcPricesStored: false,
       rail: false,
       customerLocale: { locale: 'uz', confident: true },
       unreadNumeral: false,
@@ -59,6 +60,8 @@ function eligible(): AutoGateInput {
     tools: [],
     money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
     burstMedia: false,
+    calc: null,
+    calcPrice: null,
     chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
     at: NOON,
@@ -93,6 +96,41 @@ function quote(i: AutoGateInput): AutoGateInput {
   return i;
 }
 
+/**
+ * A calculation the machine would land by itself (SPEC-P2-v2 §1.1): «Hisoblatish» ticked, the draft's one act a calc
+ * submit, labelled as the model labels a submit reply (`price`) — judged as `calc` whatever the label — and every one
+ * of its five facts clear.
+ */
+function calcSubmit(i: AutoGateInput): AutoGateInput {
+  i.config.categories = [...FOUR, 'calc'];
+  i.draft.actionTypes = ['calc_submit', 'set_followup'];
+  i.draft.category = 'price';
+  i.draft.body = 'Hisoblatishga yubordim, javob kelishi bilan aytaman.';
+  i.calc = { unproven: false, foreign: false, refused: false, recent: false, fileMissing: false };
+  return i;
+}
+
+/**
+ * A VED answer's price the money clause admits (SPEC-P2-v2 §2.3): «VED narxi» ticked, the run's `calc_price` answered,
+ * the ledger's money line is that tool's total, the prices are stored, and its four facts clear.
+ */
+function calcQuote(i: AutoGateInput): AutoGateInput {
+  i.config.categories = [...FOUR, 'calc_price'];
+  i.draft.category = 'price';
+  i.draft.body = 'VED javobi keldi: rastamojka 1 359 $ bo‘ladi.';
+  i.draft.ledger = [{ kind: 'money', origin: 'tool', tool: 'calc_price', role: 'total' }];
+  i.draft.calcPricesStored = true;
+  i.tools = [{ name: 'calc_price', ok: true, estimate: false }];
+  i.calcPrice = { unconfirmed: false, moved: false, foreign: false, media: false, ownerPriced: false, personOffer: false };
+  return i;
+}
+
+/** The refusals only a VED price can meet. */
+const CALC_PRICE_ONLY: ReadonlySet<AutoRefusal> = new Set(['markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'calc_person_offer']);
+
+/** The refusals only a calc draft can meet. */
+const CALC_ONLY: ReadonlySet<AutoRefusal> = new Set(['calc_identity', 'calc_foreign', 'calc_refused', 'calc_recent', 'calc_file_missing']);
+
 /** The refusals only a quote the money clause admitted can meet. */
 const QUOTE_ONLY: ReadonlySet<AutoRefusal> = new Set([
   'estimate_unnamed',
@@ -113,6 +151,11 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   warnings: (i) => (i.draft.warnings = 1),
   notes: (i) => (i.draft.notes = 1),
   actions: (i) => (i.draft.actionTypes = ['calc_submit']),
+  calc_identity: (i) => (calcSubmit(i).calc!.unproven = true),
+  calc_foreign: (i) => (calcSubmit(i).calc!.foreign = true),
+  calc_refused: (i) => (calcSubmit(i).calc!.refused = true),
+  calc_recent: (i) => (calcSubmit(i).calc!.recent = true),
+  calc_file_missing: (i) => (calcSubmit(i).calc!.fileMissing = true),
   money: (i) => (i.tools = [{ name: 'own_balance', ok: true, estimate: false }]),
   // A currency beside a quantity no reader placed («a few dollars» — vague, so G1 holds nothing) and no money line.
   money_unread: (i) => (i.draft.body = 'Narxi bir necha dollar.'),
@@ -123,6 +166,12 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   tariff_unconfirmed: (i) => (quote(i).money.tariffUnconfirmed = true),
   foreign_destination: (i) => (quote(i).money.foreignDestination = true),
   destination_unsaid: (i) => (quote(i).draft.body = '5 kub, 800 kg yukingiz uchun taxminan 960 $. Boj va QQS alohida hisoblanadi.'),
+  markup_unconfirmed: (i) => (calcQuote(i).calcPrice!.unconfirmed = true),
+  calc_price_moved: (i) => (calcQuote(i).calcPrice!.moved = true),
+  // His own 💵 for the job arrived while the machine's price counted down (finding 1): his figure outranks it.
+  calc_owner_priced: (i) => (calcQuote(i).calcPrice!.ownerPriced = true),
+  // A person's offer became the card's newest word on the quoted job (fix pass 3): a seller's price outranks the machine's.
+  calc_person_offer: (i) => (calcQuote(i).calcPrice!.personOffer = true),
   // A day count from HIS ✍️ answer — no money in it, and it still comes back to him.
   owner_figure: (i) => (i.draft.ledger = [{ kind: 'duration', origin: 'owner', tool: null, role: null }]),
   owner_personal: (i) => (i.money.ownerPersonal = true),
@@ -169,17 +218,21 @@ describe('the gate', () => {
     for (const code of [...AUTO_REFUSALS].reverse()) {
       // The quote's own facts are asked of a quote the money clause admitted — the second input below;
       // status_unbacked, category and the two body-reading refusals are set by hand at the end.
-      if (QUOTE_ONLY.has(code) || ['category', 'status_unbacked', 'money_unread', 'too_long'].includes(code)) continue;
+      if (QUOTE_ONLY.has(code) || CALC_ONLY.has(code) || CALC_PRICE_ONLY.has(code) || ['category', 'status_unbacked', 'money_unread', 'too_long'].includes(code)) continue;
       ONE_CHANGE[code](input);
     }
     input.draft.category = 'status';
     input.draft.body = `Narxi bir necha dollar. ${'x'.repeat(400)}`;
     const out = autoVerdict(input);
     expect(out.eligible).toBe(false);
-    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => r !== 'category' && !QUOTE_ONLY.has(r)));
+    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => r !== 'category' && !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r)));
     // …and a category outside the chosen set is the category's own refusal beside it.
     input.config.categories = ['greeting'];
-    expect(autoVerdict(input).reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r)));
+    expect(autoVerdict(input).reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r)));
+    // A calculation's own five, all at once, in the same order (SPEC-P2-v2 §1.1).
+    const c = calcSubmit(eligible());
+    c.calc = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
+    expect(autoVerdict(c).reasons).toEqual(AUTO_REFUSALS.filter((r) => CALC_ONLY.has(r)));
     // The quote's own five, all at once, in the same order.
     const q = quote(eligible());
     q.money.unnamed = true;
@@ -270,10 +323,19 @@ describe('the gate', () => {
     expect(autoVerdict(label)).toEqual({ eligible: true, reasons: [] });
   });
 
-  it('the kinds have ONE home: the gate re-exports the pure module the page reads, and 0148’s CHECK says the same five', () => {
+  it('«calc» and «calc_price» are never a model’s label (SPEC-P2-v2 §1.1): ticked, a reply LABELLED so still refuses', () => {
+    for (const category of ['calc', 'calc_price']) {
+      const input = eligible();
+      input.draft.category = category;
+      input.config.categories = [...AUTO_SEND_CATEGORIES];
+      expect(autoVerdict(input).reasons, category).toEqual(['category']);
+    }
+  });
+
+  it('the kinds have ONE home: the gate re-exports the pure module the page reads, and the LAST CHECK re-maker (0149) says the same seven', () => {
     expect(AUTO_SEND_CATEGORIES).toBe(ONE_HOME);
-    expect([...AUTO_SEND_CATEGORIES]).toEqual(['greeting', 'qualification', 'faq', 'status', 'price']);
-    const sql = readFileSync('src/modules/platform/db/migrations/0148_agent_full_p1.sql', 'utf8');
+    expect([...AUTO_SEND_CATEGORIES]).toEqual(['greeting', 'qualification', 'faq', 'status', 'price', 'calc', 'calc_price']);
+    const sql = readFileSync('src/modules/platform/db/migrations/0149_agent_full_p2.sql', 'utf8');
     const check = /"categories" <@ ARRAY\[([^\]]+)\]::text\[\]/u.exec(sql)?.[1];
     expect(check?.split(',').map((x) => x.trim().replace(/'/gu, ''))).toEqual([...AUTO_SEND_CATEGORIES]);
     // The page's file names the one home and never the gate (it would pull the send step into the browser).
@@ -728,7 +790,78 @@ describe('a reply the machine pressed is nobody’s decision — the gate never 
     const greeting = categoryVerdicts(rows).find((v) => v.category === 'greeting')!;
     expect(greeting.decided).toBe(1);
     expect(greeting.proven).toBe(false);
-    // The MEASURED four (calibration.ts): price is gated by the money clause, never measured as clean (0148).
-    expect([...AUTO_CATEGORIES, 'price'].sort()).toEqual([...AUTO_SEND_CATEGORIES].sort());
+    // The MEASURED four (calibration.ts): price is gated by the money clause, never measured as clean (0148) — and
+    // so are the calculation and the VED price (0149, SPEC-P2-v2 §1.1): gated by what the reply does, not measured.
+    expect([...AUTO_CATEGORIES, 'price', 'calc', 'calc_price'].sort()).toEqual([...AUTO_SEND_CATEGORIES].sort());
+  });
+});
+
+describe('a calculation the machine lands by itself (SPEC-P2-v2 §1.1)', () => {
+  it('a calc submit with every fact clear, «Hisoblatish» ticked, goes by itself', () => {
+    expect(autoVerdict(calcSubmit(eligible()))).toEqual({ eligible: true, reasons: [] });
+  });
+
+  it('is judged as `calc` by its ACTION, whatever kind of reply the model labelled it — never as the label', () => {
+    // (`status` is asked its own cargo reading beside — `status_unbacked` — whatever the act.)
+    for (const label of ['price', 'qualification', 'faq', 'greeting']) {
+      const i = calcSubmit(eligible());
+      i.draft.category = label;
+      expect(autoVerdict(i), String(label)).toEqual({ eligible: true, reasons: [] });
+    }
+    // …but a label that never goes stays his whatever it does (finding 8): «shikoyat va savolli javoblar har doim
+    // sizga qoladi» — the arming words promise it, and a missing label is no kind at all (fails closed).
+    for (const label of ['complaint', 'other', null, '']) {
+      const i = calcSubmit(eligible());
+      i.draft.category = label;
+      expect(autoVerdict(i), String(label)).toEqual({ eligible: false, reasons: ['category'] });
+    }
+    // …and with «Hisoblatish» unticked it is judged exactly as before: an action, refused, beside its label's verdict.
+    const off = calcSubmit(eligible());
+    off.config.categories = [...FOUR];
+    expect(autoVerdict(off).reasons).toEqual(['actions', 'category']);
+    off.draft.category = 'qualification';
+    expect(autoVerdict(off).reasons).toEqual(['actions']);
+    // A label never names the kind: «calc» as the model's label is no kind at all.
+    const labelled = eligible();
+    labelled.config.categories = [...FOUR, 'calc'];
+    labelled.draft.category = 'calc';
+    expect(autoVerdict(labelled).reasons).toEqual(['category']);
+  });
+
+  it('only a draft whose ONE act is a calc submit (and a follow-up): with a mute, or two submits, it is an action', () => {
+    const mute = calcSubmit(eligible());
+    mute.draft.actionTypes = ['calc_submit', 'mute'];
+    expect(autoVerdict(mute).reasons).toContain('actions');
+    const two = calcSubmit(eligible());
+    two.draft.actionTypes = ['calc_submit', 'calc_submit'];
+    expect(autoVerdict(two).reasons).toContain('actions');
+  });
+
+  it('facts not read on a calc draft refuse every one (fails closed)', () => {
+    const i = calcSubmit(eligible());
+    i.calc = null;
+    expect(autoVerdict(i).reasons).toEqual(['calc_identity', 'calc_foreign', 'calc_refused', 'calc_recent', 'calc_file_missing']);
+  });
+
+  it('`media` is not asked of a calc submit — the invoice goes to the VED — and is asked of every other draft', () => {
+    const calc = calcSubmit(eligible());
+    calc.burstMedia = true;
+    expect(autoVerdict(calc)).toEqual({ eligible: true, reasons: [] });
+    const reply = eligible();
+    reply.burstMedia = true;
+    expect(autoVerdict(reply).reasons).toEqual(['media']);
+    // With «Hisoblatish» unticked a calc submit keeps today's media rule too.
+    const off = calcSubmit(eligible());
+    off.config.categories = [...FOUR, 'price'];
+    off.burstMedia = true;
+    expect(autoVerdict(off).reasons).toEqual(['actions', 'media']);
+  });
+
+  it('the five refusals say the spec’s words', () => {
+    expect(AUTO_REFUSAL_WORDS.calc_identity).toBe('chat telefon bilan tasdiqlanmagan — hisoblatishni o‘zingiz yuboring');
+    expect(AUTO_REFUSAL_WORDS.calc_foreign).toBe('bu boshqa sotuvchining mijozi yoki lidi');
+    expect(AUTO_REFUSAL_WORDS.calc_refused).toBe('VED navbati bu hisoblatishni olmaydi (lid yopilgan yoki ochiq so‘rovlar to‘la)');
+    expect(AUTO_REFUSAL_WORDS.calc_recent).toBe('14 kun ichida shu yuk uchun hisoblatish bor — ikkinchisini o‘zingiz yuboring');
+    expect(AUTO_REFUSAL_WORDS.calc_file_missing).toBe('mijoz yuborgan fayl saqlanmagan — VED uni ko‘rmaydi');
   });
 });

@@ -757,7 +757,12 @@
       "client_confirm_on_receipt": "Whether the customer's «your cargo was received» message carries the ✅ / ❌ buttons (off: the message goes out as before; «Ask the client» on the card still works)",
       "client_reask_on_reweigh": "When cargo is re-weighed (its weight, volume or box count changes) and the question the client holds is out of date — send the client a new question by itself (10 minutes after the last correction; off: «Ask the client» on the card still works)",
       "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)",
-      "staff_rating_goal_m3": "The team’s weekly goal in m³ for the team group, groupage (LTL) cargo only (0 = no goal). Easier to change on the «Team group» page."
+      "staff_rating_goal_m3": "The team’s weekly goal in m³ for the team group, groupage (LTL) cargo only (0 = no goal). Easier to change on the «Team group» page.",
+      "crm_ai_contacted_stage": "When the AI seller has sent its first reply, the lead moves to this stage (forward only, between open stages; empty — not moved). Changed on /crm/settings",
+      "crm_ai_quoted_stage": "When the AI seller has stated a price, the lead moves to this stage (forward only; empty — not moved). Changed on /crm/settings",
+      "agent_calc_markup_kind": "The kind of markup the AI adds to the customs desk's answer: percent or fixed ($). Changed on /suhbatlar/ai",
+      "agent_calc_markup_value": "The markup the AI adds to the customs desk's answer; empty — no markup, the AI states the customs desk's own figure. Changed on /suhbatlar/ai",
+      "agent_calc_open_limit": "How many calculations the AI seller may have open at once (customs desk jobs and AI estimate calls); applies only once «This account is the AI seller» is set — people keep 20. 1 to 200; changed by a super admin only, on /suhbatlar/ai"
     },
     "driverApp": "Driver app",
     "callsApp": "Calls app",
@@ -768,7 +773,17 @@
     "aiSpentToday": "Today: {used} / {limit}",
     "aiSpentUsd": "≈ ${usd}",
     "aiSpentMonth": "30 days ≈ ${usd}",
-    "aiSpentUnpriced": "{n} calls have no known price"
+    "aiSpentUnpriced": "{n} calls have no known price",
+    "ownDoor": "This setting is changed on its own page only:",
+    "ownDoorRefused": "This setting is not changed here — change it on its own page. Nothing was saved.",
+    "ownDoorPage": {
+      "agentAi": "Chats → AI seller",
+      "crmSettings": "CRM → Settings"
+    },
+    "badValueMarkupKind": "Invalid value — write percent or fixed. Nothing was saved.",
+    "badValueMarkup": "Invalid value — a percent 0.01 to 100 (at most 2 decimals) or whole dollars 1 to 5000. Nothing was saved.",
+    "badValueOpenLimit": "Invalid value — a whole number 1 to 200. Nothing was saved.",
+    "badValueStage": "Invalid value — pick a stage from the list. Nothing was saved."
   },
   "audit": {
     "title": "Audit log",
@@ -896,8 +911,11 @@
       "number": "Number",
       "destBeforeDeparture": "Receiving warehouse (before departure)",
       "fileAdded": "File added",
-      "fileName": "File removed"
-    }
+      "fileName": "File removed",
+      "via": "Via",
+      "holder": "AI account"
+    },
+    "aiSeller": "AI seller"
   },
   "profile": {
     "title": "Profile",
@@ -3017,7 +3035,16 @@
     "pauseAlreadyCleared": "The pause is already cleared",
     "pauseClearRefused": "The account holder or a super admin clears the pause",
     "bridgePaused": "Sending stopped — Telegram restricted the account",
-    "bridgePausedCount": "Paused: {n}"
+    "bridgePausedCount": "Paused: {n}",
+    "aiStagesTitle": "AI seller's stages",
+    "aiStagesOrder": "Order: «AI replied first» → «Quote» → «AI named a price». The AI moves a lead forward only, only between open stages, and only a lead of the AI's account or nobody's. «Won» and «Lost» are set by a person only.",
+    "aiContactedStage": "AI replied first",
+    "aiContactedStageHint": "When the AI seller's reply reaches the customer, the lead moves to this stage. «—» means the AI does not move the lead.",
+    "aiQuotedStage": "AI named a price",
+    "aiQuotedStageHint": "When a reply with a price reaches the customer (the truck price, the VED price or your 💵), the lead moves to this stage. While a VED calculation is open, a truck price does not move the lead. It must come after «AI replied first».",
+    "stageSettingBad": "No such setting.",
+    "stageSettingNotOpen": "Only an active, open stage can be chosen.",
+    "stageSettingOrder": "«AI named a price» must come after «AI replied first»."
   },
   "navShort": {
     "home": "Home",
@@ -4313,6 +4340,7 @@
     "linksShownOf": "Showing {shown} of {total}",
     "sheetTitle": "What the price is made of",
     "answerSellerNoteLabel": "Note for the seller (optional)",
+    "answerSellerNoteAi": "If anything is written here, the AI seller will not quote this price to the customer by itself — the seller or the owner will. How it was calculated goes in the «internal note».",
     "answerInternalNoteLabel": "Internal note — how I worked it out (required, the seller does not see it)",
     "filterKind": "Kind",
     "kindAll": "All",
@@ -4371,7 +4399,8 @@
     "sellerGuess": "Seller's own estimate",
     "importConflict": "{unit} not allowed: the law counts in {law}",
     "freightWatchTitle": "{column} — freight bills are split in proportion to this column’s prices, but it is incomplete: as it stands, no bill is split by the tariff.",
-    "freightWatchFrom": "From {date}:"
+    "freightWatchFrom": "From {date}:",
+    "offerByAi": "🤖 AI"
   },
   "partners": {
     "title": "Counterparties",
@@ -6658,7 +6687,9 @@
       "qualification": "Clarifying",
       "price": "Price",
       "complaint": "Complaint",
-      "other": "Other"
+      "other": "Other",
+      "calc": "Calculation (to the customs desk)",
+      "calc_price": "Customs price (with markup)"
     },
     "styleTitle": "Reply style",
     "styleApprovedAt": "Approved: {when}",
@@ -6747,7 +6778,16 @@
       "lesson_money": "A price cannot be a lesson — prices come from the tools and the settings. If this number is not a price, write it as a word (for example: “once”).",
       "lesson_personal": "The text carries customer details (name, code, phone) — a lesson is read in every chat.",
       "lesson_already": "Already saved.",
-      "lesson_confirmed": "The lesson is already saved."
+      "lesson_confirmed": "The lesson is already saved.",
+      "seat_not_holder": "The AI seat is set only on the account the AI speaks from — pick the account first.",
+      "bad_markup": "Invalid markup — a percent from 0.01 to 100 (at most 2 decimals) or a fixed sum of 1 to 5,000 $ as a whole number; empty means no markup.",
+      "markup_changed": "The markup changed after this page was opened — reload the page and confirm the new markup.",
+      "offer_gone": "The customs desk is recalculating this job — the price no longer stands and the reply was not sent.",
+      "calc_price_moved": "The customs desk's answer or the markup changed — this price was not sent. Give the new price with 💵.",
+      "calc_owner_priced": "You gave this job's price yourself with 💵 — your price stands, the AI's price was not sent.",
+      "calc_person_offer": "A seller's newer price is on the card — it stands, the AI's price was not sent.",
+      "ai_price_sent": "The AI's price has already reached the customer — send yours? Type it once more.",
+      "bad_open_limit": "Invalid limit — a whole number 1 to 200."
     },
     "sendNow": "Send now",
     "autoStop": "Stop",
@@ -6832,7 +6872,29 @@
     "lessonSwitchOn": "Switch on",
     "lessonDelete": "Delete",
     "lessonDeleteConfirm": "Delete this lesson for good? The AI will no longer read it.",
-    "statsOwnerTriggered": "Written from your own answer or lesson (not graded)"
+    "statsOwnerTriggered": "Written from your own answer or lesson (not graded)",
+    "seatTitle": "AI seat",
+    "seatHolds": "This account is the AI seller (a staff member of its own): {name}",
+    "seatElsewhere": "The AI seat names another user ({name}) — the AI now speaks from another account; until you set it again, the cap of {cap} and the price on the card are stopped.",
+    "seatNone": "No AI seat set — the AI's calculations are capped at 20 like a person's, and the AI's price is not written onto a card.",
+    "seatHint": "Mark the account the AI seller speaks from as a staff member of its own. If the AI's account is changed later, the mark does not move by itself.",
+    "seatSet": "This account is the AI seller",
+    "seatClear": "Remove the mark",
+    "markupTitle": "Markup on the customs desk's answer",
+    "markupHint": "On a calculation the customs desk answered, the AI tells the customer the price with this markup. The system computes the price, not the AI; the first price waits for your ✅.",
+    "markupRule": "Markup",
+    "markupUnreadable": "the setting is broken — enter it again (the AI states no customs price for now)",
+    "markupConfirmed": "confirmed",
+    "markupUnconfirmed": "not confirmed yet — the first customs price waits for you",
+    "markupEmptyLine": "Left empty, no markup is added — the AI states the customs desk's own figure: {example}",
+    "markupCost": "Today: {offers} customs prices written to cards · {jobs} calculations sent by the AI · AI-VED calls {calls} / {limit}",
+    "markupValueLabel": "Markup (percent or $; empty — no markup)",
+    "markupKindLabel": "Markup kind",
+    "markupKindPercent": "Percent (%)",
+    "markupKindFixed": "Fixed sum ($)",
+    "markupConfirm": "✅ Markup is right",
+    "openLimitLabel": "AI open calculations limit",
+    "openLimitHint": "Applies once the AI seat is set (people keep 20). {min} to {max}; raising it widens what a machine may open, so a super admin only."
   },
   "invoys": {
     "title": "Goods under one HS code",

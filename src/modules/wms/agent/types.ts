@@ -48,6 +48,12 @@ export interface CardMemory {
   customerLabel: string;
   lastOut: string | null;
   customerLines: string[];
+  /**
+   * A VED answer's price on the HOLDER's card (SPEC-P2-v2 §2.2, judge hands 11): «🧮 rastamojka: VED 1 234,56 $ ·
+   * ustama 10 % → mijozga 1 359 $» — the one place the floor and the rule are printed (law 4: never the ledger, the
+   * chat block or any prompt part). Absent = the reply quotes no VED price.
+   */
+  calcLine?: string;
 }
 
 export interface DraftPolicyJson {
@@ -96,6 +102,25 @@ export interface DraftPolicyJson {
    * before and after a lesson can be read off the drafts. Absent = the run read none.
    */
   lessons?: LessonSetMark;
+  /**
+   * The reply a `calc_answer` run wrote on the VED's answer (SPEC-P2-v2 §2.3) — K2's week-long anchor clock and K1's
+   * forgiven head read it (anchor-clock, outbox-store `chatFacts`). Absent = an ordinary reply.
+   */
+  calcAnswer?: { requestId: string };
+  /**
+   * What the reply settled on the card once it was SENT (SPEC-P2-v2 §2.4, §3.2; after-sent.ts) — written once, by the
+   * after-sent job's last step: its absence on a sent row is what the sweep's net re-queues. `offer` = the holder's
+   * card lines («💳 Kartaga yozildi: 1 359 $» or why not), `stage` = the stage step's outcome code (for the record).
+   */
+  afterSent?: AfterSentMark;
+}
+
+/** The after-sent job's record on its draft (§2.4, §3.2). */
+export interface AfterSentMark {
+  /** ISO — when the job finished. */
+  at: string;
+  offer: string[];
+  stage: string;
 }
 
 export type ForcedQuestion = 'rail' | 'avia';

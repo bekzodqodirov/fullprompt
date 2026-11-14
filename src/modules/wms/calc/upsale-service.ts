@@ -11,6 +11,7 @@ import { rateFor } from '../costing/service';
 import { latestTxDate } from '../finance/dates';
 import { CalcError } from './service';
 import { MONEY_EPSILON, payableOffersSql } from './upsale';
+import { agentFullP2Ready } from '../agent/config';
 import { forgetUpsaleLiability, rememberedLiability } from './liability-memo';
 import type { UpsaleScope } from './upsale-scope';
 
@@ -331,6 +332,8 @@ export async function upsaleRows(
   // Inclusive to the end of the named day, the way every period filter here is.
   if (opts.to) where.push(sql`p.offered_at < ((${opts.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Tashkent')`);
 
+  // The AI seller's offers are no seller's promise (SPEC-P2-v2 §2.4a) — once 0149 is there to mark them.
+  const machineOffers = await agentFullP2Ready();
   const raw = await db.execute<RawRow>(sql`
     SELECT p.*,
            u.full_name AS seller_name,
@@ -340,7 +343,7 @@ export async function upsaleRows(
            c.sales_manager_id AS client_manager_id,
            inv.charged AS charged_usd,
            inv.compensated AS compensated_usd
-      FROM (${payableOffersSql()}) p
+      FROM (${payableOffersSql({ machineOffers })}) p
       JOIN users u ON u.id = p.offered_by
       LEFT JOIN deals d   ON d.id = p.entity_id AND p.entity_type = 'deal'
       LEFT JOIN clients c ON c.id = d.client_id
@@ -510,6 +513,8 @@ export async function upsaleLiability(budget: UpsaleWalkBudget): Promise<{
   unknownCount: number;
   unknownUsd: number;
 }> {
+  // The AI seller's offers owe nobody a commission (SPEC-P2-v2 §2.4a) — never in the liability.
+  const machineOffers = await agentFullP2Ready();
   const raw = await db.execute<{
     entity_type: string;
     entity_id: string;
@@ -526,7 +531,7 @@ export async function upsaleLiability(budget: UpsaleWalkBudget): Promise<{
            d.client_id,
            inv.charged AS charged_usd,
            inv.compensated AS compensated_usd
-      FROM (${payableOffersSql()}) p
+      FROM (${payableOffersSql({ machineOffers })}) p
       LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
       ${jobInvoiceSql()}
      WHERE p.payout_expense_id IS NULL
@@ -612,6 +617,9 @@ export async function payUpsale(
     ids.map((offerId) => sql`${offerId}::uuid`),
     sql`, `,
   );
+  // Read on the pool BEFORE the transaction (#714): the AI seller's offers are never payable (SPEC-P2-v2 §2.4a), so
+  // the read below and the claim's own UPDATE both leave them out — a posted id of one is `offer_not_payable`.
+  const machineOffers = await agentFullP2Ready();
   try {
     const paid = await db.transaction(async (tx) => {
       // payKpi's pair (kpi-service.ts): a hung read must not hold the offers'
@@ -641,7 +649,7 @@ export async function payUpsale(
       }>(sql`
         SELECT p.id, p.payable_usd, p.offered_by, p.payout_at, p.entity_type, p.entity_id, p.due_price_usd,
                p.cargo_receipts, d.client_id, inv.charged AS charged_usd, inv.compensated AS compensated_usd
-          FROM (${payableOffersSql()}) p
+          FROM (${payableOffersSql({ machineOffers })}) p
           LEFT JOIN deals d ON d.id = p.entity_id AND p.entity_type = 'deal'
           ${jobInvoiceSql()}
          WHERE p.id IN (${idList}) AND p.payout_expense_id IS NULL
@@ -700,7 +708,7 @@ export async function payUpsale(
                payout_at = now(),
                payout_by = ${ctx.actorId}::uuid,
                payout_usd = p.payable_usd
-          FROM (${payableOffersSql()}) p
+          FROM (${payableOffersSql({ machineOffers })}) p
          WHERE o.id = p.id
            AND o.id IN (${idList})
            AND o.payout_expense_id IS NULL

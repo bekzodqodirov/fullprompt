@@ -4,6 +4,7 @@ import { settings } from '../db/schema';
 import { parseDayOrInstant } from '../time/tashkent';
 import { originsSettingValid } from '../http/origins';
 import { reasonListValid } from './reason-list';
+import { OPEN_CALC_CAP_SEAT_DEFAULT, readOpenCalcLimit } from './calc-cap';
 
 /**
  * Typed settings registry (spec §17). Values live as JSONB rows in
@@ -246,6 +247,30 @@ export const SETTING_DEFAULTS = {
   crm_calc_stage: '',
   /** The same, for the DEAL board — a coded client's request lands there. */
   deal_calc_stage: '',
+  /**
+   * The two funnel stages the AI seller moves a lead to by itself (SPEC-P2-v2 §3.1, his item 4 ⭐): «AI birinchi
+   * javob berdi» after its first reply went, «AI narx aytdi» after a price went. Forward only, between OPEN
+   * stages — «Yutildi» and «Yo'qotildi» stay a person's, always. Empty = the AI moves nothing (how it ships).
+   * OWN-DOOR (`OWN_DOOR_KEYS`): written only by /crm/settings, never by this screen's generic form.
+   */
+  crm_ai_contacted_stage: '',
+  crm_ai_quoted_stage: '',
+  /**
+   * The markup the AI adds to the VED's answer before it tells the customer (SPEC-P2-v2 §2.1, his «foiz yokida fix
+   * summa qoshib ayitshni belgilash»): `percent` or `fixed` dollars, and the value as a decimal STRING — empty =
+   * NO markup, the AI quotes the VED's own figure (his answer of 2026-11-14, «bosh tursa usha yer ustama qoymasdan ozi
+   * narx beraversin» — SPEC-P2-v2 §00 A1; a value that cannot be read fails closed). OWN-DOOR: written on /suhbatlar/ai
+   * by the AI's holder or a super_admin, audited, and a change retires what was priced on the old rule.
+   */
+  agent_calc_markup_kind: 'percent' as 'percent' | 'fixed',
+  agent_calc_markup_value: '',
+  /**
+   * How many calculation requests the AI seat may have open at once (SPEC-P2-v2 §1.3, his §7 Q11 ⭐ a: 100) — the
+   * one bound on VED jobs and AI-VED calls for a machine with no daily count. Only while the seat holds the
+   * account (`holderIsSeat`); every person keeps 20. A whole number 1..200, never 0 («no cap»). OWN-DOOR: written
+   * on /suhbatlar/ai by a super_admin only — raising it is a widening, not a brake.
+   */
+  agent_calc_open_limit: OPEN_CALC_CAP_SEAT_DEFAULT,
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
   /**
@@ -368,7 +393,89 @@ export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boo
   // «3.7» were stored as typed while the cap enforced something else.
   tnved_ai_daily_limit: wholeNumberSettingValid,
   tarkib_ai_daily_limit: wholeNumberSettingValid,
+  // The full AI seller's part 2 (SPEC-P2-v2 K5): each own-door key keeps a shape here too, so its own writer and
+  // any reader ask ONE rule — a value the shape refuses is read as «off» / the default, never guessed.
+  agent_calc_markup_kind: calcMarkupKindValid,
+  agent_calc_markup_value: calcMarkupValueValid,
+  agent_calc_open_limit: (raw) => readOpenCalcLimit(raw) !== null,
+  crm_ai_contacted_stage: stageSettingValid,
+  crm_ai_quoted_stage: stageSettingValid,
 };
+
+/**
+ * The keys that steer the machine and have a door of their OWN (SPEC-P2-v2 K5): never writable through the generic
+ * `/admin/settings` form — it stores a string-default key verbatim when no validator stops it, and its door
+ * (`admin.settings.manage`, the whole `admin` role) is not the door of the AI (`mayRunAgent`) nor the funnel's
+ * (`crm.manage`). That screen draws them read-only and names the page that changes them; `updateSettingAction`
+ * refuses them in words. The value is the page, and the key the bundles' `settings.ownDoorPage` reads.
+ */
+export const OWN_DOOR_KEYS = {
+  agent_calc_markup_kind: 'agentAi',
+  agent_calc_markup_value: 'agentAi',
+  agent_calc_open_limit: 'agentAi',
+  crm_ai_contacted_stage: 'crmSettings',
+  crm_ai_quoted_stage: 'crmSettings',
+} as const satisfies Partial<Record<SettingKey, 'agentAi' | 'crmSettings'>>;
+
+export type OwnDoorKey = keyof typeof OWN_DOOR_KEYS;
+
+/** The page each own door lives on — the link `/admin/settings` draws beside the read-only value. */
+export const OWN_DOOR_PAGES: Record<(typeof OWN_DOOR_KEYS)[OwnDoorKey], string> = {
+  agentAi: '/suhbatlar/ai',
+  crmSettings: '/crm/settings',
+};
+
+export function isOwnDoorKey(key: string): key is OwnDoorKey {
+  return Object.prototype.hasOwnProperty.call(OWN_DOOR_KEYS, key);
+}
+
+/** The markup's two kinds (SPEC-P2-v2 §2.1). */
+export const CALC_MARKUP_KINDS = ['percent', 'fixed'] as const;
+export type CalcMarkupKind = (typeof CALC_MARKUP_KINDS)[number];
+
+export function calcMarkupKindValid(raw: string): boolean {
+  return (CALC_MARKUP_KINDS as readonly string[]).includes(raw);
+}
+
+/** His §7 Q4 ⭐ a: a percent 0.01-100 with at most two decimals; a fixed sum a whole number of dollars 1-5 000. */
+export const CALC_MARKUP_BOUNDS = { percentHundredthsMax: 10_000, fixedMax: 5_000 } as const;
+
+/** A percent as hundredths («10.5» → 1050), read from its decimal STRING — never `Number()` on a float. */
+export function percentHundredths(raw: string): number | null {
+  const m = /^(0|[1-9]\d{0,2})(?:\.(\d{1,2}))?$/u.exec(raw);
+  if (!m) return null;
+  const h = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
+  return h >= 1 && h <= CALC_MARKUP_BOUNDS.percentHundredthsMax ? h : null;
+}
+
+/** A fixed markup in whole dollars, or null. */
+export function fixedDollars(raw: string): number | null {
+  if (!/^[1-9]\d{0,3}$/u.test(raw)) return null;
+  const n = Number(raw);
+  return n <= CALC_MARKUP_BOUNDS.fixedMax ? n : null;
+}
+
+/**
+ * The value alone, as `SETTING_VALIDATORS` sees it (no kind beside it): empty («no markup», §00 A1), or a shape one of
+ * the two kinds takes. Its own writer asks the whole rule (`calcMarkupRuleValid`).
+ */
+export function calcMarkupValueValid(raw: string): boolean {
+  return raw === '' || percentHundredths(raw) !== null || fixedDollars(raw) !== null;
+}
+
+/** The whole rule: the kind, and a value that kind takes — or an empty value («no markup», §00 A1). */
+export function calcMarkupRuleValid(kind: string, value: string): boolean {
+  if (!calcMarkupKindValid(kind)) return false;
+  if (value === '') return true;
+  return kind === 'percent' ? percentHundredths(value) !== null : fixedDollars(value) !== null;
+}
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** A funnel stage setting: empty («do nothing») or a stage id. Whether it names an OPEN, active stage is its door's. */
+export function stageSettingValid(raw: string): boolean {
+  return raw === '' || UUID_SHAPE.test(raw);
+}
 
 /** A whole number, typed as digits and nothing else — «0» is allowed and means off. */
 export function wholeNumberSettingValid(raw: string): boolean {

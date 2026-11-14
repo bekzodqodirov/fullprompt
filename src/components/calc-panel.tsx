@@ -450,6 +450,12 @@ export async function CalcPanel({
                 <span className="font-mono tabular-nums">${Number(o.clientPriceUsd).toFixed(2)}</span>
                 <span className="uppercase">{o.locale}</span>
                 <span>{format.dateTime(o.offeredAt, { dateStyle: 'short' })}</span>
+                {/* The AI seller's offer (SPEC-P2-v2 §2.4a): his markup over the VED's answer, no seller's promise. */}
+                {o.byAi ? (
+                  <span className="chip" data-testid="calc-offer-ai">
+                    {t('offerByAi')}
+                  </span>
+                ) : null}
                 {o.belowFloor ? <span className="chip chip-warn">{t('belowFloorChip')}</span> : null}
                 {o.belowFloor && !o.approvedAt ? (
                   <span className="chip chip-warn" data-testid="calc-offer-pending">

@@ -8,7 +8,7 @@ import {
   saveLostReasonAction,
   saveSourceAction,
   saveStageAction,
-  setCalcStageAction,
+  setAiStageAction,
   type CrmFormState,
 } from '../../actions';
 import { STAGE_CLASS, stageClass } from '../../stage-color';
@@ -337,21 +337,44 @@ export function CalcStageForm({
   stages: { id: string; name: string; kind: string; active: boolean }[];
   current: string;
 }) {
+  return <StageSettingForm board={board} which="calc" stages={stages} current={current} />;
+}
+
+/**
+ * One stage setting (SPEC-P2-v2 §3.1): «Hisoblatish» on either board, and the AI seller's two lead stages. Posts the
+ * board and WHICH stage — never a settings key; the server maps the pair through a closed list and refuses the rest.
+ */
+export function StageSettingForm({
+  board,
+  which,
+  stages,
+  current,
+}: {
+  board: 'lead' | 'deal';
+  which: 'calc' | 'ai_contacted' | 'ai_quoted';
+  stages: { id: string; name: string; kind: string; active: boolean }[];
+  current: string;
+}) {
   const t = useTranslations('crm');
   const tc = useTranslations('common');
-  const [state, formAction, pending] = useActionState<CrmFormState, FormData>(
-    setCalcStageAction,
-    {},
-  );
+  const [state, formAction, pending] = useActionState<CrmFormState, FormData>(setAiStageAction, {});
+  const label = which === 'calc' ? t('calcStage') : which === 'ai_contacted' ? t('aiContactedStage') : t('aiQuotedStage');
+  // His words for each refusal — a literal map, so the i18n fence sees every key (#163).
+  const refusal: Record<string, string> = {
+    bad_setting: t('stageSettingBad'),
+    stage_not_open: t('stageSettingNotOpen'),
+    quoted_not_after_contacted: t('stageSettingOrder'),
+  };
 
   return (
     <form action={formAction} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="board" value={board} />
+      <input type="hidden" name="which" value={which} />
       <select
         name="stageId"
         defaultValue={current}
-        aria-label={t('calcStage')}
-        data-testid={`calc-stage-${board}`}
+        aria-label={label}
+        data-testid={which === 'calc' ? `calc-stage-${board}` : `ai-stage-${which}`}
         className="input min-w-40 flex-1"
       >
         <option value="">—</option>
@@ -367,7 +390,7 @@ export function CalcStageForm({
         {tc('save')}
       </button>
       {state.ok && <span className="self-center text-sm text-good">✅</span>}
-      {state.error && <span className="self-center text-sm text-bad">{state.error}</span>}
+      {state.error && <span className="self-center text-sm text-bad">{refusal[state.error] ?? tc('error')}</span>}
     </form>
   );
 }

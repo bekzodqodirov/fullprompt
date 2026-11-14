@@ -8,6 +8,7 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import { db } from '@/modules/platform/db/client';
 import {
   getSetting,
+  isOwnDoorKey,
   SETTING_DEFAULTS,
   SETTING_VALIDATORS,
   SETTINGS_AUDIT_ID,
@@ -19,6 +20,10 @@ export async function updateSettingAction(formData: FormData): Promise<void> {
   const actor = await authorize('admin.settings.manage');
   const key = String(formData.get('key')) as SettingKey;
   if (!(key in SETTING_DEFAULTS)) return;
+  // A key that steers the machine has a door of its own (SPEC-P2-v2 K5) — the AI page's holder or super_admin, the
+  // funnel's `crm.manage` — never this form's `admin.settings.manage`. The screen draws it read-only; a forged post
+  // is refused in words, never a silent no-op that leaves the admin believing he moved it.
+  if (isOwnDoorKey(key)) redirect(`/admin/settings?own=${encodeURIComponent(key)}`);
 
   const raw = String(formData.get('value') ?? '');
   // A value with a shape (the unpriced-cargo ban's instant) is checked before

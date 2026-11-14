@@ -261,8 +261,10 @@ describe('the night (his Q14 ⭐, S2)', () => {
     const night = new Date('2026-11-02T18:30:00Z'); // 23:30 Tashkent
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(night);
-    // The listener's stamps on the same clock as the press.
+    // The listener's stamps on the same clock as the press — and the agent's start a month before it (the ramp's clock:
+    // one read off the REAL now passes this fixed night about 2026-11-18, and the day's ceiling falls to one send).
     await db.update(tgAccountGuard).set({ agentPumpAt: night, caughtUpAt: night }).where(eq(tgAccountGuard.accountId, accountId));
+    await db.update(agentConfig).set({ startedAt: new Date(night.getTime() - 30 * 86_400_000) }).where(eq(agentConfig.id, 1));
     const { tgId } = await inbound({ sentAt: new Date(night.getTime() - 3 * 3_600_000) });
     const draftId = await pendingDraft(tgId);
     const r = await decideDraft(actor(), draftId, 'send', {}, ctx());

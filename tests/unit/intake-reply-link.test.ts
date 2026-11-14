@@ -37,10 +37,11 @@ describe('the ✅ after «Hisoblatish» links what its sender can open', () => {
     // …and the landed request's door (docs/IKKI-ESHIK.md §2.3, §3.5) at BOTH
     // senders, read off the row by the landing they share (as-built review
     // DOORS-2, DOORS-3) — the press said the collection's own door.
-    expect(save).toContain('landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable })');
+    // …and the sender's own open-calc cap for a refusal's words (SPEC-P2-v2 §1.3).
+    expect(save).toContain('landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable, openCap })');
     const sweep = read('src/modules/platform/telegram/calc-intake-sweep.ts');
     const resumed = sweep.slice(sweep.indexOf('async function resumeLanding('));
-    expect(resumed).toContain('landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable })');
+    expect(resumed).toContain('landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable, openCap })');
     const bot = read('src/modules/platform/telegram/staff-bot.ts');
     const land = bot.slice(bot.indexOf('export async function landCollectedIntake('), bot.indexOf('export async function landingLinkFor('));
     expect(land).toContain('await landedWordsOf(');

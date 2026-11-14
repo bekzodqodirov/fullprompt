@@ -5,7 +5,7 @@ import { Panel } from '@/components/panel';
 import { listLostReasons, listSources, listStages, stageUsage } from '@/modules/wms/crm/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import Link from 'next/link';
-import { CalcStageForm, LostReasonForm, SourceForm, StageForm, StageTools } from './forms';
+import { CalcStageForm, LostReasonForm, SourceForm, StageForm, StageSettingForm, StageTools } from './forms';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -18,12 +18,14 @@ export default async function CrmSettingsPage() {
   if (!actor.permissions.has('crm.manage')) redirect('/crm');
   const t = await getTranslations('crm');
 
-  const [stages, sources, usage, calcStage, reasons] = await Promise.all([
+  const [stages, sources, usage, calcStage, reasons, aiContacted, aiQuoted] = await Promise.all([
     listStages(true),
     listSources(true),
     stageUsage(),
     getSetting('crm_calc_stage'),
     listLostReasons(true),
+    getSetting('crm_ai_contacted_stage'),
+    getSetting('crm_ai_quoted_stage'),
   ]);
 
   const stageRows = stages.map((stage) => ({
@@ -48,6 +50,19 @@ export default async function CrmSettingsPage() {
         <h2 className="text-sm font-bold uppercase text-ink-500">🧮 {t('calcStage')}</h2>
         <p className="text-xs text-ink-500">{t('calcStageHint')}</p>
         <CalcStageForm board="lead" stages={stageRows} current={calcStage} />
+      </div>
+
+      {/* The AI seller's own two moves (SPEC-P2-v2 §3.1, his item 4 ⭐): forward only, between open stages, and only
+          on a lead that is the AI's or nobody's — «Yutildi» and «Yo'qotildi» stay a person's. Empty = no move. */}
+      <div className="card space-y-2" data-testid="ai-stages">
+        <h2 className="text-sm font-bold uppercase text-ink-500">🤖 {t('aiStagesTitle')}</h2>
+        <p className="text-xs text-ink-500">{t('aiStagesOrder')}</p>
+        <p className="text-xs font-semibold">{t('aiContactedStage')}</p>
+        <p className="text-xs text-ink-500">{t('aiContactedStageHint')}</p>
+        <StageSettingForm board="lead" which="ai_contacted" stages={stageRows} current={String(aiContacted ?? '')} />
+        <p className="pt-1 text-xs font-semibold">{t('aiQuotedStage')}</p>
+        <p className="text-xs text-ink-500">{t('aiQuotedStageHint')}</p>
+        <StageSettingForm board="lead" which="ai_quoted" stages={stageRows} current={String(aiQuoted ?? '')} />
       </div>
 
       <Panel title={`➕ ${t('addStage')}`}>

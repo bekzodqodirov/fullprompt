@@ -62,6 +62,10 @@ export type AgentErrorCode =
   // sentence, naming its bounds — `auto_bad_value` is the kinds form's «tick at least one».
   | 'auto_bad_per_day'
   | 'auto_bad_caps'
+  // The AI seat's open-calc cap (SPEC-P2-v2 §1.3, web-actions `agentOpenLimitAction`): a whole number 1..200.
+  | 'bad_open_limit'
+  // His markup on the VED's answer (SPEC-P2-v2 §2.1, web-actions `agentMarkupAction`): a rule out of its bounds.
+  | 'bad_markup'
   | `auto_stop_${Exclude<StopAutoRefusal, 'not_ready'>}`
   | `auto_fb_${Exclude<AutoFeedbackRefusal, 'not_ready'>}`
   // «📝 Tuzatish» (web-actions `agentLesson…`, lessons.ts): their own codes too — «empty» and «too long» there
@@ -100,6 +104,10 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_sending: 'errors.auto_sending',
   auto_sent: 'errors.auto_sent',
   estimate_moved: 'errors.estimate_moved',
+  offer_gone: 'errors.offer_gone',
+  calc_price_moved: 'errors.calc_price_moved',
+  calc_owner_priced: 'errors.calc_owner_priced',
+  calc_person_offer: 'errors.calc_person_offer',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',
@@ -110,6 +118,11 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   owner_not_connected: 'errors.owner_not_connected',
   turn_off_first: 'errors.turn_off_first',
   bad_value: 'errors.bad_value',
+  // «Bu akkaunt — AI sotuvchi» names the account the AI speaks from (SPEC-P2-v2 K4, config `setAgentSeat`).
+  seat_not_holder: 'errors.seat_not_holder',
+  bad_open_limit: 'errors.bad_open_limit',
+  bad_markup: 'errors.bad_markup',
+  markup_changed: 'errors.markup_changed',
   // «✅ Tarif to'g'ri»: the column changed since the page was drawn (tariff-watch `confirmTariff`).
   tariff_changed: 'errors.tariff_changed',
   // writeKbFact
@@ -130,6 +143,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   editing_open: 'errors.editing_open',
   no_anchor: 'errors.no_anchor',
   recalculated: 'errors.recalculated',
+  ai_price_sent: 'errors.ai_price_sent',
   // «O'zi yuborish» (web-actions `agentAuto…`)
   auto_not_ready: 'errors.auto_not_ready',
   auto_forbidden: 'errors.auto_forbidden',
@@ -176,8 +190,14 @@ export const PAUSE_KIND_KEYS: Record<PauseKind, string> = {
   blocks: 'pause.blocks',
 };
 
-/** The 0138 category CHECK, verbatim. */
-export const CATEGORY_KEYS: Record<'greeting' | 'status' | 'faq' | 'qualification' | 'price' | 'complaint' | 'other', string> = {
+/**
+ * The 0138 category CHECK, verbatim — and the two kinds 0149 adds to the auto layer's boxes (SPEC-P2-v2 §4.4): a
+ * calculation sent to the VED (`calc`) and the VED's answer with his markup (`calc_price`), never a model's label.
+ */
+export const CATEGORY_KEYS: Record<
+  'greeting' | 'status' | 'faq' | 'qualification' | 'price' | 'complaint' | 'other' | 'calc' | 'calc_price',
+  string
+> = {
   greeting: 'category.greeting',
   status: 'category.status',
   faq: 'category.faq',
@@ -185,6 +205,8 @@ export const CATEGORY_KEYS: Record<'greeting' | 'status' | 'faq' | 'qualificatio
   price: 'category.price',
   complaint: 'category.complaint',
   other: 'category.other',
+  calc: 'category.calc',
+  calc_price: 'category.calc_price',
 };
 
 export function categoryKey(category: string): string {

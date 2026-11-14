@@ -20,6 +20,20 @@ export const JOB_AGENT_HAND_BACK = 'agent.hand_back';
  * SPEC-P1-v2 §2.2; round 101, #706: a model run is never awaited on the poller).
  */
 export const JOB_AGENT_OWNER_ANSWER = 'agent.owner_answer';
+/**
+ * The VED answered (Готово) or sealed a job the AI submitted, whose submitting reply went (SPEC-P2-v2 §2.3): the
+ * customer's price — the VED figure plus his markup — is drafted off the VED's button, never inside its request.
+ */
+export const JOB_AGENT_CALC_ANSWER = 'agent.calc_answer';
+/**
+ * A reply REACHED the customer (SPEC-P2-v2 §2.4, §3.2): what it settles on the card — the VED price the machine
+ * quoted written as the card's offer, and the lead moved one stage on. Enqueued from the listener's `sent` branch
+ * ONLY (never from `settled()`, which also fires for holds, cancels, unknowns and failures), with the outbox row's
+ * id as the JOB's id: pg-boss inserts ON CONFLICT DO NOTHING, so a replayed outcome is one job.
+ */
+export const JOB_AGENT_AFTER_SENT = 'agent.after_sent';
+/** Its retries — a database error only; a refusal by the steps' own rules completes the job (§3.2). */
+export const AFTER_SENT_RETRY_LIMIT = 3;
 
 /** A customer's message landed on the agent owner's account. */
 export interface AgentInboundJob {
@@ -94,6 +108,29 @@ export interface AgentHandBackJob {
   reason: string;
   /** 0 (absent) from the VED's button; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
   attempt?: number;
+}
+
+/**
+ * A VED answer to price for the customer (§2.3). `sourceKey` is the run's key — `calc:<requestId>:<versionId|answer>`,
+ * one draft per standing anchor of a chain: a correction's later seal is its own key, a redelivery is not a second bill.
+ */
+export interface AgentCalcAnswerJob {
+  managerUserId: string;
+  peerId: string;
+  requestId: string;
+  sourceKey: string;
+  /** 0 (absent) from the VED's press; 1 = the one retry after a refusal that passes by itself (run.ts `passesByItself`). */
+  attempt?: number;
+  /**
+   * ISO — the price first waited behind another live reply in the chat (calc-loop `holdCalcAnswer`, fix pass 5): a
+   * RECHECK, re-queued until that reply is decided, under the same source key. Absent on the VED's own press.
+   */
+  heldSince?: string;
+}
+
+/** A sent agent reply to settle on the card (§2.4, §3.2) — the row is re-read; only `status = 'sent'` acts. */
+export interface AgentAfterSentJob {
+  outboxId: string;
 }
 
 /**

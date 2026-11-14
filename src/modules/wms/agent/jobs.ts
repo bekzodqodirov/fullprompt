@@ -11,18 +11,24 @@ import { canLogInSql } from '../../platform/users/login';
 import { officialPeerSql } from '../crm/chat-rules';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
+import { anchorMaxAgeMsSqlText } from './anchor-clock';
 import { ANSWER_RUN_STALE_MS } from './owner-answer';
 import type { DraftPolicyJson } from './types';
 import {
+  AFTER_SENT_RETRY_LIMIT,
   EDIT_ATTEMPT_BASE,
   INBOUND_START_AFTER_S,
   isFirstAsk,
+  JOB_AGENT_AFTER_SENT,
+  JOB_AGENT_CALC_ANSWER,
   JOB_AGENT_HAND_BACK,
   JOB_AGENT_HUMAN_REPLY,
   JOB_AGENT_INBOUND,
   JOB_AGENT_OWNER_ANSWER,
   JOB_AGENT_SWEEP,
   REDRAFT_ATTEMPT_BASE,
+  type AgentAfterSentJob,
+  type AgentCalcAnswerJob,
   type AgentHandBackJob,
   type AgentHumanReplyJob,
   type AgentInboundJob,
@@ -120,6 +126,30 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
         // second model bill, and the run's source_key keeps it once anyway.
         logger.error({ err }, '[agent] hand-back job failed');
       }
+    }
+  });
+  await boss.createQueue(JOB_AGENT_CALC_ANSWER);
+  await boss.work<AgentCalcAnswerJob>(JOB_AGENT_CALC_ANSWER, async (jobs) => {
+    const { handleCalcAnswer } = await import('./calc-loop');
+    for (const job of jobs) {
+      try {
+        const out = await handleCalcAnswer(job.data);
+        logger.info({ peer: job.data.peerId, requestId: job.data.requestId, ...out }, '[agent] calc answer');
+      } catch (err) {
+        // Sent with retryLimit 0, like the hand-back: a second delivery is a second model bill, and the run's
+        // source_key keeps one standing anchor one draft anyway.
+        logger.error({ err }, '[agent] calc answer job failed');
+      }
+    }
+  });
+  await boss.createQueue(JOB_AGENT_AFTER_SENT);
+  await boss.work<AgentAfterSentJob>(JOB_AGENT_AFTER_SENT, async (jobs) => {
+    const { handleAfterSent } = await import('./after-sent');
+    for (const job of jobs) {
+      // NO catch here, unlike the model jobs: a database error is the one thing this job retries
+      // (`AFTER_SENT_RETRY_LIMIT`) — every refusal by its own rules completes it (after-sent.ts).
+      const out = await handleAfterSent(job.data);
+      logger.info({ outboxId: job.data.outboxId, ...out }, '[agent] after sent');
     }
   });
   await boss.createQueue(JOB_AGENT_OWNER_ANSWER);
@@ -316,6 +346,24 @@ export async function retireOnHumanReply(managerUserId: string, peerId: bigint, 
   return retired.length;
 }
 
+/**
+ * The sweep's step 1: a draft lives as long as its anchor's reply window (fit-3) — the anchor clock's (SPEC-P2-v2
+ * K2, anchor-clock `anchorMaxAgeMsSqlText`): a week for his 💵 and the machine's VED-answer reply, 24 hours for every
+ * other. Without the draft's own clock a price card born two days after the request read «⌛ Muddati o'tdi» at the
+ * next minute. Its cards are redrawn. Exported for the clock's tests.
+ */
+export async function expireStaleDrafts(now: Date = new Date()): Promise<{ id: string }[]> {
+  const expired = await db.execute<{ id: string }>(sql`
+    UPDATE agent_drafts d SET status = 'expired', updated_at = now()
+      FROM tg_messages m
+     WHERE d.status IN ('pending', 'editing')
+       AND m.manager_user_id = d.manager_user_id AND m.peer_id = d.peer_id AND m.tg_message_id = d.anchor_tg_message_id
+       AND m.sent_at < ${now.toISOString()}::timestamptz - ${sql.raw(anchorMaxAgeMsSqlText('d'))} * interval '1 millisecond'
+    RETURNING d.id`);
+  for (const r of expired) await refreshCardOf(r.id);
+  return [...expired];
+}
+
 export async function agentSweep(
   now: Date = new Date(),
 ): Promise<{
@@ -327,20 +375,14 @@ export async function agentSweep(
   reminded: number;
   interrupted: number;
   autoPressed: number;
+  afterSent: number;
 }> {
   if (!(await agentTablesReady())) {
-    return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0, reminded: 0, interrupted: 0, autoPressed: 0 };
+    return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0, reminded: 0, interrupted: 0, autoPressed: 0, afterSent: 0 };
   }
 
   // 1. A draft lives as long as its anchor's reply window (fit-3).
-  const expired = await db.execute<{ id: string }>(sql`
-    UPDATE agent_drafts d SET status = 'expired', updated_at = now()
-      FROM tg_messages m
-     WHERE d.status IN ('pending', 'editing')
-       AND m.manager_user_id = d.manager_user_id AND m.peer_id = d.peer_id AND m.tg_message_id = d.anchor_tg_message_id
-       AND m.sent_at < ${new Date(now.getTime() - AGENT_LIMITS.draftTtlMs).toISOString()}::timestamptz
-    RETURNING d.id`);
-  for (const r of expired) await refreshCardOf(r.id);
+  const expired = await expireStaleDrafts(now);
 
   // 2. His own reply the hook did not carry (a CRM reply is recorded by the
   //    pump, not by NewMessage) — the human-reply fallback.
@@ -510,6 +552,19 @@ export async function agentSweep(
     logger.error({ err }, '[agent] auto presses failed');
   }
 
+  // 7b. The after-sent net (SPEC-P2-v2 §2.4, §3.2): a reply sent in the last day whose card-side outcome was never
+  //     recorded — the listener's enqueue lost, or a listener built before it — is queued again under its own job
+  //     id (one job, whatever is already queued). Its own catch: bookkeeping must never cost the sweep's answers.
+  let afterSent = 0;
+  try {
+    const { queueMissedAfterSent } = await import('./after-sent');
+    afterSent = await queueMissedAfterSent(now, (id) =>
+      enqueue(JOB_AGENT_AFTER_SENT, { outboxId: id } satisfies AgentAfterSentJob, { id, retryLimit: AFTER_SENT_RETRY_LIMIT }),
+    );
+  } catch (err) {
+    logger.error({ err }, '[agent] after-sent net failed');
+  }
+
   // 8. The website table's 14-day notice (0148, spec SPEC-P1-v2 §1.6): once per `validThrough`, by day, to the
   //    holder — after it the truck's price is /admin/tarif's, and «✅ Tarif to'g'ri» vouches for the column. Its
   //    own catch: a notice must never cost the sweep's answers.
@@ -519,7 +574,7 @@ export async function agentSweep(
   } catch (err) {
     logger.error({ err }, '[agent] tariff notice failed');
   }
-  return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length, autoPressed };
+  return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length, autoPressed, afterSent };
 }
 
 /**

@@ -757,7 +757,12 @@
       "client_confirm_on_receipt": "发给客户的「货物已入库」消息下是否显示 ✅ / ❌ 按钮（关闭后消息照旧发送；卡片上的「询问客户」仍可使用）",
       "client_reask_on_reweigh": "货物重新称重（重量、体积或箱数变化）导致客户手中的确认问题过期时，是否自动重新发送问题（最后一次修改后 10 分钟；关闭后，卡片上的「询问客户」仍可使用）",
       "freight_tariff_cost_type_codes": "车辆费用中自动选择「按运费价目表」的费用类型（代码列表）",
-      "staff_rating_goal_m3": "团队群的每周团队目标（立方，仅拼车 LTL 货物，0 = 无目标）。在「团队群」页面修改更方便。"
+      "staff_rating_goal_m3": "团队群的每周团队目标（立方，仅拼车 LTL 货物，0 = 无目标）。在「团队群」页面修改更方便。",
+      "crm_ai_contacted_stage": "AI 销售发出第一条回复后，线索移到此阶段（只向前，只在开放阶段之间；为空 — 不移动）。在 /crm/settings 修改",
+      "crm_ai_quoted_stage": "AI 销售报出价格后，线索移到此阶段（只向前；为空 — 不移动）。在 /crm/settings 修改",
+      "agent_calc_markup_kind": "AI 在报关部答复上加价的方式：percent（百分比）或 fixed（固定金额，$）。在 /suhbatlar/ai 修改",
+      "agent_calc_markup_value": "AI 在报关部答复上加的加价；为空 — 不加价，AI 直接报报关部的价格。在 /suhbatlar/ai 修改",
+      "agent_calc_open_limit": "AI 销售同时可有的未结核算数量（报关部工作和 AI 估算调用）；仅在设置「此账号 — AI 销售」后生效，员工为 20。1 至 200；仅超级管理员可在 /suhbatlar/ai 修改"
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
@@ -768,7 +773,17 @@
     "aiSpentToday": "今天：{used} / {limit} 次",
     "aiSpentUsd": "≈ ${usd}",
     "aiSpentMonth": "30 天 ≈ ${usd}",
-    "aiSpentUnpriced": "{n} 次调用价格未知"
+    "aiSpentUnpriced": "{n} 次调用价格未知",
+    "ownDoor": "此设置只能在其专属页面修改：",
+    "ownDoorRefused": "此设置不在这里修改 — 请在其专属页面修改。未保存任何内容。",
+    "ownDoorPage": {
+      "agentAi": "聊天 → AI 销售",
+      "crmSettings": "CRM → 设置"
+    },
+    "badValueMarkupKind": "值无效 — 请填写 percent 或 fixed。未保存任何内容。",
+    "badValueMarkup": "值无效 — 百分比 0.01 至 100（小数最多 2 位）或 1 至 5000 美元整数。未保存任何内容。",
+    "badValueOpenLimit": "值无效 — 请填写 1 至 200 的整数。未保存任何内容。",
+    "badValueStage": "值无效 — 请从列表中选择阶段。未保存任何内容。"
   },
   "audit": {
     "title": "审计日志",
@@ -896,8 +911,11 @@
       "number": "编号",
       "destBeforeDeparture": "收货仓库（出发前）",
       "fileAdded": "已添加文件",
-      "fileName": "文件已删除"
-    }
+      "fileName": "文件已删除",
+      "via": "途径",
+      "holder": "AI 账号"
+    },
+    "aiSeller": "AI 销售"
   },
   "profile": {
     "title": "个人资料",
@@ -3017,7 +3035,16 @@
     "pauseAlreadyCleared": "暂停已解除",
     "pauseClearRefused": "只有账号持有人或超级管理员可以解除暂停",
     "bridgePaused": "发送已停止 — Telegram 限制了该账号",
-    "bridgePausedCount": "已暂停：{n}"
+    "bridgePausedCount": "已暂停：{n}",
+    "aiStagesTitle": "AI 销售的阶段",
+    "aiStagesOrder": "顺序：「AI 首次回复」→「报价」→「AI 已报价」。AI 只把线索向前移动，只在开放阶段之间，且只移动 AI 账号的或无人负责的线索。「成交」和「失败」只由人设置。",
+    "aiContactedStage": "AI 首次回复",
+    "aiContactedStageHint": "AI 销售的回复发给客户后，线索移到该阶段。选「—」表示 AI 不移动线索。",
+    "aiQuotedStage": "AI 已报价",
+    "aiQuotedStageHint": "带价格的回复发给客户后（卡车价格、VED 价格或您的 💵），线索移到该阶段。VED 有未完成的计算时，卡车价格不移动线索。该阶段必须在「AI 首次回复」之后。",
+    "stageSettingBad": "没有这个设置。",
+    "stageSettingNotOpen": "只能选择启用的开放阶段。",
+    "stageSettingOrder": "「AI 已报价」必须在「AI 首次回复」之后。"
   },
   "navShort": {
     "home": "首页",
@@ -4313,6 +4340,7 @@
     "linksShownOf": "显示 {shown} / {total}",
     "sheetTitle": "计算明细",
     "answerSellerNoteLabel": "给销售的备注（可选）",
+    "answerSellerNoteAi": "此处只要填写任何内容，AI 销售就不会自行向客户报出此价格——由销售或老板报价。计算过程请写在「内部备注」中。",
     "answerInternalNoteLabel": "内部备注——如何计算的（必填，销售看不到）",
     "filterKind": "类型",
     "kindAll": "全部",
@@ -4371,7 +4399,8 @@
     "sellerGuess": "销售填写的估价",
     "importConflict": "不可用 {unit}：法规按 {law} 计",
     "freightWatchTitle": "{column}——运费按此列价目的比例分摊，但此列不完整：目前任何费用都不会按价目表分摊。",
-    "freightWatchFrom": "自 {date} 起："
+    "freightWatchFrom": "自 {date} 起：",
+    "offerByAi": "🤖 AI"
   },
   "partners": {
     "title": "合作方",
@@ -6658,7 +6687,9 @@
       "qualification": "澄清",
       "price": "价格",
       "complaint": "投诉",
-      "other": "其他"
+      "other": "其他",
+      "calc": "核算（发给报关部）",
+      "calc_price": "报关价格（含加价）"
     },
     "styleTitle": "回复风格",
     "styleApprovedAt": "已批准：{when}",
@@ -6747,7 +6778,16 @@
       "lesson_money": "价格不能作为规则 — 价格来自工具和设置。如果这个数字不是价格，请用文字写出（例如：“一次”）。",
       "lesson_personal": "文本中有客户信息（姓名、代码、电话）— 规则会用于所有聊天。",
       "lesson_already": "已保存。",
-      "lesson_confirmed": "规则已保存。"
+      "lesson_confirmed": "规则已保存。",
+      "seat_not_holder": "AI 席位只能设在 AI 发言的账号上 — 请先选择账号。",
+      "bad_markup": "加价无效 — 百分比 0.01 至 100（小数点后最多 2 位），或固定金额 1 至 5 000 $ 的整数；留空则不加价。",
+      "markup_changed": "加价在打开页面后已被更改 — 请刷新页面并确认新的加价。",
+      "offer_gone": "报关部正在重新核算 — 此价格已不再有效，回复未发送。",
+      "calc_price_moved": "报关部答复或加价已变更 — 此价格未发送。请用 💵 给出新价格。",
+      "calc_owner_priced": "您已用 💵 亲自给出此项目的价格 — 以您的价格为准，AI 的价格未发送。",
+      "calc_person_offer": "卡片上有销售员更新的价格 — 以该价格为准，AI 的价格未发送。",
+      "ai_price_sent": "AI 的价格已发给客户 — 是否发送您的价格？请再输入一次。",
+      "bad_open_limit": "上限无效 — 请填写 1 至 200 的整数。"
     },
     "sendNow": "立即发送",
     "autoStop": "暂停",
@@ -6832,7 +6872,29 @@
     "lessonSwitchOn": "开启",
     "lessonDelete": "删除",
     "lessonDeleteConfirm": "彻底删除这条纠正吗？AI 将不再读取它。",
-    "statsOwnerTriggered": "根据您的回答或纠正写的（不计入评分）"
+    "statsOwnerTriggered": "根据您的回答或纠正写的（不计入评分）",
+    "seatTitle": "AI 席位",
+    "seatHolds": "此账号 — AI 销售（独立员工）：{name}",
+    "seatElsewhere": "AI 席位指向另一位用户（{name}）— AI 现在从另一个账号发言；在您重新设置之前，{cap} 的上限和在卡片上写价格已停止。",
+    "seatNone": "未设置 AI 席位 — AI 的核算与员工一样限 20 个，AI 的价格不写到卡片上。",
+    "seatHint": "将 AI 销售发言的账号标记为独立员工。若之后更换 AI 账号，标记不会自动转移。",
+    "seatSet": "此账号 — AI 销售",
+    "seatClear": "取消标记",
+    "markupTitle": "报关部答复加价",
+    "markupHint": "报关部答复后，AI 按此加价向客户报价。价格由系统计算，不是 AI；第一个价格等待您的 ✅。",
+    "markupRule": "加价",
+    "markupUnreadable": "设置已损坏 — 请重新填写（AI 暂不报报关部价格）",
+    "markupConfirmed": "已确认",
+    "markupUnconfirmed": "尚未确认 — 第一个报关部价格等待您确认",
+    "markupEmptyLine": "留空则不加价 — AI 直接报报关部的价格：{example}",
+    "markupCost": "今天：写入卡片的报关部价格 {offers} 个 · AI 提交的核算 {jobs} 个 · AI-VED 调用 {calls} / {limit}",
+    "markupValueLabel": "加价（百分比或 $；留空 — 不加价）",
+    "markupKindLabel": "加价方式",
+    "markupKindPercent": "百分比 (%)",
+    "markupKindFixed": "固定金额 ($)",
+    "markupConfirm": "✅ 加价无误",
+    "openLimitLabel": "AI 未结核算上限",
+    "openLimitHint": "设置 AI 席位后生效（员工为 20）。{min} 至 {max}；提高上限即扩大权限，因此仅超级管理员可改。"
   },
   "invoys": {
     "title": "同一海关编码的货物",

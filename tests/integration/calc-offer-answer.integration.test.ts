@@ -105,7 +105,7 @@ async function payableFor(dealId: string) {
     request_id: string;
     total_usd: string;
     upsale_usd: string;
-  }>(sql`SELECT * FROM (${payableOffersSql()}) p WHERE p.entity_id = ${dealId}::uuid`);
+  }>(sql`SELECT * FROM (${payableOffersSql({ machineOffers: true })}) p WHERE p.entity_id = ${dealId}::uuid`);
 }
 
 beforeAll(async () => {

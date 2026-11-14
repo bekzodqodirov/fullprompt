@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import {
+  agentOffers,
   calcExtras,
   calcGroups,
   calcOffers,
@@ -17,6 +18,8 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { writeAudit, type AuditContext } from '@/modules/platform/audit/service';
+import { AUDIT_VIA_AI } from '@/modules/platform/audit/fields';
+import { agentFullP2Ready } from '../agent/config';
 import { getSetting } from '@/modules/platform/settings/service';
 import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
@@ -5520,6 +5523,19 @@ export async function recordOffer(
      * from where the caller stands.
      */
     expect?: { entityType: 'deal' | 'lead'; entityId: string };
+    /**
+     * Push the offer text and its sheet to the offerer's own chat (default true — a seller forwards it). FALSE for
+     * the AI seller's offer (SPEC-P2-v2 §2.4): the customer already HAS the price — the reply that quoted it went —
+     * and a forwardable second «offer» in the holder's chat invites a double send.
+     */
+    push?: boolean;
+    /**
+     * The AI seller wrote this offer, for the reply `draftId` that told the customer (SPEC-P2-v2 §2.4a). Its mark
+     * (`agent_offers`, 0149) is written in the SAME short transaction as the offer — two INSERTs, no read between
+     * them: a crash between two separate writes would leave an unmarked machine offer, and an unmarked offer is
+     * payable (fail open on money, refused). Commission is never paid on it (`payableOffersSql({ machineOffers })`).
+     */
+    machine?: { draftId: string };
   },
   ctx: AuditContext,
 ): Promise<OfferResult> {
@@ -5678,39 +5694,59 @@ export async function recordOffer(
   // customer on the phone is a door they walk around by not using the screen.
   const approved = belowFloor ? Boolean(input.mayApprove) : true;
 
-  const [saved] = await db
-    .insert(calcOffers)
-    .values({
-      versionId,
-      requestId,
-      entityType: request.entityType,
-      entityId: request.entityId,
-      clientPriceUsd: input.clientPriceUsd.toFixed(2),
-      belowFloor,
-      belowFloorReason: belowFloor ? reason : null,
-      approvedAt: approved && belowFloor ? new Date() : null,
-      approvedBy: approved && belowFloor ? ctx.actorId : null,
-      locale: input.locale,
-      text,
-      offeredBy: ctx.actorId,
-    })
-    .returning({ id: calcOffers.id });
-  // A new standing offer can change what the sellers are owed (it replaces
-  // the job's payable row): the Balans's minute-long memo forgets it (3a).
-  forgetUpsaleLiability();
-
-  await writeAudit(db, ctx, {
+  const offerRow = {
+    versionId,
+    requestId,
+    entityType: request.entityType,
+    entityId: request.entityId,
+    clientPriceUsd: input.clientPriceUsd.toFixed(2),
+    belowFloor,
+    belowFloorReason: belowFloor ? reason : null,
+    approvedAt: approved && belowFloor ? new Date() : null,
+    approvedBy: approved && belowFloor ? ctx.actorId : null,
+    locale: input.locale,
+    text,
+    offeredBy: ctx.actorId,
+  };
+  const machine = input.machine;
+  const auditEntry = (id: string) => ({
     entityType: 'calc_offer',
-    entityId: saved!.id,
-    action: 'create',
+    entityId: id,
+    action: 'create' as const,
     after: {
       versionId,
       requestId,
       clientPriceUsd: input.clientPriceUsd,
       belowFloor,
       locale: input.locale,
+      // The AI seller's own offer (§2.4a): the History names the machine, never a seller's promise.
+      ...(machine ? { via: AUDIT_VIA_AI } : {}),
     },
   });
+  if (machine) {
+    if (belowFloor) throw new CalcError('below_floor_reason_required');
+    // The machine's offer is EVERY write of it in ONE transaction (§2.4a; review crm 0): the offer, its mark, its audit
+    // row and the card's price. Its caller (the after-sent job) retries a database error and takes a mark it finds as
+    // «written» — so a retry must find everything or nothing, never an offer whose card was not written. A machine
+    // never allows a price below the floor (refused just above), so its offer is always released; and it pushes no
+    // second «offer» to the holder's chat (§2.4 — the customer already has the price). Every read above is on the
+    // pool, before it (#714); nothing is read inside it.
+    const saved = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(calcOffers).values(offerRow).returning({ id: calcOffers.id });
+      await tx.insert(agentOffers).values({ offerId: row!.id, requestId: request.id, draftId: machine.draftId });
+      await writeAudit(tx, ctx, auditEntry(row!.id));
+      await applyOfferToCard(row!.id, request, input.clientPriceUsd, tx);
+      return row!;
+    });
+    forgetUpsaleLiability();
+    return { id: saved.id, text, belowFloor, delivered: false, pending: false };
+  }
+  const [saved] = await db.insert(calcOffers).values(offerRow).returning({ id: calcOffers.id });
+  // A new standing offer can change what the sellers are owed (it replaces
+  // the job's payable row): the Balans's minute-long memo forgets it (3a).
+  forgetUpsaleLiability();
+
+  await writeAudit(db, ctx, auditEntry(saved!.id));
 
   // A PENDING promise sends nothing and hands back nothing to forward. The
   // row exists — that is the owner's visibility — but until somebody allows
@@ -5721,6 +5757,9 @@ export async function recordOffer(
   }
 
   await applyOfferToCard(saved!.id, request, input.clientPriceUsd);
+
+  // The customer already has the price (§2.4): no second «offer» lands in the holder's own chat to forward again.
+  if (input.push === false) return { id: saved!.id, text, belowFloor, delivered: false, pending: false };
 
   // The offer goes to the seller's OWN chat as its own message, deliberately
   // carrying no staff URL: the internal notification does that, and this is
@@ -5762,12 +5801,14 @@ async function applyOfferToCard(
   offerId: string,
   request: typeof calcRequests.$inferSelect,
   clientPriceUsd: number,
+  // The machine's offer writes the card inside its own transaction (review crm 0); everyone else on the pool.
+  exec: Pick<typeof db, 'update'> = db,
 ): Promise<void> {
   const set = { quotedAmount: clientPriceUsd.toFixed(2), quotedCurrency: 'USD', updatedAt: new Date() };
   if (request.entityType === 'lead') {
-    await db.update(leads).set(set).where(eq(leads.id, request.entityId));
+    await exec.update(leads).set(set).where(eq(leads.id, request.entityId));
   } else {
-    await db.update(deals).set(set).where(eq(deals.id, request.entityId));
+    await exec.update(deals).set(set).where(eq(deals.id, request.entityId));
   }
   logger.info({ offerId, entityId: request.entityId }, '[calc] client price written to card');
 }
@@ -5788,17 +5829,28 @@ async function hasLinkedChat(userId: string): Promise<boolean> {
   return Boolean(link);
 }
 
-/** Every offer made against this card, newest first. */
+/**
+ * Every offer made against this card, newest first. `byAi`: the AI seller wrote it (its `agent_offers` mark,
+ * SPEC-P2-v2 §2.4a) — the list draws «🤖 AI», so a mechanical markup is not read as what a seller told a customer.
+ * One migration behind 0149 there are no machine offers, and the list reads exactly as before.
+ */
 export async function offersFor(
   entityType: 'deal' | 'lead',
   entityId: string,
-): Promise<(typeof calcOffers.$inferSelect)[]> {
-  return db
-    .select()
+): Promise<((typeof calcOffers.$inferSelect) & { byAi: boolean })[]> {
+  const where = and(eq(calcOffers.entityType, entityType), eq(calcOffers.entityId, entityId));
+  if (!(await agentFullP2Ready())) {
+    const rows = await db.select().from(calcOffers).where(where).orderBy(desc(calcOffers.offeredAt)).limit(10);
+    return rows.map((row) => ({ ...row, byAi: false }));
+  }
+  const rows = await db
+    .select({ offer: calcOffers, aiMark: agentOffers.offerId })
     .from(calcOffers)
-    .where(and(eq(calcOffers.entityType, entityType), eq(calcOffers.entityId, entityId)))
+    .leftJoin(agentOffers, eq(agentOffers.offerId, calcOffers.id))
+    .where(where)
     .orderBy(desc(calcOffers.offeredAt))
     .limit(10);
+  return rows.map((row) => ({ ...row.offer, byAi: row.aiMark !== null }));
 }
 
 /**

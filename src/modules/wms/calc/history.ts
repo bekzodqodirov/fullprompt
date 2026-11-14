@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { calcGroups, calcOffers, calcRequests, calcVersions, leads } from '@/modules/platform/db/schema';
+import { agentOffers, calcGroups, calcOffers, calcRequests, calcVersions, leads } from '@/modules/platform/db/schema';
+import { agentFullP2Ready } from '../agent/config';
 import type { CalcSectionName } from './pricing';
 import { seesOfferPriceOf, type UpsaleScope } from './upsale-scope';
 
@@ -47,6 +48,11 @@ export interface QuoteHistoryRow {
   /** What a seller actually quoted, when one has been recorded. */
   clientPriceUsd: number | null;
   belowFloor: boolean;
+  /**
+   * The quoted price is the AI seller's (its `agent_offers` mark, SPEC-P2-v2 §2.4a): his markup over the VED's answer,
+   * drawn «🤖 AI» — never read as what a seller told a customer. False whenever no price is shown.
+   */
+  offerByAi: boolean;
   /** False for a seller: the card behind it prints the sealed floor. */
   cardReadable: boolean;
   /**
@@ -194,6 +200,8 @@ export async function quoteHistoryFor(
         hidePrice || !offer || !seesOfferPriceOf(opts.scope, offer.offeredBy, opts.viewerId)
           ? false
           : offer.belowFloor,
+      offerByAi:
+        hidePrice || !offer || !seesOfferPriceOf(opts.scope, offer.offeredBy, opts.viewerId) ? false : offer.byAi,
       /** A card link is a door to the floor: `/bitimlar/<id>` prints it. */
       cardReadable: !hideCost,
       leadOwnerId: r.leadOwnerId ?? null,
@@ -201,19 +209,29 @@ export async function quoteHistoryFor(
   });
 }
 
-/** The newest offer per version — one grouped query, never one per row (#432). */
+type HistoryOffer = typeof calcOffers.$inferSelect & { byAi: boolean };
+
+/**
+ * The newest offer per version — one grouped query, never one per row (#432). `byAi` from the machine's own mark
+ * (`agent_offers`, a LEFT JOIN) — read only once 0149 is there; one migration behind there are no machine offers.
+ */
 async function offersByVersion(versionIds: string[], ownerFilter: string | null) {
-  if (versionIds.length === 0) return new Map<string, typeof calcOffers.$inferSelect>();
-  const rows = await db
-    .select()
-    .from(calcOffers)
-    .where(
-      ownerFilter === null
-        ? inArray(calcOffers.versionId, versionIds)
-        : and(inArray(calcOffers.versionId, versionIds), eq(calcOffers.offeredBy, ownerFilter)),
-    )
-    .orderBy(desc(calcOffers.offeredAt));
-  const out = new Map<string, typeof calcOffers.$inferSelect>();
+  const out = new Map<string, HistoryOffer>();
+  if (versionIds.length === 0) return out;
+  const where =
+    ownerFilter === null
+      ? inArray(calcOffers.versionId, versionIds)
+      : and(inArray(calcOffers.versionId, versionIds), eq(calcOffers.offeredBy, ownerFilter));
+  const rows: HistoryOffer[] = (await agentFullP2Ready())
+    ? (
+        await db
+          .select({ offer: calcOffers, aiMark: agentOffers.offerId })
+          .from(calcOffers)
+          .leftJoin(agentOffers, eq(agentOffers.offerId, calcOffers.id))
+          .where(where)
+          .orderBy(desc(calcOffers.offeredAt))
+      ).map((r) => ({ ...r.offer, byAi: r.aiMark !== null }))
+    : (await db.select().from(calcOffers).where(where).orderBy(desc(calcOffers.offeredAt))).map((r) => ({ ...r, byAi: false }));
   // The inArray above admits only version-anchored rows, so versionId is
   // non-null here — the narrowing is for the widened column (phase 4).
   for (const r of rows) if (r.versionId && !out.has(r.versionId)) out.set(r.versionId, r);

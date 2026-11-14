@@ -1,11 +1,9 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
-  agentCalcLinks,
   agentConversations,
   agentDrafts,
   attachments,
-  calcRequests,
   clients,
   clientTelegramLinks,
   leads,
@@ -119,6 +117,12 @@ export interface AgentContext {
    * the goods as often as the truck. Null = nothing quoted in the week.
    */
   lastQuote: LastQuote | null;
+  /**
+   * The LEAD's funnel stage, for a lead chat only (SPEC-P2-v2 §3.4) — read here by its own query, never in
+   * `chatIdentity` (the listener's send step calls that every tick). Printed only on the chat block's lead line;
+   * never the lost reason. Absent/null: a client chat, or no lead. Optional, so a context built by hand is today's.
+   */
+  leadStage?: { name: string; kind: string } | null;
 }
 
 /** A road a run priced or asked: the flight, the truck, or both in one reply. */
@@ -520,6 +524,135 @@ export function customerScriptOf(messages: readonly ChatMessage[]): ScriptName |
   return s === 'none' ? null : s;
 }
 
+/** How many of the chat's calculation chains a run reads (the newest by their last link) — five, as before §1.7. */
+export const CONTEXT_CHAINS = 5;
+
+/**
+ * One calculation CHAIN of this chat (SPEC-P2-v2 §1.7, §1.5): what the agent linked under one root
+ * (`agent_calc_links.root_request_id`) — the request its submit landed, the hand-back loop's resubmission linked
+ * under the same root — and every correction the VED opened off any of them (`supersedes_request_id`, the walk
+ * `calc/chain.ts` makes). A link holds the request it LANDED; the VED's correction is a new request no link names,
+ * so a join on the link alone read «answered» while the correction was being written.
+ */
+export interface CalcChain {
+  /** The chain's root, as the links name it. */
+  root: string;
+  /** The chain's newest link — what the context listed by. */
+  linkedAt: Date;
+  /** The chain's newest member, by when it was requested. */
+  newestId: string;
+  newestRequestedAt: Date;
+  section: string | null;
+  /** `open` while ANY member is open; else the newest member's own ending (a return reason = returned). */
+  status: 'open' | 'answered' | 'returned';
+  /** The card the newest member sits on, and the client of that card when it is a deal. */
+  entityType: string;
+  entityId: string;
+  dealClientId: string | null;
+  /** The newest member's card label — a deal's code or a lead's name (the card's «B-…/lid» words). */
+  cardLabel: string | null;
+  /** Every member of the chain — what «is this request one of this chat's» is asked against (calc-price `calcPriceFor`). */
+  memberIds: string[];
+  /** When the newest member ended — answered, sealed or handed back (`completed_at`); null while it is open. */
+  endedAt: Date | null;
+  /** The newest member's card still takes jobs: its deal's or lead's stage is of kind `open` (not won, not lost). */
+  cardOpen: boolean;
+  /**
+   * The «↩️ Ma'lumot to'ldiring» task the VED opened for THE NEWEST MEMBER ITSELF (`calc_return_tasks`, fix pass 4)
+   * stands open on that card for this account — the task the hand-back loop closes (calc/service `closeReturnTasks`,
+   * the same predicate). Never another job's task on the same card: a lead holds every job its chat sends, and a loop
+   * he closed by hand must stay closed while another job's task is open. One migration behind: false (no loop).
+   */
+  returnTaskOpen: boolean;
+}
+
+/**
+ * The chat's chains, newest link first — `limit` of them (a run reads `CONTEXT_CHAINS`; the gate and the landing read
+ * all). One statement: the chains' members are the links' requests and their roots, and every request that
+ * supersedes one of them, walked down (capped in depth — a cycle is impossible by construction and a hang in a run
+ * is not). Pooled; never inside a transaction.
+ */
+export async function chatCalcChains(managerUserId: string, peerId: bigint, limit: number | null = null): Promise<CalcChain[]> {
+  const { agentFullP2Ready } = await import('./config');
+  const returnTaskOpen = (await agentFullP2Ready())
+    ? sql`EXISTS (
+             SELECT 1 FROM calc_return_tasks b JOIN tasks tk ON tk.id = b.task_id
+              WHERE b.request_id = n.id
+                AND tk.origin = 'calc_return' AND tk.entity_type = n.entity_type AND tk.entity_id = n.entity_id
+                AND tk.assignee_id = ${managerUserId}::uuid AND tk.status = 'open'
+           )`
+    : sql`false`;
+  const rows = (await db.execute(sql`
+    WITH RECURSIVE linked AS (
+      SELECT root_request_id AS root, request_id AS id, created_at
+        FROM agent_calc_links
+       WHERE manager_user_id = ${managerUserId}::uuid AND peer_id = ${String(peerId)}::bigint
+    ), roots AS (
+      SELECT root, max(created_at) AS linked_at FROM linked GROUP BY root
+       ORDER BY max(created_at) DESC
+       ${limit === null ? sql`` : sql`LIMIT ${limit}`}
+    ), seeds AS (
+      SELECT r.root, r.root AS id FROM roots r
+      UNION
+      SELECT l.root, l.id FROM linked l JOIN roots r ON r.root = l.root
+    ), tree AS (
+      SELECT root, id, 0 AS depth FROM seeds
+      UNION ALL
+      SELECT t.root, c.id, t.depth + 1
+        FROM calc_requests c JOIN tree t ON c.supersedes_request_id = t.id
+       WHERE t.depth < 64
+    )
+    SELECT r.root::text AS root, r.linked_at, n.id::text AS newest_id, n.requested_at, n.section,
+           n.completed_at, n.return_reason, n.entity_type, n.entity_id::text AS entity_id,
+           d.client_id::text AS deal_client_id,
+           coalesce(d.code, l.name) AS card_label,
+           coalesce((SELECT ds.kind FROM deal_stages ds WHERE ds.id = d.stage_id), (SELECT ls.kind FROM lead_stages ls WHERE ls.id = l.stage_id)) = 'open' AS card_open,
+           ${returnTaskOpen} AS return_task_open,
+           EXISTS (SELECT 1 FROM tree t JOIN calc_requests c ON c.id = t.id WHERE t.root = r.root AND c.completed_at IS NULL) AS any_open,
+           ARRAY(SELECT DISTINCT t.id::text FROM tree t WHERE t.root = r.root) AS member_ids
+      FROM roots r
+      CROSS JOIN LATERAL (
+        SELECT c.* FROM tree t JOIN calc_requests c ON c.id = t.id
+         WHERE t.root = r.root ORDER BY c.requested_at DESC, c.id DESC LIMIT 1
+      ) n
+      LEFT JOIN deals d ON n.entity_type = 'deal' AND d.id = n.entity_id
+      LEFT JOIN leads l ON n.entity_type = 'lead' AND l.id = n.entity_id
+     ORDER BY r.linked_at DESC
+  `)) as unknown as {
+    root: string;
+    linked_at: string | Date;
+    newest_id: string;
+    requested_at: string | Date;
+    section: string | null;
+    completed_at: string | Date | null;
+    return_reason: string | null;
+    entity_type: string;
+    entity_id: string;
+    deal_client_id: string | null;
+    card_label: string | null;
+    card_open: boolean | null;
+    return_task_open: boolean;
+    any_open: boolean;
+    member_ids: string[] | null;
+  }[];
+  return rows.map((r) => ({
+    root: r.root,
+    linkedAt: new Date(r.linked_at),
+    newestId: r.newest_id,
+    newestRequestedAt: new Date(r.requested_at),
+    section: r.section ?? null,
+    status: r.any_open || r.completed_at === null ? 'open' : r.return_reason ? 'returned' : 'answered',
+    entityType: r.entity_type,
+    entityId: r.entity_id,
+    dealClientId: r.deal_client_id,
+    cardLabel: r.card_label,
+    memberIds: [...new Set(r.member_ids ?? [])],
+    endedAt: r.completed_at === null ? null : new Date(r.completed_at),
+    cardOpen: r.card_open === true,
+    returnTaskOpen: r.return_task_open === true,
+  }));
+}
+
 /** The whole context for a run. */
 /** The newest draft he APPROVED this week that priced or asked a road (review R1) — a pending or rejected one quoted nobody. */
 export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promise<LastQuote | null> {
@@ -567,20 +700,12 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
     .select({ locale: agentConversations.locale })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)));
-  const calcs = await db
-    .select({
-      requestId: agentCalcLinks.requestId,
-      section: calcRequests.section,
-      completedAt: calcRequests.completedAt,
-      returnReason: calcRequests.returnReason,
-      createdAt: agentCalcLinks.createdAt,
-    })
-    .from(agentCalcLinks)
-    .innerJoin(calcRequests, eq(calcRequests.id, agentCalcLinks.requestId))
-    .where(and(eq(agentCalcLinks.managerUserId, managerUserId), eq(agentCalcLinks.peerId, peerId)))
-    .orderBy(desc(agentCalcLinks.createdAt))
-    .limit(5);
+  // The chat's calculations by CHAIN (SPEC-P2-v2 §1.7): a correction the VED opened reads «open» while it is written,
+  // never «answered» off the request it replaces.
+  const calcs = await chatCalcChains(managerUserId, peerId, CONTEXT_CHAINS);
   const lastQuote = await lastQuoteFor(managerUserId, peerId);
+  // A lead chat's stage (§3.4): a client chat prints none — its lead is the won one.
+  const leadStage = identity.clientId === null && identity.leadId !== null ? await leadStageOf(identity.leadId) : null;
   return {
     managerUserId,
     peerId,
@@ -594,15 +719,24 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
     customerScript: customerScriptOf(messages),
     measures: measureCandidates(messages),
     openCalcs: calcs.map((c) => ({
-      requestId: c.requestId,
-      section: c.section ?? null,
-      createdAt: c.createdAt,
+      requestId: c.newestId,
+      section: c.section,
+      createdAt: c.linkedAt,
       // Words, never the answer's amount (leak-10): the model learns that a
       // price exists, not what it is.
-      status: c.completedAt ? (c.returnReason ? 'returned' : 'answered') : 'open',
+      status: c.status,
     })),
     ruleDecision: identity.ruleDecision,
     lastQuote,
+    leadStage,
   };
+}
+
+/** The lead's stage — its name and kind, nothing else (never the lost reason). Null for a lead that is gone. */
+export async function leadStageOf(leadId: string): Promise<{ name: string; kind: string } | null> {
+  const rows = (await db.execute(sql`
+    SELECT s.name, s.kind FROM leads l JOIN lead_stages s ON s.id = l.stage_id WHERE l.id = ${leadId}::uuid
+  `)) as unknown as { name: string; kind: string }[];
+  return [...rows][0] ?? null;
 }
 

@@ -1,6 +1,7 @@
 import type PgBoss from 'pg-boss';
 import { logger } from '../logger';
 import { tashkentDay, tashkentMinute } from '../time/tashkent';
+import { openCalcCapFor } from '../settings/calc-cap';
 import {
   activeIntake,
   BOOT_GRACE_MS,
@@ -447,9 +448,11 @@ async function resumeLanding(
     // The ✅ says what the REQUEST's door promises (docs/IKKI-ESHIK.md §2.3,
     // §3.5) — read off the row the landing wrote, as the pass reads it; the
     // landing reads it for both senders (as-built review DOORS-3).
+    // The sender's own open-calc cap, read only when the queue refused (SPEC-P2-v2 §1.3 — the one figure).
+    const openCap = target.queued ? null : await openCalcCapFor(state.staffId).catch(() => null);
     await sayOrRetry({
       chatId,
-      text: landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable }),
+      text: landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable, openCap }),
       replyMarkup: markup,
     });
     endIntake(chatId);
@@ -471,7 +474,8 @@ async function resumeLanding(
       if (ends || !failed.refusalSaid) {
         failed.refusalSaid = true;
         const { replyKeyboardFor } = await import('./keyboards');
-        await sayOrRetry({ chatId, text: `⚠️ Saqlanmadi: ${queueRefusal(refused)}`, replyMarkup: await replyKeyboardFor(chatId) });
+        const cap = refused === 'too_many_open' ? await openCalcCapFor(state.staffId).catch(() => null) : null;
+        await sayOrRetry({ chatId, text: `⚠️ Saqlanmadi: ${queueRefusal(refused, cap)}`, replyMarkup: await replyKeyboardFor(chatId) });
       }
     } else if (sweepMemory.silenced.has(k)) {
       // A «Tasdiqlash» this resume kept silent is owed an answer: the press

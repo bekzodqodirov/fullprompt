@@ -408,6 +408,7 @@ describe('the home row counts DEALS on the same sentence', () => {
 describe('G2 — whose deal the bot mints', () => {
   const land = (sender: Person, client: { id: string; clientCode: string; name: string }) =>
     landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',
@@ -529,6 +530,7 @@ describe('G2 — whose deal the bot mints', () => {
   it('(ix) Q5 a — the VED sends for a STRANGER → the lead it opens is the VED’s', async () => {
     seq += 1;
     const target = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',

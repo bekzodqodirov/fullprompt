@@ -2879,7 +2879,9 @@ export const TARIFF_FOLLOWS =
  * rest of them, and an unknown code prints the honest fallback.
  */
 export const QUEUE_REFUSAL: Record<string, string> = {
-  too_many_open: 'sizda 20 ta ochiq so‘rov bor — VED javob bergach qayta yuboring.',
+  // The figure is the requester's own (`openCalcCapFor`, SPEC-P2-v2 §1.3) — put in by `queueRefusal` when the caller
+  // read it; these are the words without it, never a second constant.
+  too_many_open: 'ochiq so‘rovlaringiz chegarasiga yetdi — VED javob bergach qayta yuboring.',
   too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq).',
   not_found: 'karta topilmadi.',
   note_taken: 'bu material allaqachon yozilgan.',
@@ -2889,7 +2891,9 @@ export const QUEUE_REFUSAL: Record<string, string> = {
   server_behind: 'server yangilanmoqda — biroz keyinroq urinib ko‘ring.',
 };
 
-export function queueRefusal(code: string | null | undefined): string {
+/** `cap`: the requester's open-calc cap (`openCalcCapFor`) — the one figure «too many open» names; null = unread. */
+export function queueRefusal(code: string | null | undefined, cap: number | null): string {
+  if (code === 'too_many_open' && cap !== null) return `sizda ${cap} ta ochiq so‘rov bor — VED javob bergach qayta yuboring.`;
   return (code && QUEUE_REFUSAL[code]) ?? 'kartadan qo‘lda yuboring.';
 }
 
@@ -2948,7 +2952,14 @@ const LEGACY_QUEUED = '🧮 Hisoblash navbatiga tushdi — VED xodimi javob bera
  */
 export function landingReplyText(
   target: LandedTarget,
-  opts: { link: string | null; tariffFollows: boolean; door: 'plain' | 'ai' | null; aiAvailable: boolean },
+  opts: {
+    link: string | null;
+    tariffFollows: boolean;
+    door: 'plain' | 'ai' | null;
+    aiAvailable: boolean;
+    /** The sender's open-calc cap (`openCalcCapFor`) — named only when the queue refused for it; absent = unread. */
+    openCap?: number | null;
+  },
 ): string {
   return (
     `✅ Saqlandi — ${landedWords(target)}\n` +
@@ -2956,7 +2967,7 @@ export function landingReplyText(
     '\n' +
     // Honest about which half landed: the material is on the card either
     // way, but only a queued request will be calculated by anybody.
-    (target.queued ? queuedLine(target, opts) : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`)
+    (target.queued ? queuedLine(target, opts) : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError, opts.openCap ?? null)}`)
   );
 }
 

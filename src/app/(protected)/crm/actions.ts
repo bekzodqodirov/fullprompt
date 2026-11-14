@@ -568,21 +568,26 @@ export async function saveLostReasonAction(
 }
 
 /**
- * Which stage a request for a price lands on (round 83).
+ * Which stage a card lands on (round 83's «Hisoblatish» stage, both boards) and the AI seller's two lead stages
+ * (SPEC-P2-v2 §3.1: «AI birinchi javob berdi», «AI narx aytdi») — ONE action for all of them.
  *
- * A SETTING rather than a column — it names one stage — and gated on
- * `crm.manage` like the funnel it points into. An empty value is a real
- * answer: «leave the card where it is».
+ * A SETTING rather than a column — it names one stage — and gated on `crm.manage` like the funnel it points into.
+ * The form posts `board` and `which` and the SERVER maps the pair onto a key through a closed map
+ * (`stageSettingKey`): a posted key would let any `crm.manage` holder write ANY setting. An empty value is a real
+ * answer: «leave the card where it is». A stage must be active and open, the AI's quoted stage after its contacted
+ * one — each refused in words — and every write is audited under the settings' id (the old calc-stage action wrote
+ * no audit row at all).
  */
-export async function setCalcStageAction(
+export async function setAiStageAction(
   _prev: CrmFormState,
   formData: FormData,
 ): Promise<CrmFormState> {
+  const board = str(formData, 'board');
+  const which = str(formData, 'which');
   const stageId = str(formData, 'stageId');
-  const board = str(formData, 'board') === 'deal' ? 'deal' : 'lead';
   return run('crm.manage', async (ctx) => {
-    const { setSetting } = await import('@/modules/platform/settings/service');
-    await setSetting(board === 'deal' ? 'deal_calc_stage' : 'crm_calc_stage', stageId, ctx.actorId);
+    const { setStageSetting } = await import('@/modules/wms/crm/stage-settings');
+    await setStageSetting({ board, which, stageId }, ctx);
   });
 }
 

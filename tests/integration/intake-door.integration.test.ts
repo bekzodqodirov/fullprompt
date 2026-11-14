@@ -240,6 +240,7 @@ describe('the landing writes the door (§0.1)', () => {
     // fenced in tests/unit/intake-door-wire.test.ts.
     expect(await doorOf(await openOn(null))).toBeNull();
     const target = await landIntake({
+      machine: false,
       noteId: crypto.randomUUID(),
       section: 'rastamojka',
       facts: { weightKg: 100, goods: [{ name: tag(), quantity: 10 }] },

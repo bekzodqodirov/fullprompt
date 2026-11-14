@@ -155,6 +155,30 @@ export function waitsOfKind<P>(kind: WaitKind): { chatId: string; entry: WaitEnt
   return out;
 }
 
+/**
+ * Is a wait of this kind live with its payload's `key` one of `values` — in this process's memory, or in the table the
+ * bot writes every wait to? For a reader in ANOTHER process than the bot (the AI sotuvchi's send step runs in the
+ * listener, which arms and hydrates no wait, so memory alone answered «no» there while he was typing — fix pass 3 of
+ * the full AI seller, calc-price `ownerPricedChain`). Read-only: memory answers first, the table only what memory does
+ * not hold; one migration behind 0130 there is no table, and memory is the whole answer.
+ */
+export async function waitLiveFor(kind: WaitKind, key: string, values: readonly string[]): Promise<boolean> {
+  if (values.length === 0) return false;
+  const at = nowSec();
+  for (const { entry } of waitsOfKind<Record<string, unknown>>(kind)) {
+    const v = entry.payload?.[key];
+    if (entry.expiresAt > at && typeof v === 'string' && values.includes(v)) return true;
+  }
+  if (!(await redeliveryReady())) return false;
+  const rows = await db.execute<{ armed: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM telegram_chat_waits
+       WHERE kind = ${kind} AND expires_at > now()
+         AND payload->>${key} IN (${sql.join(values.map((v) => sql`${v}`), sql`, `)})
+    ) AS armed`);
+  return rows[0]?.armed === true;
+}
+
 export function dropWait(chatId: bigint | number, kind: WaitKind): void {
   const key = keyOf(chatId, kind);
   // Only what memory holds: the table never holds a wait this process does

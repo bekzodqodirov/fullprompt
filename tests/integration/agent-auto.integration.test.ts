@@ -70,6 +70,7 @@ import { agentRowById, applyAgentOutcome, sendFactsFor } from '@/modules/wms/age
 import { agentSendVerdict } from '@/modules/wms/agent/send-step';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
+import { JOB_AGENT_AFTER_SENT } from '@/modules/wms/agent/queues';
 import { agentToday, autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { setWorkAccount } from '@/modules/wms/crm/telegram-accounts';
@@ -293,6 +294,15 @@ async function cardDigestOf(draftId: string): Promise<string> {
 const ALL_PEERS = [PEER, PEER2, ...OTHERS];
 
 async function clearChats() {
+  // Each `sent` outcome queues the after-sent job on pg-boss's REAL table, named by its row (settle-hooks
+  // `onAgentReplySent`): it goes with the rows it names — left behind, the browser suite's worker runs it on a row that
+  // no longer exists (#154; fix pass 3). By the row each job names, before the rows go.
+  await db
+    .execute(
+      sql`DELETE FROM pgboss.job WHERE name = ${JOB_AGENT_AFTER_SENT}
+            AND data->>'outboxId' IN (SELECT id::text FROM agent_outbox WHERE peer_id IN (${sql.join(ALL_PEERS.map((p) => sql`${String(p)}::bigint`), sql`, `)}))`,
+    )
+    .catch(() => undefined);
   await db.delete(agentOutbox).where(inArray(agentOutbox.peerId, ALL_PEERS));
   // The verdicts follow their drafts (ON DELETE CASCADE).
   await db.delete(agentDrafts).where(inArray(agentDrafts.peerId, ALL_PEERS));
@@ -432,11 +442,17 @@ describe('the plan — written beside the draft by the inbound run', () => {
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
     const owner = src.slice(src.indexOf('export async function runOwnerTriggered'));
     expect(owner.length).toBeGreaterThan(100);
-    // Every plan in the owner-triggered run is behind his answer: a hand-back's redraft never counts down (the
-    // behaviour is pinned in agent-owner-answer.integration: a hand-back run writes no verdict row).
+    // Every plan in the owner-triggered run is behind his answer — or the VED answer's price (SPEC-P2-v2 §2.3, a
+    // `calcAnswer` only `handleCalcAnswer` passes): a hand-back's redraft never counts down (the behaviour is pinned in
+    // agent-owner-answer.integration: a hand-back run writes no verdict row).
     const plans = owner.match(/autoPlanFor\(/gu) ?? [];
     expect(plans).toHaveLength(1);
-    expect(owner).toMatch(/const autoPlan = answer \? await autoPlanFor\(/u);
+    // …and never a lesson's rewrite, even of a VED answer's card that carries the mark (fix pass 4).
+    expect(owner).toMatch(/const autoPlan = !lesson && \(answer \|\| calcAnswer\) \? await autoPlanFor\(/u);
+    const loop = readFileSync('src/modules/wms/agent/calc-loop.ts', 'utf8');
+    const handBack = loop.slice(loop.indexOf('export async function handleHandBack'), loop.indexOf('export function tooOldWords'));
+    expect(handBack.length, 're-anchor: handleHandBack').toBeGreaterThan(200);
+    expect(handBack).not.toMatch(/calcAnswer/u);
     const inbound = src.slice(src.indexOf('export async function handleInbound'), src.indexOf('export async function runOwnerTriggered'));
     expect(inbound).toMatch(/autoPlanFor\(/u);
   });

@@ -41,7 +41,8 @@ describe('the agent reads nothing wider than its own chat (review leak-11)', () 
   it('the toolset is the closed list the review agreed', () => {
     expect(TOOL_SPECS.map((t) => t.name).sort()).toEqual(
       // avia_estimate: his 2026-10-24 rate × the customer's kilos (§17.14).
-      ['avia_estimate', 'calc_checklist', 'cargo_status', 'cargo_volume', 'compose_reply', 'kb_search', 'own_balance', 'yolkira_estimate'].sort(),
+      // calc_price: the VED answer's CLIENT price, computed by code (SPEC-P2-v2 §2.3) — offered only while the run quotes them.
+      ['avia_estimate', 'calc_checklist', 'calc_price', 'cargo_status', 'cargo_volume', 'compose_reply', 'kb_search', 'own_balance', 'yolkira_estimate'].sort(),
     );
     // compose_reply is the strict terminal one; nothing takes a client id or a code.
     expect(TOOL_SPECS.find((t) => t.name === 'compose_reply')!.strict).toBe(true);
@@ -49,6 +50,56 @@ describe('the agent reads nothing wider than its own chat (review leak-11)', () 
       const props = Object.keys((t.input_schema as { properties: Record<string, unknown> }).properties);
       for (const p of props) expect(/client|code|phone|peer/i.test(p), `${t.name}.${p}`).toBe(false);
     }
+  });
+});
+
+/**
+ * Law 4 inside the agent (SPEC-P2-v2 §2.6, judge money 14): a calculation's AMOUNTS are read by ONE file — calc-price,
+ * whose only output is the client price (and the holder's own card line). Defined by what is READ, so it is neither red
+ * on day one nor vacuous:
+ *  - calc-loop's `amountText` is the holder's own «💵 Hisob javobi keldi» text — passed in by calc/service, never
+ *    selected here, and named by no pattern below;
+ *  - drafts' `offerStandsSql` is a predicate (a row stands or not) — no amount leaves it;
+ *  - the offer step's `recordOffer` call (part 2's P4) writes the client price and reads no amount back.
+ */
+const LAW4_READS: readonly RegExp[] = [
+  /\banswer_amount\b|\banswerAmount\b/u,
+  /\b(?:total_usd|customs_usd|freight_usd|extras_usd|discount_usd)\b|\b(?:totalUsd|customsUsd|freightUsd|extrasUsd|discountUsd)\b/u,
+  /\bbreakdown\b/u,
+  /\b(?:standingAnchorsFor|currentSealFor|loadWorkspace|quoteWriterFor|lastReleasedOfferFor)\b/u,
+];
+
+/** The one file that may read a calculation's amounts. */
+const LAW4_READER = join('src/modules/wms/agent', 'calc-price.ts');
+
+function law4Violations(files: readonly { path: string; src: string }[]): string[] {
+  const out: string[] = [];
+  for (const f of files) {
+    if (f.path === LAW4_READER) continue;
+    for (const re of LAW4_READS) if (re.test(f.src)) out.push(`${f.path} ${re.source}`);
+  }
+  return out;
+}
+
+describe('law 4 — the VED’s figure is read by calc-price alone (SPEC-P2-v2 §2.6)', () => {
+  const files = filesUnder('src/modules/wms/agent').map((path) => ({ path, src: strip(readFileSync(path, 'utf8')) }));
+
+  it('no agent file but calc-price selects an answer amount, a seal’s money columns or a calculation reader', () => {
+    expect(files.length).toBeGreaterThan(10);
+    expect(law4Violations(files)).toEqual([]);
+  });
+
+  it('…and calc-price is the one that does (re-anchor: the fence must see its subject)', () => {
+    const reader = files.find((f) => f.path === LAW4_READER);
+    expect(reader, 're-anchor: calc-price.ts').toBeDefined();
+    expect(LAW4_READS.slice(0, 2).every((re) => re.test(reader!.src))).toBe(true);
+  });
+
+  it('a planted read anywhere else is caught — the fence is not vacuous', () => {
+    const planted = [{ path: join('src/modules/wms/agent', 'tools.ts'), src: "const rows = await db.execute(sql`SELECT r.answer_amount FROM calc_requests r`);" }];
+    expect(law4Violations(planted)).toHaveLength(1);
+    expect(law4Violations([{ path: join('src/modules/wms/agent', 'run.ts'), src: 'const w = await loadWorkspace(id);' }])).toHaveLength(1);
+    expect(law4Violations([{ path: join('src/modules/wms/agent', 'run.ts'), src: 'select({ t: calcVersions.totalUsd })' }])).toHaveLength(1);
   });
 });
 
@@ -81,6 +132,8 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
     const SURVIVES: Record<string, string> = {
       agent_lessons:
         'his instruction to EVERY chat, refused personal details at write — it survives the purge with draft_id NULL (0148)',
+      agent_offers:
+        'a money fact: the offer row survives every chat purge, and so must its «the machine wrote it» mark, or the machine’s offer becomes payable (0149, SPEC-P2-v2 §2.4a)',
     };
     const pointing: string[] = [];
     for (const value of Object.values(schema)) {

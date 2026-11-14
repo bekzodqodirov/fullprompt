@@ -62,6 +62,7 @@ import { humanOutBodies, knownNamesForMask } from '@/modules/wms/agent/style';
 import { addGeneralFact, assertFactSeen, editKbFact } from '@/modules/wms/agent/web-kb';
 import { webDrafts, webKbFacts } from '@/modules/wms/agent/web-page';
 import { MAX_OPEN_PER_REQUESTER } from '@/modules/wms/calc/service';
+import { openCalcCapFor } from '@/modules/platform/settings/calc-cap';
 import { JOB_CALC_PREFILL } from '@/modules/wms/calc/jobs';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { attachPeerToCard, decideChat, openLeadForChat } from '@/modules/wms/crm/chat-rules';
@@ -331,6 +332,9 @@ afterAll(async () => {
     // people: found by the task it names (fix pass 5, the check of pass 3's leftovers).
     await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join(taskIds.map((t) => sql`${t}`), sql`, `)})`);
     await db.delete(events).where(inArray(events.entityId, taskIds));
+    // Their «TaskAssigned» copies (fix pass 3): the VED rota hands a landed job to whoever holds `ved.docs` — the seeded
+    // «VED Demo» among them, whom no person filter below names — found by the task each one names.
+    await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join(taskIds.map((id) => sql`${id}`), sql`, `)})`);
     await db.delete(tasks).where(inArray(tasks.id, taskIds));
   }
   const dealIds = (await db.select({ id: deals.id }).from(deals).where(inArray(deals.clientId, [clientId, otherClientId, ...madeClients]))).map((d) => d.id);
@@ -657,9 +661,14 @@ describe('a calculation the queue refused lands on a later ✅ (K26)', () => {
     expect(first).toEqual({ ok: false, code: 'calc_not_queued', detail: 'too_many_open' });
     const refused = await draftRow(draftId);
     expect(refused).toMatchObject({ status: 'pending', actionStatus: 'failed', actionError: 'too_many_open' });
-    const card = renderDraftCard(refused, null);
+    // The figure the card names is the holder's own cap, read by the renderer (`openCalcCapFor`, SPEC-P2-v2 §1.3).
+    const card = renderDraftCard(refused, null, [], { openCalcCap: await openCalcCapFor(ownerId) });
     expect(card).toContain(`${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov`);
     expect(card).not.toMatch(/Kartadan qo.lda yuboring|too_many_open|already_landed/u);
+    // …and the page's own reader names the same figure — the card, the bot and the page say one number (§1.3).
+    const onPage = (await webDrafts(actor())).pending.find((w) => w.id === draftId);
+    expect(onPage, 'the refused draft is on the page').toBeDefined();
+    expect(onPage!.cardText).toContain(`${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov`);
 
     // One of the twenty answered: the very next ✅ lands the job the note promised — never «already landed».
     await db.update(calcRequests).set({ completedAt: new Date(), completedBy: vedId, completedVia: 'task' }).where(eq(calcRequests.id, busy[0]!.id));

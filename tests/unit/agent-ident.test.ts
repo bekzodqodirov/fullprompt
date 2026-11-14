@@ -8,6 +8,7 @@ import { NIGHT_SILENT_TYPES, sendsSilently } from '@/modules/platform/notificati
 import { UNMUTABLE_TYPES } from '@/modules/platform/notifications/mutes';
 import { AgentWaitingBubble } from '@/components/agent-waiting-bubble';
 import { renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
+import { OPEN_CALC_CAP_PEOPLE } from '@/modules/platform/settings/calc-cap';
 import { ownerQuestionReminderText } from '@/modules/wms/agent/jobs';
 
 /**
@@ -96,12 +97,19 @@ describe('a card says why in words, never a code (K34, K26, K2)', () => {
   });
 
   it('a calculation the queue refused: the waiting draft and an approved one say the reason in words (K26)', () => {
-    const waiting = renderDraftCard(row({ status: 'pending', actionStatus: 'failed', actionError: 'too_many_open' }), null);
+    // The figure is the one the renderer read (`openCalcCapFor`, SPEC-P2-v2 §1.3) — the people's 20 here.
+    const cap = { openCalcCap: OPEN_CALC_CAP_PEOPLE };
+    const waiting = renderDraftCard(row({ status: 'pending', actionStatus: 'failed', actionError: 'too_many_open' }), null, [], cap);
     expect(waiting).toContain('20 ta ochiq so‘rov');
     expect(waiting).not.toContain('too_many_open');
     expect(waiting).not.toMatch(/Kartadan qo.lda yuboring/u);
-    const approved = renderDraftCard(row({ actionStatus: 'failed', actionError: 'too_many_open' }), null);
+    const approved = renderDraftCard(row({ actionStatus: 'failed', actionError: 'too_many_open' }), null, [], cap);
     expect(approved).toContain('20 ta ochiq so‘rov');
+    // The seat's own number when that is the holder's cap — and with no cap read, words with no second constant.
+    expect(renderDraftCard(row({ actionStatus: 'failed', actionError: 'too_many_open' }), null, [], { openCalcCap: 100 })).toContain('100 ta ochiq so‘rov');
+    const unread = renderDraftCard(row({ actionStatus: 'failed', actionError: 'too_many_open' }), null);
+    expect(unread).toContain('ochiq so‘rovlaringiz chegarasiga yetdi');
+    expect(unread).not.toMatch(/\d+ ta ochiq/u);
     expect(approved).not.toContain('too_many_open');
     const thrown = renderDraftCard(row({ actionStatus: 'failed', actionError: 'relation "x" does not exist' }), null);
     expect(thrown).not.toContain('relation');

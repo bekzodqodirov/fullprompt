@@ -261,6 +261,9 @@ afterAll(async () => {
     // people: found by the task it names (fix pass 5, the check of pass 3's leftovers).
     await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join(taskIds.map((t) => sql`${t}`), sql`, `)})`);
     await db.delete(events).where(inArray(events.entityId, taskIds));
+    // Their «TaskAssigned» copies (fix pass 3): the VED rota hands a landed job to whoever holds `ved.docs` — the seeded
+    // «VED Demo» among them, whom no person filter below names — found by the task each one names.
+    await db.delete(notifications).where(sql`${notifications.payload}->>'taskId' IN (${sql.join(taskIds.map((id) => sql`${id}`), sql`, `)})`);
     await db.delete(tasks).where(inArray(tasks.id, taskIds));
   }
   const dealIds = [

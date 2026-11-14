@@ -221,7 +221,8 @@ describe('the payload the keyboard is drawn from (card `cardExtra`, auto-card `a
     expect(drafts).toMatch(/auto: autoPayload\(auto, row, sendable\)/u);
     expect(drafts).toMatch(/renderDraftCardFull\(row, null, \[\], \{ auto \}\)/u);
     const page = readFileSync('src/modules/wms/agent/web-page.ts', 'utf8');
-    expect(page).toMatch(/renderDraftCardFull\(d, o, \[\], \{ surface: 'web', auto \}\)/u);
+    // …and the page's own reads beside it (fix pass 1 — the cap and the landed card the bot's copy names too).
+    expect(page).toMatch(/renderDraftCardFull\(d, o, \[\], \{ surface: 'web', auto(?:, [^}]*)? \}\)/u);
   });
 });
 

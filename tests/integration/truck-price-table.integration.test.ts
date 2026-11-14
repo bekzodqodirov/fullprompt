@@ -1221,7 +1221,7 @@ describe('a pre-filled part passes its own deal’s invoice check (§3.1.4, judg
 
     await press(truck, [{ dealId: sold, amount: 205.74 }]);
     const [row] = await db.execute<{ due_price_usd: string; cargo_receipts: string; payout_at: Date | null; entity_type: string }>(
-      sql`SELECT due_price_usd, cargo_receipts, payout_at, entity_type FROM (${payableOffersSql()}) p WHERE p.entity_id = ${sold}::uuid`,
+      sql`SELECT due_price_usd, cargo_receipts, payout_at, entity_type FROM (${payableOffersSql({ machineOffers: true })}) p WHERE p.entity_id = ${sold}::uuid`,
     );
     expect(Number(row!.due_price_usd)).toBe(205.73);
     const charged = (await db

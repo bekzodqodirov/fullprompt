@@ -133,6 +133,7 @@ function eligibleInput(): AutoGateInput {
       ledger: [],
       hasEstimate: false,
       estimatesStored: false,
+      calcPricesStored: false,
       rail: false,
       // The customer's language, confidently the reply's (fix pass 6: an absent guess holds every reply now).
       customerLocale: { locale: 'uz', confident: true },
@@ -141,6 +142,8 @@ function eligibleInput(): AutoGateInput {
     tools: [],
     money: { unnamed: false, moved: false, tariffUnconfirmed: false, foreignDestination: false, ownerPersonal: false, answerStale: false, ownerFigure: false },
     burstMedia: false,
+    calc: null,
+    calcPrice: null,
     chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
     at: NOON,

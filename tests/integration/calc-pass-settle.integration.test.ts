@@ -844,6 +844,7 @@ describe('Uch band’s retried landings queue the pass a cut left owed (§10.2.1
     madeNotes.push(noteId);
     const land = () =>
       landIntake({
+        machine: false,
         intakeDoor: null,
         noteId,
         section: 'rastamojka',

@@ -9,13 +9,17 @@ import { GuardError, clearAccountPause } from '../crm/account-guard';
 import { agentPress } from './bot-door';
 import {
   AgentConfigError,
+  confirmCalcMarkup,
   confirmSessionExclusive,
   mayRunAgent,
   readAgentConfig,
   setAgentMode,
   setAgentNumbers,
   setAgentOwner,
+  setAgentSeat,
   setAviaRate,
+  setCalcMarkup,
+  setCalcOpenLimit,
 } from './config';
 import { decideDraft, submitOwnText, type DraftDecision, type SupersededDetail } from './decide';
 import { KbError } from './kb';
@@ -241,6 +245,59 @@ export async function agentOwnerAction(userId: string | null): Promise<AgentActi
   return run(async ({ actor, ctx }) => {
     await setAgentOwner(actor, userId && /^[0-9a-f-]{36}$/iu.test(userId) ? userId : null, ctx);
     revalidatePath('/', 'layout');
+  });
+}
+
+/**
+ * «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4) — a super_admin names the account the AI speaks from as
+ * the AI's own seat, or clears it (`null`). The service asks the role and that the user IS the holder at the press.
+ */
+export async function agentSeatAction(userId: string | null): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    await setAgentSeat(actor, userId && /^[0-9a-f-]{36}$/iu.test(userId) ? userId : null, ctx);
+  });
+}
+
+/**
+ * The AI seat's open-calc cap (SPEC-P2-v2 §1.3, his §7 Q11 ⭐ a) — a super_admin's alone (the service asks); a value
+ * out of 1..200 is this box's own code, never the generic «noto'g'ri qiymat».
+ */
+export async function agentOpenLimitAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setCalcOpenLimit(actor, typeof raw === 'string' ? raw : '', ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_open_limit' };
+      throw err;
+    }
+  });
+}
+
+/**
+ * His markup on the VED's answer (SPEC-P2-v2 §2.1): a percent or a fixed sum, or EMPTY — «no markup», the AI quotes the
+ * VED's own figure (his §00 A1). The service asks the door (`mayRunAgent`) and the whole rule; a value it refuses is
+ * this box's own code, naming the bounds.
+ */
+export async function agentMarkupAction(kind: string, value: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setCalcMarkup(actor, { kind: typeof kind === 'string' ? kind : '', value: typeof value === 'string' ? value : '' }, ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_markup' };
+      throw err;
+    }
+  });
+}
+
+/** «✅ Ustama to'g'ri» (§2.1, his §7 Q5 ⭐): he vouches for the rule his page showed (`seen`, its canonical string). */
+export async function agentMarkupConfirmAction(seen: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await confirmCalcMarkup(actor, typeof seen === 'string' ? seen : '', ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_markup' };
+      throw err;
+    }
   });
 }
 

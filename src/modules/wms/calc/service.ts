@@ -5,6 +5,7 @@ import {
   calcOffers,
   calcRequestItems,
   calcRequests,
+  calcReturnTasks,
   crmActivities,
   clients,
   dealLines,
@@ -25,6 +26,7 @@ import { logger } from '@/modules/platform/logger';
 import { violatedUnique } from '@/modules/platform/db/errors';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
 import { clipText } from '@/modules/platform/telegram/format';
+import { OPEN_CALC_CAP_PEOPLE, openCalcCapFor } from '@/modules/platform/settings/calc-cap';
 import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
 import { insertActivityTx } from '../crm/service';
 import { itemNameNorm } from './memory';
@@ -98,9 +100,11 @@ export const MAX_CALC_ITEMS = 1000;
  * Not a security fence — twenty trusted people — but a runaway guard: the bot
  * mints a fresh LEAD for every stranger with no phone, so a stuck loop would
  * otherwise open a request (and a lead, and a model call) per press with
- * nothing in the schema to stop it.
+ * nothing in the schema to stop it. The constant moved to its one home
+ * (platform/settings/calc-cap.ts, SPEC-P2-v2 §1.3), beside the AI seat's own
+ * number: every reader asks `openCalcCapFor(requester)` for the figure.
  */
-export const MAX_OPEN_PER_REQUESTER = 20;
+export const MAX_OPEN_PER_REQUESTER = OPEN_CALC_CAP_PEOPLE;
 
 /**
  * The owner's scale, verbatim: «1 dona TNVED kod bo'lsa yarim soat; 2, 3, 10
@@ -337,7 +341,9 @@ export async function calcOpenRefusal(
     .select({ n: sql<number>`count(*)::int` })
     .from(calcRequests)
     .where(and(eq(calcRequests.requestedBy, requestedBy), openRequests));
-  return Number(mine[0]?.n ?? 0) >= MAX_OPEN_PER_REQUESTER ? 'too_many_open' : null;
+  // The seat's own number while it holds, everybody else's 20 (§1.3) — the one function the card, the bot and the
+  // page print the figure from.
+  return Number(mine[0]?.n ?? 0) >= (await openCalcCapFor(requestedBy)) ? 'too_many_open' : null;
 }
 
 /**
@@ -955,7 +961,7 @@ export async function returnCalcRequest(
     const due = new Date();
     due.setUTCDate(due.getUTCDate() + 1);
     due.setUTCHours(23, 59, 59, 999);
-    await createTask(
+    const task = await createTask(
       {
         title: `↩️ Ma'lumot to'ldiring: ${await requestLabel(row.entityType, row.entityId)}`,
         note: trimmed.slice(0, 500),
@@ -981,6 +987,9 @@ export async function returnCalcRequest(
       // the VED tracks in «📤 Men bergan», and not bound to the calc clock.
       { origin: 'calc_return' },
     );
+    // …and which request it is for (0149, fix pass 4): the AI seller's hand-back loop closes THIS task, never another
+    // job's on the same card. Its own catch — a task with no row is no loop, and the machine never closes it.
+    await bindReturnTask(task.id, id).catch((err: unknown) => logger.error({ err, id, taskId: task.id }, '[calc] return task not bound'));
   } catch (err) {
     logger.error({ err, id }, '[calc] return task creation failed');
   }
@@ -988,6 +997,61 @@ export async function returnCalcRequest(
   // above is the VED's own work and must not wait behind the agent's.
   // Best-effort and queued, never a model run under the VED's button.
   await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
+}
+
+/**
+ * The ↩️ task's request (0149 `calc_return_tasks`, fix pass 4) — written beside the task, one migration behind nothing
+ * (no table: no task is bound, and the loop takes none).
+ */
+async function bindReturnTask(taskId: string, requestId: string): Promise<void> {
+  const { agentFullP2Ready } = await import('../agent/config');
+  if (!(await agentFullP2Ready())) return;
+  await db.insert(calcReturnTasks).values({ taskId, requestId }).onConflictDoNothing();
+}
+
+/**
+ * The «↩️ Ma'lumot to'ldiring» task a hand-back opened for ONE returned request, closed by the one who fills the
+ * information in (SPEC-P2-v2 §1.5: the AI seller's resubmission lands on the returned request's card and closes its
+ * task with «AI ma'lumotni to'ldirib qayta yubordi»). The task's request (`calc_return_tasks`, fix pass 4) says which —
+ * a card may hold another job's ↩️ task, whose question nobody answered; and its origin (`calc_return`), card and
+ * assignee must agree — never a title. A compare-and-set on 'open', audited under the person the task was for, its
+ * Telegram copies retired after the write. Pooled, never inside a transaction (#714). Returns how many it closed.
+ */
+export async function closeReturnTasks(input: {
+  requestId: string;
+  entityType: string;
+  entityId: string;
+  holderId: string;
+  result: string;
+}): Promise<number> {
+  const { agentFullP2Ready } = await import('../agent/config');
+  if (!(await agentFullP2Ready())) return 0;
+  const now = new Date();
+  const closed = await db
+    .update(tasks)
+    .set({ status: 'done', doneAt: now, doneBy: input.holderId, result: input.result, updatedAt: now })
+    .where(
+      and(
+        inArray(tasks.id, db.select({ id: calcReturnTasks.taskId }).from(calcReturnTasks).where(eq(calcReturnTasks.requestId, input.requestId))),
+        eq(tasks.origin, 'calc_return'),
+        eq(tasks.entityType, input.entityType),
+        eq(tasks.entityId, input.entityId),
+        eq(tasks.assigneeId, input.holderId),
+        eq(tasks.status, 'open'),
+      ),
+    )
+    .returning({ id: tasks.id });
+  for (const t of closed) {
+    await writeAudit(db, { actorId: input.holderId }, {
+      entityType: 'task',
+      entityId: t.id,
+      action: 'status_change',
+      before: { status: 'open' },
+      after: { status: 'done', result: input.result },
+    });
+  }
+  if (closed.length > 0) retireTaskCopiesSoon({ taskIds: closed.map((t) => t.id), outcome: 'done' });
+  return closed.length;
 }
 
 /** The currencies the fold offers — the answer is typed as the VED read it. */

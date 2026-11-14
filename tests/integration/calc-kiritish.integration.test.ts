@@ -203,6 +203,7 @@ describe('the bot’s invoice keeps its code column (P1.6)', () => {
       .from(calcRequests)
       .where(eq(calcRequests.requestedBy, actorId));
     const target = await landIntake({
+      machine: false,
       intakeDoor: null,
       noteId: uuidv4(),
       section: 'rastamojka',

@@ -61,6 +61,17 @@ export interface SendFacts {
   caughtUp: boolean;
   /** The anchor's sent_at; null when the stored row is gone (deleted, purged). */
   anchorSentAt: Date | null;
+  /**
+   * How old the anchor may be for THIS row's draft (SPEC-P2-v2 K2, anchor-clock `anchorMaxAgeMsFor`): a week for his
+   * 💵 and the machine's VED-answer reply, 24 hours for every other — read from the draft at this tick.
+   */
+  anchorMaxAgeMs: number;
+  /**
+   * Our own agent sends in this chat newer than the anchor, by Telegram id (SPEC-P2-v2 K1) — the live head skips
+   * them for an OWNER-started draft only (his 💵, the hand-back's question, the VED-answer reply), whose anchor is
+   * the customer's newest inbound line and whose own «yubordim» came after it. EMPTY for every other draft.
+   */
+  forgivenOut: ReadonlySet<bigint>;
   anchorDeleted: boolean;
   anchorEditedSinceDraft: boolean;
   /** An out row in this chat after the anchor that is not this outbox row (his phone, a CRM reply). */
@@ -99,7 +110,7 @@ export interface SendFacts {
    * The draft's figure (drafts `draftOfferStands`): a 💵's request or offer, or the machine's estimates priced again
    * on today's tariff (spec SPEC-P1-v2 §1.3); null when the draft carries none.
    */
-  offerStands: 'stands' | 'offer_gone' | 'estimate_moved' | null;
+  offerStands: 'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved' | 'calc_owner_priced' | 'calc_person_offer' | null;
   /**
    * Caps, counted over agent_outbox rows handed to Telegram — 'sent' AND 'unknown' (S5). The hour and the
    * account's last send count the account's sent CRM replies as well (K5); the day and the chat's two are
@@ -139,7 +150,13 @@ export type FinalRefusal =
   | 'identity_changed'
   | 'offer_gone'
   /** A machine estimate priced again today gives another figure, or the re-price refused (spec §1.3). */
-  | 'estimate_moved';
+  | 'estimate_moved'
+  /** A VED answer's price priced again today gives another anchor, rule or figure, or is refused (SPEC-P2-v2 §2.5). */
+  | 'calc_price_moved'
+  /** …refused because HIS own 💵 now stands on the job — given, waiting or being typed (fix pass 4: its own words). */
+  | 'calc_owner_priced'
+  /** …refused because a person's newer offer is the card's word on the job (fix pass 4: its own words). */
+  | 'calc_person_offer';
 
 export type WaitReason =
   | 'flood_wait'
@@ -190,7 +207,7 @@ export function agentSendVerdict(
     return fin('human_replied');
   }
   if (f.newerSubstantiveInbound) return fin('anchor_superseded');
-  if (now - f.anchorSentAt.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return fin('anchor_too_old');
+  if (now - f.anchorSentAt.getTime() > f.anchorMaxAgeMs) return fin('anchor_too_old');
   // From the later of the press and the morning it was held to (S2) — or every night-held ✅ is cancelled
   // at the 08:30 it was promised for.
   const approvedAt = Math.max(row.queuedAt.getTime(), row.releaseAt?.getTime() ?? 0);
@@ -201,6 +218,9 @@ export function agentSendVerdict(
   if (f.identityChanged) return fin('identity_changed');
   if (f.offerStands === 'offer_gone') return fin('offer_gone');
   if (f.offerStands === 'estimate_moved') return fin('estimate_moved');
+  if (f.offerStands === 'calc_price_moved') return fin('calc_price_moved');
+  if (f.offerStands === 'calc_owner_priced') return fin('calc_owner_priced');
+  if (f.offerStands === 'calc_person_offer') return fin('calc_person_offer');
 
   if (f.floodUntil && f.floodUntil.getTime() > now) return wait('flood_wait', f.floodUntil);
   // The night rule at the SEND, not only at the ✅ (his Q14 ⭐, review S3): a row a flood wait, the hour cap
@@ -331,6 +351,14 @@ export type HeadVerdict = { ok: true } | { ok: false; reason: 'human_replied' | 
  * already answered; one of THEIRS that asks anew (`asksAnew`) means the reply
  * answers a question that is no longer the last one.
  *
+ * `forgiven` (SPEC-P2-v2 K1, REQUIRED): our own AGENT sends the stored checks
+ * already forgive (outbox-store `chatFacts`), passed only for an OWNER-started
+ * draft — his 💵, the hand-back's question, the VED-answer reply anchor on the
+ * customer's newest inbound line, and the AI's own «hisoblatishga yubordim»
+ * sent after it is not him answering. A hand-typed message of his still
+ * cancels, and so does a newer line of the customer's; for every other draft
+ * the set is empty and the rule is exactly what it was.
+ *
  * And the anchor itself (S6): a customer who deleted the question leaves no
  * line newer than it, so the loop above found nothing. When the head reaches
  * back to the anchor's place — it holds an older line, or it is shorter than
@@ -341,10 +369,12 @@ export function liveHeadVerdict(
   head: readonly HeadMessage[],
   anchorId: bigint,
   isNudge: (text: string) => boolean,
-  limit: number = AGENT_LIMITS.headMessages,
+  limit: number,
+  forgiven: ReadonlySet<bigint>,
 ): HeadVerdict {
   for (const m of head) {
     if (m.id <= anchorId) continue;
+    if (m.out && forgiven.has(m.id)) continue;
     if (m.out) return { ok: false, reason: 'human_replied' };
     if (asksAnew(m, isNudge)) return { ok: false, reason: 'anchor_superseded' };
   }
@@ -450,7 +480,8 @@ export async function runAgentStep(
   const now = deps.now ?? (() => new Date());
   const t = now();
   const plan = choreographyPlan(row.body, deps.random);
-  const refused = verdictOutcome(row, agentSendVerdict(row, await deps.store.facts(row, t)));
+  const facts = await deps.store.facts(row, t);
+  const refused = verdictOutcome(row, agentSendVerdict(row, facts));
   if (refused) return refused;
 
   const cosmetic = async (method: string, call: () => Promise<void>): Promise<StepOutcome | null> => {
@@ -481,7 +512,7 @@ export async function runAgentStep(
       // Unknown live head: try again shortly rather than send blind.
       return { kind: 'wait', nextStepAt: new Date(t.getTime() + 15_000), reason: 'not_caught_up' };
     }
-    const v = liveHeadVerdict(head, row.answersTgMessageId, deps.isNudge, AGENT_LIMITS.headMessages);
+    const v = liveHeadVerdict(head, row.answersTgMessageId, deps.isNudge, AGENT_LIMITS.headMessages, facts.forgivenOut);
     return v.ok ? null : { kind: 'cancel', reason: v.reason, markUnread: row.readDone };
   };
 

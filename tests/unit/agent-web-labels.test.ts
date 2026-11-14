@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AUTO_SEND_CATEGORIES, OUTCOME_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';
 import uz from '../../messages/uz.json';
@@ -79,7 +80,10 @@ describe('the AI sotuvchi page’s runtime labels', () => {
       const tail = schema.slice(at, schema.indexOf('`', schema.indexOf('`', at) + 1));
       return [...tail.matchAll(/'([a-z_]+)'/gu)].map((m) => m[1]!).filter((v) => v !== check);
     };
-    expect(Object.keys(CATEGORY_KEYS).sort()).toEqual(listOf('agent_drafts_category_check').sort());
+    // A draft's own kinds, and the two the auto layer's boxes add that no draft is labelled with (0149, SPEC-P2-v2
+    // §4.4): judged by what the reply does — every box the page draws has its words.
+    expect(Object.keys(CATEGORY_KEYS).sort()).toEqual([...listOf('agent_drafts_category_check'), ...OUTCOME_CATEGORIES].sort());
+    for (const kind of AUTO_SEND_CATEGORIES) expect(Object.keys(CATEGORY_KEYS), kind).toContain(kind);
     expect(Object.keys(SCOPE_KEYS).sort()).toEqual(listOf('kb_facts_scope_check').sort());
     expect(Object.keys(SOURCE_KEYS).sort()).toEqual(listOf('kb_facts_source_check').sort());
     expect(Object.keys(PAUSE_KIND_KEYS).sort()).toEqual(listOf('tg_account_guard_kind_check').sort());

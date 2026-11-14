@@ -69,7 +69,15 @@ export type WriteDraftResult =
    * The draft this one was to replace is no longer waiting for it — the question his ✍️ answer was for (`answers`),
    * or the reply his lesson was rewriting (`redrafts`): nothing was written.
    */
-  | { kind: 'question_gone'; draftId: string };
+  | { kind: 'question_gone'; draftId: string }
+  /**
+   * The VED answer's run (`calcChain`) found ANOTHER reply live in the chat that it may not take over (fix pass 4;
+   * `calcAnswerOverLive` 'held'): nothing written over it. The caller re-queues the price for when that reply is
+   * decided (fix pass 5) and tells him once, with the 💵 door.
+   */
+  | { kind: 'other_live'; draftId: string }
+  /** …or a live reply that already states this very anchor's price (fix pass 5): nothing written, nothing to say. */
+  | { kind: 'already_priced'; draftId: string };
 
 /** Everything a new draft row carries — the machine's reply, a price, a hand-back question. */
 export interface NewDraft {
@@ -118,6 +126,83 @@ export interface NewDraft {
    * is written (`question_gone`). The rewrite gets a card of its own, a push, and the old card is closed in words.
    */
   redrafts?: { draftId: string; lessonId: string; decidedBy: string } | null;
+  /**
+   * The VED answer's run (SPEC-P2-v2 §2.3; fix passes 4-5): the chain it prices, the anchor and the moment the VED
+   * answered. Nothing the customer wrote started this run, so the chat's live reply is asked `calcAnswerOverLive`
+   * under the chat's lock (a reply drafted while the model worked is seen too): the chain's own earlier price card, or
+   * the machine's ordinary reply drafted BEFORE the answer, is replaced with words of its own (`stale: 'calc_answer'`)
+   * — never «Mijoz yana yozdi», which nobody wrote; a reply already stating this anchor's price, and nothing is
+   * written (`already_priced`); anything else, and nothing is written (`other_live`) — the caller re-queues.
+   */
+  calcChain?: CalcChainOver | null;
+  /**
+   * Why the live reply this one supersedes stopped standing, when the CUSTOMER did not write again (fix pass 4): his
+   * 💵 (`owner_price`, calc-loop `priceDraftFromText`) — its card then says he priced it, never «Mijoz yana yozdi».
+   */
+  supersedeStale?: 'owner_price' | null;
+}
+
+/** The run's key for one standing anchor of a chain (§2.3): a later seal is its own key, a redelivery is the same. */
+export function calcAnswerSourceKey(mark: { requestId: string; anchor: 'seal' | 'answer'; anchorId: string }): string {
+  return `calc:${mark.requestId}:${mark.anchor === 'seal' ? mark.anchorId : 'answer'}`;
+}
+
+/** What the VED answer's run prices, as `calcAnswerOverLive` and the draft's own transaction ask it (fix pass 5). */
+export interface CalcChainOver {
+  /** Every request of the chain. */
+  members: readonly string[];
+  /** The standing anchor's key (`calcAnswerSourceKey`, the job's own): a reply that states it already prices it. */
+  anchorKey: string | null;
+  /** When the VED answered or sealed (the request's `completed_at`); null = unknown — no ordinary reply is taken over. */
+  answeredAt: Date | null;
+}
+
+/** The live reply as `calcAnswerOverLive` reads it — the columns the draft's transaction selects. */
+export interface LiveReplyShape {
+  kind: string | null;
+  policy: unknown;
+  finalBody?: string | null;
+  actions?: unknown;
+  needsOwner?: boolean | null;
+  offerId?: string | null;
+  createdAt?: Date | null;
+}
+
+/** The marks a run that ASKED for something of his leaves on the draft — his answer, his lesson, a question to him. */
+const HIS_MARKS = ['answering', 'ownerAnswer', 'fromAnswer', 'lessonRedraft', 'fromLesson', 'forcedQuestion'] as const;
+
+/**
+ * What the VED answer's run may do with the chat's live reply (SPEC-P2-v2 §2.3; check send-0 — fix pass 4 held every
+ * other reply, and the price was then never written at all once that reply was decided). Pure; asked before the model
+ * is paid AND inside the draft's transaction under the chat's lock:
+ *
+ *   already_priced — it already states THIS anchor's price (`memory.calcPrices`, an inbound run's `calc_price`):
+ *                    nothing to write, and nothing to tell him — never «💵 bering» over a price already on its way;
+ *   own_card       — the machine's own earlier price card of the same chain (`policy.calcAnswer`): replaced;
+ *   takes_over     — the machine's ORDINARY reply drafted before the VED answered («javob kelishi bilan aytaman»):
+ *                    the run reads the same burst and answers it with the price, so it takes that reply's place. Only
+ *                    while it is plainly the machine's words: no ✏️ text, no act, no question to him, no offer, no
+ *                    truck figure, no other job's price, no mark of his answer or his lesson;
+ *   held           — anything else (his 💵, a hand-back, another job's price, a reply drafted after the answer — its run
+ *                    was offered `calc_price` and answered otherwise): the caller waits for it to be decided.
+ */
+export function calcAnswerOverLive(live: LiveReplyShape, over: CalcChainOver): 'already_priced' | 'own_card' | 'takes_over' | 'held' {
+  const policy = live.policy !== null && typeof live.policy === 'object' ? (live.policy as Record<string, unknown>) : {};
+  const memory = policy.memory !== null && typeof policy.memory === 'object' ? (policy.memory as Record<string, unknown>) : {};
+  const marks = (Array.isArray(memory.calcPrices) ? memory.calcPrices : []).filter(
+    (m): m is { requestId: string; anchor: 'seal' | 'answer'; anchorId: string } =>
+      m !== null && typeof m === 'object' && typeof (m as { requestId?: unknown }).requestId === 'string',
+  );
+  if (over.anchorKey !== null && marks.some((m) => calcAnswerSourceKey(m) === over.anchorKey)) return 'already_priced';
+  if (live.kind !== 'reply' || (live.finalBody ?? null) !== null) return 'held';
+  const own = policy.calcAnswer !== null && typeof policy.calcAnswer === 'object' ? (policy.calcAnswer as { requestId?: unknown }).requestId : undefined;
+  if (typeof own === 'string') return over.members.includes(own) ? 'own_card' : 'held';
+  if (over.answeredAt === null || !live.createdAt || !(live.createdAt.getTime() < over.answeredAt.getTime())) return 'held';
+  if ((Array.isArray(live.actions) && live.actions.length > 0) || live.needsOwner === true || (live.offerId ?? null) !== null) return 'held';
+  if (HIS_MARKS.some((k) => policy[k] !== undefined && policy[k] !== null)) return 'held';
+  if (marks.some((m) => !over.members.includes(m.requestId))) return 'held';
+  if (Array.isArray(memory.estimates) && memory.estimates.length > 0) return 'held';
+  return 'takes_over';
 }
 
 const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
@@ -134,7 +219,17 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
   let closeOld = false as boolean;
   const out = await db.transaction(async (tx): Promise<WriteDraftResult> => {
     const [live] = await tx
-      .select({ id: agentDrafts.id, status: agentDrafts.status })
+      .select({
+        id: agentDrafts.id,
+        status: agentDrafts.status,
+        kind: agentDrafts.kind,
+        policy: agentDrafts.policy,
+        finalBody: agentDrafts.finalBody,
+        actions: agentDrafts.actions,
+        needsOwner: agentDrafts.needsOwner,
+        offerId: agentDrafts.offerId,
+        createdAt: agentDrafts.createdAt,
+      })
       .from(agentDrafts)
       .where(
         and(
@@ -144,6 +239,8 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
         ),
       )
       .for('update');
+    // The VED answer's run: what it may do with the live reply, asked here under the chat's lock (fix pass 5).
+    const calcOver = live && n.calcChain ? calcAnswerOverLive(live, n.calcChain) : null;
     if (n.answers) {
       // The question waits for THIS answer, or the redraft writes nothing: a ✅, ❌ or 🙋 on it, his ✏️ words, a
       // newer answer, the sweep handing it back — each decided it first.
@@ -208,8 +305,22 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       closeOld = true;
     } else if (live?.status === 'editing') {
       return { kind: 'editing', draftId: live.id };
+    } else if (live && calcOver === 'already_priced') {
+      return { kind: 'already_priced', draftId: live.id };
+    } else if (live && calcOver === 'held') {
+      return { kind: 'other_live', draftId: live.id };
     } else if (live) {
-      await tx.update(agentDrafts).set({ status: 'superseded', updatedAt: new Date() }).where(eq(agentDrafts.id, live.id));
+      // A reason of its own when the customer did not write: the VED's word on the chain (its own earlier card, or the
+      // machine's reply drafted before the answer, which the price takes the place of — fix pass 5), or his 💵.
+      const stale = n.calcChain ? 'calc_answer' : (n.supersedeStale ?? null);
+      await tx
+        .update(agentDrafts)
+        .set({
+          status: 'superseded',
+          updatedAt: new Date(),
+          ...(stale ? { policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ stale })}::jsonb` } : {}),
+        })
+        .where(eq(agentDrafts.id, live.id));
       superseded = live.id;
     }
     const [draft] = await tx
@@ -318,6 +429,10 @@ export interface RunDraftInput {
   fromLesson?: { lessonId: string; draftId: string } | null;
   /** The lessons this run read (§3.7, lessons `promptLessons`) — null when it read none. */
   lessonSet?: LessonSetMark | null;
+  /** The VED answered the job this reply is about (SPEC-P2-v2 §2.3) — kept as `policy.calcAnswer` (K2's clock, K1's head). */
+  calcAnswer?: { requestId: string } | null;
+  /** The holder's card line for the VED prices the run's `calc_price` quoted (§2.2) — `policy.card.calcLine`. */
+  calcCardLine?: string | null;
 }
 
 /**
@@ -360,7 +475,7 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       warnings: policy.warnings,
       ledger: policy.ledger,
       memory: input.memory,
-      card: cardMemory(ctx),
+      card: input.calcCardLine ? { ...cardMemory(ctx), calcLine: input.calcCardLine } : cardMemory(ctx),
       burstSeenAt: burstSeenAt(ctx),
       notes: input.notes,
       // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
@@ -368,6 +483,7 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       ...(input.fromAnswer ? { fromAnswer: input.fromAnswer } : {}),
       ...(input.fromLesson ? { fromLesson: input.fromLesson } : {}),
       ...(input.lessonSet ? { lessons: input.lessonSet } : {}),
+      ...(input.calcAnswer ? { calcAnswer: input.calcAnswer } : {}),
     },
     blocked: !policy.ok,
     needsOwner: compose.needsOwner,
@@ -392,9 +508,17 @@ export async function writeDraft(
     answers?: NewDraft['answers'];
     /** His lesson's rewrite: the reply it replaces (`NewDraft.redrafts`). */
     redrafts?: NewDraft['redrafts'];
+    /** The VED answer's run: the chain it prices — what it may take over (`NewDraft.calcChain`). */
+    calcChain?: NewDraft['calcChain'];
   },
 ): Promise<WriteDraftResult> {
-  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null, answers: input.answers ?? null, redrafts: input.redrafts ?? null });
+  return createDraft({
+    ...draftFromRun(input),
+    autoPlan: input.autoPlan ?? null,
+    answers: input.answers ?? null,
+    redrafts: input.redrafts ?? null,
+    calcChain: input.calcChain ?? null,
+  });
 }
 
 export { cardMemory };
@@ -456,8 +580,11 @@ export async function requestRecalculated(requestId: string): Promise<boolean> {
   return newer !== undefined;
 }
 
-/** What the send step, his ✅ and the press hear of a draft's figure: it stands, a VED recalculation took it, its table moved. */
-export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved';
+/**
+ * What the send step, his ✅ and the press hear of a draft's figure: it stands, a VED recalculation took it, its table
+ * moved, or a VED answer's price no longer stands as it was quoted (SPEC-P2-v2 §2.5).
+ */
+export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved' | 'calc_price_moved' | 'calc_owner_priced' | 'calc_person_offer';
 
 /**
  * A draft's figure still stands; null when the draft carries none — a REASON, never a boolean (spec SPEC-P1-v2
@@ -478,7 +605,14 @@ export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved';
  */
 export async function draftOfferStands(draftId: string, now: Date = new Date()): Promise<OfferStanding | null> {
   const [draft] = await db
-    .select({ offerId: agentDrafts.offerId, kind: agentDrafts.kind, policy: agentDrafts.policy, finalBody: agentDrafts.finalBody })
+    .select({
+      offerId: agentDrafts.offerId,
+      kind: agentDrafts.kind,
+      policy: agentDrafts.policy,
+      finalBody: agentDrafts.finalBody,
+      managerUserId: agentDrafts.managerUserId,
+      peerId: agentDrafts.peerId,
+    })
     .from(agentDrafts)
     .where(eq(agentDrafts.id, draftId));
   const priced = draft?.kind === 'price' ? ((draft.policy ?? {}) as { priceRequestId?: unknown }).priceRequestId : undefined;
@@ -495,7 +629,38 @@ export async function draftOfferStands(draftId: string, now: Date = new Date()):
   }
   if (!draft || draft.finalBody !== null) return null;
   const memory = ((draft.policy ?? {}) as Partial<DraftPolicyJson>).memory;
+  // A VED answer's price the machine quoted (SPEC-P2-v2 §2.5), whatever the draft's kind: priced again for each stored
+  // request — the same anchor, the same rule, the same total — or `calc_price_moved`. A later seal or a newer answer on
+  // the card, the quote's clock, a concession, a markup edit: each stops it here. Never a throw (the listener).
+  if (Array.isArray(memory?.calcPrices) && memory.calcPrices.length > 0) {
+    const standing = await calcPricesStandFor(draft, memory.calcPrices, now);
+    if (standing !== 'stands') return standing;
+    if (!Array.isArray(memory.estimates) || memory.estimates.length === 0) return 'stands';
+  }
   return estimatesStand(memory?.estimates, now);
+}
+
+/**
+ * `calcPricesStanding` by dynamic import, each reason in its own words (fix pass 4): HIS 💵 on the job
+ * (`calc_owner_priced`) or a person's newer offer on the card (`calc_person_offer`) — the gate's two words — and
+ * anything else `calc_price_moved`. A load or a read that fails answers «moved», never a throw in the send step.
+ */
+async function calcPricesStandFor(
+  draft: { managerUserId: string; peerId: bigint },
+  marks: unknown,
+  now: Date,
+): Promise<'stands' | 'calc_price_moved' | 'calc_owner_priced' | 'calc_person_offer'> {
+  try {
+    const { calcPricesStanding } = await import('./calc-price');
+    const standing = await calcPricesStanding(marks, { managerUserId: draft.managerUserId, peerId: draft.peerId }, now);
+    if (standing === 'stands') return 'stands';
+    if (standing === 'owner_priced') return 'calc_owner_priced';
+    if (standing === 'person_offer') return 'calc_person_offer';
+    return 'calc_price_moved';
+  } catch (err) {
+    logger.warn({ err, peer: String(draft.peerId) }, '[agent] calc price not re-priced at the send');
+    return 'calc_price_moved';
+  }
 }
 
 /**

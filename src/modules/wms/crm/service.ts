@@ -16,7 +16,7 @@ import {
   users,
 } from '../../platform/db/schema';
 import { diffFields, writeAudit, type AuditContext } from '../../platform/audit/service';
-import { isUuidShaped } from '../../platform/audit/fields';
+import { AUDIT_VIA_AI, isUuidShaped } from '../../platform/audit/fields';
 import { emitEvent } from '../../platform/events/service';
 import { createClient } from '../../platform/clients/service';
 import { likeNeedle, parseQuery } from '../search/query';
@@ -31,6 +31,9 @@ import { leadDealMoveRefusal, type FtlDoor } from '../ftl/door';
 import type { LoadMode } from '../ftl/sql';
 import { aboutClientsOf } from './lead-about';
 import { isAgentSource } from './agent-source';
+import { machineStageVerdict } from './forward-stage';
+import { machineMayTouch } from '../agent/machine-owner';
+import { getSetting } from '../../platform/settings/service';
 
 /**
  * The funnel's own board-order table (0075).
@@ -884,6 +887,13 @@ async function writeLeadStageTx(
   lostReason: string | null,
   ctx: AuditContext,
   place?: { beforeId: string | null },
+  /**
+   * The AI seller's own move (SPEC-P2-v2 §3.3) — internal, set by `moveLeadByMachine` alone and reachable from no
+   * server action. The seller's booked call date is KEPT (the machine moving a card is not the seller's call), and
+   * the audit row names the machine: `via: 'ai'` and the account it spoke from, under a NULL actor — never the holder
+   * as actor, or the History would net it into his own edits and the first-contact clock would count it as his.
+   */
+  machine?: { holderId: string },
 ): Promise<boolean> {
   const id = lead.id;
   const stageId = stage.id;
@@ -901,8 +911,9 @@ async function writeLeadStageTx(
             closedAt: closedAtFor(stage.kind, new Date()),
             // `clearsFollowUp` with no typed date always answers true here —
             // the board posts none. Asked rather than restated so the rule
-            // has one home with the form door (#513).
-            ...(clearsFollowUp({ moved: true, storedAt: lead.nextActionAt })
+            // has one home with the form door (#513). The machine's move keeps
+            // the seller's date (§3.3): it is not a call anybody made.
+            ...(!machine && clearsFollowUp({ moved: true, storedAt: lead.nextActionAt })
               ? { nextActionAt: null, nextActionNote: null }
               : {}),
             // Moving the card IS the work (owner's answer, go-live day):
@@ -928,9 +939,74 @@ async function writeLeadStageTx(
     entityId: id,
     action: 'update',
     before: { stageId: lead.stageId },
-    after: { stageId, lostReason },
+    after: machine ? { stageId, lostReason, via: AI_STAGE_VIA, holder: machine.holderId } : { stageId, lostReason },
   });
   return true;
+}
+
+/** The audit `via` of the AI seller's own stage move (§3.3) — what the History calls «AI sotuvchi», what part 3 counts. */
+export const AI_STAGE_VIA = AUDIT_VIA_AI;
+
+/** Which stage setting the machine moves a lead to (SPEC-P2-v2 §3.1's closed enum, never a key from a caller). */
+export type MachineStage = 'calc' | 'ai_contacted' | 'ai_quoted';
+
+const MACHINE_STAGE_KEYS = {
+  calc: 'crm_calc_stage',
+  ai_contacted: 'crm_ai_contacted_stage',
+  ai_quoted: 'crm_ai_quoted_stage',
+} as const satisfies Record<MachineStage, string>;
+
+export type MachineMoveResult =
+  | { moved: true; stageId: string }
+  | { moved: false; reason: 'not_configured' | 'target_closed' | 'current_closed' | 'not_mine' | 'not_forward' | 'lead_gone' };
+
+/**
+ * The AI seller moves a lead (SPEC-P2-v2 §3.2, his item 4 ⭐: forward only, between OPEN stages — «Yutildi» mints a
+ * code and «Yo'qotildi» needs a reason, both stay a person's). An INTERNAL entry: no server action reaches it
+ * (`moveLeadAction` passes no options — the `viaConvert` rule), its callers are the machine's own steps.
+ *
+ * The stage setting and the stage list are read on the pool BEFORE the transaction (a `getSetting` inside one is
+ * #714). Inside: the lead's row locked ALONE (#1585), the decision taken on the LOCKED row (`machineStageVerdict`:
+ * the current stage still open, the target active and open and strictly further down, and `machineMayTouch` with
+ * the holder — the OUTBOX row's account, passed in, never the config read now), then the one stage writer with the
+ * machine's options. So a `winLead` that committed won, a seller's drag to Yo'qotildi with a reason, or a
+ * `setLeadOwner` to a colleague between the caller's read and this write leaves the lead as the person left it; two
+ * machine moves landing in reverse order cannot walk the card backwards. The stage event goes out after the commit
+ * under a NULL actor, so «entered stage» rules still fire (an owner or a fixed assignee; «whoever did it» finds
+ * nobody, as for the stale sweep). A lead that is gone is done, not retried.
+ */
+export async function moveLeadByMachine(
+  leadId: string,
+  want: MachineStage,
+  opts: { holderId: string },
+): Promise<MachineMoveResult> {
+  const wanted = await getSetting(MACHINE_STAGE_KEYS[want]);
+  if (!wanted) return { moved: false, reason: 'not_configured' };
+  const stages = await db
+    .select({ id: leadStages.id, sortOrder: leadStages.sortOrder, kind: leadStages.kind, active: leadStages.active })
+    .from(leadStages);
+  const out = await db.transaction(async (tx) => {
+    const [lead] = await tx
+      .select({ id: leads.id, name: leads.name, ownerId: leads.ownerId, stageId: leads.stageId, nextActionAt: leads.nextActionAt })
+      .from(leads)
+      .where(eq(leads.id, leadId))
+      .for('update');
+    if (!lead) return { result: { moved: false, reason: 'lead_gone' } as MachineMoveResult, lead: null };
+    const verdict = machineStageVerdict({
+      stages,
+      currentStageId: lead.stageId,
+      wantedId: String(wanted),
+      mayTouch: machineMayTouch({ kind: 'lead', ownerId: lead.ownerId }, opts.holderId),
+    });
+    if (!verdict.move) return { result: { moved: false, reason: verdict.reason } as MachineMoveResult, lead: null };
+    const stage = stages.find((row) => row.id === verdict.stageId)!;
+    const moved = await writeLeadStageTx(tx, lead, stage, null, { actorId: null }, undefined, { holderId: opts.holderId });
+    return moved
+      ? { result: { moved: true, stageId: verdict.stageId } as MachineMoveResult, lead }
+      : { result: { moved: false, reason: 'not_forward' } as MachineMoveResult, lead: null };
+  });
+  if (out.lead && out.result.moved) await announceLeadStage(out.lead, out.result.stageId, { actorId: null });
+  return out.result;
 }
 
 /**

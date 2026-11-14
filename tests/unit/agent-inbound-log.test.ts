@@ -90,3 +90,22 @@ describe('the inbound worker logs the origin and how long the job waited', () =>
     ).toEqual({ peer: '9001', origin: 'pull', attempt: 0, lagMs: 5_000 });
   });
 });
+
+describe('every agent queue has its worker (review tests: a renamed `work` call left a queue nobody drains, suite green)', () => {
+  it('registerAgentWorkers creates and works each JOB_AGENT_* queue the agent sends to — the VED answer’s and the after-sent’s included', async () => {
+    const created = new Set<string>();
+    const { boss, work } = recordingBoss();
+    (boss as unknown as { createQueue: (n: string) => Promise<void> }).createQueue = async (n: string) => void created.add(n);
+    await registerAgentWorkers(boss);
+    const Q = await import('@/modules/wms/agent/queues');
+    const queues = Object.entries(Q)
+      .filter(([k, v]) => k.startsWith('JOB_AGENT_') && typeof v === 'string')
+      .map(([, v]) => v as string);
+    // Re-anchor: the fence must see the two part 2 added, or it proves nothing about them.
+    expect(queues).toEqual(expect.arrayContaining([Q.JOB_AGENT_CALC_ANSWER, Q.JOB_AGENT_AFTER_SENT]));
+    for (const q of queues) {
+      expect([...work.keys()], q).toContain(q);
+      expect([...created], q).toContain(q);
+    }
+  });
+});
