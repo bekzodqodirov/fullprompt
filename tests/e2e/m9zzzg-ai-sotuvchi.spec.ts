@@ -41,7 +41,10 @@ const runId = String(Date.now()).slice(-6);
 const body = `Sinov javobi ${runId}: yukingiz Toshkentga yetib keldi.`;
 const factAnswer = `Sinov bilimi ${runId}: ofis dushanbadan shanbagacha ishlaydi.`;
 // A rule with no name, code, phone or price in it — a lesson is refused each of those.
-const lessonText = `Salomga avval salom bilan javob ber, keyin bitta savol ber ${runId}.`;
+// The lesson's run tag is spelled in LETTERS: a bare figure that counts nothing is a price to the lesson rule
+// (fix pass 7, check7#11) — the run id typed as digits made this ordinary lesson a refused one.
+const lessonTag = runId.replace(/\d/g, (d) => 'abcdefghij'[Number(d)]!);
+const lessonText = `Salomga avval salom bilan javob ber, keyin bitta savol ber (sinov ${lessonTag}).`;
 
 test.describe.configure({ mode: 'serial' });
 
@@ -327,7 +330,7 @@ async function restore(): Promise<void> {
     if (draftId) await sql`DELETE FROM agent_drafts WHERE id = ${draftId}`;
     await sql`DELETE FROM kb_facts WHERE answer LIKE ${`%${runId}%`}`;
     // A lesson is in every chat's prompt — the loudest configuration this spec can leave behind (#183).
-    await sql`DELETE FROM agent_lessons WHERE text LIKE ${`%${runId}%`}`;
+    await sql`DELETE FROM agent_lessons WHERE text LIKE ${`%${runId}%`} OR text LIKE ${`%${lessonTag}%`}`;
     restored = true;
   } finally {
     await sql.end();
@@ -351,7 +354,7 @@ test('cleanup: agent_config is back as it was, and the fixture rows are gone', a
     const [left] = await sql<{ n: number }[]>`
       SELECT (SELECT count(*) FROM agent_drafts WHERE id = ${draftId || '00000000-0000-0000-0000-000000000000'})::int
            + (SELECT count(*) FROM kb_facts WHERE answer LIKE ${`%${runId}%`})::int
-           + (SELECT count(*) FROM agent_lessons WHERE text LIKE ${`%${runId}%`})::int AS n`;
+           + (SELECT count(*) FROM agent_lessons WHERE text LIKE ${`%${runId}%`} OR text LIKE ${`%${lessonTag}%`})::int AS n`;
     expect(left!.n).toBe(0);
   } finally {
     await sql.end();
