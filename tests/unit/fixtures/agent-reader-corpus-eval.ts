@@ -134,7 +134,8 @@ function eligibleInput(): AutoGateInput {
       hasEstimate: false,
       estimatesStored: false,
       rail: false,
-      customerLocale: null,
+      // The customer's language, confidently the reply's (fix pass 6: an absent guess holds every reply now).
+      customerLocale: { locale: 'uz', confident: true },
       unreadNumeral: false,
     },
     tools: [],

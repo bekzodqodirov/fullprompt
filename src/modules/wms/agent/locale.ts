@@ -57,8 +57,14 @@ export function dominantScript(text: string): ScriptName {
 
 /** Letters only Uzbek Cyrillic has. */
 const UZ_CYRL_LETTERS = /[ўқғҳЎҚҒҲ]/u;
-/** Everyday Uzbek Cyrillic words that are not Russian. */
-const UZ_CYRL_WORDS = /(?:^|[^\p{L}])(?:ва|учун|керак|канча|қанча|борми|нима|қачон|качон|юк|нарх|йўқ|йук|бўлади|булади)(?=$|[^\p{L}])/iu;
+/**
+ * Everyday Uzbek Cyrillic words that are not Russian — and (fix pass 6, the hunt #3) the ones an Uzbek on a Russian
+ * keyboard writes with none of «ў қ ғ ҳ»: «Иудан Тошкентгача неча пул?», «Мен Иудан юбордим», «Тушундим ака» read as no
+ * language, and the guess let a Russian reply go by itself. A place with an Uzbek case on it («Иудан», «Гуанчжоуда»,
+ * «Тошкентгача», any «…гача») and the possessive «-имиз/-ингиз» are Uzbek's alone.
+ */
+const UZ_CYRL_WORDS =
+  /(?:^|[^\p{L}])(?:ва|учун|керак|керакми|канча|қанча|неча|пул|бор|борми|нима|қачон|качон|юк|нарх|йўқ|йук|бўлади|булади|буладими|мен|сиз|биз|битта|мумкин|мумкинми|муаммо|савол|эди|экан|келади|келадими|турибди|турибдими|тушундим|юбордим|олдим|келдим|бердим)(?=$|[^\p{L}])|\p{L}{2,}(?:гача|имиз|ингиз|имизни|ингизни|имизга|ингизга)(?=$|[^\p{L}])|(?:^|[^\p{L}])(?:иу|иву|гуанчжоу|шэньчжэн\p{L}*|шенжен|фошан\p{L}*|тошкент|ташкент|хитой)(?:дан|да|даги|га|нинг)(?=$|[^\p{L}])/iu;
 
 /**
  * What makes a Cyrillic line RUSSIAN by its own words (0148 fix): the everyday words Uzbek does not have, and the
@@ -75,7 +81,14 @@ const RU_LETTERS = /[ыщЫЩ]/u;
 // Груз из Гуанчжоу, 5 кубов, 800 кг. Цена?» carried no mark once the greeting was none, and an Uzbek reply went by
 // itself. «Груз», «куб», «товар», «доставка» stay unmarked: an Uzbek says them too.
 const RU_WORDS =
-  /(?:^|[^\p{L}])(?:сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|ещё|еще|меня|мне|вас|вам|нет|и|в|на|по|за|до|напишите|скиньте|отправьте|пришлите|подскажите|скажите|который|которая|которые|кубов|куба|кубы|кубах|кубами|груза|грузов|грузы|грузом|товара|товаров|товары|цена|цену|цены|ценой|вес|веса|весом|стоимость|стоимости|объём|объем|объёма|объема|доставку|доставки|килограмм|килограммов)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:сколько|что|как|это|есть|для|или|если|можно|нужно|надо|хочу|можете|будет|стоит|когда|где|почему|уже|меня|мне|вас|вам|напишите|скиньте|отправьте|пришлите|подскажите|скажите|который|которая|которые|кубов|куба|кубы|кубах|кубами|груза|грузов|грузы|грузом|товара|товаров|товары|цена|цену|цены|ценой|вес|веса|весом|стоимость|стоимости|объём|объем|объёма|объема|доставку|доставки|килограмм|килограммов|почём|почем|хотел|хотела|хотим|узнать|интересует|интересно|понял|поняла|понятно|ясно|пришёл|пришел|пришла|китая|китае|китаю|отправляю|отправлю|заберёте|заберете|забрать|сможете)(?=$|[^\p{L}])/iu;
+/**
+ * Russian's short function words — «и», «в», «на», «по», «за», «до», «нет», «еще» — mark Russian only in a text that
+ * carries no Uzbek word and no Uzbek word ending (fix pass 6, the hunt #9): an Uzbek on a Russian keyboard mixes them in
+ * — «Кийим и обувь бор», «Товар в Гуанчжоуда турибди», «Ака, по карте тулаш мумкинми?» — and each read «ru, confident»:
+ * the right Uzbek reply was refused and a Russian one went by itself. Beside an Uzbek ending they lean Uzbek.
+ */
+const RU_WEAK = /(?:^|[^\p{L}])(?:и|в|на|по|за|до|нет|ещё|еще)(?=$|[^\p{L}])/iu;
 
 /**
  * Russian's everyday adverbs — «сегодня», «сейчас», «потом», «тогда», «тоже», «очень», «только», «здесь» — are a mark of
@@ -93,6 +106,13 @@ const UZ_CYRL_ENDING =
  */
 export function uzbekEndingLean(text: string): AgentLocale | null {
   return dominantScript(text) === 'cyrillic' && UZ_CYRL_ENDING.test(text) && !RU_LETTERS.test(text) && !RU_WORDS.test(text) ? 'uz_cyrl' : null;
+}
+
+/** Russian by its own words — the weak ones and the adverbs only where nothing of Uzbek stands beside them. */
+function russianMarks(t: string): boolean {
+  if (RU_LETTERS.test(t) || RU_WORDS.test(t)) return true;
+  const uzbek = UZ_CYRL_ENDING.test(t) || UZ_CYRL_WORDS.test(t) || UZ_CYRL_LETTERS.test(t);
+  return !uzbek && (RU_FILLER.test(t) || RU_WEAK.test(t));
 }
 
 /**
@@ -117,14 +137,26 @@ const SHORT_LINE = 12;
 const UZ_LATIN_LETTERS = /[og]['ʻʼ‘’`]/iu;
 /** Everyday Uzbek Latin words that are not English. */
 const UZ_LATIN_WORDS =
-  /(?:^|[^\p{L}])(?:qancha|kancha|nechpul|necha|kerak|bormi|yoq|yo'q|yuk|yukim|narx|narxi|qayerda|qachon|kachon|keldimi|ketdimi|bo'ladi|boladi|aka|opa|uka|iltimos|mumkinmi|qilib|berasiz|bering|kub|kubi|xitoydan|toshkentga)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:qancha|kancha|nechpul|necha|kerak|bor|bormi|yoq|yo'q|yuk|yukim|narx|narxi|qayerda|qachon|kachon|keldimi|ketdimi|bo'ladi|boladi|aka|opa|uka|iltimos|mumkin|mumkinmi|qilib|olib|berasiz|bering|kub|kubi|xitoydan|toshkentga|tayyor|ekan|tovar|tovarim|turibdi|turibdimi|xizmati|qilganman|kelasizmi|kelasizlarmi)(?=$|[^\p{L}])|\p{L}{2,}(?:gacha|imiz|ingiz|imizni|ingizni)(?=$|[^\p{L}])|(?:^|[^\p{L}])(?:ivu|yiwu|guanchjou|guanjou|shenchjen|shenjen|toshkent|xitoy)(?:dan|da|dagi|ga|ning)(?=$|[^\p{L}])/iu;
 /**
  * Everyday English words that are not Uzbek — and the function words an English request is made of (fix pass 4): «Hi,
  * I have 3 cbm of clothes in Yiwu» carried no mark once «Hi» was none, and the English reply waited. Never «it» (a
  * dog) or «in» (a den): Uzbek words too.
  */
 const EN_WORDS =
-  /(?:^|[^\p{L}])(?:the|is|are|what|how|much|price|cost|cargo|shipping|please|when|where|my|your|can|you|need|delivery|from|to|i|i'm|i've|have|has|of|we|want|would|like|ship|send|and|with|for|this|that|do|does|any|our|us|me|there|here|get|buy|order|quote|goods|freight)(?=$|[^\p{L}])/iu;
+  /(?:^|[^\p{L}])(?:the|is|are|what|how|much|price|cost|shipping|please|when|where|which|my|your|can|you|need|from|i'm|i've|have|has|of|we|want|would|like|ship|send|and|with|for|this|that|do|does|any|our|us|me|there|here|get|buy|quote|goods|freight|rate|per|warehouse|address|shipment|ready|pickup|kindly|advise)(?=$|[^\p{L}])/iu;
+/**
+ * The trade's English loan words — «cargo», «delivery», «order» — and «i» / «to» (fix pass 6, the hunt #10): an Uzbek
+ * types them in his Latin («kiyim i poyabzal bor», «delivery bor», «order qilganman», «to Toshkent olib kelasizlarmi»),
+ * and each read «en, confident» — the right Uzbek reply was refused and an English one went by itself. They mark
+ * English only in a text that carries no Uzbek word and no Uzbek ending.
+ */
+const EN_LOAN = /(?:^|[^\p{L}])(?:cargo|delivery|order|i|to)(?=$|[^\p{L}])/iu;
+const UZ_LATIN_ENDING = /\p{L}{2,}(?:lar|larmi|mi|dan|ga|gacha|da|dagi|imiz|ingiz|aman|amiz|yapman|ganman|ganmiz|asiz|asizlarmi|ibdi|di)(?=$|[^\p{L}])/iu;
+function englishMarks(t: string): boolean {
+  if (EN_WORDS.test(t)) return true;
+  return EN_LOAN.test(t) && !UZ_LATIN_WORDS.test(t) && !UZ_LATIN_LETTERS.test(t) && !UZ_LATIN_ENDING.test(t);
+}
 
 /**
  * One script's two languages, read as MARKS: each language's own words or letters (`uz`, `other`) — never a
@@ -189,7 +221,7 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
       text,
       {
         uz: (t) => UZ_CYRL_LETTERS.test(t) || UZ_CYRL_WORDS.test(t),
-        other: (t) => RU_LETTERS.test(t) || RU_WORDS.test(t) || (RU_FILLER.test(t) && !UZ_CYRL_ENDING.test(t)),
+        other: russianMarks,
       },
       { uz: CYRL_GREETING_UZ, other: CYRL_GREETING_RU },
       CYRILLIC,
@@ -213,7 +245,7 @@ export function detectLocale(text: string, previous: AgentLocale | null = null):
   if (script === 'latin') {
     const m = marksOf(
       text,
-      { uz: (t) => UZ_LATIN_LETTERS.test(t) || UZ_LATIN_WORDS.test(t), other: (t) => EN_WORDS.test(t) },
+      { uz: (t) => UZ_LATIN_LETTERS.test(t) || UZ_LATIN_WORDS.test(t), other: englishMarks },
       { uz: LATIN_GREETING_UZ, other: LATIN_GREETING_EN },
       LATIN,
     );

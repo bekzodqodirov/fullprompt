@@ -12,11 +12,12 @@ export const KNOWN_HELD: ReadonlyMap<string, string> = new Map<string, string>([
   // «Hello» — so the English reply waits for his ✅ (and the Uzbek one is refused: lg006, dangerous, holds).
   ['lg221', 'an English greeting over unmarked words: an unconfident guess; English goes only on a confident one'],
   ['lg224', 'an English greeting over unmarked words: an unconfident guess; English goes only on a confident one'],
-  // A Russian greeting over unmarked Cyrillic, first contact (nothing stored): the guess leans Russian, and the rule
-  // cannot tell an Uzbek on a Russian keyboard from a Russian customer — the Uzbek reply waits. In a chat stored Uzbek
-  // Cyrillic the same lines go (lg211, lg212).
-  ['lg228', 'a Russian greeting over unmarked Cyrillic with nothing stored leans Russian; the Uzbek reply waits'],
-  ['lg229', 'a Russian greeting over unmarked Cyrillic with nothing stored leans Russian; the Uzbek reply waits'],
+  // (lg228, lg229 left the list in fix pass 6: «Гуанчжоудан» — a place with an Uzbek case on it — is Uzbek's alone.)
+
+  // ── avia (fix pass 6) ───────────────────────────────────────────────────────────────────────────────────────────
+  // A statement naming a Chinese place holds, whatever its verb (the hunt #1): «Ваш груз на складе в Иу» cannot be told
+  // from «Ждём ваш груз на складе в Гуанчжоу» or «Отправка груза — в наш офис в Иу» without reading Russian's cases.
+  ['av242', 'a statement naming a Chinese place holds: the rule cannot tell where the cargo IS from where it is to GO'],
 
   // ── money: another reader's rule ────────────────────────────────────────────────────────────────────────────────
   // G2 (policy, the company's payment rule) reads «оплата по прибытии» without «до получения» as a credit promise

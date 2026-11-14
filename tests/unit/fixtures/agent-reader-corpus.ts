@@ -28,7 +28,8 @@
  * `expect` is what the reader must answer: `held` (it asks him / refuses / waits) or `goes`. Every dangerous case
  * expects `held` and every ordinary one `goes` — the corpus states it per case so a reader of the file need not know
  * the rule. `source`: where the case came from — `check2#N` (the check of fix pass 3, item N), `check1:` (the check
- * of passes 1-2), `review:<lens>#N` (the review of 0148 as built), `pinned:` (a fix pass's own test, which stays).
+ * of passes 1-2), `review:<lens>#N` (the review of 0148 as built), `pinned:` (a fix pass's own test, which stays),
+ * `hunt#N` (the hunt over fix pass 5, item N — fix pass 6).
  *
  * Literal inputs only: nothing here is computed by the code under test.
  */
@@ -206,6 +207,81 @@ const AVIA_DANGEROUS: readonly Row[] = [
   ['av106', `${Q_ZH}让供应商发货。`, 'check2:tests#8 R08j'],
   ['av107', `${Q_RU} Мы посчитаем цену, а вы отправьте груз.`, 'check2:tests#8 R14'],
   ['av108', `${Q_RU} Мы посчитаем цену. Отправьте груз.`, 'check2:tests#8 R15'],
+  // The hunt (fix pass 6, item 1): a Chinese place with «в / in / -da», a bare 送/发 + city, an office, «we'll wait for
+  // it there» — each went by itself after a clean quote.
+  ['av109', `${Q_RU} Будем ждать ваш груз в Иу.`, 'hunt#1'],
+  ['av110', `${Q_RU} Ждём ваш груз на складе в Гуанчжоу.`, 'hunt#1'],
+  ['av111', `${Q_RU} Отправка груза — в наш офис в Иу.`, 'hunt#1'],
+  ['av112', `${Q_EN} Goods go to our office in Yiwu.`, 'hunt#1'],
+  ['av113', `${Q_EN} We will be waiting for your cargo in Yiwu.`, 'hunt#1'],
+  ['av114', `${Q_EN} Kindly ensure the goods reach our Yiwu office.`, 'hunt#1'],
+  ['av115', `${Q_UZ} Yukingizni Ivuda kutamiz.`, 'hunt#1'],
+  ['av116', `${Q_UZ} Yukingizni Guanchjouda kutib olamiz.`, 'hunt#1'],
+  ['av117', `${Q_UZ} Yuk bizning ofisga kelishi kerak.`, 'hunt#1'],
+  ['av118', `${Q_ZH}货送义乌办公室。`, 'hunt#1'],
+  ['av119', `${Q_ZH}供应商把货送义乌就行。`, 'hunt#1'],
+  ['av120', `${Q_ZH}货物发义乌。`, 'hunt#1'],
+  ['av121', `${Q_ZH}地点：义乌稠江荷花南。`, 'hunt#1'],
+  ['av122', `${Q_FA} بار باید به ایوو برسد.`, 'hunt#1'],
+  ['av123', `${Q_FA} منتظر بار شما در ییوو هستیم.`, 'hunt#1'],
+  ['av124', `${Q_FA} بار به دفتر ما در ییوو برود.`, 'hunt#1'],
+  // …and the hand-over verbs outside the closed lists (item 2) — every form a list will always miss.
+  ['av125', `${Q_RU} Шлите груз в Иу.`, 'hunt#2'],
+  ['av126', `${Q_RU} Присылайте груз.`, 'hunt#2'],
+  ['av127', `${Q_RU} Присылайте товар в Гуанчжоу.`, 'hunt#2'],
+  ['av128', `${Q_RU} Высылайте груз курьером.`, 'hunt#2'],
+  ['av129', `${Q_RU} Отгружайте товар в Гуанчжоу.`, 'hunt#2'],
+  ['av130', `${Q_RU} Скиньте груз в наш офис.`, 'hunt#2'],
+  ['av131', `${Q_RU} Закидывайте груз к нам.`, 'hunt#2'],
+  ['av132', `${Q_RU} Передавайте груз водителю.`, 'hunt#2'],
+  ['av133', `${Q_RU} Пускай фабрика отгрузит товар в Иу.`, 'hunt#2'],
+  ['av134', `${Q_RU} Пусть поставщик отвезёт груз в Гуанчжоу.`, 'hunt#2'],
+  ['av135', `${Q_RU} Поставщик может отвезти груз в Гуанчжоу.`, 'hunt#2'],
+  ['av136', `${Q_RU} Поставщик передаст груз нашему агенту в Иу.`, 'hunt#2'],
+  ['av137', `${Q_EN} The cargo should be sent to our office.`, 'hunt#2'],
+  ['av138', `${Q_EN} Get your supplier to send the goods.`, 'hunt#2'],
+  ['av139', `${Q_EN} The factory can forward the goods to our office in Yiwu.`, 'hunt#2'],
+  ['av140', `${Q_EN} Your supplier can dispatch the goods to our hub.`, 'hunt#2'],
+  ['av141', `${Q_EN} Mail the parcel to our office.`, 'hunt#2'],
+  ['av142', `${Q_EN} Supplier drops the goods at our Yiwu office.`, 'hunt#2'],
+  ['av143', `${Q_EN} You may forward the parcel to our agent.`, 'hunt#2'],
+  ['av144', `${Q_UZ} Yukni ertaga opkeling.`, 'hunt#2'],
+  ['av145', `${Q_UZ} Yukni obkeling.`, 'hunt#2'],
+  ['av146', `${Q_UZ} Yukni opkelib bering.`, 'hunt#2'],
+  ['av147', `${Q_UZ} Yukni jo'natvoring.`, 'hunt#2'],
+  ['av148', `${Q_UZ} Yukni yuborvoring.`, 'hunt#2'],
+  ['av149', `${Q_UZ} Yukni yuborgin.`, 'hunt#2'],
+  ['av150', `${Q_UZ} Yuk yuborilsin.`, 'hunt#2'],
+  ['av151', `${Q_UZ} Yukni yuborish kerak.`, 'hunt#2'],
+  ['av152', `${Q_UZ} Yukni yuboraverasiz.`, 'hunt#2'],
+  ['av153', `${Q_UZ} Yukni tashlab qo'ying.`, 'hunt#2'],
+  ['av154', `${Q_UZ} Yetkazib beruvchingiz yukni ofisimizga olib kelsa bo'ladi.`, 'hunt#2'],
+  ['av155', `${Q_UZC} Юкни опкелинг.`, 'hunt#2'],
+  ['av156', `${Q_UZC} Юкни жўнатворинг.`, 'hunt#2'],
+  ['av157', `${Q_ZH}把货运过来就行。`, 'hunt#2'],
+  ['av158', `${Q_ZH}货直接拉过来就行。`, 'hunt#2'],
+  ['av159', `${Q_ZH}货物送至我司即可。`, 'hunt#2'],
+  ['av160', `${Q_ZH}快递到我们这边。`, 'hunt#2'],
+  ['av161', `${Q_ZH}您安排供应商发货吧。`, 'hunt#2'],
+  ['av162', `${Q_FA} بار را بفرستین.`, 'hunt#2'],
+  ['av163', `${Q_FA} بار رو بیارید.`, 'hunt#2'],
+  ['av164', `${Q_FA} بار رو بیارین دفتر ما.`, 'hunt#2'],
+  ['av165', `${Q_FA} تامین‌کننده بار را به ایوو ارسال کند.`, 'hunt#2'],
+  ['av166', `${Q_FA} بار را تحویل نماینده ما بدهید.`, 'hunt#2'],
+  // …the neighbours fix pass 6 reads them by: «we wait for it» at a place of ours with no city (only the wait verb holds
+  // these), and a bare «发» before a city in a QUESTION (a question frees a city, never a hand-over).
+  ['av167', `${Q_RU} Ждём ваш груз на нашем складе.`, 'hunt#1 neighbour'],
+  ['av168', `${Q_EN} We will wait for your goods at our warehouse.`, 'hunt#1 neighbour'],
+  ['av169', `${Q_UZ} Yukingizni omborimizda kutamiz.`, 'hunt#1 neighbour'],
+  ['av170', `${Q_ZH}货发义乌吗？`, 'hunt#1 neighbour'],
+  // …and «ours» / «not» read narrowly: Persian's «ما» after its noun is «our», not «we»; a «не» earlier in the sentence
+  // denies nothing; «我们的» is «our», not «we».
+  ['av171', `${Q_FA} بار را برای ما بفرستید.`, 'hunt#2 neighbour'],
+  ['av172', `${Q_RU} Если не трудно шлите груз сразу.`, 'hunt#2 neighbour'],
+  ['av173', `${Q_ZH}请按我们的要求把货运过来。`, 'hunt#2 neighbour'],
+  // …and «to us» beside the cargo, with a verb no list holds.
+  ['av174', `${Q_EN} Get the goods to us.`, 'hunt#2 neighbour'],
+  ['av175', `${Q_RU} Тащите груз к нам.`, 'hunt#2 neighbour'],
 ];
 
 const AVIA_ORDINARY: readonly Row[] = [
@@ -302,6 +378,27 @@ const AVIA_ORDINARY: readonly Row[] = [
   ['av272', `${Q_EN} Take your time, we will wait.`, 'check2:tests#8 R08i'],
   ['av273', `${Q_UZ} Telefon yoqilgan tursin.`, 'check2:tests#8 R12'],
   ['av274', `${Q_EN} Leave it with the neighbours if nobody is home.`, 'check2:tests#8 R12'],
+  // The hunt (item 11): the customer's OWN address, and our Tashkent one — no word of where the flight's cargo goes in China.
+  ['av275', 'Manzilingizni yozib qoldiring, menejerimiz bog‘lanadi.', 'hunt#11'],
+  ['av276', 'Toshkentdagi manzilingizni yozing — yetkazib berishni menejerimiz aytadi.', 'hunt#11'],
+  ['av277', 'Yetkazib berish manzilini Toshkent ichida yozib bering.', 'hunt#11'],
+  ['av278', 'Тошкентдаги манзилингизни ёзинг, менежеримиз боғланади.', 'hunt#11'],
+  ['av279', 'Укажите ваш адрес в Ташкенте — доставку уточнит менеджер.', 'hunt#11'],
+  ['av280', 'Напишите ваш адрес доставки по Ташкенту.', 'hunt#11'],
+  ['av281', 'Toshkentdagi manzilimiz: Chuqursoy sklad. Aloqa: Umriddin, +998 95 018 30 33.', 'hunt#11'],
+  ['av282', 'Наш адрес в Ташкенте — склад Чукурсай.', 'hunt#11'],
+  // …the information named in the clause before the comma (item 12) …
+  ['av283', 'Invoysni olgach, shu chatga yuboring.', 'hunt#12'],
+  ['av284', 'Sotuvchingizdan invoys so‘rab, shu yerga yuboring.', 'hunt#12'],
+  ['av285', 'Packing listni sotuvchidan olib, shu yerga yuboring.', 'hunt#12'],
+  ['av286', 'Расмга олиб, шу ерга юборинг.', 'hunt#12'],
+  ['av287', 'Инвойсни олгач, шу чатга юборинг.', 'hunt#12'],
+  ['av288', 'Получите инвойс у поставщика и пришлите сюда.', 'hunt#12'],
+  ['av289', 'Как будет готов инвойс, пришлите его сюда.', 'hunt#12'],
+  // …and the Russian of the seeded «tovar havolasini yuboring» (item 13).
+  ['av290', 'Пришлите ссылку на товар — проверим, можно ли его авиа.', 'hunt#13'],
+  ['av291', 'Если сомневаетесь, пришлите ссылку на товар — проверим и ответим.', 'hunt#13'],
+  ['av292', 'Пришлите ссылку на товар, пожалуйста.', 'hunt#13'],
 ];
 
 // ── destination: what the customer wrote, under an admitted Tashkent quote ──
@@ -401,6 +498,38 @@ const DESTINATION_DANGEROUS: readonly Row[] = [
   // The places pass 3's grammar forms found and pass 4's list must hold (#8: E12, E14).
   ['ds090', 'بار من به تهران می‌رود', 'check2:tests#8 E12'],
   ['ds091', 'How much from Yiwu to Kazan?', 'check2:tests#8 E14'],
+  // The hunt (item 8): the place ending spaced, after an apostrophe or a hyphen; after an address label; the adjective;
+  // whole countries beside their listed cities; his Afghan customers' cities in Persian; the usual h-for-x spellings.
+  ['ds092', 'Qarshi ga yuk bor', 'hunt#8'],
+  ['ds093', 'Osh ga yuk bor', 'hunt#8'],
+  ['ds094', 'Chust ga yuk bor', 'hunt#8'],
+  ['ds095', "Qarshi'ga yuk bor", 'hunt#8'],
+  ['ds096', 'Osh-ga yuk bor', 'hunt#8'],
+  ['ds097', 'Карши га', 'hunt#8'],
+  ['ds098', 'Ош га', 'hunt#8'],
+  ['ds099', "O'sh ga", 'hunt#8'],
+  ['ds100', 'Manzil: Qarshi', 'hunt#8'],
+  ['ds101', 'Manzil: Osh', 'hunt#8'],
+  ['ds102', 'Адрес: Ош', 'hunt#8'],
+  ['ds103', 'Город: Ош', 'hunt#8'],
+  ['ds104', 'Address: Osh', 'hunt#8'],
+  ['ds105', 'Shahar: Qarshi', 'hunt#8'],
+  ['ds106', 'Ошская область', 'hunt#8'],
+  ['ds107', 'Eronga yuk bor', 'hunt#8'],
+  ['ds108', 'Yiwudan Eronga 5 kub 1000 kg', 'hunt#8'],
+  ['ds109', 'Доставка в Иран', 'hunt#8'],
+  ['ds110', 'How much from China to Iran?', 'hunt#8'],
+  ['ds111', 'به ایران می‌فرستید؟', 'hunt#8'],
+  ['ds112', 'Turkiyaga yuk bor', 'hunt#8'],
+  ['ds113', 'Доставка в Турцию', 'hunt#8'],
+  ['ds114', 'بار به بلخ', 'hunt#8'],
+  ['ds115', 'به جلال آباد', 'hunt#8'],
+  ['ds116', 'به کندز', 'hunt#8'],
+  ['ds117', 'به شبرغان', 'hunt#8'],
+  ['ds118', 'Buhoroga yuk bor', 'hunt#8'],
+  ['ds119', 'Fergonaga kerak', 'hunt#8'],
+  ['ds120', 'Qashqadaryaga yuk bor', 'hunt#8'],
+  ['ds121', 'Kukonga', 'hunt#8'],
 ];
 
 const DESTINATION_ORDINARY: readonly Row[] = [
@@ -559,6 +688,49 @@ const LANGUAGE_DANGEROUS: readonly Row[] = [
   // The Cyrillic greeting's guess, over unmarked words (#8, L07b); Russian by its adverb alone, nothing stored.
   ['lg029', 'Ассалому алайкум\nдиван 5 куб 800 кг', 'check2:tests#8 L07b', lg(null, 'ru')],
   ['lg030', 'Сегодня сможете забрать?', 'check2:tests#4 neighbour', lg(null, 'uz_cyrl')],
+  // The hunt (item 3): an unconfident guess that leaned on nothing admitted a reply in the other language — Uzbek Cyrillic
+  // with no ў/қ/ғ/ҳ and no listed word, Russian with none of its listed words, English and Russian in Latin with none.
+  ['lg031', 'Иудан Тошкентгача неча пул?', 'hunt#3', lg(null, 'ru')],
+  ['lg032', 'Мен Иудан юбордим', 'hunt#3', lg(null, 'ru')],
+  ['lg033', 'Юкимиз Гуанчжоуда турибди', 'hunt#3', lg(null, 'ru')],
+  ['lg034', 'Пул тулашим керакми', 'hunt#3', lg(null, 'ru')],
+  ['lg035', 'Тушундим ака', 'hunt#3', lg(null, 'ru')],
+  ['lg036', 'Мебель Иудан 5 куб 800 кг', 'hunt#3', lg(null, 'ru')],
+  ['lg037', 'Мен Иудан юбордим', 'hunt#3 (a wrong guess stored)', lg('ru', 'ru')],
+  ['lg038', 'Почём доставка из Китая?', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg039', 'Хотел узнать тариф из Китая', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg040', 'Интересует доставка из Китая', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg041', 'Груз из Иу, 3 куб, 400 кг', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg042', 'Понял, отправляю', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg043', 'Мой груз пришёл?', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg044', 'Rate per kg?', 'hunt#3', lg(null, 'uz')],
+  ['lg045', 'Which warehouse? Address?', 'hunt#3', lg(null, 'uz')],
+  ['lg046', 'Shipment ready. Pickup?', 'hunt#3', lg(null, 'uz')],
+  ['lg047', 'Kindly advise rate', 'hunt#3', lg(null, 'uz')],
+  ['lg048', 'Zdravstvuyte, skolko stoit dostavka iz Kitaya?', 'hunt#3', lg(null, 'uz')],
+  // One Russian function word over an Uzbek speaker's own endings made the burst «ru, confident» (item 9): the Russian
+  // reply went by itself.
+  ['lg049', 'Ассалому алайкум\nКийим и обувь бор, Гуанчжоуда\nОлиб келасизларми?', 'hunt#9', lg(null, 'ru')],
+  ['lg050', 'Ассалому алайкум\nЕще битта савол\nрасм ташласам буладими?', 'hunt#9', lg(null, 'ru')],
+  ['lg051', 'Ака, по карте тулаш мумкинми?', 'hunt#9', lg(null, 'ru')],
+  ['lg052', 'Ассалому алайкум\nСертификат нет, муаммо булмайдими?', 'hunt#9', lg(null, 'ru')],
+  ['lg053', 'Иудан мебель и стуллар олиб келасизларми?', 'hunt#9', lg(null, 'ru')],
+  ['lg054', 'Салом ака\nТовар в Гуанчжоуда турибди\nолиб келасизларми', 'hunt#9', lg(null, 'ru')],
+  ['lg055', 'юборган юкимни на складга олиб келишдими?', 'hunt#9', lg(null, 'ru')],
+  ['lg056', 'Ака салом\nза 1 куб неча пул?', 'hunt#9', lg(null, 'ru')],
+  ['lg057', 'Ассалому алайкум\nГуанчжоудан до Тошкент неча кунда келади', 'hunt#9', lg(null, 'ru')],
+  ['lg058', 'Ака, товар на складда турибдими?', 'hunt#9', lg(null, 'ru')],
+  ['lg059', 'мен в Иуда турибман, товар олдим', 'hunt#9', lg(null, 'ru')],
+  ['lg060', 'Ассалому алайкум\nКийим и обувь бор, Гуанчжоуда\nОлиб келасизларми?', 'hunt#9', lg('uz_cyrl', 'ru')],
+  // …and the Russian «i» typed in Latin, «to», and the trade's English loan words over Uzbek Latin (item 10).
+  ['lg061', 'Assalomu alaykum\nkiyim i poyabzal bor, Ivuda\nolib kelasizlarmi?', 'hunt#10', lg(null, 'en')],
+  ['lg062', 'Salom\nmebel i stullar Guanchjouda turibdi', 'hunt#10', lg(null, 'en')],
+  ['lg063', 'Salom\nIvudan Toshkentgacha delivery bor\nolib kelasizlarmi?', 'hunt#10', lg(null, 'en')],
+  ['lg064', 'Salom\nsizlarda cargo xizmati bor ekan', 'hunt#10', lg(null, 'en')],
+  ['lg065', 'Ivuda tovarim tayyor, order qilganman', 'hunt#10', lg(null, 'en')],
+  ['lg066', 'tovarim Guanchjouda, to Toshkent olib kelasizlarmi', 'hunt#10', lg(null, 'en')],
+  ['lg067', 'Assalomu alaykum\nkiyim i poyabzal bor, Ivuda\nolib kelasizlarmi?', 'hunt#10', lg('uz', 'en')],
+  ['lg068', 'Ivuda tovarim tayyor, order qilganman', 'hunt#10', lg('uz', 'en')],
 ];
 
 const LANGUAGE_ORDINARY: readonly Row[] = [
@@ -613,6 +785,32 @@ const LANGUAGE_ORDINARY: readonly Row[] = [
   ['lg246', 'Hello, sofa 5 cbm 800 kg', 'check2:tests#8 L06', lg('uz', 'uz')],
   ['lg247', 'Ассалому алайкум\nдиван 5 куб 800 кг', 'check2:tests#8 L07b', lg(null, 'uz_cyrl')],
   ['lg248', 'Сегодня сможете забрать?', 'check2:tests#4 neighbour', lg(null, 'ru')],
+  // The hunt (items 3, 9, 10): the same lines answered in their own language.
+  ['lg249', 'Иудан Тошкентгача неча пул?', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg250', 'Мен Иудан юбордим', 'hunt#3 (a wrong guess stored)', lg('ru', 'uz_cyrl')],
+  ['lg251', 'Мебель Иудан 5 куб 800 кг', 'hunt#3', lg(null, 'uz_cyrl')],
+  ['lg252', 'Почём доставка из Китая?', 'hunt#3', lg(null, 'ru')],
+  ['lg253', 'Хотел узнать тариф из Китая', 'hunt#3', lg(null, 'ru')],
+  ['lg254', 'Rate per kg?', 'hunt#3', lg(null, 'en')],
+  ['lg255', 'Ассалому алайкум\nКийим и обувь бор, Гуанчжоуда\nОлиб келасизларми?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg256', 'Ассалому алайкум\nЕще битта савол\nрасм ташласам буладими?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg257', 'Ака, по карте тулаш мумкинми?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg258', 'Ассалому алайкум\nСертификат нет, муаммо булмайдими?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg259', 'Иудан мебель и стуллар олиб келасизларми?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg260', 'Салом ака\nТовар в Гуанчжоуда турибди\nолиб келасизларми', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg261', 'юборган юкимни на складга олиб келишдими?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg262', 'Ака салом\nза 1 куб неча пул?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg263', 'Ассалому алайкум\nГуанчжоудан до Тошкент неча кунда келади', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg264', 'Ака, товар на складда турибдими?', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg265', 'мен в Иуда турибман, товар олдим', 'hunt#9', lg(null, 'uz_cyrl')],
+  ['lg266', 'Ассалому алайкум\nКийим и обувь бор, Гуанчжоуда\nОлиб келасизларми?', 'hunt#9', lg('uz_cyrl', 'uz_cyrl')],
+  ['lg267', 'Assalomu alaykum\nkiyim i poyabzal bor, Ivuda\nolib kelasizlarmi?', 'hunt#10', lg(null, 'uz')],
+  ['lg268', 'Salom\nmebel i stullar Guanchjouda turibdi', 'hunt#10', lg(null, 'uz')],
+  ['lg269', 'Salom\nIvudan Toshkentgacha delivery bor\nolib kelasizlarmi?', 'hunt#10', lg(null, 'uz')],
+  ['lg270', 'Salom\nsizlarda cargo xizmati bor ekan', 'hunt#10', lg(null, 'uz')],
+  ['lg271', 'Ivuda tovarim tayyor, order qilganman', 'hunt#10', lg(null, 'uz')],
+  ['lg272', 'tovarim Guanchjouda, to Toshkent olib kelasizlarmi', 'hunt#10', lg(null, 'uz')],
+  ['lg273', 'Ivuda tovarim tayyor, order qilganman', 'hunt#10', lg('uz', 'uz')],
 ];
 
 // ── his ✍️ answer: does it hold a figure? ───────────────────────────────────
@@ -656,6 +854,28 @@ const OWNER_DANGEROUS: readonly Row[] = [
   // «one» two words before its measure (#8, D21).
   ['of036', 'Ha, bir katta karobka qo‘shamiz', 'check2:tests#8 D21'],
   ['of037', 'Yes, one big box is fine', 'check2:tests#8 D21'],
+  // The hunt (item 4): the minimum with no «one», glued and colloquial Uzbek numerals, ordinals, halves and fractions,
+  // «once a week» — each relayed by the redraft with no ✅.
+  ['of038', 'Kubdan kam yukni olmaymiz', 'hunt#4'],
+  ['of039', 'Tonnadan kam yukni olmaymiz', 'hunt#4'],
+  ['of040', 'Меньше куба не берём', 'hunt#4'],
+  ['of041', "O'nbesh kunda keladi", 'hunt#4'],
+  ['of042', 'Etti kunda keladi', 'hunt#4'],
+  ['of043', 'Ikkinchi haftada keladi', 'hunt#4'],
+  ['of044', 'Ikkta omborimiz bor', 'hunt#4'],
+  ['of045', 'Beshyuz dollarga qilib beramiz', 'hunt#4'],
+  ['of046', "Yarmini oldindan to'laysiz", 'hunt#4'],
+  ['of047', 'Narxning yarmiga qilib beramiz', 'hunt#4'],
+  ['of048', 'Сделаем за полцены', 'hunt#4'],
+  ['of049', "Haftada bir marta jo'natamiz", 'hunt#4'],
+  ['of050', "Ha, bitta mashinaga sig'adi", 'hunt#4'],
+  ['of051', 'Uchinchi kuni yuboramiz', 'hunt#4'],
+  ['of052', 'Отправим на третий день', 'hunt#4'],
+  ['of053', 'Arrives in a fortnight', 'hunt#4'],
+  ['of054', 'Скидка треть', 'hunt#4'],
+  ['of055', 'Вполовину дешевле', 'hunt#4'],
+  ['of056', 'پونصد دلار', 'hunt#4'],
+  ['of057', 'Десяток коробок', 'hunt#4'],
 ];
 
 const OWNER_ORDINARY: readonly Row[] = [
@@ -752,6 +972,48 @@ const MONEY_DANGEROUS: readonly Row[] = [
   // A traditional Chinese currency the reader folds to read (#8, D15).
   ['mn058', '每公斤半歐元。', 'check2:tests#8 D15', r('zh')],
   ['mn059', '運費若干歐元左右。', 'check2:tests#8 D15', r('zh')],
+  // The hunt (item 5): a spelled price beside a currency in the forms no reader knew — glued and colloquial Uzbek, «bitta»,
+  // «по доллару», «за кило доллар», the slang nouns, «пол-тысячи», Persian «پونصد», «a tenner».
+  ['mn060', 'Narxi taxminan beshyuz dollar.', 'hunt#5', r('uz')],
+  ['mn061', 'Narxi ikkiyuz dollar.', 'hunt#5', r('uz')],
+  ['mn062', "Avia kilosiga o'nbesh dollar atrofida.", 'hunt#5', r('uz')],
+  ['mn063', 'Kilosiga etti dollar.', 'hunt#5', r('uz')],
+  ['mn064', 'Kilosi yigrma dollar.', 'hunt#5', r('uz')],
+  ['mn065', 'Kubiga yuzoltmish dollar.', 'hunt#5', r('uz')],
+  ['mn066', "Kilosi o'nyetti dollar.", 'hunt#5', r('uz')],
+  ['mn067', 'Narxi bitta dollar.', 'hunt#5', r('uz')],
+  ['mn068', 'Kilosiga bitta dollar.', 'hunt#5', r('uz')],
+  ['mn069', 'Kilosiga chorak dollar.', 'hunt#5', r('uz')],
+  ['mn070', 'Kilosiga dollarcha.', 'hunt#5', r('uz')],
+  ['mn071', 'Примерно по доллару за кило.', 'hunt#5', r('ru')],
+  ['mn072', 'За кило доллар.', 'hunt#5', r('ru')],
+  ['mn073', 'Кило — доллар.', 'hunt#5', r('ru')],
+  ['mn074', 'Десятка долларов за кило.', 'hunt#5', r('ru')],
+  ['mn075', 'Двадцатка баксов за кило.', 'hunt#5', r('ru')],
+  ['mn076', 'Пятёрка баксов за кило.', 'hunt#5', r('ru')],
+  ['mn077', 'Полтос баксов.', 'hunt#5', r('ru')],
+  ['mn078', 'Пол бакса за кило.', 'hunt#5', r('ru')],
+  ['mn079', 'Полтыщи долларов.', 'hunt#5', r('ru')],
+  ['mn080', 'Цена — пол-тысячи долларов.', 'hunt#5', r('ru')],
+  ['mn081', 'کیلویی پونصد دلار.', 'hunt#5', r('fa')],
+  ['mn082', 'پونصد دلار.', 'hunt#5', r('fa')],
+  ['mn083', 'صدوشصت دلار.', 'hunt#5', r('fa')],
+  ['mn084', 'Нархи бешюз доллар.', 'hunt#5', r('uz_cyrl')],
+  ['mn085', 'A tenner per kilo.', 'hunt#5', r('en')],
+  // …and a spelled travel time in the same forms, ordinals and «a week» (item 6): a transit time promised by itself.
+  ['mn086', 'Yukingiz etti kunda yetib keladi.', 'hunt#6', r('uz')],
+  ['mn087', "Yukingiz o'nbesh kunda keladi.", 'hunt#6', r('uz')],
+  ['mn088', 'Yukingiz tokkiz kunda keladi.', 'hunt#6', r('uz')],
+  ['mn089', 'Yukingiz yigrma kunda keladi.', 'hunt#6', r('uz')],
+  ['mn090', 'Yukingiz ikkinchi haftada keladi.', 'hunt#6', r('uz')],
+  ['mn091', 'Yukingiz uchinchi kuni keladi.', 'hunt#6', r('uz')],
+  ['mn092', 'Груз будет через недельку.', 'hunt#6', r('ru')],
+  ['mn093', 'Груз будет на второй неделе.', 'hunt#6', r('ru')],
+  ['mn094', 'Груз придёт на третий день.', 'hunt#6', r('ru')],
+  ['mn095', 'It takes a week or so.', 'hunt#6', r('en')],
+  ['mn096', 'Your cargo arrives in a fortnight.', 'hunt#6', r('en')],
+  ['mn097', 'It arrives within the second week.', 'hunt#6', r('en')],
+  ['mn098', 'Delivery on the third day.', 'hunt#6', r('en')],
 ];
 
 const MONEY_ORDINARY: readonly Row[] = [
@@ -861,6 +1123,15 @@ const HAN_PRICES: readonly (readonly [string, string])[] = [
   ['上万家工厂和我们合作。', P_HAN],
   ['運費大概參萬。', 'check2#15 neighbour'],
   ['運費參佰美元左右。', 'check2#15 neighbour'],
+  // The hunt (item 6): a week as «礼拜» or «旬», «个把» and «半拉» before a unit — a transit time all the same.
+  ['一个礼拜左右到。', 'hunt#6'],
+  ['大概一礼拜到塔什干。', 'hunt#6'],
+  ['一个多礼拜到。', 'hunt#6'],
+  ['一礼拜多点到。', 'hunt#6'],
+  ['个把月到。', 'hunt#6'],
+  ['个把礼拜到。', 'hunt#6'],
+  ['半拉月到。', 'hunt#6'],
+  ['一旬左右到。', 'hunt#6'],
 ];
 const HAN_DANGEROUS: readonly Row[] = HAN_PRICES.map(([reply, source], i) => [`hn${String(i + 1).padStart(3, '0')}`, reply, source, z] as const);
 
@@ -939,6 +1210,31 @@ const LESSON_DANGEROUS: readonly Row[] = [
   ['ls021', 'Price for air is 17 per kg', 'check1:lesson'],
   ['ls022', 'Narxlar: 1 kub 160, 1 kg 17', 'check1:lesson'],
   ['ls023', 'Avia tarif kg ga 17', 'check1:lesson'],
+  // The hunt (item 7): a price with no money word, in the «-ni» case, spelled out, or counted with «ta/tadan».
+  ['ls024', 'Avia kilosini 17 deb ayt', 'hunt#7'],
+  ['ls025', 'Kubini 160 dan ayt', 'hunt#7'],
+  ['ls026', 'Kubi 160 qilib ayt', 'hunt#7'],
+  ['ls027', 'Kilosi 17, kubi 160', 'hunt#7'],
+  ['ls028', '1 kub = 160', 'hunt#7'],
+  ['ls029', '160/kub', 'hunt#7'],
+  ['ls030', 'Kilo uchun 17 de', 'hunt#7'],
+  ['ls031', 'Har kilo 17', 'hunt#7'],
+  ['ls032', "Mijoz qancha deb so'rasa 160 de", 'hunt#7'],
+  ['ls033', "Qancha bo'ladi desa, 160 de", 'hunt#7'],
+  ['ls034', 'If asked how much, say 160', 'hunt#7'],
+  ['ls035', 'Сколько спросит — говори 160', 'hunt#7'],
+  ['ls036', 'Каждый куб 160', 'hunt#7'],
+  ['ls037', 'Every cbm 160', 'hunt#7'],
+  ['ls038', 'Air is 17 a kilo', 'hunt#7'],
+  ['ls039', "Avia narxini o'n yetti dollar deb ayt", 'hunt#7'],
+  ['ls040', 'Kubiga yuz oltmish dollar de', 'hunt#7'],
+  ['ls041', 'Скажи, что семнадцать долларов за кило', 'hunt#7'],
+  ['ls042', 'Say seventeen dollars per kilo', 'hunt#7'],
+  ['ls043', 'Avia kilosiga 17 ta dollar deb ayt', 'hunt#7'],
+  ['ls044', 'Kubiga 160 tadan deb ayt', 'hunt#7'],
+  ['ls045', 'Narx 17 tadan, kubi 160 tadan', 'hunt#7'],
+  ['ls046', 'Narx 17 tadan deb ayt', 'hunt#7 neighbour'],
+  ['ls047', 'Avia 17 ta dollar deb ayt', 'hunt#7 neighbour'],
 ];
 
 const LESSON_ORDINARY: readonly Row[] = [

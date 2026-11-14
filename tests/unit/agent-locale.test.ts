@@ -32,7 +32,9 @@ describe('detectLocale', () => {
   // Russian keyboard, «у» for «ў», «к» for «қ» — and it was «ru, confident», so the auto layer's language clause
   // refused every correct Uzbek Cyrillic reply to such a line. `confident` means a MARK in the text decided.
   it('Cyrillic that carries no mark of either language is a guess, and says so — the conversation keeps its language', () => {
-    for (const line of ['Кийим-кечак, Гуанчжоудан жунатаман', '5 куб 800 кг', 'Иву шахридан', 'Гуанчжоудан юборилади']) {
+    // (Fix pass 6 — corrected: «Гуанчжоудан» is a MARK now, a place with an Uzbek case on it — the lines that carry one
+    // left this list for the next test.)
+    for (const line of ['Кийим-кечак, Гуанчжоу жунатаман', '5 куб 800 кг', 'Иву шахридан', 'Гуанчжоу юборилади']) {
       // With nothing to keep, the guess: Uzbek where a word ENDS as only Uzbek ends («жунат-аман», fix pass 5), else Russian.
       const guess = line.includes('жунатаман') ? 'uz_cyrl' : 'ru';
       expect(detectLocale(line), line).toEqual({ locale: guess, confident: false, script: 'cyrillic' });
@@ -43,10 +45,37 @@ describe('detectLocale', () => {
     }
   });
 
+  // Fix pass 6 (the hunt #3, #9): a place with an Uzbek case on it — «Гуанчжоудан», «Иуда», «Тошкентгача», any «…гача» —
+  // is Uzbek's alone (Russian says «из Гуанчжоу»), and so are «мен», «неча», «пул», «мумкинми»: the guess that leaned on
+  // nothing let a Russian reply go. Russian's short words («и», «в», «на», «по», «нет») beside them mark nothing.
+  it('a place with an Uzbek case, and the everyday words a Russian keyboard leaves unmarked, are Uzbek — confidently', () => {
+    for (const line of [
+      'Кийим-кечак, Гуанчжоудан жунатаман',
+      'Гуанчжоудан юборилади',
+      'Иудан Тошкентгача неча пул?',
+      'Мен Иудан юбордим',
+      'Ака, по карте тулаш мумкинми?',
+      'Иудан мебель и стуллар олиб келасизларми?',
+      'Салом ака\nТовар в Гуанчжоуда турибди\nолиб келасизларми',
+    ]) {
+      for (const stored of [null, 'uz_cyrl', 'ru'] as const) {
+        expect(detectLocale(line, stored), `${line} / ${stored}`).toEqual({ locale: 'uz_cyrl', confident: true, script: 'cyrillic' });
+      }
+    }
+    // Russian keeps its own: the weak words alone, and Russian's new marks.
+    expect(detectLocale('Груз в Иу и на складе нет')).toEqual({ locale: 'ru', confident: true, script: 'cyrillic' });
+    expect(detectLocale('Почём доставка из Китая?')).toEqual({ locale: 'ru', confident: true, script: 'cyrillic' });
+    // Latin: «i», «to» and the loan words beside Uzbek are no English.
+    expect(detectLocale('kiyim i poyabzal bor, Ivuda olib kelasizlarmi?')).toEqual({ locale: 'uz', confident: true, script: 'latin' });
+    expect(detectLocale('sizlarda cargo xizmati bor ekan')).toEqual({ locale: 'uz', confident: true, script: 'latin' });
+    expect(detectLocale('I have cargo to ship')).toEqual({ locale: 'en', confident: true, script: 'latin' });
+  });
+
   // Fix pass 5 (the check of pass 3): Russian's everyday adverbs mark Russian only in a line with no Uzbek word ending —
   // an Uzbek speaker's «тогда», «сейчас», «потом», «очень» beside his own «-аман», «-асизларми», «-миди» mark nothing.
   it('Russian adverbs beside Uzbek word endings decide nothing; alone, they are Russian', () => {
-    for (const line of ['Ака хоп, тогда жунатаман', 'Ака сейчас жунатаман, Гуанчжоудан', 'Гуанчжоудан юкимни потом жунатаман', 'Мебель олиб келасизларми, очень срочно керакмиди']) {
+    // (Fix pass 6 — corrected: the place «Гуанчжоудан» made two of these lines confident; written without its case here.)
+    for (const line of ['Ака хоп, тогда жунатаман', 'Ака сейчас жунатаман, Гуанчжоу', 'Гуанчжоу юкимни потом жунатаман', 'Мебель олиб келасизларми, очень срочно керакмиди']) {
       expect(detectLocale(line, 'uz_cyrl'), line).toEqual({ locale: 'uz_cyrl', confident: false, script: 'cyrillic' });
       expect(uzbekEndingLean(line), line).toBe('uz_cyrl');
     }
@@ -108,7 +137,8 @@ describe('detectLocale', () => {
       expect(detectLocale('Рахмат, сколько стоит?', stored)).toMatchObject({ locale: 'ru', confident: true });
     }
     // An unmarked Uzbek line under a Russian greeting is a guess: the conversation keeps its language.
-    for (const burst of ['Здравствуйте\nКийим-кечак, Гуанчжоудан жунатаман', 'Привет\nГуанчжоудан 5 куб 800 кг', 'Здравствуйте, мебель олиб келасизларми', 'Добрый день\nИву шахридан']) {
+    // (Fix pass 6 — corrected: «Гуанчжоудан» decides now; the place is written without its case here.)
+    for (const burst of ['Здравствуйте\nКийим-кечак, Гуанчжоу жунатаман', 'Привет\nГуанчжоу 5 куб 800 кг', 'Здравствуйте, мебель олиб келасизларми', 'Добрый день\nИву шахридан']) {
       expect(detectLocale(burst, 'uz_cyrl'), burst).toEqual({ locale: 'uz_cyrl', confident: false, script: 'cyrillic' });
       expect(detectLocale(burst), burst).toMatchObject({ confident: false });
     }

@@ -137,6 +137,11 @@ const STEMS: readonly string[] = [
   // Baku («Боку» is the Uzbek, and only with its endings — «на боку» is «on its side»), Minsk, Moldova, Temirtau, Abu
   // Dhabi, Isfahan, Kazan (Russian «Казань» with its «ь» — «казан» is a cauldron, and goods).
   `ozarbayjon`, 'озарбайжон', 'азербайджан', 'azerbaijan', 'azerbayjan',
+  // …and the hunt over pass 5 (fix pass 6, #8): Iran and Turkey themselves beside their listed cities, Balkh, and the
+  // usual h-for-x and u-for-o spellings of listed places («Buhoroga», «Fergonaga», «Qashqadaryaga», «Kukonga», «Horazm»).
+  'eron', 'iran', 'иран', 'ерон', 'turkiy', 'turkey', 'турци', 'туркия',
+  'balkh', 'balx', 'балх',
+  'buhoro', 'bukhoro', 'buhara', 'fergon', 'qashqadar', 'kashkadar', 'қашқадар', 'кашкадар', 'ku[kq]on', 'horazm', 'hiva',
   'baku', 'баку',
   'minsk', 'минск', 'belarus', 'беларус',
   'moldov', 'молдов',
@@ -158,20 +163,26 @@ const TOWN_CYRL = '\\s+(?:ша[ҳх](?:ри|ар)|туман|вилоят)\\p{L}
  * Places whose bare word is something else too — counted only in a place's own form: with an Uzbek place ending
  * («Qarshiga», «Oshdan»), after a Russian preposition («в Ош», «до Карши»), or with «shahri»/«город».
  */
+/** The place's ending, glued — or after a space, an apostrophe or a hyphen (fix pass 6, the hunt #8: «Qarshi ga», «Osh-ga»). */
+const SEP = "[\\s'’ʻ`-]?";
 const ENDED: readonly string[] = [
   // «qarshi» is «against».
   // …or with its abbreviation, «uchun», «tomon», a preposition or «г.» before it (fix pass 3: «Qarshi uchun», «Qarshi
   // sh.ga», «в г. Карши», «to Qarshi» were no place).
-  `qarshi(?:ga|gacha|dan|da|ning|${TOWN}|\\s+sh\\.\\p{L}*|\\s+(?:uchun|tomon\\p{L}*))`, `қарши(?:га|гача|дан|да|нинг|${TOWN_CYRL}|\\s+(?:учун|томон\\p{L}*))`, `карши(?:га|гача|дан|да|${TOWN_CYRL})`,
+  `qarshi(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN}|\\s+sh\\.\\p{L}*|\\s+(?:uchun|tomon\\p{L}*))`, `қарши(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL}|\\s+(?:учун|томон\\p{L}*))`, `карши(?:${SEP}(?:га|гача|дан|да)|${TOWN_CYRL})`,
   `(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?карши`, '(?<![\\p{L}])г\\.\\s*карши', '(?:to|in|for)\\s+qarshi', 'karshi',
   // «osh» is the dish.
   // «O‘sh» is how Uzbek spells it — and «o‘sha» is «that», so only with the place's own endings; English and Russian
   // name it after a preposition («to Osh», «на Ош», «в г. Ош»), or after «г.» (fix pass 3).
-  `osh(?:ga|gacha|dan|da|ning|${TOWN})`, `o${A}sh(?:ga|gacha|dan|da|ning|${TOWN})`, `ўш(?:га|гача|дан|да|${TOWN_CYRL})?`, `ош(?:га|гача|дан|${TOWN_CYRL})`,
+  `osh(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `o${A}sh(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `ўш(?:${SEP}(?:га|гача|дан|да)|${TOWN_CYRL})?`, `ош(?:${SEP}(?:га|гача|дан)|${TOWN_CYRL})`,
   '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?ош[аеу]?', '(?<![\\p{L}])г\\.\\s*ош[аеу]?', '(?:to|in|for)\\s+osh',
   // «Chust» is a skullcap's and a knife's name too («Chust do'ppi») — the town only with its place endings or after a
   // preposition (fix pass 4: «Yiwudan Toshkentga emas, Chustga», «доставка в Чуст»).
-  `chust(?:ga|gacha|dan|da|ning|${TOWN})`, `чуст(?:га|гача|дан|да|нинг|${TOWN_CYRL})`, '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?чуст[аеу]?',
+  `chust(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `чуст(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, '(?:в|до|из|на|для)\\s+(?:г\\.?\\s*|город\\p{L}*\\s+)?чуст[аеу]?',
+  // …the bare name after an address or city LABEL («Manzil: Qarshi», «Адрес: Ош», «Город: Ош», «Address: Osh»), and the
+  // adjective («Ошская область») — fix pass 6, the hunt #8.
+  `(?:manzil|shahar|shahri|address|city|адрес|город|манзил|шаҳар|шахар)\\p{L}*\\s*[:–—-]\\s*(?:qarshi|osh|o${A}sh|chust|қарши|карши|ош|ўш|чуст)`,
+  '(?:ошск|каршинск|чустск)\\p{L}*',
   // «Boku», «Боку» — Baku in Uzbek — only with an ending; «Kazan» only after «to»/«in» (a «qozon» is a cauldron).
   `boku(?:ga|gacha|dan|da)`, `боку(?:га|гача|дан|да)`, '(?:to|in)\\s+kazan',
   // «Navoiy ko'chasi» is a street in every town.
@@ -188,7 +199,7 @@ const SCRIPT_ONLY: readonly string[] = [
   // Kazakhstan, Kyrgyzstan, Tajikistan, Afghanistan
   '哈萨克斯坦', '阿拉木图', '阿斯塔纳', '奇姆肯特', '吉尔吉斯', '比什凯克', '奥什', '塔吉克斯坦', '杜尚别', '苦盏', '阿富汗', '喀布尔', '马扎里沙里夫', '赫拉特', '坎大哈',
   '土库曼斯坦', '阿什哈巴德', '俄罗斯', '莫斯科',
-  '德黑兰', '马什哈德', '伊斯坦布尔', '迪拜', '巴库', '阿塞拜疆', '明斯克', '喀山', '阿布扎比',
+  '德黑兰', '马什哈德', '伊斯坦布尔', '迪拜', '巴库', '阿塞拜疆', '明斯克', '喀山', '阿布扎比', '伊朗', '土耳其',
 ];
 const PERSIAN: readonly string[] = [
   'اندیجان', 'نمنگان', 'فرغانه', 'سمرقند', 'بخارا', 'ترمذ', 'خوقند', 'خوارزم', 'جیزخ',
@@ -197,6 +208,8 @@ const PERSIAN: readonly string[] = [
   'خیوه', 'ترکمنستان', 'عشق\\s*آباد', 'روسیه', 'مسکو',
   'تهران', 'مشهد', 'استانبول', 'دبی',
   'اصفهان', 'باکو', 'آذربایجان', 'مینسک',
+  // fix pass 6, the hunt #8: Iran and Turkey, and the Afghan cities his Persian-writing customers name.
+  'ایران', 'ترکیه', 'بلخ', 'جلال\\s*آباد', 'کندز', 'شبرغان', 'پلخمری', 'غزنی',
 ];
 
 const PLACE = new RegExp(

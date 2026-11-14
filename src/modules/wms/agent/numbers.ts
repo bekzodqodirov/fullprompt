@@ -804,7 +804,7 @@ const TOTAL_BEFORE =
  * lesson is an INSTRUCTION, never a source: in a text that names money every other bare figure is money, as a fact's
  * («Narx: avia 17, avto 160», «Цену называй 17», «Avia narxi 1 kg uchun 17»); only what a count is is taken away.
  */
-const LESSON_COUNT_AFTER = new RegExp(
+export const LESSON_COUNT_AFTER = new RegExp(
   // «3 ta savol» needs no prefix of its own: the classifier alone counts (fix pass 5 — the «ta» prefix pass 3 put here
   // could be deleted with every test green, because «ta» below already reads it).
   `^\\s*-?\\s*(?:[-–—]\\s*\\d+(?:[.,]\\d+)?\\s*)?(?:${[

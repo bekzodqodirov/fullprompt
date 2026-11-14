@@ -11,7 +11,8 @@ import { answeredNow } from './card-io';
 import { knownNamesFor } from './chat-names';
 import { agentFullP1Ready, agentRunning, mayRunAgent, readAgentConfig } from './config';
 import { personalBitsWithBook } from './kb';
-import { extractNumbers } from './numbers';
+import { currencyBesideQuantity, namesCurrency, normalizeDigits } from './digits';
+import { extractNumbers, LESSON_COUNT_AFTER } from './numbers';
 import { fitLessons, lessonsBlock, lessonsChars, LESSON_LIMITS, type LessonSetMark, type PromptLesson } from './lesson-rules';
 import { ANSWER_RUN_STALE_MS } from './owner-answer';
 import { JOB_AGENT_OWNER_ANSWER, type AgentOwnerAnswerJob } from './queues';
@@ -135,6 +136,47 @@ export function lessonShapeRefusal(text: string): { code: 'empty' | 'too_long' |
   // price through (fix pass 3). Lessons about HOW to speak of the price are the likeliest ones.
   const money = extractNumbers(body, [], { lesson: true }).find((f) => f.kind === 'money');
   if (money) return { code: 'money', detail: money.raw };
+  const unnamed = priceNamingNoMoney(body);
+  if (unnamed) return { code: 'money', detail: unnamed };
+  return null;
+}
+
+/**
+ * A price stated with NO money word (fix pass 6, the hunt #7) — the fact's reader asks for one in the text, and a
+ * lesson says the price as people do: by its unit («Avia kilosini 17 deb ayt», «Kubi 160 qilib ayt», «Kilosi 17, kubi
+ * 160», «1 kub = 160», «160/kub», «Har kilo 17», «Каждый куб 160», «Every cbm 160», «Air is 17 a kilo»), after the
+ * price QUESTION («Mijoz qancha deb so'rasa 160 de», «If asked how much, say 160»), spelled out beside a currency
+ * («o'n yetti dollar», «семнадцать долларов»), or counted with «ta» before its currency («17 ta dollar») or after its
+ * price word with nothing counted («Narx 17 tadan»). Read FAIL-CLOSED: in a lesson that names a measure unit or asks
+ * the price, every bare figure that is no count is a price — a lesson is an instruction, never a source, and a price
+ * saved in one is said to every customer.
+ */
+const LESSON_UNIT = '(?:kub|kilo|kg|tonn|cbm|cubes?|m3|куб|кило|кг|тонн|м3)\\p{L}*';
+const LESSON_UNIT_ANY = new RegExp(`(?<![\\p{L}])${LESSON_UNIT}`, 'iu');
+const UNIT_BEFORE_FIGURE = new RegExp(`(?<![\\p{L}])${LESSON_UNIT}(?:\\s+(?:uchun|учун|ga|га|за))?\\s*[:=—–-]?\\s*$`, 'iu');
+const UNIT_PER_AFTER = new RegExp(`^\\s*(?:/|(?:a|an|per|each|за|в)\\s+)\\s*${LESSON_UNIT}`, 'iu');
+const PRICE_ASKED = /(?<![\p{L}])(?:qancha\p{L}*|necha\s+pul|nechpul|қанча\p{L}*|неча\s+пул|сколько|почём|почем|how\s+much|what\s+price)/iu;
+const PRICE_WORD_BEFORE = /(?<![\p{L}])(?:narx\p{L}*|нарх\p{L}*|цен\p{L}*|price\p{L}*|tarif\p{L}*|тариф\p{L}*)\s*[:—–-]?\s*$/iu;
+const CLASSIFIER_THEN = /^\s*(?:ta|та)(?:dan|дан)?(?:\s+(\S+)|\s*(?:[,.;!?]|$))/iu;
+function priceNamingNoMoney(body: string): string | null {
+  const t = normalizeDigits(body);
+  if (currencyBesideQuantity(t)) return t.trim();
+  const unitNamed = LESSON_UNIT_ANY.test(t);
+  const asked = PRICE_ASKED.test(t);
+  for (const f of extractNumbers(t, [], { lesson: true })) {
+    if (f.kind === 'date' || f.fixed) continue;
+    const before = t.slice(0, f.index);
+    const after = t.slice(f.index + f.raw.length);
+    if (UNIT_BEFORE_FIGURE.test(before) || UNIT_PER_AFTER.test(after)) return f.raw;
+    // «17 ta dollar» — the classifier before its currency; «Narx 17 tadan (deb ayt)» — after its price word, counting
+    // nothing a lesson counts (never «Narx so‘rasa, 1 tadan ortiq emoji»: no price word right before it).
+    const counted = CLASSIFIER_THEN.exec(after);
+    const next = counted?.[1];
+    if (counted && ((next !== undefined && namesCurrency(next)) || (PRICE_WORD_BEFORE.test(before) && (next === undefined || !LESSON_COUNT_AFTER.test(next))))) {
+      return f.raw;
+    }
+    if (f.kind === 'plain' && !LESSON_COUNT_AFTER.test(after) && (unitNamed || asked)) return f.raw;
+  }
   return null;
 }
 

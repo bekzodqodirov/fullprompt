@@ -1683,7 +1683,9 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
       // nothing could read it.
       const cases: [Record<string, unknown>, string[]][] = [
         [{ ledger: [{ kind: 'money', raw: '110 $' }] }, ['money']],
-        [{ memory: { hasEstimate: true } }, ['money', 'money_unread']],
+        // The patch replaces the whole memory, so no customer's language is stored with it either: «language» too (fix
+        // pass 6 — a draft whose customer's language is unknown never goes by itself).
+        [{ memory: { hasEstimate: true } }, ['money', 'money_unread', 'language']],
       ];
       for (const [policyPatch, reasons] of cases) {
         await clearChats();
@@ -2999,7 +3001,8 @@ describe('0148 fix — what goes by itself, on real runs', () => {
     const UZC = `Ассалому алайкум! Хитойдан юк олиб келишда ёрдам бераман. Юкингиз неча куб ва неча кг ${TAG}?`;
 
     it('Uzbek typed on a Russian keyboard (no ў қ ғ ҳ) in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
-      const d = await ran(['Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      // (Fix pass 6: «Гуанчжоудан» — a place with an Uzbek case — is a mark now; written without its case, the line is unmarked.)
+      const d = await ran(['Кийим-кечак, Гуанчжоу жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
       // An unconfident guess that leans on the conversation's own language (fix pass 4): only that language goes.
       expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
       await goes(d);
@@ -3030,7 +3033,7 @@ describe('0148 fix — what goes by itself, on real runs', () => {
     });
 
     it('«Здравствуйте» on top of an unmarked Uzbek line in an Uzbek Cyrillic chat: the Uzbek Cyrillic reply goes', async () => {
-      const d = await ran(['Здравствуйте', 'Кийим-кечак, Гуанчжоудан жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
+      const d = await ran(['Здравствуйте', 'Кийим-кечак, Гуанчжоу жунатаман'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })], { stored: 'uz_cyrl' });
       expect((d.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: false, leans: true });
       await goes(d);
     });
@@ -3057,6 +3060,30 @@ describe('0148 fix — what goes by itself, on real runs', () => {
       await clearChats();
       const uzc = await ran(['Здравствуйте, сколько стоит доставка из Китая?'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })]);
       expect((await verdictOf(uzc.id))!.reasons).toEqual(['language']);
+    });
+
+    // Fix pass 6 (the hunt #3): the chat's remembered language is only what the customer's message SAID. An unconfident
+    // fallback stored as the language — the model's own reply language, or a guess — became the next turn's lean, and an
+    // Uzbek line with no mark let a Russian reply go by itself.
+    it('only what his message said is remembered — an unmarked line stores nothing, and its reply is his', async () => {
+      const remembered = async () =>
+        (
+          await db
+            .select({ locale: agentConversations.locale })
+            .from(agentConversations)
+            .where(and(eq(agentConversations.managerUserId, ownerId), eq(agentConversations.peerId, PEER)))
+        )[0]?.locale ?? null;
+      const unmarked = await ran(['Груз из Иу, 3 куб, 400 кг'], [compose(RUQ, { language: 'ru', category: 'qualification' })]);
+      expect((unmarked.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'ru', confident: false });
+      expect((await verdictOf(unmarked.id))!.reasons).toEqual(['language']);
+      await staysHis(unmarked);
+      expect(await remembered()).toBeNull();
+      await clearChats();
+      // …and a line that says its language is remembered as it said it.
+      const marked = await ran(['Мен Иудан юбордим'], [compose(UZC, { language: 'uz_cyrl', category: 'qualification' })]);
+      expect((marked.policy as { memory: { customerLocale: unknown } }).memory.customerLocale).toEqual({ locale: 'uz_cyrl', confident: true });
+      await goes(marked);
+      expect(await remembered()).toBe('uz_cyrl');
     });
   });
 
