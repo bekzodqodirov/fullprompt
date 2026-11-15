@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-11-15 — «O'zi yuborish»: belgilarni va AI ishonchini sahifada o'zingiz o'zgartirasiz
+
+Sizning so'zingiz: «Sahifada narxni belgilab bolmayabti va 80 foizni ham tushirib bolmayabti».
+
+**Migratsiya yo'q** — baza soni **150** bo'lib qoladi. Deploydan keyin `/api/version` bugungi vaqtni ko'rsatishi kerak.
+
+### Nima o'zgardi
+- **«Qaysi javoblar o'zi ketadi»** belgilarini (Narx, Hisoblatish, VED narxi…) va **kunlik sonni** endi super admin
+  ham o'zgartiradi. Oldin faqat akkaunt egasi — ya'ni «BEKZOD AI sotuvchisi» — o'zgartira olardi, siz esa o'z
+  akkauntingiz bilan kirasiz.
+- Sahifada yangi katak: **«AI ishonchi kamida (%)»** — 50 dan 100 gacha. Bugun AI har bir javobiga 60-75 % ishonch
+  bergan, 80 % chegarada birortasi o'zi ketolmasdi. Masalan 60 qo'ysangiz, oddiy javoblar o'zi keta boshlaydi. Narx,
+  rasm, boshqa shahar, tun va boshqa qoidalar baribir ishlaydi.
+- **«O'zi yuborish»ni yoqish** — akkaunt egasi, yoki akkaunt «Bu akkaunt — AI sotuvchi» deb belgilangan bo'lsa, super
+  admin. Xodimning shaxsiy akkauntida faqat egasining o'zi yoqadi (oldingidek).
+
 ## 2026-11-15 — To'liq AI sotuvchi, 2-qism: hisoblatishni o'zi yuboradi, VED javobini ustama bilan aytadi, kartaga yozadi, lidni bosqichdan o'tkazadi
 
 **Migratsiya bor: 0149.** Deploydan keyin son **150** bo'lishi, `/api/version` bugungi vaqtni ko'rsatishi kerak.

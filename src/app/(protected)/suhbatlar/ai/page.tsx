@@ -4,7 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
-import { AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
+import { AUTO_CONFIDENCE_PCT, AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { webLessons } from '@/modules/wms/agent/lessons';
@@ -42,6 +42,7 @@ import {
   AutoArmButtons,
   AutoBadButton,
   AutoCategoriesForm,
+  AutoConfidenceForm,
   AutoPerDayForm,
   AviaRateForm,
   DraftActions,
@@ -601,7 +602,8 @@ async function SettingsSection({
           t={t}
           auto={auto}
           viewerId={actor.id}
-          holder={holder}
+          mayArm={holder || (superAdmin && seat.state === 'holds')}
+          mayTune={holder || superAdmin}
           mayDisarm={holder || superAdmin}
           running={running}
         />
@@ -817,14 +819,18 @@ function AutoSection({
   t,
   auto,
   viewerId,
-  holder,
+  mayArm,
+  mayTune,
   mayDisarm,
   running,
 }: {
   t: T;
   auto: AutoPanel;
   viewerId: string;
-  holder: boolean;
+  /** The holder, or a super_admin while the holder is the AI seat (`setAutoArmed`'s own rule). */
+  mayArm: boolean;
+  /** The holder or any super_admin — the kinds, the daily count, the confidence floor (2026-11-15). */
+  mayTune: boolean;
   mayDisarm: boolean;
   running: boolean;
 }) {
@@ -870,23 +876,23 @@ function AutoSection({
         </p>
       )}
       {/* What arming would refuse, said BEFORE the press — and the button is not offered until it can arm. */}
-      {!c.armed && holder && !running && (
+      {!c.armed && mayArm && !running && (
         <p className="text-xs font-semibold text-warn" data-testid="agent-auto-needs-running">
           {t('autoNeedsRunning')}
         </p>
       )}
-      {!c.armed && holder && !auto.workAccount && (
+      {!c.armed && mayArm && !auto.workAccount && (
         <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="agent-auto-needs-work">
           {t('autoNeedsWork')}
         </p>
       )}
-      <AutoArmButtons armed={c.armed} canArm={holder} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
+      <AutoArmButtons armed={c.armed} canArm={mayArm} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
       <div className="border-t border-line pt-2">
         {/* «Narx» is a box only where 0148's CHECK admits it, «Hisoblatish» and «VED narxi» only where 0149's does —
             one migration behind, the boxes that server can store. */}
         <AutoCategoriesForm
           current={c.categories}
-          editable={holder}
+          editable={mayTune}
           kinds={AUTO_SEND_CATEGORIES.filter(
             (k) => (auto.fullReady || k !== 'price') && (auto.p2Ready || !(P2_CATEGORIES as readonly string[]).includes(k)),
           )}
@@ -894,9 +900,12 @@ function AutoSection({
       </div>
       {auto.fullReady && (
         <div className="border-t border-line pt-2">
-          <AutoPerDayForm current={c.perDay} editable={holder} max={AUTO_PER_DAY_MAX} />
+          <AutoPerDayForm current={c.perDay} editable={mayTune} max={AUTO_PER_DAY_MAX} />
         </div>
       )}
+      <div className="border-t border-line pt-2">
+        <AutoConfidenceForm current={Math.round(c.minConfidence * 100)} editable={mayTune} bounds={AUTO_CONFIDENCE_PCT} />
+      </div>
       <p className="border-t border-line pt-2 text-sm [overflow-wrap:anywhere]" data-testid="agent-auto-today">
         {t('autoToday', { sent: auto.today.sent, paused: auto.today.paused, left: auto.today.left })}
         {auto.today.waiting > 0 ? ` · ${t('autoTodayWaiting', { n: auto.today.waiting })}` : ''}

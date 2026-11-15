@@ -8,6 +8,7 @@ import {
   agentAutoArmAction,
   agentAutoCategoriesAction,
   agentAutoFeedbackAction,
+  agentAutoMinConfidenceAction,
   agentAutoPerDayAction,
   agentAutoStopAction,
   agentAviaRateAction,
@@ -915,6 +916,54 @@ export function AutoPerDayForm({ current, editable, max }: { current: number | n
           disabled={pending || !changed}
           data-testid="agent-auto-per-day-save"
           onClick={() => run(() => agentAutoPerDayAction(value))}
+        >
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * The confidence floor a reply must reach to go by itself (2026-11-15, his «80 foizni ham tushirib bolmayabti»): a
+ * whole percent, `bounds.min`..`bounds.max`. The holder's or a super_admin's (`setAutoMinConfidence`). Controlled.
+ */
+export function AutoConfidenceForm({
+  current,
+  editable,
+  bounds,
+}: {
+  current: number;
+  editable: boolean;
+  bounds: { min: number; max: number };
+}) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ min: bounds.min, max: bounds.max });
+  const [value, setValue] = useState(String(current));
+  const changed = value.trim().replace(/\s*%$/u, '') !== String(current);
+  return (
+    <div className="space-y-1" data-testid="agent-auto-confidence">
+      <label className="label" htmlFor="agent-auto-confidence-input">
+        {t('autoConfidenceLabel')}
+      </label>
+      <input
+        id="agent-auto-confidence-input"
+        className="input"
+        inputMode="numeric"
+        value={value}
+        disabled={!editable || pending}
+        onChange={(event) => setValue(event.target.value)}
+        data-testid="agent-auto-confidence-input"
+      />
+      <p className="text-xs text-ink-500">{t('autoConfidenceHint', { min: bounds.min, max: bounds.max })}</p>
+      {editable && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || !changed}
+          data-testid="agent-auto-confidence-save"
+          onClick={() => run(() => agentAutoMinConfidenceAction(value))}
         >
           {t('save')}
         </button>

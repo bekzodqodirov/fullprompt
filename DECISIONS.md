@@ -9867,3 +9867,27 @@ at the VED's own figure («ustamasiz») for his ✅ — it was the bare 💵 car
 lint 0, vitest 949 files / 19,476 tests, build 0, e2e 527 + 1 skipped; fix pass 5 and d66a58db ran their gates (the
 agent suites and the whole tests/unit — 14,726 tests — and the price file fresh); the run at d66a58db and GitHub's CI on
 the PR head decide the merge. Part 1b's own run, for the record: b3986e60, vitest 940 / 19,138, e2e 527 + 1 skipped.
+
+## «O'zi yuborish» on the AI seat — the boxes a super_admin may tune, the confidence floor on the page (2026-11-15; NO migration, ledger 150; numbered #1800)
+
+**#1800 — The first live day, measured on his server, and the two doors it found shut.** After part 2 deployed (150)
+he moved the agent to the AI seat (+998902405077, «BEKZOD AI sotuvchisi»), armed «o'zi yuborish» from that account's
+bot chat, and reported «har doim tasdiq sorayabti» then «sahifada narxni belgilab bolmayabti va 80 foizni ham tushirib
+bolmayabti». His database said why, verdict by verdict: of the day's nine replies EVERY one carried `low_confidence`
+— the model rated them 0.60-0.75 (a greeting at 0.70) against the shipped floor of 0.80 — beside `category` (no
+«Narx» box) and `money`/`warnings`/`notes`/`needs_owner`. Two causes, both of the seat: (1) **the kinds and the daily
+count were the holder's alone** (`actor.id === ownerUserId`), and the holder is now a machine user nobody signs in as
+— the boxes stood greyed for the one person who decides them; (2) **`min_confidence` had no box at all** — 0145
+shipped the column and its CHECK (0.50-1) and only the page's sentence ever read it. Now `mayTuneAuto` = the holder or
+any super_admin (the send caps' own rule, `setSendCaps`) for the kinds, the daily count and a new
+`setAutoMinConfidence` (a whole percent 50..100, audited, its own refusal `auto_bad_confidence` naming the bounds);
+**arming** keeps answer 15 («a message leaves a personal account only by its holder») and widens only where no person
+owns the account: `mayArmAuto` = the holder, or a super_admin while the holder IS the designated AI seat
+(`holderIsSeat`), asked before the transaction and again inside it. Not one rule of the gate moved: a lower floor
+frees only `low_confidence`; money, warnings, notes, media, destination, night, streak and the rest still hold the
+reply. Four red proofs by string edit (super_admin dropped from the tune rule → 3 red; the seat clause → false and →
+true → 1 and 2 red; the floor not written → 1 red). The e2e's «the owner reads, never tunes» became «the owner tunes
+the boxes, never arms a colleague's account» (DELIBERATE EDIT), and the holder's test names the floor's bounds in
+words. Asked of him at the same time and NOT changed: why the AI quoted from the table where he expected a
+calculation sent to the VED — none of the day's nine drafts carried a `calc_submit` action, so the model never offered
+one; the chats' words decide whether that is the prompt or the customer's question.
