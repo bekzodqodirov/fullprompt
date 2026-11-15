@@ -61,6 +61,7 @@ export type AgentErrorCode =
   // A number out of bounds in the daily-count box and in the account-limit boxes (web-actions): each its own
   // sentence, naming its bounds — `auto_bad_value` is the kinds form's «tick at least one».
   | 'auto_bad_per_day'
+  | 'auto_bad_confidence'
   | 'auto_bad_caps'
   // The AI seat's open-calc cap (SPEC-P2-v2 §1.3, web-actions `agentOpenLimitAction`): a whole number 1..200.
   | 'bad_open_limit'
@@ -152,6 +153,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_not_work_account: 'errors.auto_not_work_account',
   auto_bad_value: 'errors.auto_bad_value',
   auto_bad_per_day: 'errors.auto_bad_per_day',
+  auto_bad_confidence: 'errors.auto_bad_confidence',
   auto_bad_caps: 'errors.auto_bad_caps',
   auto_stop_not_found: 'errors.auto_stop_not_found',
   auto_stop_not_account_holder: 'errors.auto_stop_not_account_holder',

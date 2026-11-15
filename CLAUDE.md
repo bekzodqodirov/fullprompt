@@ -3876,6 +3876,14 @@ markup EMPTY = a VED answer to an AI job becomes a PRICE card at the VED's own f
 twice more after the merge (fix passes 4-5); CI-order run at 47507ee9: vitest 949 / 19,476, e2e 527 + 1 skipped.
 tg-listen MUST be rebuilt.
 
+**Hotfix — «O'zi yuborish» on the AI seat (2026-11-15; DECISIONS #1800; NO migration, ledger 150).** His first live
+day after 150: every reply waited, because the model rated all nine 0.60-0.75 against the shipped 0.80 floor, and the
+boxes were the HOLDER's alone — a machine seat nobody signs in as. `mayTuneAuto` (holder or any super_admin, the send
+caps' rule) for the kinds, the daily count and the new page box `setAutoMinConfidence` (whole percent 50..100);
+`mayArmAuto` = holder, or a super_admin while the holder IS the AI seat (`holderIsSeat`, re-read in the tx). No gate
+rule moved. Open with him: none of the day's drafts carried `calc_submit` — why the AI quoted instead of sending to the
+VED waits on the chats' words.
+
 **Latest migration: 0149** (`agent_full_p2`, `when` …128; ledger must reach **150**). Before
 it: 0148 (`agent_full_p1`, `when` …127). Before
 it: 0147 (`prixod_javoblar`, `when` …126). Before

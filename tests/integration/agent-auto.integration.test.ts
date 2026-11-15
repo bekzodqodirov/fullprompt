@@ -24,6 +24,7 @@ import {
   leads,
   notifications,
   roles,
+  settings,
   telegramLinks,
   tgAccountGuard,
   tgAccounts,
@@ -32,6 +33,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { __resetTelegramPause, sendPendingTelegram } from '@/modules/platform/notifications/service';
+import { AGENT_SEAT_KEY } from '@/modules/platform/settings/agent-seat';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
@@ -47,6 +49,7 @@ import {
   readAutoConfig,
   setAutoArmed,
   setAutoCategories,
+  setAutoMinConfidence,
   setAutoPerDay,
   stopAuto,
   __restoreAutoConfig,
@@ -233,6 +236,8 @@ function compose(text = REPLY, extra: Record<string, unknown> = {}) {
 }
 
 const actorOf = (id: string) => ({ id, roles: ['super_admin'], permissions: new Set<string>(['crm.leads.view_all']) });
+/** The same person without the super_admin role — a colleague the settings doors refuse. */
+const plainActor = (id: string) => ({ id, roles: ['sales_manager'], permissions: new Set<string>(['crm.leads.view_all']) });
 
 const QUESTIONS = [
   'Salom, Xitoydan yuk olib kelasizlarmi?',
@@ -691,7 +696,10 @@ describe('arming and disarming', () => {
     // DELIBERATE EDIT (0148, spec §1.5): «price» is the fifth kind now; complaint and other never are.
     expect(await refused(setAutoCategories(actorOf(ownerId), ['complaint'], { actorId: ownerId }))).toBe('bad_value');
     expect(await refused(setAutoCategories(actorOf(ownerId), ['other', 'faq'], { actorId: ownerId }))).toBe('bad_value');
-    expect(await refused(setAutoCategories(actorOf(otherId), ['faq'], { actorId: otherId }))).toBe('not_account_holder');
+    // DELIBERATE EDIT (2026-11-15, his «Sahifada narxni belgilab bolmayabti»): the kinds are the holder's OR a
+    // super_admin's now (`mayTuneAuto`, the send caps' rule) — a colleague without the role is still refused.
+    expect(await refused(setAutoCategories(plainActor(otherId), ['faq'], { actorId: otherId }))).toBe('forbidden');
+    expect((await setAutoCategories(actorOf(otherId), ['faq'], { actorId: otherId })).categories).toEqual(['faq']);
     expect((await setAutoCategories(actorOf(ownerId), ['price', 'faq'], { actorId: ownerId })).categories).toEqual(['faq', 'price']);
     // One migration behind 0148 the CHECK refuses «price»: said in words, never a raw 23514 — the four still save.
     __pretendAgentFullP1Behind();
@@ -711,7 +719,9 @@ describe('arming and disarming', () => {
     for (const bad of [0, 1001, 1.5, Number.NaN, -3]) {
       expect(await refused(setAutoPerDay(actorOf(ownerId), bad, { actorId: ownerId })), String(bad)).toBe('bad_value');
     }
-    expect(await refused(setAutoPerDay(actorOf(otherId), 10, { actorId: otherId }))).toBe('not_account_holder');
+    // DELIBERATE EDIT (2026-11-15): the holder's or a super_admin's, as the kinds are.
+    expect(await refused(setAutoPerDay(plainActor(otherId), 10, { actorId: otherId }))).toBe('forbidden');
+    expect((await setAutoPerDay(actorOf(otherId), 10, { actorId: otherId })).perDay).toBe(10);
     expect((await setAutoPerDay(actorOf(ownerId), null, { actorId: ownerId })).perDay).toBeNull();
     expect((await readAutoConfig())!.perDay).toBeNull();
     expect((await setAutoPerDay(actorOf(ownerId), 1000, { actorId: ownerId })).perDay).toBe(1000);
@@ -729,6 +739,53 @@ describe('arming and disarming', () => {
       expect(await refused(setAutoPerDay(actorOf(ownerId), 10, { actorId: ownerId }))).toBe('not_ready');
     } finally {
       __forgetAgentFullP1Ready();
+    }
+  });
+
+  it('the confidence floor (2026-11-15): a whole percent 50..100, the holder’s or a super_admin’s, audited — and the gate reads it', async () => {
+    const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
+    for (const bad of [49, 101, 70.5, Number.NaN, 0, -60]) {
+      expect(await refused(setAutoMinConfidence(actorOf(ownerId), bad, { actorId: ownerId })), String(bad)).toBe('bad_value');
+    }
+    expect(await refused(setAutoMinConfidence(plainActor(otherId), 60, { actorId: otherId }))).toBe('forbidden');
+    // The drafts here say 0.90: a floor above it refuses every one of them by itself …
+    expect((await setAutoMinConfidence(actorOf(otherId), 95, { actorId: otherId })).minConfidence).toBe(0.95);
+    expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['low_confidence']);
+    // … and the floor he types frees them, nothing else of the gate moved.
+    expect((await setAutoMinConfidence(actorOf(ownerId), 60, { actorId: ownerId })).minConfidence).toBe(0.6);
+    expect((await readAutoConfig())!.minConfidence).toBe(0.6);
+    expect((await verdictOf((await drafted()).id))!.reasons).toEqual([]);
+    const [audit] = await db
+      .select({ before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'agent_auto_config'), eq(auditLog.actorId, ownerId)))
+      .orderBy(sql`${auditLog.id} DESC`)
+      .limit(1);
+    expect(audit).toMatchObject({ before: { minConfidence: 0.95 }, after: { minConfidence: 0.6 } });
+  });
+
+  it('arming by a super_admin who is not the holder: refused on a person’s account, allowed while the holder is the AI seat', async () => {
+    const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
+    const [kept] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, AGENT_SEAT_KEY));
+    const putSeat = async (v: string | null) =>
+      v === null
+        ? db.delete(settings).where(eq(settings.key, AGENT_SEAT_KEY))
+        : db.insert(settings).values({ key: AGENT_SEAT_KEY, value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
+    try {
+      await db.update(agentAutoConfig).set({ armedAt: null, armedBy: null }).where(eq(agentAutoConfig.id, 1));
+      // No seat named: the holder's own account — answer 15 stands.
+      await putSeat(null);
+      expect(await refused(setAutoArmed(actorOf(otherId), true, { actorId: otherId }))).toBe('not_account_holder');
+      // The seat names somebody else: still the holder's alone.
+      await putSeat(otherId);
+      expect(await refused(setAutoArmed(actorOf(otherId), true, { actorId: otherId }))).toBe('not_account_holder');
+      // The holder IS the AI seat: a super_admin arms it — and a colleague without the role still may not.
+      await putSeat(ownerId);
+      expect(await refused(setAutoArmed(plainActor(otherId), true, { actorId: otherId }))).toBe('not_account_holder');
+      expect(await setAutoArmed(actorOf(otherId), true, { actorId: otherId })).toMatchObject({ armed: true, armedBy: otherId });
+    } finally {
+      if (kept) await putSeat(kept.value as string);
+      else await putSeat(null);
     }
   });
 
@@ -1559,7 +1616,14 @@ describe('fix pass B — what he sees and presses (C1 C6 C7 C9 C10)', () => {
     const page = readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8');
     expect(page).toMatch(/\{c\.armed && !auto\.workAccount && \(/u);
     expect(page).toMatch(/tone=\{c\.armed \? \(auto\.workAccount \? 'text-good' : 'text-warn'\) : 'text-ink-700'\}/u);
-    expect(page).toMatch(/\{!c\.armed && holder && !auto\.workAccount && \(/u);
+    // DELIBERATE EDIT (2026-11-15): the hint follows who may ARM — the holder, or a super_admin on the AI seat.
+    expect(page).toMatch(/\{!c\.armed && mayArm && !auto\.workAccount && \(/u);
+    expect(page).toMatch(/mayArm=\{holder \|\| \(superAdmin && seat\.state === 'holds'\)\}/u);
+    // The kinds, the daily count and the confidence floor: the holder's or any super_admin's (`mayTuneAuto`).
+    expect(page).toMatch(/mayTune=\{holder \|\| superAdmin\}/u);
+    expect(page).toMatch(/<AutoCategoriesForm\s+current=\{c\.categories\}\s+editable=\{mayTune\}/u);
+    expect(page).toMatch(/<AutoPerDayForm current=\{c\.perDay\} editable=\{mayTune\}/u);
+    expect(page).toMatch(/<AutoConfidenceForm current=\{Math\.round\(c\.minConfidence \* 100\)\} editable=\{mayTune\}/u);
     expect(page).toMatch(/armBlocked=\{!running \|\| !auto\.workAccount\}/u);
     const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
     const arm = ui.slice(ui.indexOf('data-testid="agent-auto-arm"') - 200, ui.indexOf('data-testid="agent-auto-arm"') + 200);

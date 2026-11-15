@@ -27,7 +27,17 @@ import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
 import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
-import { AutoConfigError, STOP_AUTO_WORDS, autoFeedback, setAutoArmed, setAutoCategories, setAutoPerDay, stopAuto, stopAutoForEdit } from './auto-send';
+import {
+  AutoConfigError,
+  STOP_AUTO_WORDS,
+  autoFeedback,
+  setAutoArmed,
+  setAutoCategories,
+  setAutoMinConfidence,
+  setAutoPerDay,
+  stopAuto,
+  stopAutoForEdit,
+} from './auto-send';
 import { deleteLesson, editLesson, lessonFromPage, lessonSavedWords, openLesson, setLessonActive, type LessonResult } from './lessons';
 import { SendCapsError, setSendCaps } from './send-caps';
 import { confirmTariff, TariffConfirmError } from './tariff-watch';
@@ -432,6 +442,23 @@ export async function agentAutoPerDayAction(raw: string): Promise<AgentActionRes
       await setAutoPerDay(actor, capOf(raw), ctx);
     } catch (err) {
       if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_per_day' : `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/**
+ * The confidence floor a reply must reach to go by itself (2026-11-15), typed as a whole percent. The holder's or a
+ * super_admin's — the service asks. A number out of its bounds is THIS box's own code, as the daily count's is.
+ */
+export async function agentAutoMinConfidenceAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    const s = typeof raw === 'string' ? raw.trim().replace(/\s*%$/u, '') : '';
+    const pct = /^\d{1,3}$/u.test(s) ? Number(s) : Number.NaN;
+    try {
+      await setAutoMinConfidence(actor, pct, ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_confidence' : `auto_${err.code}` };
       throw err;
     }
   });

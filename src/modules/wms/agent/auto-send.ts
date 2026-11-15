@@ -18,6 +18,7 @@ import { sendsSilently } from '../../platform/notifications/night';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { actorGrants } from '../../platform/rbac/authorize';
+import { holderIsSeat } from '../../platform/settings/agent-seat';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
@@ -1425,8 +1426,32 @@ export async function workAccountOf(userId: string): Promise<boolean> {
 }
 
 /**
- * Arm or disarm «o'zi yuborish». Arming is the ACCOUNT HOLDER's alone (his
- * answer 15: a message leaves a personal account only by its holder), only
+ * Who may tune the layer's KINDS, daily count and confidence floor (2026-11-15, his «Sahifada narxni belgilab
+ * bolmayabti va 80 foizni ham tushirib bolmayabti»): the holder, or any super_admin — the send caps' rule
+ * (`setSendCaps`). Since the AI speaks from its own seat (SPEC-P2-v2 K4), the holder is a machine user nobody signs
+ * in as, so «the holder's alone» left the boxes greyed for the one person who decides them. None of these sends a
+ * message: arming does, and arming keeps its own rule (`mayArmAuto`).
+ */
+function mayTuneAuto(actor: AutoActor, ownerUserId: string | null): boolean {
+  return (ownerUserId !== null && actor.id === ownerUserId) || actor.roles.includes('super_admin');
+}
+
+/**
+ * Who may ARM it (his answer 15: a message leaves a personal account only by its holder): the holder, or a
+ * super_admin while the holder is the designated AI seat (`holderIsSeat`) — the seat is the company's machine
+ * account and no person's own (2026-11-15). Read inside the arming transaction too.
+ */
+async function mayArmAuto(actor: AutoActor, ownerUserId: string | null, handle: Db | Tx = db): Promise<boolean> {
+  if (ownerUserId === null) return false;
+  if (actor.id === ownerUserId) return true;
+  if (!actor.roles.includes('super_admin')) return false;
+  return holderIsSeat(handle);
+}
+
+/**
+ * Arm or disarm «o'zi yuborish». Arming is the ACCOUNT HOLDER's (his
+ * answer 15: a message leaves a personal account only by its holder) — or a
+ * super_admin's while the holder is the AI seat (`mayArmAuto`), only
  * while the agent runs, and only on a number marked «Ish raqami» (his Q5 ⭐);
  * it clears the last disarm. Disarming is open to the holder and any
  * super_admin — an off switch never waits for one person. Audited.
@@ -1435,7 +1460,7 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
   if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
   const pre = await readAgentConfig();
   if (armed) {
-    if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
+    if (!pre?.ownerUserId || !(await mayArmAuto(actor, pre.ownerUserId))) throw new AutoConfigError('not_account_holder');
     if (!agentRunning(pre)) throw new AutoConfigError('agent_off');
     if (!(await workAccountOf(pre.ownerUserId))) throw new AutoConfigError('not_work_account');
   } else if (!mayRunAgent(actor, pre)) {
@@ -1444,7 +1469,9 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
   const out = await db.transaction(async (tx) => {
     // agent_config first, then the layer's row — the order «off» locks them in (config `setAgentMode`).
     const [agent] = await tx.select().from(agentConfig).where(eq(agentConfig.id, 1)).for('share');
-    if (armed && (agent?.mode !== 'shadow' || agent.ownerUserId !== actor.id)) throw new AutoConfigError('agent_off');
+    // The holder read above, still the holder and still running — and the presser still may (a seat re-pointed since).
+    if (armed && (agent?.mode !== 'shadow' || agent.ownerUserId !== pre!.ownerUserId)) throw new AutoConfigError('agent_off');
+    if (armed && !(await mayArmAuto(actor, agent!.ownerUserId, tx))) throw new AutoConfigError('not_account_holder');
     const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
     if (!before) throw new AutoConfigError('not_ready');
     const now = new Date();
@@ -1476,7 +1503,7 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
 }
 
 /**
- * Which kinds of reply may go by themselves — the holder's choice among the five, at least one. Audited. The
+ * Which kinds of reply may go by themselves — the holder's or a super_admin's choice (`mayTuneAuto`), at least one. Audited. The
  * fifth, `price`, is admitted by 0148's CHECK alone: one migration behind it is refused in words, never a 23514.
  */
 export async function setAutoCategories(actor: AutoActor, categories: readonly string[], ctx: AuditContext): Promise<AutoConfig> {
@@ -1490,7 +1517,8 @@ export async function setAutoCategories(actor: AutoActor, categories: readonly s
     throw new AutoConfigError('not_ready');
   }
   const pre = await readAgentConfig();
-  if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
+  if (!pre?.ownerUserId) throw new AutoConfigError('not_ready');
+  if (!mayTuneAuto(actor, pre.ownerUserId)) throw new AutoConfigError('forbidden');
   // In the design's own order, so the stored list never depends on the order of the boxes.
   const ordered = AUTO_SEND_CATEGORIES.filter((c) => chosen.includes(c));
   return db.transaction(async (tx) => {
@@ -1517,14 +1545,15 @@ export const AUTO_PER_DAY_MAX = 1000;
 
 /**
  * The layer's daily count (spec §5.1, his «7 chegara qoyma»): null = no cap, or a whole number he types, 1 to
- * `AUTO_PER_DAY_MAX`. The holder's alone, as the kinds are. One migration behind it is refused in words (the
+ * `AUTO_PER_DAY_MAX`. The holder's or a super_admin's, as the kinds are (`mayTuneAuto`). One migration behind it is refused in words (the
  * column is NOT NULL and bounded 1-80 there). Audited.
  */
 export async function setAutoPerDay(actor: AutoActor, perDay: number | null, ctx: AuditContext): Promise<AutoConfig> {
   if (perDay !== null && !(Number.isInteger(perDay) && perDay >= 1 && perDay <= AUTO_PER_DAY_MAX)) throw new AutoConfigError('bad_value');
   if (!(await agentAutoReady()) || !(await agentFullP1Ready())) throw new AutoConfigError('not_ready');
   const pre = await readAgentConfig();
-  if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
+  if (!pre?.ownerUserId) throw new AutoConfigError('not_ready');
+  if (!mayTuneAuto(actor, pre.ownerUserId)) throw new AutoConfigError('forbidden');
   return db.transaction(async (tx) => {
     const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
     if (!before) throw new AutoConfigError('not_ready');
@@ -1535,6 +1564,37 @@ export async function setAutoPerDay(actor: AutoActor, perDay: number | null, ctx
       action: 'update',
       before: { perDay: before.perDay },
       after: { perDay },
+    });
+    return toAutoConfig(row!);
+  });
+}
+
+/** The bounds a typed confidence floor keeps, in whole percent — 0145's CHECK is 0.50 to 1. */
+export const AUTO_CONFIDENCE_PCT = { min: 50, max: 100 } as const;
+
+/**
+ * The confidence floor a reply's own `confidence` must reach (0145 `min_confidence`, shipped 0.80 with no box to move
+ * it). On his server the model rated every reply of 2026-11-15 between 0.60 and 0.75 — a greeting included — so at
+ * 0.80 nothing could ever go by itself (his «80 foizni ham tushirib bolmayabti»). A whole percent, 50..100; the
+ * holder's or a super_admin's (`mayTuneAuto`). Every other rule of the gate stands whatever this says. Audited.
+ */
+export async function setAutoMinConfidence(actor: AutoActor, pct: number, ctx: AuditContext): Promise<AutoConfig> {
+  if (!(Number.isInteger(pct) && pct >= AUTO_CONFIDENCE_PCT.min && pct <= AUTO_CONFIDENCE_PCT.max)) throw new AutoConfigError('bad_value');
+  if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
+  const pre = await readAgentConfig();
+  if (!pre?.ownerUserId) throw new AutoConfigError('not_ready');
+  if (!mayTuneAuto(actor, pre.ownerUserId)) throw new AutoConfigError('forbidden');
+  const value = (pct / 100).toFixed(2);
+  return db.transaction(async (tx) => {
+    const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
+    if (!before) throw new AutoConfigError('not_ready');
+    const [row] = await tx.update(agentAutoConfig).set({ minConfidence: value, updatedAt: new Date() }).where(eq(agentAutoConfig.id, 1)).returning();
+    await writeAudit(tx, ctx, {
+      entityType: 'agent_auto_config',
+      entityId: AUTO_AUDIT_ID,
+      action: 'update',
+      before: { minConfidence: Number(before.minConfidence) },
+      after: { minConfidence: Number(value) },
     });
     return toAutoConfig(row!);
   });

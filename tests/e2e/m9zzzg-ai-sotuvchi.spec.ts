@@ -133,14 +133,18 @@ test('the owner is offered the page, reads the card and is given no ✅ on a col
   // Not his account: he may switch it off, never on.
   await expect(page.getByTestId('agent-on-holder-only')).toBeVisible();
   await expect(page.getByTestId('agent-mode-on')).toHaveCount(0);
-  // «O‘zi yuborish» (0145): read, never armed by him — the kinds are shown and cannot be changed.
+  // «O‘zi yuborish» (0145): never armed by him on a colleague's account (no AI seat named here).
+  // DELIBERATE EDIT (2026-11-15, his «Sahifada narxni belgilab bolmayabti»): the kinds, the daily count and the
+  // confidence floor are a super_admin's too — the boxes are live for him; arming stays the holder's.
   const auto = page.getByTestId('agent-auto');
   await expect(auto).toBeVisible();
   await expect(auto.getByTestId('agent-auto-today')).toBeVisible();
   await expect(auto.getByTestId('agent-auto-holder-only')).toBeVisible();
   await expect(auto.getByTestId('agent-auto-arm')).toHaveCount(0);
-  await expect(auto.getByTestId('agent-auto-category-faq')).toBeDisabled();
-  await expect(auto.getByTestId('agent-auto-categories-save')).toHaveCount(0);
+  await expect(auto.getByTestId('agent-auto-category-faq')).toBeEnabled();
+  await expect(auto.getByTestId('agent-auto-categories-save')).toBeDisabled();
+  await expect(auto.getByTestId('agent-auto-confidence-input')).toBeEnabled();
+  await expect(auto.getByTestId('agent-auto-confidence-input')).toHaveValue(/^\d+$/u);
   await fitsThePhone(page);
 });
 
@@ -278,6 +282,13 @@ test('the holder is offered «O‘zi yuborish», and is told BEFORE any press wh
   await perDay.getByTestId('agent-auto-per-day-save').click();
   await expect(perDay.getByTestId('agent-error')).toContainText('1000');
   await expect(perDay.getByTestId('agent-auto-per-day-input')).toHaveValue('0');
+  // The confidence floor (2026-11-15) names its own bounds the same way, and keeps what he typed.
+  const confidence = auto.getByTestId('agent-auto-confidence');
+  await confidence.getByTestId('agent-auto-confidence-input').fill('40');
+  await confidence.getByTestId('agent-auto-confidence-save').click();
+  await expect(confidence.getByTestId('agent-error')).toContainText('50');
+  await expect(confidence.getByTestId('agent-error')).toContainText('100');
+  await expect(confidence.getByTestId('agent-auto-confidence-input')).toHaveValue('40');
   const caps = page.getByTestId('agent-caps-form');
   await caps.getByTestId('agent-caps-dayCap').fill('500');
   await caps.getByTestId('agent-caps-save').click();
