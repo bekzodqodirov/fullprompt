@@ -23,7 +23,12 @@ const made = { clients: [] as string[], receipts: [] as string[], deals: [] as s
 
 const sellerActor = () => ({ id: seller, permissions: new Set<string>(ROLE_MATRIX.sales_manager) });
 
-async function prixod(code: string, manager: string, dealOwner: string | null): Promise<{ receiptId: string; dealId: string | null }> {
+async function prixod(
+  code: string,
+  manager: string,
+  dealOwner: string | null,
+  stamped: string = manager,
+): Promise<{ receiptId: string; dealId: string | null }> {
   const [client] = (await db.execute(sql`
     INSERT INTO clients (id, client_code, name, phones, sales_manager_id)
     VALUES (gen_random_uuid(), ${code}, ${`Refile ${code}`}, '[]'::jsonb, ${manager}::uuid) RETURNING id`)) as unknown as { id: string }[];
@@ -39,7 +44,7 @@ async function prixod(code: string, manager: string, dealOwner: string | null): 
   }
   const [receipt] = (await db.execute(sql`
     INSERT INTO receipts (id, number, warehouse_id, client_id, deal_id, sales_manager_id, status, confirmed_at, confirmed_by, created_by)
-    VALUES (gen_random_uuid(), ${`${code}-R`}, ${warehouse}::uuid, ${client!.id}::uuid, ${dealId}::uuid, ${manager}::uuid,
+    VALUES (gen_random_uuid(), ${`${code}-R`}, ${warehouse}::uuid, ${client!.id}::uuid, ${dealId}::uuid, ${stamped}::uuid,
             'confirmed', now(), ${colleague}::uuid, ${colleague}::uuid)
     RETURNING id`)) as unknown as { id: string }[];
   made.receipts.push(receipt!.id);
@@ -92,6 +97,15 @@ describe('refileRefusal reads the door’s facts from the database', () => {
     const mine = await prixod(`RFB${SUFFIX}`, seller, seller);
     expect(await refileRefusal(sellerActor(), mine.receiptId)).toBeNull();
     expect(await refileRefusal(sellerActor(), mine.receiptId, null)).toBeNull();
+  });
+
+  it('reads the client’s manager and the stamp as two facts — either one makes the prixod his', async () => {
+    // The client moved to him after the cargo came (stamped with the colleague, on the colleague's deal)…
+    const movedToHim = await prixod(`RFE${SUFFIX}`, seller, colleague, colleague);
+    expect(await refileRefusal(sellerActor(), movedToHim.receiptId, null)).toBeNull();
+    // …and the cargo he brought in for a client who has since gone to the colleague.
+    const broughtByHim = await prixod(`RFF${SUFFIX}`, colleague, colleague, seller);
+    expect(await refileRefusal(sellerActor(), broughtByHim.receiptId, null)).toBeNull();
   });
 
   it("lets him attach a colleague's client's LOOSE prixod onto a deal he owns, and not onto the colleague's", async () => {
