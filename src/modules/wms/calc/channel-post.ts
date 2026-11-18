@@ -315,7 +315,7 @@ const LINK_TOKEN: readonly RegExp[] = [
  * 2026-11-18 `batches.view` opens the board and ⌘K's truck hits to them, so a
  * truck code a person TYPED into a goods name does point at the clients on
  * that truck. Rare (it needs the code in an item's name), and kept as a stated
- * trade (DECISIONS #1802); scrubbing truck codes by DATA, as deal and client
+ * trade (DECISIONS #1804); scrubbing truck codes by DATA, as deal and client
  * codes are, is its own round.
  */
 const SYSTEM_SHAPES: readonly string[] = [

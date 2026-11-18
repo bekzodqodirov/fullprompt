@@ -369,6 +369,29 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## Sotuvchilar yukni, furalarni va skladlarni ko‘radi (2026-11-18, 0150) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0150** — deploydan keyin son **151** bo‘ladi. Yangi huquq `batches.view` qo‘shiladi va
+**«Sales manager»** hamda **«Super admin»** rollariga beriladi (Boshqaruv → Rollar’da qo‘lda o‘zgartirilgan bo‘lsa ham).
+«Admin» roliga — u qo‘lda o‘zgartirilmagan bo‘lsa yoki allaqachon furalarni ko‘ra olsa. Telegram bot qayta qurilishi
+shart emas.
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng `docker compose --profile https up -d --build`.
+3. Sonni o‘qing — **151**. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+4. Kim oldi — `docker compose exec -T postgres psql -U gsr -d gsr -c "SELECT r.code FROM role_permissions rp JOIN roles r
+   ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id WHERE p.code = 'batches.view' ORDER BY 1"` —
+   `admin`, `sales_manager`, `super_admin` (yoki admin’siz — yuqoridagi shart).
+5. Sinov: sotuvchi bilan kiring — menyuda Ostatka, Partiyalar, Mashinalar, Xarita bor; boshqa sotuvchining mijozi
+   prixodini oching — «Bitim» katagi ham, xarajat summalari ham yo‘q.
+
+**Orqaga qaytarish kerak bo‘lsa:** eski kod `batches.view` ni tanimaydi va «Sales manager» / «Admin» rollarini
+Rollar sahifasida saqlashni rad etadi (boshqa hech narsa buzilmaydi). Ikki yo‘l: qatorlarni qoldiring (kod qaytguncha
+o‘sha ikki rol tahrirlanmaydi), yoki ikkalasini BIRGA o‘chiring —
+`DELETE FROM permissions WHERE code = 'batches.view';` va
+`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = 1785190000129;` — faqat birinchisini o‘chirsangiz, keyingi
+deployda 0150 qayta ishlamaydi va qo‘lda o‘zgartirilgan sotuvchi roli bu huquqni hech qachon olmaydi.
+
 ## To‘liq AI sotuvchi, 2-qism (2026-11-15, 0149) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0149** — deploydan keyin son **150** bo‘ladi. Ikkita yangi jadval (AI yozgan narxlar belgisi va

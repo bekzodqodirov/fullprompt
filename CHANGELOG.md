@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## 2026-11-18 — Sotuvchilar skladdagi yuklarni, furalarni va skladlarni ko'radi
+
+Sizning so'zingiz: «sotuvchilarga ham skladdagi yuklarni korishga ruxsat ochib berish kerak furalarga va skladlarni
+korishga ruxsat kerak». Javobingiz: «hammasi sening taklifing» (sakkiz savolning hammasi ⭐ bo'yicha).
+
+**Migratsiya bor: 0150.** Deploydan keyin son **151** bo'lishi, `/api/version` bugungi vaqtni ko'rsatishi kerak.
+Qadamlar: `docs/UPDATE.md` → «Sotuvchilar yukni, furalarni va skladlarni ko'radi (2026-11-18, 0150)».
+
+### Sotuvchi menyusida endi
+- **Ostatka** — hamma skladdagi hamma mijozning yuki, sklad tanlash bilan. Egasi aniqlanmagan yuk ham ko'rinadi,
+  Excel yuklab olish ham bor.
+- **Partiya doskasi**, **Mashinalar**, **«Yo'lda»** va **Xarita**. Xaritadagi sklad nuqtalarida har skladda qaysi
+  mijozning qancha yuki borligi ko'rinadi.
+- Hammasi **faqat ko'rish uchun**. Yuklash, jo'natish, bekor qilish, reja, chegara navbatini yozish tugmalari
+  chiqmaydi. Furaning «Xarajatlar», «Narx», «Bojxona» bo'limlari yopiq qoladi.
+- Haydovchi ismi, telefoni va mashina raqami ko'rinadi (fura kartasida oldin ham ko'rinardi).
+- Telegram botda mijoz kodini yozsa, javob ostida «🗺 Xaritada» tugmasi ham chiqadi.
+- Furalar haqidagi Telegram ogohlantirishlari sotuvchilarga **kelmaydi**.
+
+### Prixod kartasida
+- **Xarajat summalari** (yo'lkira, rastamojka va boshqalar) sotuvchiga ko'rinmaydi. Sklad, logist, VED, buxgalter va
+  admin oldingidek ko'radi.
+- Boshqa sotuvchining mijozi prixodida sotuvchiga **«Bitim» katagi chiqmaydi**. Yukni ko'radi, lekin uni bitimga
+  biriktira olmaydi, boshqa bitimga o'tkaza olmaydi, u uchun yangi bitim ham ocha olmaydi. Server ham rad etadi:
+  «Bu prixod boshqa sotuvchining mijoziga tegishli». Uch holatda hammasi oldingidek ishlaydi: o'z mijozining prixodida,
+  o'z bitimida turgan prixodda va o'ziga yozilgan prixodda.
+- Hamkasbining bitim narxi va chegirmasi sahifaga umuman tushmaydi. Oldin sahifa kodida bor edi, ekranda ko'rinmasa ham.
+- Zavod reysi raqami: reys kartasini ocha olmaydigan odamga oddiy matn bo'lib chiqadi. Oldin u ochilmaydigan havola edi.
+
+### Huquq
+- Yangi huquq: **`batches.view`**. U Boshqaruv → Rollar sahifasida «batches» guruhida turadi va hamma sotuvchilarga
+  avtomatik berildi.
+- Olib tashlamoqchi bo'lsangiz: «Sales manager» kartasida belgini olib, saqlang. **Diqqat:** buni sotuvchi roli
+  **bo'lmagan** admin akkauntidan qilasiz. Tizim hech kimga o'zida bor rolni o'zgartirishga ruxsat bermaydi, siz esa
+  «admin va sotuvchi» akkaunti bilan kirasiz.
+
+### Bilib qo'ying
+- Sotuvchi endi hamkasbining mijozi yukini ham ko'radi: kod, tovar, rasm, kub, kg (siz 1a dedingiz).
+- Bitim kartasini (`/bitimlar/...`) manzil orqali ochish hali ham cheklanmagan. Bu alohida ish (CRM ruxsatlari).
+  Prixod kartasidan unga havola endi faqat o'z prixodida chiqadi.
+
 ## 2026-11-15 — «O'zi yuborish»: belgilarni va AI ishonchini sahifada o'zingiz o'zgartirasiz
 
 Sizning so'zingiz: «Sahifada narxni belgilab bolmayabti va 80 foizni ham tushirib bolmayabti».
