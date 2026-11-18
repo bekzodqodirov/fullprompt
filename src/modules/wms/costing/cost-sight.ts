@@ -26,6 +26,28 @@ export const costSightFor = cache(function costSightFor(actor: { id: string; per
 });
 
 /**
+ * Who reads a prixod's cost AMOUNTS at all (2026-11-18). The people who enter
+ * them, and the truck card's «Xarajatlar» audience (`mayOpenBatchCosts`,
+ * batches/card-door.ts — restated here as codes because that module imports
+ * the pricing door): the warehouse that typed the bill, the logist and the
+ * VED, the accountant, a reports reader.
+ *
+ * Everybody else opening a prixod card used to read its bills too, and since
+ * the sellers were given every client's cargo on Ostatka and the board (his
+ * «sotuvchilarga … skladdagi yuklarni korishga ruxsat», 4a «yashirilsin») the
+ * card is one tap from their menu: a prixod's freight and customs bills beside
+ * its kg and m³ are the tannarx (#791). The VED still reads through
+ * `costSightFor` — his own amounts, the others' types.
+ */
+export function mayReadCostAmounts(permissions: { has(code: string): boolean }): boolean {
+  return (
+    permissions.has('costs.enter_receipt') ||
+    permissions.has('costs.enter_batch') ||
+    permissions.has('reports.all_warehouses')
+  );
+}
+
+/**
  * Whether a cost row may print the NAME of the kassa it was paid from: money
  * readers only. A warehouse operator reading a receipt's costs learns that a
  * kassa answered, never which drawer holds the company's cash — and the VED,

@@ -74,8 +74,12 @@ export const NAV: NavGroupSpec[] = [
         icon: 'truck',
         // `ved.docs` belongs here: the customs papers live on the batch card,
         // and gating the tile on scan.load alone left the VED manager with no
-        // way in but a pasted URL.
-        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage'],
+        // way in but a pasted URL. The page's door is the trucks door
+        // (wms/batches/read-door.ts), spelled out here because platform must
+        // not import wms — it lacked `batches.depart_close` until 2026-11-18,
+        // when `batches.view` (the sellers' read-only door) joined it and the
+        // fence started pinning this list too.
+        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close', 'batches.view'],
         primary: 2,
       },
       {
@@ -223,7 +227,7 @@ export const NAV: NavGroupSpec[] = [
         // because platform must not import wms; the unit fence pins the two
         // lists against each other. Without it an owner-invented role got a
         // menu entry that bounced to the home screen.
-        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close'],
+        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close', 'batches.view'],
       },
       {
         // «Zavod reysi» (0100): the trucks WE hire to collect from factories.
@@ -241,7 +245,7 @@ export const NAV: NavGroupSpec[] = [
         labelKey: 'title',
         namespace: 'map',
         icon: 'map',
-        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close'],
+        permissions: ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close', 'batches.view'],
       },
       {
         // The AI assistant (owner: «sistemamizga AI ulay olamizmi»). No
@@ -611,6 +615,14 @@ export const MENU_BY_ROLE: Record<string, string[]> = {
     '/reports/sotuvchilar',
     // The things they send customers all day, kept once.
     '/zametkalar',
+    // Where the cargo is (2026-11-18, his «sotuvchilarga ham skladdagi
+    // yuklarni … furalarga va skladlarni korishga ruxsat», answers «hammasi
+    // sening taklifing»): Ostatka with its warehouse picker, the board, the
+    // trucks list and the map with its warehouse pins — every client's cargo
+    // (1a), read-only, no money on any of them. /stock was always open to a
+    // login and simply not drawn; the three truck screens open through
+    // `batches.view`. «Yo'lda» (/transit) is a tab hung off /trucks.
+    '/stock', '/batches', '/trucks', '/map',
   ],
   accountant: [
     '/', '/bugun', '/kalendar', '/accounting', '/accounting/expenses', '/finance', '/kontragentlar', '/reports',

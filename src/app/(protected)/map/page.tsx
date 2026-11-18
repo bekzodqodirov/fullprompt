@@ -45,8 +45,11 @@ export default async function MapPage({
   if (!actor) redirect('/login');
   // The trucks door, because this page IS the trucks plus every warehouse's
   // stock broken down by client code — the audit found it answering all of
-  // that to any signed-in login, including a seller round 91 deliberately
-  // scoped to his own clients.
+  // that to any signed-in login. Round 91 scoped a seller's MONEY to his own
+  // clients, never his cargo, and since 2026-11-18 the sellers are let in on
+  // purpose (`batches.view`, his «sotuvchilarga … furalarga va skladlarni
+  // korishga ruxsat», 1a: every client's cargo). A login with none of the
+  // door's codes still goes home.
   if (!mayReadBatches(actor.permissions)) redirect('/');
   const t = await getTranslations('map');
   const { zr, mijoz } = await searchParams;

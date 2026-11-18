@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BATCH_READERS, mayReadBatches } from '@/modules/wms/batches/read-door';
 import { NAV } from '@/modules/platform/rbac/nav';
+import { BATCH_READERS as WORKSPACE_BATCH_READERS } from '@/modules/platform/rbac/workspaces';
+import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 
 /**
  * Every screen that shows trucks asks the SAME door.
@@ -45,17 +47,29 @@ describe('the batch read door', () => {
   });
 
   it('the MENU promises exactly what the door checks — platform cannot import wms', () => {
+    // /batches joined the fence on 2026-11-18: its entry had lacked
+    // `batches.depart_close` since it was written, and the sellers'
+    // `batches.view` would have been a fourth copy to forget.
     const items = NAV.flatMap((s) => s.items).filter(
-      (i) => i.href === '/trucks' || i.href === '/map',
+      (i) => i.href === '/trucks' || i.href === '/map' || i.href === '/batches',
     );
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     for (const item of items) {
       expect([...(item.permissions ?? [])].sort(), item.href).toEqual([...BATCH_READERS].sort());
     }
   });
 
+  it("the workspaces' own copy is the door too — or «Yo'lda» hides from whoever it admits", () => {
+    expect([...WORKSPACE_BATCH_READERS].sort()).toEqual([...BATCH_READERS].sort());
+  });
+
   it('the door itself answers both ways', () => {
     expect(mayReadBatches(new Set(['plans.manage']))).toBe(true);
     expect(mayReadBatches(new Set(['crm.leads', 'finance.view']))).toBe(false);
+  });
+
+  it('the read-only code opens it, and the seeded seller holds it (his 2a 8a, 2026-11-18)', () => {
+    expect(mayReadBatches(new Set(['batches.view']))).toBe(true);
+    expect(mayReadBatches(new Set(ROLE_MATRIX.sales_manager))).toBe(true);
   });
 });

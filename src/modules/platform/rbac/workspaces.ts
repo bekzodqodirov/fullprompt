@@ -111,8 +111,14 @@ export interface WorkspaceSpec {
   strip: boolean;
 }
 
-/** The batch-reading door (`wms/batches/read-door.ts`), spelled out once here. */
-const BATCH_READERS = ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close'];
+/**
+ * The batch-reading door (`wms/batches/read-door.ts`), spelled out once here
+ * because platform must not import wms. Exported for ONE reader,
+ * `tests/unit/batch-read-door.test.ts`, which pins it against the door: a
+ * missed edit here hides «Yo'lda» from whoever the door admits, with every
+ * other test green (the sellers' `batches.view`, 2026-11-18).
+ */
+export const BATCH_READERS = ['scan.load', 'scan.unload', 'ved.docs', 'plans.manage', 'batches.depart_close', 'batches.view'];
 const ANY_REPORT = ['reports.all_warehouses', 'reports.own_warehouse'];
 
 export const WORKSPACES: WorkspaceSpec[] = [

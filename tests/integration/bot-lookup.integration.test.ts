@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ROLE_MATRIX } from '@/modules/platform/rbac/catalog';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
@@ -239,12 +240,17 @@ describe('the bot answers "where is it?"', () => {
     const rich = await botLookupAnswer(boss(), clientCode);
     expect(rich?.text).toContain(`🚚 ${batch!.code} (${WH_O} → ${WH_D}) yo‘lda: 2 karobka`);
     expect(rich?.mapClientCode).toBe(clientCode);
-    const seller = await botLookupAnswer(
+    // A hand the trucks door does not admit: the answer, no map.
+    const noDoor = await botLookupAnswer(
       { ...boss(), permissions: new Set(['finance.view', 'crm.leads']) },
       clientCode,
     );
-    expect(seller?.text).toContain(clientCode);
-    expect(seller?.mapClientCode).toBeUndefined();
+    expect(noDoor?.text).toContain(clientCode);
+    expect(noDoor?.mapClientCode).toBeUndefined();
+    // The real seller holds `batches.view` since 2026-11-18 (his 2a): the
+    // map opens to him, so the button is offered.
+    const seller = await botLookupAnswer({ ...boss(), permissions: new Set(ROLE_MATRIX.sales_manager) }, clientCode);
+    expect(seller?.mapClientCode).toBe(clientCode);
     // A box or a truck answer carries no client map.
     expect((await botLookupAnswer(boss(), batch!.code))?.mapClientCode).toBeUndefined();
   });

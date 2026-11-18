@@ -309,9 +309,14 @@ const LINK_TOKEN: readonly RegExp[] = [
  * so «Printer B-400» is a model and «в 100000 шт» a preposition — and the
  * dash-less arm takes no space for the same reason.
  *
- * KEPT on purpose: the batch `YW-045`. A truck carries many clients, its
- * contents sit behind `BATCH_READERS`, and `{PREFIX}-{NNN}` cannot be told
- * from «LED-100» — scrubbing it would eat real goods names.
+ * KEPT on purpose: the batch `YW-045`. A truck carries many clients, and
+ * `{PREFIX}-{NNN}` cannot be told from «LED-100» — scrubbing it would eat real
+ * goods names. Its contents no longer sit out of the sellers' reach: since
+ * 2026-11-18 `batches.view` opens the board and ⌘K's truck hits to them, so a
+ * truck code a person TYPED into a goods name does point at the clients on
+ * that truck. Rare (it needs the code in an item's name), and kept as a stated
+ * trade (DECISIONS #1802); scrubbing truck codes by DATA, as deal and client
+ * codes are, is its own round.
  */
 const SYSTEM_SHAPES: readonly string[] = [
   /* crate   */ 'CR-[A-Za-z0-9]*\\d{2}-\\d{5,}',

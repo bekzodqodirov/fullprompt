@@ -321,6 +321,23 @@ describe('a tab is a promise that the page opens', () => {
     expect(theirs).not.toContain('/accounting/pnl');
   });
 
+  it('shows the seller where the cargo is — and only to read (his 2a 3a, 2026-11-18)', () => {
+    // «sotuvchilarga ham skladdagi yuklarni … furalarga va skladlarni korishga
+    // ruxsat»: Ostatka, the board, the trucks list, «Yo'lda» and the map — a
+    // missing screen is a failure too, not only one that bounces.
+    const seller = actorFor(['sales_manager']);
+    const offered = visibleWorkspaces(seller).flatMap((ws) => ws.tabs.map((tab) => tab.href));
+    for (const href of ['/stock', '/batches', '/trucks', '/map', '/transit']) {
+      expect(offered, href).toContain(href);
+      expect(GATES[href]!(seller), href).toBe(true);
+    }
+    // …and none of the truck screens that WORK: planning, factory trips, the
+    // warehouse floor.
+    for (const href of ['/plans', '/zavod', '/receive', '/issue', '/crates', '/inventory']) {
+      expect(offered, href).not.toContain(href);
+    }
+  });
+
   it('gives the accountant her FX rates back as a Pul tab, and the logist his truck presets as Yo’l’s ⚙', () => {
     // Their only hub doors left the hub; the workspaces must carry them.
     const accountant = visibleWorkspaces(actorFor(['accountant']));

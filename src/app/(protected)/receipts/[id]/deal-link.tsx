@@ -177,7 +177,11 @@ export function DealLink({
       )}
       {error && (
         <p className="text-sm font-semibold text-bad" data-testid="receipt-deal-error">
-          {error === 'upsale_paid' ? t('dealLinkUpsalePaid') : tc('error')}
+          {error === 'upsale_paid'
+            ? t('dealLinkUpsalePaid')
+            : error === 'not_your_cargo'
+              ? t('dealLinkNotYours')
+              : tc('error')}
         </p>
       )}
     </div>

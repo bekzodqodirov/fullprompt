@@ -39,7 +39,7 @@ import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
 import { ownDealOf } from '@/modules/wms/finance/truck-deal';
 import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
-import { receiptPickupInfo, stopOptionsForWarehouse } from '@/modules/wms/pickups/service';
+import { mayReadPickup, receiptPickupInfo, stopOptionsForWarehouse } from '@/modules/wms/pickups/service';
 import { ReceiptPickupControl } from '@/app/(protected)/zavod/pickup-forms';
 import { CalcLink } from './calc-link';
 import { calcLinkOptions } from '@/modules/wms/calc/link';
@@ -47,7 +47,7 @@ import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
 import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
 import { canWriteDeal, openDealsForClient, withCargo } from '@/modules/wms/deals/service';
-import { mayEditDealTerms } from '@/modules/wms/deals/door';
+import { mayEditDealTerms, mayRefileReceipt } from '@/modules/wms/deals/door';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
@@ -60,7 +60,7 @@ import { listPartners } from '@/modules/wms/partners/service';
 import { maySeeStaffMoney, payerView } from '@/modules/wms/partners/staff';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { tillOptionsFor } from '@/modules/wms/costing/till-props';
-import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
+import { costSightFor, mayReadCostAmounts, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
 import { lotQrState } from '@/modules/wms/labels/qrless';
@@ -381,10 +381,26 @@ export default async function ReceiptDetailPage({
   );
   const canAssign = actor.permissions.has('receipts.unclaimed.resolve') && receipt.status === 'confirmed';
 
+  const linkedDeal = receipt.dealId
+    ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
+    : null;
   // Which job this cargo belongs to — shown, and correctable, from the cargo
   // itself. Only to somebody who may write deals: to everybody else a deal
-  // code is a link into a screen they cannot open.
-  const canLinkDeal = canWriteDeal(actor.permissions) && Boolean(receipt.clientId);
+  // code is a link into a screen they cannot open. And only on a prixod that
+  // is the reader's to move (`mayRefileReceipt`, the rule both actions ask):
+  // since 2026-11-18 a seller opens EVERY client's prixod from Ostatka and the
+  // board, and a colleague's prixod draws him what it draws a warehouse
+  // worker — no deal cell, no deal link, no «+ Yangi bitim» (the design
+  // judge's LEAK-1).
+  const canLinkDeal =
+    canWriteDeal(actor.permissions) &&
+    Boolean(receipt.clientId) &&
+    mayRefileReceipt(actor.permissions, actor.id, {
+      clientManagerId: client?.salesManagerId ?? null,
+      stampedSellerId: receipt.salesManagerId,
+      standingDealId: linkedDeal?.id ?? null,
+      standingDealOwnerId: linkedDeal?.ownerId ?? null,
+    });
   // The factory truck it came off (0100): shown to everyone who opens the
   // card — the factory's phone is what a goods problem next month needs — and
   // correctable by whoever enters a truck's cost, because linking moves that
@@ -400,9 +416,6 @@ export default async function ReceiptDetailPage({
   const pickupOptions = canLinkPickup
     ? await stopOptionsForWarehouse(receipt.warehouseId).catch(() => [])
     : [];
-  const linkedDeal = receipt.dealId
-    ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
-    : null;
   // «The prixod's deal» is the client's OWN (`ownDealOf`, finance/truck-deal.ts
   // — the rule the seller's «Prixod keldi» message reads the state by): a
   // client correction leaves `deal_id` on the old client's job, and the block
@@ -428,7 +441,7 @@ export default async function ReceiptDetailPage({
   // one customer's cargo against another customer's quote. The doors in
   // calc/link.ts refuse it too; this is what the cell offers.
   const calcOptions = mayLinkCalc ? await calcLinkOptions(ownDeal?.id ?? null) : [];
-  const dealChoices =
+  const dealRows =
     ownDeal && !dealOptions.some((d) => d.id === ownDeal.id)
       ? [
           // The deal this prixod is ON, even once it has left the open list —
@@ -439,6 +452,13 @@ export default async function ReceiptDetailPage({
           ...dealOptions,
         ]
       : dealOptions;
+  // What the picker DRAWS, and nothing else: the cell is a client component,
+  // so every field of what it is handed is in the page's payload — and these
+  // rows carried the deal's quote, and for the deal it stands on the WHOLE
+  // row (discount, its reason, the deferral, the note). Never a database row
+  // into a client prop (2026-11-18, the judge's LEAK-1 (a);
+  // `refile-door-wire.test.ts` pins it).
+  const dealChoices = dealRows.map((d) => ({ id: d.id, code: d.code, title: d.title, cargo: d.cargo }));
 
   // The office receipt (0112, Q9 b): who physically received it, who typed
   // it, and the real day — printed when any of them differs from «the person
@@ -507,7 +527,11 @@ export default async function ReceiptDetailPage({
   // No card for a reader who cannot attach when there is nothing to list —
   // it was a heading over nothing (a voided prixod is the case left).
   const showFiles = mayAttach || receiptFiles.length > 0;
-  const showCosts = costMeta !== null || costs.length > 0 || othersLine !== null;
+  // Drawn for the people who enter a prixod's bills or read a truck's
+  // (`mayReadCostAmounts`) — never for a seller (2026-11-18, his 4a).
+  const showCosts =
+    (costMeta !== null || mayReadCostAmounts(actor.permissions)) &&
+    (costMeta !== null || costs.length > 0 || othersLine !== null);
   // What «Boshqa amallar» holds for this reader, named on its closed line:
   // a manager looking for «Bekor qilish» must not have to open a fold called
   // «other» to find out whether it is in there.
@@ -747,9 +771,15 @@ export default async function ReceiptDetailPage({
                   <p className="section-title">🏭 {tp('title')}</p>
                   {pickupInfo ? (
                     <p className="[overflow-wrap:anywhere]">
-                      <Link href={`/zavod/${pickupInfo.pickupId}`} className="font-mono text-brand-700 underline">
-                        {pickupInfo.code}
-                      </Link>{' '}
+                      {/* A link only for a reader the trip card admits — a seller opens every
+                          client's prixod since 2026-11-18, and a link that bounces is a dead end. */}
+                      {mayReadPickup(actor, pickupInfo.destWarehouseId) ? (
+                        <Link href={`/zavod/${pickupInfo.pickupId}`} className="font-mono text-brand-700 underline">
+                          {pickupInfo.code}
+                        </Link>
+                      ) : (
+                        <span className="font-mono">{pickupInfo.code}</span>
+                      )}{' '}
                       · {pickupInfo.seq}. {pickupInfo.factoryName}
                       {pickupInfo.factoryPhone && (
                         <>

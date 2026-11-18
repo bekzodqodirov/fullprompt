@@ -1122,6 +1122,7 @@
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
     "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
+    "dealLinkNotYours": "This prixod is cargo of another seller's client — only that seller or the office ties it to a deal",
     "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them",
     "dealNew": "Open a new deal",
     "dealForeign": "Still on another client's deal: {code}. Pick this client's own deal, open a new one, or save «Unlink» to take it off that deal.",
@@ -3476,7 +3477,8 @@
       "server_behind": "The server is behind — an administrator must run the migrations.",
       "receipt_has_deal": "This receipt is already on a deal — no new deal was opened. Open the receipt card again.",
       "receipt_not_confirmed": "This receipt is not confirmed, or was voided — no deal was opened for it.",
-      "upsale_paid": "A seller’s share was already paid on the deal this receipt stands on — the accountant takes the payout back first, then the receipt moves."
+      "upsale_paid": "A seller’s share was already paid on the deal this receipt stands on — the accountant takes the payout back first, then the receipt moves.",
+      "not_your_cargo": "This prixod is cargo of another seller's client — only that seller or the office ties it to a deal"
     },
     "discountTitle": "Discount (damage)",
     "discountAmount": "Discount amount",

@@ -137,10 +137,17 @@ test('the VED reads the same number and is offered no fold', async ({ page }) =>
   await expect(page.getByTestId('queue-edit-yallama')).toHaveCount(0);
 });
 
-test('the seller is sent home — /trucks is the batch readers’ page', async ({ page }) => {
+test('the seller reads the same number and is offered no fold (`batches.view`, 2026-11-18)', async ({ page }) => {
+  // Until 2026-11-18 the seller was sent home from /trucks. His «sotuvchilarga
+  // … furalarga … korishga ruxsat» opened the trucks to read, so he now sees
+  // the typed wait like the VED does — and, like the VED, cannot type one
+  // (`mayEditBorderQueue` = plans.manage, unscoped).
   await login(page, SELLER);
   await page.goto('/trucks');
-  await expect(page).toHaveURL('/');
+  await expect(page).toHaveURL(/\/trucks$/);
+  await expect(page.getByTestId('queue-value-khorgos')).toContainText(/3–4/);
+  await expect(page.getByTestId('queue-edit-khorgos')).toHaveCount(0);
+  await expect(page.getByTestId('queue-edit-yallama')).toHaveCount(0);
 });
 
 test('the Mashina pins at 360 px, in Russian and in Uzbek: every one inside the phone', async ({ page }) => {
