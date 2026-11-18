@@ -10032,4 +10032,8 @@ cured — both keys now list all four movers and «open the new deal without the
 too. (5) T6: the deal card's filter fence did not pin `clientManagerId: row.clientSalesManagerId` (a mutation to
 `actor.id` reopened SEL-2 with everything green). (6) T7: «nine nits» was eight. The integration file's cases are now
 the hand-over (RFB, only the manager his), the trade with TWO sellers both ways (RFI: the colleague files, the client's
-seller takes it back, the owner keeps his move), plus #1805's.
+seller takes it back, the owner keeps his move), plus #1805's. Red proofs by string edit, each restored by hash: 18 for the round
+(one stayed green and was re-anchored), 14 for #1805's fixes, 12 for these; in a browser against stripped builds,
+2 + 4 + 2 (the payload and cell gates; the menu, the owner fact, the restricted cell, the /stock guard; the restricted
+cell's guard and the full cell). Gates at 2e24381d on a FRESH database in CI's order: vitest 953 files / 19,528 tests,
+build, Playwright 535 passed and 1 skipped; GitHub's check on the same head green.

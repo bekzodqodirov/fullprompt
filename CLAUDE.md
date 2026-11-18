@@ -3908,7 +3908,9 @@ the obey is pinned and `refile-door-actions.integration.test.ts` presses both ac
 handed `{id, code, title, cargo}`, never a deal row (the quote and discount were in the payload); bills only for
 `mayReadCostAmounts`; the factory trip a link only for `mayReadPickup`; /stock and its XLSX drop a non-uuid id. Stated: /bitimlar/[id] still has no owner gate by URL; the price channel keeps truck codes in goods
 names (a seller can now open that truck); the untick works only from an admin account WITHOUT the seller role
-(`own_role`); rollback deletes the permission row AND 0150's ledger row together (docs/UPDATE.md).
+(`own_role`); rollback deletes the permission row AND 0150's ledger row together (docs/UPDATE.md). Reviewed as built
+(#1805) and the fixes reviewed (#1806 — the owner outranking the client's seller TAKEN BACK); 44 + 8 red proofs.
+**19,528 unit/integration (953 files) + 535 e2e** (1 skipped) green on a fresh database in CI's order at 2e24381d.
 
 **Latest migration: 0150** (`batches_view`, `when` …129; ledger must reach **151**). Before
 it: 0149 (`agent_full_p2`, `when` …128). Before
