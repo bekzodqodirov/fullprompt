@@ -1122,7 +1122,7 @@
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
-    "dealLinkNotYours": "Bu prixod boshqa sotuvchining mijoziga tegishli — uni bitimga faqat o‘sha sotuvchi yoki ofis biriktiradi",
+    "dealLinkNotYours": "Bu prixodni ko‘chira olmaysiz. Bitimda turgan prixodni o‘sha bitimning egasi yoki ofis ko‘chiradi; bitimsiz prixodni — mijozning sotuvchisi yoki ofis, siz esa uni faqat o‘z bitimingizga biriktira olasiz",
     "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi",
     "dealNew": "Yangi bitim ochish",
     "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang, yangisini oching yoki «Uzish»ni saqlab, o'sha bitimdan chiqaring.",
@@ -3478,7 +3478,7 @@
       "receipt_has_deal": "Bu prixod allaqachon bitimga biriktirilgan — yangi bitim ochilmadi. Prixod kartasini qayta oching.",
       "receipt_not_confirmed": "Bu prixod tasdiqlanmagan yoki bekor qilingan — unga bitim ochilmadi.",
       "upsale_paid": "Bu prixod turgan bitim bo‘yicha sotuvchiga ulush to‘langan — avval buxgalter to‘lovni qaytarsin, keyin prixod ko‘chiriladi.",
-      "not_your_cargo": "Bu prixod boshqa sotuvchining mijoziga tegishli — uni bitimga faqat o‘sha sotuvchi yoki ofis biriktiradi"
+      "not_your_cargo": "Bu prixodni ko‘chira olmaysiz. Bitimda turgan prixodni o‘sha bitimning egasi yoki ofis ko‘chiradi; bitimsiz prixodni — mijozning sotuvchisi yoki ofis, siz esa uni faqat o‘z bitimingizga biriktira olasiz"
     },
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",

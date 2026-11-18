@@ -11,13 +11,19 @@ import postgres from 'postgres';
  *
  *  - `SY<4 digits>M`: the demo SELLER manages it and owns its deal;
  *  - `SY<4 digits>O`: the super admin manages it and owns its deal — a
- *    colleague's client, as the seller meets it on Ostatka.
+ *    colleague's client, as the seller meets it on Ostatka;
+ *  - `SY<4 digits>H`: the super admin's client, stamped with him, on a deal the
+ *    SELLER owns (a won lead about a colleague's client, Uch band Q3 b) — only
+ *    the deal's owner makes this prixod his (the as-built review, FENCE-2);
+ *  - `SY<4 digits>L`: the super admin's client, its prixod on NO deal, with one
+ *    deal of each of them — the seller's cell offers his deal and only his
+ *    (the as-built review, EE-1).
  *
  * (A client code is at most ten characters, so the marker is short.)
  *
  * Each deal carries a quote nobody prints, and each prixod a bill of an amount
  * nobody types, so the page's text AND its payload can be searched for them.
- * Nothing here is configuration: two clients, their prixods, deals and bills,
+ * Nothing here is configuration: four clients, their prixods, deals and bills,
  * all deleted by the cleanup TEST (#523).
  */
 
@@ -45,6 +51,10 @@ export function newRun(): Run {
 export interface Minted {
   mine: { receiptId: string; dealCode: string };
   other: { receiptId: string; dealCode: string };
+  /** On a deal the seller owns, of a colleague's client. */
+  hisDeal: { receiptId: string; dealCode: string };
+  /** On no deal; `dealCode` is the seller's deal, `theirDealCode` the colleague's. */
+  loose: { receiptId: string; dealCode: string; theirDealCode: string };
 }
 
 export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
@@ -56,45 +66,68 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
       SELECT id FROM deal_stages WHERE active AND kind = 'open' ORDER BY sort_order LIMIT 1`;
     const [type] = await tx<{ id: string }[]>`SELECT id FROM cost_types WHERE code = 'customs'`;
     if (!owner || !seller || !yw || !stage || !type) throw new Error('the demo lacks the owner, seller, YW, an open stage or «customs»');
-    const one = async (which: 'MINE' | 'OTHER', manager: string) => {
-      const code = `${run.marker}${which === 'MINE' ? 'M' : 'O'}`;
+    const deal = async (code: string, clientId: string, dealOwner: string, title: string, quote: string | null) => {
+      const [row] = await tx<{ id: string }[]>`
+        INSERT INTO deals (id, code, client_id, stage_id, owner_id, title, quoted_amount, quoted_currency, created_by)
+        VALUES (gen_random_uuid(), ${code}, ${clientId}, ${stage.id}, ${dealOwner}, ${title},
+                ${quote}, ${quote ? 'USD' : null}, ${owner.id})
+        RETURNING id`;
+      return row!.id;
+    };
+    const one = async (
+      letter: 'M' | 'O' | 'H' | 'L',
+      manager: string,
+      standsOn: { owner: string } | null,
+      money: { quote: string; bill: string } | null,
+    ) => {
+      const code = `${run.marker}${letter}`;
       const [client] = await tx<{ id: string }[]>`
         INSERT INTO clients (id, client_code, name, phones, sales_manager_id)
         VALUES (gen_random_uuid(), ${code}, ${`Sotuvchi yuk ${code}`}, ${tx.json([])}, ${manager})
         RETURNING id`;
       const dealCode = `${code}-D`;
-      const [deal] = await tx<{ id: string }[]>`
-        INSERT INTO deals (id, code, client_id, stage_id, owner_id, title, quoted_amount, quoted_currency, created_by)
-        VALUES (gen_random_uuid(), ${dealCode}, ${client!.id}, ${stage.id}, ${manager}, ${`Sotuvchi yuk ${which}`},
-                ${QUOTE[which]}, 'USD', ${owner.id})
-        RETURNING id`;
+      const dealId = standsOn ? await deal(dealCode, client!.id, standsOn.owner, `Sotuvchi yuk ${letter}`, money?.quote ?? null) : null;
       const [receipt] = await tx<{ id: string }[]>`
         INSERT INTO receipts (id, number, warehouse_id, client_id, deal_id, sales_manager_id, status, confirmed_at, confirmed_by,
                               source_note, created_by, created_at)
-        VALUES (gen_random_uuid(), ${`${code}-R`}, ${yw.id}, ${client!.id}, ${deal!.id}, ${manager}, 'confirmed',
+        VALUES (gen_random_uuid(), ${`${code}-R`}, ${yw.id}, ${client!.id}, ${dealId}, ${manager}, 'confirmed',
                 now() - interval '1 hour', ${owner.id}, ${run.marker}, ${owner.id}, now() - interval '1 hour')
         RETURNING id`;
       const [lot] = await tx<{ id: string }[]>`
         INSERT INTO receipt_lots (id, receipt_id, seq, letter, cycle_no, product_name_zh, product_name_ru, box_count, dims_mode,
                                   total_weight_kg, total_volume_m3)
-        VALUES (gen_random_uuid(), ${receipt!.id}, 1, 'A', 1, ${'卖家'}, ${`Sotuvchi yuk ${which}`}, 1, 'mixed', 15.000, 0.2000)
+        VALUES (gen_random_uuid(), ${receipt!.id}, 1, 'A', 1, ${'卖家'}, ${`Sotuvchi yuk ${letter === 'M' ? 'MINE' : letter === 'O' ? 'OTHER' : letter}`}, 1, 'mixed', 15.000, 0.2000)
         RETURNING id`;
       await tx`
         INSERT INTO boxes (id, lot_id, short_code, seq_in_lot, status, current_warehouse_id)
         VALUES (gen_random_uuid(), ${lot!.id}, ${`${code}-1`}, 1, 'in_stock', ${yw.id})`;
-      await tx`
-        INSERT INTO cost_entries (id, scope, receipt_id, cost_type_id, amount, currency, cost_date, entered_by, note)
-        VALUES (gen_random_uuid(), 'receipt', ${receipt!.id}, ${type.id}, ${BILL[which]}, 'CNY', current_date, ${owner.id}, ${run.marker})`;
-      return { receiptId: receipt!.id, dealCode };
+      if (money) {
+        await tx`
+          INSERT INTO cost_entries (id, scope, receipt_id, cost_type_id, amount, currency, cost_date, entered_by, note)
+          VALUES (gen_random_uuid(), 'receipt', ${receipt!.id}, ${type.id}, ${money.bill}, 'CNY', current_date, ${owner.id}, ${run.marker})`;
+      }
+      return { receiptId: receipt!.id, dealCode, clientId: client!.id };
     };
-    return { mine: await one('MINE', seller.id), other: await one('OTHER', owner.id) };
+    const mine = await one('M', seller.id, { owner: seller.id }, { quote: QUOTE.MINE, bill: BILL.MINE });
+    const other = await one('O', owner.id, { owner: owner.id }, { quote: QUOTE.OTHER, bill: BILL.OTHER });
+    const hisDeal = await one('H', owner.id, { owner: seller.id }, null);
+    const loose = await one('L', owner.id, null, null);
+    const looseCode = `${run.marker}L`;
+    await deal(`${looseCode}-MY`, loose.clientId, seller.id, 'Sotuvchi yuk L — his', null);
+    await deal(`${looseCode}-TH`, loose.clientId, owner.id, 'Sotuvchi yuk L — theirs', null);
+    return {
+      mine: { receiptId: mine.receiptId, dealCode: mine.dealCode },
+      other: { receiptId: other.receiptId, dealCode: other.dealCode },
+      hisDeal: { receiptId: hisDeal.receiptId, dealCode: hisDeal.dealCode },
+      loose: { receiptId: loose.receiptId, dealCode: `${looseCode}-MY`, theirDealCode: `${looseCode}-TH` },
+    };
   });
 }
 
 /** Everything any run of this spec minted — found by the marker's shape, never by ids a dead run lost. */
 export async function cleanupAll(sql: postgres.Sql): Promise<number> {
   const clients = await sql<{ id: string }[]>`
-    SELECT id FROM clients WHERE client_code ~ '^SY[0-9]{4}[MO]$' AND name = 'Sotuvchi yuk ' || client_code`;
+    SELECT id FROM clients WHERE client_code ~ '^SY[0-9]{4}[MOHL]$' AND name = 'Sotuvchi yuk ' || client_code`;
   for (const client of clients) {
     await sql.begin(async (tx) => {
       const receiptIds = (await tx<{ id: string }[]>`SELECT id FROM receipts WHERE client_id = ${client.id}`).map((r) => r.id);

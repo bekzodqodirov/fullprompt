@@ -32,7 +32,15 @@ export function DealLink({
   newDealHref = null,
   foreign = null,
   voided = false,
+  detachable = true,
 }: {
+  /**
+   * May this reader take the prixod off a deal (`mayRefileReceipt` with a
+   * `null` target)? False for a seller drawn the cell only to file a loose
+   * prixod that is not his onto a deal HE owns (2026-11-18): the empty option
+   * then means «no choice yet», and «Saqlash» waits for a deal.
+   */
+  detachable?: boolean;
   /** The prixod is voided: said in the block's own first line (the button that opens it outlives the prixod). */
   voided?: boolean;
   /**
@@ -135,7 +143,7 @@ export function DealLink({
             answer that needs no deal at all, «take it off that job», had no
             door anywhere (the deal card only attaches). The press sends what
             the select holds; empty detaches. */}
-        {(dealId !== (current?.id ?? '') || foreign !== null) && (
+        {(dealId !== (current?.id ?? '') || foreign !== null) && (detachable || dealId !== '') && (
           <button
             type="button"
             disabled={pending}

@@ -104,12 +104,23 @@ export function dealBoardWhose(
  *
  *  - The office decides for everybody: the VED (the prixod links are his work,
  *    17a / G1 a), whoever manages clients, whoever reads every funnel.
- *  - A seller (`crm.leads`) moves a prixod that is HIS: he is the client's
- *    sales manager, or the seller the prixod was stamped with, or the owner of
- *    the deal it stands on.
+ *  - A prixod standing on a job somebody OWNS is that owner's to move. Not
+ *    the client's sales manager's: since Uch band Q3 b a colleague's request
+ *    about his client is the COLLEAGUE's sale, and taking its cargo off zeroes
+ *    the colleague's unpaid upsale — the very harm this door exists for (the
+ *    as-built review, SEL-3).
+ *  - Otherwise a seller (`crm.leads`) moves a prixod that is HIS: he is the
+ *    client's sales manager, or the seller the prixod was stamped with.
  *  - And one more: a prixod standing on NO deal, onto a deal HE owns — the deal
  *    card's own attach, for a won lead about a colleague's client (Uch band
  *    Q3 b), whose prixods are stamped with the colleague.
+ *
+ * «The deal it stands on» is the prixod client's OWN deal (`ownDealOf`,
+ * finance/truck-deal.ts). A client correction leaves `deal_id` on the old
+ * client's job; that job's owner is nobody's owner here — counted, he could
+ * file a colleague's client's cargo on the colleague's deals and open a deal
+ * of his own born with it (the as-built review, SEL-1/EE-2). Both readers
+ * hand the door the OWN deal or none; the door cannot see a client id.
  *
  * `target`: `undefined` = the question with no particular deal (the card
  * drawing its cell, a new deal born with the prixod — a NEW deal is always the
@@ -121,7 +132,7 @@ export interface RefileFacts {
   clientManagerId: string | null;
   /** The seller stamped on the prixod (0117). */
   stampedSellerId: string | null;
-  /** The deal the prixod stands on, and its owner. */
+  /** The prixod client's OWN deal the prixod stands on (`ownDealOf`), and its owner. */
   standingDealId: string | null;
   standingDealOwnerId: string | null;
 }
@@ -136,10 +147,9 @@ export function mayRefileReceipt(
     return true;
   }
   if (!permissions.has('crm.leads')) return false;
-  const his =
-    facts.clientManagerId === actorId ||
-    facts.stampedSellerId === actorId ||
-    (facts.standingDealId !== null && facts.standingDealOwnerId === actorId);
-  if (his) return true;
+  if (facts.standingDealId !== null && facts.standingDealOwnerId !== null) {
+    return facts.standingDealOwnerId === actorId;
+  }
+  if (facts.clientManagerId === actorId || facts.stampedSellerId === actorId) return true;
   return facts.standingDealId === null && target != null && target.ownerId === actorId;
 }

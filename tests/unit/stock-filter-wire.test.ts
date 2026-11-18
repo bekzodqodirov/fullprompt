@@ -30,3 +30,21 @@ describe('the stock search predicate', () => {
     expect(source).not.toMatch(/factoryBarcode|factory-barcode/);
   });
 });
+
+describe('an address that is not an id reads as the whole list, never a white page (#514)', () => {
+  // postgres refuses to compare a uuid column with «GS777», and that refusal is
+  // a 22P02 error page. /stock is on every seller's menu since 2026-11-18, and
+  // its drill-downs and its file bound a hand-typed or cut value as given (the
+  // as-built review, SEL-6). The behaviour is pinned in m9zzzj too.
+  it('the screen drops a non-uuid ?wh, ?lot and ?client before any query', () => {
+    const source = strip(readFileSync('src/app/(protected)/stock/page.tsx', 'utf8'));
+    for (const key of ['wh', 'lot', 'client']) {
+      expect(source, key).toContain(`if (params.${key} && !isUuidShaped(params.${key})) params.${key} = undefined;`);
+    }
+  });
+
+  it('the XLSX drops a non-uuid ?wh the same way', () => {
+    const source = strip(readFileSync('src/app/api/reports/stock/route.ts', 'utf8'));
+    expect(source).toMatch(/const wh = isUuidShaped\(rawWh\) \? rawWh : '';/);
+  });
+});

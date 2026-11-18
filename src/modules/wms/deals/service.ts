@@ -51,6 +51,7 @@ import {
 } from './deviation';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { mayRefileReceipt } from './door';
+import { ownDealOf } from '../finance/truck-deal';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
 
 /**
@@ -623,10 +624,12 @@ export async function refileRefusal(
   if (!isUuidShaped(receiptId)) return null;
   const [row] = await db
     .select({
+      clientId: receipts.clientId,
       clientManagerId: clients.salesManagerId,
       stampedSellerId: receipts.salesManagerId,
-      standingDealId: receipts.dealId,
-      standingDealOwnerId: deals.ownerId,
+      dealId: receipts.dealId,
+      dealClientId: deals.clientId,
+      dealOwnerId: deals.ownerId,
     })
     .from(receipts)
     .leftJoin(clients, eq(clients.id, receipts.clientId))
@@ -635,6 +638,16 @@ export async function refileRefusal(
     .limit(1);
   // An unknown prixod is the link's own refusal to say (`receipt_not_found`).
   if (!row) return null;
+  // The deal it stands on is the client's OWN or none (`ownDealOf`, the card's
+  // rule): a client correction leaves `deal_id` on the old client's job, and
+  // that job's owner is no owner of this prixod (the as-built review, SEL-1).
+  const own = row.clientId ? ownDealOf(row, row.clientId) : null;
+  const facts = {
+    clientManagerId: row.clientManagerId,
+    stampedSellerId: row.stampedSellerId,
+    standingDealId: own,
+    standingDealOwnerId: own ? row.dealOwnerId : null,
+  };
   let targetOwner: { ownerId: string | null } | null | undefined = target === null ? null : undefined;
   if (typeof target === 'string' && !isUuidShaped(target)) targetOwner = { ownerId: null };
   else if (typeof target === 'string') {
@@ -642,7 +655,7 @@ export async function refileRefusal(
     // An unknown deal is the link's own refusal too; asked as «no owner».
     targetOwner = { ownerId: deal?.ownerId ?? null };
   }
-  return mayRefileReceipt(actor.permissions, actor.id, row, targetOwner) ? null : 'not_your_cargo';
+  return mayRefileReceipt(actor.permissions, actor.id, facts, targetOwner) ? null : 'not_your_cargo';
 }
 
 /**
@@ -2006,7 +2019,14 @@ async function receiptContents(receiptIds: string[]) {
  */
 export async function unlinkedReceipts(clientId: string) {
   const rows = await db
-    .select({ id: receipts.id, number: receipts.number, receivedAt: receipts.receivedAt })
+    .select({
+      id: receipts.id,
+      number: receipts.number,
+      receivedAt: receipts.receivedAt,
+      /** The seller the prixod was stamped with — the deal card asks the refile
+          door with it (`mayRefileReceipt`); never handed to the picker. */
+      stampedSellerId: receipts.salesManagerId,
+    })
     .from(receipts)
     .where(
       and(

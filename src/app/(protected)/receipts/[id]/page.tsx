@@ -384,23 +384,52 @@ export default async function ReceiptDetailPage({
   const linkedDeal = receipt.dealId
     ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
     : null;
+  // «The prixod's deal» is the client's OWN (`ownDealOf`, finance/truck-deal.ts
+  // — the rule the seller's «Prixod keldi» message reads the state by): a
+  // client correction leaves `deal_id` on the old client's job, and the block
+  // its «🔗 Bitim biriktirish» button opens must not print that job as linked.
+  const ownDeal =
+    linkedDeal && receipt.clientId && ownDealOf({ dealId: linkedDeal.id, dealClientId: linkedDeal.clientId }, receipt.clientId)
+      ? linkedDeal
+      : null;
+  const foreignDeal = linkedDeal && !ownDeal ? linkedDeal : null;
   // Which job this cargo belongs to — shown, and correctable, from the cargo
   // itself. Only to somebody who may write deals: to everybody else a deal
-  // code is a link into a screen they cannot open. And only on a prixod that
-  // is the reader's to move (`mayRefileReceipt`, the rule both actions ask):
-  // since 2026-11-18 a seller opens EVERY client's prixod from Ostatka and the
-  // board, and a colleague's prixod draws him what it draws a warehouse
-  // worker — no deal cell, no deal link, no «+ Yangi bitim» (the design
-  // judge's LEAK-1).
-  const canLinkDeal =
-    canWriteDeal(actor.permissions) &&
-    Boolean(receipt.clientId) &&
-    mayRefileReceipt(actor.permissions, actor.id, {
-      clientManagerId: client?.salesManagerId ?? null,
-      stampedSellerId: receipt.salesManagerId,
-      standingDealId: linkedDeal?.id ?? null,
-      standingDealOwnerId: linkedDeal?.ownerId ?? null,
-    });
+  // code is a link into a screen they cannot open. And only as far as the
+  // prixod is the reader's to move (`mayRefileReceipt`, the rule both actions
+  // ask, over the OWN deal as `refileRefusal` reads it): since 2026-11-18 a
+  // seller opens EVERY client's prixod from Ostatka and the board, and a
+  // colleague's prixod draws him what it draws a warehouse worker — no deal
+  // cell, no deal link, no «+ Yangi bitim» (the design judge's LEAK-1).
+  const refileFacts = {
+    clientManagerId: client?.salesManagerId ?? null,
+    stampedSellerId: receipt.salesManagerId,
+    standingDealId: ownDeal?.id ?? null,
+    standingDealOwnerId: ownDeal?.ownerId ?? null,
+  };
+  const mayWriteHere = canWriteDeal(actor.permissions) && Boolean(receipt.clientId);
+  const mayRefile = mayWriteHere && mayRefileReceipt(actor.permissions, actor.id, refileFacts);
+  const openDeals = mayWriteHere ? await openDealsForClient(receipt.clientId!) : [];
+  // One move is a seller's on a prixod that is NOT his: a loose one onto a
+  // deal HE owns (Uch band Q3 b — the rule's last clause, until now reachable
+  // from the deal card alone, the as-built review EE-1). Then the cell offers
+  // those deals and nothing else: no «— uzish», no «+ Yangi bitim».
+  const dealOwners = mayWriteHere && !mayRefile && openDeals.length > 0
+    ? new Map(
+        (
+          await db
+            .select({ id: deals.id, ownerId: deals.ownerId })
+            .from(deals)
+            .where(inArray(deals.id, openDeals.map((d) => d.id)))
+        ).map((d) => [d.id, d.ownerId]),
+      )
+    : null;
+  const dealOptions = dealOwners
+    ? openDeals.filter((d) =>
+        mayRefileReceipt(actor.permissions, actor.id, refileFacts, { ownerId: dealOwners.get(d.id) ?? null }),
+      )
+    : openDeals;
+  const canLinkDeal = mayWriteHere && (mayRefile || dealOptions.length > 0);
   // The factory truck it came off (0100): shown to everyone who opens the
   // card — the factory's phone is what a goods problem next month needs — and
   // correctable by whoever enters a truck's cost, because linking moves that
@@ -416,16 +445,6 @@ export default async function ReceiptDetailPage({
   const pickupOptions = canLinkPickup
     ? await stopOptionsForWarehouse(receipt.warehouseId).catch(() => [])
     : [];
-  // «The prixod's deal» is the client's OWN (`ownDealOf`, finance/truck-deal.ts
-  // — the rule the seller's «Prixod keldi» message reads the state by): a
-  // client correction leaves `deal_id` on the old client's job, and the block
-  // its «🔗 Bitim biriktirish» button opens must not print that job as linked.
-  const ownDeal =
-    linkedDeal && receipt.clientId && ownDealOf({ dealId: linkedDeal.id, dealClientId: linkedDeal.clientId }, receipt.clientId)
-      ? linkedDeal
-      : null;
-  const foreignDeal = linkedDeal && !ownDeal ? linkedDeal : null;
-  const dealOptions = canLinkDeal ? await openDealsForClient(receipt.clientId!) : [];
   // 0105: a compensation for this prixod's lost cargo follows it to another
   // deal — said under the picker BEFORE the press. Caught: the column is
   // minted this release (#472).
@@ -725,17 +744,24 @@ export default async function ReceiptDetailPage({
                   current={ownDeal ? { id: ownDeal.id, code: ownDeal.code } : null}
                   options={dealChoices}
                   hasCompensation={hasCompensation}
-                  foreign={foreignDeal ? { code: foreignDeal.code } : null}
+                  // Another client's job is named only to whoever may take the
+                  // prixod off it — the sentence offers «Uzish».
+                  foreign={foreignDeal && mayRefile ? { code: foreignDeal.code } : null}
                   // The seller's «🔗 Bitim biriktirish» button outlives the prixod it
                   // was sent about: a wrong prixod is voided and received again, and
                   // the button under the FIRST message still opens this cell — with
                   // the void's only marks (the status chip, the reason) scrolled
                   // under the sticky bar. So the cell says it itself.
                   voided={receipt.status === 'voided'}
+                  // A seller drawn the cell only for the deals HE owns (a loose
+                  // prixod that is not his) may file it there and nothing more.
+                  detachable={mayRefile}
                   newDealHref={
                     // Only for a CONFIRMED prixod — the form refuses any other
-                    // (`bornWithVerdict`), and a link to a refusal is a dead end.
-                    !ownDeal && receipt.status === 'confirmed' && mayEditDealTerms(actor.permissions)
+                    // (`bornWithVerdict`), and a link to a refusal is a dead end;
+                    // and only on a prixod that is his (the born-with door asks
+                    // `refileRefusal` with no target).
+                    !ownDeal && receipt.status === 'confirmed' && mayEditDealTerms(actor.permissions) && mayRefile
                       ? `/bitimlar/new?client=${receipt.clientId}&prixod=${id}`
                       : null
                   }

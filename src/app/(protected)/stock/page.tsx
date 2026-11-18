@@ -107,6 +107,11 @@ export default async function StockPage({
   // A `?wh=` that is not an id is dropped, not bound: postgres refuses to
   // compare a uuid column with «YW», and that refusal is a white page (#514).
   if (params.wh && !isUuidShaped(params.wh)) params.wh = undefined;
+  // The two drill-downs bind the same way, and since 2026-11-18 this screen is
+  // on every seller's menu: a hand-typed `?client=GS777` or a cut pasted link
+  // reads as the whole list, never a white page (the as-built review, SEL-6).
+  if (params.lot && !isUuidShaped(params.lot)) params.lot = undefined;
+  if (params.client && !isUuidShaped(params.client)) params.client = undefined;
   // «Yuk ma'lumoti tekshirildi» (docs/YUK-TEKSHIRUV.md): `?tek=ha|yoq`, and
   // anything else is dropped rather than bound (#514).
   const tek = readCheckFilter(params.tek);

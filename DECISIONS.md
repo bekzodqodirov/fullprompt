@@ -9892,7 +9892,7 @@ words. Asked of him at the same time and NOT changed: why the AI quoted from the
 calculation sent to the VED — none of the day's nine drafts carried a `calc_submit` action, so the model never offered
 one; the chats' words decide whether that is the prompt or the customer's question.
 
-## Sotuvchilar yukni, furalarni va skladlarni ko'radi — a read-only truck door, the first migration that writes a grant, and seeing a colleague's prixod without moving it (2026-11-18; migration 0150 `batches_view`, `when` …129, ledger 151; numbered #1801-#1804)
+## Sotuvchilar yukni, furalarni va skladlarni ko'radi — a read-only truck door, the first migration that writes a grant, and seeing a colleague's prixod without moving it (2026-11-18; migration 0150 `batches_view`, `when` …129, ledger 151; numbered #1801-#1805)
 
 **#1801 — A NEW permission, because every code that opened the trucks was a power to act.** His «sotuvchilarga ham
 skladdagi yuklarni korishga ruxsat ochib berish kerak furalarga va skladlarni korishga ruxsat kerak», then «hammasi
@@ -9949,7 +9949,8 @@ everyday path, from Ostatka and the board. ONE pure predicate `mayRefileReceipt`
 clients.manage, crm.leads.view_all) moves anybody's; a seller moves HIS — the client's manager, the stamped seller,
 or the owner of the deal it stands on — plus one more: a prixod standing on NO deal onto a deal HE owns (the deal
 card's attach for a won lead about a colleague's client, Uch band Q3 b; the refuter's correction to the first
-proposal, which would have refused a seller on his own deal). A NEW deal is always the presser's, so the born-with
+proposal, which would have refused a seller on his own deal). (The rule as SHIPPED is #1805's: the review found the deal it
+stands on must be the client's OWN, and its owner — not the client's seller — decides.) A NEW deal is always the presser's, so the born-with
 door asks it with no target. The card draws the cell only where it holds; `linkReceiptAction` and `createDealAction`'s
 born-with path ask it over facts read server-side (`refileRefusal`) and refuse `not_your_cargo` in words, before
 anything is written — enforced in the two actions, the only src callers of `linkReceipt`, so the eleven integration
@@ -9969,3 +9970,37 @@ now gets the button. The price channel's scrub keeps a truck code in a goods nam
 («its contents sit behind BATCH_READERS»): a seller can now find that truck and read its clients. Kept as a stated
 trade — it needs a truck code TYPED into an item's name — and the comment says so; scrubbing truck codes by data is
 its own round.
+
+**#1805 — Reviewed as built: the deal it stands on is the client's OWN, and its owner decides.** Three lenses
+(the seller, everybody else, the house's rules) with a refuter per finding: six defects, none refuted, and nine nits.
+(1) SEL-1/EE-2: «the owner of the deal it stands on» counted a FOREIGN deal — a client correction
+(`assignReceiptClient`) restamps the prixod and leaves `deal_id` on the old client's job — so that job's seller was
+drawn the full cell on a colleague's client's prixod, filed it on the colleague's deals and opened a deal of his own
+born with it: #1803's LEAK-1 (d) reopened by its own fix. Both readers now hand the door the prixod client's OWN deal
+or none (`ownDealOf`, the card's rule since #1741): the card from `ownDeal`, `refileRefusal` from `receipts.client_id`
+against `deals.client_id`; the door sees no client id, so the rule's comment says who must pass it. A foreign deal
+reads as LOOSE — the last clause may file the prixod onto a deal of ITS client that he owns. (2) SEL-3: the client's
+seller could take the cargo off a colleague's deal about his client — a won lead about a colleague's client is the
+colleague's sale since Uch band Q3 b, and taking its cargo off zeroes his unpaid upsale, the harm #1803 names. A prixod
+on a job somebody OWNS is now that owner's (and the office's) to move; on an ownerless deal or none the client's
+seller and the stamp decide as before. (3) EE-1/SEL-4: the card hid the cell on a loose prixod that is not his even
+where the rule grants one move — onto a deal HE owns — so the deal card could do what the prixod card could not. The
+cell is drawn for that move alone: options filtered by the door with each deal as target (owners read on the page,
+never added to `openDealsForClient`, whose warehouse route serialises its rows), no «— uzish» to save
+(`DealLink.detachable`), no «+ Yangi bitim», and no foreign-deal sentence offering «Uzish». The refusal's words named
+«another seller's client», untrue for an unmanaged client and for the client's own seller on a colleague's deal: both
+keys now state the rule (four locales). (4) SEL-2/EE-3/DOC-2: the deal card's «Prixodni bog‘lash» listed every loose
+prixod of the client to any deal writer and printed every refusal as «Xatolik» — it now offers only what the door
+admits with THIS deal as the target (`unlinkedReceipts` returns the stamp for that, never handed to the picker) and
+says the refusal's code in words. (5) FENCE-1: the wire fence found the CALL and never the obey — an inverted `if`, or
+a bare `await refileRefusal(...)`, is lint-clean and passed it; it now pins `const notHis = …; if (notHis) throw …`
+(receipt-files-wire's idiom), and `refile-door-actions.integration.test.ts` presses both actions as the demo seller
+(refused, nothing moved, no deal minted; his own client's and the Q3 b moves still land). (6) FENCE-2: every
+database case had manager = stamp = owner, so a reader that dropped the deal's owner stayed green: each integration
+case now has ONE fact deciding it (the helper takes a null manager, a null stamp, an ownerless deal and a foreign
+one), and the e2e grew two prixods — a colleague's client on a deal the seller owns (cell drawn), and a loose one
+with a deal of each (only his offered, the colleague's code nowhere in the page, the one move lands). Nits fixed:
+/stock bound a non-uuid `?client=`/`?lot=` (and its XLSX a `?wh=`) into a uuid compare — a white page on a screen now
+in every seller's menu (pre-existing, SEL-6); m9zzt's header still said «the seller is sent home»; the menu test
+never looked at a menu — it now opens the «•••» sheet on each page (E2E-1). Kept, stated: the race between
+`refileRefusal`'s read and the link (#1803).

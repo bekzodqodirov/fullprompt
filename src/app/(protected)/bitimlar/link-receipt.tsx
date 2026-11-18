@@ -30,7 +30,9 @@ export function LinkReceipt({
   const t = useTranslations('deals');
   const tc = useTranslations('common');
   const [receiptId, setReceiptId] = useState('');
-  const [error, setError] = useState(false);
+  // The refusal's CODE, not a boolean: «not_your_cargo» is a sentence about
+  // whose prixod it is (2026-11-18), and «Xatolik» said nothing about it.
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   return (
@@ -70,7 +72,7 @@ export function LinkReceipt({
           onClick={() =>
             startTransition(async () => {
               const result = await linkReceiptAction(receiptId, dealId);
-              setError(!result.ok);
+              setError(result.ok ? null : (result.error ?? 'error'));
               if (result.ok) setReceiptId('');
             })
           }
@@ -78,7 +80,11 @@ export function LinkReceipt({
           {pending ? tc('loading') : tc('save')}
         </button>
       </div>
-      {error && <p className="text-sm font-semibold text-bad">{tc('error')}</p>}
+      {error && (
+        <p className="text-sm font-semibold text-bad" data-testid="link-receipt-error">
+          {error === 'error' ? tc('error') : t(`errors.${error}` as 'errors.validation')}
+        </p>
+      )}
     </div>
   );
 }

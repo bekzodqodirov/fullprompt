@@ -3884,7 +3884,7 @@ caps' rule) for the kinds, the daily count and the new page box `setAutoMinConfi
 rule moved. Open with him: none of the day's drafts carried `calc_submit` — why the AI quoted instead of sending to the
 VED waits on the chats' words.
 
-**Round — sotuvchilar yukni, furalarni va skladlarni ko'radi (2026-11-18; DECISIONS #1801-#1804; migration 0150
+**Round — sotuvchilar yukni, furalarni va skladlarni ko'radi (2026-11-18; DECISIONS #1801-#1805; migration 0150
 `batches_view`, `when` …129 — ledger must reach 151).** His «sotuvchilarga ham skladdagi yuklarni … furalarga va
 skladlarni korishga ruxsat», answered «hammasi sening taklifing» (1a every client's cargo, 2a board + trucks + map +
 «Yo'lda» read-only, 3a Ostatka's picker + the map's pins, 4a a prixod's bills hidden, 8a every seller). Mapped by five
@@ -3896,11 +3896,15 @@ pinned by `batch-read-door.test.ts`; the seller's menu gains /stock /batches /tr
 super_admin lacks is grantable by nobody, #179): seller + super_admin always, admin only when unedited or already a
 truck reader; its test deletes what the seed wrote first or it proves nothing in CI's order. **Seeing a colleague's
 prixod is not moving it** (the judge's LEAK-1, pre-existing, made the everyday path): `mayRefileReceipt`
-(deals/door.ts, pure) — office | the client's manager | the stamped seller | the standing deal's owner | a LOOSE prixod
-onto a deal he owns — asked by the card (no «Bitim» cell otherwise) and by BOTH moving actions over server-read facts
-(`refileRefusal`, refusal `not_your_cargo`); the cell is handed `{id, code, title, cargo}`, never a deal row (the quote
-and discount were in the payload); bills only for `mayReadCostAmounts`; the factory trip a link only for
-`mayReadPickup`. Stated: /bitimlar/[id] still has no owner gate by URL; the price channel keeps truck codes in goods
+(deals/door.ts, pure) — the office moves anybody's; a prixod on a job somebody OWNS is that owner's; on an ownerless
+deal or none, the client's manager | the stamped seller; plus a LOOSE prixod onto a deal he owns. «The deal it stands
+on» is the client's OWN (`ownDealOf`) — both readers pass it, a foreign one reads as loose (#1805: counted, the old
+job's seller filed a colleague's cargo). Asked by the card (the cell where it holds, or — loose and not his — a cell
+offering only his deals, `detachable` false, no «+ Yangi bitim»), by the deal card's «Prixodni bog‘lash» list (the
+deal as target), and by BOTH moving actions over server-read facts (`refileRefusal`, refusal `not_your_cargo` in words);
+the obey is pinned and `refile-door-actions.integration.test.ts` presses both actions as the demo seller. The cell is
+handed `{id, code, title, cargo}`, never a deal row (the quote and discount were in the payload); bills only for
+`mayReadCostAmounts`; the factory trip a link only for `mayReadPickup`; /stock and its XLSX drop a non-uuid id. Stated: /bitimlar/[id] still has no owner gate by URL; the price channel keeps truck codes in goods
 names (a seller can now open that truck); the untick works only from an admin account WITHOUT the seller role
 (`own_role`); rollback deletes the permission row AND 0150's ledger row together (docs/UPDATE.md).
 

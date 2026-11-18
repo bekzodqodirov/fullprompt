@@ -22,12 +22,24 @@ Qadamlar: `docs/UPDATE.md` → «Sotuvchilar yukni, furalarni va skladlarni ko'r
 ### Prixod kartasida
 - **Xarajat summalari** (yo'lkira, rastamojka va boshqalar) sotuvchiga ko'rinmaydi. Sklad, logist, VED, buxgalter va
   admin oldingidek ko'radi.
-- Boshqa sotuvchining mijozi prixodida sotuvchiga **«Bitim» katagi chiqmaydi**. Yukni ko'radi, lekin uni bitimga
-  biriktira olmaydi, boshqa bitimga o'tkaza olmaydi, u uchun yangi bitim ham ocha olmaydi. Server ham rad etadi:
-  «Bu prixod boshqa sotuvchining mijoziga tegishli». Uch holatda hammasi oldingidek ishlaydi: o'z mijozining prixodida,
-  o'z bitimida turgan prixodda va o'ziga yozilgan prixodda.
+- Prixodni bitimlar orasida **kim ko'chiradi** — endi aniq qoida:
+  - **Bitimda turgan prixodni** o'sha bitimning egasi ko'chiradi (yoki ofis: VED, logist, admin). Mijozning sotuvchisi
+    ham emas: hamkasbingiz sizning mijozingiz bo'yicha bitim yutgan bo'lsa, uning yukini o'sha bitimdan olib qo'yib,
+    upsale'ini nolga tushirib bo'lmaydi.
+  - **Bitimsiz prixodni** mijozning sotuvchisi yoki prixod yozilgan sotuvchi ko'chiradi va unga yangi bitim ochadi.
+    Boshqa sotuvchi esa uni faqat **o'zi egasi bo'lgan bitimga** biriktira oladi — prixod kartasida «Bitim» katagida
+    faqat o'z bitimlari chiqadi, «Uzish» va «+ Yangi bitim» chiqmaydi.
+  - Boshqa hollarda «Bitim» katagi umuman chiqmaydi. Server ham rad etadi va sababini so'z bilan aytadi.
+  - Mijoz almashtirilganda prixod eski mijozning bitimida qolib ketgan bo'lsa, o'sha bitimning egasi bu prixodga ega
+    hisoblanmaydi.
+- **Bitim kartasidagi «Prixodni bog‘lash»** ro'yxatida faqat shu odam shu bitimga biriktira oladigan prixodlar
+  chiqadi. Rad etilsa — «Xatolik» emas, sababi yoziladi.
 - Hamkasbining bitim narxi va chegirmasi sahifaga umuman tushmaydi. Oldin sahifa kodida bor edi, ekranda ko'rinmasa ham.
 - Zavod reysi raqami: reys kartasini ocha olmaydigan odamga oddiy matn bo'lib chiqadi. Oldin u ochilmaydigan havola edi.
+
+### Ostatka
+- Manzilga qo'lda yozilgan noto'g'ri qiymat (masalan `/stock?client=GS777`) endi xato sahifasi emas, oddiy ro'yxatni
+  ochadi. Excel yuklab olishda ham shunday.
 
 ### Huquq
 - Yangi huquq: **`batches.view`**. U Boshqaruv → Rollar sahifasida «batches» guruhida turadi va hamma sotuvchilarga
