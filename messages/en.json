@@ -1122,10 +1122,13 @@
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
     "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
+    "dealLinkNotYours": "You cannot move this receipt: it is moved by the client's seller, the seller it was stamped with, the owner of the deal it stands on, or the office. A receipt on no deal can be attached to a deal of your own — open a new deal without the receipt first",
     "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them",
     "dealNew": "Open a new deal",
     "dealForeign": "Still on another client's deal: {code}. Pick this client's own deal, open a new one, or save «Unlink» to take it off that deal.",
     "dealForeignPick": "Still on another client's deal: {code}. Pick this client's own deal, or save «Unlink» to take it off that deal.",
+    "dealPickOwn": "— Choose a deal of yours",
+    "dealForeignOwnOnly": "Left on another client's deal: {code}. Choosing and saving a deal of yours moves the receipt off that deal onto yours.",
     "dealVoided": "This receipt is voided — its cargo counts on no deal."
   },
   "stock": {
@@ -3476,7 +3479,8 @@
       "server_behind": "The server is behind — an administrator must run the migrations.",
       "receipt_has_deal": "This receipt is already on a deal — no new deal was opened. Open the receipt card again.",
       "receipt_not_confirmed": "This receipt is not confirmed, or was voided — no deal was opened for it.",
-      "upsale_paid": "A seller’s share was already paid on the deal this receipt stands on — the accountant takes the payout back first, then the receipt moves."
+      "upsale_paid": "A seller’s share was already paid on the deal this receipt stands on — the accountant takes the payout back first, then the receipt moves.",
+      "not_your_cargo": "You cannot move this receipt: it is moved by the client's seller, the seller it was stamped with, the owner of the deal it stands on, or the office. A receipt on no deal can be attached to a deal of your own — open a new deal without the receipt first"
     },
     "discountTitle": "Discount (damage)",
     "discountAmount": "Discount amount",

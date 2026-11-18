@@ -8,7 +8,7 @@ import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { bornWithVerdict } from '@/modules/wms/receipts/deal-state';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
-import { listStages } from '@/modules/wms/deals/service';
+import { listStages, refileRefusal } from '@/modules/wms/deals/service';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { formStages } from '@/modules/wms/crm/stage-law';
 import { leadLoadMode } from '@/modules/wms/ftl/read';
@@ -88,7 +88,12 @@ export default async function NewDealPage({
         dealClientId: standing?.clientId ?? null,
       },
       preset.id,
-    ) === null
+    ) === null &&
+    // …and only when the prixod is the presser's to move — the action's own
+    // second question (`refileRefusal`, no target): a stale or typed link to a
+    // colleague's cargo draws a plain deal form, not one whose save is refused
+    // (the fixes' review, RR-5).
+    (await refileRefusal(actor, forReceipt.id)) === null
       ? { id: forReceipt.id, number: forReceipt.number ?? '' }
       : null;
 

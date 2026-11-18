@@ -27,7 +27,7 @@ import {
   listStages,
   unlinkedReceipts,
 } from '@/modules/wms/deals/service';
-import { mayEditDealTerms } from '@/modules/wms/deals/door';
+import { mayEditDealTerms, mayRefileReceipt } from '@/modules/wms/deals/door';
 import { batchTabHref, mayOpenBatchCard, mayOpenBatchCosts } from '@/modules/wms/batches/card-door';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { formStages } from '@/modules/wms/crm/stage-law';
@@ -115,6 +115,27 @@ export default async function DealPage({
     unlinkedReceipts(row.deal.clientId),
   ]);
 
+  // The client's loose prixods THIS reader may attach to THIS deal — the refile
+  // door both actions ask (`mayRefileReceipt`, deals/door.ts), with the deal as
+  // its target. The card has no owner gate by URL, so a seller on a colleague's
+  // deal was offered every one of them and every press was refused (the
+  // as-built review, SEL-2/EE-3). The stamp is the door's fact, never the
+  // picker's: dropped before the rows reach the client component.
+  const attachable = unlinked
+    .filter((r) =>
+      mayRefileReceipt(
+        actor.permissions,
+        actor.id,
+        {
+          clientManagerId: row.clientSalesManagerId,
+          stampedSellerId: r.stampedSellerId,
+          standingDealId: null,
+          standingDealOwnerId: null,
+        },
+        { ownerId: row.deal.ownerId },
+      ),
+    )
+    .map((r) => ({ id: r.id, number: r.number, receivedAt: r.receivedAt, goods: r.goods, volumeM3: r.volumeM3, weightKg: r.weightKg }));
   const quotedAmount = row.deal.quotedAmount === null ? null : Number(row.deal.quotedAmount);
   const discount = Number(row.deal.discountAmount);
   const deferred = Boolean(row.deal.deferredAt) && !row.deal.deferralEndedAt;
@@ -433,7 +454,7 @@ export default async function DealPage({
             )}
           </Link>
         ))}
-        {unlinked.length > 0 && <LinkReceipt dealId={row.deal.id} receipts={unlinked} />}
+        {attachable.length > 0 && <LinkReceipt dealId={row.deal.id} receipts={attachable} />}
       </Section>
 
       {/* The charge panel stood here from phase 5 to round 100. The owner

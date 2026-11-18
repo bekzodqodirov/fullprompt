@@ -424,9 +424,10 @@ export async function BatchCard({
 
   return (
     <div className="space-y-3">
-      {/* /batches bounces the accountant, the sellers and the viewer, who reach
-          a truck from money and cargo screens — a back link that bounces is
-          worse than none (#1023). */}
+      {/* /batches bounces the accountant and the viewer, who reach a truck
+          from money and cargo screens — a back link that bounces is worse
+          than none (#1023). The sellers read the board since 2026-11-18
+          (`batches.view`), so they get the link. */}
       {mayReadBatches(actor.permissions) && <BackLink href="/batches" label={t('title')} />}
 
       <div className="card space-y-2 !p-3" data-testid="batch-head">

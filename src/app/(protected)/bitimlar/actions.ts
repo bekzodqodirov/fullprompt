@@ -16,6 +16,7 @@ import {
   deleteDealStage,
   linkReceipt,
   moveDeal,
+  refileRefusal,
   reorderDealStages,
   saveDealStage,
   saveLines,
@@ -156,6 +157,11 @@ export async function createDealAction(
     if (receiptId) {
       const refused = await bornWithRefusal(receiptId, parsed.data.clientId);
       if (refused) throw new DealError(refused);
+      // A deal opened FOR a prixod moves that prixod onto it, so the prixod
+      // must be the presser's to move — asked with no target: the new deal is
+      // always his, and that must not make a colleague's cargo his (2026-11-18).
+      const notHis = await refileRefusal(actor, receiptId);
+      if (notHis) throw new DealError(notHis);
     }
     id = await createDeal({ ...parsed.data, load: readLoad(form, actor) }, ctx);
     if (receiptId && id) {
@@ -370,7 +376,14 @@ export async function linkReceiptAction(
   // G1 a: the VED keeps ALL prixod linking — link, move, detach — and
   // `linkReceipt` audits each one under the presser's name. The presser's
   // FTL door decides whether the move carries an FTL deal's mark (0135).
-  const state = await run('work', (ctx, actor) => linkReceipt(receiptId, dealId, ctx, ftlDoorFor(actor)));
+  // And it must be the presser's prixod to move (`mayRefileReceipt`): since
+  // 2026-11-18 a seller opens every client's prixod from Ostatka and the
+  // board, and seeing a colleague's cargo is not re-filing it.
+  const state = await run('work', async (ctx, actor) => {
+    const notHis = await refileRefusal(actor, receiptId, dealId);
+    if (notHis) throw new DealError(notHis);
+    return linkReceipt(receiptId, dealId, ctx, ftlDoorFor(actor));
+  });
   revalidatePath(`/receipts/${receiptId}`);
   return state;
 }

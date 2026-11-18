@@ -3884,7 +3884,36 @@ caps' rule) for the kinds, the daily count and the new page box `setAutoMinConfi
 rule moved. Open with him: none of the day's drafts carried `calc_submit` — why the AI quoted instead of sending to the
 VED waits on the chats' words.
 
-**Latest migration: 0149** (`agent_full_p2`, `when` …128; ledger must reach **150**). Before
+**Round — sotuvchilar yukni, furalarni va skladlarni ko'radi (2026-11-18; DECISIONS #1801-#1806; migration 0150
+`batches_view`, `when` …129 — ledger must reach 151).** His «sotuvchilarga ham skladdagi yuklarni … furalarga va
+skladlarni korishga ruxsat», answered «hammasi sening taklifing» (1a every client's cargo, 2a board + trucks + map +
+«Yo'lda» read-only, 3a Ostatka's picker + the map's pins, 4a a prixod's bills hidden, 8a every seller). Mapped by five
+readers + a critic, the design judged by four lenses with a refuter per finding. A NEW code `batches.view` because
+every code that opened the trucks ACTS (scan, depart, plan, the VED's rota + every chat): it joins `BATCH_READERS` and
+nothing else; three copies (read-door.ts, nav.ts /batches /trucks /map, workspaces.ts — exported for the fence) are
+pinned by `batch-read-door.test.ts`; the seller's menu gains /stock /batches /trucks /map, the phone bar is unchanged.
+**0150 is the first migration that writes a grant** (the seed skips an edited role, #170, and a code a customised
+super_admin lacks is grantable by nobody, #179): seller + super_admin always, admin only when unedited or already a
+truck reader; its test deletes what the seed wrote first or it proves nothing in CI's order. **Seeing a colleague's
+prixod is not moving it** (the judge's LEAK-1, pre-existing, made the everyday path): `mayRefileReceipt`
+(deals/door.ts, pure) — the office moves anybody's; a seller moves HIS: the client's manager | the stamped seller |
+the owner of the deal it stands on, each alone (the owner OUTRANKING the client's seller was tried and taken back,
+#1806: a one-way door and a hand-over lockout); plus a LOOSE prixod onto a deal he owns. «The deal it stands on» is
+the client's OWN (`ownDealOf`) — both readers pass it, a foreign one reads as loose (#1805). Asked by the card (the
+cell where it holds, or — loose and not his — a cell offering only his deals: a disabled «— o‘z bitimingizni tanlang»
+instead of «Uzish», `detachable` false, the foreign job named, no «+ Yangi bitim»), by the deal card's «Prixodni
+bog‘lash» list (the deal as target), by /bitimlar/new?prixod=, and by BOTH moving actions over server-read facts
+(`refileRefusal`, refusal `not_your_cargo` in words);
+the obey is pinned and `refile-door-actions.integration.test.ts` presses both actions as the demo seller. The cell is
+handed `{id, code, title, cargo}`, never a deal row (the quote and discount were in the payload); bills only for
+`mayReadCostAmounts`; the factory trip a link only for `mayReadPickup`; /stock and its XLSX drop a non-uuid id. Stated: /bitimlar/[id] still has no owner gate by URL; the price channel keeps truck codes in goods
+names (a seller can now open that truck); the untick works only from an admin account WITHOUT the seller role
+(`own_role`); rollback deletes the permission row AND 0150's ledger row together (docs/UPDATE.md). Reviewed as built
+(#1805) and the fixes reviewed (#1806 — the owner outranking the client's seller TAKEN BACK); 44 + 8 red proofs.
+**19,528 unit/integration (953 files) + 535 e2e** (1 skipped) green on a fresh database in CI's order at 2e24381d.
+
+**Latest migration: 0150** (`batches_view`, `when` …129; ledger must reach **151**). Before
+it: 0149 (`agent_full_p2`, `when` …128). Before
 it: 0148 (`agent_full_p1`, `when` …127). Before
 it: 0147 (`prixod_javoblar`, `when` …126). Before
 it: 0146 (`prixod_xabari`, `when` …125). Before
@@ -4038,7 +4067,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **150** since 0149 (149 since 0148, 148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **151** since 0150 (150 since 0149, 149 since 0148, 148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

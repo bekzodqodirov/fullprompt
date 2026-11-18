@@ -36,6 +36,18 @@ export const PERMISSION_CODES = [
   // Batches (M3+)
   'batches.depart_close',
   'batches.vehicle_info',
+  // To SEE the trucks and nothing else (2026-11-18, his «sotuvchilarga …
+  // furalarga va skladlarni korishga ruxsat», answers «hammasi sening
+  // taklifing»): the board, the trucks list, «Yo'lda» and the map. Every
+  // other code that opens them is a power to ACT — load, depart, plan, or
+  // the VED's rota and every manager's chats — so a seller could not be
+  // let in by a checkbox without being handed one of those. It joins the
+  // read door (`wms/batches/read-door.ts`) and nothing else: no action, no
+  // document, no notification audience, no money sight. Shipped by
+  // migration 0150 as well as the matrix, because the seed skips a role an
+  // admin has edited (#170) and a new code a customised super_admin does not
+  // hold can be granted by nobody (#179).
+  'batches.view',
   // VED (M5+)
   'ved.docs',
   // Costs (M1 capture, M6 engine)
@@ -185,6 +197,9 @@ export const ROLE_MATRIX: Record<RoleCode, PermissionCode[]> = {
     'reports.own_clients',
     // Own leads only — `crm.leads.view_all` stays with the owner/admins.
     'crm.leads',
+    // The trucks, the board and the map, read-only (2026-11-18, his 2a 8a):
+    // every client's cargo on them (1a), no money anywhere on those screens.
+    'batches.view',
   ],
   accountant: [
     'finance.expenses',

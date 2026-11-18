@@ -9,7 +9,8 @@ import { database, dropTruck, mintTruck, putQueueBack, readQueue, type QueueRow 
  * 1. The logist types Horgos «3»–«4» and reads it back with his own name.
  * 2. A refusal («5»–«2») keeps what he typed and says why.
  * 3. The VED reads the same number and is offered no fold.
- * 4. The seller is sent home: /trucks is the batch readers' page.
+ * 4. The seller reads the same number and is offered no fold, like the VED
+ *    (`batches.view`, 2026-11-18 — until then /trucks sent him home).
  * 5. The Mashina tab's pins on a truck of this spec's OWN, at 360 px in
  *    Russian and in Uzbek — the reason `whitespace-nowrap` left the buttons:
  *    every pin inside the screen, the document no wider than the phone.
@@ -137,10 +138,17 @@ test('the VED reads the same number and is offered no fold', async ({ page }) =>
   await expect(page.getByTestId('queue-edit-yallama')).toHaveCount(0);
 });
 
-test('the seller is sent home — /trucks is the batch readers’ page', async ({ page }) => {
+test('the seller reads the same number and is offered no fold (`batches.view`, 2026-11-18)', async ({ page }) => {
+  // Until 2026-11-18 the seller was sent home from /trucks. His «sotuvchilarga
+  // … furalarga … korishga ruxsat» opened the trucks to read, so he now sees
+  // the typed wait like the VED does — and, like the VED, cannot type one
+  // (`mayEditBorderQueue` = plans.manage, unscoped).
   await login(page, SELLER);
   await page.goto('/trucks');
-  await expect(page).toHaveURL('/');
+  await expect(page).toHaveURL(/\/trucks$/);
+  await expect(page.getByTestId('queue-value-khorgos')).toContainText(/3–4/);
+  await expect(page.getByTestId('queue-edit-khorgos')).toHaveCount(0);
+  await expect(page.getByTestId('queue-edit-yallama')).toHaveCount(0);
 });
 
 test('the Mashina pins at 360 px, in Russian and in Uzbek: every one inside the phone', async ({ page }) => {

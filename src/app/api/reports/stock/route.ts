@@ -9,6 +9,7 @@ import { arrivalLabelsForPairs } from '@/modules/wms/documents/arrivals';
 import { buildStockXlsx } from '@/modules/wms/reports/stock-xlsx';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import {
   askableSql,
   checkFilterSql,
@@ -53,7 +54,10 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const wh = url.searchParams.get('wh') ?? '';
+  // An id or nothing: postgres refuses to compare a uuid column with «YW», and
+  // that refusal is an error page (#514) — the screen drops it the same way.
+  const rawWh = url.searchParams.get('wh') ?? '';
+  const wh = isUuidShaped(rawWh) ? rawWh : '';
   const q = url.searchParams.get('q') ?? '';
   // The screen's check filter, read by the same rule (#514): anything else is dropped.
   const tek = readCheckFilter(url.searchParams.get('tek'));

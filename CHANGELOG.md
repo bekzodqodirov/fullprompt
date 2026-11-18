@@ -1,5 +1,61 @@
 # CHANGELOG
 
+## 2026-11-18 — Sotuvchilar skladdagi yuklarni, furalarni va skladlarni ko'radi
+
+Sizning so'zingiz: «sotuvchilarga ham skladdagi yuklarni korishga ruxsat ochib berish kerak furalarga va skladlarni
+korishga ruxsat kerak». Javobingiz: «hammasi sening taklifing» (sakkiz savolning hammasi ⭐ bo'yicha).
+
+**Migratsiya bor: 0150.** Deploydan keyin son **151** bo'lishi, `/api/version` bugungi vaqtni ko'rsatishi kerak.
+Qadamlar: `docs/UPDATE.md` → «Sotuvchilar yukni, furalarni va skladlarni ko'radi (2026-11-18, 0150)».
+
+### Sotuvchi menyusida endi
+- **Ostatka** — hamma skladdagi hamma mijozning yuki, sklad tanlash bilan. Egasi aniqlanmagan yuk ham ko'rinadi,
+  Excel yuklab olish ham bor.
+- **Partiya doskasi**, **Mashinalar**, **«Yo'lda»** va **Xarita**. Xaritadagi sklad nuqtalarida har skladda qaysi
+  mijozning qancha yuki borligi ko'rinadi.
+- Hammasi **faqat ko'rish uchun**. Yuklash, jo'natish, bekor qilish, reja, chegara navbatini yozish tugmalari
+  chiqmaydi. Furaning «Xarajatlar», «Narx», «Bojxona» bo'limlari yopiq qoladi.
+- Haydovchi ismi, telefoni va mashina raqami ko'rinadi (fura kartasida oldin ham ko'rinardi).
+- Telegram botda mijoz kodini yozsa, javob ostida «🗺 Xaritada» tugmasi ham chiqadi.
+- Furalar haqidagi Telegram ogohlantirishlari sotuvchilarga **kelmaydi**.
+
+### Prixod kartasida
+- **Xarajat summalari** (yo'lkira, rastamojka va boshqalar) sotuvchiga ko'rinmaydi. Sklad, logist, VED, buxgalter va
+  admin oldingidek ko'radi.
+- Prixodni bitimlar orasida **kim ko'chiradi** — endi aniq qoida:
+  - **Mijozning sotuvchisi**, **prixod yozilgan sotuvchi** yoki prixod turgan **bitimning egasi** — har biri o'zi
+    yetarli. Mijoz boshqa sotuvchiga o'tkazilgan bo'lsa ham, yangi sotuvchi eski bitimlardagi yukni to'g'irlay oladi.
+  - Ofis (VED, logist, admin) hammasini ko'chiradi.
+  - **Bitimsiz prixodni** boshqa sotuvchi faqat **o'zi egasi bo'lgan bitimga** biriktira oladi. Prixod kartasida
+    «Bitim» katagida unga faqat o'z bitimlari chiqadi («— O‘z bitimingizni tanlang»), «Uzish» va «+ Yangi bitim»
+    chiqmaydi.
+  - Boshqa hollarda «Bitim» katagi umuman chiqmaydi. Server ham rad etadi va kim ko'chirishini so'z bilan aytadi.
+  - Mijoz almashtirilganda prixod eski mijozning bitimida qolib ketgan bo'lsa, o'sha bitimning egasi bu prixodga ega
+    hisoblanmaydi.
+  - **Bilib qo'ying:** hamkasbingiz sizning mijozingiz bo'yicha bitim yutgan bo'lsa (uning bitimi), siz — mijozning
+    sotuvchisi — yukni o'sha bitimdan olib qo'ya olasiz va u holda uning **hali to'lanmagan** upsale'i nolga tushadi.
+    To'langan upsale'ning yukini hech kim ko'chira olmaydi (oldingidek).
+- **Bitim kartasidagi «Prixodni bog‘lash»** ro'yxatida faqat shu odam shu bitimga biriktira oladigan prixodlar
+  chiqadi. Rad etilsa — «Xatolik» emas, sababi yoziladi.
+- Hamkasbining bitim narxi va chegirmasi sahifaga umuman tushmaydi. Oldin sahifa kodida bor edi, ekranda ko'rinmasa ham.
+- Zavod reysi raqami: reys kartasini ocha olmaydigan odamga oddiy matn bo'lib chiqadi. Oldin u ochilmaydigan havola edi.
+
+### Ostatka
+- Manzilga qo'lda yozilgan noto'g'ri qiymat (masalan `/stock?client=GS777`) endi xato sahifasi emas, oddiy ro'yxatni
+  ochadi. Excel yuklab olishda ham shunday.
+
+### Huquq
+- Yangi huquq: **`batches.view`**. U Boshqaruv → Rollar sahifasida «batches» guruhida turadi va hamma sotuvchilarga
+  avtomatik berildi.
+- Olib tashlamoqchi bo'lsangiz: «Sales manager» kartasida belgini olib, saqlang. **Diqqat:** buni sotuvchi roli
+  **bo'lmagan** admin akkauntidan qilasiz. Tizim hech kimga o'zida bor rolni o'zgartirishga ruxsat bermaydi, siz esa
+  «admin va sotuvchi» akkaunti bilan kirasiz.
+
+### Bilib qo'ying
+- Sotuvchi endi hamkasbining mijozi yukini ham ko'radi: kod, tovar, rasm, kub, kg (siz 1a dedingiz).
+- Bitim kartasini (`/bitimlar/...`) manzil orqali ochish hali ham cheklanmagan. Bu alohida ish (CRM ruxsatlari).
+  Prixod kartasidan unga havola endi faqat o'z prixodida chiqadi.
+
 ## 2026-11-15 — «O'zi yuborish»: belgilarni va AI ishonchini sahifada o'zingiz o'zgartirasiz
 
 Sizning so'zingiz: «Sahifada narxni belgilab bolmayabti va 80 foizni ham tushirib bolmayabti».

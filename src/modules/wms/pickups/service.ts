@@ -1963,6 +1963,9 @@ export async function receiptPickupInfo(stopId: string | null) {
       code: pickups.code,
       status: pickups.status,
       vehiclePlate: pickups.vehiclePlate,
+      // The trip card's door asks it (`mayReadPickup`): the receipt card links
+      // the trip only for a reader that card admits.
+      destWarehouseId: pickups.destWarehouseId,
       factoryName: factories.name,
       factoryPhone: factories.phone,
       factoryWechat: factories.wechat,

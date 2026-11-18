@@ -89,3 +89,72 @@ export function dealBoardWhose(
     hodim: seesAll && UUID.test(asked.hodim ?? '') ? asked.hodim! : '',
   };
 }
+
+/**
+ * Who may move a prixod between deals — tie it to one, re-file it, take it
+ * off, or open a new deal born with it (2026-11-18).
+ *
+ * The deal-write list alone answered this until the sellers were given every
+ * client's cargo on Ostatka and the board (his «sotuvchilarga … skladdagi
+ * yuklarni korishga ruxsat», 1a): from there every row opens its prixod card,
+ * and the card's «Bitim» cell let any seller take a COLLEAGUE's prixod off the
+ * colleague's deal (which zeroes that deal's unpaid upsale), file it on another
+ * deal, or open a deal of his own born with it. Seeing a colleague's cargo is
+ * what he asked for; moving it is not.
+ *
+ *  - The office decides for everybody: the VED (the prixod links are his work,
+ *    17a / G1 a), whoever manages clients, whoever reads every funnel.
+ *  - A seller (`crm.leads`) moves a prixod that is HIS: he is the client's
+ *    sales manager, or the seller the prixod was stamped with, or the owner of
+ *    the deal it stands on. Each of them alone — so a client handed over to
+ *    him, a deal an admin opened, a colleague's won lead about his client: the
+ *    client's seller can always put his client's cargo right, and so can the
+ *    deal's owner. Letting the owner OUTRANK the client's seller was tried and
+ *    taken back (#1805): it made a colleague's attach a one-way door for the
+ *    client's own seller, and locked a new manager out of the old one's deals.
+ *    The trade, stated: the client's seller can take cargo off a colleague's
+ *    deal about his client, which zeroes that deal's UNPAID upsale — a paid
+ *    one keeps its cargo (`upsale_paid`, the link's own refusal).
+ *  - And one more: a prixod standing on NO deal, onto a deal HE owns — the deal
+ *    card's own attach, for a won lead about a colleague's client (Uch band
+ *    Q3 b), whose prixods are stamped with the colleague.
+ *
+ * «The deal it stands on» is the prixod client's OWN deal (`ownDealOf`,
+ * finance/truck-deal.ts). A client correction leaves `deal_id` on the old
+ * client's job; that job's owner is nobody's owner here — counted, he could
+ * file a colleague's client's cargo on the colleague's deals and open a deal
+ * of his own born with it (the as-built review, SEL-1/EE-2). Both readers
+ * hand the door the OWN deal or none; the door cannot see a client id.
+ *
+ * `target`: `undefined` = the question with no particular deal (the card
+ * drawing its cell, a new deal born with the prixod — a NEW deal is always the
+ * presser's, so it must never count as «his deal»); `null` = taking it off;
+ * `{ ownerId }` = an existing deal.
+ */
+export interface RefileFacts {
+  /** The client's sales manager. */
+  clientManagerId: string | null;
+  /** The seller stamped on the prixod (0117). */
+  stampedSellerId: string | null;
+  /** The prixod client's OWN deal the prixod stands on (`ownDealOf`), and its owner. */
+  standingDealId: string | null;
+  standingDealOwnerId: string | null;
+}
+
+export function mayRefileReceipt(
+  permissions: { has(code: string): boolean },
+  actorId: string,
+  facts: RefileFacts,
+  target?: { ownerId: string | null } | null,
+): boolean {
+  if (permissions.has('ved.docs') || permissions.has('clients.manage') || permissions.has('crm.leads.view_all')) {
+    return true;
+  }
+  if (!permissions.has('crm.leads')) return false;
+  const his =
+    facts.clientManagerId === actorId ||
+    facts.stampedSellerId === actorId ||
+    (facts.standingDealId !== null && facts.standingDealOwnerId === actorId);
+  if (his) return true;
+  return facts.standingDealId === null && target != null && target.ownerId === actorId;
+}

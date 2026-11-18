@@ -50,6 +50,9 @@ import {
   type Deviation,
 } from './deviation';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { mayRefileReceipt } from './door';
+import { ownDealOf } from '../finance/truck-deal';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 
 /**
  * Bitim (deal) — one client's job, from "please price this" to "paid".
@@ -596,6 +599,63 @@ export async function bornWithRefusal(receiptId: string, clientId: string): Prom
   // `linkReceipt` refuses for every door.
   if (row.dealId && (await dealPaidUpsale(db, row.dealId))) return 'upsale_paid';
   return null;
+}
+
+/**
+ * The deal door's «is this prixod his to move» (`mayRefileReceipt`, door.ts)
+ * over facts read HERE, never posted by the browser — asked by the two
+ * actions that move a prixod between deals (`linkReceiptAction`, the new deal
+ * born with a prixod) before anything is written, and fenced by
+ * `tests/unit/refile-door-wire.test.ts`. `target`: `undefined` = no
+ * particular deal (a new one), `null` = taking it off, a uuid = that deal.
+ *
+ * Read on the pool, outside the link's own transaction: the facts it asks —
+ * who manages the client, whose stamp the prixod carries, who owns a deal —
+ * change by an admin's hand, and a race between this read and the link can
+ * only let through a move the presser was entitled to a moment before.
+ * Stated rather than locked (2026-11-18).
+ */
+export async function refileRefusal(
+  actor: { id: string; permissions: { has(code: string): boolean } },
+  receiptId: string,
+  target?: string | null,
+): Promise<'not_your_cargo' | null> {
+  // A posted id that is no uuid would be a 22P02 here; the link refuses it.
+  if (!isUuidShaped(receiptId)) return null;
+  const [row] = await db
+    .select({
+      clientId: receipts.clientId,
+      clientManagerId: clients.salesManagerId,
+      stampedSellerId: receipts.salesManagerId,
+      dealId: receipts.dealId,
+      dealClientId: deals.clientId,
+      dealOwnerId: deals.ownerId,
+    })
+    .from(receipts)
+    .leftJoin(clients, eq(clients.id, receipts.clientId))
+    .leftJoin(deals, eq(deals.id, receipts.dealId))
+    .where(eq(receipts.id, receiptId))
+    .limit(1);
+  // An unknown prixod is the link's own refusal to say (`receipt_not_found`).
+  if (!row) return null;
+  // The deal it stands on is the client's OWN or none (`ownDealOf`, the card's
+  // rule): a client correction leaves `deal_id` on the old client's job, and
+  // that job's owner is no owner of this prixod (the as-built review, SEL-1).
+  const own = row.clientId ? ownDealOf(row, row.clientId) : null;
+  const facts = {
+    clientManagerId: row.clientManagerId,
+    stampedSellerId: row.stampedSellerId,
+    standingDealId: own,
+    standingDealOwnerId: own ? row.dealOwnerId : null,
+  };
+  let targetOwner: { ownerId: string | null } | null | undefined = target === null ? null : undefined;
+  if (typeof target === 'string' && !isUuidShaped(target)) targetOwner = { ownerId: null };
+  else if (typeof target === 'string') {
+    const [deal] = await db.select({ ownerId: deals.ownerId }).from(deals).where(eq(deals.id, target)).limit(1);
+    // An unknown deal is the link's own refusal too; asked as «no owner».
+    targetOwner = { ownerId: deal?.ownerId ?? null };
+  }
+  return mayRefileReceipt(actor.permissions, actor.id, facts, targetOwner) ? null : 'not_your_cargo';
 }
 
 /**
@@ -1959,7 +2019,14 @@ async function receiptContents(receiptIds: string[]) {
  */
 export async function unlinkedReceipts(clientId: string) {
   const rows = await db
-    .select({ id: receipts.id, number: receipts.number, receivedAt: receipts.receivedAt })
+    .select({
+      id: receipts.id,
+      number: receipts.number,
+      receivedAt: receipts.receivedAt,
+      /** The seller the prixod was stamped with — the deal card asks the refile
+          door with it (`mayRefileReceipt`); never handed to the picker. */
+      stampedSellerId: receipts.salesManagerId,
+    })
     .from(receipts)
     .where(
       and(

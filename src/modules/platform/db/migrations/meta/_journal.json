@@ -1051,6 +1051,13 @@
       "when": 1785190000128,
       "tag": "0149_agent_full_p2",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1785190000129,
+      "tag": "0150_batches_view",
+      "breakpoints": true
     }
   ]
 }

@@ -37,10 +37,25 @@ describe('RBAC catalog (spec §16 matrix)', () => {
         // Phase 2.3: own leads only — seeing everyone's needs
         // crm.leads.view_all, which stays with the owner and the logist.
         'crm.leads',
+        // 2026-11-18 (his 2a 8a): the trucks, the board and the map, to READ.
+        'batches.view',
       ]),
     );
     expect(ROLE_MATRIX.sales_manager).not.toContain('crm.leads.view_all');
     expect(ROLE_MATRIX.sales_manager).not.toContain('crm.manage');
+  });
+
+  it('the sellers read the trucks and hold none of the codes that ACT on them', () => {
+    // `batches.view` is the read-only door; every other code that opens the
+    // board is a power — scan, depart, plan, or the VED's rota and chats.
+    for (const code of ['scan.load', 'scan.unload', 'plans.manage', 'batches.depart_close', 'ved.docs', 'batches.vehicle_info'] as const) {
+      expect(ROLE_MATRIX.sales_manager, code).not.toContain(code);
+    }
+    // Only the seller is given it by the matrix; the admins hold everything.
+    for (const role of ROLE_CODES) {
+      const has = ROLE_MATRIX[role].includes('batches.view');
+      expect(has, `${role} batches.view`).toBe(['super_admin', 'admin', 'sales_manager'].includes(role));
+    }
   });
 
   it('the company margin stays away from sales (Phase 2.3/2.4)', () => {

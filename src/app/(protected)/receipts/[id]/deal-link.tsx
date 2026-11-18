@@ -32,7 +32,16 @@ export function DealLink({
   newDealHref = null,
   foreign = null,
   voided = false,
+  detachable = true,
 }: {
+  /**
+   * May this reader take the prixod off a deal (`mayRefileReceipt` with a
+   * `null` target)? False for a seller drawn the cell only to file a prixod
+   * that is not his onto a deal HE owns (2026-11-18): the empty option is then
+   * a disabled «choose a deal of yours» — never «Uzish» — and «Saqlash» waits
+   * for a deal, a foreign one standing or not (the fixes' review, RR-3/T2).
+   */
+  detachable?: boolean;
   /** The prixod is voided: said in the block's own first line (the button that opens it outlives the prixod). */
   voided?: boolean;
   /**
@@ -122,7 +131,13 @@ export function DealLink({
           data-testid="receipt-deal-pick"
           className="input-sm min-w-0 flex-1"
         >
-          <option value="">— {td('unlink')}</option>
+          {detachable ? (
+            <option value="">— {td('unlink')}</option>
+          ) : (
+            <option value="" disabled data-testid="receipt-deal-pick-own">
+              {t('dealPickOwn')}
+            </option>
+          )}
           {options.map((deal) => (
             <option key={deal.id} value={deal.id}>
               {dealOptionLabel(deal)}
@@ -135,7 +150,7 @@ export function DealLink({
             answer that needs no deal at all, «take it off that job», had no
             door anywhere (the deal card only attaches). The press sends what
             the select holds; empty detaches. */}
-        {(dealId !== (current?.id ?? '') || foreign !== null) && (
+        {(dealId !== (current?.id ?? '') || foreign !== null) && (detachable || dealId !== '') && (
           <button
             type="button"
             disabled={pending}
@@ -160,7 +175,7 @@ export function DealLink({
           what this reader is offered: no «open a new one» without the link. */}
       {foreign && (
         <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="receipt-deal-foreign">
-          {t(newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}
+          {t(!detachable ? 'dealForeignOwnOnly' : newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}
         </p>
       )}
       {newDealHref && (
@@ -177,7 +192,11 @@ export function DealLink({
       )}
       {error && (
         <p className="text-sm font-semibold text-bad" data-testid="receipt-deal-error">
-          {error === 'upsale_paid' ? t('dealLinkUpsalePaid') : tc('error')}
+          {error === 'upsale_paid'
+            ? t('dealLinkUpsalePaid')
+            : error === 'not_your_cargo'
+              ? t('dealLinkNotYours')
+              : tc('error')}
         </p>
       )}
     </div>

@@ -138,7 +138,11 @@ describe('the deal cell inside the card’s «ties» (after the merge with docs/
   });
 
   it('the foreign sentence offers only what this reader is offered', () => {
-    expect(link).toContain("{t(newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}");
+    // A third reader since 2026-11-18 (#1806): a seller drawn the cell only to file
+    // the prixod onto a deal of HIS — offered no «Uzish», so his sentence names none.
+    expect(link).toContain(
+      "{t(!detachable ? 'dealForeignOwnOnly' : newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}",
+    );
     for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
       const bundle = JSON.parse(read(`messages/${locale}.json`)) as { receipts: Record<string, string>; deals: Record<string, string> };
       const unlink = bundle.deals.unlink!;
@@ -149,6 +153,9 @@ describe('the deal cell inside the card’s «ties» (after the merge with docs/
       expect(bundle.receipts.dealForeignPick).toContain('{code}');
       // …and the one for a reader with no new-deal door is the shorter of the two.
       expect(bundle.receipts.dealForeignPick!.length).toBeLessThan(bundle.receipts.dealForeign!.length);
+      // The restricted reader's sentence names the job and never the door he lacks.
+      expect(bundle.receipts.dealForeignOwnOnly).toContain('{code}');
+      expect(bundle.receipts.dealForeignOwnOnly).not.toContain(unlink);
     }
   });
 

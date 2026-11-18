@@ -9891,3 +9891,149 @@ the boxes, never arms a colleague's account» (DELIBERATE EDIT), and the holder'
 words. Asked of him at the same time and NOT changed: why the AI quoted from the table where he expected a
 calculation sent to the VED — none of the day's nine drafts carried a `calc_submit` action, so the model never offered
 one; the chats' words decide whether that is the prompt or the customer's question.
+
+## Sotuvchilar yukni, furalarni va skladlarni ko'radi — a read-only truck door, the first migration that writes a grant, and seeing a colleague's prixod without moving it (2026-11-18; migration 0150 `batches_view`, `when` …129, ledger 151; numbered #1801-#1806)
+
+**#1801 — A NEW permission, because every code that opened the trucks was a power to act.** His «sotuvchilarga ham
+skladdagi yuklarni korishga ruxsat ochib berish kerak furalarga va skladlarni korishga ruxsat kerak», then «hammasi
+sening taklifing» to eight ⭐ questions: 1a every client's cargo, 2a the board + the trucks list + the map + «Yo'lda»
+read-only, 3a «skladlar» = Ostatka's warehouse picker and the map's warehouse pins (never the fill block, never
+/admin/warehouses), 4a a prixod's bills hidden from sellers, 5a driver and plate stay visible, 6a unclaimed cargo
+visible, 7a the Ostatka XLSX allowed, 8a every seller automatically. Mapped first by five readers and a critic: /stock,
+its XLSX, a box card, a prixod card and ANY truck card were already open to any login by URL — the seller's menu
+simply did not draw them — while /batches, /trucks, /transit, /map, its cargo API, ⌘K truck hits and the bot's
+«🗺 Xaritada» sat behind `mayReadBatches` = scan.load | scan.unload | ved.docs | plans.manage | batches.depart_close,
+each one a power: scan.load on an unscoped role draws DEPART on every truck, plans.manage makes its holder «the
+office» in nine alert lists and the FTL/cargo-thread doors, ved.docs puts him in the VED rota, opens every manager's
+Telegram chats and HIDES kassa/profit from him. No checkbox could open the board without one of those. Hence
+`batches.view`, which joins `BATCH_READERS` and NOTHING else — no action asks the list, the documents keep their own
+door (`guardBatchDocument`), no notification audience is built on it, no money sight keys on it. The seller's menu
+gains /stock, /batches, /trucks and /map (/transit is a workspace tab off /trucks); the phone bar is unchanged.
+`reports.all_warehouses` (the viewer's grant, «see all warehouses» by its name) was REFUSED as the vehicle: it opens
+the truck card's Xarajatlar tab, the box card's tannarx and /reports/landed-cost. Fences: the NAV /batches entry
+joined the pinned lists (it had lacked `batches.depart_close` since it was written), and workspaces.ts's own copy is
+exported for ONE reader, `batch-read-door.test.ts` — a missed edit there hid «Yo'lda» from whoever the door admits
+with every test green (the judge's CONS-2), so a positive test now says the seeded seller is OFFERED /stock,
+/batches, /trucks, /map and /transit, not only that nothing he is offered bounces. Accepted and stated (CONS-6,
+MWT-4): the truck card now draws a seller the «← Partiyalar» back link and the rename log; his home gains the Sklad
+and Yo'l tiles and the /batches tile reads «Yuklash» — the NAV label every admin's tile reads, renaming it would rename
+the warehouse workers' menu entry; ⌘K truck hits also reach the AI assistant's tier-1 search tool.
+
+**#1802 — The first migration that writes a GRANT, and why the seed could not carry this one.** Until now a new code
+reached a role only through the seed, and the seed steps away from any role an admin has edited (`grants_customised`,
+#170) — on his database a customised «Sotuvchi» would never get it, and a customised «Super admin» would not hold it
+either, which makes it grantable by nobody (`grantableBy` offers only codes the editor holds, #179); the deal actions'
+own comment had refused a new code for exactly that reason. 0150 inserts the code and grants it to `sales_manager`
+and `super_admin` whatever their flag (a code that did not exist cannot have been an admin's refusal, and his 8a
+asks for every seller), and to `admin` only when it is not customised or already holds one of the five reader codes
+(the judge's DEP-4: a customised admin with none of them is one he cut off from the trucks with checkboxes). On a
+fresh database the roles do not exist when migrations run, so the statement grants nothing and the seed's matrix does
+it — which is why the test (`batches-view-migration.integration.test.ts`, the file's own statements in a rolled-back
+transaction) first DELETES what the seed wrote and marks the roles edited: in CI's order a plain re-run inserts 0/0
+and proves nothing (DEP-2), and that statement runs nowhere before production. The untick his 8a promised works only
+from an account holding super_admin/admin and NOT sales_manager (`own_role`), and the box reads the code
+`batches.view` — the screen prints codes, `permissions.description` is read nowhere (DEP-3, CONS-5); both are said in
+the CHANGELOG. Rollback (DEP-5): old code re-posts the unknown code as a locked hidden grant and refuses every save of
+the admin and seller cards; the recipe in docs/UPDATE.md deletes the permission row AND 0150's ledger row together,
+because deleting the row alone means the forward deploy never re-runs 0150.
+
+**#1803 — Seeing a colleague's prixod is not moving it.** The judge's leak lens found the round's real defect, and it
+predates the round: the prixod card's «Bitim» cell asked only the deal-write list (`crm.leads` is on it), so EVERY
+seller was drawn it on EVERY client's prixod, and (a) the cell — a client component — was handed `openDealsForClient`
+rows carrying the quote, and for the deal the prixod stands on the WHOLE row (discount, its reason, the deferral, the
+note), all in the page's payload; (b) it linked the deal card, whose `terms` door asks no owner; (c) `linkReceipt`
+refuses only `client_mismatch`/`upsale_paid`, so a seller could take a colleague's prixod off the colleague's deal —
+which zeroes that deal's unpaid upsale (`WHEN cargo.receipts = 0 THEN 0`) — or file it elsewhere; (d) «+ Yangi bitim»
+opened a deal of his own born with the colleague's cargo. Reachable before by search; this round made it the seller's
+everyday path, from Ostatka and the board. ONE pure predicate `mayRefileReceipt` (deals/door.ts): the office (ved.docs,
+clients.manage, crm.leads.view_all) moves anybody's; a seller moves HIS — the client's manager, the stamped seller,
+or the owner of the deal it stands on — plus one more: a prixod standing on NO deal onto a deal HE owns (the deal
+card's attach for a won lead about a colleague's client, Uch band Q3 b; the refuter's correction to the first
+proposal, which would have refused a seller on his own deal). (The rule as SHIPPED is #1805's: the review found the deal it
+stands on must be the client's OWN, and its owner — not the client's seller — decides.) A NEW deal is always the presser's, so the born-with
+door asks it with no target. The card draws the cell only where it holds; `linkReceiptAction` and `createDealAction`'s
+born-with path ask it over facts read server-side (`refileRefusal`) and refuse `not_your_cargo` in words, before
+anything is written — enforced in the two actions, the only src callers of `linkReceipt`, so the eleven integration
+files that call the service directly stay as they were; the race between the read and the link can only pass a move
+the presser was entitled to a moment before (stated). The cell is handed `{id, code, title, cargo}` and never a deal
+row, on his own prixod too. NOT closed, stated: /bitimlar/[id] still has no owner gate by URL (recorded since phase C)
+— this round stops LINKING to it from a colleague's cargo; closing it is a CRM access round. Also on the card: the
+bills are drawn only for `mayReadCostAmounts` (costs.enter_receipt | costs.enter_batch | reports.all_warehouses — the
+truck Xarajatlar tab's audience plus the prixod's own enterers; his 4a), and the factory trip's code is a link only
+for `mayReadPickup` (it 404'd for a seller, LEAK-2) while the factory's phone stays, as it always was to every reader.
+
+**#1804 — Two tests asserted the opposite of his answer, and one trade is kept.** `m9zzt-chegara-navbat` asserted
+«the seller is sent home from /trucks» — rewritten, DELIBERATELY, to the VED's shape above it: he reads the typed
+wait and is offered no fold (`mayEditBorderQueue` = plans.manage). `bot-lookup`'s «seller gets no map button» used a
+hand-made set without the grant — renamed «a hand the door does not admit», and the real `ROLE_MATRIX.sales_manager`
+now gets the button. The price channel's scrub keeps a truck code in a goods name on a premise this round made false
+(«its contents sit behind BATCH_READERS»): a seller can now find that truck and read its clients. Kept as a stated
+trade — it needs a truck code TYPED into an item's name — and the comment says so; scrubbing truck codes by data is
+its own round.
+
+**#1805 — Reviewed as built: the deal it stands on is the client's OWN, and its owner decides.** Three lenses
+(the seller, everybody else, the house's rules) with a refuter per finding: six defects, none refuted, and eight nits.
+(1) SEL-1/EE-2: «the owner of the deal it stands on» counted a FOREIGN deal — a client correction
+(`assignReceiptClient`) restamps the prixod and leaves `deal_id` on the old client's job — so that job's seller was
+drawn the full cell on a colleague's client's prixod, filed it on the colleague's deals and opened a deal of his own
+born with it: #1803's LEAK-1 (d) reopened by its own fix. Both readers now hand the door the prixod client's OWN deal
+or none (`ownDealOf`, the card's rule since #1741): the card from `ownDeal`, `refileRefusal` from `receipts.client_id`
+against `deals.client_id`; the door sees no client id, so the rule's comment says who must pass it. A foreign deal
+reads as LOOSE — the last clause may file the prixod onto a deal of ITS client that he owns. (2) SEL-3: the client's
+seller could take the cargo off a colleague's deal about his client — a won lead about a colleague's client is the
+colleague's sale since Uch band Q3 b, and taking its cargo off zeroes his unpaid upsale, the harm #1803 names. The
+first fix let the deal's owner OUTRANK the client's seller; #1806 TOOK IT BACK, and the rule is #1803's again. (3) EE-1/SEL-4: the card hid the cell on a loose prixod that is not his even
+where the rule grants one move — onto a deal HE owns — so the deal card could do what the prixod card could not. The
+cell is drawn for that move alone: options filtered by the door with each deal as target (owners read on the page,
+never added to `openDealsForClient`, whose warehouse route serialises its rows), no «— uzish» to save
+(`DealLink.detachable`), no «+ Yangi bitim», and no foreign-deal sentence offering «Uzish» (#1806 made the first two
+real). The refusal's words named
+«another seller's client», untrue for an unmanaged client and for the client's own seller on a colleague's deal: both
+keys now state the rule (four locales). (4) SEL-2/EE-3/DOC-2: the deal card's «Prixodni bog‘lash» listed every loose
+prixod of the client to any deal writer and printed every refusal as «Xatolik» — it now offers only what the door
+admits with THIS deal as the target (`unlinkedReceipts` returns the stamp for that, never handed to the picker) and
+says the refusal's code in words. (5) FENCE-1: the wire fence found the CALL and never the obey — an inverted `if`, or
+a bare `await refileRefusal(...)`, is lint-clean and passed it; it now pins `const notHis = …; if (notHis) throw …`
+(receipt-files-wire's idiom), and `refile-door-actions.integration.test.ts` presses both actions as the demo seller
+(refused, nothing moved, no deal minted; his own client's and the Q3 b moves still land). (6) FENCE-2: every
+database case had manager = stamp = owner, so a reader that dropped the deal's owner stayed green: each integration
+case now has ONE fact deciding it (the helper takes a null manager, a null stamp, an ownerless deal and a foreign
+one), and the e2e grew two prixods — a colleague's client on a deal the seller owns (cell drawn), and a loose one
+with a deal of each (only his offered, the colleague's code nowhere in the page, the one move lands). Nits fixed:
+/stock bound a non-uuid `?client=`/`?lot=` (and its XLSX a `?wh=`) into a uuid compare — a white page on a screen now
+in every seller's menu (pre-existing, SEL-6); m9zzt's header still said «the seller is sent home»; the menu test
+never looked at a menu — it now opens the «•••» sheet on each page (E2E-1). Kept, stated: the race between
+`refileRefusal`'s read and the link (#1803).
+
+**#1806 — The fixes reviewed: the owner may not outrank the client's seller, and a dead prop made live.** Two lenses
+(the rule and its readers, the tests and docs) with a refuter per finding: seven defects, none refuted. (1) RR-1/T1/
+RR-2/T4: #1805 (2)'s «a job somebody owns is that owner's» turned the deal card's kept Q3 b attach into a ONE-WAY door
+— a colleague who owns a deal of your client files your client's loose cargo there and only he or the office can give
+it back, the upsale harm #1803 cites moved onto the client's own seller; the client's seller's own mis-file onto a
+colleague's deal hid his cell for good; and a client handed to a new seller (his «hamma mijozlarga biriktirib
+chiqdim»), a deal an admin opened, a leaver's deal all locked the CURRENT seller out of his client's cargo — the very
+case #1803's old RFE test documented, rewritten instead of pinned. The protection was bypassable besides: the deal
+card has no owner gate by URL, so any seller can make himself the owner from ✏️ and then move the cargo. TAKEN BACK:
+the client's seller, the stamped seller and the owner of the OWN deal it stands on each make the prixod his (#1803's
+rule; #1805's own-deal fix stays). The trade is stated where the rule lives and in the CHANGELOG: the client's seller
+can take cargo off a colleague's deal about his client, zeroing that deal's UNPAID upsale — a paid one keeps its cargo
+(`upsale_paid`, the link's own refusal); narrowing it to «a deal holding a payable offer» was offered by the refuter
+and not built (a third reader of the payable predicate in a door both readers must ask identically). (2) RR-3/T2:
+`DealLink.detachable` changed nothing in any state the card could draw — the restricted cell only exists with no own
+deal standing, and `foreign` was masked for it, so the guard reduced to «a deal picked» either way; its e2e check and
+its red proof pinned a string. The restricted cell's empty option is now a disabled «— o‘z bitimingizni tanlang»
+(never «Uzish»), and (RR-4) the foreign job is named to it in its own sentence (`dealForeignOwnOnly`: saving moves the
+prixod off that job onto yours) — so with a foreign deal standing «Saqlash» waits ONLY because of `detachable`, which
+the e2e's `L` prixod now stands on (left on `O`'s deal). (3) T3: the «on a deal HE owns» e2e passed with the card's
+facts zeroed (the restricted cell draws the same code); it now picks «— Uzish» by value and expects «Saqlash», which
+only the owner fact earns. (4) RR-5/T5: the refusal named neither the stamped seller nor how a born-with refusal is
+cured — both keys now list all four movers and «open the new deal without the receipt first»; and
+/bitimlar/new?prixod= drew «born with» from a stale or typed link the save would refuse — it now asks `refileRefusal`
+too. (5) T6: the deal card's filter fence did not pin `clientManagerId: row.clientSalesManagerId` (a mutation to
+`actor.id` reopened SEL-2 with everything green). (6) T7: «nine nits» was eight. The integration file's cases are now
+the hand-over (RFB, only the manager his), the trade with TWO sellers both ways (RFI: the colleague files, the client's
+seller takes it back, the owner keeps his move), plus #1805's. Red proofs by string edit, each restored by hash: 18 for the round
+(one stayed green and was re-anchored), 14 for #1805's fixes, 12 for these; in a browser against stripped builds,
+2 + 4 + 2 (the payload and cell gates; the menu, the owner fact, the restricted cell, the /stock guard; the restricted
+cell's guard and the full cell). Gates at 2e24381d on a FRESH database in CI's order: vitest 953 files / 19,528 tests,
+build, Playwright 535 passed and 1 skipped; GitHub's check on the same head green.
