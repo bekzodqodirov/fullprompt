@@ -15,9 +15,11 @@ import postgres from 'postgres';
  *  - `SY<4 digits>H`: the super admin's client, stamped with him, on a deal the
  *    SELLER owns (a won lead about a colleague's client, Uch band Q3 b) — only
  *    the deal's owner makes this prixod his (the as-built review, FENCE-2);
- *  - `SY<4 digits>L`: the super admin's client, its prixod on NO deal, with one
- *    deal of each of them — the seller's cell offers his deal and only his
- *    (the as-built review, EE-1).
+ *  - `SY<4 digits>L`: the super admin's client, with one deal of each of them,
+ *    its prixod on no deal of ITS client — left on `O`'s deal, as a client
+ *    correction leaves it — so the seller's cell offers his deal and only his,
+ *    names the foreign job, and waits for a deal before «Saqlash» (the as-built
+ *    review EE-1, the fixes' review RR-3/RR-4).
  *
  * (A client code is at most ten characters, so the marker is short.)
  *
@@ -53,7 +55,7 @@ export interface Minted {
   other: { receiptId: string; dealCode: string };
   /** On a deal the seller owns, of a colleague's client. */
   hisDeal: { receiptId: string; dealCode: string };
-  /** On no deal; `dealCode` is the seller's deal, `theirDealCode` the colleague's. */
+  /** On no deal of its client (left on `other`'s); `dealCode` is the seller's deal, `theirDealCode` the colleague's. */
   loose: { receiptId: string; dealCode: string; theirDealCode: string };
 }
 
@@ -79,6 +81,7 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
       manager: string,
       standsOn: { owner: string } | null,
       money: { quote: string; bill: string } | null,
+      leftOn: string | null = null,
     ) => {
       const code = `${run.marker}${letter}`;
       const [client] = await tx<{ id: string }[]>`
@@ -86,7 +89,7 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
         VALUES (gen_random_uuid(), ${code}, ${`Sotuvchi yuk ${code}`}, ${tx.json([])}, ${manager})
         RETURNING id`;
       const dealCode = `${code}-D`;
-      const dealId = standsOn ? await deal(dealCode, client!.id, standsOn.owner, `Sotuvchi yuk ${letter}`, money?.quote ?? null) : null;
+      const dealId = standsOn ? await deal(dealCode, client!.id, standsOn.owner, `Sotuvchi yuk ${letter}`, money?.quote ?? null) : leftOn;
       const [receipt] = await tx<{ id: string }[]>`
         INSERT INTO receipts (id, number, warehouse_id, client_id, deal_id, sales_manager_id, status, confirmed_at, confirmed_by,
                               source_note, created_by, created_at)
@@ -106,12 +109,12 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
           INSERT INTO cost_entries (id, scope, receipt_id, cost_type_id, amount, currency, cost_date, entered_by, note)
           VALUES (gen_random_uuid(), 'receipt', ${receipt!.id}, ${type.id}, ${money.bill}, 'CNY', current_date, ${owner.id}, ${run.marker})`;
       }
-      return { receiptId: receipt!.id, dealCode, clientId: client!.id };
+      return { receiptId: receipt!.id, dealCode, clientId: client!.id, dealId };
     };
     const mine = await one('M', seller.id, { owner: seller.id }, { quote: QUOTE.MINE, bill: BILL.MINE });
     const other = await one('O', owner.id, { owner: owner.id }, { quote: QUOTE.OTHER, bill: BILL.OTHER });
     const hisDeal = await one('H', owner.id, { owner: seller.id }, null);
-    const loose = await one('L', owner.id, null, null);
+    const loose = await one('L', owner.id, null, null, other.dealId);
     const looseCode = `${run.marker}L`;
     await deal(`${looseCode}-MY`, loose.clientId, seller.id, 'Sotuvchi yuk L — his', null);
     await deal(`${looseCode}-TH`, loose.clientId, owner.id, 'Sotuvchi yuk L — theirs', null);
@@ -128,6 +131,9 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
 export async function cleanupAll(sql: postgres.Sql): Promise<number> {
   const clients = await sql<{ id: string }[]>`
     SELECT id FROM clients WHERE client_code ~ '^SY[0-9]{4}[MOHL]$' AND name = 'Sotuvchi yuk ' || client_code`;
+  // `L`'s prixod stands on `O`'s deal: unhooked first, or a client deleted
+  // before the other trips the receipt → deal key.
+  if (clients.length > 0) await sql`UPDATE receipts SET deal_id = NULL WHERE client_id IN ${sql(clients.map((c) => c.id))}`;
   for (const client of clients) {
     await sql.begin(async (tx) => {
       const receiptIds = (await tx<{ id: string }[]>`SELECT id FROM receipts WHERE client_id = ${client.id}`).map((r) => r.id);

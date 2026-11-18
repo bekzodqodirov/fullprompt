@@ -9892,7 +9892,7 @@ words. Asked of him at the same time and NOT changed: why the AI quoted from the
 calculation sent to the VED — none of the day's nine drafts carried a `calc_submit` action, so the model never offered
 one; the chats' words decide whether that is the prompt or the customer's question.
 
-## Sotuvchilar yukni, furalarni va skladlarni ko'radi — a read-only truck door, the first migration that writes a grant, and seeing a colleague's prixod without moving it (2026-11-18; migration 0150 `batches_view`, `when` …129, ledger 151; numbered #1801-#1805)
+## Sotuvchilar yukni, furalarni va skladlarni ko'radi — a read-only truck door, the first migration that writes a grant, and seeing a colleague's prixod without moving it (2026-11-18; migration 0150 `batches_view`, `when` …129, ledger 151; numbered #1801-#1806)
 
 **#1801 — A NEW permission, because every code that opened the trucks was a power to act.** His «sotuvchilarga ham
 skladdagi yuklarni korishga ruxsat ochib berish kerak furalarga va skladlarni korishga ruxsat kerak», then «hammasi
@@ -9972,7 +9972,7 @@ trade — it needs a truck code TYPED into an item's name — and the comment sa
 its own round.
 
 **#1805 — Reviewed as built: the deal it stands on is the client's OWN, and its owner decides.** Three lenses
-(the seller, everybody else, the house's rules) with a refuter per finding: six defects, none refuted, and nine nits.
+(the seller, everybody else, the house's rules) with a refuter per finding: six defects, none refuted, and eight nits.
 (1) SEL-1/EE-2: «the owner of the deal it stands on» counted a FOREIGN deal — a client correction
 (`assignReceiptClient`) restamps the prixod and leaves `deal_id` on the old client's job — so that job's seller was
 drawn the full cell on a colleague's client's prixod, filed it on the colleague's deals and opened a deal of his own
@@ -9981,13 +9981,13 @@ or none (`ownDealOf`, the card's rule since #1741): the card from `ownDeal`, `re
 against `deals.client_id`; the door sees no client id, so the rule's comment says who must pass it. A foreign deal
 reads as LOOSE — the last clause may file the prixod onto a deal of ITS client that he owns. (2) SEL-3: the client's
 seller could take the cargo off a colleague's deal about his client — a won lead about a colleague's client is the
-colleague's sale since Uch band Q3 b, and taking its cargo off zeroes his unpaid upsale, the harm #1803 names. A prixod
-on a job somebody OWNS is now that owner's (and the office's) to move; on an ownerless deal or none the client's
-seller and the stamp decide as before. (3) EE-1/SEL-4: the card hid the cell on a loose prixod that is not his even
+colleague's sale since Uch band Q3 b, and taking its cargo off zeroes his unpaid upsale, the harm #1803 names. The
+first fix let the deal's owner OUTRANK the client's seller; #1806 TOOK IT BACK, and the rule is #1803's again. (3) EE-1/SEL-4: the card hid the cell on a loose prixod that is not his even
 where the rule grants one move — onto a deal HE owns — so the deal card could do what the prixod card could not. The
 cell is drawn for that move alone: options filtered by the door with each deal as target (owners read on the page,
 never added to `openDealsForClient`, whose warehouse route serialises its rows), no «— uzish» to save
-(`DealLink.detachable`), no «+ Yangi bitim», and no foreign-deal sentence offering «Uzish». The refusal's words named
+(`DealLink.detachable`), no «+ Yangi bitim», and no foreign-deal sentence offering «Uzish» (#1806 made the first two
+real). The refusal's words named
 «another seller's client», untrue for an unmanaged client and for the client's own seller on a colleague's deal: both
 keys now state the rule (four locales). (4) SEL-2/EE-3/DOC-2: the deal card's «Prixodni bog‘lash» listed every loose
 prixod of the client to any deal writer and printed every refusal as «Xatolik» — it now offers only what the door
@@ -10004,3 +10004,32 @@ with a deal of each (only his offered, the colleague's code nowhere in the page,
 in every seller's menu (pre-existing, SEL-6); m9zzt's header still said «the seller is sent home»; the menu test
 never looked at a menu — it now opens the «•••» sheet on each page (E2E-1). Kept, stated: the race between
 `refileRefusal`'s read and the link (#1803).
+
+**#1806 — The fixes reviewed: the owner may not outrank the client's seller, and a dead prop made live.** Two lenses
+(the rule and its readers, the tests and docs) with a refuter per finding: seven defects, none refuted. (1) RR-1/T1/
+RR-2/T4: #1805 (2)'s «a job somebody owns is that owner's» turned the deal card's kept Q3 b attach into a ONE-WAY door
+— a colleague who owns a deal of your client files your client's loose cargo there and only he or the office can give
+it back, the upsale harm #1803 cites moved onto the client's own seller; the client's seller's own mis-file onto a
+colleague's deal hid his cell for good; and a client handed to a new seller (his «hamma mijozlarga biriktirib
+chiqdim»), a deal an admin opened, a leaver's deal all locked the CURRENT seller out of his client's cargo — the very
+case #1803's old RFE test documented, rewritten instead of pinned. The protection was bypassable besides: the deal
+card has no owner gate by URL, so any seller can make himself the owner from ✏️ and then move the cargo. TAKEN BACK:
+the client's seller, the stamped seller and the owner of the OWN deal it stands on each make the prixod his (#1803's
+rule; #1805's own-deal fix stays). The trade is stated where the rule lives and in the CHANGELOG: the client's seller
+can take cargo off a colleague's deal about his client, zeroing that deal's UNPAID upsale — a paid one keeps its cargo
+(`upsale_paid`, the link's own refusal); narrowing it to «a deal holding a payable offer» was offered by the refuter
+and not built (a third reader of the payable predicate in a door both readers must ask identically). (2) RR-3/T2:
+`DealLink.detachable` changed nothing in any state the card could draw — the restricted cell only exists with no own
+deal standing, and `foreign` was masked for it, so the guard reduced to «a deal picked» either way; its e2e check and
+its red proof pinned a string. The restricted cell's empty option is now a disabled «— o‘z bitimingizni tanlang»
+(never «Uzish»), and (RR-4) the foreign job is named to it in its own sentence (`dealForeignOwnOnly`: saving moves the
+prixod off that job onto yours) — so with a foreign deal standing «Saqlash» waits ONLY because of `detachable`, which
+the e2e's `L` prixod now stands on (left on `O`'s deal). (3) T3: the «on a deal HE owns» e2e passed with the card's
+facts zeroed (the restricted cell draws the same code); it now picks «— Uzish» by value and expects «Saqlash», which
+only the owner fact earns. (4) RR-5/T5: the refusal named neither the stamped seller nor how a born-with refusal is
+cured — both keys now list all four movers and «open the new deal without the receipt first»; and
+/bitimlar/new?prixod= drew «born with» from a stale or typed link the save would refuse — it now asks `refileRefusal`
+too. (5) T6: the deal card's filter fence did not pin `clientManagerId: row.clientSalesManagerId` (a mutation to
+`actor.id` reopened SEL-2 with everything green). (6) T7: «nine nits» was eight. The integration file's cases are now
+the hand-over (RFB, only the manager his), the trade with TWO sellers both ways (RFI: the colleague files, the client's
+seller takes it back, the owner keeps his move), plus #1805's.

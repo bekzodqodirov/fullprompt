@@ -36,23 +36,22 @@ describe('mayRefileReceipt — whose prixod it is to move', () => {
     expect(mayRefileReceipt(seller, ME, facts(), { ownerId: COLLEAGUE })).toBe(false);
   });
 
-  it('lets him move his own: the client is his or the stamp, on no deal or an ownerless one; or the deal it stands on is his', () => {
+  it('lets him move his own: the client is his, or the stamp, or the deal it stands on — each one alone', () => {
     const loose = facts({ standingDealId: null, standingDealOwnerId: null });
-    const ownerless = facts({ standingDealOwnerId: null });
     expect(mayRefileReceipt(seller, ME, { ...loose, clientManagerId: ME })).toBe(true);
     expect(mayRefileReceipt(seller, ME, { ...loose, stampedSellerId: ME }, null)).toBe(true);
-    expect(mayRefileReceipt(seller, ME, { ...ownerless, clientManagerId: ME }, { ownerId: COLLEAGUE })).toBe(true);
     expect(mayRefileReceipt(seller, ME, facts({ standingDealOwnerId: ME }), { ownerId: COLLEAGUE })).toBe(true);
     expect(mayRefileReceipt(seller, ME, facts({ standingDealOwnerId: ME }))).toBe(true);
   });
 
-  it('a prixod on a job a colleague OWNS is the colleague’s — even when the client or the stamp is his (Uch band Q3 b, SEL-3)', () => {
-    // Taking it off zeroes the colleague's unpaid upsale: the deal's owner or the office moves it.
-    for (const mine of [{ clientManagerId: ME }, { stampedSellerId: ME }, { clientManagerId: ME, stampedSellerId: ME }]) {
-      expect(mayRefileReceipt(seller, ME, facts(mine)), JSON.stringify(mine)).toBe(false);
-      expect(mayRefileReceipt(seller, ME, facts(mine), null)).toBe(false);
-      expect(mayRefileReceipt(seller, ME, facts(mine), { ownerId: ME })).toBe(false);
-    }
+  it('the client’s seller is never locked out of his client’s cargo by whoever owns the deal (#1805: tried and taken back)', () => {
+    // A client handed over to him, a deal an admin or a colleague opened: the
+    // deal's owner OUTRANKING him made a colleague's attach a one-way door
+    // (the fixes' review, RR-1/T1/T4). Both of them may move it — the stated trade.
+    expect(mayRefileReceipt(seller, ME, facts({ clientManagerId: ME }), null)).toBe(true);
+    expect(mayRefileReceipt(seller, ME, facts({ clientManagerId: ME }), { ownerId: ME })).toBe(true);
+    expect(mayRefileReceipt(seller, ME, facts({ stampedSellerId: ME }), { ownerId: COLLEAGUE })).toBe(true);
+    expect(mayRefileReceipt(seller, COLLEAGUE, facts({ clientManagerId: ME }), null)).toBe(true);
   });
 
   it('lets him attach a prixod standing on NO deal to a deal he owns — and only that', () => {
@@ -136,13 +135,27 @@ describe('the two doors that move a prixod ask the rule — and the card draws b
     // A restricted cell takes nothing off and opens no deal born with it.
     expect(card).toContain('detachable={mayRefile}');
     expect(card).toContain("!ownDeal && receipt.status === 'confirmed' && mayEditDealTerms(actor.permissions) && mayRefile");
-    expect(card).toContain('foreign={foreignDeal && mayRefile ?');
+    // The foreign job is named to whoever is drawn the cell — a restricted one
+    // in its own sentence with no «Uzish» (RR-4); and the empty option there is a
+    // disabled «choose a deal of yours», never «Uzish» (RR-3/T2).
+    expect(card).toContain('foreign={foreignDeal ? { code: foreignDeal.code } : null}');
+    const cell = readFileSync('src/app/(protected)/receipts/[id]/deal-link.tsx', 'utf8');
+    expect(cell).toMatch(/\{detachable \? \(\s*<option value="">— \{td\('unlink'\)\}<\/option>\s*\) : \(\s*<option value="" disabled data-testid="receipt-deal-pick-own">/);
+    expect(cell).toContain("t(!detachable ? 'dealForeignOwnOnly' : newDealHref ? 'dealForeign' : 'dealForeignPick'");
+    expect(cell).toContain("(detachable || dealId !== '')");
+  });
+
+  it('the new-deal form draws «born with» only for a prixod the rule lets the presser move (RR-5)', () => {
+    const page = readFileSync('src/app/(protected)/bitimlar/new/page.tsx', 'utf8');
+    expect(page).toMatch(/\) === null &&[\s\S]{0,400}\(await refileRefusal\(actor, forReceipt\.id\)\) === null\s*\? \{ id: forReceipt\.id/);
   });
 
   it('the deal card offers only the loose prixods the rule lets THIS reader attach to THIS deal (SEL-2)', () => {
     const page = readFileSync('src/app/(protected)/bitimlar/[id]/page.tsx', 'utf8');
     expect(page).toMatch(/const attachable = unlinked\s*\.filter\(\(r\) =>\s*mayRefileReceipt\(/);
-    expect(page).toMatch(/stampedSellerId: r\.stampedSellerId,\s*standingDealId: null,\s*standingDealOwnerId: null,\s*\},\s*\{ ownerId: row\.deal\.ownerId \},/);
+    expect(page).toMatch(
+      /clientManagerId: row\.clientSalesManagerId,\s*stampedSellerId: r\.stampedSellerId,\s*standingDealId: null,\s*standingDealOwnerId: null,\s*\},\s*\{ ownerId: row\.deal\.ownerId \},/,
+    );
     expect(page).toContain('<LinkReceipt dealId={row.deal.id} receipts={attachable} />');
     expect(page).not.toContain('receipts={unlinked}');
     // …and says the refusal in words, never a bare «Xatolik».

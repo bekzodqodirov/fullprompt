@@ -80,23 +80,33 @@ test('his own prixod: the deal cell to work with — still no bill, and no quote
   expect(html).not.toContain(BILL.MINE);
 });
 
-test('a colleague’s client’s prixod on a deal HE owns: the cell is his to work with', async ({ page }) => {
+test('a colleague’s client’s prixod on a deal HE owns: the FULL cell is his to work with', async ({ page }) => {
   // Only the deal's owner makes this prixod his — the client and the stamp are
-  // the colleague's (the as-built review, FENCE-2: the card's fact, in a browser).
+  // the colleague's (the as-built review, FENCE-2). The full cell, not the
+  // restricted one: «— Uzish» is a choice that draws «Saqlash», which only the
+  // owner fact earns (the fixes' review, T3). Not pressed.
   await login(page, SELLER_PHONE);
   await page.goto(`/receipts/${minted.hisDeal.receiptId}`);
   await expect(page.getByTestId('receipt-deal-block')).toContainText(minted.hisDeal.dealCode);
   await expect(page.getByTestId('receipt-costs')).toHaveCount(0);
+  await expect(page.getByTestId('receipt-deal-pick-own')).toHaveCount(0);
+  await page.getByTestId('receipt-deal-pick').selectOption('');
+  await expect(page.getByTestId('receipt-deal-save')).toBeVisible();
 });
 
-test('a colleague’s client’s LOOSE prixod: the cell offers his deal and only his — and files it there', async ({ page }) => {
-  // The rule's last clause on the card (the as-built review, EE-1): no «— uzish»
-  // to save, no «+ Yangi bitim», and the colleague's deal is not even named.
+test('a colleague’s client’s prixod on no deal of its own: the cell offers his deal and only his — and files it there', async ({ page }) => {
+  // The rule's last clause on the card (the as-built review, EE-1): the empty
+  // option is a disabled «choose a deal of yours», never «Uzish»; the foreign
+  // job it was left on is named; «Saqlash» waits for a deal although a foreign
+  // one stands (RR-3/RR-4); no «+ Yangi bitim»; the colleague's deal is not
+  // even in the page.
   await login(page, SELLER_PHONE);
   await page.goto(`/receipts/${minted.loose.receiptId}`);
   const cell = page.getByTestId('receipt-deal-block');
   await expect(cell).toBeVisible();
+  await expect(page.getByTestId('receipt-deal-foreign')).toContainText(minted.other.dealCode);
   const pick = page.getByTestId('receipt-deal-pick');
+  await expect(pick.locator('option[value=""]')).toHaveAttribute('data-testid', 'receipt-deal-pick-own');
   await expect(pick.locator('option', { hasText: minted.loose.dealCode })).toHaveCount(1);
   await expect(pick.locator('option', { hasText: minted.loose.theirDealCode })).toHaveCount(0);
   expect(await page.content()).not.toContain(minted.loose.theirDealCode);

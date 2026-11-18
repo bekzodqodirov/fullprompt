@@ -1122,11 +1122,13 @@
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
-    "dealLinkNotYours": "Bu prixodni ko‘chira olmaysiz. Bitimda turgan prixodni o‘sha bitimning egasi yoki ofis ko‘chiradi; bitimsiz prixodni — mijozning sotuvchisi yoki ofis, siz esa uni faqat o‘z bitimingizga biriktira olasiz",
+    "dealLinkNotYours": "Bu prixodni ko‘chira olmaysiz: uni mijozning sotuvchisi, prixod yozilgan sotuvchi, u turgan bitimning egasi yoki ofis ko‘chiradi. Bitimsiz prixodni o‘z bitimingizga biriktirishingiz mumkin — yangi bitimni avval prixodsiz oching",
     "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi",
     "dealNew": "Yangi bitim ochish",
     "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang, yangisini oching yoki «Uzish»ni saqlab, o'sha bitimdan chiqaring.",
     "dealForeignPick": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang yoki «Uzish»ni saqlab, o'sha bitimdan chiqaring.",
+    "dealPickOwn": "— O‘z bitimingizni tanlang",
+    "dealForeignOwnOnly": "Boshqa mijozning bitimida qolgan: {code}. O‘z bitimingizni tanlab saqlasangiz, prixod o‘sha bitimdan chiqib, sizning bitimingizga o‘tadi.",
     "dealVoided": "Bu prixod bekor qilingan — uning yuki hech qaysi bitimda hisobga olinmaydi."
   },
   "stock": {
@@ -3478,7 +3480,7 @@
       "receipt_has_deal": "Bu prixod allaqachon bitimga biriktirilgan — yangi bitim ochilmadi. Prixod kartasini qayta oching.",
       "receipt_not_confirmed": "Bu prixod tasdiqlanmagan yoki bekor qilingan — unga bitim ochilmadi.",
       "upsale_paid": "Bu prixod turgan bitim bo‘yicha sotuvchiga ulush to‘langan — avval buxgalter to‘lovni qaytarsin, keyin prixod ko‘chiriladi.",
-      "not_your_cargo": "Bu prixodni ko‘chira olmaysiz. Bitimda turgan prixodni o‘sha bitimning egasi yoki ofis ko‘chiradi; bitimsiz prixodni — mijozning sotuvchisi yoki ofis, siz esa uni faqat o‘z bitimingizga biriktira olasiz"
+      "not_your_cargo": "Bu prixodni ko‘chira olmaysiz: uni mijozning sotuvchisi, prixod yozilgan sotuvchi, u turgan bitimning egasi yoki ofis ko‘chiradi. Bitimsiz prixodni o‘z bitimingizga biriktirishingiz mumkin — yangi bitimni avval prixodsiz oching"
     },
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",

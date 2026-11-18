@@ -14,9 +14,10 @@ import { refileRefusal } from '@/modules/wms/deals/service';
  * actions themselves in `refile-door-actions.integration.test.ts`).
  * 2026-11-18: a seller sees every client's prixod, and moves his own.
  *
- * Every case is built so that ONE fact decides it — a fixture where the
- * manager, the stamp and the deal's owner are the same person proves nothing
- * about which of them the reader read (the as-built review, FENCE-2).
+ * Every case that grants a move is built so that ONE fact decides it — a
+ * fixture where the manager, the stamp and the deal's owner are the same
+ * person proves nothing about which of them the reader read (the as-built
+ * review, FENCE-2).
  */
 
 const SUFFIX = String(Date.now()).slice(-5);
@@ -27,6 +28,8 @@ let stage = '';
 const made = { clients: [] as string[], receipts: [] as string[], deals: [] as string[] };
 
 const sellerActor = () => ({ id: seller, permissions: new Set<string>(ROLE_MATRIX.sales_manager) });
+/** The colleague's id with a SELLER's grants — a second seller, never the office. */
+const colleagueSeller = () => ({ id: colleague, permissions: new Set<string>(ROLE_MATRIX.sales_manager) });
 
 async function clientOf(code: string, manager: string | null): Promise<string> {
   const [client] = (await db.execute(sql`
@@ -101,10 +104,13 @@ describe('refileRefusal reads the door’s facts from the database', () => {
     expect(await refileRefusal(sellerActor(), theirs.receiptId, mineToo)).toBe('not_your_cargo');
   });
 
-  it('lets him move his own client’s prixod off a deal he owns, anywhere', async () => {
-    const mine = await prixod(`RFB${SUFFIX}`, { manager: seller, stamped: seller, dealOwner: seller });
-    expect(await refileRefusal(sellerActor(), mine.receiptId)).toBeNull();
-    expect(await refileRefusal(sellerActor(), mine.receiptId, null)).toBeNull();
+  it('a client handed over to him: his client’s prixod on the OLD seller’s deal is his to move (T4)', async () => {
+    // Only the client's manager is his — the stamp and the deal are the colleague's.
+    const handed = await prixod(`RFB${SUFFIX}`, { manager: seller, stamped: colleague, dealOwner: colleague });
+    const his = await dealOf(`RFB${SUFFIX}-MY`, handed.clientId, seller);
+    expect(await refileRefusal(sellerActor(), handed.receiptId)).toBeNull();
+    expect(await refileRefusal(sellerActor(), handed.receiptId, null)).toBeNull();
+    expect(await refileRefusal(sellerActor(), handed.receiptId, his)).toBeNull();
   });
 
   it('reads the client’s manager and the stamp as two facts — either one makes a LOOSE prixod his', async () => {
@@ -131,14 +137,21 @@ describe('refileRefusal reads the door’s facts from the database', () => {
     expect(await refileRefusal(sellerActor(), nobodys.receiptId)).toBeNull();
   });
 
-  it('a prixod on a job a colleague OWNS is the colleague’s — even to the client’s own seller (SEL-3)', async () => {
-    // His client, stamped with him — on the colleague's deal (a won lead about his client).
-    const onTheirs = await prixod(`RFI${SUFFIX}`, { manager: seller, stamped: seller, dealOwner: colleague });
-    const his = await dealOf(`RFI${SUFFIX}-MY`, onTheirs.clientId, seller);
-    expect(await refileRefusal(sellerActor(), onTheirs.receiptId)).toBe('not_your_cargo');
-    expect(await refileRefusal(sellerActor(), onTheirs.receiptId, null)).toBe('not_your_cargo');
-    expect(await refileRefusal(sellerActor(), onTheirs.receiptId, his)).toBe('not_your_cargo');
-    // On an OWNERLESS deal his client's prixod is his again.
+  it('the client’s seller and the deal’s owner each move it — and a colleague’s attach is never a one-way door (RR-1/T1)', async () => {
+    // His client, his stamp; a colleague owns a deal of it (a won lead about his
+    // client, Uch band Q3 b). The colleague files the loose prixod there…
+    const loose = await prixod(`RFI${SUFFIX}`, { manager: seller, stamped: seller });
+    const theirs = await dealOf(`RFI${SUFFIX}-TH`, loose.clientId, colleague);
+    const his = await dealOf(`RFI${SUFFIX}-MY`, loose.clientId, seller);
+    expect(await refileRefusal(colleagueSeller(), loose.receiptId, theirs)).toBeNull();
+    await db.execute(sql`UPDATE receipts SET deal_id = ${theirs}::uuid WHERE id = ${loose.receiptId}::uuid`);
+    // …and the client's seller can take it back — the stated trade (#1805): it
+    // zeroes the colleague's UNPAID upsale; a paid one is the link's `upsale_paid`.
+    expect(await refileRefusal(sellerActor(), loose.receiptId, his)).toBeNull();
+    expect(await refileRefusal(sellerActor(), loose.receiptId, null)).toBeNull();
+    // The deal's owner keeps his move too.
+    expect(await refileRefusal(colleagueSeller(), loose.receiptId, null)).toBeNull();
+    // On an OWNERLESS deal his client's prixod is his as well.
     const onNobodys = await prixod(`RFJ${SUFFIX}`, { manager: seller, stamped: null, dealOwner: null });
     expect(await refileRefusal(sellerActor(), onNobodys.receiptId, null)).toBeNull();
   });

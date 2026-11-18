@@ -36,9 +36,10 @@ export function DealLink({
 }: {
   /**
    * May this reader take the prixod off a deal (`mayRefileReceipt` with a
-   * `null` target)? False for a seller drawn the cell only to file a loose
-   * prixod that is not his onto a deal HE owns (2026-11-18): the empty option
-   * then means «no choice yet», and «Saqlash» waits for a deal.
+   * `null` target)? False for a seller drawn the cell only to file a prixod
+   * that is not his onto a deal HE owns (2026-11-18): the empty option is then
+   * a disabled «choose a deal of yours» — never «Uzish» — and «Saqlash» waits
+   * for a deal, a foreign one standing or not (the fixes' review, RR-3/T2).
    */
   detachable?: boolean;
   /** The prixod is voided: said in the block's own first line (the button that opens it outlives the prixod). */
@@ -130,7 +131,13 @@ export function DealLink({
           data-testid="receipt-deal-pick"
           className="input-sm min-w-0 flex-1"
         >
-          <option value="">— {td('unlink')}</option>
+          {detachable ? (
+            <option value="">— {td('unlink')}</option>
+          ) : (
+            <option value="" disabled data-testid="receipt-deal-pick-own">
+              {t('dealPickOwn')}
+            </option>
+          )}
           {options.map((deal) => (
             <option key={deal.id} value={deal.id}>
               {dealOptionLabel(deal)}
@@ -168,7 +175,7 @@ export function DealLink({
           what this reader is offered: no «open a new one» without the link. */}
       {foreign && (
         <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="receipt-deal-foreign">
-          {t(newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}
+          {t(!detachable ? 'dealForeignOwnOnly' : newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}
         </p>
       )}
       {newDealHref && (

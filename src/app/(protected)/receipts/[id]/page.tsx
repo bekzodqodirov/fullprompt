@@ -744,9 +744,10 @@ export default async function ReceiptDetailPage({
                   current={ownDeal ? { id: ownDeal.id, code: ownDeal.code } : null}
                   options={dealChoices}
                   hasCompensation={hasCompensation}
-                  // Another client's job is named only to whoever may take the
-                  // prixod off it — the sentence offers «Uzish».
-                  foreign={foreignDeal && mayRefile ? { code: foreignDeal.code } : null}
+                  // Another client's job is named to everybody drawn the cell: a
+                  // save takes the prixod off it (RR-4). A restricted cell says
+                  // so in its own sentence, with no «Uzish» in it.
+                  foreign={foreignDeal ? { code: foreignDeal.code } : null}
                   // The seller's «🔗 Bitim biriktirish» button outlives the prixod it
                   // was sent about: a wrong prixod is voided and received again, and
                   // the button under the FIRST message still opens this cell — with
