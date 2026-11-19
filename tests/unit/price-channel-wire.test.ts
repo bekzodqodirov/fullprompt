@@ -41,13 +41,18 @@ describe('the price hooks', () => {
     expect(seal.slice(queue, retire)).toContain('.catch(');
   });
 
-  it('finishCalcRequest claims the answer right after the job closed, before the label read', () => {
+  it('finishCalcRequest claims the answer right after the job closed, before the seller’s ping', () => {
     const finish = body(service, 'export async function finishCalcRequest(');
     const closed = finish.indexOf("'already_closed'", finish.indexOf('await endRequest('));
     const queue = finish.indexOf("queuePriceChannelPost({ kind: 'answer'");
-    const label = finish.indexOf('requestLabel(');
+    // The label read this used to be anchored on moved INTO the ping's own
+    // sender (calc/request-head.ts, where it cannot throw) — the claim still
+    // goes first, before every read the ping makes.
+    const ping = finish.indexOf('sendCalcPing(');
+    expect(ping).toBeGreaterThan(-1);
+    expect(finish).not.toContain('requestLabel(');
     expect(queue).toBeGreaterThan(closed);
-    expect(queue).toBeLessThan(label);
+    expect(queue).toBeLessThan(ping);
   });
 
   it('the shared ending and the recalc both kick the drain', () => {

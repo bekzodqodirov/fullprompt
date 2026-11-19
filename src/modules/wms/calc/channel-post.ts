@@ -147,6 +147,17 @@ export function pickPerUnit(o: {
   return null;
 }
 
+/**
+ * A typed answer's price per cubic metre — rounded to the cent like the seal's
+ * own column (`totalsFor`'s `perM3Usd`) — or null when there is no volume to
+ * divide by. ONE arithmetic for the channel's answer post and the CalcDone ping
+ * (#513), so the two say the same «$/m³» about one answer.
+ */
+export function perM3Of(amount: number, volumeM3: number | null): number | null {
+  if (!Number.isFinite(amount) || volumeM3 === null || !Number.isFinite(volumeM3) || volumeM3 <= 0) return null;
+  return Math.round((amount / volumeM3) * 100) / 100;
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

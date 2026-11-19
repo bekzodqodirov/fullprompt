@@ -21,7 +21,6 @@ import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/
 import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifications/service';
 import { canLogInSql } from '@/modules/platform/users/login';
 import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
-import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { violatedUnique } from '@/modules/platform/db/errors';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
@@ -705,8 +704,10 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
     // The previous holder's copies say it moved on; the taker's own survive.
     retireTaskCopiesSoon({ taskIds: [won.taskId], outcome: 'reassigned', exceptUserIds: [ctx.actorId] });
   } else {
-    const label = await requestLabel(won.entityType, won.entityId);
     try {
+      // Inside the try (R12): the claim is committed, and a label that could
+      // not be read must not throw out of a take that already happened.
+      const label = await requestLabel(won.entityType, won.entityId);
       const task = await createTask(
         {
           title: `Hisoblash: ${label} (${won.itemCount})`,
@@ -738,14 +739,20 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
     action: 'update',
     after: { calcTakenBy: ctx.actorId, calcRequest: id },
   });
-  await notifyStaffTelegram({
-    userIds: [won.requestedBy],
-    type: 'CalcTaken',
-    text:
-      `🧮 Hisoblash olindi: ${await requestLabel(won.entityType, won.entityId)}\n` +
-      `👤 ${await userName(ctx.actorId)}${linkLine(won.entityType, won.entityId)}`,
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, id }, '[calc] taken notify failed'));
+  // The ping's facts, its taker and its link are read where nothing can
+  // throw out of a take that is already committed (request-head.ts, R12).
+  // Dynamic: request-head reaches the card doors, which import this file's
+  // neighbours.
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId: id,
+        ping: { type: 'CalcTaken', takerId: ctx.actorId },
+        requestedBy: won.requestedBy,
+        exceptUserId: ctx.actorId,
+      }),
+    )
+    .catch((err) => logger.error({ err, id }, '[calc] taken notify failed'));
 }
 
 /**
@@ -933,14 +940,16 @@ export async function returnCalcRequest(
     action: 'update',
     after: { calcReturned: id, reason: trimmed.slice(0, 500) },
   });
-  await notifyStaffTelegram({
-    userIds: [row.requestedBy],
-    type: 'CalcReturned',
-    text:
-      `↩️ Hisoblash qaytarildi: ${await requestLabel(row.entityType, row.entityId)}\n` +
-      `📝 ${trimmed.slice(0, 300)}${linkLine(row.entityType, row.entityId)}`,
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, id }, '[calc] returned notify failed'));
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId: id,
+        ping: { type: 'CalcReturned', reason: trimmed.slice(0, 500) },
+        requestedBy: row.requestedBy,
+        exceptUserId: ctx.actorId,
+      }),
+    )
+    .catch((err) => logger.error({ err, id }, '[calc] returned notify failed'));
 
   /**
    * …and the work lands back on the SELLER's day (owner's item 5, question
@@ -1174,20 +1183,22 @@ export async function finishCalcRequest(
   await queuePriceChannelPost({ kind: 'answer', requestId: id }).catch((err) =>
     logger.error({ err, id }, '[price-channel] not queued'),
   );
-  const label = await requestLabel(row.entityType, row.entityId);
   // The seller's push goes BEFORE the bookkeeping (review ved-money-4): the
   // job is already closed with its price, so an audit write that throws
   // below must not also swallow the one message that tells the seller — a
-  // second press reads «already closed» and nobody would ever send it.
-  await notifyStaffTelegram({
-    userIds: [row.requestedBy],
-    type: 'CalcDone',
-    text:
-      `✅ Hisoblash tayyor: ${label}\n💵 ${amount} ${currency}` +
-      `${sellerNote ? `\n📝 ${clipText(sellerNote, 300)}` : ''}` +
-      linkLine(row.entityType, row.entityId),
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
+  // second press reads «already closed» and nobody would ever send it. Its
+  // facts are read inside a sender that cannot throw (R12): the label read
+  // that used to stand here, uncaught, was exactly such a throw.
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId: id,
+        requestedBy: row.requestedBy,
+        ping: { type: 'CalcDone', amount, currency, sellerNote },
+        exceptUserId: ctx.actorId,
+      }),
+    )
+    .catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
   // The AI sotuvchi's own «javob keldi» (0138, regression-5): its own type, no
   // exceptUserId — a no-op unless the agent sent this job. Never throws.
   await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'done', { amountText: `${amount} ${currency}` });
@@ -1384,18 +1395,6 @@ export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Pro
       .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)));
     return rekeyLeadCalcJobsTx(tx, leadId, [{ dealId, requestIds: rows.map((row) => row.id) }]);
   });
-}
-
-/**
- * The card's own address, for a message read on a phone.
- *
- * Through `cardLink` rather than a template literal: where a deal or a lead
- * lives is already answered in one place, and a third copy is the thing #381
- * records (remembered in one place, forgotten in the other).
- */
-export function linkLine(entityType: string, entityId: string): string {
-  const href = cardLink(entityType, entityId);
-  return href ? `\n${href}` : '';
 }
 
 export async function requestLabel(entityType: string, entityId: string): Promise<string> {

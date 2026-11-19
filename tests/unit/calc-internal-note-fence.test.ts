@@ -98,6 +98,9 @@ describe('no seller-facing surface names it', () => {
     'src/app/api/calc/registry/[requestId]/goods/route.ts',
     'src/app/(protected)/hisoblash/[id]/karta/page.tsx',
     'src/components/client-feed.tsx',
+    // The five calc pings' one facts source and renderer — every seller's
+    // «Hisob tayyor» is written here (SEC-10).
+    'src/modules/wms/calc/request-head.ts',
   ];
   it.each(FILES)('%s', (file) => {
     expect(read(file)).not.toMatch(/internalNote|internal_note|calcInternalNote/i);

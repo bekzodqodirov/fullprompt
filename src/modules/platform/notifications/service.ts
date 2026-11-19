@@ -22,6 +22,7 @@ import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
 import { arrivalAlertOf, arrivalOpensDealPicker, isReceiptArrival, receiptArrivalText } from './receipt-arrival';
+import { calcPingOpenLabel } from './calc-ping';
 import { cardStepVerdict, NEW_CLIENT_CARD, noteCardOf, type NoteCardCursor } from './note-card';
 import { reachOf } from './staff';
 import { groupDigits, h, visibleLength } from '../telegram/format';
@@ -1164,8 +1165,13 @@ export function composeStaffMessage(
   return composeStaffHtml(type, renderTelegramText(type, payload, locale), {
     appUrl: process.env.APP_URL,
     // «Prixod keldi» with no deal on the prixod: the link opens the card AT
-    // its deal picker, and the button says what it is for.
-    openLabel: !preRendered && arrivalOpensDealPicker(type, payload) ? L.attachDealButton : L.openInApp,
+    // its deal picker, and the button says what it is for. A calc ping names
+    // the door its writer drew (`payload.openAs`, calc-ping.ts) — by TYPE
+    // first, so no other message linking a lead or a deal is renamed.
+    openLabel:
+      !preRendered && arrivalOpensDealPicker(type, payload)
+        ? L.attachDealButton
+        : (calcPingOpenLabel(type, payload, L) ?? L.openInApp),
   });
 }
 
