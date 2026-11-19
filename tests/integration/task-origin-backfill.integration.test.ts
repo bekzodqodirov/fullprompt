@@ -45,7 +45,10 @@ describe("0124's backfill labels every old task by the door that made it", () =>
     expect(MIGRATION).toContain(`'${PROMISE_TASK_TITLE.replace(/'/g, "''")}%'`);
     const calc = readFileSync('src/modules/wms/calc/service.ts', 'utf8');
     expect(calc).toContain('title: `Hisoblash: ${label} (${items.length})`');
-    expect(calc).toContain("title: `↩️ Ma'lumot to'ldiring: ${await requestLabel(row.entityType, row.entityId)}`");
+    // The label is read beside it now, with its own fallback (review P2-4);
+    // the title's PREFIX — what the backfill matches — is unchanged.
+    expect(calc).toContain("title: `↩️ Ma'lumot to'ldiring: ${label}`");
+    expect(calc).toContain('const label = await requestLabel(row.entityType, row.entityId).catch(');
   });
 
   it('labels each shape, and leaves a person\'s own «Hisoblash: …» alone', async () => {
