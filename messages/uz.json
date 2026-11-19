@@ -4984,7 +4984,8 @@
       "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring.",
       "notCompany": "Faqat umumiy (🏢 Hammaga) zametka yangi mijozga yuborilishi mumkin.",
       "serverBehind": "Server hali yangilanmagan — bir ozdan keyin qayta urinib ko‘ring.",
-      "failed": "Saqlanganini bilib bo‘lmadi — sahifa yangilandi, belgini tekshiring va kerak bo‘lsa qaytadan urinib ko‘ring."
+      "failed": "Saqlanganini bilib bo‘lmadi — sahifa yangilandi, belgini tekshiring va kerak bo‘lsa qaytadan urinib ko‘ring.",
+      "unreachable": "Server javob bermadi — belgi o‘zgarmagan bo‘lishi mumkin. Internetni tekshirib, qaytadan bosing."
     },
     "makeShared": "🏢 Hammaga",
     "makePrivate": "👤 Faqat menda",

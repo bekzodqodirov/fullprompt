@@ -74,9 +74,11 @@ export function NoteList({
     not_company: t('errors.notCompany'),
     server_behind: t('errors.serverBehind'),
     title_taken: t('errors.titleTaken'),
-    // The request itself failed, or the server threw (review W-3): «try
-    // again», never «check the fields» under a checkbox.
+    // The server threw (review W-3): «try again», never «check the fields»
+    // under a checkbox — said as uncertainty, because the page was re-read.
     failed: t('errors.failed'),
+    // No answer at all (fourth check FC2-1): nothing re-read, nothing lost.
+    unreachable: t('errors.unreachable'),
   };
 
   return (
@@ -195,7 +197,10 @@ export function NoteList({
                     // A press that did not land (refused, or the request itself
                     // failed) puts the box back to what the server holds, with
                     // the reason under it.
-                    const res = await setNewClientFlagAction(note.id, on).catch(() => ({ error: 'failed' as const }));
+                    // A request that never got an answer is its own word
+                    // (fourth check FC2-1): the server answers its own failures
+                    // as a value, so only this case reaches the catch.
+                    const res = await setNewClientFlagAction(note.id, on).catch(() => ({ error: 'unreachable' as const }));
                     if (res.error) {
                       setPressed((all) => {
                         const rest = { ...all };
@@ -203,11 +208,17 @@ export function NoteList({
                         return rest;
                       });
                       setRowError({ id: note.id, code: res.error });
-                      // …and the page re-read (third review WORDS-4): a request
-                      // that «failed» may still have committed (a blip after the
-                      // UPDATE), so the box must read what the server HOLDS, not
-                      // the value it had before the press.
-                      router.refresh();
+                      // A server that ANSWERED «failed» may still have
+                      // committed (a blip after the UPDATE, third review
+                      // WORDS-4): the page is re-read so the box says what the
+                      // server holds — and an ON that may have landed shows the
+                      // AI-copy notice (worded «if it changed», FC2-2). Never
+                      // after no answer at all: Next turns that refresh into a
+                      // full reload, and an open note draft is lost with it.
+                      if (res.error !== 'unreachable') {
+                        if (on && res.error === 'failed') setDrift(true);
+                        router.refresh();
+                      }
                       return;
                     }
                     if (on) setDrift(true);

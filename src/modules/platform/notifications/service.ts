@@ -1384,8 +1384,8 @@ async function deliverNoteCard(
     ids: [...card.ids],
     maybe: [...card.maybe],
     skipped: [...card.skipped],
+    skippedWhy: [...card.skippedWhy],
   };
-  const skippedWords: string[] = [];
   const stamp = async () => {
     // Merged in SQL, the cursor's fields only: the frozen plan beside them is
     // never rewritten. `claimed_at` moves with it — the card's HEARTBEAT, so
@@ -1442,8 +1442,8 @@ async function deliverNoteCard(
       // The last attempt, and the bytes are still not ours to send: not in the
       // chat (the body never completed), never retried again — stepped over.
       cursor.skipped.push(stop.index + 1);
+      cursor.skippedWhy.push(`step ${stop.index + 1}: ${stop.description}`);
       cursor.done = stop.index + 2;
-      skippedWords.push(`step ${stop.index + 1}: ${stop.description}`);
       logger.warn(
         { notificationId, step: stop.index + 1, description: stop.description },
         'new-client card: our own file could not be read on the last attempt — stepped over, the rest still go',
@@ -1464,11 +1464,19 @@ async function deliverNoteCard(
   // staff line promised «pastdagi N ta xabar», and in the commonest card —
   // one photo under the whole caption — the skipped step IS the forwardable
   // part. One closing line with the card's own link (the resend lives
-  // there); its failure is logged and never fails a card already sent.
-  if (skippedWords.length > 0) {
+  // there); its failure is logged and never fails a card already sent. From
+  // the SAVED cursor (fourth check FC1-1): a pause after the skip comes back
+  // here on a later run, and this is reached once — when the card completes.
+  // Counted in FILES (FC1-3): one unreadable member costs its whole album.
+  const why = cursor.skippedWhy.length > 0 ? cursor.skippedWhy : cursor.skipped.map((step) => `step ${step}`);
+  if (cursor.skipped.length > 0) {
+    const files = cursor.skipped.reduce((sum, step) => {
+      const planned = card.steps[step - 1];
+      return sum + (planned && planned.kind === 'media' ? planned.files.length : 1);
+    }, 0);
     const closing: StaffMessage = {
       html: h(
-        `⚠ ${skippedWords.length} ta fayl o‘qilmadi va yuborilmadi — yuqoridagi xabar to‘liq emas. ` +
+        `⚠ ${files} ta fayl o‘qilmadi va yuborilmadi — yuqoridagi xabar to‘liq emas. ` +
           'Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» bilan qayta oling.',
       ),
       url: message.url,
@@ -1487,7 +1495,7 @@ async function deliverNoteCard(
     ok: true,
     status: 200,
     messageId: cursor.head,
-    description: skippedWords.length > 0 ? `skipped ${skippedWords.join('; ')}` : '',
+    description: why.length > 0 ? `skipped ${why.join('; ')}` : '',
   };
 }
 

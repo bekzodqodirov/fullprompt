@@ -37,6 +37,13 @@ export interface NoteCardCursor {
    * still reaches the seller — and named in the row's `error`.
    */
   skipped: number[];
+  /**
+   * Why each skipped step was skipped, beside it — the cursor's own, so the
+   * closing line and the row's `error` are built from what was SAVED and not
+   * from one run's memory (fourth check FC1-1: a pause after the skip resumed
+   * with nothing to say, and the seller was never told the card is short).
+   */
+  skippedWhy: string[];
 }
 
 export interface NoteCard extends NoteCardCursor {
@@ -51,8 +58,9 @@ export function noteCardOf(payload: Record<string, unknown>): NoteCard | null {
   const ids = Array.isArray(card.ids) ? card.ids.filter((id): id is number => Number.isInteger(id)) : [];
   const maybe = Array.isArray(card.maybe) ? card.maybe.filter((i): i is number => Number.isInteger(i)) : [];
   const skipped = Array.isArray(card.skipped) ? card.skipped.filter((i): i is number => Number.isInteger(i)) : [];
+  const skippedWhy = Array.isArray(card.skippedWhy) ? card.skippedWhy.filter((w): w is string => typeof w === 'string') : [];
   const head = Number.isInteger(card.head) ? (card.head as number) : null;
-  return { steps: card.steps as NoteSend[], done, head, ids, maybe, skipped };
+  return { steps: card.steps as NoteSend[], done, head, ids, maybe, skipped, skippedWhy };
 }
 
 /**

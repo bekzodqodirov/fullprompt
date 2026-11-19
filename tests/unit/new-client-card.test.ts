@@ -287,6 +287,7 @@ describe('the outcome’s sentences, in all four bundles', () => {
     'quick.addressSelfNobody',
     'clients.addressInactive',
     'notes.errors.failed',
+    'notes.errors.unreachable',
   ];
 
   it('every one formats (ICU-valid) and every outcome has words of its own', () => {
@@ -389,7 +390,9 @@ describe('the card’s short reclaim (review FR1-1)', () => {
 describe('the drain’s cursor rules', () => {
   it('reads a card off a row, and refuses a row of another shape', () => {
     expect(
-      noteCardOf({ card: { steps: [{ kind: 'text', text: 'a' }], done: 2, head: 5, ids: [5, 6], maybe: [1], skipped: [2] } }),
+      noteCardOf({
+        card: { steps: [{ kind: 'text', text: 'a' }], done: 2, head: 5, ids: [5, 6], maybe: [1], skipped: [2], skippedWhy: ['step 2: x', 7] },
+      }),
     ).toEqual({
       steps: [{ kind: 'text', text: 'a' }],
       done: 2,
@@ -397,9 +400,19 @@ describe('the drain’s cursor rules', () => {
       ids: [5, 6],
       maybe: [1],
       skipped: [2],
+      // Words only (fourth check FC1-1) — a stray value of another type is dropped.
+      skippedWhy: ['step 2: x'],
     });
     // A row queued before FR1-4 carries no `skipped`: nothing was stepped over.
-    expect(noteCardOf({ card: { steps: [] } })).toEqual({ steps: [], done: 0, head: null, ids: [], maybe: [], skipped: [] });
+    expect(noteCardOf({ card: { steps: [] } })).toEqual({
+      steps: [],
+      done: 0,
+      head: null,
+      ids: [],
+      maybe: [],
+      skipped: [],
+      skippedWhy: [],
+    });
     expect(noteCardOf({})).toBeNull();
     expect(noteCardOf({ card: { done: 1 } })).toBeNull();
   });
@@ -551,8 +564,14 @@ describe('the wires', () => {
     const refused = list.slice(list.indexOf('const res = await setNewClientFlagAction(note.id, on)'), list.indexOf('if (on) setDrift(true);'));
     expect(refused).toContain('if (res.error) {');
     expect(refused).toContain('delete rest[note.id];');
-    // WORDS-4: a «failed» that may still have committed re-reads the page — the box then says what the server holds.
-    expect(refused).toMatch(/setRowError\(\{ id: note\.id, code: res\.error \}\);[\s\S]*router\.refresh\(\);\s*return;/);
+    // WORDS-4: a «failed» that may still have committed re-reads the page — the box then says what the server holds;
+    // FC2-1: never after NO answer (Next makes that refresh a full reload, and an open note draft goes with it).
+    expect(list).toContain(".catch(() => ({ error: 'unreachable' as const }))");
+    expect(refused).toMatch(/setRowError\(\{ id: note\.id, code: res\.error \}\);[\s\S]*if \(res\.error !== 'unreachable'\) \{[\s\S]*?router\.refresh\(\);\s*\}\s*return;/);
+    expect(list).toContain("unreachable: t('errors.unreachable'),");
+    // …and the action answers its own failures as a value, so only no answer reaches that catch.
+    const flagAction = read('src/app/(protected)/zametkalar/actions.ts');
+    expect(flagAction).toMatch(/setNewClientFlagAction[\s\S]*?catch \(err\) \{\s*unstable_rethrow\(err\);[\s\S]*?return \{ error: 'failed' \};/);
     // CUST-3: the knowledge tab, not the page's default section.
     expect(list).toContain('href="/suhbatlar/ai?bolim=bilimlar"');
     // CUST-8: the «+» says it TO the seller, who is the presser there.

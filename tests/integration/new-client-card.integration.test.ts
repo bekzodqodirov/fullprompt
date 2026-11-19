@@ -734,6 +734,76 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     }
   });
 
+  it('a skip followed by a PAUSE is still said once, when the card completes — from the saved cursor (fourth check FC1-1)', async () => {
+    let textCalls = 0;
+    const sent: string[] = [];
+    __setPlanApi(
+      new Api('TEST:TOKEN', {
+        fetch: (async (url: string, init: { body?: unknown }) => {
+          const method = url.slice(url.lastIndexOf('/') + 1);
+          if (init.body && typeof init.body !== 'string') for await (const _chunk of init.body as AsyncIterable<Uint8Array>) void _chunk;
+          else if (typeof init.body === 'string') {
+            textCalls += 1;
+            // The text step after the skipped photo meets a 429 on the first run.
+            if (textCalls === 1) {
+              return new Response(JSON.stringify({ ok: false, error_code: 429, description: 'Too Many Requests: retry after 1', parameters: { retry_after: 1 } }), {
+                status: 429,
+              });
+            }
+            sent.push(`${method}:${String((JSON.parse(init.body) as { text?: string }).text)}`);
+          }
+          return new Response(JSON.stringify({ ok: true, result: { message_id: (seq += 1), date: 0, chat: { id: 0, type: 'private' } } }), {
+            status: 200,
+          });
+        }) as never,
+      }),
+    );
+    try {
+      const id = await handMade([
+        {
+          kind: 'media',
+          as: 'photo',
+          caption: `Xitoy sklad ${RUN}`,
+          files: [
+            {
+              partId: randomUUID(),
+              attachmentId: randomUUID(),
+              fileName: 'sklad.jpg',
+              storageKey: `staff_note/${TAG}/gone-pause-${RUN}.jpg`,
+              sizeBytes: 1000,
+              sendAs: 'photo',
+              telegramFileId: null,
+              telegramSentAs: null,
+            },
+          ],
+        },
+        { kind: 'text', text: `Bot havolasi ${RUN}` },
+      ]);
+      // The row's LAST attempt: the unreadable photo is stepped over on this run.
+      await db.execute(sql`UPDATE notifications SET attempts = 5 WHERE id = ${id}::uuid`);
+      await drain();
+      const paused = await cursorOf(id);
+      expect(paused.status).toBe('pending');
+      expect(paused.card).toMatchObject({ done: 2, skipped: [1] });
+      // The skip's words are SAVED, not left in one run's memory.
+      expect((paused.card as unknown as { skippedWhy: string[] }).skippedWhy[0]).toMatch(/^step 1: source_unreadable sklad\.jpg/);
+      expect(order.filter((one) => one.via === 'send')).toHaveLength(1);
+
+      __resetTelegramPause();
+      await drain();
+      const [last] = await db.select().from(notifications).where(eq(notifications.id, id));
+      expect(last!.status).toBe('sent');
+      expect(last!.error).toMatch(/^skipped step 1: source_unreadable sklad\.jpg/);
+      expect(sent).toEqual([`sendMessage:Bot havolasi ${RUN}`]);
+      // ONE closing line, on the run that completed the card.
+      const closing = order.filter((one) => one.via === 'send' && one.text.includes('ta fayl o‘qilmadi'));
+      expect(closing).toHaveLength(1);
+      expect(closing[0]!.text).toContain('1 ta fayl o‘qilmadi va yuborilmadi');
+    } finally {
+      __setPlanApi(planApi);
+    }
+  });
+
   it('a card that stops part-way holds the seller’s later rows back, so nothing lands inside it (P1-DLV-4)', async () => {
     const card = await handMade([
       { kind: 'text', text: 'A' },
@@ -787,6 +857,20 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     const backlog: string[] = [];
     for (let i = 0; i < 3; i += 1) backlog.push(await plainRow(`Navbat ${i} ${RUN}`));
     const other = await plainRow(`Boshqa odam ${RUN}`, people.presser);
+    // Only this file's rows are claimable (fourth check FC1-2): any older foreign row is parked first, as
+    // `drain()` parks them, and put back in afterAll — or the claim takes it and asserts about strangers.
+    const foreign = await db
+      .update(notifications)
+      .set({ status: 'sending', claimedAt: new Date() })
+      .where(
+        and(
+          eq(notifications.channel, 'telegram'),
+          eq(notifications.status, 'pending'),
+          notInArray(notifications.userId, Object.values(people)),
+        ),
+      )
+      .returning({ id: notifications.id });
+    for (const row of foreign) parked.add(row.id);
     const claimed = await claimPendingTelegram(2);
     // Two slots, three older rows of the held seller: the claim spent them on somebody else.
     expect(claimed).toContain(other);

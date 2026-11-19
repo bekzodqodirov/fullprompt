@@ -4984,7 +4984,8 @@
       "upload": "The file did not upload. Try again.",
       "notCompany": "Only a company (🏢 Everyone) note can be sent to new clients.",
       "serverBehind": "The server is not updated yet — try again in a moment.",
-      "failed": "Could not tell whether it was saved — the page was refreshed; check the tick and try again if needed."
+      "failed": "Could not tell whether it was saved — the page was refreshed; check the tick and try again if needed.",
+      "unreachable": "The server did not answer — the tick may not have changed. Check the connection and press again."
     },
     "makeShared": "🏢 Make it the company's",
     "makePrivate": "👤 Make it mine only",
