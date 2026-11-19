@@ -307,6 +307,18 @@ export default async function ProfilePage() {
               />
               💬 {tth('notifMuteChat')}
             </label>
+            {/* 0151: the new code's address card, for everybody — whoever
+                mints a code, or is a client's seller, is the one it goes to. */}
+            <label className="flex min-h-10 items-center gap-3">
+              <input
+                type="checkbox"
+                name="mute_yangiMijoz"
+                defaultChecked={mutes.groups.yangiMijoz}
+                className="h-5 w-5"
+                data-testid="profile-mute-new-client"
+              />
+              🆕 {t('notifMuteNewClient')}
+            </label>
             <label className="flex min-h-10 items-center gap-3">
               <input type="checkbox" name="mute_system" defaultChecked={mutes.groups.system} className="h-5 w-5" />
               🛠 {tk('muteSystem')}

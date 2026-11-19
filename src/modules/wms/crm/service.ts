@@ -34,6 +34,7 @@ import { isAgentSource } from './agent-source';
 import { machineStageVerdict } from './forward-stage';
 import { machineMayTouch } from '../agent/machine-owner';
 import { getSetting } from '../../platform/settings/service';
+import type { AddressCardOutcome } from '../client-card/address-card';
 
 /**
  * The funnel's own board-order table (0075).
@@ -1053,6 +1054,13 @@ export interface WinLeadResult {
   minted: boolean;
   /** The deals the lead's OTHER sales opened, beside the main one. */
   otherDeals: { id: string; code: string }[];
+  /** Who got the new code's address card (0151) — only on the press that MINTED it. */
+  addressCard?: AddressCardOutcome;
+  /**
+   * The presser IS the new code's seller (review W-1) — a seller winning his
+   * own lead, or an unowned one: the dialog then says the outcome TO him.
+   */
+  addressCardSelf?: boolean;
 }
 
 /** The win's deals, named by its token: the main deal, and one per other sale (by its oldest request). */
@@ -1096,6 +1104,10 @@ export async function winLead(
   let clientId = lead.clientId;
   let clientCode: string;
   let minted = false;
+  let addressCard: AddressCardOutcome | undefined;
+  // The minted code's seller, kept: the dialog says the address card's
+  // outcome to him in the second person when he is the one who pressed.
+  let sellerId: string | null = null;
   const about = lead.clientId ? undefined : (await aboutClientsOf([id])).get(id);
   if (clientId) {
     const existing = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
@@ -1119,6 +1131,7 @@ export async function winLead(
     // for it would be a second customer card for one person, owned by the
     // wrong seller (judge money-8).
     if (about) throw new CrmError('lead_about_client');
+    sellerId = input.salesManagerId || lead.ownerId || ctx.actorId;
     const client = await createClient(
       {
         clientCode: input.clientCode?.trim() ?? '',
@@ -1126,7 +1139,7 @@ export async function winLead(
         phones: lead.phone ? [lead.phone] : [],
         // Round 91's money scope keys every seller read on this column — a
         // client minted without it is invisible to the seller who just won it.
-        salesManagerId: input.salesManagerId || lead.ownerId || ctx.actorId,
+        salesManagerId: sellerId,
         messengerNote: '',
         notes: lead.note ?? '',
         active: true,
@@ -1152,6 +1165,17 @@ export async function winLead(
       // against the old index — and says so in words (judge deploy-1).
       if (isUniqueViolation(err)) throw new CrmError('server_behind');
       throw err;
+    }
+    // 0151: the new code's address card, HERE and nowhere later (judge R7).
+    // Before this write a throw would leave the lead clientless and the retry
+    // would mint a second code; after the deal transaction a `changed` or any
+    // later throw would retry with the client already on the lead — `minted`
+    // false — and the card would never go. Right after the client lands on
+    // the lead it goes exactly once, and on the pool (no transaction is held
+    // here). It never throws. `convertLeadAction` reaches it through here too.
+    if (minted) {
+      const { sendNewClientCard } = await import('../client-card/address-card');
+      addressCard = await sendNewClientCard(clientId!, ctx.actorId);
     }
     await writeAudit(db, ctx, {
       entityType: 'lead',
@@ -1306,6 +1330,7 @@ export async function winLead(
     dealCode: codeOf.get(mainDealId) ?? '',
     minted,
     otherDeals: others.map((other) => ({ id: other.id, code: codeOf.get(other.id) ?? '' })),
+    ...(addressCard ? { addressCard, addressCardSelf: sellerId === ctx.actorId } : {}),
   };
 }
 

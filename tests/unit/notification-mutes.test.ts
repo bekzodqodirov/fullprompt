@@ -7,6 +7,7 @@ import {
   isTelegramMuted,
   listFromGroups,
   MUTE_GROUPS,
+  UNMUTABLE_TYPES,
 } from '@/modules/platform/notifications/mutes';
 
 describe('notification mutes (spec §11 per-user mute)', () => {
@@ -39,6 +40,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       owner: false,
       debt: false,
       chat: false,
+      yangiMijoz: false,
     });
     expect(list).toEqual([...MUTE_GROUPS.digest, ...MUTE_GROUPS.operations]);
     const back = groupsFromList(list);
@@ -54,6 +56,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       owner: false,
       debt: false,
       chat: false,
+      yangiMijoz: false,
     });
   });
 
@@ -72,6 +75,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       owner: false,
       debt: false,
       chat: false,
+      yangiMijoz: false,
     });
     expect(isTelegramMuted(everythingElse, 'OwnerSummary')).toBe(false);
     const own = listFromGroups(false, {
@@ -85,6 +89,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       owner: true,
       debt: false,
       chat: false,
+      yangiMijoz: false,
     });
     expect(own).toEqual(['OwnerSummary']);
     expect(isTelegramMuted(own, 'OwnerSummary')).toBe(true);
@@ -104,6 +109,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       owner: false,
       debt: false,
       chat: false,
+      yangiMijoz: false,
     });
     expect(list).toEqual(['all']);
     const back = groupsFromList(list);
@@ -119,6 +125,7 @@ describe('notification mutes (spec §11 per-user mute)', () => {
       owner: true,
       debt: true,
       chat: true,
+      yangiMijoz: true,
     });
   });
 
@@ -163,6 +170,7 @@ describe('0126 — «qarzga yuk berildi» has its own switch (the owner’s D6a)
     owner: false,
     debt: false,
     chat: false,
+    yangiMijoz: false,
   };
 
   it('a list muting every OTHER group does not mute it — the control he asked for is never born silent', () => {
@@ -183,6 +191,7 @@ describe('0126 — «qarzga yuk berildi» has its own switch (the owner’s D6a)
       owner: true,
       debt: false,
       chat: false,
+      yangiMijoz: false,
     });
     expect(isTelegramMuted(everythingElse, 'DebtReleased')).toBe(false);
     expect(groupsFromList(everythingElse).groups.debt).toBe(false);
@@ -237,10 +246,63 @@ describe('«navbatda kechikdi» (docs/XORGOS-NAVBAT.md §3) rides with the truck
       owner: false,
       debt: false,
       chat: false,
+      yangiMijoz: false,
     });
     expect(isTelegramMuted(ticked, 'TruckQueueLate')).toBe(true);
     expect(isTelegramMuted(['TruckSilent'], 'TruckQueueLate')).toBe(false);
     const sender = readFileSync(resolve(__dirname, '../../src/modules/wms/tracking/queue-alert.ts'), 'utf8');
     expect(sender).toContain("type: 'TruckQueueLate',");
+  });
+});
+
+describe('0151 — the new-client address card has its own switch', () => {
+  const none = {
+    digest: false,
+    calls: false,
+    leads: false,
+    tasks: false,
+    alerts: false,
+    operations: false,
+    system: false,
+    owner: false,
+    debt: false,
+    chat: false,
+    yangiMijoz: false,
+  };
+
+  it('is born whole, and no OTHER box silences it — a seller who muted the routine still gets the card', () => {
+    // Sent through notifyStaffTelegram (wms/client-card/address-card.ts), so
+    // the routing scan above cannot see it — named here.
+    expect(MUTE_GROUPS.yangiMijoz).toEqual(['NewClientCard']);
+    expect(FOUNDERS.yangiMijoz).toEqual(['NewClientCard']);
+    expect(MUTE_GROUPS.operations).not.toContain('NewClientCard');
+    const everythingElse = listFromGroups(false, {
+      digest: true,
+      calls: true,
+      leads: true,
+      tasks: true,
+      alerts: true,
+      operations: true,
+      system: true,
+      owner: true,
+      debt: true,
+      chat: true,
+      yangiMijoz: false,
+    });
+    expect(isTelegramMuted(everythingElse, 'NewClientCard')).toBe(false);
+    expect(groupsFromList(everythingElse).groups.yangiMijoz).toBe(false);
+  });
+
+  it('its own box mutes it, «all» still does, and it is never the AI’s unmutable kind', () => {
+    const own = listFromGroups(false, { ...none, yangiMijoz: true });
+    expect(own).toEqual(['NewClientCard']);
+    expect(isTelegramMuted(own, 'NewClientCard')).toBe(true);
+    expect(groupsFromList(own).groups.yangiMijoz).toBe(true);
+    expect(isTelegramMuted(['all'], 'NewClientCard')).toBe(true);
+    expect((UNMUTABLE_TYPES as readonly string[]).includes('NewClientCard')).toBe(false);
+    const sender = readFileSync(resolve(__dirname, '../../src/modules/wms/client-card/address-card.ts'), 'utf8');
+    expect(sender).toContain('type: NEW_CLIENT_CARD,');
+    const constant = readFileSync(resolve(__dirname, '../../src/modules/platform/notifications/note-card.ts'), 'utf8');
+    expect(constant).toContain("export const NEW_CLIENT_CARD = 'NewClientCard';");
   });
 });

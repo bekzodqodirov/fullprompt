@@ -75,7 +75,15 @@ function runs(files: NoteFile[]): { as: 'photo' | 'document'; files: NoteFile[] 
  * that order (`attachments` is shared by nine entity types and has none).
  */
 export function notePlan(note: NoteHead, files: NoteFile[]): NoteSend[] {
-  const caption = noteCaption(note);
+  return stepsFor(noteCaption(note), files);
+}
+
+/**
+ * The words and the files, as sends — the ONE caption rule both plans follow
+ * (a 📌 tap and the new-client card), so the card can never grow a second
+ * idea of «when does the text ride the photo».
+ */
+function stepsFor(caption: string, files: NoteFile[]): NoteSend[] {
   const sends: NoteSend[] = [];
   const groups = runs(files);
 
@@ -96,6 +104,43 @@ export function notePlan(note: NoteHead, files: NoteFile[]): NoteSend[] {
   });
 
   return sends;
+}
+
+/**
+ * The new-client card's forwardable part (the owner, 2026-11-19: «code
+ * berganda shu adreslar va botga ssilka qoshilib berilsin … sotuvchilar shuni
+ * ozini pereslat qilishsin»): EVERY ticked company note merged into ONE note
+ * and planned by the 📌 rule above.
+ *
+ * Merged, not one plan per note: a seller forwards by multi-selecting
+ * messages on a phone, and three notes planned apart are three captions, a
+ * footer and a staff line to pick out by hand — miss one and the customer has
+ * two addresses of three, silently. Merged, the commonest card (his three
+ * addresses and one picture) is ONE photo with every word under it.
+ *
+ *   - the text: each note's caption — TITLE kept, exactly what 📌 sends for
+ *     that note — in the notes' own order, a blank line between, then the
+ *     footer the caller built (the marking line, his reminder, the bot line);
+ *   - the files: every part, in note order and then part order;
+ *   - text ≤ 1024 with any file → the caption rides the first file; otherwise
+ *     the text goes first (split, never cut) and the files after it, bare —
+ *     always contiguous, so nothing else lands between them in the chat (a
+ *     card that stops part-way holds the seller's other rows back until its
+ *     remainder has gone — the drain's `heldFor`, review P1-DLV-4).
+ *
+ * `notes` arrive read through the visibility rule and in their order, `files`
+ * in note order then part order. `messages` is counted from the SAME steps
+ * that are sent, so the staff line's «N ta xabar» cannot disagree with what
+ * arrives.
+ */
+export function newClientPlan(
+  notes: NoteHead[],
+  files: NoteFile[],
+  footer: string,
+): { steps: NoteSend[]; messages: number } {
+  const text = [...notes.map(noteCaption), footer.trim()].filter((part) => part !== '').join('\n\n');
+  const steps = stepsFor(text, files);
+  return { steps, messages: planMessageCount(steps) };
 }
 
 /** How many Telegram messages a plan becomes — a media group is its members. */

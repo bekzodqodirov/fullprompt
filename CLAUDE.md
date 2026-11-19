@@ -3912,7 +3912,39 @@ names (a seller can now open that truck); the untick works only from an admin ac
 (#1805) and the fixes reviewed (#1806 — the owner outranking the client's seller TAKEN BACK); 44 + 8 red proofs.
 **19,528 unit/integration (953 files) + 535 e2e** (1 skipped) green on a fresh database in CI's order at 2e24381d.
 
-**Latest migration: 0150** (`batches_view`, `when` …129; ledger must reach **151**). Before
+**Round — yangi kodga manzil xabari + to'liq «Hisob tayyor» (2026-11-19; DECISIONS #1807-#1815; migration 0151
+`new_client_card`, `when` …130 — ledger must reach 152).** His «klient code ochilganda sklad adresi … botga ssilka
+qoshilib berilsin telegramga kelsin sotuvchilar shuni ozini pereslat qilishsin» + «hisob tayyor … qaysi klient qaysi
+bitim … qaysi lid qanday tovar … ssilka», answered «hammasi ⭐, 5: «Xitoy sklad» zametkasi (3 manzil + rasm), 9: $/kub
+ham». PR #155 (the seller cargo view, 0150) was merged and he said «ishladi yaxshi» (count not quoted). PART 1: the
+addresses are a ticked COMPANY zametka — `staff_notes.for_new_client` (SQL-only; CHECK company-only), one writer
+`setNewClientFlag` (`admin.settings.manage`), one reader `newClientNotes` through `visibleNotes`; NOT
+`warehouses.address` (the arrival's DESTINATION) and NOT the AI's `kb_facts` (two copies now — the save says so). The
+bot link is ONE generic `t.me/<bot>?start=mijoz` (`mijoz-start.ts`: clears the advert visit and the «Hodim» wait,
+greets once, the cabinet's own phone check) — a personal link with a seller ✅ is #111's incident one tap away. The
+footer is the system's: «Markirovka / 唛头: CODE», his `GS_REMINDER` verbatim (unless the notes carry «唛头»), the bot
+line. `NewClientCard` is a pre-rendered notification with its plan FROZEN in `payload.card.steps`; the drain's
+`deliverNoteCard` sends the staff line first, then `sendPlan` (extracted from note-send.ts), stamping a per-step
+cursor with `claimed_at = now()` (heartbeat; `CARD_RECLAIM_MINUTES` 5); a card part-way holds its seller's other rows
+in the run AND in the claim (`NOT EXISTS` a 'sending' card with `done > 0`); `redactToken` keeps the bot token out of
+`notifications.error`; an unreadable source is `source_unreadable` (retried, then stepped over with ONE closing line
+from the saved cursor, `skippedWhy`); an album has the single photo's repairs. Doors: «+», the full form, `winLead`'s
+mint block — never `createClient` (fenced). `cardRecipient`: seller ok → seller; seller muted → nobody
+(`muted`/`muted_unlinked`); seller unlinked → the presser; outcomes a closed set (`ADDRESS_FLASHES`, `addressWordOf`,
+second person when the presser IS the seller). «📨 Manzil xabarini menga yuborish» on the client card; mute group
+«Yangi mijoz xabari». PART 2: `calcRequestFacts` + `calcPingText` (wms/calc/request-head.ts, cannot throw) give every
+calc ping the client/deal/lead/goods/kg/m³ head, gated per recipient (`canWriteDeal`, `mayOpenLead`), the link the
+reader's own (`calcJobDoorFor` → «↗️ Lidni/Bitimni/Hisobni ochish»), the chain's V (`quoteNoFor`), told to the
+requester AND the card's owner unless the AI speaks for it; $/kub = the seal's `perM3Usd` or the answer ÷ the volume,
+USD only, `perM3Of` + `roundCents` (one arithmetic with the channel), spelled by `usd()`; every post-commit audit in
+seal/take/return/recalc is caught so nothing loses the ping. Reviewed FOUR times after the build (10, 8, 3, 2 upheld,
+all fixed); 15 + 16 + 31 + 7 + 19 + 6 + 6 + 4 red proofs. TRAPS: a builder's database stands at the builder's
+migration level (six correct tests read «column for_new_client does not exist»); a fence I did not run (the 0124
+backfill's title literal) went red only in the full run.
+**19,658 unit/integration (959 files) + 535 e2e** (1 skipped) green on a fresh database in CI's order at 3f899dab.
+
+**Latest migration: 0151** (`new_client_card`, `when` …130; ledger must reach **152**). Before
+it: 0150 (`batches_view`, `when` …129). Before
 it: 0149 (`agent_full_p2`, `when` …128). Before
 it: 0148 (`agent_full_p1`, `when` …127). Before
 it: 0147 (`prixod_javoblar`, `when` …126). Before
@@ -4067,7 +4099,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **151** since 0150 (150 since 0149, 149 since 0148, 148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **152** since 0151 (151 since 0150, 150 since 0149, 149 since 0148, 148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -4092,6 +4124,8 @@ confirmed: alone it reads 146, and with the prixod-xabari round (0146) the count
 prixod-javoblari round (0147) **148**; with the full seller's part 1 (0148) **149**.
 **Then he CONFIRMED 149** (2026-11-14, his `select count(*)` after deploying PR #151), so everything through #1784 is
 LIVE; part 1b (no migration) is checked by `/api/version` alone.
+PR #155 (0150) was merged 2026-11-18 and he said «ishladi yaxshi» — the count was NOT quoted, so the 0151 deploy is
+checked by BOTH the count (152) and `/api/version`.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

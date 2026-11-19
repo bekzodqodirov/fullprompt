@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { unstable_rethrow } from 'next/navigation';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
@@ -9,6 +10,7 @@ import {
   deleteNote,
   removeNotePart,
   saveNote,
+  setNewClientFlag,
   setNoteShared,
   setPartSendAs,
   type NoteCtx,
@@ -75,6 +77,25 @@ export async function deleteNoteAction(id: string): Promise<NoteFormState> {
  */
 export async function setNoteSharedAction(id: string, shared: boolean): Promise<NoteFormState> {
   return run((ctx) => setNoteShared(id, shared, ctx));
+}
+
+/**
+ * «🆕 Yangi mijozga yuborilsin» (0151) — the tick on a company note the
+ * new-client card carries. The publisher's power, asked again in the service.
+ */
+export async function setNewClientFlagAction(id: string, on: boolean): Promise<NoteFormState> {
+  // A server that ANSWERED, even with its own failure, says so in a value
+  // (the fourth check's FC2-1): the box then re-reads the page, because the
+  // UPDATE may have committed before something after it threw. Only a request
+  // that never got an answer reaches the client's `.catch` — and there a
+  // refresh would be a full reload that loses an open note draft.
+  try {
+    return await run((ctx) => setNewClientFlag(id, on === true, ctx));
+  } catch (err) {
+    unstable_rethrow(err);
+    console.error('[notes] new-client flag', err);
+    return { error: 'failed' };
+  }
 }
 
 export async function removeNotePartAction(partId: string): Promise<NoteFormState> {

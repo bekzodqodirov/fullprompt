@@ -10037,3 +10037,123 @@ seller takes it back, the owner keeps his move), plus #1805's. Red proofs by str
 2 + 4 + 2 (the payload and cell gates; the menu, the owner fact, the restricted cell, the /stock guard; the restricted
 cell's guard and the full cell). Gates at 2e24381d on a FRESH database in CI's order: vitest 953 files / 19,528 tests,
 build, Playwright 535 passed and 1 skipped; GitHub's check on the same head green.
+
+## Yangi kodga manzil xabari + «Hisob tayyor» to'liq — the card a seller forwards when a code is minted, and the calc pings that say WHICH job came back (2026-11-19; migration 0151 `new_client_card`, `when` …130, ledger 152; numbered #1807-#1815)
+
+His two asks of 2026-11-18: «klient code ochilganda sklad adresi zametkada bor yokida shunday joy qilib ber men sklad
+adreslarini doimiy toldirib yuray va code berganda shu adreslar va botga ssilka qoshilib berilsin telegramga kelsin
+sotuvchilar shuni ozini pereslat qilishsin» and «sotuvchilarga hsob kelganda shunday hisob tayyor narxni oziemas
+toliqroq qaysi klient qaysi bitim yokida crm qaysi lid qanday tovar toliqroq malumot bilan leadga ssilka kelsin».
+Mapped by five readers and a critic, designed, judged by four lenses with a refuter per objection (44 objections, 42
+upheld) BEFORE the questions went to him; his answers: every ⭐ except (5) «xozir zametkada xtoy sklad deb zametkaga
+qoyilgan 3 adress va rasim» and (9) «$/kub ham qo'shilsin». Built as two packages in worktrees, then reviewed FOUR
+times — as built (five lenses, 10 upheld), the fixes (four lenses, 8 upheld), the second fixes (three lenses, 3
+upheld), the third fixes (two lenses, 2 upheld) — every finding reproduced or traced before its fix.
+
+**#1807 — the addresses live in a ticked COMPANY zametka, not the warehouses table and not the AI's facts.** Three homes
+existed and none was wired to the mint: `warehouses.address` is one admin-only line that the arrival push prints as the
+DESTINATION; the AI sotuvchi's `kb_facts` hold his three China addresses verbatim, but only the super_admin or the agent
+owner edits them and a NEW phone is refused (`personal`) — not «a place he keeps filling»; the 2026-09-05 CHANGELOG had
+already named the zametka as the home for the warehouse addresses, and he answered that his «Xitoy sklad» note holds
+them with a picture. 0151 adds `staff_notes.for_new_client` + a CHECK that only a company note (`user_id IS NULL`) may
+carry it, SQL-only this release (every whole-row reader of `staff_notes` would 42703 one migration behind, #1313); one raw
+writer `setNewClientFlag` (the publisher's power, `admin.settings.manage`), one reader `newClientNotes(recipient)`
+through `visibleNotes` (the fence counts it), and «Shaxsiy qilish» clears the flag in the same UPDATE (the CHECK would
+otherwise white-page it). Several notes may be ticked and go merged in their order. TWO copies of the China addresses
+now exist — the note and the AI's facts — so saving or ticking a ticked note says so, with a link to
+`/suhbatlar/ai?bolim=bilimlar` for whoever may edit it; pointing the AI at the note is a later round. The tick is
+optimistic and tied to the row's revision (`flag-press.ts`), a request with no answer never re-reads the page (Next
+makes that refresh a full reload that loses an open draft), and a server that answered «failed» re-reads it because
+the UPDATE may have committed.
+
+**#1808 — the bot link is ONE generic link, `t.me/<bot>?start=mijoz`; no personal link, no seller ✅.** The judge's
+blockers (SEC-1…8): a personal link that a seller could approve for a different number is DECISIONS #111's incident made
+one tap away — the card is built to be forwarded on, to the supplier, and the first stranger to tap it would ask the
+seller «ulash?»; a ✅ that writes the number onto the card puts every code on that number into the stranger's cabinet
+through `linkPhoneSiblings`. With the phone check kept, a personal link added nothing for the right number. The new
+`/start mijoz` branch sits before the link lookup, greets ONCE and asks for the contact (an already-linked or staff chat
+gets `bareStart`); it CLEARS an armed advert visit and an earlier «👨‍💼 Hodim» wait first (CUST-2: the contact would
+otherwise land as an advert lead or meet the staff refusal). A customer whose Telegram number differs from the card is
+still the office's to add — owed to him as a question, not built.
+
+**#1809 — no placeholders; the footer is the system's.** `{kod}`/`{bot}` in a note would have been sent literally by 📌
+(the same note is an ordinary company zametka every seller sends). The card adds, once, after the merged notes:
+«Markirovka / 唛头: GS777», his own bilingual `GS_REMINDER` verbatim (imported from the AI seed — one home, #513; left
+out only when the notes already carry «唛头», CUST-5), and the bot line in the client's language (NULL → uz). The note's
+title goes too, as 📌 sends it. The staff line says what the customer part lacks: no ticked note, no phone on the card
+(the link cannot connect him — the office adds the number), no bot link, a code already linked.
+
+**#1810 — one notification row, sent in order, with a cursor and a heartbeat.** `NewClientCard` is queued pre-rendered
+with its plan FROZEN in `payload.card.steps` (the staff line's N is the count of what is sent). The drain's branch
+`deliverNoteCard` sends the staff line FIRST («🆕 GS777 · Ism» / «Pastdagi N ta xabarni belgilab mijozga forward
+qiling ⬇️», the client card as «↗️ Ochish»), then the forwardable steps through `sendPlan` — extracted from
+note-send.ts, so 📌 sends as before — never through `composeStaffHtml` (no bold, no staff URL, no keyboard, no
+«(qisqartirildi)»; fenced). After every step `payload.card` is stamped in SQL with `claimed_at = now()` (the card's
+heartbeat); a replay starts at `done`; an ambiguous answer is never re-sent. What the four reviews made true:
+(1) **the bot token never reaches `notifications.error` or a log** — grammy hides node-fetch's message because it
+carries the request URL with the token, and the extracted `stepFailure` read it back (BLOCKER, proven with a probe;
+`redactToken`); (2) **our own unreadable bytes are not «ambiguous»** — a missing, failing or STALLED storage read is
+`source_unreadable` (the call's deadline is made before its sources and destroys the store stream) and retried, and on
+the last attempt stepped over so the rest still goes, the seller told in ONE closing line built from the saved cursor
+(`skippedWhy`, so a pause after the skip still says it once); (3) an album has the single photo's repairs, chained — a
+stale id forgotten and the group resent from bytes, a photo-shape refusal resent once as documents from bytes — and
+`rememberFileId` never caches an id of the other shape onto a part; (4) **contiguity** — a card part-way in a chat
+holds its seller's other rows: in this run, when another drain left it 'sending' (a deploy kills a drain mid-card),
+and when its heartbeat says no; the CLAIM itself passes such a seller's rows by, so his backlog never fills a run's 30
+slots (DRN-3); a stale card is reclaimed after `CARD_RECLAIM_MINUTES` = 5 counted from its heartbeat (one step's
+longest live silence is 3 calls × 60 s), every other row keeps 10.
+
+**#1811 — who gets it, and the screen says what happened.** At exactly three doors, after the code commits: the quick
+«+», the full form (before `redirect()`), and `winLead`'s mint block right after the lead's clientId write (both the won
+dialog and the legacy convert reach it, and a retry that finds the client written mints no second card). Never
+`createClient` (the import mints 1,700 codes through it) — fenced. One helper that never throws (`sendNewClientCard`):
+the client's seller when the bot reaches him; the presser only when the SELLER has no linked chat; a seller who MUTED
+the new group gets nobody's card (R14 over the builder's first reading); NO `exceptUserId` (on the «+» the presser IS
+the seller). Outcomes `seller | presser | muted | muted_unlinked | nobody | unlinked | failed` (a closed set on the full
+form's `?manzil=`), each with its sentence on the «+» banner, the won dialog and the card — in the second person when
+the seller is the presser (`addressWordOf`), and an unlinked presser is sent to his own Profile first and then to 📨,
+never straight to a 📨 that would refuse him. Its own mute group «Yangi mijoz xabari» on /profile (a newcomer, born
+whole). The client card's «📨 Manzil xabarini menga yuborish» sends the same card to whoever presses (for old codes;
+past his own mute; refused for a deactivated code).
+
+**#1812 — the calc pings say which job came back.** One facts source `calcRequestFacts` (calc/request-head.ts): named
+columns only (the internal note's fence lists the file; a closed projection type pinned by a key test), goods by the
+existing `registryGoods`. One renderer per RECIPIENT with the destination doors as gates: the client and the deal title
+only for `canWriteDeal`, a lead's phone and company only for `mayOpenLead`; the link is that reader's own
+(`calcJobDoorFor` — a VED gets `/hisoblash/<id>`), absolute, and the button names its door («↗️ Lidni ochish» /
+«↗️ Bitimni ochish» / «↗️ Hisobni ochish», typed by the arm that answered; every other type keeps «↗️ Ochish»). The V is
+the chain's (`quoteNoFor(versionId)`, never the per-request counter, #923). Told to the requester AND the card's current
+owner, unless the AI sotuvchi speaks for the job. A failed read costs lines, never the message (`calcPingText` cannot
+throw; an unreadable sealed total is the fallback's line, never «$0.00»), and nothing after a seal, a take, a hand-back
+or a correction commits can throw the ping away — their post-commit audits and task-title reads are caught (P2-3/P2-4,
+then P2F-1/P2F-2 for the two the first fix missed).
+
+**#1813 — his 9: «$/kub ham».** CalcSealed prints the engine's own `perM3Usd` (the figure the version stores); CalcDone
+prints the answer ÷ the request's volume, dollars only (a so'm or yuan answer has no $/kub, the channel's `pickPerUnit`
+rule) — never a $0, never NaN, nothing with no volume. ONE arithmetic for the channel's answer post and the ping
+(`perM3Of`), rounded by the engine's own decimal half-up (`roundCents`, exported from pricing.ts —
+`Math.round(x*100)/100` says 1.00 for 1.005), and the money line spelled as the channel spells money (`usd`, grouped —
+the total too, so one line writes a dollar figure one way). Money is otherwise the total only (law 10).
+
+**#1814 — process.** (1) A fence I did not run went red in the full CI-order run: the 0124 backfill test pins the
+hand-back task's title LITERAL, and P2-4 moved its label out of the template — the prefix the backfill matches is
+unchanged and the fence reads the new spelling. A targeted run is the set I THOUGHT of; only the full run is the set
+that exists. (2) The first e2e blocker of the as-built review (m0-smoke pinned the full form's URL with `$`) was found
+by reading before the run proved it — and the second fixes' new outcome re-broke the same regex, found by reading
+again (WORDS-1). (3) My own fix test ran on the Part 2 builder's database, which stood at ledger 151: «column
+for_new_client does not exist» on six tests that were correct — a builder's database is its builder's migration level.
+(4) `pnpm typecheck` caught a test cast that vitest ran happily (CLAUDE.md's footgun, again). (5) Four review layers,
+and each found defects in the previous layer's fixes — mostly in the drain every staff message rides; stopped after
+the fourth found two, both fixed and red-proven. Red proofs by paired string edit, every one restored by hash: 15 + 16
+by the builders, 31 + 7 for the first fixes, 19 + 6 for the second, 6 for the third, 4 for the fourth. Gates at 3f899dab on a FRESH database in CI's
+order (ledger 152): vitest 959 files / 19,658 tests, build, Playwright 535 passed and 1 skipped; screenshots at
+360×800 and 1280×900 (the tick and its AI-copy notice, the «+» banner as admin and seller, the card's «📨» panel and
+answer, /profile's mute box) with the document width equal to the viewport at both.
+
+**#1815 — stated, not built.** The differing-number customer (the seller cannot add a phone; the office does). Whether
+a seller may mute the card at all (W-5: today he may, and the owner is told nowhere). The AI's China addresses and the
+note are two copies. The ping's per-m³ is spelled grouped like the channel, while the workspace and /hisoblash screens
+print it ungrouped. An S3 object served with no checksum header reaches grammy as a stream with a `url` property and is
+read as a URL (FR1-3, refuted as not this round's — pre-existing for 📌). `releaseClaims` does not check that a claim is
+still this run's (DRN-2, refuted for one drain process). A stalled member inside an ALBUM has the same stall cut but no
+test of its own. Two pre-existing English strings say «his seller».

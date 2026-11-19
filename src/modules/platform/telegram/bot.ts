@@ -13,10 +13,11 @@ import {
   type Outgoing,
 } from './client-cabinet';
 import { clientLabels, localeFromTelegram } from './client-labels';
-import { adSourceFromPayload, rememberAdVisit } from './ad-intake';
+import { adSourceFromPayload, clearAdVisit, rememberAdVisit } from './ad-intake';
+import { isMijozStart, mijozStartUrl } from './mijoz-start';
 import { h } from './format';
 import { cabinetInlineKeyboard } from './menu-button';
-import { linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
+import { dropStaffEntry, linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
 import { askStaffPhone, entryKeyboard, registerStaffBot } from './staff-handlers';
 import { registerAgentCommand } from './agent-bot';
 import { replyKeyboardFor } from './keyboards';
@@ -68,6 +69,11 @@ export async function getBotUsername(): Promise<string | null> {
   }
   if (!answer.ok) logger.warn({ description: answer.description }, 'telegram getMe failed');
   return null;
+}
+
+/** The new-client card's generic bot link, or null when the bot has no username (CI, no token). */
+export async function mijozBotLink(): Promise<string | null> {
+  return mijozStartUrl(await getBotUsername());
 }
 
 /**
@@ -367,6 +373,30 @@ export function registerBotHandlers(bot: Bot): void {
 
     if (!code) {
       await bareStart();
+      return;
+    }
+    // The new-client card's link (0151, mijoz-start.ts): no code in it, so
+    // it is answered BEFORE the link lookup and never reaches the «Havola
+    // eskirgan» branch. A chat that is already somebody's — a customer back
+    // from a forwarded card, a seller testing the link he is about to send —
+    // gets the ordinary greeting: asking a connected customer for their number
+    // again would take their cabinet buttons away (CONV-5). NOT an advert
+    // visit: a stranger's contact here must never become an inbound lead.
+    if (isMijozStart(code)) {
+      const chatId = BigInt(ctx.chat.id);
+      if ((await clientsForChat(chatId)).length || (await staffForChat(chatId))) {
+        await bareStart();
+        return;
+      }
+      // The contact this greeting asks for is the CABINET's to answer (review
+      // CUST-2): an advert visit armed earlier in this chat would land it as
+      // an inbound LEAD and thank a customer who already has a code, and an
+      // earlier «👨‍💼 Hodim» press would hand it to the staff handler, which
+      // refuses a stranger. Both are forgotten before the question is asked.
+      clearAdVisit(ctx.chat.id);
+      dropStaffEntry(chatId);
+      // ONE message, one greeting, ending in the phone request (review CUST-4).
+      await ctx.reply(clientLabels(tg).mijozStart, { reply_markup: phoneKeyboard(tg) });
       return;
     }
     const link = await db.query.telegramLinks.findFirst({

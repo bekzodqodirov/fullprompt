@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client';
 import {
   clients,
@@ -22,6 +22,15 @@ import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
 import { arrivalAlertOf, arrivalOpensDealPicker, isReceiptArrival, receiptArrivalText } from './receipt-arrival';
+import { calcPingOpenLabel } from './calc-ping';
+import {
+  CARD_RECLAIM_MINUTES,
+  cardStepVerdict,
+  NEW_CLIENT_CARD,
+  noteCardOf,
+  SOURCE_UNREADABLE,
+  type NoteCardCursor,
+} from './note-card';
 import { reachOf } from './staff';
 import { groupDigits, h, visibleLength } from '../telegram/format';
 import { splitLabelCount } from '../text/label-count';
@@ -1087,6 +1096,11 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
  * stops a crash-looping process from re-sending the same row without limit.
  * A row already out of attempts goes terminal instead of back in the queue,
  * or it would be re-claimed and re-parked nightly for ever.
+ *
+ * A new-client card comes back sooner (`CARD_RECLAIM_MINUTES`, review
+ * FR1-1): one a dead drain left part-way holds its seller's other rows back
+ * (`cardsPartWayElsewhere`), and the drain keeps a live card's `claimed_at`
+ * fresh after every step, so the shorter window only ever finds a dead one.
  */
 export async function reclaimStaleTelegram(): Promise<void> {
   await db.execute(sql`
@@ -1095,7 +1109,8 @@ export async function reclaimStaleTelegram(): Promise<void> {
         attempts = attempts + 1,
         error = 'drain died mid-send'
     WHERE channel = 'telegram' AND status = 'sending'
-      AND claimed_at < now() - interval '10 minutes'`);
+      AND (claimed_at < now() - interval '10 minutes'
+        OR (type = ${NEW_CLIENT_CARD} AND claimed_at < now() - ${CARD_RECLAIM_MINUTES}::int * interval '1 minute'))`);
 }
 
 /**
@@ -1111,12 +1126,24 @@ export async function reclaimStaleTelegram(): Promise<void> {
  * them — round 83's event-drain rule, applied to the other queue.
  */
 export async function claimPendingTelegram(limit: number): Promise<string[]> {
+  // Not the rows of a seller whose new-client card is part-way 'sending'
+  // (third review DRN-3): they would only be held and handed back, and while
+  // they are the oldest pending rows they would fill every run's slots for
+  // the card's whole reclaim window — nobody else's message, alarms
+  // included, would go. The run spends its slots on other people instead.
+  // `n` is the candidate row; the card is `c`, through the 'sending' partial
+  // index.
   const rows = (await db.execute(sql`
     UPDATE notifications SET status = 'sending', claimed_at = now()
     WHERE id IN (
-      SELECT id FROM notifications
-      WHERE channel = 'telegram' AND status = 'pending' AND attempts < ${MAX_TELEGRAM_ATTEMPTS}
-      ORDER BY created_at
+      SELECT n.id FROM notifications n
+      WHERE n.channel = 'telegram' AND n.status = 'pending' AND n.attempts < ${MAX_TELEGRAM_ATTEMPTS}
+        AND NOT EXISTS (
+          SELECT 1 FROM notifications c
+          WHERE c.channel = 'telegram' AND c.status = 'sending' AND c.type = ${NEW_CLIENT_CARD}
+            AND c.user_id = n.user_id
+            AND (c.payload->'card'->>'done')::int > 0)
+      ORDER BY n.created_at
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED)
     RETURNING id`)) as unknown as { id: string }[];
@@ -1163,8 +1190,13 @@ export function composeStaffMessage(
   return composeStaffHtml(type, renderTelegramText(type, payload, locale), {
     appUrl: process.env.APP_URL,
     // «Prixod keldi» with no deal on the prixod: the link opens the card AT
-    // its deal picker, and the button says what it is for.
-    openLabel: !preRendered && arrivalOpensDealPicker(type, payload) ? L.attachDealButton : L.openInApp,
+    // its deal picker, and the button says what it is for. A calc ping names
+    // the door its writer drew (`payload.openAs`, calc-ping.ts) — by TYPE
+    // first, so no other message linking a lead or a deal is renamed.
+    openLabel:
+      !preRendered && arrivalOpensDealPicker(type, payload)
+        ? L.attachDealButton
+        : (calcPingOpenLabel(type, payload, L) ?? L.openInApp),
   });
 }
 
@@ -1306,6 +1338,177 @@ async function deliverWithSheet(
   if (!sheet.ok) logger.warn({ description: sheet.description, offerId: payload.offerId }, 'offer sheet after a long text not sent');
   return text;
 }
+
+/**
+ * The new-client card (0151): the staff instruction FIRST — the drain's own
+ * dressing and sender, the client card's link lifted into «↗️ Ochish» — then
+ * the forwardable part, step by step, through the zametka sender itself
+ * (`sendPlan`: streaming, the file-id cache, the photo downgrade, the stale-id
+ * fallback; never send.ts's photo/album/document senders, which take whole
+ * Buffers and cannot cache an album).
+ *
+ * The forwardable part is sent EXACTLY as planned: no bold title, no staff
+ * link, no keyboard, no «(qisqartirildi)», never protect_content — it is the
+ * customer's message, forwarded by the seller as it stands, so nothing of the
+ * staff dressing may touch it (`message` is the staff line alone).
+ *
+ * Progress is the row's (note-card.ts): stamped in SQL after each confirmed
+ * step, read back on a replay. A 429 or a refused token answers with the
+ * drain's own pause; Telegram's «no» to an attempt is the drain's attempt
+ * counting; an answer that never came is `maybe` — stepped over and never
+ * sent twice.
+ *
+ * Our own file that cannot be read is retried (review P1-DLV-2) — but on the
+ * row's LAST attempt (review FR1-4) it is stepped over instead, as `skipped`,
+ * and the rest of the card still goes: a storage outage of half a minute
+ * spends a run-counted budget, and failing the whole remainder at that step
+ * would drop the addresses with the one photo that could not be read. The
+ * skipped file is named in the row's `error` (the drain writes the returned
+ * description there) and in the log.
+ */
+async function deliverNoteCard(
+  type: string,
+  notificationId: string,
+  chatId: bigint,
+  message: StaffMessage,
+  payload: Record<string, unknown>,
+  silent: boolean,
+  lastAttempt: boolean,
+): Promise<SendResult | null> {
+  if (type !== NEW_CLIENT_CARD) return null;
+  const card = noteCardOf(payload);
+  if (!card) return null;
+  const cursor: NoteCardCursor = {
+    done: card.done,
+    head: card.head,
+    ids: [...card.ids],
+    maybe: [...card.maybe],
+    skipped: [...card.skipped],
+    skippedWhy: [...card.skippedWhy],
+  };
+  const stamp = async () => {
+    // Merged in SQL, the cursor's fields only: the frozen plan beside them is
+    // never rewritten. `claimed_at` moves with it — the card's HEARTBEAT, so
+    // the card's short reclaim window (note-card.ts `CARD_RECLAIM_MINUTES`)
+    // is counted from the last step that landed, never from the run's claim.
+    await db.execute(sql`
+      UPDATE notifications
+         SET payload = jsonb_set(payload, '{card}', (payload->'card') || ${JSON.stringify(cursor)}::jsonb),
+             claimed_at = now()
+       WHERE id = ${notificationId}`);
+  };
+  const total = card.steps.length + 1;
+
+  while (cursor.done < total) {
+    if (cursor.done === 0) {
+      const res = await deliverStaffMessage(chatId, message, null, silent);
+      if (!res.ok) {
+        if (cardStepVerdict(res) !== 'ambiguous') return res;
+        cursor.maybe.push(0);
+        logger.warn({ notificationId, status: res.status, description: res.description }, 'new-client card: staff line may be in the chat — not sent again');
+      } else if (res.messageId !== null) {
+        cursor.head = res.messageId;
+        cursor.ids.push(res.messageId);
+      }
+      cursor.done = 1;
+      await stamp();
+      continue;
+    }
+    const { drainPlanApi, sendPlan } = await import('../telegram/note-send');
+    const api = drainPlanApi();
+    if (!api) return { ...NOT_SENT, description: 'no_bot_token' };
+    const outcome = await sendPlan(api, chatId, card.steps, {
+      fromStep: cursor.done - 1,
+      onRateLimit: 'return',
+      silent,
+      onStep: async (index, ids) => {
+        cursor.done = index + 2;
+        cursor.ids.push(...ids);
+        await stamp();
+      },
+    });
+    if (!outcome.stop) break;
+    const stop = outcome.stop;
+    const failed: SendResult = {
+      ...NOT_SENT,
+      status: stop.status,
+      description: stop.description,
+      retryAfter: stop.retryAfter,
+      permanent: isPermanentFailure(stop.status),
+      botDown: isBotFailure(stop.status),
+    };
+    const verdict = cardStepVerdict(failed);
+    if (verdict === 'retry' && lastAttempt && stop.description.startsWith(SOURCE_UNREADABLE)) {
+      // The last attempt, and the bytes are still not ours to send: not in the
+      // chat (the body never completed), never retried again — stepped over.
+      cursor.skipped.push(stop.index + 1);
+      cursor.skippedWhy.push(`step ${stop.index + 1}: ${stop.description}`);
+      cursor.done = stop.index + 2;
+      logger.warn(
+        { notificationId, step: stop.index + 1, description: stop.description },
+        'new-client card: our own file could not be read on the last attempt — stepped over, the rest still go',
+      );
+      await stamp();
+      continue;
+    }
+    if (verdict !== 'ambiguous') return failed;
+    cursor.maybe.push(stop.index + 1);
+    cursor.done = stop.index + 2;
+    logger.warn(
+      { notificationId, step: stop.index + 1, status: stop.status, description: stop.description },
+      'new-client card: a step may be in the chat — not sent again',
+    );
+    await stamp();
+  }
+  // A file stepped over is said to the SELLER (third review WORDS-5): the
+  // staff line promised «pastdagi N ta xabar», and in the commonest card —
+  // one photo under the whole caption — the skipped step IS the forwardable
+  // part. One closing line with the card's own link (the resend lives
+  // there); its failure is logged and never fails a card already sent. From
+  // the SAVED cursor (fourth check FC1-1): a pause after the skip comes back
+  // here on a later run, and this is reached once — when the card completes.
+  // Counted in FILES (FC1-3): one unreadable member costs its whole album.
+  const why = cursor.skippedWhy.length > 0 ? cursor.skippedWhy : cursor.skipped.map((step) => `step ${step}`);
+  if (cursor.skipped.length > 0) {
+    const files = cursor.skipped.reduce((sum, step) => {
+      const planned = card.steps[step - 1];
+      return sum + (planned && planned.kind === 'media' ? planned.files.length : 1);
+    }, 0);
+    const closing: StaffMessage = {
+      html: h(
+        `⚠ ${files} ta fayl o‘qilmadi va yuborilmadi — yuqoridagi xabar to‘liq emas. ` +
+          'Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» bilan qayta oling.',
+      ),
+      url: message.url,
+      urlRow: message.urlRow,
+    };
+    const said = await deliverStaffMessage(chatId, closing, null, silent).catch((err: unknown) => {
+      logger.warn({ err, notificationId }, 'new-client card: the closing line about a skipped file was not sent');
+      return null;
+    });
+    if (said && !said.ok) logger.warn({ notificationId, status: said.status }, 'new-client card: the closing line about a skipped file was not sent');
+  }
+  // The row remembers the staff line (step 0) as its message — the one with
+  // the card's link on it — and, when a file was stepped over, which one.
+  return {
+    ...NOT_SENT,
+    ok: true,
+    status: 200,
+    messageId: cursor.head,
+    description: why.length > 0 ? `skipped ${why.join('; ')}` : '',
+  };
+}
+
+const NOT_SENT: SendResult = {
+  ok: false,
+  status: 0,
+  description: '',
+  messageId: null,
+  retryAfter: null,
+  permanent: false,
+  botDown: false,
+  usedFallback: false,
+};
 
 /**
  * Show a colleague the customer's OWN message before our sentence about it
@@ -1611,6 +1814,88 @@ async function releaseClaims(ids: string[]): Promise<void> {
     .where(and(inArray(notifications.id, ids), eq(notifications.status, 'sending')));
 }
 
+/**
+ * The run's rows with every new-client card already PART-WAY in a chat moved
+ * to the front, the rest in their own order (a stable sort, created_at as
+ * read). Such a card's remainder must reach the seller before anything else of
+ * his — an older row still retrying would otherwise land between the card's
+ * delivered part and the rest of it (review P1-DLV-4). Rows of different people
+ * never share a chat, so moving one person's card ahead of another person's
+ * row changes nothing anybody reads.
+ */
+function cardsInProgressFirst<T extends { type: string; payload: unknown }>(rows: T[]): T[] {
+  const started = (row: T) =>
+    row.type === NEW_CLIENT_CARD && (noteCardOf(row.payload as Record<string, unknown>)?.done ?? 0) > 0;
+  return [...rows.filter(started), ...rows.filter((row) => !started(row))];
+}
+
+/**
+ * Is this card's first step already in the chat — read back from the row the
+ * card stamps after every step? A read that fails answers yes: holding a
+ * person's rows back one run is the safe side of not knowing.
+ */
+async function cardStartedNow(notificationId: string): Promise<boolean> {
+  try {
+    const rows = (await db.execute(sql`
+      SELECT (payload->'card'->>'done')::int AS done FROM notifications WHERE id = ${notificationId}`)) as unknown as {
+      done: number | null;
+    }[];
+    return (rows[0]?.done ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The sellers whose new-client card ANOTHER run left part-way (review
+ * FR1-1): 'sending', not claimed by this run, at least one step already in
+ * the chat. A drain killed mid-card by a deploy leaves exactly that — and
+ * until the card's short reclaim puts it back, every run would otherwise send
+ * that seller's later rows into the middle of the card he forwards to the
+ * customer. A card a LIVE drain elsewhere is sending is held for the same
+ * reason. `claimedIds` is never empty here (the drain returns first).
+ */
+async function cardsPartWayElsewhere(claimedIds: string[]): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ userId: notifications.userId })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.channel, 'telegram'),
+        eq(notifications.type, NEW_CLIENT_CARD),
+        eq(notifications.status, 'sending'),
+        notInArray(notifications.id, claimedIds),
+        sql`(${notifications.payload}->'card'->>'done')::int > 0`,
+      ),
+    );
+  return rows.map((row) => row.userId);
+}
+
+/**
+ * Is this card still THIS run's to send — and its heartbeat moved now?
+ *
+ * The run's rows share one claim moment, and the rows ahead of a card may
+ * take longer than the card's short reclaim window (FR1-1): the reclaim may
+ * then have put the card back and another drain taken it. The reclaim counts
+ * an attempt, so a card whose attempts no longer match the run's read is
+ * somebody else's now and is left alone. Asked as the UPDATE that refreshes
+ * `claimed_at`, so from here the window counts from the card's own start. A
+ * read that fails answers no: a card not sent this run is reclaimed and sent
+ * later; a card sent by two drains is the customer's album twice.
+ */
+async function keepCardClaim(notificationId: string, attempts: number): Promise<boolean> {
+  try {
+    const rows = (await db.execute(sql`
+      UPDATE notifications SET claimed_at = now()
+       WHERE id = ${notificationId} AND status = 'sending' AND attempts = ${attempts}
+      RETURNING id`)) as unknown as { id: string }[];
+    return rows.length > 0;
+  } catch (err) {
+    logger.warn({ err, notificationId }, 'new-client card claim not confirmed — left for the reclaim');
+    return false;
+  }
+}
+
 export async function sendPendingTelegram(now: Date = new Date()): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
@@ -1621,11 +1906,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
   await reclaimStaleTelegram();
   const claimedIds = await claimPendingTelegram(30);
   if (claimedIds.length === 0) return;
-  const pending = await db
-    .select()
-    .from(notifications)
-    .where(inArray(notifications.id, claimedIds))
-    .orderBy(notifications.createdAt);
+  const pending = cardsInProgressFirst(
+    await db
+      .select()
+      .from(notifications)
+      .where(inArray(notifications.id, claimedIds))
+      .orderBy(notifications.createdAt),
+  );
 
   // One dead chat must not hold up the queue. Every row is attempted, its
   // own failure recorded, and the batch reports at the end — before this,
@@ -1633,8 +1920,44 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
   // including "boxes missing in transit".
   let failed = 0;
   const settled = new Set<string>();
+  // People whose new-client card stopped part-way in THIS run (review
+  // P1-DLV-4): the card's delivered part is already in their chat, and the
+  // seller multi-selects it together with the remainder to forward to the
+  // customer — so nothing else of theirs goes between the two. Their later
+  // rows are handed back untouched (no attempt counted) and go next run,
+  // after the card's own retry, which `cardsInProgressFirst` puts first.
+  // Seeded with the sellers whose card ANOTHER run left part-way (FR1-1): a
+  // dead drain's card is in their chat too, and it is not in this run at all.
+  let elsewhere: string[];
+  try {
+    elsewhere = await cardsPartWayElsewhere(claimedIds);
+  } catch (err) {
+    // Not knowing whose card is part-way must not send into one: the run is
+    // handed back whole, no attempt counted, and pg-boss retries.
+    await releaseClaims(claimedIds);
+    throw err;
+  }
+  const heldFor = new Set<string>(elsewhere);
 
   for (const notification of pending) {
+    if (heldFor.has(notification.userId)) {
+      await releaseClaims([notification.id]);
+      settled.add(notification.id);
+      continue;
+    }
+    // A card the short reclaim took back while the rows ahead of it were sent
+    // is another drain's now — never sent from this run's stale copy. And its
+    // seller is HELD for the rest of the run (third review DRN-1): whichever
+    // reason the claim said no — another drain is sending it, or the
+    // heartbeat's own write failed and it stays 'sending' on this run's
+    // claim — the card may be part-way in his chat, and nothing else of his
+    // may land inside it. A held row only goes back pending, no attempt
+    // counted, so holding a card that had not started costs one run.
+    if (notification.type === NEW_CLIENT_CARD && !(await keepCardClaim(notification.id, notification.attempts))) {
+      heldFor.add(notification.userId);
+      settled.add(notification.id);
+      continue;
+    }
     const recipient = await db.query.users.findFirst({
       columns: { locale: true, active: true },
       where: eq(users.id, notification.userId),
@@ -1716,6 +2039,15 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
         (await forwardSources(notification.id, link.telegramChatId, payload)) ??
+        (await deliverNoteCard(
+          notification.type,
+          notification.id,
+          link.telegramChatId,
+          message,
+          payload,
+          silent,
+          notification.attempts + 1 >= MAX_TELEGRAM_ATTEMPTS,
+        )) ??
         (await deliverWithSheet(
           notification.type,
           link.telegramChatId,
@@ -1758,7 +2090,9 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
         .set({
           status: 'sent',
           sentAt: new Date(),
-          error: null,
+          // A new-client card that stepped over a file it could not read on
+          // its last attempt says which (FR1-4); every other success clears.
+          error: notification.type === NEW_CLIENT_CARD && res.description ? res.description : null,
           // Merged in SQL, not spread from the row read above: the forward
           // may have written `forwarded` onto it since.
           ...(tg ? { payload: sql`${notifications.payload} || ${JSON.stringify(shown ? { tg, shown, rang: !silent } : { tg })}::jsonb` } : {}),
@@ -1812,6 +2146,11 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       })
       .where(eq(notifications.id, notification.id));
     settled.add(notification.id);
+    // A card that stopped with part of it already in the chat holds its
+    // recipient's later rows back for the rest of this run (P1-DLV-4).
+    if (notification.type === NEW_CLIENT_CARD && (await cardStartedNow(notification.id))) {
+      heldFor.add(notification.userId);
+    }
   }
 
   // Still throw so pg-boss retries — but only after every row had its turn.

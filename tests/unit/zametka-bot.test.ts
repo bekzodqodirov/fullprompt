@@ -160,7 +160,27 @@ describe('the rules a shell cannot exercise', () => {
 
   it('every Telegram call in the sender carries a deadline', () => {
     const sender = read('src/modules/platform/telegram/note-send.ts');
-    expect(sender).toContain('AbortSignal.timeout(SEND_TIMEOUT_MS)');
+    // ONE place makes a call's deadline (review FR1-2: made before its sources,
+    // so our own reads are cut by it too), and every call passes its signal.
+    expect(sender).toContain('signal: AbortSignal.timeout(sendTimeoutMs)');
+    expect(sender).toContain('let sendTimeoutMs = SEND_TIMEOUT_MS;');
+    const calls = [...sender.matchAll(/api\.send\w+\(/g)];
+    expect(calls.length).toBeGreaterThanOrEqual(4);
+    for (const call of calls) {
+      // The call up to ITS OWN closing paren (third review TR2-1): sliced to
+      // the next `call.signal)`, a sendPhoto that lost its signal borrowed the
+      // sendDocument beside it in the same ternary and still passed.
+      const open = call.index! + call[0].length - 1;
+      let depth = 0;
+      let close = open;
+      for (; close < sender.length; close += 1) {
+        if (sender[close] === '(') depth += 1;
+        else if (sender[close] === ')' && (depth -= 1) === 0) break;
+      }
+      const args = sender.slice(call.index, close + 1);
+      expect(args.match(/api\.send\w+\(/g), args).toHaveLength(1);
+      expect(args, args).toMatch(/call\.signal\)$/);
+    }
     // …and a 429 is a WAIT, not a failure: a multi-part note is a burst of up
     // to a dozen messages and there is no throttler installed.
     expect(sender).toContain('err.error_code === 429');

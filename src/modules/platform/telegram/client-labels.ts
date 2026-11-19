@@ -253,6 +253,30 @@ const DICT = {
     ru: 'GSR LOGISTICS. Чтобы подключить кабинет, попросите ссылку у вашего менеджера.',
     en: 'GSR LOGISTICS. To connect your cabinet, ask your manager for a link.',
   },
+  /**
+   * The new-client card's bot line (0151) — what the customer reads under the
+   * addresses the seller forwards, with the generic `?start=mijoz` link: a
+   * link that carries NO code, so it may travel on to a supplier and opens
+   * nothing but «send your number».
+   */
+  newClientBotLine: {
+    uz: 'Yuklaringizni Telegramda kuzatish uchun botimiz: {url}',
+    ru: 'Следите за своими грузами в нашем Telegram-боте: {url}',
+    en: 'Track your cargo in our Telegram bot: {url}',
+  },
+  /**
+   * `?start=mijoz` — the customer who tapped that line (0151): ONE message
+   * that greets once, says what the bot is for, and ends in the phone request
+   * `askPhone` makes elsewhere (the self-service door connects every code on a
+   * number we hold). Not `askPhone` glued after it: that one opens with its
+   * own «Assalomu alaykum!», and the stranger read two greetings, the hello
+   * after the welcome (review CUST-4).
+   */
+  mijozStart: {
+    uz: 'Assalomu alaykum! GSR LOGISTICS botiga xush kelibsiz — bu yerda yuklaringiz qayerdaligini, rasmlarini va balansingizni ko‘rasiz. Kabinetni ulash uchun telefon raqamingizni tasdiqlang — pastdagi tugmani bosing.',
+    ru: 'Здравствуйте! Добро пожаловать в бот GSR LOGISTICS — здесь вы видите, где ваши грузы, их фото и ваш баланс. Чтобы подключить кабинет, подтвердите свой номер телефона — нажмите кнопку ниже.',
+    en: 'Hello! Welcome to the GSR LOGISTICS bot — here you can see where your cargo is, its photos and your balance. To connect your cabinet, confirm your phone number — tap the button below.',
+  },
   /** The self-service door (item 13): no link needed if the number matches. */
   linkByPhone: {
     uz: 'Yoki pastdagi tugma bilan raqamingizni yuboring — kod kerak emas: raqamingiz bizda bo‘lsa, kabinet o‘zi ulanadi.',

@@ -1469,6 +1469,15 @@ export function takeStaffEntry(chatId: bigint, atSec: number = nowSec()): boolea
   return waitVerdict(entry, atSec, false) === 'answers';
 }
 
+/**
+ * Forget an earlier «👨‍💼 Hodim» press — for a door that asks for the number
+ * on the CABINET's behalf (`?start=mijoz`, review CUST-2): the contact it asks
+ * for must not be taken by the staff handler first and refused as a stranger.
+ */
+export function dropStaffEntry(chatId: bigint): void {
+  dropWait(chatId, 'staff_entry');
+}
+
 /** The grants alone — `userPermissions`, the one home of the join `actorGrants` reads. */
 const permissionsOf = userPermissions;
 

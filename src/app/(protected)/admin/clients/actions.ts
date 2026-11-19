@@ -13,6 +13,7 @@ import { autoLinkClientToVerifiedChats } from '@/modules/platform/telegram/clien
 import { activeClientsByPhone } from '@/modules/wms/client-cabinet/service';
 import { stampUnattributedCargo } from '@/modules/wms/staff/stamp';
 import { celebrateNewClient } from '@/modules/wms/staff/celebrate';
+import { sendNewClientCard, type AddressCardOutcome } from '@/modules/wms/client-card/address-card';
 import {
   ClientError,
   canMintClient,
@@ -116,6 +117,13 @@ export interface QuickClientResult {
    * one exists.
    */
   dealId?: string | null;
+  /**
+   * Where the address card went (0151, `AddressCardOutcome`) — said under the
+   * code whenever it was not the seller, because a card that went nowhere is
+   * otherwise silent. On this door the presser IS the seller, so the screen
+   * words it to him («Telegramingiz…», review CUST-8).
+   */
+  addressCard?: AddressCardOutcome;
 }
 
 /**
@@ -228,9 +236,13 @@ export async function quickCreateClientAction(input: {
     // 0134: the person who opened the code is praised in the staff group —
     // after the commit, never throwing (celebrateNewClient catches its own).
     await celebrateNewClient(row.id, actor.id);
+    // 0151: the address card to the code's seller — after the commit, never
+    // throwing (sendNewClientCard catches its own), INSIDE this try: a throw
+    // here would answer «failed» and the next press would mint a second code.
+    const addressCard = await sendNewClientCard(row.id, actor.id);
     revalidatePath('/admin/clients');
     revalidatePath('/bitimlar', 'layout');
-    return { ok: true, id: row.id, code: row.clientCode, name: row.name, dealId };
+    return { ok: true, id: row.id, code: row.clientCode, name: row.name, dealId, addressCard };
   } catch (err) {
     if (err instanceof ClientError) return { ok: false, error: err.code };
     // The deploy-morning rule (#473): an action that touches the database
@@ -287,12 +299,16 @@ export async function createClientAction(
     ...meta,
   });
   await celebrateNewClient(row.id, actor.id);
+  // 0151, before the redirect like the two above; the outcome rides the
+  // address so the card can say where the address card went when it did not
+  // go to the seller (the action's own state dies with the redirect).
+  const addressCard = await sendNewClientCard(row.id, actor.id);
 
   revalidatePath('/admin/clients');
   revalidatePath('/bitimlar', 'layout');
   // Land on the new card: the owner must SEE the assigned code (and the
   // cabinet block) right after saving — the list hid it.
-  redirect(`/admin/clients/${row.id}`);
+  redirect(`/admin/clients/${row.id}${addressCard === 'seller' ? '' : `?manzil=${addressCard}`}`);
 }
 
 

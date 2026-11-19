@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { cardLink } from '../../platform/notifications/links';
+import type { CalcOpenAs } from '../../platform/notifications/calc-ping';
 import { userPermissions } from '../../platform/rbac/authorize';
 import { mayOpenLead } from '../crm/lead-door';
 import { isAnswerSql } from './credit';
@@ -253,9 +254,24 @@ export function calcJobHrefFor(
   reader: CalcCardReader,
   job: { entityType: 'lead' | 'deal'; entityId: string; leadOwnerId: string | null; requestId: string | null },
 ): string | null {
+  return calcJobDoorFor(reader, job)?.href ?? null;
+}
+
+/**
+ * The same door, saying WHICH ARM answered — the calc pings' button is named
+ * by it («↗️ Lidni ochish» / «Bitimni ochish» / «Hisobni ochish»). Never the
+ * job's entity type: on a lead the VED is handed `/hisoblash/<id>`, and an
+ * entity-keyed word would call the workspace a lead (D10). ONE body, so the
+ * href and its word cannot disagree (#513).
+ */
+export function calcJobDoorFor(
+  reader: CalcCardReader,
+  job: { entityType: 'lead' | 'deal'; entityId: string; leadOwnerId: string | null; requestId: string | null },
+): { href: string; openAs: CalcOpenAs } | null {
   const card = admittedCardHref(reader, job);
-  if (card) return card;
-  return calcWorkspaceHref(reader, job.requestId);
+  if (card) return { href: card, openAs: job.entityType };
+  const calc = calcWorkspaceHref(reader, job.requestId);
+  return calc ? { href: calc, openAs: 'calc' } : null;
 }
 
 /**

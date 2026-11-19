@@ -647,7 +647,14 @@
     "sectorPlaceholder": "e.g. clothing, construction",
     "cargoKinds": "Cargo they bring (comma-separated)",
     "cargoKindsPlaceholder": "e.g. clothes, shoes, appliances",
-    "cargoKindsKnown": "Already in use"
+    "cargoKindsKnown": "Already in use",
+    "addressTitle": "Address message",
+    "addressHint": "Warehouse addresses, the client’s marking and the bot link — sent to your Telegram for you to forward to the client.",
+    "addressResend": "📨 Send me the address message",
+    "addressResent": "✅ Sent — open your Telegram.",
+    "addressNoChat": "⚠ Your Telegram is not linked to the bot — link it on your profile first.",
+    "addressFailed": "⚠ Could not send — try again.",
+    "addressInactive": "⚠ This code is deactivated — no address message is sent for it."
   },
   "users": {
     "title": "Employees",
@@ -986,7 +993,8 @@
       "advanceHint": "Advances and what you owe the company are in «{panel}» below.",
       "salaryNotDue": "not due this month yet",
       "ftlLine": "FTL: {m3} m³ · {n} receipts — not in the KPI"
-    }
+    },
+    "notifMuteNewClient": "Address message for a new client"
   },
   "receive": {
     "title": "Receiving",
@@ -4586,7 +4594,15 @@
       "empty": "Nothing found"
     },
     "back": "← Back",
-    "actions": "Quick actions"
+    "actions": "Quick actions",
+    "addressPresser": "The seller’s Telegram is not linked — the address message was sent to you.",
+    "addressMuted": "The seller turned these messages off in their profile — the address message was not sent. Get it with «📨 Send me the address message» on the client card.",
+    "addressMutedUnlinked": "The seller turned these messages off in their profile — the address message was not sent. Your Telegram is not linked either — link it in Profile → Telegram first, then press «📨 Send me the address message» on the client card.",
+    "addressNobody": "The seller’s Telegram is not linked to the bot — the address message went to nobody. Get it with «📨 Send me the address message» on the client card.",
+    "addressNobodyUnlinked": "The seller’s Telegram is not linked to the bot — the address message went to nobody. Your Telegram is not linked either — link it in Profile → Telegram first, then press «📨 Send me the address message» on the client card.",
+    "addressFailed": "The address message could not be sent — send it again with «📨» on the client card.",
+    "addressSelfMuted": "You turned these messages off in your profile — the address message was not sent (Profile → Telegram notifications).",
+    "addressSelfNobody": "Your Telegram is not linked to the bot — the address message was not sent (Profile → Telegram)."
   },
   "routing": {
     "title": "Lead distribution",
@@ -4965,11 +4981,22 @@
       "empty": "The note is empty — add text, a file or coordinates.",
       "titleTaken": "A note with that name already exists.",
       "tooManyParts": "Too many files.",
-      "upload": "The file did not upload. Try again."
+      "upload": "The file did not upload. Try again.",
+      "notCompany": "Only a company (🏢 Everyone) note can be sent to new clients.",
+      "serverBehind": "The server is not updated yet — try again in a moment.",
+      "failed": "Could not tell whether it was saved — the page was refreshed; check the tick and try again if needed.",
+      "unreachable": "The server did not answer — the tick may not have changed. Check the connection and press again."
     },
     "makeShared": "🏢 Make it the company's",
     "makePrivate": "👤 Make it mine only",
-    "confirmUnshare": "Take the note out of the company list? Everyone else will stop seeing it."
+    "confirmUnshare": "Take the note out of the company list? Everyone else will stop seeing it.",
+    "newClientToggle": "Send to new clients — this note goes to the seller of every new code as the address message",
+    "newClientMark": "Sent to new clients",
+    "newClientNone": "No note is ticked «Send to new clients» — a new code sends the seller only the marking and the bot link, with no warehouse address.",
+    "aiDrift": "The AI seller’s knowledge holds the China addresses too — if they changed, correct them there as well.",
+    "aiDriftLink": "Open the AI seller’s knowledge →",
+    "aiDriftAsk": "Only a super-admin can correct the AI seller’s knowledge — tell them.",
+    "confirmUnshareFlagged": "Take the note out of the company list? Others will stop seeing it, and it will stop going to new clients."
   },
   "pickups": {
     "title": "Factory pickup",

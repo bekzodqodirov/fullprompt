@@ -647,7 +647,14 @@
     "sectorPlaceholder": "例如：服装、建筑",
     "cargoKinds": "常运货物（逗号分隔）",
     "cargoKindsPlaceholder": "例如：服装、鞋类、家电",
-    "cargoKindsKnown": "已有"
+    "cargoKindsKnown": "已有",
+    "addressTitle": "地址消息",
+    "addressHint": "仓库地址、客户唛头和机器人链接 — 会发到您的 Telegram，再转发给客户。",
+    "addressResend": "📨 把地址消息发给我",
+    "addressResent": "✅ 已发送 — 请打开您的 Telegram。",
+    "addressNoChat": "⚠ 您的 Telegram 未连接机器人 — 请先在个人资料中连接。",
+    "addressFailed": "⚠ 发送失败 — 请重试。",
+    "addressInactive": "⚠ 此代码已停用 — 不发送地址消息。"
   },
   "users": {
     "title": "员工",
@@ -986,7 +993,8 @@
       "advanceHint": "预支款及欠公司款项见下方「{panel}」。",
       "salaryNotDue": "本月尚未到付款期",
       "ftlLine": "FTL：{m3} 立方 · {n} 张收货单 — 不计入 KPI"
-    }
+    },
+    "notifMuteNewClient": "新客户地址消息"
   },
   "receive": {
     "title": "收货",
@@ -4586,7 +4594,15 @@
       "empty": "未找到"
     },
     "back": "← 返回",
-    "actions": "快捷操作"
+    "actions": "快捷操作",
+    "addressPresser": "销售员的 Telegram 未连接 — 地址消息已发给您。",
+    "addressMuted": "销售员已在个人资料中关闭此类消息 — 地址消息未发送。请在客户卡片上用“📨 把地址消息发给我”按钮获取。",
+    "addressMutedUnlinked": "销售员已在个人资料中关闭此类消息 — 地址消息未发送。您的 Telegram 也未连接 — 请先在 个人资料 → Telegram 中连接，然后在客户卡片上点击“📨 把地址消息发给我”。",
+    "addressNobody": "销售员的 Telegram 未连接机器人 — 地址消息未发给任何人。请在客户卡片上用“📨 把地址消息发给我”按钮获取。",
+    "addressNobodyUnlinked": "销售员的 Telegram 未连接机器人 — 地址消息未发给任何人。您的 Telegram 也未连接 — 请先在 个人资料 → Telegram 中连接，然后在客户卡片上点击“📨 把地址消息发给我”。",
+    "addressFailed": "地址消息发送失败 — 请在客户卡片上用“📨”重新发送。",
+    "addressSelfMuted": "您已在个人资料中关闭此类消息 — 地址消息未发送（个人资料 → Telegram 通知）。",
+    "addressSelfNobody": "您的 Telegram 未连接机器人 — 地址消息未发送（个人资料 → Telegram）。"
   },
   "routing": {
     "title": "线索分配",
@@ -4965,11 +4981,22 @@
       "empty": "备忘为空 — 请添加文本、文件或坐标。",
       "titleTaken": "同名备忘已存在。",
       "tooManyParts": "文件过多。",
-      "upload": "文件上传失败，请重试。"
+      "upload": "文件上传失败，请重试。",
+      "notCompany": "只有公共（🏢 所有人）笔记可以发给新客户。",
+      "serverBehind": "服务器尚未更新 — 请稍后再试。",
+      "failed": "无法确定是否已保存 — 页面已刷新，请检查勾选状态，如有需要请重试。",
+      "unreachable": "服务器没有响应 — 勾选可能没有改变。请检查网络后再点一次。"
     },
     "makeShared": "🏢 设为公共",
     "makePrivate": "👤 设为个人",
-    "confirmUnshare": "将备忘移出公共列表？其他人将不再看到它。"
+    "confirmUnshare": "将备忘移出公共列表？其他人将不再看到它。",
+    "newClientToggle": "发给新客户 — 每个新客户编号的销售员都会收到这条笔记作为地址消息",
+    "newClientMark": "发给新客户",
+    "newClientNone": "没有任何笔记被标记为“发给新客户” — 新开客户编号时，销售员只会收到唛头和机器人链接，没有仓库地址。",
+    "aiDrift": "AI 销售的知识库里也有中国地址 — 如有变化，请在那里也修改。",
+    "aiDriftLink": "打开 AI 销售知识库 →",
+    "aiDriftAsk": "只有超级管理员可以修改 AI 销售知识库 — 请告诉他。",
+    "confirmUnshareFlagged": "要把这条笔记从公共列表中移除吗？其他人将看不到它，新客户也将不再收到它。"
   },
   "pickups": {
     "title": "工厂提货",

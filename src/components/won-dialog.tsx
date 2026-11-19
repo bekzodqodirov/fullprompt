@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Overlay } from './ui/overlay';
+import { addressWordOf, type AddressWord } from '@/app/(protected)/admin/clients/address-flash';
 import {
   resolveClientCodeAction,
   winLeadAction,
@@ -92,6 +93,18 @@ export function WonDialog({
   const [error, setError] = useState('');
   const [result, setResult] = useState<NonNullable<WinLeadState['result']> | null>(null);
   const [copied, setCopied] = useState(false);
+  // Literal map — the i18n fence cannot see a key built at runtime (#163).
+  const addressWords: Record<AddressWord, string> = {
+    addressPresser: tq('addressPresser'),
+    addressMuted: tq('addressMuted'),
+    addressMutedUnlinked: tq('addressMutedUnlinked'),
+    addressNobody: tq('addressNobody'),
+    addressNobodyUnlinked: tq('addressNobodyUnlinked'),
+    addressFailed: tq('addressFailed'),
+    addressSelfMuted: tq('addressSelfMuted'),
+    addressSelfNobody: tq('addressSelfNobody'),
+  };
+  const addressWord = result ? addressWordOf(result.addressCard, result.addressCardSelf === true) : null;
   // The lead the fields were typed for: a dialog opened on card A must not
   // hand card B the leftovers.
   const [forLead, setForLead] = useState<string | null>(null);
@@ -256,6 +269,19 @@ export function WonDialog({
               {t('won.deal')}: {result.dealCode}
             </p>
           </div>
+          {/* 0151: the new code's address card, when it did not go to its
+              seller — said TO the presser, the full form's words, one
+              vocabulary (`addressWordOf`): to HIM when he is the code's
+              seller (a seller winning his own lead, review W-1), about the
+              seller otherwise. */}
+          {addressWord && (
+            <p
+              className={`text-sm ${addressWord === 'addressPresser' ? 'text-ink-700' : 'text-warn'}`}
+              data-testid="won-address-card"
+            >
+              {addressWord === 'addressPresser' ? '📨' : '⚠'} {addressWords[addressWord]}
+            </p>
+          )}
           {/* The lead's other calculations each opened a deal of their own
               (his Q5 a): named here, so nobody hunts for them on the board. */}
           {result.otherDeals.length > 0 && (

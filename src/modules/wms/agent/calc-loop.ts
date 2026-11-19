@@ -114,6 +114,29 @@ function labelOf(identity: Awaited<ReturnType<typeof chatIdentity>>): string {
   return `Lid: ${identity.customerName ?? '—'}`;
 }
 
+/**
+ * The link the agent speaks through for this request's chain — or null when it does not: no link (the job is not one
+ * the agent sent), or the chat is not on the agent owner's account. ONE test for both its readers: the announcement
+ * below, and `agentSpeaksForCalc`, which the calc pings ask before they add the card's owner (R13).
+ */
+async function speakingLink(requestId: string, config: { ownerUserId: string | null }) {
+  const link = await linkFor(requestId);
+  if (!link || config.ownerUserId !== link.managerUserId) return null;
+  return link;
+}
+
+/**
+ * Does the AI sotuvchi speak for this job — will its owner hear the VED's answer as the agent's own card
+ * (`AgentCalcAnswered`)? Resolved through the chain ROOT, so a correction of an agent job counts. The calc pings ask it
+ * before they tell the card's owner too: beside the machine's pending price a plain «💵 X USD» invites a second, manual
+ * quote (R13). The requester's own ping never asks it.
+ */
+export async function agentSpeaksForCalc(requestId: string): Promise<boolean> {
+  const config = await readAgentConfig();
+  if (!config) return false;
+  return (await speakingLink(requestId, config)) !== null;
+}
+
 export interface AnnounceDeps {
   /** Tests: the hand-back's and the VED answer's job sender (pg-boss's `enqueue` otherwise). */
   enqueue?: (name: string, data: AgentHandBackJob | AgentCalcAnswerJob, options: { retryLimit: number; startAfter?: number }) => Promise<void>;
@@ -134,9 +157,8 @@ export async function announceAgentCalc(
 ): Promise<boolean> {
   const config = await readAgentConfig();
   if (!config) return false;
-  const link = await linkFor(requestId);
+  const link = await speakingLink(requestId, config);
   if (!link) return false;
-  if (config.ownerUserId !== link.managerUserId) return false;
   const identity = await chatIdentity(link.managerUserId, link.peerId);
   const [req] = await db.select({ section: calcRequests.section }).from(calcRequests).where(eq(calcRequests.id, requestId));
   const section = SECTION_WORDS[req?.section ?? ''] ?? req?.section ?? '';
@@ -200,7 +222,10 @@ export async function announceAgentCalc(
       managerUserId: link.managerUserId,
       peerId: String(link.peerId),
       requestId,
-      reason: (detail.reason ?? '').slice(0, 500),
+      // By code points (review P2F-5): a UTF-16 `slice` halves an emoji the
+      // hand-back's own clip let through, and the job's jsonb refuses the
+      // lone surrogate.
+      reason: clipText(detail.reason ?? '', 500),
     };
     const send = deps.enqueue ?? (async (name, data, options) => (await import('../../platform/jobs/boss')).enqueue(name, data, options));
     await send(JOB_AGENT_HAND_BACK, job, { retryLimit: 0 }).catch((err: unknown) =>

@@ -88,7 +88,6 @@ import {
   CalcError,
   MAX_CALC_ITEMS,
   calcDueMinutes,
-  linkLine,
   nextVedAssigneeInTx,
   requestLabel,
   vedRotaPool,
@@ -2231,6 +2230,7 @@ export async function sealCalc(
     return {
       versionNo: row.versionNo,
       versionId: inserted!.id,
+      validUntil,
       requestedBy: row.requestedBy,
       entityType: row.entityType,
       entityId: row.entityId,
@@ -2239,8 +2239,8 @@ export async function sealCalc(
   });
 
   // The price channel's claim (his F, 2026-10-07) — FIRST after the commit:
-  // `writeAudit` below is not in a catch and `announceSeal` awaits Telegram,
-  // so a throw or a restart in that window must not cost the row. Its own
+  // `announceSeal` below awaits Telegram, so a restart in that window must
+  // not cost the row. Its own
   // catch: a channel that cannot be told must never undo a seal (#472), and
   // the drain's net picks up a row this misses.
   await import('./channel-queue')
@@ -2255,6 +2255,12 @@ export async function sealCalc(
   // off the request (the void form, #706).
   if (result.taskId) retireTaskCopiesSoon({ taskIds: [result.taskId], outcome: 'done' });
 
+  // Caught (review P2-3): the seal has COMMITTED, so a throw here undoes
+  // nothing — it only tells the VED «error» about a price that is locked,
+  // turns his second press into `already_closed`, and skips every message
+  // below it: the requester's and the card owner's «🧮 Hisob tayyor», the
+  // owners' concession notice, the agent's answer. None of those is ever
+  // re-sent. The row that failed is said in the log instead.
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
     entityId: requestId,
@@ -2265,7 +2271,7 @@ export async function sealCalc(
       discountUsd: totals.discountUsd,
       bandOverrideMin: input.bandOverrideMin,
     },
-  });
+  }).catch((err) => logger.error({ err, requestId }, '[calc] seal audit not written'));
 
   // 0096: the seal is the company's answer, so it teaches the code memory
   // too. `tnved_assignments` is the EXACT-key half (`productKey` = the same
@@ -2329,20 +2335,35 @@ async function rememberSealedCodes(workspace: Workspace, ctx: AuditContext): Pro
  * same way, because it moves the same money by another name.
  */
 async function announceSeal(
-  result: { versionNo: number; requestedBy: string; entityType: string; entityId: string },
-  totals: { totalUsd: number; discountUsd: number },
+  result: { versionId: string; validUntil: Date; requestedBy: string; entityType: string; entityId: string },
+  totals: { totalUsd: number; discountUsd: number; perM3Usd: number | null },
   input: SealInput,
   ctx: AuditContext,
   requestId: string,
 ) {
   const link = cardLink(result.entityType === 'lead' ? 'lead' : 'deal', result.entityId);
+  // The requester's «🧮 Hisob tayyor — V2» — and the card's owner, when that
+  // is somebody else — said in full, by a sender that cannot throw (R12): the
+  // concession notice below must never be lost to a read for the first
+  // message. The V is the CHAIN's, read from the version (D8); the per-m³ is
+  // the engine's own figure, the one the version stores (his 9).
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId,
+        requestedBy: result.requestedBy,
+        ping: {
+          type: 'CalcSealed',
+          versionId: result.versionId,
+          totalUsd: totals.totalUsd,
+          perM3Usd: totals.perM3Usd,
+          validUntil: result.validUntil,
+        },
+        exceptUserId: ctx.actorId ?? null,
+      }),
+    )
+    .catch((err) => logger.error({ err, requestId }, '[calc] seal ping failed'));
   const who = ctx.actorId ? await userName(ctx.actorId) : '—';
-  await notifyStaffTelegram({
-    userIds: [result.requestedBy],
-    type: 'CalcSealed',
-    text: `🧮 Hisob tayyor: $${totals.totalUsd.toFixed(2)}\n${link}`,
-    exceptUserId: ctx.actorId ?? null,
-  });
   await (await import('../agent/calc-loop')).announceAgentCalcSafe(requestId, 'sealed', {
     amountText: `$${totals.totalUsd.toFixed(2)}`,
   });
@@ -2811,12 +2832,17 @@ export async function recalcFromSealed(
     throw err;
   }
 
+  // Both caught (review P2F-1, the seal's rule P2-3): the correction is
+  // COMMITTED, so a throw here undoes nothing — it would only cost the
+  // holder his task («Olaman» then answers `already_yours`), the seller
+  // «🔄 … qayta hisoblanmoqda», the agent's notice and the channel's kick,
+  // and a second press answers `recalc_open`. A row that failed is logged.
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
     entityId: newId,
     action: 'create',
     after: { supersedes: requestId, relawed, remeasure },
-  });
+  }).catch((err) => logger.error({ err, newId }, '[calc] recalc audit not written'));
   // The CARD's own row too, in the same vocabulary as every other calc
   // ending, so the seller's History tab says the price was reopened.
   await writeAudit(db, ctx, {
@@ -2824,9 +2850,14 @@ export async function recalcFromSealed(
     entityId: card.entityId,
     action: 'update',
     after: { calcRecalc: newId, calcRequest: requestId },
-  });
+  }).catch((err) => logger.error({ err, newId }, '[calc] recalc card audit not written'));
 
-  const label = await requestLabel(card.entityType, card.entityId);
+  // Caught (R12): the correction is committed, and the task's title must not
+  // throw it away with the ping behind it.
+  const label = await requestLabel(card.entityType, card.entityId).catch((err: unknown) => {
+    logger.error({ err, newId }, '[calc] correction label not read');
+    return '—';
+  });
   // The task: what puts the correction on the holder's /bugun and phone,
   // bound to the request so no task door can move its clock or close it
   // (docs/VED-TARIX.md §8). After the commit, never inside it (#714); a
@@ -2858,14 +2889,16 @@ export async function recalcFromSealed(
       logger.error({ err, newId }, '[calc] correction task creation failed');
     }
   }
-  await notifyStaffTelegram({
-    userIds: [seller],
-    type: 'CalcRecalc',
-    text:
-      `🔄 ${label}: narx qayta hisoblanmoqda — eski narx endi amal qilmaydi` +
-      linkLine(card.entityType, card.entityId),
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId: newId,
+        ping: { type: 'CalcRecalc' },
+        requestedBy: seller,
+        exceptUserId: ctx.actorId,
+      }),
+    )
+    .catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
   await (await import('../agent/calc-loop')).announceAgentCalcSafe(newId, 'recalc');
   // The old price's channel post gets its «qayta hisoblanmoqda» mark — derived
   // by the drain's reconcile from the graph this insert just changed; the

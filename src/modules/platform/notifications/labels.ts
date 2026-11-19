@@ -385,6 +385,11 @@ const DICT = {
   // Round C: the card link at the foot of a staff message becomes a BUTTON
   // (the drain moves it; the stored text keeps the link).
   openInApp: { ru: '↗️ Открыть', uz: '↗️ Ochish', 'zh-CN': '↗️ 打开', en: '↗️ Open' },
+  // The calc pings' button says WHICH door it is (calc-ping.ts): the lead
+  // card, the deal card, or the VED's own calculation screen.
+  openLead: { ru: '↗️ Открыть лид', uz: '↗️ Lidni ochish', 'zh-CN': '↗️ 打开线索', en: '↗️ Open lead' },
+  openDeal: { ru: '↗️ Открыть сделку', uz: '↗️ Bitimni ochish', 'zh-CN': '↗️ 打开交易', en: '↗️ Open deal' },
+  openCalc: { ru: '↗️ Открыть расчёт', uz: '↗️ Hisobni ochish', 'zh-CN': '↗️ 打开核算', en: '↗️ Open calculation' },
   // Round 2 of the staff threads (0129): a prixod's or a truck's question
   // reaches a Chinese warehouse, so its FRAME — the reply hint, the reply
   // button and the «📍» place line — follows the recipient's language

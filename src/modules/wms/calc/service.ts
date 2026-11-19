@@ -21,7 +21,6 @@ import { notifyStaffTelegram, userName } from '@/modules/platform/notifications/
 import { usersWithPermission, usersWithRoles } from '@/modules/platform/notifications/service';
 import { canLogInSql } from '@/modules/platform/users/login';
 import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
-import { cardLink } from '@/modules/platform/notifications/links';
 import { logger } from '@/modules/platform/logger';
 import { violatedUnique } from '@/modules/platform/db/errors';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
@@ -705,8 +704,16 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
     // The previous holder's copies say it moved on; the taker's own survive.
     retireTaskCopiesSoon({ taskIds: [won.taskId], outcome: 'reassigned', exceptUserIds: [ctx.actorId] });
   } else {
-    const label = await requestLabel(won.entityType, won.entityId);
     try {
+      // Its own catch, falling back to «—» (review P2-4): the claim is
+      // committed, and a label that could not be read must neither throw out
+      // of a take that already happened (R12) nor skip the task — «Olaman» on
+      // a request he holds is refused `already_yours`, so the taker could
+      // never get the task back (the correction's same rule, workspace.ts).
+      const label = await requestLabel(won.entityType, won.entityId).catch((err: unknown) => {
+        logger.error({ err, id }, '[calc] take label not read');
+        return '—';
+      });
       const task = await createTask(
         {
           title: `Hisoblash: ${label} (${won.itemCount})`,
@@ -732,20 +739,30 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
     }
   }
 
+  // Caught (review P2F-2, the seal's rule P2-3): the take is COMMITTED, so a
+  // throw here would only tell the VED «error» about a take that happened,
+  // answer his second press `already_yours`, and cost the requester and the
+  // card owner «🙋 Oldi» for good.
   await writeAudit(db, ctx, {
     entityType: won.entityType,
     entityId: won.entityId,
     action: 'update',
     after: { calcTakenBy: ctx.actorId, calcRequest: id },
-  });
-  await notifyStaffTelegram({
-    userIds: [won.requestedBy],
-    type: 'CalcTaken',
-    text:
-      `🧮 Hisoblash olindi: ${await requestLabel(won.entityType, won.entityId)}\n` +
-      `👤 ${await userName(ctx.actorId)}${linkLine(won.entityType, won.entityId)}`,
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, id }, '[calc] taken notify failed'));
+  }).catch((err) => logger.error({ err, id }, '[calc] take audit not written'));
+  // The ping's facts, its taker and its link are read where nothing can
+  // throw out of a take that is already committed (request-head.ts, R12).
+  // Dynamic: request-head reaches the card doors, which import this file's
+  // neighbours.
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId: id,
+        ping: { type: 'CalcTaken', takerId: ctx.actorId },
+        requestedBy: won.requestedBy,
+        exceptUserId: ctx.actorId,
+      }),
+    )
+    .catch((err) => logger.error({ err, id }, '[calc] taken notify failed'));
 }
 
 /**
@@ -921,26 +938,37 @@ export async function returnCalcRequest(
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const trimmed = reason.trim();
   if (trimmed.length < 3) throw new CalcError('reason_required');
+  // By CODE POINTS, as `finishCalcRequest` cuts its notes: `slice` can halve
+  // an emoji into a lone surrogate, which jsonb refuses — the request is
+  // already closed by then, so the refusal would cost the seller every
+  // message below.
+  const why = clipText(trimmed, 500);
   const row = await endRequest(id, {
     via: 'returned',
     actorId: ctx.actorId,
-    returnReason: trimmed.slice(0, 500),
+    returnReason: why,
   });
   if (!row) throw new CalcError('already_closed');
+  // Caught (review P2-3): the request is CLOSED, so a throw here undoes
+  // nothing and only costs the seller «↩️ qaytarildi» and the «↩️ Ma'lumot
+  // to'ldiring» task — a second press then reads `already_closed` and nobody
+  // re-sends either (the seal's same rule, and `finishCalcRequest`'s order).
   await writeAudit(db, ctx, {
     entityType: row.entityType,
     entityId: row.entityId,
     action: 'update',
-    after: { calcReturned: id, reason: trimmed.slice(0, 500) },
-  });
-  await notifyStaffTelegram({
-    userIds: [row.requestedBy],
-    type: 'CalcReturned',
-    text:
-      `↩️ Hisoblash qaytarildi: ${await requestLabel(row.entityType, row.entityId)}\n` +
-      `📝 ${trimmed.slice(0, 300)}${linkLine(row.entityType, row.entityId)}`,
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, id }, '[calc] returned notify failed'));
+    after: { calcReturned: id, reason: why },
+  }).catch((err) => logger.error({ err, id }, '[calc] return audit not written'));
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId: id,
+        ping: { type: 'CalcReturned', reason: why },
+        requestedBy: row.requestedBy,
+        exceptUserId: ctx.actorId,
+      }),
+    )
+    .catch((err) => logger.error({ err, id }, '[calc] returned notify failed'));
 
   /**
    * …and the work lands back on the SELLER's day (owner's item 5, question
@@ -961,10 +989,16 @@ export async function returnCalcRequest(
     const due = new Date();
     due.setUTCDate(due.getUTCDate() + 1);
     due.setUTCHours(23, 59, 59, 999);
+    // The label's own catch, as the take's (review P2-4): a title that could
+    // not be read must not cost the seller the task.
+    const label = await requestLabel(row.entityType, row.entityId).catch((err: unknown) => {
+      logger.error({ err, id }, '[calc] return label not read');
+      return '—';
+    });
     const task = await createTask(
       {
-        title: `↩️ Ma'lumot to'ldiring: ${await requestLabel(row.entityType, row.entityId)}`,
-        note: trimmed.slice(0, 500),
+        title: `↩️ Ma'lumot to'ldiring: ${label}`,
+        note: why,
         typeId: null,
         assigneeId: row.requestedBy,
         // A DATE and not an instant: `parseDue` treats only a bare
@@ -996,7 +1030,7 @@ export async function returnCalcRequest(
   // The AI sotuvchi hears it LAST (review regression-3): the seller's task
   // above is the VED's own work and must not wait behind the agent's.
   // Best-effort and queued, never a model run under the VED's button.
-  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: why });
 }
 
 /**
@@ -1174,20 +1208,22 @@ export async function finishCalcRequest(
   await queuePriceChannelPost({ kind: 'answer', requestId: id }).catch((err) =>
     logger.error({ err, id }, '[price-channel] not queued'),
   );
-  const label = await requestLabel(row.entityType, row.entityId);
   // The seller's push goes BEFORE the bookkeeping (review ved-money-4): the
   // job is already closed with its price, so an audit write that throws
   // below must not also swallow the one message that tells the seller — a
-  // second press reads «already closed» and nobody would ever send it.
-  await notifyStaffTelegram({
-    userIds: [row.requestedBy],
-    type: 'CalcDone',
-    text:
-      `✅ Hisoblash tayyor: ${label}\n💵 ${amount} ${currency}` +
-      `${sellerNote ? `\n📝 ${clipText(sellerNote, 300)}` : ''}` +
-      linkLine(row.entityType, row.entityId),
-    exceptUserId: ctx.actorId,
-  }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
+  // second press reads «already closed» and nobody would ever send it. Its
+  // facts are read inside a sender that cannot throw (R12): the label read
+  // that used to stand here, uncaught, was exactly such a throw.
+  await import('./request-head')
+    .then(({ sendCalcPing }) =>
+      sendCalcPing({
+        requestId: id,
+        requestedBy: row.requestedBy,
+        ping: { type: 'CalcDone', amount, currency, sellerNote },
+        exceptUserId: ctx.actorId,
+      }),
+    )
+    .catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
   // The AI sotuvchi's own «javob keldi» (0138, regression-5): its own type, no
   // exceptUserId — a no-op unless the agent sent this job. Never throws.
   await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'done', { amountText: `${amount} ${currency}` });
@@ -1384,18 +1420,6 @@ export async function rekeyLeadCalcRequests(leadId: string, dealId: string): Pro
       .where(and(eq(calcRequests.entityType, 'lead'), eq(calcRequests.entityId, leadId)));
     return rekeyLeadCalcJobsTx(tx, leadId, [{ dealId, requestIds: rows.map((row) => row.id) }]);
   });
-}
-
-/**
- * The card's own address, for a message read on a phone.
- *
- * Through `cardLink` rather than a template literal: where a deal or a lead
- * lives is already answered in one place, and a third copy is the thing #381
- * records (remembered in one place, forgotten in the other).
- */
-export function linkLine(entityType: string, entityId: string): string {
-  const href = cardLink(entityType, entityId);
-  return href ? `\n${href}` : '';
 }
 
 export async function requestLabel(entityType: string, entityId: string): Promise<string> {

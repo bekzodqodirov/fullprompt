@@ -139,6 +139,7 @@ export function QuickCreate({
     code: string;
     name: string;
     dealId: string | null;
+    addressCard: QuickClientResult['addressCard'] | null;
   } | null>(null);
   const [copied, setCopied] = useState(false);
   // A door that needs to know WHO first (a payment, a calculation) turns the
@@ -235,6 +236,7 @@ export function QuickCreate({
         code: (result as QuickClientResult).code ?? '',
         name: result.name!,
         dealId: (result as QuickClientResult).dealId ?? null,
+        addressCard: (result as QuickClientResult).addressCard ?? null,
       });
       reset();
       router.refresh();
@@ -296,6 +298,31 @@ export function QuickCreate({
               </p>
               <p className="mt-1 truncate text-sm text-ink-500">{madeClient.name}</p>
             </div>
+            {/* 0151: where the address card went, when it did not go to the
+                seller the usual way — a card that reached nobody is otherwise
+                silent, and the code is about to go on cartons. On this door
+                the presser IS the seller, so the sentence is said TO him, in
+                the second person (review CUST-8). */}
+            {madeClient.addressCard === 'presser' && (
+              <p className="text-sm text-ink-700" data-testid="quick-address-card">
+                📨 {t('addressPresser')}
+              </p>
+            )}
+            {madeClient.addressCard === 'muted' && (
+              <p className="text-sm text-warn" data-testid="quick-address-card">
+                ⚠ {t('addressSelfMuted')}
+              </p>
+            )}
+            {madeClient.addressCard === 'nobody' && (
+              <p className="text-sm text-warn" data-testid="quick-address-card">
+                ⚠ {t('addressSelfNobody')}
+              </p>
+            )}
+            {madeClient.addressCard === 'failed' && (
+              <p className="text-sm text-warn" data-testid="quick-address-card">
+                ⚠ {t('addressFailed')}
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <button
                 type="button"

@@ -369,6 +369,28 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## Yangi kodga manzil xabari va to‘liq «Hisob tayyor» (2026-11-19, 0151) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0151** — deploydan keyin son **152** bo‘ladi. Zametkalar jadvaliga bitta ustun qo‘shiladi
+(«🆕 Yangi mijozga yuborilsin» belgisi). Telegram tinglovchisini (tg-listen) qayta qurish shart emas: staff bot va
+xabarlar navbati `app` ichida.
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng `docker compose --profile https up -d --build`.
+3. Sonni o‘qing — **152**. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+4. **Belgini qo‘ying:** Zametkalar → «Xitoy sklad» → «🆕 Yangi mijozga yuborilsin». Belgi qo‘yilmaguncha yangi kodga
+   xabar manzilsiz ketadi va sotuvchiga «⚠ Manzil zametkasi belgilanmagan» deb aytiladi. Belgi qo‘yganingizda AI
+   sotuvchining bilimi haqida eslatma chiqadi — u yerdagi manzillar alohida nusxa.
+5. Sinov: «+» bilan sinov mijoz oching (telefon bilan). Staff botda avval ko‘rsatma, keyin manzil xabari kelishi kerak.
+   Xabar ostidagi botga ssilkani boshqa telefondan bosib ko‘ring: bot salomlashib raqam so‘raydi. Sinov mijozni keyin
+   o‘chirib qo‘ying.
+6. Sinov: VED bitta hisobni muhrlasin yoki «Готово» bossin — sotuvchiga mijoz, bitim yoki lid, tovarlar va $/kub bilan
+   xabar kelishi kerak; tugma «↗️ Bitimni ochish» yoki «↗️ Lidni ochish» deb yoziladi.
+
+**Orqaga qaytarish kerak bo‘lsa:** eski kod yangi ustunni o‘qimaydi va hech narsa buzilmaydi — ustunni qoldiring.
+Eski kodda «🆕» belgisi ham, manzil xabari ham bo‘lmaydi; navbatda qolgan manzil xabaridan faqat sotuvchiga
+ko‘rsatma qatori ketadi (manzil qismi ketmaydi) — kerak bo‘lsa, yangi kodga qaytgach kartadagi «📨» bilan qayta oling.
+
 ## Sotuvchilar yukni, furalarni va skladlarni ko‘radi (2026-11-18, 0150) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0150** — deploydan keyin son **151** bo‘ladi. Yangi huquq `batches.view` qo‘shiladi va
