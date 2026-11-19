@@ -176,6 +176,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, his six questions of 2026-11-10; **§18.3 = «o'zi yuborish», the auto-send layer AS BUILT** on his answer of 2026-11-11, migration 0145; **§18.8 = the FULL seller's part 1 AS BUILT** — the price act «Narx», «✍️ Savolga javob», «📝 Tuzatish» lessons, six languages, the account's limits, migration 0148, and **the reader corpus** every reader change runs first) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live; auto-send SHIPPED, armed only by him; full seller part 1 + 1b SHIPPED («Narx» may be ticked after 1b); **§18.9 = part 2 AS BUILT** (the calc sent by itself, the VED answer with his markup, the card and the funnel; migration 0149); part 3 next |
+| **To'liq AI sotuvchi** — the TARGET product (a fully autonomous sales agent): lifecycle, rights per action, the guard, channels, the road, the 32 questions | `docs/AI-SOTUVCHI-TOLIQ.md` — design v2 of 2026-11-19, **NOT built, awaiting his answers** (§11); working material, the critics and the 303 safety cases in `docs/ai-toliq/`; `critic-feasibility.md` §A = the 35 earlier answers it touches |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
@@ -3911,6 +3912,23 @@ names (a seller can now open that truck); the untick works only from an admin ac
 (`own_role`); rollback deletes the permission row AND 0150's ledger row together (docs/UPDATE.md). Reviewed as built
 (#1805) and the fixes reviewed (#1806 — the owner outranking the client's seller TAKEN BACK); 44 + 8 red proofs.
 **19,528 unit/integration (953 files) + 535 e2e** (1 skipped) green on a fresh database in CI's order at 2e24381d.
+
+**Design round — To'liq AI sotuvchi (2026-11-19; NO code, NO migration, NO DECISIONS entry; `docs/AI-SOTUVCHI-TOLIQ.md` +
+`docs/ai-toliq/`).** His «hozir AI sotuvchi emas salomlashadgan bot yasab qoyibsanku» and «hozirdan toliq ai sotuvchi
+qurishni strukturasini qur … boshlashdan oldin hammasini aniqlashtirib olaylik». Three code maps → three independent
+designs → the lead's synthesis → six critics → design v2, shown to him as an Artifact page («To'liq AI sotuvchi», the
+source is `docs/ai-toliq/toliq-ai-sotuvchi.html`) with 4 fill-ins and 32 questions (13 needed before stage 1a). **Build
+NOTHING of it until he answers; his answers go into §11 and bind.** The flip: judge ACTIONS by what they can cost, not
+words and not the model's own confidence; rights per action in four positions (O'zi / Nazoratda / So'rab / Faqat odam).
+What the critics changed, and a later session must not undo: the guard is «blocks + permits + tripwire-holds, reviewer
+on top» — NO word rule is deleted before the measurement of `critic-guard.md` §C.2 has run and he has seen the missed
+list; `language` on money messages, `owner_figure`, the `complaint` label and his own-typing pause STAY in stage 1a, and
+`streak` + `repeat` leave only together with a loop detector; the conversation engine (acts before speech, event
+triggers, a conversation record) is its own stage; Telegram's Chat Automation is free since May 2026 but works only in
+chats with an incoming message in the last 24 h, so the session stays for good; law 4 binds every AI card (a VED answer
+relayed «as given» is the FLOOR); the seat already accrues KPI/rating and must leave them in 1a; the website truck
+table ends 2026-12-31. Every ⭐ that reverses an earlier answer of his is marked ⚠ on the page — never build such a ⭐
+on a bare «sen aytgandek» without having shown him the ⚠.
 
 **Latest migration: 0150** (`batches_view`, `when` …129; ledger must reach **151**). Before
 it: 0149 (`agent_full_p2`, `when` …128). Before
