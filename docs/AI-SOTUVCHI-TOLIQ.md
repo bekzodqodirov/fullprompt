@@ -15,7 +15,7 @@ guard). This file is v1 with the critics' corrections applied. The working mater
 | `design-product.md`, `design-risk.md`, `design-operations.md` | the three designs (they DISAGREE on the guard — see §3) |
 | `SPEC-TOLIQ-v1.md` | the first synthesis, superseded by this file |
 | `critic-*.md` | six critiques; `critic-feasibility.md` §A is the table of 35 earlier answers the design touches |
-| `toliq-ai-sotuvchi.html` | the page shown to the owner (Uzbek): the product, the road, the 32 questions |
+| `toliq-ai-sotuvchi.html` | the page shown to the owner (Uzbek): the product, the road, the 32 questions — published as the Artifact https://claude.ai/artifact/VULstuxzWxKtMJ9YPy3TQM (republish THAT url after an edit) |
 
 His answers, when they come, are recorded in §11 and become binding over everything above them.
 
@@ -41,13 +41,13 @@ on the question named.
 |---|---|---|---|
 | First contact | answers in 1-3 min (at night if Q4 says so); opens the lead; fills the card | «telefon qiling» → a call-back task (Q15) | phone calls; a first message to someone who never wrote |
 | Qualifying | reads Excel exactly; reads photos and PDFs and READS BACK what it read; kub from typed sizes; asks «to'liq mashinami?» (FTL); voice ONLY if the trial passes, with a typed confirmation (Q13) | unreadable → «yozib yuboring» + a card; «may this be imported?» → the VED | — |
-| Price | truck tariff by density; avia = kg × rate; sends the VED job with its files; the VED price + his markup, PDF | rail (his rule stands); big cargo / FTL (Q3); Kashgar, Horgos (Q18); another city (Q19); factory pickup, «Sotib olib berish» (Q20) | the official customs calculation; tariff and markup; a customs ESTIMATE to the customer — not until he sees his own data (§8 «later, with data») |
+| Price | truck tariff by density (today's own ceiling stays: above 100 m³ / 20 t → the VED); avia = kg × rate; sends the VED job with its files; the VED price + his markup, PDF (Q29); big cargo is still answered, he gets a ping (Q3); another city → «narx Toshkentgacha» (Q19) | rail (his rule stands); Kashgar and Horgos until their prices AND receiving address stand in the system (Q18); factory pickup, «Sotib olib berish» → collects and hands over (Q20) | the official customs calculation; tariff and markup; a customs ESTIMATE to the customer — not until he sees his own data (§8 «later, with data») |
 | Negotiation | explains the price, offers alternatives | discount = a one-tap card (Q23) | credit; below the floor |
 | Closing | (if Q16) phone checked → GS code = lead won + deal → code, marking rule, the China address verbatim from Bilimlar, the company-bot link | phone belongs to another client → him | — |
 | Journey | answers «yukim qayerda» with the cabinet's five steps and window; never repeats a bot message | «why late» → logist; «came without a code» → warehouse; the client's ❌ on a prixod → warehouse + him | loss / damage decisions |
-| Payment | names the ways to pay; the balance in a phone-proven chat; a cheque photo → the accountant | «qarzga bering» → him or the client's seller (never the 24-h counter approval); reminders per Q25 | posting money; granting debt |
+| Payment | names the ways to pay; the balance when the customer ASKS, in a phone-proven chat (today every balance reply is his ✅ — Q25 ⚠); a cheque photo → the accountant | «qarzga bering» → him or the client's seller (never the 24-h counter approval); reminders per Q25 | posting money; granting debt |
 | Handover | where and from whom (the stored Tashkent contact) | off-hours pickup → warehouse | the handover |
-| Repeat | «keyingi yuk?» inside the same conversation after a handover | quiet-customer messages and the Friday greeting, one approval per campaign (Q24, Q26) | cold messages — never |
+| Repeat | «keyingi yuk?» inside a reply when the customer writes after a handover (never a first message); a quote left unanswered is reminded at most twice (Q24) | quiet-customer messages and the Friday greeting, one approval per campaign (Q24, Q26) | cold messages — never |
 | Complaints | never silent: apologises without admitting fault, collects facts, opens a case | he decides, the AI relays | compensation, refund |
 
 Never, whatever is on: a number, address, date or code the system did not hand it; «I am a person»; another
@@ -153,10 +153,10 @@ codes, everything the system sends «to the client's seller» must reach the sup
 | # | Stage | Built | Size |
 |---|---|---|---|
 | 0 | Today, no code | his chores (three ticks, markup, «Tarif to'g'ri», the seat button, the two AI stages, confidence 60); two read-only counts on his server (the 11-15 verdicts re-judged under 1a rules; the share of bursts with media); the Chat Automation trial; the speech trial on 25 real notes | — |
-| 1a | To'siqlar olinadi | `low_confidence` out; typed warnings/notes; ordinary labels free (`complaint` kept); ONE loop detector replacing `streak` + `repeat`; his Q2 rule in the prompt; persona; an honest reply to media-only bursts; night per Q4; the seat out of pay/rating; the morning line. `language` stays for money messages, `owner_figure` stays | S-M |
-| 1b | Kod va manzil — bir tugma | «So'rab» for the code: the AI prepares, he taps, the AI sends code + address | S |
-| 1c | Suhbat dvigateli | the conversation record, event triggers, multi-part outbox, the system holding line, supervisor + deputy, the new prompt measured by a dry replay on the server | L |
-| — | 2026-12-31 | the website truck table ends — the 2027 tariff must stand in «Tarif» by then | a date |
+| 1a | To'siqlar olib tashlanadi | the big-cargo ping (Q3); `low_confidence` out; typed warnings/notes; ordinary labels free (`complaint` kept); ONE loop detector replacing `streak` + `repeat`; his Q2 rule in the prompt; persona; an honest reply to media-only bursts; night per Q4; the seat out of pay/rating; the morning line. `language` stays for money messages, `owner_figure` stays | S-M |
+| 1b | Suhbatni yuritish (the conversation engine) | the conversation record, event triggers, acts before speech, multi-part outbox, the system holding line, supervisor + deputy, the new prompt measured by a dry replay on the server | L |
+| 1c | Kod va manzil — bir tugma | «So'rab» for the code: the AI prepares, he taps, the code opens, the AI sends code + address. NOT small: the reply needs a code that exists (acts before speech, hence after 1b), `winLead` re-keys the chat (the send step cancels on `identity_changed` today), and the seat becomes minter and seller (KPI stamp, group congratulation) | M-L |
+| — | 2026-12-31 | the website truck table ends. The price does NOT stop: from then the truck figure comes from /admin/tarif's China column (`agent/estimate.ts`, «skipped, never refused»). He must check the column and press «✅ Tarif to'g'ri» before then, or the first priced reply waits for his ✅ (`tariff-watch.ts`) | a date |
 | 2 | Ko'radi va eshitadi | eyes (two-phase turn, a new source origin) M-L; ears M only after the trial | M-L + M |
 | 3a | Hamkasblardan so'raydi | routing by topic with clocks, answers relayed, take-over and give-back, the law-4 card sight | M-L |
 | 3b | Yangi qo'riqchi | blocks, permits, reviewer, the rights page, limits ledger, nightly comparison; the exam on the server; word tables go last | L |
@@ -175,29 +175,29 @@ Sizes: S = days, M = 1-2 weeks, L = 2-4 weeks — estimates; in the earlier part
 The full Uzbek wording with options is the page (`docs/ai-toliq/toliq-ai-sotuvchi.html`). ⭐ = what «sen aytgandek»
 builds. ⚠ = the option reverses a recorded answer of his.
 
-**Fill-ins:** the AI's name · his deputy · the markup on a VED price (empty = none, his A1) · who holds the seat's SIM.
+**Fill-ins:** the AI's name · his deputy · the markup on a VED price (empty = none, his A1) · who holds the seat's SIM · which avia price and days are said ($17/kg, 2-5 days — his; the site says $9-12/kg, 5-10 days).
 
 **To start (before 1a):** 1 persona ⚠ (⭐ own name, honest one line to «botmisiz?») · 2 a bare «narxi qancha?» (⭐
-table figure at once + «rastamojka bilan hisoblab beraymi?») · 3 big cargo (⭐ ping from 20 kub or «fura») · 4 night ⚠
+table figure at once + «rastamojka bilan hisoblab beraymi?») · 3 big cargo (⭐ ping from 20 kub or «fura»; the table's own ceiling of 100 m³ / 20 t stays) · 4 night ⚠
 (⭐ answers, never first) · 5 supervisor + deputy ⚠ (⭐ 15 min, 09-19) · 6 website «Telegram» visitors (⭐ one more
 seat in the queue for two weeks) · 7 do existing customers learn the number (⭐ sellerless clients, through the bot) ·
 8 a colleague's customer (⭐ status/addresses/table price; money to the seller; the seller's price outranks) · 9
 checking (⭐ ten a day for a month) · 10 the money meter ⚠ (⭐ warn $15; at $50 stop writing first and reading files,
-keep answering) · 11 the 2-minute hold (⭐ prices wait, talk does not) · 12 the Chat Automation trial ⚠ (⭐ try) ·
+keep answering) · 11 the 2-minute hold ⚠ (⭐ prices wait, talk does not — on 11-11 he took «2 minutes with ⏸» for every reply) · 12 the Chat Automation trial ⚠ (⭐ try) ·
 13 voice (⭐ trial on 25 notes; until it passes «yozib yuboring» + a card).
 
 **Later (now, or when the stage comes):** 14 whom it asks by topic · 15 «telefon qiling» · 16 GS code ⚠ (⭐ alone,
 ≤ 10 a day, each shown to him for two weeks) · 17 avia address ⚠ (first: is it ONE address?) · 18 Kashgar/Horgos ·
 19 delivery city · 20 other services · 21 payment requisites · 22 quoted too low (⭐ honour to $50) · 23 discount ⚠
 (⭐ one-tap card for the first month) · 24 follow-up on a silent quote ⚠ (⭐ twice, then stop) · 25 ready cargo and
-its money ⚠ (⭐ once, through the bot) · 26 the Friday greeting and quiet customers ⚠ (⭐ from the seat only to people
-who wrote to it; the rest through the bot) · 27 road news unasked (⭐ none) · 28 the AI inside the company bot ·
+its money ⚠ (⭐ the balance alone when the customer asks; the amount said once when the cargo is ready, through the bot) · 26 the Friday greeting and quiet customers ⚠ (⭐ from the seat only to people
+who wrote to it in the last 90 days, ≤ 10 a day shared with Q24, once a month per customer; the rest through the bot) · 27 road news unasked (⭐ none) · 28 the AI inside the company bot ·
 29 the quote on the card and the PDF through the bot ⚠ 6b · 30 the reserve number · 31 whose are AI-won customers ·
 32 order of stages.
 
 **Decided without a question, told to him:** ordinary talk goes alone · rail unchanged · under the minimum → says it,
 offers avia · reads files and reads back · complaints as above · no language shown → Uzbek Latin; `language` stays
-strict on money messages · a figure in his or a colleague's answer still comes to him as a card · his own typing on
+strict on money messages · ANY figure (price, days, kg) in his or a colleague's answer still comes to him as a card · his own typing on
 the seat still pauses the AI · ⚠ the two-in-a-row rule goes, a loop detector replaces it · the AI asks the city,
 never picks · only he approves knowledge · Pashto → one line asking for Russian or Persian.
 
@@ -210,7 +210,8 @@ The account (cannot be excluded; the reserve number cannot write first; the more
 · a wrong address or code (the most expensive mistake) · a wrong price · an invented promise (UNMEASURED under the
 new guard until the protocol has run) · mis-heard voice · Telegram's terms · customers learning it is an AI · prompt
 injection through text or files · nothing can be proven before launch (no Telegram, no model key in the build
-environment — one day on staff phones first) · volume: the seat got nine replies on its measured day.
+environment — one day on staff phones first) · volume: the seat wrote nine replies on its measured day; who has ever
+written to the seat is uncounted (396 clients were visible on it on 11-14, #1789) — count it in stage 0.
 
 **Cost** (`critic-cost.md`; computed from the code's price map, nothing measured): today 2-5 cents a reply, under $1
 a day. Target: a 6-turn conversation ≈ $0.3, 12 turns ≈ $0.6, a full sale ≈ $0.9. 20 conversations a day ≈ $7-14 a
@@ -227,3 +228,13 @@ reader do on the same 20 real papers, with cost per paper · his real volume and
 ## 11. His answers
 
 _(none yet — the page was sent to him on 2026-11-19)_
+
+## 12. How the page was checked before it went out
+
+Three independent checkers (facts against the repo and the critiques; Uzbek, cross-references and consistency;
+rendering at 400 and 1280 px in both themes with the page's behaviour) returned 63 findings; all that held were
+applied — among them: the truck price does not stop on 2026-12-31; the cause of «no VED job on 11-15» is still OPEN
+(#1800) and is not stated as fact; a balance reply is always his ✅ today; the company broadcast screen is «Savdo →
+Xabar yuborish», not «Xabarlar»; «olinadi» reads as «is adopted» — the page says «olib tashlanadi»; the cost table
+hid its monthly column on a phone. The page counts 13 ⚠ lines; the 35 of `critic-feasibility.md` §A include rows
+that do not change.

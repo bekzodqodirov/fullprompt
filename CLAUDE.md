@@ -3916,8 +3916,10 @@ names (a seller can now open that truck); the untick works only from an admin ac
 **Design round — To'liq AI sotuvchi (2026-11-19; NO code, NO migration, NO DECISIONS entry; `docs/AI-SOTUVCHI-TOLIQ.md` +
 `docs/ai-toliq/`).** His «hozir AI sotuvchi emas salomlashadgan bot yasab qoyibsanku» and «hozirdan toliq ai sotuvchi
 qurishni strukturasini qur … boshlashdan oldin hammasini aniqlashtirib olaylik». Three code maps → three independent
-designs → the lead's synthesis → six critics → design v2, shown to him as an Artifact page («To'liq AI sotuvchi», the
-source is `docs/ai-toliq/toliq-ai-sotuvchi.html`) with 4 fill-ins and 32 questions (13 needed before stage 1a). **Build
+designs → the lead's synthesis → six critics → design v2, shown to him as an Artifact page («To'liq AI sotuvchi»,
+https://claude.ai/artifact/VULstuxzWxKtMJ9YPy3TQM — republish THAT url; the source is
+`docs/ai-toliq/toliq-ai-sotuvchi.html`, checked by three more agents before it went out) with 5 fill-ins and 32
+questions (13 needed before stage 1a). **Build
 NOTHING of it until he answers; his answers go into §11 and bind.** The flip: judge ACTIONS by what they can cost, not
 words and not the model's own confidence; rights per action in four positions (O'zi / Nazoratda / So'rab / Faqat odam).
 What the critics changed, and a later session must not undo: the guard is «blocks + permits + tripwire-holds, reviewer
