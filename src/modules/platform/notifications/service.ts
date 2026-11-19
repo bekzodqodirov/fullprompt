@@ -22,6 +22,7 @@ import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
 import { arrivalAlertOf, arrivalOpensDealPicker, isReceiptArrival, receiptArrivalText } from './receipt-arrival';
+import { cardStepVerdict, NEW_CLIENT_CARD, noteCardOf, type NoteCardCursor } from './note-card';
 import { reachOf } from './staff';
 import { groupDigits, h, visibleLength } from '../telegram/format';
 import { splitLabelCount } from '../text/label-count';
@@ -1308,6 +1309,109 @@ async function deliverWithSheet(
 }
 
 /**
+ * The new-client card (0151): the staff instruction FIRST — the drain's own
+ * dressing and sender, the client card's link lifted into «↗️ Ochish» — then
+ * the forwardable part, step by step, through the zametka sender itself
+ * (`sendPlan`: streaming, the file-id cache, the photo downgrade, the stale-id
+ * fallback; never send.ts's photo/album/document senders, which take whole
+ * Buffers and cannot cache an album).
+ *
+ * The forwardable part is sent EXACTLY as planned: no bold title, no staff
+ * link, no keyboard, no «(qisqartirildi)», never protect_content — it is the
+ * customer's message, forwarded by the seller as it stands, so nothing of the
+ * staff dressing may touch it (`message` is the staff line alone).
+ *
+ * Progress is the row's (note-card.ts): stamped in SQL after each confirmed
+ * step, read back on a replay. A 429 or a refused token answers with the
+ * drain's own pause; Telegram's «no» to an attempt is the drain's attempt
+ * counting; an answer that never came is `maybe` — stepped over and never
+ * sent twice.
+ */
+async function deliverNoteCard(
+  type: string,
+  notificationId: string,
+  chatId: bigint,
+  message: StaffMessage,
+  payload: Record<string, unknown>,
+  silent: boolean,
+): Promise<SendResult | null> {
+  if (type !== NEW_CLIENT_CARD) return null;
+  const card = noteCardOf(payload);
+  if (!card) return null;
+  const cursor: NoteCardCursor = { done: card.done, head: card.head, ids: [...card.ids], maybe: [...card.maybe] };
+  const stamp = async () => {
+    // Merged in SQL, the cursor's three fields only: the frozen plan beside
+    // them is never rewritten, and nothing else on the row is touched.
+    await db.execute(sql`
+      UPDATE notifications
+         SET payload = jsonb_set(payload, '{card}', (payload->'card') || ${JSON.stringify(cursor)}::jsonb)
+       WHERE id = ${notificationId}`);
+  };
+  const total = card.steps.length + 1;
+
+  while (cursor.done < total) {
+    if (cursor.done === 0) {
+      const res = await deliverStaffMessage(chatId, message, null, silent);
+      if (!res.ok) {
+        if (cardStepVerdict(res) !== 'ambiguous') return res;
+        cursor.maybe.push(0);
+        logger.warn({ notificationId, status: res.status, description: res.description }, 'new-client card: staff line may be in the chat — not sent again');
+      } else if (res.messageId !== null) {
+        cursor.head = res.messageId;
+        cursor.ids.push(res.messageId);
+      }
+      cursor.done = 1;
+      await stamp();
+      continue;
+    }
+    const { drainPlanApi, sendPlan } = await import('../telegram/note-send');
+    const api = drainPlanApi();
+    if (!api) return { ...NOT_SENT, description: 'no_bot_token' };
+    const outcome = await sendPlan(api, chatId, card.steps, {
+      fromStep: cursor.done - 1,
+      onRateLimit: 'return',
+      silent,
+      onStep: async (index, ids) => {
+        cursor.done = index + 2;
+        cursor.ids.push(...ids);
+        await stamp();
+      },
+    });
+    if (!outcome.stop) break;
+    const stop = outcome.stop;
+    const failed: SendResult = {
+      ...NOT_SENT,
+      status: stop.status,
+      description: stop.description,
+      retryAfter: stop.retryAfter,
+      permanent: isPermanentFailure(stop.status),
+      botDown: isBotFailure(stop.status),
+    };
+    if (cardStepVerdict(failed) !== 'ambiguous') return failed;
+    cursor.maybe.push(stop.index + 1);
+    cursor.done = stop.index + 2;
+    logger.warn(
+      { notificationId, step: stop.index + 1, status: stop.status, description: stop.description },
+      'new-client card: a step may be in the chat — not sent again',
+    );
+    await stamp();
+  }
+  // The row remembers the staff line (step 0) as its message — the one with the card's link on it.
+  return { ...NOT_SENT, ok: true, status: 200, messageId: cursor.head };
+}
+
+const NOT_SENT: SendResult = {
+  ok: false,
+  status: 0,
+  description: '',
+  messageId: null,
+  retryAfter: null,
+  permanent: false,
+  botDown: false,
+  usedFallback: false,
+};
+
+/**
  * Show a colleague the customer's OWN message before our sentence about it
  * (round C, contract 2): a photo of a damaged carton or a voice note is not
  * something a line of text can carry. Best-effort — the sentence goes either
@@ -1716,6 +1820,7 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
         (await forwardSources(notification.id, link.telegramChatId, payload)) ??
+        (await deliverNoteCard(notification.type, notification.id, link.telegramChatId, message, payload, silent)) ??
         (await deliverWithSheet(
           notification.type,
           link.telegramChatId,

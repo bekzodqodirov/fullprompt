@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -8,6 +9,7 @@ import {
   deleteNoteAction,
   removeNotePartAction,
   saveNoteAction,
+  setNewClientFlagAction,
   setNoteSharedAction,
   setPartSendAsAction,
   type NoteFormState,
@@ -25,6 +27,8 @@ export interface NoteRowView {
   title: string;
   body: string;
   shared: boolean;
+  /** Ticked «🆕 Yangi mijozga» — the new-client card carries it (0151). */
+  forNewClient: boolean;
   parts: NotePart[];
 }
 
@@ -32,10 +36,16 @@ export interface NoteRowView {
 export function NoteList({
   notes,
   canShare,
+  canRunAgent,
+  flagsReady,
   maxParts,
 }: {
   notes: NoteRowView[];
   canShare: boolean;
+  /** May open the AI sotuvchi's page — where its own copy of the addresses lives. */
+  canRunAgent: boolean;
+  /** 0151 has landed; otherwise no tick is drawn at all. */
+  flagsReady: boolean;
   maxParts: number;
 }) {
   const t = useTranslations('notes');
@@ -43,10 +53,34 @@ export function NoteList({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [pending, start] = useTransition();
+  // The AI sotuvchi's knowledge holds its OWN copy of the China addresses
+  // (judge O4): the person who just changed the ticked note is told, right
+  // where they changed it, that there is a second copy to correct.
+  const [drift, setDrift] = useState(false);
+  const [rowError, setRowError] = useState<{ id: string; code: string } | null>(null);
   const router = useRouter();
+  const rowErrors: Record<string, string> = {
+    forbidden: t('errors.forbidden'),
+    not_found: t('errors.notFound'),
+    not_company: t('errors.notCompany'),
+    server_behind: t('errors.serverBehind'),
+    title_taken: t('errors.titleTaken'),
+  };
 
   return (
     <div className="space-y-3">
+      {drift && (
+        <p className="card space-y-1 text-sm text-warn" role="status" data-testid="notes-ai-drift">
+          <span className="block">🤖 {t('aiDrift')}</span>
+          {canRunAgent ? (
+            <Link href="/suhbatlar/ai" className="font-semibold underline" data-testid="notes-ai-drift-link">
+              {t('aiDriftLink')}
+            </Link>
+          ) : (
+            <span className="block">{t('aiDriftAsk')}</span>
+          )}
+        </p>
+      )}
       {/* Add FIRST, list after — the templates and cost-types shape, and
           load-bearing on a phone: at the list's end the button slides under
           the fixed tab bar as soon as the list grows past a screenful. */}
@@ -91,7 +125,10 @@ export function NoteList({
                   disabled={pending}
                   className="btn-secondary !min-h-9 px-2 text-sm disabled:opacity-60"
                   onClick={() => {
-                    if (note.shared && !window.confirm(t('confirmUnshare'))) return;
+                    // A ticked note leaves the new-client card with the company
+                    // list (0151) — the confirm says that too.
+                    const question = note.forNewClient ? t('confirmUnshareFlagged') : t('confirmUnshare');
+                    if (note.shared && !window.confirm(question)) return;
                     start(async () => {
                       await setNoteSharedAction(note.id, !note.shared);
                       router.refresh();
@@ -126,6 +163,44 @@ export function NoteList({
               </button>
             </span>
           </div>
+
+          {/* 0151: the publisher ticks which company notes every new code's
+              seller is sent; everybody else reads that a note is one. */}
+          {flagsReady && note.shared && canShare && (
+            <label className="flex min-h-10 items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                data-testid="note-new-client"
+                checked={note.forNewClient}
+                disabled={pending}
+                className="size-5 shrink-0"
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setRowError(null);
+                  start(async () => {
+                    const res = await setNewClientFlagAction(note.id, on);
+                    if (res.error) {
+                      setRowError({ id: note.id, code: res.error });
+                      return;
+                    }
+                    if (on) setDrift(true);
+                    router.refresh();
+                  });
+                }}
+              />
+              <span>🆕 {t('newClientToggle')}</span>
+            </label>
+          )}
+          {flagsReady && note.forNewClient && !canShare && (
+            <p className="text-sm text-ink-500" data-testid="note-new-client-mark">
+              🆕 {t('newClientMark')}
+            </p>
+          )}
+          {rowError?.id === note.id && (
+            <p role="alert" className="text-sm font-semibold text-bad" data-testid="note-row-error">
+              {rowErrors[rowError.code] ?? t('errors.validation')}
+            </p>
+          )}
 
           {note.body && (
             <p className="whitespace-pre-wrap text-sm text-ink-500 [overflow-wrap:anywhere]">
@@ -183,7 +258,11 @@ export function NoteList({
               note={note}
               canShare={canShare}
               maxParts={maxParts}
-              onDone={() => setEditingId(null)}
+              onDone={() => {
+                setEditingId(null);
+                // The ticked note's words changed: the AI's copy did not.
+                if (note.forNewClient) setDrift(true);
+              }}
             />
           )}
         </div>

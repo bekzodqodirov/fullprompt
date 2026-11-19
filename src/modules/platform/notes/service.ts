@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/client';
 import { attachments, staffNoteParts, staffNotes } from '../db/schema';
+import { isServerBehind } from '../db/errors';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { purgeAttachment } from '../files/service';
 import { MAX_TELEGRAM_PHOTO_BYTES } from '../telegram/limits';
@@ -35,7 +36,11 @@ export type NoteErrorCode =
   | 'not_found'
   | 'note_empty'
   | 'title_taken'
-  | 'too_many_parts';
+  | 'too_many_parts'
+  /** The «🆕 Yangi mijozga» tick on a note that is somebody's own (0151's CHECK, said in words). */
+  | 'not_company'
+  /** 0151 has not landed: the tick's column is not there yet (#472's morning). */
+  | 'server_behind';
 
 /** Publishing to the company. No new permission code (#170). */
 export const SHARE_NOTES_PERMISSION = 'admin.settings.manage';
@@ -387,11 +392,18 @@ export async function setNoteShared(id: string, shared: boolean, ctx: NoteCtx): 
   if (!existing) throw new NoteError('not_found');
   refuseUnlessOwn(existing, ctx);
   if ((existing.userId === null) === shared) return;
+  const owner = shared ? null : (existing.userId ?? ctx.actorId);
+  // Taking a note out of the company's list takes its «🆕 Yangi mijozga» tick
+  // with it, in the SAME statement (0151): a personal note cannot be one the
+  // new-client card sends, and a second statement — or a CHECK refusal caught
+  // afterwards — would be a white page or a half-move under a race.
+  const wasFlagged = !shared && ((await newClientFlags(ctx.actorId))?.has(id) ?? false);
   try {
-    await db
-      .update(staffNotes)
-      .set({ userId: shared ? null : (existing.userId ?? ctx.actorId), updatedAt: new Date() })
-      .where(eq(staffNotes.id, id));
+    if (!shared) {
+      await unshareClearingFlag(id, owner!);
+    } else {
+      await db.update(staffNotes).set({ userId: owner, updatedAt: new Date() }).where(eq(staffNotes.id, id));
+    }
   } catch (err) {
     if (isUniqueViolation(err)) throw new NoteError('title_taken');
     throw err;
@@ -400,9 +412,120 @@ export async function setNoteShared(id: string, shared: boolean, ctx: NoteCtx): 
     entityType: 'staff_note',
     entityId: id,
     action: 'update',
-    before: { shared: existing.userId === null },
-    after: { shared },
+    // History says the card lost a note, not only that a list did.
+    before: { shared: existing.userId === null, ...(wasFlagged ? { forNewClient: true } : {}) },
+    after: { shared, ...(wasFlagged ? { forNewClient: false } : {}) },
   });
+}
+
+/**
+ * The unshare's one statement. One migration behind (0151 not run) the column
+ * is absent and no tick can exist, so the plain move is the whole truth.
+ */
+async function unshareClearingFlag(id: string, owner: string): Promise<void> {
+  try {
+    await db.execute(sql`
+      UPDATE staff_notes SET user_id = ${owner}::uuid, for_new_client = false, updated_at = now()
+       WHERE id = ${id}::uuid`);
+  } catch (err) {
+    if (!isServerBehind(err)) throw err;
+    await db.update(staffNotes).set({ userId: owner, updatedAt: new Date() }).where(eq(staffNotes.id, id));
+  }
+}
+
+/**
+ * «🆕 Yangi mijozga yuborilsin» — the tick on a COMPANY note (0151, the
+ * owner's answer: his «Xitoy sklad» zametka with the three addresses and the
+ * picture is the one he ticks himself; nothing is ever ticked by its title).
+ *
+ * The publisher's power and nobody else's: what every new customer is sent is
+ * a broadcast to the company's customers, larger than editing a note. The ONE
+ * writer of the column — raw SQL, because the column is not on the drizzle
+ * table this release (#1313: a whole-row reader would 42703 one migration
+ * behind) — and `user_id IS NULL` is in its WHERE, so a note moved to
+ * somebody's own list between the read and the write is refused, never
+ * flagged.
+ */
+export async function setNewClientFlag(id: string, on: boolean, ctx: NoteCtx): Promise<void> {
+  if (!ctx.actorId) throw new NoteError('unauthenticated');
+  if (!ctx.canShare) throw new NoteError('forbidden');
+  const existing = await db.query.staffNotes.findFirst({ where: eq(staffNotes.id, id) });
+  if (!existing) throw new NoteError('not_found');
+  if (existing.userId !== null) throw new NoteError('not_company');
+  const flags = await newClientFlags(ctx.actorId);
+  if (flags === null) throw new NoteError('server_behind');
+  // A press that changes nothing writes nothing — no empty History line (#502).
+  if (flags.has(id) === on) return;
+  let rows: unknown[];
+  try {
+    rows = [
+      ...(await db.execute(sql`
+        UPDATE staff_notes SET for_new_client = ${on}, updated_at = now()
+         WHERE id = ${id}::uuid AND user_id IS NULL
+        RETURNING id`)),
+    ];
+  } catch (err) {
+    if (isServerBehind(err)) throw new NoteError('server_behind');
+    throw err;
+  }
+  if (rows.length === 0) throw new NoteError('not_company');
+  await writeAudit(db, ctx, {
+    entityType: 'staff_note',
+    entityId: id,
+    action: 'update',
+    before: { forNewClient: !on },
+    after: { forNewClient: on },
+  });
+}
+
+/**
+ * The ticked notes this reader may see, by id — or null when 0151 has not
+ * landed (the screen then draws no tick at all rather than a white page).
+ */
+export async function newClientFlags(actorId: string): Promise<Set<string> | null> {
+  try {
+    const rows = await db
+      .select({ id: staffNotes.id })
+      .from(staffNotes)
+      // `${staffNotes}.for_new_client`, never a bare name (#128's idiom): the
+      // column is qualified by its TABLE, whatever the select around it is.
+      .where(and(visibleNotes(actorId), sql`${staffNotes}.for_new_client`));
+    return new Set(rows.map((row) => row.id));
+  } catch (err) {
+    if (isServerBehind(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * What the new-client card carries: every ticked note this recipient may see,
+ * in the library's own order, each with its files in the note's order.
+ *
+ * Through `visibleNotes` like every other reader (the fence), with the person
+ * the card goes to — a tick can only sit on a company note (0151's CHECK), so
+ * in practice that is the company's ticked notes; the predicate is what makes
+ * «in practice» a rule. One migration behind it answers «nothing is ticked»,
+ * which is true: the card then goes as its footer alone, and says so.
+ */
+export async function newClientNotes(
+  recipientId: string,
+): Promise<{ note: NoteHead; files: NoteFile[] }[]> {
+  let rows: { id: string; title: string; body: string | null }[];
+  try {
+    rows = await db
+      .select({ id: staffNotes.id, title: staffNotes.title, body: staffNotes.body })
+      .from(staffNotes)
+      .where(and(visibleNotes(recipientId), sql`${staffNotes}.for_new_client`))
+      .orderBy(asc(staffNotes.sortOrder), asc(staffNotes.title));
+  } catch (err) {
+    if (isServerBehind(err)) return [];
+    throw err;
+  }
+  const out: { note: NoteHead; files: NoteFile[] }[] = [];
+  // One read per ticked note: he ticks one or two, never a list (#432 is
+  // about a list's length, and this list is his handful).
+  for (const row of rows) out.push({ note: row, files: await filesForNote(row.id) });
+  return out;
 }
 
 export async function deleteNote(id: string, ctx: NoteCtx): Promise<void> {

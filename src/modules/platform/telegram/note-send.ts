@@ -1,4 +1,4 @@
-import { GrammyError, InputFile, type Api } from 'grammy';
+import { Api, GrammyError, HttpError, InputFile } from 'grammy';
 import { logger } from '../logger';
 import { getStorage } from '../files/storage';
 import {
@@ -61,13 +61,7 @@ export async function sendNote(
     const plan = notePlan(found.note, found.files);
     if (plan.length === 0) return { status: 'empty', sent: 0, failed: 0, messages: 0 };
 
-    let sent = 0;
-    let failed = 0;
-    for (const step of plan) {
-      const ok = await sendStep(api, chatId, step);
-      if (ok) sent += 1;
-      else failed += 1;
-    }
+    const { sent, failed } = await sendPlan(api, chatId, plan, { onRateLimit: 'wait' });
     return {
       status: failed === 0 ? 'sent' : 'partial',
       sent,
@@ -79,9 +73,122 @@ export async function sendNote(
   }
 }
 
-async function sendStep(api: Api, chatId: bigint, step: NoteSend): Promise<boolean> {
+/** Where a plan stopped, and Telegram's (or the network's) own words for why. */
+export interface PlanStop {
+  /** The step that did not go — every step before it did. */
+  index: number;
+  /** HTTP status; 0 when no answer arrived (the network, our deadline). */
+  status: number;
+  description: string;
+  retryAfter: number | null;
+}
+
+export interface PlanSendResult {
+  sent: number;
+  failed: number;
+  /** Set only in `'return'` mode, at the first step that did not go. */
+  stop: PlanStop | null;
+}
+
+/**
+ * A plan's steps, sent in order — the ONE sender of a zametka's shapes, for
+ * the bot's 📌 tap and the drain's new-client card alike (the streaming, the
+ * file-id cache read and written positionally, the photo downgrade and the
+ * stale-id fallback all live below, and live once).
+ *
+ * The two callers differ only in what a failure means:
+ *   - `'wait'` — the 📌 tap, a person looking at the chat: a 429 is waited out
+ *     once, a failed step is counted and the rest still go (today's rule);
+ *   - `'return'` — the drain: nothing sleeps, the FIRST step that does not go
+ *     stops the plan and is handed back with Telegram's answer, and every step
+ *     that did go is reported through `onStep` as it lands, so the row can
+ *     remember it and a replay starts after it — never at the top (a 429 in
+ *     the middle of a card must not send the customer's album to the seller
+ *     twice, the forward he then makes being the duplicate).
+ *
+ * `silent` rides every send (the drain's night rule); absent, the calls are
+ * exactly the 📌 tap's.
+ */
+export async function sendPlan(
+  api: Api,
+  chatId: bigint,
+  plan: NoteSend[],
+  opts: {
+    fromStep?: number;
+    onRateLimit: 'wait' | 'return';
+    silent?: boolean;
+    onStep?: (index: number, messageIds: number[]) => Promise<void>;
+  },
+): Promise<PlanSendResult> {
+  let sent = 0;
+  let failed = 0;
+  for (let index = Math.max(0, opts.fromStep ?? 0); index < plan.length; index += 1) {
+    const step = plan[index]!;
+    if (opts.onRateLimit === 'wait') {
+      const ids = await sendStep(api, chatId, step, opts.silent === true);
+      if (ids) {
+        sent += 1;
+        await opts.onStep?.(index, ids);
+      } else {
+        failed += 1;
+      }
+      continue;
+    }
+    let ids: number[];
+    try {
+      ids = await attemptStep(api, chatId, step, opts.silent === true);
+    } catch (err) {
+      logger.warn({ err, kind: step.kind, index }, 'note plan step not sent');
+      return { sent, failed: failed + 1, stop: { index, ...stepFailure(err) } };
+    }
+    sent += 1;
+    await opts.onStep?.(index, ids);
+  }
+  return { sent, failed, stop: null };
+}
+
+/**
+ * A failed send as the drain reads one: Telegram's own code and words when it
+ * answered, status 0 and the network's words when it did not — the cause chain
+ * is spelled out, because «was this a refused CONNECT (nothing left the
+ * machine) or a cut-off answer (the message may be in the chat)» is decided on
+ * those words (the price channel's rule).
+ */
+function stepFailure(err: unknown): Omit<PlanStop, 'index'> {
+  if (err instanceof GrammyError) {
+    return { status: err.error_code, description: err.description, retryAfter: err.parameters?.retry_after ?? null };
+  }
+  const words: string[] = [];
+  let cause: unknown = err instanceof HttpError ? err.error : err;
+  for (let depth = 0; cause && depth < 4; depth += 1) {
+    const one = cause as { message?: unknown; code?: unknown; errno?: unknown; cause?: unknown };
+    for (const part of [one.code, one.errno, one.message]) if (typeof part === 'string') words.push(part);
+    cause = one.cause;
+  }
+  if (err instanceof HttpError) words.unshift(err.message);
+  return { status: 0, description: words.join(' ') || String(err), retryAfter: null };
+}
+
+/** The drain's sends go through a grammy Api of their own (it has no bot); made once per token. */
+let planApiOverride: Api | null = null;
+let planApiMade: { token: string; api: Api } | null = null;
+
+/** Tests only: the Api the drain's card is sent through (a harness bot's `api`). */
+export function __setPlanApi(api: Api | null): void {
+  planApiOverride = api;
+}
+
+export function drainPlanApi(): Api | null {
+  if (planApiOverride) return planApiOverride;
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  if (planApiMade?.token !== token) planApiMade = { token, api: new Api(token) };
+  return planApiMade.api;
+}
+
+async function sendStep(api: Api, chatId: bigint, step: NoteSend, silent: boolean): Promise<number[] | null> {
   try {
-    return await attemptStep(api, chatId, step);
+    return await attemptStep(api, chatId, step, silent);
   } catch (err) {
     // A 429 is «too fast», not «this failed». A multi-part note is a burst of
     // up to a dozen messages into one chat and there is no throttler installed
@@ -92,25 +199,42 @@ async function sendStep(api: Api, chatId: bigint, step: NoteSend): Promise<boole
     if (wait !== null) {
       await sleep(Math.min(wait, 30) * 1000);
       try {
-        return await attemptStep(api, chatId, step);
+        return await attemptStep(api, chatId, step, silent);
       } catch (again) {
         logger.warn({ err: again, kind: step.kind }, 'note send failed after 429');
-        return false;
+        return null;
       }
     }
     logger.warn({ err, kind: step.kind }, 'note send failed');
-    return false;
+    return null;
   }
 }
 
-async function attemptStep(api: Api, chatId: bigint, step: NoteSend): Promise<boolean> {
+/**
+ * `extra` as the 📌 tap has always sent it — the very same value, `undefined`
+ * included — plus «no ring» when the drain sends at night.
+ */
+function quietly<T extends object>(extra: T | undefined, silent: boolean): T | undefined {
+  if (!silent) return extra;
+  return { ...(extra ?? ({} as T)), disable_notification: true };
+}
+
+/** One step, sent; the ids of the messages it became. */
+async function attemptStep(api: Api, chatId: bigint, step: NoteSend, silent = false): Promise<number[]> {
   const chat = Number(chatId);
   const signal = AbortSignal.timeout(SEND_TIMEOUT_MS);
   if (step.kind === 'text') {
-    await api.sendMessage(chat, step.text, undefined, signal);
-    return true;
+    const message = await api.sendMessage(chat, step.text, quietly(undefined, silent), signal);
+    return idsOf(message);
   }
-  return sendMedia(api, chat, step, signal);
+  return sendMedia(api, chat, step, signal, silent);
+}
+
+function idsOf(message: unknown): number[] {
+  const list = Array.isArray(message) ? message : [message];
+  return list
+    .map((one) => (one as { message_id?: unknown } | null)?.message_id)
+    .filter((id): id is number => typeof id === 'number');
 }
 
 async function sendMedia(
@@ -118,7 +242,8 @@ async function sendMedia(
   chat: number,
   step: Extract<NoteSend, { kind: 'media' }>,
   signal: AbortSignal,
-): Promise<boolean> {
+  silent: boolean,
+): Promise<number[]> {
   if (step.files.length >= MEDIA_GROUP_MIN) {
     const media = await Promise.all(
       step.files.map(async (file, index) => ({
@@ -135,7 +260,7 @@ async function sendMedia(
     const out = await api.sendMediaGroup(
       chat,
       media as Parameters<Api['sendMediaGroup']>[1],
-      undefined,
+      quietly(undefined, silent),
       signal,
     );
     if (out.length === step.files.length) {
@@ -143,19 +268,19 @@ async function sendMedia(
         await cacheFrom(step.files[i]!, out[i], step.as);
       }
     }
-    return true;
+    return idsOf(out);
   }
 
   const file = step.files[0]!;
   const body = await source(file);
-  const extra = step.caption ? { caption: step.caption } : undefined;
+  const extra = quietly(step.caption ? { caption: step.caption } : undefined, silent);
   try {
     const message =
       step.as === 'photo'
         ? await api.sendPhoto(chat, body, extra, signal)
         : await api.sendDocument(chat, body, extra, signal);
     await cacheFrom(file, message, step.as);
-    return true;
+    return idsOf(message);
   } catch (err) {
     if (step.as === 'photo' && isPhotoShapeRefusal(err)) {
       // sendPhoto refuses on bytes, on width+height summed AND on the ratio,
@@ -171,7 +296,7 @@ async function sendMedia(
         AbortSignal.timeout(SEND_TIMEOUT_MS),
       );
       await cacheFrom({ ...file, sendAs: 'document' }, message, 'document');
-      return true;
+      return idsOf(message);
     }
     if (isUnknownFileId(err) && cachedFileId(file)) {
       // The cached id is gone from Telegram's side. Clear it and send the
@@ -183,7 +308,7 @@ async function sendMedia(
           ? await api.sendPhoto(chat, await source(fresh), extra, AbortSignal.timeout(SEND_TIMEOUT_MS))
           : await api.sendDocument(chat, await source(fresh), extra, AbortSignal.timeout(SEND_TIMEOUT_MS));
       await cacheFrom(file, message, step.as);
-      return true;
+      return idsOf(message);
     }
     throw err;
   }

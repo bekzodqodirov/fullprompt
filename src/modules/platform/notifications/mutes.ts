@@ -264,6 +264,16 @@ export const MUTE_GROUPS = {
   // from lists that held them by name, or those would stay muted under a box
   // that reads unticked.
   chat: ['InternalNote', 'MentionedInNote', 'CalcThread'],
+  // «Yangi mijozga manzil xabari» (0151, the owner, 2026-11-19): the ticked
+  // address note, the marking line and the bot link, sent to the seller of a
+  // code the moment it is minted, for him to forward to the customer. A group
+  // of its OWN, born whole: it is a work instruction, not news — so not
+  // `operations`, whose founders a seller who silenced the warehouse's routine
+  // already holds (the card would be born muted for exactly him) — and it is
+  // never in UNMUTABLE_TYPES, which is the AI sotuvchi's off switch and means
+  // nothing else (its fences say so). Muting it is a deliberate tick of its
+  // own box on /profile; «all» still mutes.
+  yangiMijoz: ['NewClientCard'],
 } as const;
 
 export type MuteGroup = keyof typeof MUTE_GROUPS;
@@ -316,6 +326,8 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
   // Born whole on 2026-10-07 (0127, E8 a): every list that ticks it from now
   // on holds all three.
   chat: ['InternalNote', 'MentionedInNote', 'CalcThread'],
+  // Born whole on 2026-11-19 (0151) with its one member.
+  yangiMijoz: ['NewClientCard'],
 };
 
 /**

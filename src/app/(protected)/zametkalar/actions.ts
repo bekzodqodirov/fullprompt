@@ -9,6 +9,7 @@ import {
   deleteNote,
   removeNotePart,
   saveNote,
+  setNewClientFlag,
   setNoteShared,
   setPartSendAs,
   type NoteCtx,
@@ -75,6 +76,14 @@ export async function deleteNoteAction(id: string): Promise<NoteFormState> {
  */
 export async function setNoteSharedAction(id: string, shared: boolean): Promise<NoteFormState> {
   return run((ctx) => setNoteShared(id, shared, ctx));
+}
+
+/**
+ * «🆕 Yangi mijozga yuborilsin» (0151) — the tick on a company note the
+ * new-client card carries. The publisher's power, asked again in the service.
+ */
+export async function setNewClientFlagAction(id: string, on: boolean): Promise<NoteFormState> {
+  return run((ctx) => setNewClientFlag(id, on === true, ctx));
 }
 
 export async function removeNotePartAction(partId: string): Promise<NoteFormState> {

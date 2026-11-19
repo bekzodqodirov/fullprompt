@@ -16,6 +16,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { toggleClientActiveAction, updateClientAction } from '../actions';
 import { createClientCabinetCodeAction, revokeClientCabinetLinkAction } from '../cabinet-actions';
+import { AddressCardButton } from '../address-card-button';
 import { ClientForm } from '../client-form';
 import { ClientCrmSections } from '../../../crm/client-crm';
 import { TasksPanel } from '@/components/tasks-panel';
@@ -34,10 +35,13 @@ export default async function ClientDetailPage({
 }: {
   params: Promise<{ id: string }>;
   /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
-  searchParams: Promise<{ hodim?: string; chodim?: string }>;
+  searchParams: Promise<{ hodim?: string; chodim?: string; manzil?: string }>;
 }) {
   const { id } = await params;
-  const { hodim, chodim } = await searchParams;
+  const { hodim, chodim, manzil } = await searchParams;
+  // Where the full form's mint sent the address card (0151) — a sentence and
+  // nothing else, so the param is read as one of two words or not at all.
+  const addressFlash = manzil === 'presser' || manzil === 'nobody' ? manzil : null;
   const actor = await getActor();
   if (!actor) redirect('/login');
   // Sales staff read the card their CRM sends them to; only an admin edits
@@ -190,6 +194,10 @@ export default async function ClientDetailPage({
           three panels saying the same thing, and the first is the one every
           other phone-matching path in this system uses. */}
       <TelegramLookback phone={(client.phones as string[])[0]} clientId={client.id} />
+
+      {/* 0151: the address card again, to whoever is reading the card — for
+          a code older than the card, or a message lost in a long chat. */}
+      <AddressCardButton clientId={client.id} flash={addressFlash} />
 
       {/* Phase 2.2: Telegram cabinet — staff mints a one-time deep link and
           sends it to the client; the client sees cargo/photos/debt in the bot.

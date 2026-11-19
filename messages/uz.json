@@ -647,7 +647,13 @@
     "sectorPlaceholder": "masalan: kiyim-kechak, qurilish",
     "cargoKinds": "Qanday yuk olib keladi (vergul bilan)",
     "cargoKindsPlaceholder": "masalan: kiyim, poyabzal, maishiy texnika",
-    "cargoKindsKnown": "Kiritilganlar"
+    "cargoKindsKnown": "Kiritilganlar",
+    "addressTitle": "Manzil xabari",
+    "addressHint": "Sklad manzillari, mijoz markirovkasi va bot havolasi — Telegramingizga keladi, mijozga forward qilasiz.",
+    "addressResend": "📨 Manzil xabarini menga yuborish",
+    "addressResent": "✅ Yuborildi — Telegramingizni oching.",
+    "addressNoChat": "⚠ Telegramingiz botga ulanmagan — avval Profil bo‘limidan ulang.",
+    "addressFailed": "⚠ Yuborib bo‘lmadi — qaytadan urinib ko‘ring."
   },
   "users": {
     "title": "Xodimlar",
@@ -986,7 +992,8 @@
       "advanceHint": "Avans va kompaniyadan qarzingiz — pastdagi «{panel}» blokida.",
       "salaryNotDue": "bu oy hali to‘lanmaydi",
       "ftlLine": "FTL: {m3} kub · {n} prixod — KPI’ga kirmaydi"
-    }
+    },
+    "notifMuteNewClient": "Yangi mijozga manzil xabari"
   },
   "receive": {
     "title": "Qabul",
@@ -4586,7 +4593,9 @@
       "empty": "Topilmadi"
     },
     "back": "← Orqaga",
-    "actions": "Tezkor harakatlar"
+    "actions": "Tezkor harakatlar",
+    "addressPresser": "Manzil xabari sotuvchiga bormaydi (Telegrami ulanmagan yoki bu xabarlarni o‘chirgan) — u sizga yuborildi.",
+    "addressNobody": "Manzil xabari hech kimga yuborilmadi: sotuvchining Telegrami ulanmagan yoki u bu xabarlarni o‘chirgan. Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasidan oling."
   },
   "routing": {
     "title": "Arizalar taqsimoti",
@@ -4965,11 +4974,20 @@
       "empty": "Zametka bo‘sh — matn, fayl yoki koordinata qo‘shing.",
       "titleTaken": "Bu nomdagi zametka bor.",
       "tooManyParts": "Fayllar soni ko‘p.",
-      "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring."
+      "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring.",
+      "notCompany": "Faqat umumiy (🏢 Hammaga) zametka yangi mijozga yuborilishi mumkin.",
+      "serverBehind": "Server hali yangilanmagan — bir ozdan keyin qayta urinib ko‘ring."
     },
     "makeShared": "🏢 Hammaga",
     "makePrivate": "👤 Faqat menda",
-    "confirmUnshare": "Zametka umumiy ro‘yxatdan olinsinmi? Boshqalar uni ko‘rmay qoladi."
+    "confirmUnshare": "Zametka umumiy ro‘yxatdan olinsinmi? Boshqalar uni ko‘rmay qoladi.",
+    "newClientToggle": "Yangi mijozga yuborilsin — har yangi kod sotuvchisiga shu zametka manzil xabari bo‘lib boradi",
+    "newClientMark": "Yangi mijozlarga yuboriladi",
+    "newClientNone": "Hech qaysi zametka «Yangi mijozga yuborilsin» deb belgilanmagan — yangi kod ochilganda sotuvchiga faqat markirovka va bot havolasi boradi, sklad manzili bormaydi.",
+    "aiDrift": "AI sotuvchi bilimida ham Xitoy manzillari bor — o‘zgargan bo‘lsa, u yerda ham tuzating.",
+    "aiDriftLink": "AI sotuvchi bilimini ochish →",
+    "aiDriftAsk": "AI sotuvchi bilimini faqat super-admin tuzata oladi — unga ayting.",
+    "confirmUnshareFlagged": "Zametka umumiy ro‘yxatdan olinsinmi? Boshqalar uni ko‘rmay qoladi va u yangi mijozlarga yuborilmay qoladi."
   },
   "pickups": {
     "title": "Zavod reysi",
