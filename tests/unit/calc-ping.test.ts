@@ -14,7 +14,7 @@ import {
   type PingReader,
   type PingResolved,
 } from '@/modules/wms/calc/request-head';
-import { strip } from '../fixtures/source-shape';
+import { bodyOf, strip } from '../fixtures/source-shape';
 
 /**
  * The five calc pings said in full (the owner's answers of 2026-11-19, his 9:
@@ -298,6 +298,21 @@ describe('$/kub — his 9', () => {
     expect(donePerM3(Number.NaN, 'USD', 30)).toBeNull();
   });
 
+  it('rounds by the engine’s own rule, decimal half-up — not a binary Math.round (review P2-1)', () => {
+    // 3.015 / 1 in binary is 3.01499…: `Math.round(x * 100) / 100` says 3.01,
+    // the engine's `roundCents` (the seal's `perM3Usd`) says 3.02.
+    expect(donePerM3(3.015, 'USD', 1)).toBe(3.02);
+    expect(donePerM3(1.005, 'USD', 1)).toBe(1.01);
+  });
+
+  it('a four-figure cube is spelled as the price channel spells it — grouped digits (review P2-2)', () => {
+    const NBSP = ' ';
+    const done = renderCalcPing({ ...DONE, amount: 36_000 } as CalcPing, NONE, dealFacts({ volumeM3: 30 }), SELLER, APP).text;
+    expect(done).toContain(`💵 36000 USD · $1${NBSP}200.00/m³`);
+    const sealed = renderCalcPing({ ...SEALED, perM3Usd: 1250 } as CalcPing, NONE, dealFacts(), SELLER, APP).text;
+    expect(sealed).toContain(`· $1${NBSP}250.00/m³`);
+  });
+
   it('the line says none of it then — never «$0.00/m³», never «NaN»', () => {
     const noVolume = renderCalcPing(DONE, NONE, dealFacts({ volumeM3: null }), SELLER, APP).text;
     expect(noVolume).toContain('💵 1200.46 USD\n');
@@ -382,6 +397,24 @@ describe('the five senders all go through the one sender', () => {
     expect(pings.sort()).toEqual([...CALC_PING_TYPES].sort());
     expect((service.match(/sendCalcPing\(\{/g) ?? []).length).toBe(3);
     expect((workspace.match(/sendCalcPing\(\{/g) ?? []).length).toBe(2);
+  });
+
+  it('after the commit, nothing can throw the ping away: the audit and the task titles are caught (review P2-3, P2-4)', () => {
+    // The seal: its post-commit audit sits ABOVE `announceSeal`, so an
+    // uncaught throw there costs «🧮 Hisob tayyor» for good.
+    const seal = bodyOf(workspace, 'export async function sealCalc(');
+    const sealTail = seal.slice(seal.indexOf('retireTaskCopiesSoon'));
+    const sealAudit = sealTail.slice(sealTail.indexOf('await writeAudit('), sealTail.indexOf('announceSeal('));
+    expect(sealAudit).toMatch(/^await writeAudit\([\s\S]*\}\)\.catch\(/);
+    // The hand-back: its audit sits above the CalcReturned ping.
+    const back = bodyOf(service, 'export async function returnCalcRequest(');
+    const backAudit = back.slice(back.indexOf('await writeAudit('), back.indexOf('sendCalcPing('));
+    expect(backAudit).toMatch(/^await writeAudit\([\s\S]*\}\)\.catch\(/);
+    // The two task titles read a label with its own fallback — a throw must
+    // neither escape a committed take nor skip the task it names.
+    const take = bodyOf(service, 'export async function takeCalcRequest(');
+    expect(take).toMatch(/requestLabel\(won\.entityType, won\.entityId\)\.catch\(/);
+    expect(back).toMatch(/requestLabel\(row\.entityType, row\.entityId\)\.catch\(/);
   });
 
   it('a seal names its version for the V, never the per-request counter (D8)', () => {

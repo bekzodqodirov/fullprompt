@@ -5,7 +5,7 @@ import { logger } from '../../platform/logger';
 import type { CalcOpenAs, CalcPingType } from '../../platform/notifications/calc-ping';
 import { notifyStaffTelegram, userName } from '../../platform/notifications/staff';
 import { userPermissions } from '../../platform/rbac/authorize';
-import { clipText, groupDigits } from '../../platform/telegram/format';
+import { clipText, groupDigits, usd } from '../../platform/telegram/format';
 import { tashkentDay } from '../../platform/time/tashkent';
 import { mayOpenLead } from '../crm/lead-door';
 import { canWriteDeal } from '../deals/door';
@@ -269,7 +269,9 @@ function bodyLines(ping: CalcPing, resolved: PingResolved, facts: CalcRequestFac
     case 'CalcSealed': {
       // The engine's own figure, the one the version stores — null with no
       // volume, and never printed as «$0.00».
-      const perM3 = printable(ping.perM3Usd) ? ` · $${ping.perM3Usd.toFixed(2)}/m³` : '';
+      // Spelled as the price channel spells a per-unit figure (grouped
+      // digits, two places — `usd`), so one cube reads the same in both.
+      const perM3 = printable(ping.perM3Usd) ? ` · ${usd(ping.perM3Usd)}/m³` : '';
       const lines = [`💵 $${ping.totalUsd.toFixed(2)}${perM3}`];
       if (ping.validUntil) lines.push(`⏳ ${dottedDay(ping.validUntil)} gacha amal qiladi`);
       return lines;
@@ -278,7 +280,7 @@ function bodyLines(ping: CalcPing, resolved: PingResolved, facts: CalcRequestFac
       // «💵 1200.46 USD» stays the substring it always was (ved-tarix pins
       // it): the STORED figure, as a JS number, in the typed currency.
       const perM3 = donePerM3(ping.amount, ping.currency, facts?.volumeM3 ?? null);
-      const lines = [`💵 ${ping.amount} ${ping.currency}${perM3 !== null ? ` · $${perM3.toFixed(2)}/m³` : ''}`];
+      const lines = [`💵 ${ping.amount} ${ping.currency}${perM3 !== null ? ` · ${usd(perM3)}/m³` : ''}`];
       if (filled(ping.sellerNote)) lines.push(`📝 ${clipText(ping.sellerNote, 300)}`);
       return lines;
     }

@@ -1,5 +1,6 @@
 import { b, clipText, groupDigits, h, usd, visibleLength } from '../../platform/telegram/format';
 import type { ChildState } from './chain';
+import { roundCents } from './pricing';
 
 /**
  * The price channel's POST — what the staff read when a price is given (the
@@ -148,14 +149,15 @@ export function pickPerUnit(o: {
 }
 
 /**
- * A typed answer's price per cubic metre — rounded to the cent like the seal's
- * own column (`totalsFor`'s `perM3Usd`) — or null when there is no volume to
- * divide by. ONE arithmetic for the channel's answer post and the CalcDone ping
+ * A typed answer's price per cubic metre — rounded to the cent by the seal's
+ * own rule (`roundCents`, the engine's decimal half-up behind `totalsFor`'s
+ * `perM3Usd`; a binary `Math.round(x * 100) / 100` turns 1.005 into 1.00) —
+ * or null when there is no volume to divide by. ONE arithmetic for the channel's answer post and the CalcDone ping
  * (#513), so the two say the same «$/m³» about one answer.
  */
 export function perM3Of(amount: number, volumeM3: number | null): number | null {
   if (!Number.isFinite(amount) || volumeM3 === null || !Number.isFinite(volumeM3) || volumeM3 <= 0) return null;
-  return Math.round((amount / volumeM3) * 100) / 100;
+  return roundCents(amount / volumeM3);
 }
 
 function escapeRegExp(s: string): string {

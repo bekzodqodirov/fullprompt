@@ -857,4 +857,11 @@ function roundTo(n: number, places: number): number {
   return Number.isFinite(back) ? back : rounded / 10 ** places;
 }
 const round2 = (n: number) => roundTo(n, 2);
+/**
+ * The engine's cent rounding (decimal half-up on the printed digits, the
+ * 2026-10-09 audit's fix for `Math.round(x*100)/100`), for a figure derived
+ * outside the engine that must agree with the engine's own — the price
+ * channel's and the CalcDone ping's answer-per-m³.
+ */
+export const roundCents = round2;
 const round4 = (n: number) => roundTo(n, 4);

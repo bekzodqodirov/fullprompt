@@ -2255,6 +2255,12 @@ export async function sealCalc(
   // off the request (the void form, #706).
   if (result.taskId) retireTaskCopiesSoon({ taskIds: [result.taskId], outcome: 'done' });
 
+  // Caught (review P2-3): the seal has COMMITTED, so a throw here undoes
+  // nothing — it only tells the VED «error» about a price that is locked,
+  // turns his second press into `already_closed`, and skips every message
+  // below it: the requester's and the card owner's «🧮 Hisob tayyor», the
+  // owners' concession notice, the agent's answer. None of those is ever
+  // re-sent. The row that failed is said in the log instead.
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
     entityId: requestId,
@@ -2265,7 +2271,7 @@ export async function sealCalc(
       discountUsd: totals.discountUsd,
       bandOverrideMin: input.bandOverrideMin,
     },
-  });
+  }).catch((err) => logger.error({ err, requestId }, '[calc] seal audit not written'));
 
   // 0096: the seal is the company's answer, so it teaches the code memory
   // too. `tnved_assignments` is the EXACT-key half (`productKey` = the same

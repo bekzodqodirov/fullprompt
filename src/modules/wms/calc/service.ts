@@ -705,9 +705,15 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
     retireTaskCopiesSoon({ taskIds: [won.taskId], outcome: 'reassigned', exceptUserIds: [ctx.actorId] });
   } else {
     try {
-      // Inside the try (R12): the claim is committed, and a label that could
-      // not be read must not throw out of a take that already happened.
-      const label = await requestLabel(won.entityType, won.entityId);
+      // Its own catch, falling back to «—» (review P2-4): the claim is
+      // committed, and a label that could not be read must neither throw out
+      // of a take that already happened (R12) nor skip the task — «Olaman» on
+      // a request he holds is refused `already_yours`, so the taker could
+      // never get the task back (the correction's same rule, workspace.ts).
+      const label = await requestLabel(won.entityType, won.entityId).catch((err: unknown) => {
+        logger.error({ err, id }, '[calc] take label not read');
+        return '—';
+      });
       const task = await createTask(
         {
           title: `Hisoblash: ${label} (${won.itemCount})`,
@@ -928,23 +934,32 @@ export async function returnCalcRequest(
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const trimmed = reason.trim();
   if (trimmed.length < 3) throw new CalcError('reason_required');
+  // By CODE POINTS, as `finishCalcRequest` cuts its notes: `slice` can halve
+  // an emoji into a lone surrogate, which jsonb refuses — the request is
+  // already closed by then, so the refusal would cost the seller every
+  // message below.
+  const why = clipText(trimmed, 500);
   const row = await endRequest(id, {
     via: 'returned',
     actorId: ctx.actorId,
-    returnReason: trimmed.slice(0, 500),
+    returnReason: why,
   });
   if (!row) throw new CalcError('already_closed');
+  // Caught (review P2-3): the request is CLOSED, so a throw here undoes
+  // nothing and only costs the seller «↩️ qaytarildi» and the «↩️ Ma'lumot
+  // to'ldiring» task — a second press then reads `already_closed` and nobody
+  // re-sends either (the seal's same rule, and `finishCalcRequest`'s order).
   await writeAudit(db, ctx, {
     entityType: row.entityType,
     entityId: row.entityId,
     action: 'update',
-    after: { calcReturned: id, reason: trimmed.slice(0, 500) },
-  });
+    after: { calcReturned: id, reason: why },
+  }).catch((err) => logger.error({ err, id }, '[calc] return audit not written'));
   await import('./request-head')
     .then(({ sendCalcPing }) =>
       sendCalcPing({
         requestId: id,
-        ping: { type: 'CalcReturned', reason: trimmed.slice(0, 500) },
+        ping: { type: 'CalcReturned', reason: why },
         requestedBy: row.requestedBy,
         exceptUserId: ctx.actorId,
       }),
@@ -970,10 +985,16 @@ export async function returnCalcRequest(
     const due = new Date();
     due.setUTCDate(due.getUTCDate() + 1);
     due.setUTCHours(23, 59, 59, 999);
+    // The label's own catch, as the take's (review P2-4): a title that could
+    // not be read must not cost the seller the task.
+    const label = await requestLabel(row.entityType, row.entityId).catch((err: unknown) => {
+      logger.error({ err, id }, '[calc] return label not read');
+      return '—';
+    });
     const task = await createTask(
       {
-        title: `↩️ Ma'lumot to'ldiring: ${await requestLabel(row.entityType, row.entityId)}`,
-        note: trimmed.slice(0, 500),
+        title: `↩️ Ma'lumot to'ldiring: ${label}`,
+        note: why,
         typeId: null,
         assigneeId: row.requestedBy,
         // A DATE and not an instant: `parseDue` treats only a bare
@@ -1005,7 +1026,7 @@ export async function returnCalcRequest(
   // The AI sotuvchi hears it LAST (review regression-3): the seller's task
   // above is the VED's own work and must not wait behind the agent's.
   // Best-effort and queued, never a model run under the VED's button.
-  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: why });
 }
 
 /**
