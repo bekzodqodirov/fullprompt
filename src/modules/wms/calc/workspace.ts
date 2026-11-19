@@ -2239,8 +2239,8 @@ export async function sealCalc(
   });
 
   // The price channel's claim (his F, 2026-10-07) — FIRST after the commit:
-  // `writeAudit` below is not in a catch and `announceSeal` awaits Telegram,
-  // so a throw or a restart in that window must not cost the row. Its own
+  // `announceSeal` below awaits Telegram, so a restart in that window must
+  // not cost the row. Its own
   // catch: a channel that cannot be told must never undo a seal (#472), and
   // the drain's net picks up a row this misses.
   await import('./channel-queue')
@@ -2832,12 +2832,17 @@ export async function recalcFromSealed(
     throw err;
   }
 
+  // Both caught (review P2F-1, the seal's rule P2-3): the correction is
+  // COMMITTED, so a throw here undoes nothing — it would only cost the
+  // holder his task («Olaman» then answers `already_yours`), the seller
+  // «🔄 … qayta hisoblanmoqda», the agent's notice and the channel's kick,
+  // and a second press answers `recalc_open`. A row that failed is logged.
   await writeAudit(db, ctx, {
     entityType: 'calc_request',
     entityId: newId,
     action: 'create',
     after: { supersedes: requestId, relawed, remeasure },
-  });
+  }).catch((err) => logger.error({ err, newId }, '[calc] recalc audit not written'));
   // The CARD's own row too, in the same vocabulary as every other calc
   // ending, so the seller's History tab says the price was reopened.
   await writeAudit(db, ctx, {
@@ -2845,7 +2850,7 @@ export async function recalcFromSealed(
     entityId: card.entityId,
     action: 'update',
     after: { calcRecalc: newId, calcRequest: requestId },
-  });
+  }).catch((err) => logger.error({ err, newId }, '[calc] recalc card audit not written'));
 
   // Caught (R12): the correction is committed, and the task's title must not
   // throw it away with the ping behind it.

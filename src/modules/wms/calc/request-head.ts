@@ -272,7 +272,12 @@ function bodyLines(ping: CalcPing, resolved: PingResolved, facts: CalcRequestFac
       // Spelled as the price channel spells a per-unit figure (grouped
       // digits, two places — `usd`), so one cube reads the same in both.
       const perM3 = printable(ping.perM3Usd) ? ` · ${usd(ping.perM3Usd)}/m³` : '';
-      const lines = [`💵 $${ping.totalUsd.toFixed(2)}${perM3}`];
+      // The total in the same spelling as the per-m³ beside it (review
+      // P2F-3) — one line, one way of writing a dollar figure. `usd` prints a
+      // figure it cannot read as «$0.00» where `toFixed` threw, so the guard
+      // is said here: an unreadable total is the fallback's line, never a $0.
+      if (typeof ping.totalUsd !== 'number' || !Number.isFinite(ping.totalUsd)) throw new Error('sealed total not a number');
+      const lines = [`💵 ${usd(ping.totalUsd)}${perM3}`];
       if (ping.validUntil) lines.push(`⏳ ${dottedDay(ping.validUntil)} gacha amal qiladi`);
       return lines;
     }

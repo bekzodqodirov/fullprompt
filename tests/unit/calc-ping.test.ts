@@ -214,7 +214,7 @@ describe('it never throws, and a failed read costs lines, never the message (R12
       openAs: null,
     });
     expect(renderCalcPing(SEALED, { quoteNo: 2, takerName: null }, null, SELLER, APP).text).toBe(
-      '🧮 Hisob tayyor — V2: —\n💵 $1200.00 · $40.00/m³\n⏳ 25.11.2026 gacha amal qiladi',
+      '🧮 Hisob tayyor — V2: —\n💵 $1\u00a0200.00 · $40.00/m³\n⏳ 25.11.2026 gacha amal qiladi',
     );
   });
 
@@ -245,7 +245,7 @@ describe('the five kinds', () => {
   it('a seal carries the CHAIN’s V, its total, its per-m³ and its last day', () => {
     const out = renderCalcPing(SEALED, { quoteNo: 2, takerName: null }, dealFacts(), SELLER, APP);
     expect(lines(out.text)[0]).toBe('🧮 Hisob tayyor — V2: B-00123');
-    expect(out.text).toContain('💵 $1200.00 · $40.00/m³');
+    expect(out.text).toContain('💵 $1\u00a0200.00 · $40.00/m³');
     expect(out.text).toContain('⏳ 25.11.2026 gacha amal qiladi');
   });
 
@@ -322,7 +322,7 @@ describe('$/kub — his 9', () => {
     expect(uzs).not.toContain('/m³');
     for (const perM3Usd of [null, 0, 0.004, Number.NaN]) {
       const sealed = renderCalcPing({ ...SEALED, perM3Usd } as CalcPing, NONE, dealFacts(), SELLER, APP).text;
-      expect(sealed).toContain('💵 $1200.00\n');
+      expect(sealed).toContain('💵 $1\u00a0200.00\n');
       expect(sealed).not.toMatch(/\/m³|NaN/);
     }
   });
@@ -415,6 +415,17 @@ describe('the five senders all go through the one sender', () => {
     const take = bodyOf(service, 'export async function takeCalcRequest(');
     expect(take).toMatch(/requestLabel\(won\.entityType, won\.entityId\)\.catch\(/);
     expect(back).toMatch(/requestLabel\(row\.entityType, row\.entityId\)\.catch\(/);
+    // …and the take's own audit, above «🙋 Oldi» (review P2F-2).
+    const takeAudit = take.slice(take.lastIndexOf('await writeAudit('), take.indexOf('sendCalcPing('));
+    expect(takeAudit).toMatch(/^await writeAudit\([\s\S]*\}\)\.catch\(/);
+    // The correction: BOTH its post-commit audits sit above its task and the
+    // CalcRecalc ping (review P2F-1) — every one of them caught.
+    const recalc = bodyOf(workspace, 'export async function recalcFromSealed(');
+    const recalcTail = recalc.slice(recalc.indexOf("throw new CalcError('recalc_open')"), recalc.indexOf('sendCalcPing('));
+    const audits = recalcTail.split('await writeAudit(').slice(1);
+    expect(audits).toHaveLength(2);
+    // The call's own close — the first «})» in each chunk — is followed by its catch.
+    for (const audit of audits) expect(audit.slice(audit.indexOf('})'), audit.indexOf('})') + 9)).toBe('}).catch(');
   });
 
   it('a seal names its version for the V, never the per-request counter (D8)', () => {

@@ -442,6 +442,19 @@ describe('a VED hand-back — queued off the VED’s button, and the chat’s ow
     // Nothing ran under the press.
     expect(await db.select().from(agentRuns).where(eq(agentRuns.peerId, PEER))).toHaveLength(0);
 
+    // The job's reason is cut by CODE POINTS (review P2F-5): an emoji astride
+    // the 500th UTF-16 unit stays whole, never a lone surrogate jsonb refuses.
+    const cut: { data: unknown }[] = [];
+    const long = `${'a'.repeat(499)}🙂 tail`;
+    await announceAgentCalc(requestId, 'returned', { reason: long }, {
+      enqueue: async (_name, data) => {
+        cut.push({ data });
+      },
+    });
+    const reason = (cut[0]!.data as { reason: string }).reason;
+    expect(reason).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/);
+    expect(Array.from(reason).length).toBeLessThanOrEqual(500);
+
     // …and the worker's side drafts the customer's question, once.
     await inbound('Hisob qachon bo‘ladi?');
     const model = scripted([compose('Tovaringiz nomini aniqroq yozib bera olasizmi?', { category: 'qualification' })]);

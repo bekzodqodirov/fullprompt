@@ -739,12 +739,16 @@ export async function takeCalcRequest(id: string, ctx: AuditContext): Promise<vo
     }
   }
 
+  // Caught (review P2F-2, the seal's rule P2-3): the take is COMMITTED, so a
+  // throw here would only tell the VED «error» about a take that happened,
+  // answer his second press `already_yours`, and cost the requester and the
+  // card owner «🙋 Oldi» for good.
   await writeAudit(db, ctx, {
     entityType: won.entityType,
     entityId: won.entityId,
     action: 'update',
     after: { calcTakenBy: ctx.actorId, calcRequest: id },
-  });
+  }).catch((err) => logger.error({ err, id }, '[calc] take audit not written'));
   // The ping's facts, its taker and its link are read where nothing can
   // throw out of a take that is already committed (request-head.ts, R12).
   // Dynamic: request-head reaches the card doors, which import this file's

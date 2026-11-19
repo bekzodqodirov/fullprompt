@@ -222,7 +222,10 @@ export async function announceAgentCalc(
       managerUserId: link.managerUserId,
       peerId: String(link.peerId),
       requestId,
-      reason: (detail.reason ?? '').slice(0, 500),
+      // By code points (review P2F-5): a UTF-16 `slice` halves an emoji the
+      // hand-back's own clip let through, and the job's jsonb refuses the
+      // lone surrogate.
+      reason: clipText(detail.reason ?? '', 500),
     };
     const send = deps.enqueue ?? (async (name, data, options) => (await import('../../platform/jobs/boss')).enqueue(name, data, options));
     await send(JOB_AGENT_HAND_BACK, job, { retryLimit: 0 }).catch((err: unknown) =>

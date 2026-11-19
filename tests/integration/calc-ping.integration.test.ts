@@ -35,6 +35,7 @@ import { recalcFromSealed, sealCalc, setFreightZone } from '@/modules/wms/calc/w
 import { calcRequestFacts, sendCalcPing } from '@/modules/wms/calc/request-head';
 import { agentSpeaksForCalc } from '@/modules/wms/agent/calc-loop';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { usd } from '@/modules/platform/telegram/format';
 import { itemNameNorm } from '@/modules/wms/calc/memory';
 import { sawRev } from '../fixtures/calc-saw-rev';
 
@@ -325,7 +326,7 @@ describe('«🧮 Hisob tayyor» — the chain’s V, the engine’s per-m³, the
     expect(text.split('\n')[0]).toBe(`🧮 Hisob tayyor — V1: ${ownCode}`);
     // The engine's own per-m³ — the figure the version stores.
     expect(version.perM3Usd).not.toBeNull();
-    expect(text).toContain(`💵 $${totalUsd.toFixed(2)} · $${Number(version.perM3Usd).toFixed(2)}/m³`);
+    expect(text).toContain(`💵 ${usd(totalUsd)} · ${usd(Number(version.perM3Usd))}/m³`);
     const [, m, d] = /^\d{4}-(\d{2})-(\d{2})$/.exec(tashkentDay(version.validUntil))!;
     expect(text).toContain(`⏳ ${d}.${m}.${tashkentDay(version.validUntil).slice(0, 4)} gacha amal qiladi`);
     expect(text).toContain('🚚 Yo‘lkira · Yiwu → Toshkent');
