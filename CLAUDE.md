@@ -3941,6 +3941,7 @@ seal/take/return/recalc is caught so nothing loses the ping. Reviewed FOUR times
 all fixed); 15 + 16 + 31 + 7 + 19 + 6 + 6 + 4 red proofs. TRAPS: a builder's database stands at the builder's
 migration level (six correct tests read «column for_new_client does not exist»); a fence I did not run (the 0124
 backfill's title literal) went red only in the full run.
+**19,658 unit/integration (959 files) + 535 e2e** (1 skipped) green on a fresh database in CI's order at 3f899dab.
 
 **Latest migration: 0151** (`new_client_card`, `when` …130; ledger must reach **152**). Before
 it: 0150 (`batches_view`, `when` …129). Before

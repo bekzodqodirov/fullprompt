@@ -10145,7 +10145,10 @@ for_new_client does not exist» on six tests that were correct — a builder's d
 (4) `pnpm typecheck` caught a test cast that vitest ran happily (CLAUDE.md's footgun, again). (5) Four review layers,
 and each found defects in the previous layer's fixes — mostly in the drain every staff message rides; stopped after
 the fourth found two, both fixed and red-proven. Red proofs by paired string edit, every one restored by hash: 15 + 16
-by the builders, 31 + 7 for the first fixes, 19 + 6 for the second, 6 for the third, 4 for the fourth.
+by the builders, 31 + 7 for the first fixes, 19 + 6 for the second, 6 for the third, 4 for the fourth. Gates at 3f899dab on a FRESH database in CI's
+order (ledger 152): vitest 959 files / 19,658 tests, build, Playwright 535 passed and 1 skipped; screenshots at
+360×800 and 1280×900 (the tick and its AI-copy notice, the «+» banner as admin and seller, the card's «📨» panel and
+answer, /profile's mute box) with the document width equal to the viewport at both.
 
 **#1815 — stated, not built.** The differing-number customer (the seller cannot add a phone; the office does). Whether
 a seller may mute the card at all (W-5: today he may, and the owner is told nowhere). The AI's China addresses and the
