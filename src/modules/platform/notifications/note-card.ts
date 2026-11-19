@@ -31,6 +31,12 @@ export interface NoteCardCursor {
   ids: number[];
   /** Steps whose answer never came (our deadline, a cut socket): maybe in the chat, NEVER sent again. */
   maybe: number[];
+  /**
+   * Steps whose OWN bytes could not be read on the row's LAST attempt (review
+   * FR1-4): certainly not in the chat, stepped over so the rest of the card
+   * still reaches the seller — and named in the row's `error`.
+   */
+  skipped: number[];
 }
 
 export interface NoteCard extends NoteCardCursor {
@@ -44,9 +50,40 @@ export function noteCardOf(payload: Record<string, unknown>): NoteCard | null {
   const done = Number.isInteger(card.done) && (card.done as number) >= 0 ? (card.done as number) : 0;
   const ids = Array.isArray(card.ids) ? card.ids.filter((id): id is number => Number.isInteger(id)) : [];
   const maybe = Array.isArray(card.maybe) ? card.maybe.filter((i): i is number => Number.isInteger(i)) : [];
+  const skipped = Array.isArray(card.skipped) ? card.skipped.filter((i): i is number => Number.isInteger(i)) : [];
   const head = Number.isInteger(card.head) ? (card.head as number) : null;
-  return { steps: card.steps as NoteSend[], done, head, ids, maybe };
+  return { steps: card.steps as NoteSend[], done, head, ids, maybe, skipped };
 }
+
+/**
+ * How long ONE Telegram call of a card step may take — the zametka sender's
+ * own deadline (telegram/note-send.ts reads it from here), our object-store
+ * read included since review FR1-2.
+ */
+export const CARD_CALL_DEADLINE_MS = 60_000;
+
+/**
+ * The most calls ONE step makes (telegram/note-send.ts): the send itself, an
+ * album's stale-id resend from the bytes, and its documents retry — each
+ * repair at most once (review ALB-2).
+ */
+export const CARD_STEP_MAX_CALLS = 3;
+
+/**
+ * A new-client card left in 'sending' is put back after this long, not after
+ * the drain's ten minutes (review FR1-1): while it sits there its seller's
+ * other rows are held back, so the hold is short.
+ *
+ * Measured from the card's own HEARTBEAT, never from the run's claim: the
+ * drain moves `claimed_at` when it reaches the card and again after every
+ * step (service.ts), so the longest a LIVE drain is silent on a card is one
+ * step — at most `CARD_STEP_MAX_CALLS` calls of `CARD_CALL_DEADLINE_MS` each,
+ * three minutes, plus a staff line's 20-second calls in the step before the
+ * plan. Five minutes is that with two to spare; a shorter window would put a
+ * card a live drain is still sending back in the queue for a second drain to
+ * send again — the duplicate the cursor exists to prevent.
+ */
+export const CARD_RECLAIM_MINUTES = 5;
 
 /**
  * The first word of a step's failure when OUR OWN bytes could not be read —

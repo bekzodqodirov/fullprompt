@@ -4596,8 +4596,9 @@
     "back": "← 返回",
     "actions": "快捷操作",
     "addressPresser": "销售员的 Telegram 未连接 — 地址消息已发给您。",
-    "addressMuted": "销售员已在个人资料中关闭此类消息 — 地址消息未发送。",
+    "addressMuted": "销售员已在个人资料中关闭此类消息 — 地址消息未发送。请在客户卡片上用“📨 把地址消息发给我”按钮获取。",
     "addressNobody": "销售员的 Telegram 未连接机器人 — 地址消息未发给任何人。请在客户卡片上用“📨 把地址消息发给我”按钮获取。",
+    "addressNobodyUnlinked": "销售员的 Telegram 未连接机器人 — 地址消息未发给任何人。您的 Telegram 也未连接 — 请先到 个人资料 → Telegram。",
     "addressFailed": "地址消息发送失败 — 请在客户卡片上用“📨”重新发送。",
     "addressSelfMuted": "您已在个人资料中关闭此类消息 — 地址消息未发送（个人资料 → Telegram 通知）。",
     "addressSelfNobody": "您的 Telegram 未连接机器人 — 地址消息未发送（个人资料 → Telegram）。"
@@ -4981,7 +4982,8 @@
       "tooManyParts": "文件过多。",
       "upload": "文件上传失败，请重试。",
       "notCompany": "只有公共（🏢 所有人）笔记可以发给新客户。",
-      "serverBehind": "服务器尚未更新 — 请稍后再试。"
+      "serverBehind": "服务器尚未更新 — 请稍后再试。",
+      "failed": "未保存 — 请重试。"
     },
     "makeShared": "🏢 设为公共",
     "makePrivate": "👤 设为个人",

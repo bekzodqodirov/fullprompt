@@ -87,6 +87,8 @@ export function visibleNotes(actorId: string): SQL {
 export interface NoteRow extends NoteHead {
   userId: string | null;
   sortOrder: number;
+  /** Moved by every writer of the row, the 🆕 flag's included — the screen's press is tied to it. */
+  updatedAt: Date;
   shared: boolean;
   partCount: number;
 }
@@ -552,6 +554,16 @@ export async function deleteNote(id: string, ctx: NoteCtx): Promise<void> {
  * Telegram's own id for these bytes, remembered after a successful send, and
  * forgotten the moment Telegram says it does not know it.
  */
+/**
+ * Telegram's id for a part's bytes — kept only when it is of the shape the
+ * part is SENT as (review FR1-5 / ALB-1). An album's photo-shape repair sends
+ * the group as documents without persisting the downgrade (the culprit is
+ * unknown), and its answers are document ids: written onto parts still
+ * `photo`, they replaced every good member's photo id with one `cachedFileId`
+ * never offers again, and a stale one was offered to the next documents retry
+ * with nothing left to repair it. In the WHERE, so a part flipped to the other
+ * shape between the send and this write keeps its own cache too.
+ */
 export async function rememberFileId(
   partId: string,
   fileId: string,
@@ -560,7 +572,7 @@ export async function rememberFileId(
   await db
     .update(staffNoteParts)
     .set({ telegramFileId: fileId, telegramSentAs: sentAs })
-    .where(eq(staffNoteParts.id, partId));
+    .where(and(eq(staffNoteParts.id, partId), eq(staffNoteParts.sendAs, sentAs)));
 }
 
 export async function forgetFileId(partId: string): Promise<void> {

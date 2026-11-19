@@ -4596,8 +4596,9 @@
     "back": "← Orqaga",
     "actions": "Tezkor harakatlar",
     "addressPresser": "Sotuvchining Telegrami ulanmagan — manzil xabari sizga yuborildi.",
-    "addressMuted": "Sotuvchi bu xabarlarni profilida o‘chirgan — manzil xabari yuborilmadi.",
+    "addressMuted": "Sotuvchi bu xabarlarni profilida o‘chirgan — manzil xabari yuborilmadi. Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasidan oling.",
     "addressNobody": "Sotuvchining Telegrami botga ulanmagan — manzil xabari hech kimga yuborilmadi. Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasidan oling.",
+    "addressNobodyUnlinked": "Sotuvchining Telegrami botga ulanmagan — manzil xabari hech kimga yuborilmadi. Sizning Telegramingiz ham ulanmagan — avval Profil → Telegram.",
     "addressFailed": "Manzil xabarini yuborib bo‘lmadi — mijoz kartasidan «📨» bilan qayta yuboring.",
     "addressSelfMuted": "Siz bu xabarlarni profilingizda o‘chirgansiz — manzil xabari yuborilmadi (Profil → Telegram xabarlari).",
     "addressSelfNobody": "Telegramingiz botga ulanmagan — manzil xabari yuborilmadi (Profil → Telegram)."
@@ -4981,7 +4982,8 @@
       "tooManyParts": "Fayllar soni ko‘p.",
       "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring.",
       "notCompany": "Faqat umumiy (🏢 Hammaga) zametka yangi mijozga yuborilishi mumkin.",
-      "serverBehind": "Server hali yangilanmagan — bir ozdan keyin qayta urinib ko‘ring."
+      "serverBehind": "Server hali yangilanmagan — bir ozdan keyin qayta urinib ko‘ring.",
+      "failed": "Saqlanmadi — qaytadan urinib ko‘ring."
     },
     "makeShared": "🏢 Hammaga",
     "makePrivate": "👤 Faqat menda",

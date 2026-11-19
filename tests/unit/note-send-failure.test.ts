@@ -1,10 +1,27 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
 import { Api } from 'grammy';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '@/modules/platform/logger';
-import type { NoteSend } from '@/modules/platform/notes/plan';
+import type { NoteFile, NoteSend } from '@/modules/platform/notes/plan';
 import { cardStepVerdict, SOURCE_UNREADABLE } from '@/modules/platform/notifications/note-card';
-import { redactToken, sendPlan } from '@/modules/platform/telegram/note-send';
+import { __setSendTimeout, redactToken, sendPlan } from '@/modules/platform/telegram/note-send';
 import { CONNECT_PHASE } from '@/modules/platform/telegram/staff-group-rules';
+
+/** The object store, stood in for on demand — a store that STALLS (review FR1-2). */
+const store = vi.hoisted(() => ({ getStream: null as null | ((key: string) => Promise<unknown>) }));
+vi.mock('@/modules/platform/files/storage', async (original) => {
+  const real = await original<typeof import('@/modules/platform/files/storage')>();
+  return {
+    ...real,
+    getStorage: () => {
+      const driver = real.getStorage();
+      if (!store.getStream) return driver;
+      return { ...driver, getStream: store.getStream } as unknown as ReturnType<typeof real.getStorage>;
+    },
+  };
+});
 
 /**
  * A zametka step that did not go, as the drain reads it (`PlanStop`) — the
@@ -19,6 +36,8 @@ const TOKEN = '123456:SECRET-BOT-TOKEN';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  store.getStream = null;
+  __setSendTimeout(null);
 });
 
 function logged(spy: { mock: { calls: unknown[][] } }): string {
@@ -99,5 +118,89 @@ describe('our own bytes that could not be read (review P1-DLV-2)', () => {
     expect(out.stop!.description).toContain('sklad.jpg');
     expect(cardStepVerdict({ ...out.stop!, botDown: false })).toBe('retry');
     void bodyRead;
+  });
+});
+
+/**
+ * Our own read that STALLS (review FR1-2): MinIO takes the GET and then sends
+ * nothing, and the S3 client has no request timeout. Through a REAL grammy
+ * Api and its real node-fetch, against a local server that reads the request
+ * body and never answers — so the call ends on OUR deadline, exactly as in
+ * production, with node-fetch's own abort.
+ */
+describe('a stalled read of our own store (review FR1-2)', () => {
+  const photo = (): NoteFile => ({
+    partId: '00000000-0000-0000-0000-000000000002',
+    attachmentId: 'b',
+    fileName: 'sklad.jpg',
+    storageKey: 'staff_note/stall/sklad.jpg',
+    sizeBytes: 1000,
+    sendAs: 'photo',
+    telegramFileId: null,
+    telegramSentAs: null,
+  });
+  const step = (): NoteSend => ({
+    kind: 'media',
+    as: 'photo',
+    caption: 'Xitoy sklad\n\nIvu: 浙江省 义乌市 …\n\nMarkirovka / 唛头: GS777',
+    files: [photo()],
+  });
+
+  let server: Server | null = null;
+  async function silentTelegram(): Promise<string> {
+    server = createServer((req) => {
+      // Takes whatever the body gives and never answers: the body never completes.
+      req.on('data', () => {});
+    });
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+  }
+  afterEach(async () => {
+    if (!server) return;
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server!.close(() => resolve()));
+    server = null;
+  });
+
+  it('a stream that never yields: retried as our own unreadable bytes, and the store’s stream is closed', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    // A Readable that never pushes a byte — the store's GET accepted, nothing after.
+    const stalled = new Readable({ read() {} });
+    store.getStream = async () => stalled;
+    __setSendTimeout(300);
+    const api = new Api('1:TEST', { apiRoot: await silentTelegram() });
+
+    const began = Date.now();
+    const out = await sendPlan(api, 42n, [step()], { onRateLimit: 'return' });
+    expect(Date.now() - began).toBeLessThan(5_000);
+    expect(out.stop).not.toBeNull();
+    expect(out.stop!.status).toBe(0);
+    // Not «Network request … The user aborted a request»: the multipart body never
+    // completed, so Telegram cannot have it — the card retries instead of a «maybe».
+    expect(out.stop!.description).toMatch(new RegExp(`^${SOURCE_UNREADABLE} sklad\\.jpg \\(staff_note/stall/sklad\\.jpg\\): stalled`));
+    expect(cardStepVerdict({ ...out.stop!, botDown: false })).toBe('retry');
+    // The store's stream is cut, not left holding a socket for the process's life.
+    expect(stalled.destroyed).toBe(true);
+  });
+
+  it('a store that never answers the GET at all: the same — retried, never stepped over', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    store.getStream = () => new Promise<never>(() => {});
+    __setSendTimeout(300);
+    const api = new Api('1:TEST', { apiRoot: await silentTelegram() });
+    const out = await sendPlan(api, 42n, [step()], { onRateLimit: 'return' });
+    expect(out.stop!.description.startsWith(`${SOURCE_UNREADABLE} sklad.jpg`)).toBe(true);
+    expect(out.stop!.description).toContain('stalled');
+    expect(cardStepVerdict({ ...out.stop!, botDown: false })).toBe('retry');
+  });
+
+  it('a deadline with our bytes all read is still an answer that never came — «maybe», never re-sent', async () => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    store.getStream = async () => Readable.from([Buffer.from('jpeg bytes')]);
+    __setSendTimeout(300);
+    const api = new Api('1:TEST', { apiRoot: await silentTelegram() });
+    const out = await sendPlan(api, 42n, [step()], { onRateLimit: 'return' });
+    expect(out.stop!.description.startsWith(SOURCE_UNREADABLE)).toBe(false);
+    expect(cardStepVerdict({ ...out.stop!, botDown: false })).toBe('ambiguous');
   });
 });

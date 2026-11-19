@@ -43,11 +43,17 @@ import { GS_REMINDER } from '../agent/seed-kb';
  *   - `muted`   — the seller switched these messages off on /profile: his
  *                 choice, so the card goes to NOBODY (judge R14 — a mute never
  *                 moves his work onto somebody else);
- *   - `nobody`  — nobody who could get it has a linked Telegram;
+ *   - `nobody`  — nobody who could get it has a linked Telegram (the seller
+ *                 unlinked, and the presser IS him or muted these messages —
+ *                 the card's «📨» still reaches a muted presser);
+ *   - `unlinked` — the seller's Telegram is not linked, and neither is the
+ *                 Telegram of the somebody else who pressed (review W-4): the
+ *                 card's «📨» would refuse him too, so his screen sends him to
+ *                 his own Profile first;
  *   - `failed`  — OUR fault: the card could not be queued (a database blip, a
  *                 read under it), never blamed on anybody's Telegram.
  */
-export type AddressCardOutcome = 'seller' | 'presser' | 'muted' | 'nobody' | 'failed';
+export type AddressCardOutcome = 'seller' | 'presser' | 'muted' | 'nobody' | 'unlinked' | 'failed';
 
 /** How long a mint press may wait for the bot's own name (a getMe on a cold process). */
 const BOT_NAME_WAIT_MS = 3_000;
@@ -138,6 +144,9 @@ export function cardRecipient(
   if (seller && sellerReach === 'ok') return { to: seller, outcome: 'seller' };
   if (seller && sellerReach === 'muted') return { to: null, outcome: 'muted' };
   if (presser && presser !== seller && reach.get(presser) === 'ok') return { to: presser, outcome: 'presser' };
+  if (presser && presser !== seller && (reach.get(presser) ?? 'no_chat') === 'no_chat') {
+    return { to: null, outcome: 'unlinked' };
+  }
   return { to: null, outcome: 'nobody' };
 }
 

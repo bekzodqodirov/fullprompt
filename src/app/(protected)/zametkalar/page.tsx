@@ -82,6 +82,7 @@ export default async function NotesPage() {
           body: row.body ?? '',
           shared: row.shared,
           forNewClient: flags?.has(row.id) ?? false,
+          updatedAt: row.updatedAt.toISOString(),
           parts: (parts[index] ?? []).map((file) => ({
             id: file.partId,
             attachmentId: file.attachmentId,

@@ -14,6 +14,7 @@ import {
   setPartSendAsAction,
   type NoteFormState,
 } from './actions';
+import { flagShown, type FlagPress } from './flag-press';
 
 export interface NotePart {
   id: string;
@@ -29,6 +30,8 @@ export interface NoteRowView {
   shared: boolean;
   /** Ticked «🆕 Yangi mijozga» — the new-client card carries it (0151). */
   forNewClient: boolean;
+  /** The row's revision (`updated_at`, ISO) — what a 🆕 press is tied to (review W-2). */
+  updatedAt: string;
   parts: NotePart[];
 }
 
@@ -60,14 +63,10 @@ export function NoteList({
   const [rowError, setRowError] = useState<{ id: string; code: string } | null>(null);
   // The 🆕 tick as the person just pressed it, until the round trip lands
   // (review CUST-9): a controlled box would snap back unticked and sit there,
-  // disabled, for the whole action + refresh. Kept WITH the server value it
-  // was pressed against — once the server's own value moves, the server
-  // wins again, and a refusal takes the press back at once.
-  const [pressed, setPressed] = useState<Record<string, { want: boolean; from: boolean }>>({});
-  const flagShown = (note: NoteRowView): boolean => {
-    const press = pressed[note.id];
-    return press && press.from === note.forNewClient ? press.want : note.forNewClient;
-  };
+  // disabled, for the whole action + refresh. Kept WITH the row's revision it
+  // was pressed against (flag-press.ts, review W-2) — once the row moves on,
+  // the server wins again, and a refusal takes the press back at once.
+  const [pressed, setPressed] = useState<Record<string, FlagPress>>({});
   const router = useRouter();
   const rowErrors: Record<string, string> = {
     forbidden: t('errors.forbidden'),
@@ -75,6 +74,9 @@ export function NoteList({
     not_company: t('errors.notCompany'),
     server_behind: t('errors.serverBehind'),
     title_taken: t('errors.titleTaken'),
+    // The request itself failed, or the server threw (review W-3): «try
+    // again», never «check the fields» under a checkbox.
+    failed: t('errors.failed'),
   };
 
   return (
@@ -182,13 +184,13 @@ export function NoteList({
               <input
                 type="checkbox"
                 data-testid="note-new-client"
-                checked={flagShown(note)}
+                checked={flagShown(note, pressed[note.id])}
                 disabled={pending}
                 className="size-5 shrink-0"
                 onChange={(e) => {
                   const on = e.target.checked;
                   setRowError(null);
-                  setPressed((all) => ({ ...all, [note.id]: { want: on, from: note.forNewClient } }));
+                  setPressed((all) => ({ ...all, [note.id]: { want: on, at: note.updatedAt } }));
                   start(async () => {
                     // A press that did not land (refused, or the request itself
                     // failed) puts the box back to what the server holds, with

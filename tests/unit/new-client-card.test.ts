@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import { createTranslator } from 'next-intl';
 import { describe, expect, it } from 'vitest';
 import { newClientPlan, notePlan, planMessageCount, type NoteFile, type NoteHead } from '@/modules/platform/notes/plan';
-import { cardStepVerdict, noteCardOf, SOURCE_UNREADABLE } from '@/modules/platform/notifications/note-card';
+import {
+  CARD_CALL_DEADLINE_MS,
+  CARD_RECLAIM_MINUTES,
+  CARD_STEP_MAX_CALLS,
+  cardStepVerdict,
+  noteCardOf,
+  SOURCE_UNREADABLE,
+} from '@/modules/platform/notifications/note-card';
 import { CONNECT_PHASE } from '@/modules/platform/telegram/staff-group-rules';
 import { clientLabels } from '@/modules/platform/telegram/client-labels';
 import { isMijozStart, mijozStartUrl } from '@/modules/platform/telegram/mijoz-start';
@@ -12,7 +19,8 @@ import {
   newClientFooter,
   newClientStaffText,
 } from '@/modules/wms/client-card/address-card';
-import { addressFlashOf } from '@/app/(protected)/admin/clients/address-flash';
+import { addressFlashOf, addressWordOf } from '@/app/(protected)/admin/clients/address-flash';
+import { flagShown } from '@/app/(protected)/zametkalar/flag-press';
 import { GS_REMINDER } from '@/modules/wms/agent/seed-kb';
 import { MAX_CAPTION_CHARS } from '@/modules/platform/telegram/limits';
 import { bodyOf, read, srcFiles } from '../fixtures/source-shape';
@@ -217,9 +225,44 @@ describe('who gets the card (judge R14)', () => {
   });
 
   it('nobody when nobody who could get it is reachable', () => {
-    expect(cardRecipient('s', 'p', reach({ s: 'no_chat', p: 'no_chat' }))).toEqual({ to: null, outcome: 'nobody' });
     expect(cardRecipient('s', 's', reach({ s: 'no_chat' }))).toEqual({ to: null, outcome: 'nobody' });
     expect(cardRecipient(null, null, reach({}))).toEqual({ to: null, outcome: 'nobody' });
+    // A presser who muted these messages can still take the card with «📨» (it goes past his mute).
+    expect(cardRecipient('s', 'p', reach({ s: 'no_chat', p: 'muted' }))).toEqual({ to: null, outcome: 'nobody' });
+  });
+
+  it('a presser whose OWN Telegram is unlinked too is told so — «📨» would refuse him (review W-4)', () => {
+    expect(cardRecipient('s', 'p', reach({ s: 'no_chat', p: 'no_chat' }))).toEqual({ to: null, outcome: 'unlinked' });
+    // Never about his own card: the seller who pressed is `nobody`, said in the second person.
+    expect(cardRecipient('s', 's', reach({ s: 'no_chat' })).outcome).toBe('nobody');
+  });
+});
+
+describe('which sentence a door says (review W-1, W-4)', () => {
+  it('to the seller HIMSELF when he is the one who pressed — never «Sotuvchi …» about his own switch', () => {
+    expect(addressWordOf('muted', true)).toBe('addressSelfMuted');
+    expect(addressWordOf('nobody', true)).toBe('addressSelfNobody');
+    expect(addressWordOf('muted', false)).toBe('addressMuted');
+    expect(addressWordOf('nobody', false)).toBe('addressNobody');
+  });
+
+  it('a presser unlinked too is sent to his own Profile, not to «📨»; the usual way says nothing', () => {
+    expect(addressWordOf('unlinked', false)).toBe('addressNobodyUnlinked');
+    expect(addressWordOf('presser', false)).toBe('addressPresser');
+    expect(addressWordOf('failed', true)).toBe('addressFailed');
+    for (const quiet of ['seller', undefined, null, 'x']) expect(addressWordOf(quiet, false)).toBeNull();
+  });
+
+  it('the won dialog and the client card’s flash both say it through the one chooser, with the presser’s own answer', () => {
+    const won = read('src/components/won-dialog.tsx');
+    expect(won).toContain("addressWordOf(result.addressCard, result.addressCardSelf === true)");
+    const button = read('src/app/(protected)/admin/clients/address-card-button.tsx');
+    expect(button).toContain('const flashWord = addressWordOf(flash, self);');
+    const page = read('src/app/(protected)/admin/clients/[id]/page.tsx');
+    expect(page).toContain('self={client.salesManagerId === actor.id}');
+    const crm = read('src/modules/wms/crm/service.ts');
+    expect(crm).toContain('addressCardSelf: sellerId === ctx.actorId');
+    expect(crm).toContain('salesManagerId: sellerId,');
   });
 });
 
@@ -231,10 +274,12 @@ describe('the outcome’s sentences, in all four bundles', () => {
     'quick.addressPresser',
     'quick.addressMuted',
     'quick.addressNobody',
+    'quick.addressNobodyUnlinked',
     'quick.addressFailed',
     'quick.addressSelfMuted',
     'quick.addressSelfNobody',
     'clients.addressInactive',
+    'notes.errors.failed',
   ];
 
   it('every one formats (ICU-valid) and every outcome has words of its own', () => {
@@ -262,12 +307,21 @@ describe('the outcome’s sentences, in all four bundles', () => {
     // The «+» speaks to the seller himself (CUST-8).
     expect(quick.addressSelfNobody).toContain('Telegramingiz');
     expect(quick.addressNobody).toContain('Sotuvchining');
+    // W-4: a muted seller's card is still the presser's to take with «📨»; an
+    // unlinked presser is sent to his own Profile first, never to «📨».
+    expect(quick.addressMuted).toContain('«📨 Manzil xabarini menga yuborish»');
+    expect(quick.addressNobodyUnlinked).toContain('Sizning Telegramingiz ham ulanmagan — avval Profil → Telegram');
+    expect(quick.addressNobodyUnlinked).not.toContain('📨');
+    // W-3: a checkbox that did not save says «try again», never «check the fields».
+    const notes = bundles.uz!.notes as { errors: Record<string, string> };
+    expect(notes.errors.failed).not.toBe(notes.errors.validation);
+    expect(notes.errors.failed).toContain('qaytadan urinib ko‘ring');
   });
 });
 
 describe('?manzil= — read as one of the closed set or as nothing', () => {
-  it('accepts the four outcomes the full form can redirect with', () => {
-    for (const word of ['presser', 'muted', 'nobody', 'failed'] as const) expect(addressFlashOf(word)).toBe(word);
+  it('accepts the five outcomes the full form can redirect with', () => {
+    for (const word of ['presser', 'muted', 'nobody', 'unlinked', 'failed'] as const) expect(addressFlashOf(word)).toBe(word);
   });
 
   it('draws nothing for anything else — the seller outcome, a typo, a repeated param', () => {
@@ -290,16 +344,48 @@ describe('?start=mijoz — a link that names nobody', () => {
   });
 });
 
+describe('the 🆕 press is tied to the row’s revision, never to the boolean (review W-2)', () => {
+  it('stands while the row is the one it was pressed against, and never comes back to life', () => {
+    const press = { want: true, at: 'r1' };
+    // Pressed, the round trip in flight: the box shows the press.
+    expect(flagShown({ forNewClient: false, updatedAt: 'r1' }, press)).toBe(true);
+    // The success refresh: the row moved — the server's value from here on.
+    expect(flagShown({ forNewClient: true, updatedAt: 'r2' }, press)).toBe(true);
+    // «Shaxsiy qilish» cleared the flag, then «Hammaga» shared it again — unticked,
+    // although the server is back at the value the press was made against.
+    expect(flagShown({ forNewClient: false, updatedAt: 'r3' }, press)).toBe(false);
+    expect(flagShown({ forNewClient: false, updatedAt: 'r4' }, press)).toBe(false);
+    // A colleague unticked it in another tab.
+    expect(flagShown({ forNewClient: false, updatedAt: 'r5' }, { want: true, at: 'r2' })).toBe(false);
+    // No press: the server.
+    expect(flagShown({ forNewClient: true, updatedAt: 'r1' }, undefined)).toBe(true);
+  });
+});
+
+describe('the card’s short reclaim (review FR1-1)', () => {
+  it('outlasts the longest a LIVE drain is silent on one step, and is shorter than the drain’s ten minutes', () => {
+    expect(CARD_STEP_MAX_CALLS).toBe(3);
+    expect(CARD_RECLAIM_MINUTES * 60_000).toBeGreaterThan(CARD_CALL_DEADLINE_MS * CARD_STEP_MAX_CALLS);
+    expect(CARD_RECLAIM_MINUTES).toBeLessThan(10);
+    // The sender's deadline IS the one the window is measured against.
+    expect(read('src/modules/platform/telegram/note-send.ts')).toContain('const SEND_TIMEOUT_MS = CARD_CALL_DEADLINE_MS;');
+  });
+});
+
 describe('the drain’s cursor rules', () => {
   it('reads a card off a row, and refuses a row of another shape', () => {
-    expect(noteCardOf({ card: { steps: [{ kind: 'text', text: 'a' }], done: 2, head: 5, ids: [5, 6], maybe: [1] } })).toEqual({
+    expect(
+      noteCardOf({ card: { steps: [{ kind: 'text', text: 'a' }], done: 2, head: 5, ids: [5, 6], maybe: [1], skipped: [2] } }),
+    ).toEqual({
       steps: [{ kind: 'text', text: 'a' }],
       done: 2,
       head: 5,
       ids: [5, 6],
       maybe: [1],
+      skipped: [2],
     });
-    expect(noteCardOf({ card: { steps: [] } })).toEqual({ steps: [], done: 0, head: null, ids: [], maybe: [] });
+    // A row queued before FR1-4 carries no `skipped`: nothing was stepped over.
+    expect(noteCardOf({ card: { steps: [] } })).toEqual({ steps: [], done: 0, head: null, ids: [], maybe: [], skipped: [] });
     expect(noteCardOf({})).toBeNull();
     expect(noteCardOf({ card: { done: 1 } })).toBeNull();
   });
@@ -435,15 +521,19 @@ describe('the wires', () => {
   it('the screens: the flash steps aside once the button answers, the 🆕 tick answers at once, the AI link opens the knowledge', () => {
     const button = read('src/app/(protected)/admin/clients/address-card-button.tsx');
     // CUST-7: «went nowhere» never stands over «✅ Yuborildi».
-    expect(button).toContain('{flash && said === null && (');
+    expect(button).toContain('{flashWord && said === null && (');
     const page = read('src/app/(protected)/admin/clients/[id]/page.tsx');
     // P1-DOORS-4: no resend button on a deactivated code; the flash read from the closed set.
-    expect(page).toContain('{client.active && <AddressCardButton clientId={client.id} flash={addressFlash} />}');
+    expect(page).toContain('{client.active && (\n        <AddressCardButton clientId={client.id} flash={addressFlash}');
     expect(page).toContain('const addressFlash = addressFlashOf(manzil);');
     const list = read('src/app/(protected)/zametkalar/note-list.tsx');
-    // CUST-9: the box shows the press until the round trip lands, and a refusal takes it back.
-    expect(list).toContain('checked={flagShown(note)}');
-    expect(list).toContain('setPressed((all) => ({ ...all, [note.id]: { want: on, from: note.forNewClient } }));');
+    // CUST-9: the box shows the press until the round trip lands, and a refusal takes it back —
+    // the press tied to the row's revision (W-2, `flag-press.ts`), never to the boolean.
+    expect(list).toContain('checked={flagShown(note, pressed[note.id])}');
+    expect(list).toContain('setPressed((all) => ({ ...all, [note.id]: { want: on, at: note.updatedAt } }));');
+    // W-3: the request that failed has words of its own.
+    expect(list).toContain("failed: t('errors.failed'),");
+    expect(read('src/app/(protected)/zametkalar/page.tsx')).toContain('updatedAt: row.updatedAt.toISOString(),');
     const refused = list.slice(list.indexOf('const res = await setNewClientFlagAction(note.id, on)'), list.indexOf('if (on) setDrift(true);'));
     expect(refused).toContain('if (res.error) {');
     expect(refused).toContain('delete rest[note.id];');

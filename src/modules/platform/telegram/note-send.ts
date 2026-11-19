@@ -8,7 +8,7 @@ import {
   rememberFileId,
 } from '../notes/service';
 import { cachedFileId, notePlan, planMessageCount, type NoteFile, type NoteSend } from '../notes/plan';
-import { SOURCE_UNREADABLE } from '../notifications/note-card';
+import { CARD_CALL_DEADLINE_MS, SOURCE_UNREADABLE } from '../notifications/note-card';
 import { MEDIA_GROUP_MIN } from './limits';
 
 /**
@@ -22,8 +22,18 @@ import { MEDIA_GROUP_MIN } from './limits';
  * and every arrival flow with it (#706, round 101's own outage).
  */
 
-/** A Telegram call may not sit for ever; a stalled socket is an outage here. */
-const SEND_TIMEOUT_MS = 60_000;
+/**
+ * A Telegram call may not sit for ever; a stalled socket is an outage here.
+ * The card's reclaim window is measured against it (note-card.ts), so it
+ * lives there.
+ */
+const SEND_TIMEOUT_MS = CARD_CALL_DEADLINE_MS;
+let sendTimeoutMs = SEND_TIMEOUT_MS;
+
+/** Tests only: a shorter deadline, so a stalled read is provable without waiting a minute. */
+export function __setSendTimeout(ms: number | null): void {
+  sendTimeoutMs = ms ?? SEND_TIMEOUT_MS;
+}
 
 /**
  * One send per (chat, note) at a time.
@@ -221,7 +231,8 @@ export function redactToken(text: string, token?: string): string {
  * Our OWN bytes could not be read: the object store refused the key, or the
  * stream it gave broke while Telegram was being sent it. Thrown by `ownBytes`
  * and handed back by grammy unchanged as `HttpError.error` (its multipart
- * stream reports a source's failure through the call's own rejection).
+ * stream reports a source's failure through the call's own rejection) — and
+ * by `within` when the store STALLED until the call's deadline (FR1-2).
  */
 class SourceUnreadable extends Error {
   readonly code = 'SOURCE_UNREADABLE';
@@ -293,15 +304,78 @@ function quietly<T extends object>(extra: T | undefined, silent: boolean): T | u
   return { ...(extra ?? ({} as T)), disable_notification: true };
 }
 
+/**
+ * ONE Telegram call's deadline, and what OUR side of that call is doing
+ * (review FR1-2).
+ *
+ * A read of our own object store that STALLS — MinIO takes the GET and then
+ * sends nothing, and the S3 client has no request timeout — ends on this
+ * deadline like an answer that never came, and the card would mark the step
+ * `maybe` and never send it, although the multipart body never completed and
+ * Telegram cannot have it. Worse, the read could not even be stopped: grammy
+ * closes our byte generator with `return()`/`throw()`, and those wait behind
+ * the `await` the generator is parked on, so the store's stream stayed open
+ * for the process's life. So the call knows which of our reads is in flight
+ * (`pending`), remembers it when the deadline strikes (`stalled`), and cuts
+ * the store's stream itself.
+ *
+ * Made BEFORE the call's sources, so every source of the call is read against
+ * the call's own deadline.
+ */
+interface SendCall {
+  signal: AbortSignal;
+  /** Our own read in flight — the object store is being awaited. */
+  pending: NoteFile | null;
+  /** What was in flight when the deadline struck: our bytes never came. */
+  stalled: NoteFile | null;
+  /** The store's streams this call opened, cut when the deadline strikes. */
+  streams: Set<{ destroy(): unknown }>;
+}
+
+function newCall(): SendCall {
+  const call: SendCall = { signal: AbortSignal.timeout(sendTimeoutMs), pending: null, stalled: null, streams: new Set() };
+  // Registered first, so it runs before every other listener on this signal
+  // (our own read's, grammy's own): the read in flight is known before it is
+  // rejected and forgotten. `destroy()` with NO error — an 'error' event on a
+  // stream nobody listens to any more is an uncaught exception; a pending read
+  // rejects all the same («Premature close»).
+  call.signal.addEventListener(
+    'abort',
+    () => {
+      call.stalled = call.pending;
+      for (const stream of call.streams) stream.destroy();
+    },
+    { once: true },
+  );
+  return call;
+}
+
+/**
+ * Run one call; when it failed on OUR deadline while our own read was in
+ * flight, say so as an unreadable source — `cardStepVerdict` then retries it
+ * instead of stepping over a «maybe» that cannot be in the chat. node-fetch
+ * rejects the request on the abort before our read is rejected, so the error
+ * that comes back is the network's, and only the call can tell them apart.
+ */
+async function within<T>(call: SendCall, run: (call: SendCall) => Promise<T>): Promise<T> {
+  try {
+    return await run(call);
+  } catch (err) {
+    if (call.signal.aborted && call.stalled) throw new SourceUnreadable(call.stalled, new Error('stalled'));
+    throw err;
+  }
+}
+
 /** One step, sent; the ids of the messages it became. */
 async function attemptStep(api: Api, chatId: bigint, step: NoteSend, silent = false): Promise<number[]> {
   const chat = Number(chatId);
-  const signal = AbortSignal.timeout(SEND_TIMEOUT_MS);
   if (step.kind === 'text') {
-    const message = await api.sendMessage(chat, step.text, quietly(undefined, silent), signal);
+    const message = await within(newCall(), (call) =>
+      api.sendMessage(chat, step.text, quietly(undefined, silent), call.signal),
+    );
     return idsOf(message);
   }
-  return sendMedia(api, chat, step, signal, silent);
+  return sendMedia(api, chat, step, silent);
 }
 
 function idsOf(message: unknown): number[] {
@@ -311,58 +385,29 @@ function idsOf(message: unknown): number[] {
     .filter((id): id is number => typeof id === 'number');
 }
 
+/** A file offered by its bytes alone — no cached id of any shape. */
+function bytesOnly(file: NoteFile): NoteFile {
+  return { ...file, telegramFileId: null, telegramSentAs: null };
+}
+
 async function sendMedia(
   api: Api,
   chat: number,
   step: Extract<NoteSend, { kind: 'media' }>,
-  signal: AbortSignal,
   silent: boolean,
 ): Promise<number[]> {
-  if (step.files.length >= MEDIA_GROUP_MIN) {
-    try {
-      return await sendGroup(api, chat, step, signal, silent);
-    } catch (err) {
-      // A media group is all-or-nothing on a refusal: when Telegram says «no»,
-      // no member of it is in the chat, so ONE resend — still as one call, so
-      // the album stays an album — cannot double anything. The single photo
-      // below has had both repairs since 📌 shipped; an album had neither, and
-      // the new-client card merges every ticked note's files into one
-      // (review P1-DLV-3).
-      const cached = step.files.filter((file) => cachedFileId(file) !== null);
-      if (isUnknownFileId(err) && cached.length > 0) {
-        // Which member's id Telegram forgot is not said, so every cached one
-        // is cleared and the whole group goes as bytes.
-        for (const file of cached) await forgetFileId(file.partId).catch(() => {});
-        const fresh = step.files.map((file) => ({ ...file, telegramFileId: null, telegramSentAs: null }));
-        return await sendGroup(api, chat, { ...step, files: fresh }, AbortSignal.timeout(SEND_TIMEOUT_MS), silent);
-      }
-      if (step.as === 'photo' && isPhotoShapeRefusal(err)) {
-        // Which member Telegram refused is not said either, so the group goes
-        // as DOCUMENTS this once — and the downgrade is NOT persisted: the
-        // culprit is unknown, and persisting would turn good photos into
-        // documents for every later tap. Sourced as documents, so an id
-        // Telegram minted for a PHOTO is never offered to a document slot.
-        const asDocuments = step.files.map((file) => ({ ...file, sendAs: 'document' as const }));
-        return await sendGroup(
-          api,
-          chat,
-          { ...step, as: 'document', files: asDocuments },
-          AbortSignal.timeout(SEND_TIMEOUT_MS),
-          silent,
-        );
-      }
-      throw err;
-    }
-  }
+  if (step.files.length >= MEDIA_GROUP_MIN) return sendAlbum(api, chat, step, silent);
 
   const file = step.files[0]!;
-  const body = await source(file);
   const extra = quietly(step.caption ? { caption: step.caption } : undefined, silent);
+  const send = (as: 'photo' | 'document', one: NoteFile) =>
+    within<unknown>(newCall(), (call) =>
+      as === 'photo'
+        ? api.sendPhoto(chat, source(one, call), extra, call.signal)
+        : api.sendDocument(chat, source(one, call), extra, call.signal),
+    );
   try {
-    const message =
-      step.as === 'photo'
-        ? await api.sendPhoto(chat, body, extra, signal)
-        : await api.sendDocument(chat, body, extra, signal);
+    const message = await send(step.as, file);
     await cacheFrom(file, message, step.as);
     return idsOf(message);
   } catch (err) {
@@ -373,28 +418,81 @@ async function sendMedia(
       // here. The downgrade is PERSISTED: the next tap must not propose a
       // shape Telegram has already refused once.
       await downgradeToDocument(file.partId).catch(() => {});
-      const message = await api.sendDocument(
-        chat,
-        await source({ ...file, telegramFileId: null, telegramSentAs: null }),
-        extra,
-        AbortSignal.timeout(SEND_TIMEOUT_MS),
-      );
-      await cacheFrom({ ...file, sendAs: 'document' }, message, 'document');
+      const asDocument: NoteFile = { ...bytesOnly(file), sendAs: 'document' };
+      const message = await send('document', asDocument);
+      await cacheFrom(asDocument, message, 'document');
       return idsOf(message);
     }
     if (isUnknownFileId(err) && cachedFileId(file)) {
       // The cached id is gone from Telegram's side. Clear it and send the
       // bytes — the fallback is the load-bearing half of the cache.
       await forgetFileId(file.partId).catch(() => {});
-      const fresh = { ...file, telegramFileId: null, telegramSentAs: null };
-      const message =
-        step.as === 'photo'
-          ? await api.sendPhoto(chat, await source(fresh), extra, AbortSignal.timeout(SEND_TIMEOUT_MS))
-          : await api.sendDocument(chat, await source(fresh), extra, AbortSignal.timeout(SEND_TIMEOUT_MS));
+      const message = await send(step.as, bytesOnly(file));
       await cacheFrom(file, message, step.as);
       return idsOf(message);
     }
     throw err;
+  }
+}
+
+/**
+ * A media group, with the single photo's two repairs — CHAINED, each at most
+ * once (review ALB-2): a stale-id resend from the bytes that is itself refused
+ * for a photo's shape goes on to the documents retry, built from the files it
+ * already cleared. The card's steps are frozen on its row, so a repair that
+ * stopped at the first refusal would replay the same two refusals on every
+ * run until the row failed. At most three calls; both repairs follow only a
+ * GrammyError — Telegram's definite «no», under which no member of the group
+ * is in the chat — so nothing is sent again after an answer that never came.
+ *
+ * The documents retry goes from the BYTES, never a cached id (review ALB-1):
+ * an id Telegram minted for a document is not offered to a document slot it
+ * was never checked against, and one that went stale would be refused with no
+ * repair left. Its ids are NOT cached onto the parts either — they are photos
+ * on the row, and `rememberFileId` keeps only an id of the shape a part is
+ * sent as (FR1-5), so the good members keep their PHOTO ids.
+ *
+ * The cost, stated (ALB-3): the culprit is unknown, so the downgrade is not
+ * persisted and an album holding one shape-bad photo goes as documents EVERY
+ * time — first as photos (the good members by their cached ids, the culprit
+ * as bytes), refused, then all as document bytes. Persisting would turn good
+ * photos into documents for every later tap.
+ */
+async function sendAlbum(
+  api: Api,
+  chat: number,
+  step: Extract<NoteSend, { kind: 'media' }>,
+  silent: boolean,
+): Promise<number[]> {
+  let current = step;
+  let triedStale = false;
+  let triedShape = false;
+  for (;;) {
+    try {
+      return await sendGroup(api, chat, current, silent);
+    } catch (err) {
+      const cached = current.files.filter((file) => cachedFileId(file) !== null);
+      if (!triedStale && isUnknownFileId(err) && cached.length > 0) {
+        // Which member's id Telegram forgot is not said, so every cached one
+        // is cleared and the whole group goes as bytes.
+        triedStale = true;
+        for (const file of cached) await forgetFileId(file.partId).catch(() => {});
+        current = { ...current, files: current.files.map(bytesOnly) };
+        continue;
+      }
+      if (!triedShape && current.as === 'photo' && isPhotoShapeRefusal(err)) {
+        // Which member Telegram refused is not said either: the group goes as
+        // DOCUMENTS this once, the downgrade not persisted (see above).
+        triedShape = true;
+        current = {
+          ...current,
+          as: 'document',
+          files: current.files.map((file) => ({ ...bytesOnly(file), sendAs: 'document' as const })),
+        };
+        continue;
+      }
+      throw err;
+    }
   }
 }
 
@@ -403,27 +501,21 @@ async function sendGroup(
   api: Api,
   chat: number,
   step: Extract<NoteSend, { kind: 'media' }>,
-  signal: AbortSignal,
   silent: boolean,
 ): Promise<number[]> {
-  const media = await Promise.all(
-    step.files.map(async (file, index) => ({
+  const out = await within(newCall(), (call) => {
+    const media = step.files.map((file, index) => ({
       type: step.as === 'photo' ? ('photo' as const) : ('document' as const),
-      media: await source(file),
+      media: source(file, call),
       ...(index === 0 && step.caption ? { caption: step.caption } : {}),
-    })),
-  );
+    }));
+    return api.sendMediaGroup(chat, media as Parameters<Api['sendMediaGroup']>[1], quietly(undefined, silent), call.signal);
+  });
   // The response is an ARRAY, one message per item, and the ids must be
   // mapped back BY THE PLAN'S OWN INDEX. Get that wrong and one warehouse's
   // address sheet is cached onto another warehouse's note — a customer is
   // then sent the wrong address, silently, with a cache that looks healthy.
   // So: only when the lengths agree, and only positionally.
-  const out = await api.sendMediaGroup(
-    chat,
-    media as Parameters<Api['sendMediaGroup']>[1],
-    quietly(undefined, silent),
-    signal,
-  );
   if (out.length === step.files.length) {
     for (let i = 0; i < out.length; i += 1) {
       await cacheFrom(step.files[i]!, out[i], step.as);
@@ -440,13 +532,50 @@ async function sendGroup(
  * The stored file is read through `ownBytes`, which says so when OUR read is
  * what broke (`SourceUnreadable`) — the store refusing the key, or its stream
  * breaking mid-upload — so the drain can tell «our bytes never came» from
- * «Telegram's answer never came» (review P1-DLV-2).
+ * «Telegram's answer never came» (review P1-DLV-2), and reads against the
+ * call's own deadline (FR1-2).
  */
-async function source(file: NoteFile): Promise<InputFile | string> {
+function source(file: NoteFile, call: SendCall): InputFile | string {
   const cached = cachedFileId(file);
   if (cached) return cached;
   const stored = new InputFile(() => getStorage().getStream(file.storageKey), file.fileName);
-  return new InputFile(ownBytes(stored, file), file.fileName);
+  return new InputFile(ownBytes(stored, file, call), file.fileName);
+}
+
+/**
+ * One read of OUR store, against the call's deadline: marked in flight while
+ * it is awaited, and given up the moment the deadline strikes — the read
+ * itself may never answer.
+ */
+function ownRead<T>(read: Promise<T>, call: SendCall, file: NoteFile): Promise<T> {
+  if (call.signal.aborted) return Promise.reject(new Error('stalled'));
+  call.pending = file;
+  return new Promise<T>((resolve, reject) => {
+    const cut = () => reject(new Error('stalled'));
+    // Cleared BEFORE the answer is handed on, in the same tick: the reader
+    // resumes and starts its next read of the SAME file (the open, then its
+    // first chunk), and a clear that ran later would wipe that one's mark — a
+    // stall there would then read as an answer that never came.
+    const settle = () => {
+      call.signal.removeEventListener('abort', cut);
+      if (call.pending === file) call.pending = null;
+    };
+    call.signal.addEventListener('abort', cut, { once: true });
+    void read.then(
+      (value) => {
+        settle();
+        resolve(value);
+      },
+      (err: unknown) => {
+        settle();
+        reject(err);
+      },
+    );
+  });
+}
+
+function destroyable(data: unknown): data is { destroy(): unknown } {
+  return typeof (data as { destroy?: unknown } | null)?.destroy === 'function';
 }
 
 /**
@@ -455,17 +584,22 @@ async function source(file: NoteFile): Promise<InputFile | string> {
  * own errors are ours: an abort grammy throws in at the `yield` is grammy's,
  * and passes through untagged.
  */
-async function* ownBytes(stored: InputFile, file: NoteFile): AsyncGenerator<Uint8Array, void, undefined> {
+async function* ownBytes(stored: InputFile, file: NoteFile, call: SendCall): AsyncGenerator<Uint8Array, void, undefined> {
   let data: Uint8Array | Iterable<Uint8Array> | AsyncIterable<Uint8Array>;
+  const raw = stored.toRaw();
   try {
-    data = await stored.toRaw();
+    data = await ownRead(raw, call, file);
   } catch (err) {
+    // A store that answers after the deadline hands back a stream nobody
+    // will read: it is closed, not left holding a socket.
+    if (call.signal.aborted) void raw.then((late) => (destroyable(late) ? late.destroy() : undefined), () => {});
     throw new SourceUnreadable(file, err);
   }
   if (data instanceof Uint8Array) {
     yield data;
     return;
   }
+  if (destroyable(data)) call.streams.add(data);
   const iterator: AsyncIterator<Uint8Array> | Iterator<Uint8Array> =
     Symbol.asyncIterator in data
       ? (data as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]()
@@ -475,8 +609,11 @@ async function* ownBytes(stored: InputFile, file: NoteFile): AsyncGenerator<Uint
     for (;;) {
       let next: IteratorResult<Uint8Array>;
       try {
-        next = await iterator.next();
+        next = await ownRead(Promise.resolve(iterator.next()), call, file);
       } catch (err) {
+        // Never `return()` a stream whose read is still parked: an async
+        // iterator queues it behind that read, and the read may never answer
+        // — the deadline has cut the stream itself (`newCall`).
         finished = true;
         throw new SourceUnreadable(file, err);
       }

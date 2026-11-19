@@ -81,7 +81,7 @@ import {
   type NoteCtx,
 } from '@/modules/platform/notes/service';
 import { createClient } from '@/modules/platform/clients/service';
-import { __resetTelegramPause, sendPendingTelegram } from '@/modules/platform/notifications/service';
+import { __resetTelegramPause, reclaimStaleTelegram, sendPendingTelegram } from '@/modules/platform/notifications/service';
 import { queueStaffTelegram } from '@/modules/platform/notifications/staff';
 import { __setPlanApi, sendPlan } from '@/modules/platform/telegram/note-send';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
@@ -93,7 +93,7 @@ const RUN = String(Date.now()).slice(-6);
 const CHAT = { seller: 8_520_000_000 + Number(RUN) * 10 + 1, presser: 8_520_000_000 + Number(RUN) * 10 + 2 };
 const TAG = `NCC${RUN}`;
 
-const people = { seller: '', presser: '', unlinked: '' };
+const people = { seller: '', presser: '', unlinked: '', unlinked2: '' };
 const madeNotes: string[] = [];
 const madeClients: string[] = [];
 const madeLeads: string[] = [];
@@ -142,6 +142,7 @@ beforeAll(async () => {
   await person('seller', 1, CHAT.seller);
   await person('presser', 2, CHAT.presser);
   await person('unlinked', 3, null);
+  await person('unlinked2', 4, null);
 });
 
 afterAll(async () => {
@@ -363,6 +364,45 @@ describe('the three doors queue exactly one card, for the right person', () => {
     expect(await cardRows(res.id!)).toEqual([]);
   });
 
+  it('a seller winning his OWN lead with no Telegram is told about his own Telegram — the dialog’s «self» (review W-1)', async () => {
+    const lead = await createLead({ name: `${TAG} oz lid`, ownerId: people.unlinked }, ctx(people.unlinked));
+    madeLeads.push(lead.id);
+    const won = await winLead(lead.id, { name: `${TAG} oz lid`, token: randomUUID() }, ctx(people.unlinked));
+    madeClients.push(won.clientId);
+    expect(won.addressCard).toBe('nobody');
+    expect(won.addressCardSelf).toBe(true);
+    // An unowned advert lead mints the presser as its seller: the same.
+    const advert = await createLead({ name: `${TAG} reklama lid` }, ctx(people.unlinked));
+    madeLeads.push(advert.id);
+    const fromAdvert = await winLead(advert.id, { token: randomUUID() }, ctx(people.unlinked));
+    madeClients.push(fromAdvert.clientId);
+    expect(fromAdvert).toMatchObject({ addressCard: 'nobody', addressCardSelf: true });
+    expect(await cardRows(fromAdvert.clientId)).toEqual([]);
+  });
+
+  it('a colleague’s lead, both Telegrams unlinked: «unlinked», never «take it with 📨» (review W-4)', async () => {
+    const lead = await createLead({ name: `${TAG} ikkalasi`, ownerId: people.unlinked }, ctx(people.unlinked2));
+    madeLeads.push(lead.id);
+    const won = await winLead(lead.id, { token: randomUUID() }, ctx(people.unlinked2));
+    madeClients.push(won.clientId);
+    expect(won).toMatchObject({ addressCard: 'unlinked', addressCardSelf: false });
+    expect(await cardRows(won.clientId)).toEqual([]);
+
+    // The full form says the same through its redirect.
+    gate.actor = actor(people.unlinked2, ['clients.manage']);
+    const form = new FormData();
+    form.set('clientCode', '');
+    form.set('name', `${TAG} ikkalasi forma`);
+    form.set('phones', '');
+    form.set('salesManagerId', people.unlinked);
+    const to = await createClientAction({}, form).then(
+      () => '',
+      (err: Error) => err.message,
+    );
+    expect(to).toMatch(/\?manzil=unlinked$/);
+    madeClients.push(to.slice('REDIRECT:/admin/clients/'.length, to.indexOf('?')));
+  });
+
   it('a won lead: the press that MINTS sends it once; a re-win onto the same client sends nothing', async () => {
     const lead = await createLead({ name: `${TAG} lid`, phone: `+99870${RUN}3`, ownerId: people.seller }, ctx(people.presser));
     madeLeads.push(lead.id);
@@ -370,6 +410,8 @@ describe('the three doors queue exactly one card, for the right person', () => {
     madeClients.push(won.clientId);
     expect(won.minted).toBe(true);
     expect(won.addressCard).toBe('seller');
+    // The presser is not the seller here: the dialog speaks about the seller.
+    expect(won.addressCardSelf).toBe(false);
     expect((await cardRows(won.clientId)).map((row) => row.userId)).toEqual([people.seller]);
 
     const again = await winLead(lead.id, { token: randomUUID() }, ctx(people.presser));
@@ -435,6 +477,10 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
   let planCall = 0;
   let seq = 700_000;
   let planApi: Api | null = null;
+  /** Run at a staff-line send whose text holds this needle — another drain's move, landing mid-run. */
+  let onSend: { needle: string; run: () => Promise<void> } | null = null;
+  /** Run at the n-th call through the card's Api (1-based), before it is answered. */
+  let onPlanCall = new Map<number, () => Promise<void>>();
 
   beforeAll(() => {
     process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
@@ -446,6 +492,7 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
         return new Response(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, username: 'gsr_card_bot' } }), { status: 200 });
       }
       order.push({ via: 'send', method, text: String(body.text ?? ''), parseMode: body.parse_mode, markup: body.reply_markup });
+      if (onSend && String(body.text ?? '').includes(onSend.needle)) await onSend.run();
       return new Response(JSON.stringify({ ok: true, result: { message_id: (seq += 1) } }), { status: 200 });
     });
     planApi = new Api('TEST:TOKEN');
@@ -453,6 +500,7 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
       const body = (payload ?? {}) as Record<string, unknown>;
       order.push({ via: 'plan', method, text: String(body.text ?? body.caption ?? ''), parseMode: body.parse_mode, markup: body.reply_markup });
       planCall += 1;
+      await onPlanCall.get(planCall)?.();
       const error = failOn.get(planCall);
       if (error instanceof Error) throw error;
       if (error) return { ok: false, ...error } as never;
@@ -465,6 +513,8 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     order = [];
     failOn = new Map();
     planCall = 0;
+    onSend = null;
+    onPlanCall = new Map();
     __resetTelegramPause();
     await db.delete(notifications).where(inArray(notifications.userId, Object.values(people)));
   });
@@ -486,10 +536,10 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     await sendPendingTelegram().catch(() => {});
   }
 
-  async function handMade(steps: NoteSend[], done = 0): Promise<string> {
+  async function handMade(steps: NoteSend[], done = 0, userId = people.seller): Promise<string> {
     const clientId = randomUUID();
     await queueStaffTelegram(db, {
-      userIds: [people.seller],
+      userIds: [userId],
       type: 'NewClientCard',
       text: `🆕 ${TAG} · Qo‘lda\nPastdagi ${steps.length} ta xabarni belgilab mijozga forward qiling ⬇️`,
       extra: { clientId, card: { steps, done, head: done > 0 ? 1 : null, ids: done > 0 ? [1] : [], maybe: [] } },
@@ -497,18 +547,35 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     const [row] = await db
       .select()
       .from(notifications)
-      .where(and(eq(notifications.userId, people.seller), sql`${notifications.payload}->>'clientId' = ${clientId}`));
+      .where(and(eq(notifications.userId, userId), sql`${notifications.payload}->>'clientId' = ${clientId}`));
     return row!.id;
   }
 
   /** An ordinary staff row for the seller — anything else that could land in his chat. */
-  async function plainRow(text: string): Promise<string> {
-    await queueStaffTelegram(db, { userIds: [people.seller], type: 'InternalNote', text });
+  async function plainRow(text: string, userId = people.seller): Promise<string> {
+    await queueStaffTelegram(db, { userIds: [userId], type: 'InternalNote', text });
     const [row] = await db
       .select()
       .from(notifications)
-      .where(and(eq(notifications.userId, people.seller), sql`${notifications.payload}->>'text' = ${text}`));
+      .where(and(eq(notifications.userId, userId), sql`${notifications.payload}->>'text' = ${text}`));
     return row!.id;
+  }
+
+  /** A row as another drain left it: claimed, `minutes` ago. */
+  async function claimedAgo(id: string, minutes: number): Promise<void> {
+    await db.execute(sql`
+      UPDATE notifications SET status = 'sending', claimed_at = now() - ${minutes}::int * interval '1 minute'
+       WHERE id = ${id}::uuid`);
+  }
+
+  /** Only the claim's clock moved back — a run that took long, the row still this run's. */
+  async function ageClaim(id: string, minutes: number): Promise<void> {
+    await db.execute(sql`UPDATE notifications SET claimed_at = now() - ${minutes}::int * interval '1 minute' WHERE id = ${id}::uuid`);
+  }
+
+  async function rowOf(id: string) {
+    const [row] = await db.select().from(notifications).where(eq(notifications.id, id));
+    return row!;
   }
 
   async function cursorOf(id: string) {
@@ -590,15 +657,18 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     expect(order).toEqual([]);
   });
 
-  it('a photo whose bytes are gone is NOT a «maybe»: retried, and in the end failed, naming the file (P1-DLV-2)', async () => {
+  it('a photo whose bytes are gone is NOT a «maybe»: retried, and on the LAST attempt stepped over so the rest still go (P1-DLV-2, FR1-4)', async () => {
     // A plan Api whose fetch READS the multipart body, as a real upload does:
     // the stored file is opened only then.
     let uploads = 0;
+    const sent: string[] = [];
     __setPlanApi(
       new Api('TEST:TOKEN', {
-        fetch: (async (_url: string, init: { body?: unknown }) => {
-          uploads += 1;
+        fetch: (async (url: string, init: { body?: unknown }) => {
+          const method = url.slice(url.lastIndexOf('/') + 1);
+          if (method === 'sendPhoto') uploads += 1;
           if (init.body && typeof init.body !== 'string') for await (const _chunk of init.body as AsyncIterable<Uint8Array>) void _chunk;
+          else if (typeof init.body === 'string') sent.push(`${method}:${String((JSON.parse(init.body) as { text?: string }).text)}`);
           return new Response(JSON.stringify({ ok: true, result: { message_id: (seq += 1), date: 0, chat: { id: 0, type: 'private' } } }), {
             status: 200,
           });
@@ -624,6 +694,7 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
             },
           ],
         },
+        { kind: 'text', text: `Bot havolasi ${RUN}` },
       ]);
       await drain();
       const first = await cursorOf(id);
@@ -633,20 +704,25 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
       const [row] = await db.select().from(notifications).where(eq(notifications.id, id));
       expect(row!.attempts).toBe(1);
       expect(row!.error).toMatch(/^source_unreadable sklad\.jpg/);
+      // Nothing after the unreadable photo went: the card's order is kept while the budget lasts.
+      expect(sent).toEqual([]);
 
-      // The bytes never come back: the attempt budget runs out and the row says which file it was.
+      // The bytes never come back: on the row's LAST attempt the photo is stepped over and the rest still go.
       for (let run = 0; run < 8; run += 1) {
         __resetTelegramPause();
         await drain();
       }
       const [last] = await db.select().from(notifications).where(eq(notifications.id, id));
-      expect(last!.status).toBe('failed');
-      expect(last!.error).toContain('sklad.jpg');
-      expect((last!.payload as { card: { maybe: number[] } }).card.maybe).toEqual([]);
-      // The staff line went ONCE; the photo was attempted on every run the budget allowed, and none counted as sent.
+      expect(last!.status).toBe('sent');
+      expect(last!.attempts).toBe(5);
+      // Said on the row, naming the file — not «maybe»: it is certainly not in the chat.
+      expect(last!.error).toMatch(/^skipped step 1: source_unreadable sklad\.jpg/);
+      const card = (last!.payload as { card: { done: number; maybe: number[]; skipped: number[] } }).card;
+      expect(card).toMatchObject({ done: 3, maybe: [], skipped: [1] });
+      // The staff line went ONCE, the photo was attempted on every run the budget allowed, and the rest went once.
       expect(order.filter((one) => one.via === 'send')).toHaveLength(1);
-      expect(uploads).toBe(last!.attempts);
-      expect((last!.payload as { card: { done: number } }).card.done).toBe(1);
+      expect(uploads).toBe(6);
+      expect(sent).toEqual([`sendMessage:Bot havolasi ${RUN}`]);
     } finally {
       __setPlanApi(planApi);
     }
@@ -684,6 +760,79 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     const [row] = await db.select().from(notifications).where(eq(notifications.id, older));
     expect(row!.status).toBe('sent');
   });
+
+  it('a card ANOTHER run left part-way holds the seller’s rows back in this run too — a live one included (FR1-1)', async () => {
+    // A drain killed mid-card by a deploy (or one still sending it): 'sending', one step in the chat.
+    const card = await handMade([{ kind: 'text', text: 'Qolgani' }], 1);
+    await claimedAgo(card, 4);
+    const later = await plainRow(`Prixod keldi ${RUN}`);
+    await drain();
+    // Nothing of his went into the middle of the card he forwards.
+    expect(order).toEqual([]);
+    expect(await rowOf(later)).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
+    // Four minutes is a card a live drain may still be sending: left alone, no attempt charged.
+    expect(await rowOf(card)).toMatchObject({ status: 'sending', attempts: 0 });
+  });
+
+  it('a dead drain’s card is put back after the card’s short window, and finished FIRST; other rows keep ten minutes (FR1-1)', async () => {
+    const card = await handMade([
+      { kind: 'text', text: 'A' },
+      { kind: 'text', text: 'B' },
+    ], 1);
+    await claimedAgo(card, 6);
+    const later = await plainRow(`Prixod keldi ${RUN}`);
+    // Another person's row, as a dead drain left it the same minute: not a card, so not put back yet.
+    const stuck = await plainRow(`Eski ${RUN}`, people.presser);
+    await claimedAgo(stuck, 6);
+    await drain();
+    expect(order.map((one) => `${one.via}:${one.text}`)).toEqual(['plan:A', 'plan:B', expect.stringContaining(`send:Prixod keldi ${RUN}`)]);
+    // The reclaim counted the dead drain's attempt.
+    expect(await rowOf(card)).toMatchObject({ status: 'sent', attempts: 1 });
+    expect(await rowOf(later)).toMatchObject({ status: 'sent' });
+    expect(await rowOf(stuck)).toMatchObject({ status: 'sending', attempts: 0 });
+  });
+
+  it('a LIVE drain keeps its card’s heartbeat: the short window never puts back a card being sent (FR1-1)', async () => {
+    // Two cards part-way, the presser's first in the run; the seller's has two steps left.
+    const first = await handMade([{ kind: 'text', text: 'P' }], 1, people.presser);
+    const card = await handMade([
+      { kind: 'text', text: 'A' },
+      { kind: 'text', text: 'B' },
+    ], 1);
+    // The rows ahead took long: by the time the drain reaches the seller's card its claim is six minutes old.
+    onPlanCall.set(1, () => ageClaim(card, 6));
+    // Reaching it, the drain moved its heartbeat — a reclaim now finds nothing — and then its first step
+    // takes long too…
+    onPlanCall.set(2, async () => {
+      await reclaimStaleTelegram();
+      await ageClaim(card, 6);
+    });
+    // …and the step's stamp moved it again.
+    onPlanCall.set(3, () => reclaimStaleTelegram());
+    await drain();
+    expect(order.map((one) => `${one.via}:${one.text}`)).toEqual(['plan:P', 'plan:A', 'plan:B']);
+    expect(await rowOf(card)).toMatchObject({ status: 'sent', attempts: 0 });
+    expect(await rowOf(first)).toMatchObject({ status: 'sent', attempts: 0 });
+  });
+
+  it('a card the short reclaim gave to ANOTHER drain while this run sent the rows ahead is never sent from this run’s copy (FR1-1)', async () => {
+    const ahead = await plainRow(`Oldinroq ${RUN}`, people.presser);
+    const card = await handMade([{ kind: 'text', text: 'A' }]);
+    // While the row ahead is sent, the card is reclaimed and claimed again elsewhere: its attempts moved.
+    onSend = {
+      needle: `Oldinroq ${RUN}`,
+      run: async () => {
+        await db.execute(sql`UPDATE notifications SET attempts = attempts + 1, claimed_at = now() WHERE id = ${card}::uuid`);
+      },
+    };
+    await drain();
+    expect(order.map((one) => `${one.via}:${one.text}`)).toEqual([expect.stringContaining(`Oldinroq ${RUN}`)]);
+    expect(await rowOf(ahead)).toMatchObject({ status: 'sent' });
+    // Untouched: the other drain's claim, its attempt, its cursor.
+    const left = await rowOf(card);
+    expect(left).toMatchObject({ status: 'sending', attempts: 1 });
+    expect((left.payload as { card: { done: number } }).card.done).toBe(0);
+  });
 });
 
 /**
@@ -694,12 +843,17 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
 describe('an album Telegram refuses is sent again once, as one call', () => {
   let calls: { method: string; media: { type: string; media: unknown; caption?: string }[] }[] = [];
   let answers: ({ error_code: number; description: string } | unknown[])[] = [];
+  /** Ids Telegram no longer knows: a group offering one is refused before any answer is used. */
+  let staleIds = new Set<string>();
   let parts: NoteFile[] = [];
   let albumNote = '';
   const api = new Api('TEST:TOKEN');
   api.config.use(async (_prev, method, payload) => {
     const body = (payload ?? {}) as { media?: { type: string; media: unknown; caption?: string }[] };
     calls.push({ method, media: body.media ?? [] });
+    if ((body.media ?? []).some((m) => typeof m.media === 'string' && staleIds.has(m.media))) {
+      return { ok: false, error_code: 400, description: 'Bad Request: wrong file identifier/HTTP URL specified' } as never;
+    }
     const answer = answers.shift();
     if (answer && !Array.isArray(answer)) return { ok: false, ...(answer as object) } as never;
     return { ok: true, result: answer ?? [] } as never;
@@ -727,10 +881,19 @@ describe('an album Telegram refuses is sent again once, as one call', () => {
     expect(parts.map((part) => part.sendAs)).toEqual(['photo', 'photo']);
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     calls = [];
     answers = [];
+    staleIds = new Set();
+    // Every case starts from parts with nothing cached, as freshly attached.
+    await db
+      .update(staffNoteParts)
+      .set({ sendAs: 'photo', telegramFileId: null, telegramSentAs: null })
+      .where(inArray(staffNoteParts.id, parts.map((part) => part.partId)));
   });
+
+  const setPart = (i: number, fileId: string | null, sentAs: 'photo' | 'document' | null) =>
+    db.update(staffNoteParts).set({ telegramFileId: fileId, telegramSentAs: sentAs }).where(eq(staffNoteParts.id, parts[i]!.partId));
 
   const partRows = async () =>
     db
@@ -756,11 +919,100 @@ describe('an album Telegram refuses is sent again once, as one call', () => {
     expect(calls[0]!.media.map((m) => m.type)).toEqual(['photo', 'photo']);
     expect(calls[1]!.media.map((m) => m.type)).toEqual(['document', 'document']);
     expect(calls[1]!.media.map((m) => m.caption ?? null)).toEqual(['Manzillar', null]);
-    // The culprit is unknown, so nothing is downgraded for good; the answers are cached as what they are.
+    // The culprit is unknown, so nothing is downgraded for good — and the documents' ids are NOT
+    // cached onto parts that are photos (FR1-5): a document id in a photo's cache is one nothing
+    // ever offers again, and one the next documents retry would offer stale (ALB-1).
     expect(await partRows()).toEqual([
-      { sendAs: 'photo', fileId: 'DOC-1', sentAs: 'document' },
-      { sendAs: 'photo', fileId: 'DOC-2', sentAs: 'document' },
+      { sendAs: 'photo', fileId: null, sentAs: null },
+      { sendAs: 'photo', fileId: null, sentAs: null },
     ]);
+  });
+
+  it('from the stuck state an earlier build left (document ids on photo parts, gone stale): the retry is the BYTES (ALB-1)', async () => {
+    await setPart(0, 'DOC-1', 'document');
+    await setPart(1, 'DOC-2', 'document');
+    staleIds = new Set(['DOC-1', 'DOC-2']);
+    const stuck = await filesForNote(albumNote);
+    answers = [
+      { error_code: 400, description: 'Bad Request: PHOTO_INVALID_DIMENSIONS' },
+      [
+        { message_id: 5, document: { file_id: 'DOC-NEW-1' } },
+        { message_id: 6, document: { file_id: 'DOC-NEW-2' } },
+      ],
+    ];
+    const out = await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: stuck, caption: 'Manzillar' }], {
+      onRateLimit: 'return',
+    });
+    expect(out.stop).toBeNull();
+    expect(calls.map((call) => call.media.map((m) => `${m.type}:${typeof m.media === 'string' ? m.media : 'bytes'}`))).toEqual([
+      ['photo:bytes', 'photo:bytes'],
+      ['document:bytes', 'document:bytes'],
+    ]);
+  });
+
+  it('the good members keep their PHOTO ids through a documents retry, and the next send offers them by id (FR1-5, ALB-3)', async () => {
+    // Note A's photo went before and is cached; the second photo is new and tall.
+    await setPart(0, 'PH-1', 'photo');
+    answers = [
+      { error_code: 400, description: 'Bad Request: PHOTO_INVALID_DIMENSIONS' },
+      [
+        { message_id: 7, document: { file_id: 'DOC-1' } },
+        { message_id: 8, document: { file_id: 'DOC-2' } },
+      ],
+    ];
+    const first = await filesForNote(albumNote);
+    expect((await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: first, caption: null }], { onRateLimit: 'return' })).stop).toBeNull();
+    expect(await partRows()).toEqual([
+      { sendAs: 'photo', fileId: 'PH-1', sentAs: 'photo' },
+      { sendAs: 'photo', fileId: null, sentAs: null },
+    ]);
+    // The next card: the good photo by its id, only the culprit's bytes uploaded.
+    calls = [];
+    answers = [{ error_code: 400, description: 'Bad Request: PHOTO_INVALID_DIMENSIONS' }, []];
+    await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: await filesForNote(albumNote), caption: null }], {
+      onRateLimit: 'return',
+    });
+    expect(calls[0]!.media.map((m) => (typeof m.media === 'string' ? m.media : 'bytes'))).toEqual(['PH-1', 'bytes']);
+  });
+
+  it('the two repairs CHAIN: a stale-id resend refused for its shape goes on to documents, each repair once (ALB-2)', async () => {
+    await setPart(0, 'OLD-1', 'photo');
+    staleIds = new Set(['OLD-1']);
+    const frozen = await filesForNote(albumNote);
+    answers = [
+      { error_code: 400, description: 'Bad Request: PHOTO_INVALID_DIMENSIONS' },
+      [
+        { message_id: 9, document: { file_id: 'DOC-1' } },
+        { message_id: 10, document: { file_id: 'DOC-2' } },
+      ],
+    ];
+    const out = await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: frozen, caption: 'Manzillar' }], {
+      onRateLimit: 'return',
+    });
+    expect(out.stop).toBeNull();
+    expect(calls.map((call) => call.media.map((m) => `${m.type}:${typeof m.media === 'string' ? m.media : 'bytes'}`))).toEqual([
+      ['photo:OLD-1', 'photo:bytes'],
+      ['photo:bytes', 'photo:bytes'],
+      ['document:bytes', 'document:bytes'],
+    ]);
+    expect(calls[2]!.media.map((m) => m.caption ?? null)).toEqual(['Manzillar', null]);
+    // The stale id was forgotten; nothing of the documents' answer is cached onto the photos.
+    expect(await partRows()).toEqual([
+      { sendAs: 'photo', fileId: null, sentAs: null },
+      { sendAs: 'photo', fileId: null, sentAs: null },
+    ]);
+  });
+
+  it('a documents retry refused again is not repaired a second time — at most three calls, the stop handed back', async () => {
+    answers = [
+      { error_code: 400, description: 'Bad Request: PHOTO_INVALID_DIMENSIONS' },
+      { error_code: 400, description: 'Bad Request: file is too big' },
+    ];
+    const out = await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: await filesForNote(albumNote), caption: null }], {
+      onRateLimit: 'return',
+    });
+    expect(calls).toHaveLength(2);
+    expect(out.stop).toMatchObject({ index: 0, status: 400 });
   });
 
   it('a stale cached id: every cached id in the group forgotten, the group sent again with the bytes', async () => {

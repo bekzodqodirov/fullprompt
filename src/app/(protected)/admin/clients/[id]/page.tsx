@@ -200,7 +200,9 @@ export default async function ClientDetailPage({
           a code older than the card, or a message lost in a long chat. Never
           on a deactivated code (review P1-DOORS-4): it would send a supplier
           a retired marking, and the service refuses it too. */}
-      {client.active && <AddressCardButton clientId={client.id} flash={addressFlash} />}
+      {client.active && (
+        <AddressCardButton clientId={client.id} flash={addressFlash} self={client.salesManagerId === actor.id} />
+      )}
 
       {/* Phase 2.2: Telegram cabinet — staff mints a one-time deep link and
           sends it to the client; the client sees cargo/photos/debt in the bot.
