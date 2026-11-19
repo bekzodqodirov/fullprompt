@@ -1126,12 +1126,24 @@ export async function reclaimStaleTelegram(): Promise<void> {
  * them — round 83's event-drain rule, applied to the other queue.
  */
 export async function claimPendingTelegram(limit: number): Promise<string[]> {
+  // Not the rows of a seller whose new-client card is part-way 'sending'
+  // (third review DRN-3): they would only be held and handed back, and while
+  // they are the oldest pending rows they would fill every run's slots for
+  // the card's whole reclaim window — nobody else's message, alarms
+  // included, would go. The run spends its slots on other people instead.
+  // `n` is the candidate row; the card is `c`, through the 'sending' partial
+  // index.
   const rows = (await db.execute(sql`
     UPDATE notifications SET status = 'sending', claimed_at = now()
     WHERE id IN (
-      SELECT id FROM notifications
-      WHERE channel = 'telegram' AND status = 'pending' AND attempts < ${MAX_TELEGRAM_ATTEMPTS}
-      ORDER BY created_at
+      SELECT n.id FROM notifications n
+      WHERE n.channel = 'telegram' AND n.status = 'pending' AND n.attempts < ${MAX_TELEGRAM_ATTEMPTS}
+        AND NOT EXISTS (
+          SELECT 1 FROM notifications c
+          WHERE c.channel = 'telegram' AND c.status = 'sending' AND c.type = ${NEW_CLIENT_CARD}
+            AND c.user_id = n.user_id
+            AND (c.payload->'card'->>'done')::int > 0)
+      ORDER BY n.created_at
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED)
     RETURNING id`)) as unknown as { id: string }[];
@@ -1447,6 +1459,26 @@ async function deliverNoteCard(
       'new-client card: a step may be in the chat — not sent again',
     );
     await stamp();
+  }
+  // A file stepped over is said to the SELLER (third review WORDS-5): the
+  // staff line promised «pastdagi N ta xabar», and in the commonest card —
+  // one photo under the whole caption — the skipped step IS the forwardable
+  // part. One closing line with the card's own link (the resend lives
+  // there); its failure is logged and never fails a card already sent.
+  if (skippedWords.length > 0) {
+    const closing: StaffMessage = {
+      html: h(
+        `⚠ ${skippedWords.length} ta fayl o‘qilmadi va yuborilmadi — yuqoridagi xabar to‘liq emas. ` +
+          'Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» bilan qayta oling.',
+      ),
+      url: message.url,
+      urlRow: message.urlRow,
+    };
+    const said = await deliverStaffMessage(chatId, closing, null, silent).catch((err: unknown) => {
+      logger.warn({ err, notificationId }, 'new-client card: the closing line about a skipped file was not sent');
+      return null;
+    });
+    if (said && !said.ok) logger.warn({ notificationId, status: said.status }, 'new-client card: the closing line about a skipped file was not sent');
   }
   // The row remembers the staff line (step 0) as its message — the one with
   // the card's link on it — and, when a file was stepped over, which one.
@@ -1906,8 +1938,15 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       continue;
     }
     // A card the short reclaim took back while the rows ahead of it were sent
-    // is another drain's now — never sent from this run's stale copy.
+    // is another drain's now — never sent from this run's stale copy. And its
+    // seller is HELD for the rest of the run (third review DRN-1): whichever
+    // reason the claim said no — another drain is sending it, or the
+    // heartbeat's own write failed and it stays 'sending' on this run's
+    // claim — the card may be part-way in his chat, and nothing else of his
+    // may land inside it. A held row only goes back pending, no attempt
+    // counted, so holding a card that had not started costs one run.
     if (notification.type === NEW_CLIENT_CARD && !(await keepCardClaim(notification.id, notification.attempts))) {
+      heldFor.add(notification.userId);
       settled.add(notification.id);
       continue;
     }

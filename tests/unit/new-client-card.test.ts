@@ -222,6 +222,10 @@ describe('who gets the card (judge R14)', () => {
 
   it('a seller who MUTED it gets nothing, and his choice is never moved onto the presser', () => {
     expect(cardRecipient('s', 'p', reach({ s: 'muted', p: 'ok' }))).toEqual({ to: null, outcome: 'muted' });
+    // …and the sentence never sends an unlinked presser to «📨» (third review WORDS-2).
+    expect(cardRecipient('s', 'p', reach({ s: 'muted', p: 'no_chat' }))).toEqual({ to: null, outcome: 'muted_unlinked' });
+    expect(cardRecipient('s', 'p', reach({ s: 'muted', p: 'muted' }))).toEqual({ to: null, outcome: 'muted' });
+    expect(cardRecipient('s', 's', reach({ s: 'muted' }))).toEqual({ to: null, outcome: 'muted' });
   });
 
   it('nobody when nobody who could get it is reachable', () => {
@@ -248,6 +252,8 @@ describe('which sentence a door says (review W-1, W-4)', () => {
 
   it('a presser unlinked too is sent to his own Profile, not to «📨»; the usual way says nothing', () => {
     expect(addressWordOf('unlinked', false)).toBe('addressNobodyUnlinked');
+    expect(addressWordOf('muted_unlinked', false)).toBe('addressMutedUnlinked');
+    expect(addressWordOf('muted_unlinked', true)).toBe('addressSelfMuted');
     expect(addressWordOf('presser', false)).toBe('addressPresser');
     expect(addressWordOf('failed', true)).toBe('addressFailed');
     for (const quiet of ['seller', undefined, null, 'x']) expect(addressWordOf(quiet, false)).toBeNull();
@@ -275,6 +281,7 @@ describe('the outcome’s sentences, in all four bundles', () => {
     'quick.addressMuted',
     'quick.addressNobody',
     'quick.addressNobodyUnlinked',
+    'quick.addressMutedUnlinked',
     'quick.addressFailed',
     'quick.addressSelfMuted',
     'quick.addressSelfNobody',
@@ -308,10 +315,15 @@ describe('the outcome’s sentences, in all four bundles', () => {
     expect(quick.addressSelfNobody).toContain('Telegramingiz');
     expect(quick.addressNobody).toContain('Sotuvchining');
     // W-4: a muted seller's card is still the presser's to take with «📨»; an
-    // unlinked presser is sent to his own Profile first, never to «📨».
+    // unlinked presser is sent to his own Profile FIRST — and then told the
+    // step after it (third review WORDS-3), for both causes (WORDS-2).
     expect(quick.addressMuted).toContain('«📨 Manzil xabarini menga yuborish»');
-    expect(quick.addressNobodyUnlinked).toContain('Sizning Telegramingiz ham ulanmagan — avval Profil → Telegram');
-    expect(quick.addressNobodyUnlinked).not.toContain('📨');
+    for (const unlinked of [quick.addressNobodyUnlinked!, quick.addressMutedUnlinked!]) {
+      expect(unlinked).toContain('Sizning Telegramingiz ham ulanmagan — avval Profil → Telegram');
+      expect(unlinked.indexOf('Profil → Telegram')).toBeLessThan(unlinked.indexOf('📨'));
+      expect(unlinked).toContain('keyin');
+    }
+    expect(quick.addressMutedUnlinked).toContain('o‘chirgan');
     // W-3: a checkbox that did not save says «try again», never «check the fields».
     const notes = bundles.uz!.notes as { errors: Record<string, string> };
     expect(notes.errors.failed).not.toBe(notes.errors.validation);
@@ -320,8 +332,10 @@ describe('the outcome’s sentences, in all four bundles', () => {
 });
 
 describe('?manzil= — read as one of the closed set or as nothing', () => {
-  it('accepts the five outcomes the full form can redirect with', () => {
-    for (const word of ['presser', 'muted', 'nobody', 'unlinked', 'failed'] as const) expect(addressFlashOf(word)).toBe(word);
+  it('accepts the six outcomes the full form can redirect with', () => {
+    for (const word of ['presser', 'muted', 'muted_unlinked', 'nobody', 'unlinked', 'failed'] as const) {
+      expect(addressFlashOf(word)).toBe(word);
+    }
   });
 
   it('draws nothing for anything else — the seller outcome, a typo, a repeated param', () => {
@@ -537,6 +551,8 @@ describe('the wires', () => {
     const refused = list.slice(list.indexOf('const res = await setNewClientFlagAction(note.id, on)'), list.indexOf('if (on) setDrift(true);'));
     expect(refused).toContain('if (res.error) {');
     expect(refused).toContain('delete rest[note.id];');
+    // WORDS-4: a «failed» that may still have committed re-reads the page — the box then says what the server holds.
+    expect(refused).toMatch(/setRowError\(\{ id: note\.id, code: res\.error \}\);[\s\S]*router\.refresh\(\);\s*return;/);
     // CUST-3: the knowledge tab, not the page's default section.
     expect(list).toContain('href="/suhbatlar/ai?bolim=bilimlar"');
     // CUST-8: the «+» says it TO the seller, who is the presser there.

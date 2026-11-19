@@ -455,8 +455,12 @@ async function sendMedia(
  * The cost, stated (ALB-3): the culprit is unknown, so the downgrade is not
  * persisted and an album holding one shape-bad photo goes as documents EVERY
  * time — first as photos (the good members by their cached ids, the culprit
- * as bytes), refused, then all as document bytes. Persisting would turn good
- * photos into documents for every later tap.
+ * as bytes), refused, then all as document bytes. An album that has NEVER been
+ * accepted as photos (a note made with the tall sheet among its pictures) has
+ * no photo id to offer, so it uploads every member TWICE on every send (the
+ * third review's TR2-2). Persisting would turn good photos into documents for
+ * every later tap; «Fayl bo‘lib ketsin» on the note's tall part is the person's
+ * way to settle it.
  */
 async function sendAlbum(
   api: Api,

@@ -551,11 +551,10 @@ export async function deleteNote(id: string, ctx: NoteCtx): Promise<void> {
 }
 
 /**
- * Telegram's own id for these bytes, remembered after a successful send, and
- * forgotten the moment Telegram says it does not know it.
- */
-/**
- * Telegram's id for a part's bytes — kept only when it is of the shape the
+ * Telegram's own id for these bytes, remembered after a successful send (and
+ * forgotten by `forgetFileId` the moment Telegram says it does not know it).
+ *
+ * Kept only when it is of the shape the
  * part is SENT as (review FR1-5 / ALB-1). An album's photo-shape repair sends
  * the group as documents without persisting the downgrade (the culprit is
  * unknown), and its answers are document ids: written onto parts still

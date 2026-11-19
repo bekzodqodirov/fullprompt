@@ -203,6 +203,11 @@ export function NoteList({
                         return rest;
                       });
                       setRowError({ id: note.id, code: res.error });
+                      // …and the page re-read (third review WORDS-4): a request
+                      // that «failed» may still have committed (a blip after the
+                      // UPDATE), so the box must read what the server HOLDS, not
+                      // the value it had before the press.
+                      router.refresh();
                       return;
                     }
                     if (on) setDrift(true);

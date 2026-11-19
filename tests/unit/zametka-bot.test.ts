@@ -167,8 +167,19 @@ describe('the rules a shell cannot exercise', () => {
     const calls = [...sender.matchAll(/api\.send\w+\(/g)];
     expect(calls.length).toBeGreaterThanOrEqual(4);
     for (const call of calls) {
-      const args = sender.slice(call.index, sender.indexOf(')', sender.indexOf('call.signal', call.index)) + 1);
-      expect(args, args).toMatch(/^api\.send\w+\([^;]*call\.signal\)$/);
+      // The call up to ITS OWN closing paren (third review TR2-1): sliced to
+      // the next `call.signal)`, a sendPhoto that lost its signal borrowed the
+      // sendDocument beside it in the same ternary and still passed.
+      const open = call.index! + call[0].length - 1;
+      let depth = 0;
+      let close = open;
+      for (; close < sender.length; close += 1) {
+        if (sender[close] === '(') depth += 1;
+        else if (sender[close] === ')' && (depth -= 1) === 0) break;
+      }
+      const args = sender.slice(call.index, close + 1);
+      expect(args.match(/api\.send\w+\(/g), args).toHaveLength(1);
+      expect(args, args).toMatch(/call\.signal\)$/);
     }
     // …and a 429 is a WAIT, not a failure: a multi-part note is a burst of up
     // to a dozen messages and there is no throttler installed.

@@ -53,7 +53,7 @@ import { GS_REMINDER } from '../agent/seed-kb';
  *   - `failed`  — OUR fault: the card could not be queued (a database blip, a
  *                 read under it), never blamed on anybody's Telegram.
  */
-export type AddressCardOutcome = 'seller' | 'presser' | 'muted' | 'nobody' | 'unlinked' | 'failed';
+export type AddressCardOutcome = 'seller' | 'presser' | 'muted' | 'muted_unlinked' | 'nobody' | 'unlinked' | 'failed';
 
 /** How long a mint press may wait for the bot's own name (a getMe on a cold process). */
 const BOT_NAME_WAIT_MS = 3_000;
@@ -142,7 +142,13 @@ export function cardRecipient(
 ): { to: string | null; outcome: Exclude<AddressCardOutcome, 'failed'> } {
   const sellerReach = seller ? reach.get(seller) ?? 'no_chat' : 'no_chat';
   if (seller && sellerReach === 'ok') return { to: seller, outcome: 'seller' };
-  if (seller && sellerReach === 'muted') return { to: null, outcome: 'muted' };
+  // A muting seller gets nobody's card (R14) — and the sentence points a
+  // presser who could take it at «📨», but never one whose own Telegram is
+  // unlinked too (the third review's WORDS-2: «📨» would refuse him).
+  if (seller && sellerReach === 'muted') {
+    const presserUnlinked = !!presser && presser !== seller && (reach.get(presser) ?? 'no_chat') === 'no_chat';
+    return { to: null, outcome: presserUnlinked ? 'muted_unlinked' : 'muted' };
+  }
   if (presser && presser !== seller && reach.get(presser) === 'ok') return { to: presser, outcome: 'presser' };
   if (presser && presser !== seller && (reach.get(presser) ?? 'no_chat') === 'no_chat') {
     return { to: null, outcome: 'unlinked' };

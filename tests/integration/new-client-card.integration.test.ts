@@ -81,7 +81,7 @@ import {
   type NoteCtx,
 } from '@/modules/platform/notes/service';
 import { createClient } from '@/modules/platform/clients/service';
-import { __resetTelegramPause, reclaimStaleTelegram, sendPendingTelegram } from '@/modules/platform/notifications/service';
+import { __resetTelegramPause, claimPendingTelegram, reclaimStaleTelegram, sendPendingTelegram } from '@/modules/platform/notifications/service';
 import { queueStaffTelegram } from '@/modules/platform/notifications/staff';
 import { __setPlanApi, sendPlan } from '@/modules/platform/telegram/note-send';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
@@ -719,8 +719,14 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
       expect(last!.error).toMatch(/^skipped step 1: source_unreadable sklad\.jpg/);
       const card = (last!.payload as { card: { done: number; maybe: number[]; skipped: number[] } }).card;
       expect(card).toMatchObject({ done: 3, maybe: [], skipped: [1] });
-      // The staff line went ONCE, the photo was attempted on every run the budget allowed, and the rest went once.
-      expect(order.filter((one) => one.via === 'send')).toHaveLength(1);
+      // The staff line went ONCE, the photo was attempted on every run the budget allowed, and the rest went once —
+      // then ONE closing staff line tells the seller the card is short (third review WORDS-5), with the card's link.
+      const staffSends = order.filter((one) => one.via === 'send');
+      expect(staffSends).toHaveLength(2);
+      expect(staffSends[1]!.text).toContain('1 ta fayl o‘qilmadi va yuborilmadi');
+      expect(staffSends[1]!.text).toContain('📨 Manzil xabarini menga yuborish');
+      // The staff line's own button (its card link), whatever that row carried.
+      expect(staffSends[1]!.markup).toEqual(staffSends[0]!.markup);
       expect(uploads).toBe(6);
       expect(sent).toEqual([`sendMessage:Bot havolasi ${RUN}`]);
     } finally {
@@ -772,6 +778,44 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     expect(await rowOf(later)).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
     // Four minutes is a card a live drain may still be sending: left alone, no attempt charged.
     expect(await rowOf(card)).toMatchObject({ status: 'sending', attempts: 0 });
+  });
+
+  it('the claim itself passes a held seller’s rows by, so his backlog never fills a run’s slots and the others still go (third review DRN-3)', async () => {
+    const card = await handMade([{ kind: 'text', text: 'Qolgani' }], 1);
+    await claimedAgo(card, 4);
+    // His backlog is the OLDEST pending (created before the other person's row).
+    const backlog: string[] = [];
+    for (let i = 0; i < 3; i += 1) backlog.push(await plainRow(`Navbat ${i} ${RUN}`));
+    const other = await plainRow(`Boshqa odam ${RUN}`, people.presser);
+    const claimed = await claimPendingTelegram(2);
+    // Two slots, three older rows of the held seller: the claim spent them on somebody else.
+    expect(claimed).toContain(other);
+    for (const id of backlog) expect(claimed).not.toContain(id);
+    // Handed back as the drain hands a row back: pending, no attempt, no claim.
+    await db.update(notifications).set({ status: 'pending', claimedAt: null }).where(inArray(notifications.id, claimed));
+    await drain();
+    expect(order.map((one) => one.text)).toEqual([expect.stringContaining(`Boshqa odam ${RUN}`)]);
+    for (const id of backlog) expect(await rowOf(id)).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
+  });
+
+  it('a card whose heartbeat says no holds its seller for the rest of the run (third review DRN-1)', async () => {
+    // The card is claimed with this run, then its claim moves elsewhere while the row ahead is sent (another
+    // drain took it — or the heartbeat's own write failed): whichever, it may be part-way in his chat, so the
+    // seller's later row must not land inside it. (A card already part-way would be sent FIRST — this one is
+    // fresh, so the row ahead goes before it.)
+    const ahead = await plainRow(`Oldinroq ${RUN}`, people.presser);
+    const card = await handMade([{ kind: 'text', text: 'B' }]);
+    const later = await plainRow(`Prixod keldi ${RUN}`);
+    onSend = {
+      needle: `Oldinroq ${RUN}`,
+      run: async () => {
+        await db.execute(sql`UPDATE notifications SET attempts = attempts + 1, claimed_at = now() WHERE id = ${card}::uuid`);
+      },
+    };
+    await drain();
+    expect(order.map((one) => one.text)).toEqual([expect.stringContaining(`Oldinroq ${RUN}`)]);
+    expect(await rowOf(ahead)).toMatchObject({ status: 'sent' });
+    expect(await rowOf(later)).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
   });
 
   it('a dead drain’s card is put back after the card’s short window, and finished FIRST; other rows keep ten minutes (FR1-1)', async () => {

@@ -4596,9 +4596,10 @@
     "back": "← Back",
     "actions": "Quick actions",
     "addressPresser": "The seller’s Telegram is not linked — the address message was sent to you.",
-    "addressMuted": "The seller turned these messages off in his profile — the address message was not sent. Get it with «📨 Send me the address message» on the client card.",
+    "addressMuted": "The seller turned these messages off in their profile — the address message was not sent. Get it with «📨 Send me the address message» on the client card.",
+    "addressMutedUnlinked": "The seller turned these messages off in their profile — the address message was not sent. Your Telegram is not linked either — link it in Profile → Telegram first, then press «📨 Send me the address message» on the client card.",
     "addressNobody": "The seller’s Telegram is not linked to the bot — the address message went to nobody. Get it with «📨 Send me the address message» on the client card.",
-    "addressNobodyUnlinked": "The seller’s Telegram is not linked to the bot — the address message went to nobody. Your Telegram is not linked either — first Profile → Telegram.",
+    "addressNobodyUnlinked": "The seller’s Telegram is not linked to the bot — the address message went to nobody. Your Telegram is not linked either — link it in Profile → Telegram first, then press «📨 Send me the address message» on the client card.",
     "addressFailed": "The address message could not be sent — send it again with «📨» on the client card.",
     "addressSelfMuted": "You turned these messages off in your profile — the address message was not sent (Profile → Telegram notifications).",
     "addressSelfNobody": "Your Telegram is not linked to the bot — the address message was not sent (Profile → Telegram)."
@@ -4983,7 +4984,7 @@
       "upload": "The file did not upload. Try again.",
       "notCompany": "Only a company (🏢 Everyone) note can be sent to new clients.",
       "serverBehind": "The server is not updated yet — try again in a moment.",
-      "failed": "It was not saved — try again."
+      "failed": "Could not tell whether it was saved — the page was refreshed; check the tick and try again if needed."
     },
     "makeShared": "🏢 Make it the company's",
     "makePrivate": "👤 Make it mine only",

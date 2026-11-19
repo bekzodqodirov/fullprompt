@@ -5,7 +5,7 @@
  * all: an unknown word draws no sentence. Pure and import-free, so the server
  * page and the client button share it.
  */
-export const ADDRESS_FLASHES = ['presser', 'muted', 'nobody', 'unlinked', 'failed'] as const;
+export const ADDRESS_FLASHES = ['presser', 'muted', 'muted_unlinked', 'nobody', 'unlinked', 'failed'] as const;
 export type AddressFlash = (typeof ADDRESS_FLASHES)[number];
 
 export function addressFlashOf(raw: string | string[] | undefined | null): AddressFlash | null {
@@ -16,6 +16,7 @@ export function addressFlashOf(raw: string | string[] | undefined | null): Addre
 export type AddressWord =
   | 'addressPresser'
   | 'addressMuted'
+  | 'addressMutedUnlinked'
   | 'addressNobody'
   | 'addressNobodyUnlinked'
   | 'addressFailed'
@@ -37,6 +38,9 @@ export function addressWordOf(outcome: string | null | undefined, self: boolean)
       return 'addressPresser';
     case 'muted':
       return self ? 'addressSelfMuted' : 'addressMuted';
+    case 'muted_unlinked':
+      // Never his own card either (presser ≠ seller) — the self word anyway.
+      return self ? 'addressSelfMuted' : 'addressMutedUnlinked';
     case 'nobody':
       return self ? 'addressSelfNobody' : 'addressNobody';
     case 'unlinked':

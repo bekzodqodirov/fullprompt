@@ -4597,8 +4597,9 @@
     "actions": "Tezkor harakatlar",
     "addressPresser": "Sotuvchining Telegrami ulanmagan — manzil xabari sizga yuborildi.",
     "addressMuted": "Sotuvchi bu xabarlarni profilida o‘chirgan — manzil xabari yuborilmadi. Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasidan oling.",
+    "addressMutedUnlinked": "Sotuvchi bu xabarlarni profilida o‘chirgan — manzil xabari yuborilmadi. Sizning Telegramingiz ham ulanmagan — avval Profil → Telegram'dan ulang, keyin mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasini bosing.",
     "addressNobody": "Sotuvchining Telegrami botga ulanmagan — manzil xabari hech kimga yuborilmadi. Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasidan oling.",
-    "addressNobodyUnlinked": "Sotuvchining Telegrami botga ulanmagan — manzil xabari hech kimga yuborilmadi. Sizning Telegramingiz ham ulanmagan — avval Profil → Telegram.",
+    "addressNobodyUnlinked": "Sotuvchining Telegrami botga ulanmagan — manzil xabari hech kimga yuborilmadi. Sizning Telegramingiz ham ulanmagan — avval Profil → Telegram'dan ulang, keyin mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasini bosing.",
     "addressFailed": "Manzil xabarini yuborib bo‘lmadi — mijoz kartasidan «📨» bilan qayta yuboring.",
     "addressSelfMuted": "Siz bu xabarlarni profilingizda o‘chirgansiz — manzil xabari yuborilmadi (Profil → Telegram xabarlari).",
     "addressSelfNobody": "Telegramingiz botga ulanmagan — manzil xabari yuborilmadi (Profil → Telegram)."
@@ -4983,7 +4984,7 @@
       "upload": "Fayl yuklanmadi. Qaytadan urinib ko‘ring.",
       "notCompany": "Faqat umumiy (🏢 Hammaga) zametka yangi mijozga yuborilishi mumkin.",
       "serverBehind": "Server hali yangilanmagan — bir ozdan keyin qayta urinib ko‘ring.",
-      "failed": "Saqlanmadi — qaytadan urinib ko‘ring."
+      "failed": "Saqlanganini bilib bo‘lmadi — sahifa yangilandi, belgini tekshiring va kerak bo‘lsa qaytadan urinib ko‘ring."
     },
     "makeShared": "🏢 Hammaga",
     "makePrivate": "👤 Faqat menda",

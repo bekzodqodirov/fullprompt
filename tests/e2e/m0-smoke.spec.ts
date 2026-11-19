@@ -67,8 +67,13 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   // (owner: the list hid what code the system gave).
   // The address card (0151): when it did not go to the seller, the outcome
   // rides the address — and here it never can, because no demo person has a
-  // linked Telegram, so the card's sentence is on the page.
-  await expect(page).toHaveURL(/\/admin\/clients\/[0-9a-f-]{36}(\?manzil=(presser|nobody|muted|failed))?$/);
+  // linked Telegram (the presser is the owner and the seller is Dilnoza, both
+  // unlinked: `unlinked`), so the card's sentence is on the page. The whole
+  // closed set is allowed so a linked leftover cannot turn this red for the
+  // wrong reason.
+  await expect(page).toHaveURL(
+    /\/admin\/clients\/[0-9a-f-]{36}(\?manzil=(presser|muted|muted_unlinked|nobody|unlinked|failed))?$/,
+  );
   await expect(page.getByTestId('address-card-flash')).toBeVisible();
   // The heading, not any text on the page: a custom LOOKUP field pointing at
   // clients is a configuration the owner may legitimately add, and it puts

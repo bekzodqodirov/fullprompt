@@ -97,6 +97,7 @@ export function WonDialog({
   const addressWords: Record<AddressWord, string> = {
     addressPresser: tq('addressPresser'),
     addressMuted: tq('addressMuted'),
+    addressMutedUnlinked: tq('addressMutedUnlinked'),
     addressNobody: tq('addressNobody'),
     addressNobodyUnlinked: tq('addressNobodyUnlinked'),
     addressFailed: tq('addressFailed'),
