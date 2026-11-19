@@ -118,9 +118,10 @@ export interface QuickClientResult {
    */
   dealId?: string | null;
   /**
-   * Who got the address card (0151): the code's seller, the person who
-   * pressed (the seller's Telegram is not reachable), or nobody — said under
-   * the code, because a card that went nowhere is otherwise silent.
+   * Where the address card went (0151, `AddressCardOutcome`) — said under the
+   * code whenever it was not the seller, because a card that went nowhere is
+   * otherwise silent. On this door the presser IS the seller, so the screen
+   * words it to him («Telegramingiz…», review CUST-8).
    */
   addressCard?: AddressCardOutcome;
 }

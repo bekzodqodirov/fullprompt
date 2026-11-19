@@ -300,15 +300,27 @@ export function QuickCreate({
             </div>
             {/* 0151: where the address card went, when it did not go to the
                 seller the usual way — a card that reached nobody is otherwise
-                silent, and the code is about to go on cartons. */}
+                silent, and the code is about to go on cartons. On this door
+                the presser IS the seller, so the sentence is said TO him, in
+                the second person (review CUST-8). */}
             {madeClient.addressCard === 'presser' && (
               <p className="text-sm text-ink-700" data-testid="quick-address-card">
                 📨 {t('addressPresser')}
               </p>
             )}
+            {madeClient.addressCard === 'muted' && (
+              <p className="text-sm text-warn" data-testid="quick-address-card">
+                ⚠ {t('addressSelfMuted')}
+              </p>
+            )}
             {madeClient.addressCard === 'nobody' && (
               <p className="text-sm text-warn" data-testid="quick-address-card">
-                ⚠ {t('addressNobody')}
+                ⚠ {t('addressSelfNobody')}
+              </p>
+            )}
+            {madeClient.addressCard === 'failed' && (
+              <p className="text-sm text-warn" data-testid="quick-address-card">
+                ⚠ {t('addressFailed')}
               </p>
             )}
             <div className="flex items-center gap-2">

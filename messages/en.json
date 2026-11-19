@@ -653,7 +653,8 @@
     "addressResend": "📨 Send me the address message",
     "addressResent": "✅ Sent — open your Telegram.",
     "addressNoChat": "⚠ Your Telegram is not linked to the bot — link it on your profile first.",
-    "addressFailed": "⚠ Could not send — try again."
+    "addressFailed": "⚠ Could not send — try again.",
+    "addressInactive": "⚠ This code is deactivated — no address message is sent for it."
   },
   "users": {
     "title": "Employees",
@@ -4594,8 +4595,12 @@
     },
     "back": "← Back",
     "actions": "Quick actions",
-    "addressPresser": "The address message cannot reach the seller (Telegram not linked, or he muted these messages) — it was sent to you.",
-    "addressNobody": "The address message went to nobody: the seller’s Telegram is not linked, or he muted these messages. Get it with «📨 Send me the address message» on the client card."
+    "addressPresser": "The seller’s Telegram is not linked — the address message was sent to you.",
+    "addressMuted": "The seller turned these messages off in his profile — the address message was not sent.",
+    "addressNobody": "The seller’s Telegram is not linked to the bot — the address message went to nobody. Get it with «📨 Send me the address message» on the client card.",
+    "addressFailed": "The address message could not be sent — send it again with «📨» on the client card.",
+    "addressSelfMuted": "You turned these messages off in your profile — the address message was not sent (Profile → Telegram notifications).",
+    "addressSelfNobody": "Your Telegram is not linked to the bot — the address message was not sent (Profile → Telegram)."
   },
   "routing": {
     "title": "Lead distribution",

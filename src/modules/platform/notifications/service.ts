@@ -1721,6 +1721,38 @@ async function releaseClaims(ids: string[]): Promise<void> {
     .where(and(inArray(notifications.id, ids), eq(notifications.status, 'sending')));
 }
 
+/**
+ * The run's rows with every new-client card already PART-WAY in a chat moved
+ * to the front, the rest in their own order (a stable sort, created_at as
+ * read). Such a card's remainder must reach the seller before anything else of
+ * his — an older row still retrying would otherwise land between the card's
+ * delivered part and the rest of it (review P1-DLV-4). Rows of different people
+ * never share a chat, so moving one person's card ahead of another person's
+ * row changes nothing anybody reads.
+ */
+function cardsInProgressFirst<T extends { type: string; payload: unknown }>(rows: T[]): T[] {
+  const started = (row: T) =>
+    row.type === NEW_CLIENT_CARD && (noteCardOf(row.payload as Record<string, unknown>)?.done ?? 0) > 0;
+  return [...rows.filter(started), ...rows.filter((row) => !started(row))];
+}
+
+/**
+ * Is this card's first step already in the chat — read back from the row the
+ * card stamps after every step? A read that fails answers yes: holding a
+ * person's rows back one run is the safe side of not knowing.
+ */
+async function cardStartedNow(notificationId: string): Promise<boolean> {
+  try {
+    const rows = (await db.execute(sql`
+      SELECT (payload->'card'->>'done')::int AS done FROM notifications WHERE id = ${notificationId}`)) as unknown as {
+      done: number | null;
+    }[];
+    return (rows[0]?.done ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
+
 export async function sendPendingTelegram(now: Date = new Date()): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return;
@@ -1731,11 +1763,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
   await reclaimStaleTelegram();
   const claimedIds = await claimPendingTelegram(30);
   if (claimedIds.length === 0) return;
-  const pending = await db
-    .select()
-    .from(notifications)
-    .where(inArray(notifications.id, claimedIds))
-    .orderBy(notifications.createdAt);
+  const pending = cardsInProgressFirst(
+    await db
+      .select()
+      .from(notifications)
+      .where(inArray(notifications.id, claimedIds))
+      .orderBy(notifications.createdAt),
+  );
 
   // One dead chat must not hold up the queue. Every row is attempted, its
   // own failure recorded, and the batch reports at the end — before this,
@@ -1743,8 +1777,20 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
   // including "boxes missing in transit".
   let failed = 0;
   const settled = new Set<string>();
+  // People whose new-client card stopped part-way in THIS run (review
+  // P1-DLV-4): the card's delivered part is already in their chat, and the
+  // seller multi-selects it together with the remainder to forward to the
+  // customer — so nothing else of theirs goes between the two. Their later
+  // rows are handed back untouched (no attempt counted) and go next run,
+  // after the card's own retry, which `cardsInProgressFirst` puts first.
+  const heldFor = new Set<string>();
 
   for (const notification of pending) {
+    if (heldFor.has(notification.userId)) {
+      await releaseClaims([notification.id]);
+      settled.add(notification.id);
+      continue;
+    }
     const recipient = await db.query.users.findFirst({
       columns: { locale: true, active: true },
       where: eq(users.id, notification.userId),
@@ -1923,6 +1969,11 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       })
       .where(eq(notifications.id, notification.id));
     settled.add(notification.id);
+    // A card that stopped with part of it already in the chat holds its
+    // recipient's later rows back for the rest of this run (P1-DLV-4).
+    if (notification.type === NEW_CLIENT_CARD && (await cardStartedNow(notification.id))) {
+      heldFor.add(notification.userId);
+    }
   }
 
   // Still throw so pg-boss retries — but only after every row had its turn.

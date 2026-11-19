@@ -58,6 +58,16 @@ export function NoteList({
   // where they changed it, that there is a second copy to correct.
   const [drift, setDrift] = useState(false);
   const [rowError, setRowError] = useState<{ id: string; code: string } | null>(null);
+  // The 🆕 tick as the person just pressed it, until the round trip lands
+  // (review CUST-9): a controlled box would snap back unticked and sit there,
+  // disabled, for the whole action + refresh. Kept WITH the server value it
+  // was pressed against — once the server's own value moves, the server
+  // wins again, and a refusal takes the press back at once.
+  const [pressed, setPressed] = useState<Record<string, { want: boolean; from: boolean }>>({});
+  const flagShown = (note: NoteRowView): boolean => {
+    const press = pressed[note.id];
+    return press && press.from === note.forNewClient ? press.want : note.forNewClient;
+  };
   const router = useRouter();
   const rowErrors: Record<string, string> = {
     forbidden: t('errors.forbidden'),
@@ -73,7 +83,8 @@ export function NoteList({
         <p className="card space-y-1 text-sm text-warn" role="status" data-testid="notes-ai-drift">
           <span className="block">🤖 {t('aiDrift')}</span>
           {canRunAgent ? (
-            <Link href="/suhbatlar/ai" className="font-semibold underline" data-testid="notes-ai-drift-link">
+            // The knowledge tab, not the page's default «Kutilmoqda» (review CUST-3).
+            <Link href="/suhbatlar/ai?bolim=bilimlar" className="font-semibold underline" data-testid="notes-ai-drift-link">
               {t('aiDriftLink')}
             </Link>
           ) : (
@@ -171,15 +182,24 @@ export function NoteList({
               <input
                 type="checkbox"
                 data-testid="note-new-client"
-                checked={note.forNewClient}
+                checked={flagShown(note)}
                 disabled={pending}
                 className="size-5 shrink-0"
                 onChange={(e) => {
                   const on = e.target.checked;
                   setRowError(null);
+                  setPressed((all) => ({ ...all, [note.id]: { want: on, from: note.forNewClient } }));
                   start(async () => {
-                    const res = await setNewClientFlagAction(note.id, on);
+                    // A press that did not land (refused, or the request itself
+                    // failed) puts the box back to what the server holds, with
+                    // the reason under it.
+                    const res = await setNewClientFlagAction(note.id, on).catch(() => ({ error: 'failed' as const }));
                     if (res.error) {
+                      setPressed((all) => {
+                        const rest = { ...all };
+                        delete rest[note.id];
+                        return rest;
+                      });
                       setRowError({ id: note.id, code: res.error });
                       return;
                     }

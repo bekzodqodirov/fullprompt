@@ -13,11 +13,11 @@ import {
   type Outgoing,
 } from './client-cabinet';
 import { clientLabels, localeFromTelegram } from './client-labels';
-import { adSourceFromPayload, rememberAdVisit } from './ad-intake';
+import { adSourceFromPayload, clearAdVisit, rememberAdVisit } from './ad-intake';
 import { isMijozStart, mijozStartUrl } from './mijoz-start';
 import { h } from './format';
 import { cabinetInlineKeyboard } from './menu-button';
-import { linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
+import { dropStaffEntry, linkStaffChat, staffForChat, startMenuFor } from './staff-bot';
 import { askStaffPhone, entryKeyboard, registerStaffBot } from './staff-handlers';
 import { registerAgentCommand } from './agent-bot';
 import { replyKeyboardFor } from './keyboards';
@@ -388,8 +388,15 @@ export function registerBotHandlers(bot: Bot): void {
         await bareStart();
         return;
       }
-      const t = clientLabels(tg);
-      await ctx.reply(`${t.mijozStart}\n\n${t.askPhone}`, { reply_markup: phoneKeyboard(tg) });
+      // The contact this greeting asks for is the CABINET's to answer (review
+      // CUST-2): an advert visit armed earlier in this chat would land it as
+      // an inbound LEAD and thank a customer who already has a code, and an
+      // earlier «👨‍💼 Hodim» press would hand it to the staff handler, which
+      // refuses a stranger. Both are forgotten before the question is asked.
+      clearAdVisit(ctx.chat.id);
+      dropStaffEntry(chatId);
+      // ONE message, one greeting, ending in the phone request (review CUST-4).
+      await ctx.reply(clientLabels(tg).mijozStart, { reply_markup: phoneKeyboard(tg) });
       return;
     }
     const link = await db.query.telegramLinks.findFirst({

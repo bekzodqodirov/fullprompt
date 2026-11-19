@@ -257,15 +257,26 @@ export function WonDialog({
             </p>
           </div>
           {/* 0151: the new code's address card, when it did not go to its
-              seller — the quick «+»'s two sentences, one vocabulary. */}
+              seller — said about the SELLER (the lead's owner), the full
+              form's words, one vocabulary. */}
           {result.addressCard === 'presser' && (
             <p className="text-sm text-ink-700" data-testid="won-address-card">
               📨 {tq('addressPresser')}
             </p>
           )}
+          {result.addressCard === 'muted' && (
+            <p className="text-sm text-warn" data-testid="won-address-card">
+              ⚠ {tq('addressMuted')}
+            </p>
+          )}
           {result.addressCard === 'nobody' && (
             <p className="text-sm text-warn" data-testid="won-address-card">
               ⚠ {tq('addressNobody')}
+            </p>
+          )}
+          {result.addressCard === 'failed' && (
+            <p className="text-sm text-warn" data-testid="won-address-card">
+              ⚠ {tq('addressFailed')}
             </p>
           )}
           {/* The lead's other calculations each opened a deal of their own

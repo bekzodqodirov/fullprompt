@@ -653,7 +653,8 @@
     "addressResend": "📨 把地址消息发给我",
     "addressResent": "✅ 已发送 — 请打开您的 Telegram。",
     "addressNoChat": "⚠ 您的 Telegram 未连接机器人 — 请先在个人资料中连接。",
-    "addressFailed": "⚠ 发送失败 — 请重试。"
+    "addressFailed": "⚠ 发送失败 — 请重试。",
+    "addressInactive": "⚠ 此代码已停用 — 不发送地址消息。"
   },
   "users": {
     "title": "员工",
@@ -4594,8 +4595,12 @@
     },
     "back": "← 返回",
     "actions": "快捷操作",
-    "addressPresser": "地址消息无法发给销售员（Telegram 未连接或已关闭此类消息）— 已发给您。",
-    "addressNobody": "地址消息未发给任何人：销售员的 Telegram 未连接，或已关闭此类消息。请在客户卡片上用“📨 把地址消息发给我”按钮获取。"
+    "addressPresser": "销售员的 Telegram 未连接 — 地址消息已发给您。",
+    "addressMuted": "销售员已在个人资料中关闭此类消息 — 地址消息未发送。",
+    "addressNobody": "销售员的 Telegram 未连接机器人 — 地址消息未发给任何人。请在客户卡片上用“📨 把地址消息发给我”按钮获取。",
+    "addressFailed": "地址消息发送失败 — 请在客户卡片上用“📨”重新发送。",
+    "addressSelfMuted": "您已在个人资料中关闭此类消息 — 地址消息未发送（个人资料 → Telegram 通知）。",
+    "addressSelfNobody": "您的 Telegram 未连接机器人 — 地址消息未发送（个人资料 → Telegram）。"
   },
   "routing": {
     "title": "线索分配",

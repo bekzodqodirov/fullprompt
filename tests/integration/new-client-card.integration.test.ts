@@ -17,7 +17,19 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  * a linked seller (#183): each test's notes are this file's own and deleted
  * at the end, and nothing here ticks a note it did not make.
  */
-const gate = vi.hoisted(() => ({ actor: null as unknown }));
+const gate = vi.hoisted(() => ({ actor: null as unknown, notesFail: false }));
+// The card's notes read, made to throw on demand — OUR fault inside the queue
+// write, which the doors must say as «failed», never as somebody's Telegram.
+vi.mock('@/modules/platform/notes/service', async (original) => {
+  const real = await original<typeof import('@/modules/platform/notes/service')>();
+  return {
+    ...real,
+    newClientNotes: async (...args: Parameters<typeof real.newClientNotes>) => {
+      if (gate.notesFail) throw new Error('itest: the notes read failed');
+      return real.newClientNotes(...args);
+    },
+  };
+});
 vi.mock('@/modules/platform/rbac/authorize', async (original) => ({
   ...(await original<typeof import('@/modules/platform/rbac/authorize')>()),
   getActor: async () => gate.actor,
@@ -41,6 +53,7 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
 
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  attachments,
   auditLog,
   clients,
   crmActivities,
@@ -49,12 +62,17 @@ import {
   leads,
   notifications,
   staffGroupPosts,
+  staffNoteParts,
   staffNotes,
   telegramLinks,
   users,
 } from '@/modules/platform/db/schema';
+import { saveAttachment } from '@/modules/platform/files/service';
+import type { NoteFile, NoteSend } from '@/modules/platform/notes/plan';
 import {
+  NOTE_ENTITY_TYPE,
   NoteError,
+  filesForNote,
   newClientFlags,
   newClientNotes,
   saveNote,
@@ -65,7 +83,7 @@ import {
 import { createClient } from '@/modules/platform/clients/service';
 import { __resetTelegramPause, sendPendingTelegram } from '@/modules/platform/notifications/service';
 import { queueStaffTelegram } from '@/modules/platform/notifications/staff';
-import { __setPlanApi } from '@/modules/platform/telegram/note-send';
+import { __setPlanApi, sendPlan } from '@/modules/platform/telegram/note-send';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { createClientAction, quickCreateClientAction } from '@/app/(protected)/admin/clients/actions';
 import { createLead, winLead } from '@/modules/wms/crm/service';
@@ -137,7 +155,13 @@ afterAll(async () => {
   }
   const ids = Object.values(people).filter(Boolean);
   await db.delete(notifications).where(inArray(notifications.userId, ids));
-  if (madeNotes.length) await db.delete(staffNotes).where(inArray(staffNotes.id, madeNotes));
+  if (madeNotes.length) {
+    // A note owns bytes: its uploads go with it (the album's two photos).
+    await db
+      .delete(attachments)
+      .where(and(eq(attachments.entityType, NOTE_ENTITY_TYPE), inArray(attachments.entityId, madeNotes)));
+    await db.delete(staffNotes).where(inArray(staffNotes.id, madeNotes));
+  }
   const minted = await db.select({ id: clients.id }).from(clients).where(like(clients.name, `${TAG}%`));
   const clientIds = [...new Set([...madeClients, ...minted.map((c) => c.id)])];
   if (clientIds.length) {
@@ -230,7 +254,13 @@ describe('the three doors queue exactly one card, for the right person', () => {
     const rows = await cardRows(res.id!);
     expect(rows.map((row) => row.userId)).toEqual([people.seller]);
     const payload = rows[0]!.payload as { text: string; card: { steps: { kind: string; text?: string }[] } };
-    expect(payload.text.startsWith(`🆕 ${res.code} · ${TAG} tez — pastdagi 1 ta xabarni`)).toBe(true);
+    const lines = payload.text.split('\n');
+    expect(lines[0]).toBe(`🆕 ${res.code} · ${TAG} tez`);
+    expect(lines[1]).toBe('Pastdagi 1 ta xabarni belgilab mijozga forward qiling ⬇️');
+    // A phone the bot can match: no warning about it.
+    expect(payload.text).not.toContain('telefon yo‘q');
+    // No bot token in this part of the file: the bot line is not in the card, and the seller is told.
+    expect(payload.text).toContain('⚠ Bot havolasi qo‘shilmadi');
     const forwarded = payload.card.steps.map((step) => step.text ?? '').join('\n');
     expect(forwarded).toContain(`Ivu ombori ${RUN}`);
     expect(forwarded).toContain(`Markirovka / 唛头: ${res.code}`);
@@ -267,7 +297,61 @@ describe('the three doors queue exactly one card, for the right person', () => {
     expect(to).toMatch(/\?manzil=presser$/);
     const id = to.slice('REDIRECT:/admin/clients/'.length, to.indexOf('?'));
     madeClients.push(id);
-    expect((await cardRows(id)).map((row) => row.userId)).toEqual([people.presser]);
+    const rows = await cardRows(id);
+    expect(rows.map((row) => row.userId)).toEqual([people.presser]);
+    // No phone on the card: the bot link can never connect this customer, and the staff line says so (CUST-1).
+    expect((rows[0]!.payload as { text: string }).text).toContain(
+      '⚠ Mijoz kartasida telefon yo‘q — botdagi havola uni ulay olmaydi: raqamini kartaga yozdiring (admin)',
+    );
+  });
+
+  it('a seller who MUTED the card: nobody gets it — not the presser — and the redirect says why (judge R14)', async () => {
+    await db.update(users).set({ mutedNotificationTypes: ['NewClientCard'] }).where(eq(users.id, people.seller));
+    try {
+      gate.actor = actor(people.presser, ['clients.manage']);
+      const form = new FormData();
+      form.set('clientCode', '');
+      form.set('name', `${TAG} ochirgan`);
+      form.set('phones', `+99870${RUN}4`);
+      form.set('salesManagerId', people.seller);
+      const to = await createClientAction({}, form).then(
+        () => '',
+        (err: Error) => err.message,
+      );
+      expect(to).toMatch(/\?manzil=muted$/);
+      const id = to.slice('REDIRECT:/admin/clients/'.length, to.indexOf('?'));
+      madeClients.push(id);
+      expect(await cardRows(id)).toEqual([]);
+    } finally {
+      await db.update(users).set({ mutedNotificationTypes: [] }).where(eq(users.id, people.seller));
+    }
+  });
+
+  it('our own failure is said as «failed», never blamed on anybody’s Telegram (P1-DOORS-8)', async () => {
+    gate.notesFail = true;
+    try {
+      gate.actor = actor(people.seller, ['crm.leads']);
+      const res = await quickCreateClientAction({ name: `${TAG} xato`, phones: '' });
+      expect(res.ok).toBe(true);
+      madeClients.push(res.id!);
+      expect(res.addressCard).toBe('failed');
+      expect(await cardRows(res.id!)).toEqual([]);
+
+      gate.actor = actor(people.presser, ['clients.manage']);
+      const form = new FormData();
+      form.set('clientCode', '');
+      form.set('name', `${TAG} xato forma`);
+      form.set('phones', '');
+      form.set('salesManagerId', people.seller);
+      const to = await createClientAction({}, form).then(
+        () => '',
+        (err: Error) => err.message,
+      );
+      expect(to).toMatch(/\?manzil=failed$/);
+      madeClients.push(to.slice('REDIRECT:/admin/clients/'.length, to.indexOf('?')));
+    } finally {
+      gate.notesFail = false;
+    }
   });
 
   it('nobody reachable: no row at all, and the «+» says so', async () => {
@@ -330,6 +414,17 @@ describe('the three doors queue exactly one card, for the right person', () => {
       await db.update(users).set({ mutedNotificationTypes: [] }).where(eq(users.id, people.presser));
     }
   });
+
+  it('never for a DEACTIVATED code: refused in words, no row written (P1-DOORS-4)', async () => {
+    const retired = await createClient(
+      { clientCode: '', name: `${TAG} eski`, phones: [`+99870${RUN}5`], salesManagerId: people.seller },
+      ctx(people.presser),
+    );
+    madeClients.push(retired.id);
+    await db.update(clients).set({ active: false }).where(eq(clients.id, retired.id));
+    expect(await resendNewClientCard(retired.id, people.presser)).toBe('inactive');
+    expect(await cardRows(retired.id)).toEqual([]);
+  });
 });
 
 /** The drain as Telegram sees it: send.ts's transport and the card's grammy Api, both recorders. */
@@ -339,6 +434,7 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
   let failOn = new Map<number, { error_code: number; description: string; parameters?: { retry_after?: number } } | Error>();
   let planCall = 0;
   let seq = 700_000;
+  let planApi: Api | null = null;
 
   beforeAll(() => {
     process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
@@ -352,8 +448,8 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
       order.push({ via: 'send', method, text: String(body.text ?? ''), parseMode: body.parse_mode, markup: body.reply_markup });
       return new Response(JSON.stringify({ ok: true, result: { message_id: (seq += 1) } }), { status: 200 });
     });
-    const api = new Api('TEST:TOKEN');
-    api.config.use(async (_prev, method, payload) => {
+    planApi = new Api('TEST:TOKEN');
+    planApi.config.use(async (_prev, method, payload) => {
       const body = (payload ?? {}) as Record<string, unknown>;
       order.push({ via: 'plan', method, text: String(body.text ?? body.caption ?? ''), parseMode: body.parse_mode, markup: body.reply_markup });
       planCall += 1;
@@ -362,7 +458,7 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
       if (error) return { ok: false, ...error } as never;
       return { ok: true, result: { message_id: (seq += 1), date: 0, chat: { id: 0, type: 'private' } } } as never;
     });
-    __setPlanApi(api);
+    __setPlanApi(planApi);
   });
 
   beforeEach(async () => {
@@ -390,14 +486,28 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     await sendPendingTelegram().catch(() => {});
   }
 
-  async function handMade(steps: { kind: 'text'; text: string }[]): Promise<string> {
+  async function handMade(steps: NoteSend[], done = 0): Promise<string> {
+    const clientId = randomUUID();
     await queueStaffTelegram(db, {
       userIds: [people.seller],
       type: 'NewClientCard',
-      text: `🆕 ${TAG} · Qo‘lda — pastdagi ${steps.length} ta xabarni belgilab mijozga forward qiling`,
-      extra: { clientId: randomUUID(), card: { steps, done: 0, head: null, ids: [], maybe: [] } },
+      text: `🆕 ${TAG} · Qo‘lda\nPastdagi ${steps.length} ta xabarni belgilab mijozga forward qiling ⬇️`,
+      extra: { clientId, card: { steps, done, head: done > 0 ? 1 : null, ids: done > 0 ? [1] : [], maybe: [] } },
     });
-    const [row] = await db.select().from(notifications).where(eq(notifications.userId, people.seller));
+    const [row] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, people.seller), sql`${notifications.payload}->>'clientId' = ${clientId}`));
+    return row!.id;
+  }
+
+  /** An ordinary staff row for the seller — anything else that could land in his chat. */
+  async function plainRow(text: string): Promise<string> {
+    await queueStaffTelegram(db, { userIds: [people.seller], type: 'InternalNote', text });
+    const [row] = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, people.seller), sql`${notifications.payload}->>'text' = ${text}`));
     return row!.id;
   }
 
@@ -411,7 +521,11 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     expect(await sendNewClientCard(id, people.seller)).toBe('seller');
     await drain();
     expect(order.map((one) => `${one.via}:${one.method}`)).toEqual(['send:sendMessage', 'plan:sendMessage']);
-    expect(order[0]!.text).toContain('pastdagi 1 ta xabarni');
+    expect(order[0]!.text).toContain('Pastdagi 1 ta xabarni');
+    // The bot's name came in time: no «Bot havolasi qo‘shilmadi» on this one.
+    expect(order[0]!.text).not.toContain('Bot havolasi');
+    // The first line is the code and the name alone — short enough for the drain to bold it (RG-2).
+    expect(order[0]!.text.split('\n')[0]).toMatch(/^<b>🆕 .+ · .+<\/b>$/);
     expect(order[0]!.parseMode).toBe('HTML');
     // The customer's message: no HTML mode, no keyboard — forwarded as it stands.
     expect(order[1]!.text).toContain('Markirovka / 唛头:');
@@ -474,5 +588,212 @@ describe('the drain sends the card in steps, and a replay starts where it stoppe
     order = [];
     await drain();
     expect(order).toEqual([]);
+  });
+
+  it('a photo whose bytes are gone is NOT a «maybe»: retried, and in the end failed, naming the file (P1-DLV-2)', async () => {
+    // A plan Api whose fetch READS the multipart body, as a real upload does:
+    // the stored file is opened only then.
+    let uploads = 0;
+    __setPlanApi(
+      new Api('TEST:TOKEN', {
+        fetch: (async (_url: string, init: { body?: unknown }) => {
+          uploads += 1;
+          if (init.body && typeof init.body !== 'string') for await (const _chunk of init.body as AsyncIterable<Uint8Array>) void _chunk;
+          return new Response(JSON.stringify({ ok: true, result: { message_id: (seq += 1), date: 0, chat: { id: 0, type: 'private' } } }), {
+            status: 200,
+          });
+        }) as never,
+      }),
+    );
+    try {
+      const id = await handMade([
+        {
+          kind: 'media',
+          as: 'photo',
+          caption: `Xitoy sklad ${RUN}\n\nMarkirovka / 唛头: GS777`,
+          files: [
+            {
+              partId: randomUUID(),
+              attachmentId: randomUUID(),
+              fileName: 'sklad.jpg',
+              storageKey: `staff_note/${TAG}/gone-${RUN}.jpg`,
+              sizeBytes: 1000,
+              sendAs: 'photo',
+              telegramFileId: null,
+              telegramSentAs: null,
+            },
+          ],
+        },
+      ]);
+      await drain();
+      const first = await cursorOf(id);
+      // Telegram cannot have it — the body never completed — so the step is not stepped over.
+      expect(first.status).toBe('pending');
+      expect(first.card).toMatchObject({ done: 1, maybe: [] });
+      const [row] = await db.select().from(notifications).where(eq(notifications.id, id));
+      expect(row!.attempts).toBe(1);
+      expect(row!.error).toMatch(/^source_unreadable sklad\.jpg/);
+
+      // The bytes never come back: the attempt budget runs out and the row says which file it was.
+      for (let run = 0; run < 8; run += 1) {
+        __resetTelegramPause();
+        await drain();
+      }
+      const [last] = await db.select().from(notifications).where(eq(notifications.id, id));
+      expect(last!.status).toBe('failed');
+      expect(last!.error).toContain('sklad.jpg');
+      expect((last!.payload as { card: { maybe: number[] } }).card.maybe).toEqual([]);
+      // The staff line went ONCE; the photo was attempted on every run the budget allowed, and none counted as sent.
+      expect(order.filter((one) => one.via === 'send')).toHaveLength(1);
+      expect(uploads).toBe(last!.attempts);
+      expect((last!.payload as { card: { done: number } }).card.done).toBe(1);
+    } finally {
+      __setPlanApi(planApi);
+    }
+  });
+
+  it('a card that stops part-way holds the seller’s later rows back, so nothing lands inside it (P1-DLV-4)', async () => {
+    const card = await handMade([
+      { kind: 'text', text: 'A' },
+      { kind: 'text', text: 'B' },
+    ]);
+    const later = await plainRow(`Keyingi xabar ${RUN}`);
+    // A goes; B is refused by Telegram (a «no», retried next run).
+    failOn.set(2, { error_code: 400, description: 'Bad Request: message is too long' });
+    await drain();
+    expect(order.map((one) => `${one.via}:${one.text}`)).toEqual([expect.stringMatching(/^send:/), 'plan:A', 'plan:B']);
+    const [held] = await db.select().from(notifications).where(eq(notifications.id, later));
+    // Handed back untouched: still pending, no attempt counted, no claim left on it.
+    expect(held).toMatchObject({ status: 'pending', attempts: 0, claimedAt: null });
+
+    order = [];
+    failOn = new Map();
+    planCall = 0;
+    await drain();
+    // The card's remainder first, then the seller's other message.
+    expect(order.map((one) => `${one.via}:${one.text}`)).toEqual(['plan:B', expect.stringContaining(`send:Keyingi xabar ${RUN}`)]);
+    expect((await cursorOf(card)).status).toBe('sent');
+  });
+
+  it('a card part-way in the chat is finished before an OLDER row of the same seller (P1-DLV-4)', async () => {
+    const older = await plainRow(`Eski xabar ${RUN}`);
+    const card = await handMade([{ kind: 'text', text: 'Qolgani' }], 1);
+    await drain();
+    expect(order.map((one) => `${one.via}:${one.text}`)).toEqual(['plan:Qolgani', expect.stringContaining(`send:Eski xabar ${RUN}`)]);
+    expect((await cursorOf(card)).status).toBe('sent');
+    const [row] = await db.select().from(notifications).where(eq(notifications.id, older));
+    expect(row!.status).toBe('sent');
+  });
+});
+
+/**
+ * An album of real zametka parts through the zametka sender — the card merges
+ * every ticked note's files into ONE media group, and a group had neither of
+ * the single photo's two repairs (review P1-DLV-3).
+ */
+describe('an album Telegram refuses is sent again once, as one call', () => {
+  let calls: { method: string; media: { type: string; media: unknown; caption?: string }[] }[] = [];
+  let answers: ({ error_code: number; description: string } | unknown[])[] = [];
+  let parts: NoteFile[] = [];
+  let albumNote = '';
+  const api = new Api('TEST:TOKEN');
+  api.config.use(async (_prev, method, payload) => {
+    const body = (payload ?? {}) as { media?: { type: string; media: unknown; caption?: string }[] };
+    calls.push({ method, media: body.media ?? [] });
+    const answer = answers.shift();
+    if (answer && !Array.isArray(answer)) return { ok: false, ...(answer as object) } as never;
+    return { ok: true, result: answer ?? [] } as never;
+  });
+
+  beforeAll(async () => {
+    const noteId = randomUUID();
+    albumNote = noteId;
+    for (const name of ['ivu.jpg', 'xorgos.jpg']) {
+      await saveAttachment(
+        {
+          entityType: NOTE_ENTITY_TYPE,
+          entityId: noteId,
+          fileName: name,
+          contentType: 'image/jpeg',
+          body: Buffer.from(`itest album ${name}`),
+          uploadedBy: people.presser,
+        },
+        { thumbnails: 'skip' },
+      );
+    }
+    await saveNote({ id: noteId, title: `Albom ${RUN}`, body: 'ikki rasm', shared: true }, noteCtx());
+    madeNotes.push(noteId);
+    parts = await filesForNote(noteId);
+    expect(parts.map((part) => part.sendAs)).toEqual(['photo', 'photo']);
+  });
+
+  beforeEach(() => {
+    calls = [];
+    answers = [];
+  });
+
+  const partRows = async () =>
+    db
+      .select({ sendAs: staffNoteParts.sendAs, fileId: staffNoteParts.telegramFileId, sentAs: staffNoteParts.telegramSentAs })
+      .from(staffNoteParts)
+      .where(inArray(staffNoteParts.id, parts.map((part) => part.partId)))
+      .orderBy(staffNoteParts.sortOrder);
+
+  it('a photo-shape refusal: once more as DOCUMENTS, caption on the first — and no downgrade is persisted', async () => {
+    answers = [
+      { error_code: 400, description: 'Bad Request: PHOTO_INVALID_DIMENSIONS' },
+      [
+        { message_id: 1, document: { file_id: 'DOC-1' } },
+        { message_id: 2, document: { file_id: 'DOC-2' } },
+      ],
+    ];
+    const out = await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: parts, caption: 'Manzillar' }], {
+      onRateLimit: 'return',
+    });
+    expect(out.stop).toBeNull();
+    expect(out.sent).toBe(1);
+    expect(calls.map((call) => call.method)).toEqual(['sendMediaGroup', 'sendMediaGroup']);
+    expect(calls[0]!.media.map((m) => m.type)).toEqual(['photo', 'photo']);
+    expect(calls[1]!.media.map((m) => m.type)).toEqual(['document', 'document']);
+    expect(calls[1]!.media.map((m) => m.caption ?? null)).toEqual(['Manzillar', null]);
+    // The culprit is unknown, so nothing is downgraded for good; the answers are cached as what they are.
+    expect(await partRows()).toEqual([
+      { sendAs: 'photo', fileId: 'DOC-1', sentAs: 'document' },
+      { sendAs: 'photo', fileId: 'DOC-2', sentAs: 'document' },
+    ]);
+  });
+
+  it('a stale cached id: every cached id in the group forgotten, the group sent again with the bytes', async () => {
+    await db.update(staffNoteParts).set({ telegramFileId: 'OLD-1', telegramSentAs: 'photo' }).where(eq(staffNoteParts.id, parts[0]!.partId));
+    await db.update(staffNoteParts).set({ telegramFileId: 'OLD-2', telegramSentAs: 'photo' }).where(eq(staffNoteParts.id, parts[1]!.partId));
+    const cached = await filesForNote(albumNote);
+    expect(cached.map((part) => part.telegramFileId)).toEqual(['OLD-1', 'OLD-2']);
+    answers = [
+      { error_code: 400, description: 'Bad Request: wrong file identifier/HTTP URL specified' },
+      [
+        { message_id: 3, photo: [{ file_id: 'small' }, { file_id: 'NEW-1' }] },
+        { message_id: 4, photo: [{ file_id: 'small' }, { file_id: 'NEW-2' }] },
+      ],
+    ];
+    const out = await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: cached, caption: 'Manzillar' }], {
+      onRateLimit: 'return',
+    });
+    expect(out.stop).toBeNull();
+    expect(calls.map((call) => call.method)).toEqual(['sendMediaGroup', 'sendMediaGroup']);
+    expect(calls[0]!.media.map((m) => m.media)).toEqual(['OLD-1', 'OLD-2']);
+    // The resend carries the BYTES (InputFiles), never the ids Telegram forgot.
+    expect(calls[1]!.media.every((m) => typeof m.media !== 'string')).toBe(true);
+    expect(calls[1]!.media.map((m) => m.type)).toEqual(['photo', 'photo']);
+    expect(await partRows()).toEqual([
+      { sendAs: 'photo', fileId: 'NEW-1', sentAs: 'photo' },
+      { sendAs: 'photo', fileId: 'NEW-2', sentAs: 'photo' },
+    ]);
+  });
+
+  it('any other refusal is not retried — one call, the stop handed back', async () => {
+    answers = [{ error_code: 400, description: 'Bad Request: chat not found' }];
+    const out = await sendPlan(api, 42n, [{ kind: 'media', as: 'photo', files: parts, caption: null }], { onRateLimit: 'return' });
+    expect(calls).toHaveLength(1);
+    expect(out.stop).toMatchObject({ index: 0, status: 400 });
   });
 });

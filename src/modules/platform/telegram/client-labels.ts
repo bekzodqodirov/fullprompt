@@ -265,13 +265,17 @@ const DICT = {
     en: 'Track your cargo in our Telegram bot: {url}',
   },
   /**
-   * `?start=mijoz` — the customer who tapped that line (0151). Then the phone
-   * request: the self-service door connects every code on a number we hold.
+   * `?start=mijoz` — the customer who tapped that line (0151): ONE message
+   * that greets once, says what the bot is for, and ends in the phone request
+   * `askPhone` makes elsewhere (the self-service door connects every code on a
+   * number we hold). Not `askPhone` glued after it: that one opens with its
+   * own «Assalomu alaykum!», and the stranger read two greetings, the hello
+   * after the welcome (review CUST-4).
    */
   mijozStart: {
-    uz: 'GSR LOGISTICS botiga xush kelibsiz! Bu yerda yuklaringiz qayerdaligini, rasmlarini va balansingizni ko‘rasiz.',
-    ru: 'Добро пожаловать в бот GSR LOGISTICS! Здесь вы видите, где ваши грузы, их фото и ваш баланс.',
-    en: 'Welcome to the GSR LOGISTICS bot! Here you can see where your cargo is, its photos and your balance.',
+    uz: 'Assalomu alaykum! GSR LOGISTICS botiga xush kelibsiz — bu yerda yuklaringiz qayerdaligini, rasmlarini va balansingizni ko‘rasiz. Kabinetni ulash uchun telefon raqamingizni tasdiqlang — pastdagi tugmani bosing.',
+    ru: 'Здравствуйте! Добро пожаловать в бот GSR LOGISTICS — здесь вы видите, где ваши грузы, их фото и ваш баланс. Чтобы подключить кабинет, подтвердите свой номер телефона — нажмите кнопку ниже.',
+    en: 'Hello! Welcome to the GSR LOGISTICS bot — here you can see where your cargo is, its photos and your balance. To connect your cabinet, confirm your phone number — tap the button below.',
   },
   /** The self-service door (item 13): no link needed if the number matches. */
   linkByPhone: {

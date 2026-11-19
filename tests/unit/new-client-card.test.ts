@@ -1,8 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { createTranslator } from 'next-intl';
 import { describe, expect, it } from 'vitest';
 import { newClientPlan, notePlan, planMessageCount, type NoteFile, type NoteHead } from '@/modules/platform/notes/plan';
-import { cardStepVerdict, noteCardOf } from '@/modules/platform/notifications/note-card';
+import { cardStepVerdict, noteCardOf, SOURCE_UNREADABLE } from '@/modules/platform/notifications/note-card';
+import { CONNECT_PHASE } from '@/modules/platform/telegram/staff-group-rules';
+import { clientLabels } from '@/modules/platform/telegram/client-labels';
 import { isMijozStart, mijozStartUrl } from '@/modules/platform/telegram/mijoz-start';
-import { newClientFooter, newClientStaffText } from '@/modules/wms/client-card/address-card';
+import {
+  cardRecipient,
+  hasLinkablePhone,
+  newClientFooter,
+  newClientStaffText,
+} from '@/modules/wms/client-card/address-card';
+import { addressFlashOf } from '@/app/(protected)/admin/clients/address-flash';
 import { GS_REMINDER } from '@/modules/wms/agent/seed-kb';
 import { MAX_CAPTION_CHARS } from '@/modules/platform/telegram/limits';
 import { bodyOf, read, srcFiles } from '../fixtures/source-shape';
@@ -104,10 +114,15 @@ describe('the footer — his words, one home', () => {
     expect(lines).toHaveLength(3);
   });
 
-  it('the reminder is left out when the ticked notes already say it — 唛头 or markirovka, any case', () => {
-    for (const notesText of ['Har qutiga 唛头 yozing', 'MARKIROVKA: GS', 'markirovkani unutmang']) {
+  it('the reminder is left out only when the ticked notes already carry its CHINESE instruction (唛头)', () => {
+    const footer = newClientFooter({ code: 'GS1', notesText: 'Har qutiga 唛头 yozing', botUrl: null });
+    expect(footer).toBe('Markirovka / 唛头: GS1');
+  });
+
+  it('a passing Uzbek «markirovka» in a note keeps the reminder — the supplier reads only its Chinese half (review CUST-5)', () => {
+    for (const notesText of ['MARKIROVKA: GS', 'markirovkani unutmang', 'Markirovka: GS kod']) {
       const footer = newClientFooter({ code: 'GS1', notesText, botUrl: null });
-      expect(footer, notesText).toBe('Markirovka / 唛头: GS1');
+      expect(footer.split('\n'), notesText).toEqual(['Markirovka / 唛头: GS1', GS_REMINDER]);
     }
   });
 
@@ -125,25 +140,138 @@ describe('the footer — his words, one home', () => {
 });
 
 describe('the staff line', () => {
-  it('names the code and the client, counts the messages below it, the card link last', () => {
+  const plain = { noNote: false, noPhone: false, noBotLink: false, alreadyLinked: false } as const;
+
+  it('the code and the client alone on the first line, the instruction under it, the card link last', () => {
     const text = newClientStaffText({
       code: 'GS777',
       name: 'Bobur aka',
       messages: 2,
-      noNote: false,
-      alreadyLinked: false,
+      ...plain,
       cardUrl: 'https://app.example/admin/clients/1',
     });
-    expect(text).toBe('🆕 GS777 · Bobur aka — pastdagi 2 ta xabarni belgilab mijozga forward qiling\nhttps://app.example/admin/clients/1');
+    expect(text.split('\n')).toEqual([
+      '🆕 GS777 · Bobur aka',
+      'Pastdagi 2 ta xabarni belgilab mijozga forward qiling ⬇️',
+      'https://app.example/admin/clients/1',
+    ]);
+  });
+
+  it('the first line fits the drain’s 80-character bold title for an ordinary long name (review RG-2)', () => {
+    // The drain bolds a first line of at most 80 characters (staff-html.ts
+    // TITLE_MAX); the instruction once rode it and a 14-letter name pushed it past.
+    const name = 'Abdurahmonov Muhammadali Olimjon o‘g‘li';
+    const first = newClientStaffText({ code: 'GS10234', name, messages: 3, ...plain, cardUrl: null }).split('\n')[0]!;
+    expect(first).toBe(`🆕 GS10234 · ${name}`);
+    expect([...first].length).toBeLessThanOrEqual(80);
   });
 
   it('says the address is missing, and that the customer is already in the bot', () => {
-    const text = newClientStaffText({ code: 'GS1', name: 'A', messages: 1, noNote: true, alreadyLinked: true, cardUrl: null });
+    const text = newClientStaffText({ code: 'GS1', name: 'A', messages: 1, ...plain, noNote: true, alreadyLinked: true, cardUrl: null });
     expect(text.split('\n')).toEqual([
-      '🆕 GS1 · A — pastdagi 1 ta xabarni belgilab mijozga forward qiling',
+      '🆕 GS1 · A',
+      'Pastdagi 1 ta xabarni belgilab mijozga forward qiling ⬇️',
       '⚠ Manzil zametkasi belgilanmagan — bu xabarda sklad manzili yo‘q',
       'ℹ️ Mijoz botga allaqachon ulangan',
     ]);
+  });
+
+  it('a card with no phone is told the bot link cannot connect the customer (review CUST-1)', () => {
+    const text = newClientStaffText({ code: 'GS2', name: 'Ali', messages: 1, ...plain, noPhone: true, cardUrl: null });
+    expect(text.split('\n')).toContain(
+      '⚠ Mijoz kartasida telefon yo‘q — botdagi havola uni ulay olmaydi: raqamini kartaga yozdiring (admin)',
+    );
+  });
+
+  it('a card that went without its bot line says so (review CUST-6)', () => {
+    const text = newClientStaffText({ code: 'GS3', name: 'Ali', messages: 1, ...plain, noBotLink: true, cardUrl: null });
+    expect(text.split('\n').some((line) => line.startsWith('⚠ Bot havolasi qo‘shilmadi'))).toBe(true);
+    expect(newClientStaffText({ code: 'GS3', name: 'Ali', messages: 1, ...plain, cardUrl: null })).not.toContain('Bot havolasi');
+  });
+});
+
+describe('a phone the bot could ever match — the matcher’s own rule', () => {
+  it('needs an array with a number of at least seven digits; anything else is no phone', () => {
+    expect(hasLinkablePhone(['+998 90 123 45 67'])).toBe(true);
+    expect(hasLinkablePhone(['', '1234567'])).toBe(true);
+    for (const phones of [[], [''], ['12-34'], null, undefined, '+998901234567', [998901234567], { a: 1 }]) {
+      expect(hasLinkablePhone(phones), JSON.stringify(phones) ?? String(phones)).toBe(false);
+    }
+  });
+});
+
+describe('who gets the card (judge R14)', () => {
+  const reach = (entries: Record<string, 'ok' | 'no_chat' | 'muted'>) => new Map(Object.entries(entries));
+
+  it('the seller when the bot can reach him', () => {
+    expect(cardRecipient('s', 'p', reach({ s: 'ok', p: 'ok' }))).toEqual({ to: 's', outcome: 'seller' });
+  });
+
+  it('the presser only when the seller’s Telegram is not linked', () => {
+    expect(cardRecipient('s', 'p', reach({ s: 'no_chat', p: 'ok' }))).toEqual({ to: 'p', outcome: 'presser' });
+    expect(cardRecipient(null, 'p', reach({ p: 'ok' }))).toEqual({ to: 'p', outcome: 'presser' });
+  });
+
+  it('a seller who MUTED it gets nothing, and his choice is never moved onto the presser', () => {
+    expect(cardRecipient('s', 'p', reach({ s: 'muted', p: 'ok' }))).toEqual({ to: null, outcome: 'muted' });
+  });
+
+  it('nobody when nobody who could get it is reachable', () => {
+    expect(cardRecipient('s', 'p', reach({ s: 'no_chat', p: 'no_chat' }))).toEqual({ to: null, outcome: 'nobody' });
+    expect(cardRecipient('s', 's', reach({ s: 'no_chat' }))).toEqual({ to: null, outcome: 'nobody' });
+    expect(cardRecipient(null, null, reach({}))).toEqual({ to: null, outcome: 'nobody' });
+  });
+});
+
+describe('the outcome’s sentences, in all four bundles', () => {
+  const bundles = Object.fromEntries(
+    ['uz', 'ru', 'zh-CN', 'en'].map((locale) => [locale, JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8'))]),
+  ) as Record<string, Record<string, unknown>>;
+  const KEYS = [
+    'quick.addressPresser',
+    'quick.addressMuted',
+    'quick.addressNobody',
+    'quick.addressFailed',
+    'quick.addressSelfMuted',
+    'quick.addressSelfNobody',
+    'clients.addressInactive',
+  ];
+
+  it('every one formats (ICU-valid) and every outcome has words of its own', () => {
+    for (const [locale, messages] of Object.entries(bundles)) {
+      const t = createTranslator({
+        locale,
+        messages: messages as never,
+        onError: (error) => {
+          throw error;
+        },
+      }) as unknown as (key: string) => string;
+      const said = KEYS.map((key) => t(key));
+      for (const [i, line] of said.entries()) {
+        expect(line.trim(), `${locale} ${KEYS[i]}`).not.toBe('');
+        expect(line, `${locale} ${KEYS[i]}`).not.toContain(KEYS[i]!);
+      }
+      expect(new Set(said).size, locale).toBe(KEYS.length);
+    }
+  });
+
+  it('the presser and the muted cause are no longer one merged sentence (review P1-DOORS-2 / R14)', () => {
+    const quick = bundles.uz!.quick as Record<string, string>;
+    expect(quick.addressPresser).not.toContain('o‘chirgan');
+    expect(quick.addressMuted).toContain('o‘chirgan');
+    // The «+» speaks to the seller himself (CUST-8).
+    expect(quick.addressSelfNobody).toContain('Telegramingiz');
+    expect(quick.addressNobody).toContain('Sotuvchining');
+  });
+});
+
+describe('?manzil= — read as one of the closed set or as nothing', () => {
+  it('accepts the four outcomes the full form can redirect with', () => {
+    for (const word of ['presser', 'muted', 'nobody', 'failed'] as const) expect(addressFlashOf(word)).toBe(word);
+  });
+
+  it('draws nothing for anything else — the seller outcome, a typo, a repeated param', () => {
+    for (const raw of ['seller', 'NOBODY', '', 'x', undefined, null, ['nobody']]) expect(addressFlashOf(raw)).toBeNull();
   });
 });
 
@@ -189,6 +317,30 @@ describe('the drain’s cursor rules', () => {
     expect(verdict(0, 'getaddrinfo ENOTFOUND api.telegram.org')).toBe('retry');
     expect(verdict(400, 'Bad Request: chat not found')).toBe('retry');
     expect(verdict(500)).toBe('retry');
+  });
+
+  it('our own file that could not be read is retried — nothing can be in the chat (review P1-DLV-2)', () => {
+    const verdict = (description: string) => cardStepVerdict({ status: 0, description, retryAfter: null, botDown: false });
+    expect(verdict(`${SOURCE_UNREADABLE} sklad.jpg (staff_note/n/1): ENOENT ENOENT: no such file or directory`)).toBe('retry');
+    // A reset to MinIO reads «ECONNRESET» like a cut Telegram answer; the tag decides, not the words after it.
+    expect(verdict(`${SOURCE_UNREADABLE} sklad.jpg (staff_note/n/1): ECONNRESET socket hang up`)).toBe('retry');
+    // …and the shared connect-phase rule is untouched: the same reset from Telegram stays ambiguous.
+    expect(verdict('socket hang up ECONNRESET')).toBe('ambiguous');
+    expect(CONNECT_PHASE.source).toBe('\\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|UND_ERR_CONNECT_TIMEOUT)\\b');
+    // P1-DLV-5: the export reads as the house writes an assignment.
+    expect(read('src/modules/platform/telegram/staff-group-rules.ts')).toContain('export const CONNECT_PHASE = /\\b(');
+  });
+});
+
+describe('the customer who taps the bot line', () => {
+  it('reads ONE greeting that ends in the phone request — never askPhone’s own hello after a welcome (review CUST-4)', () => {
+    for (const locale of ['uz', 'ru', 'en'] as const) {
+      const t = clientLabels(locale);
+      const hello = { uz: 'Assalomu alaykum', ru: 'Здравствуйте', en: 'Hello' }[locale];
+      expect(t.mijozStart.split(hello).length - 1, locale).toBe(1);
+      expect(t.mijozStart.startsWith(hello), locale).toBe(true);
+      expect(t.mijozStart, locale).not.toContain(t.askPhone);
+    }
   });
 });
 
@@ -268,6 +420,40 @@ describe('the wires', () => {
     expect(body).not.toContain('rememberAdVisit');
     expect(body).toContain('await bareStart();');
     expect(body).toContain('reply_markup: phoneKeyboard(tg)');
+    // ONE message (review CUST-4): the greeting alone, never askPhone glued on.
+    expect(body).toContain('await ctx.reply(clientLabels(tg).mijozStart, { reply_markup: phoneKeyboard(tg) });');
+    expect(body).not.toContain('askPhone');
+    // The contact it asks for is the cabinet's (review CUST-2): an earlier
+    // advert visit and an earlier «Hodim» press are forgotten FIRST.
+    const ask = body.indexOf('await ctx.reply(clientLabels(tg).mijozStart');
+    expect(body.indexOf('clearAdVisit(ctx.chat.id);')).toBeGreaterThan(body.indexOf('await bareStart();'));
+    expect(body.indexOf('clearAdVisit(ctx.chat.id);')).toBeLessThan(ask);
+    expect(body.indexOf('dropStaffEntry(chatId);')).toBeGreaterThan(body.indexOf('await bareStart();'));
+    expect(body.indexOf('dropStaffEntry(chatId);')).toBeLessThan(ask);
+  });
+
+  it('the screens: the flash steps aside once the button answers, the 🆕 tick answers at once, the AI link opens the knowledge', () => {
+    const button = read('src/app/(protected)/admin/clients/address-card-button.tsx');
+    // CUST-7: «went nowhere» never stands over «✅ Yuborildi».
+    expect(button).toContain('{flash && said === null && (');
+    const page = read('src/app/(protected)/admin/clients/[id]/page.tsx');
+    // P1-DOORS-4: no resend button on a deactivated code; the flash read from the closed set.
+    expect(page).toContain('{client.active && <AddressCardButton clientId={client.id} flash={addressFlash} />}');
+    expect(page).toContain('const addressFlash = addressFlashOf(manzil);');
+    const list = read('src/app/(protected)/zametkalar/note-list.tsx');
+    // CUST-9: the box shows the press until the round trip lands, and a refusal takes it back.
+    expect(list).toContain('checked={flagShown(note)}');
+    expect(list).toContain('setPressed((all) => ({ ...all, [note.id]: { want: on, from: note.forNewClient } }));');
+    const refused = list.slice(list.indexOf('const res = await setNewClientFlagAction(note.id, on)'), list.indexOf('if (on) setDrift(true);'));
+    expect(refused).toContain('if (res.error) {');
+    expect(refused).toContain('delete rest[note.id];');
+    // CUST-3: the knowledge tab, not the page's default section.
+    expect(list).toContain('href="/suhbatlar/ai?bolim=bilimlar"');
+    // CUST-8: the «+» says it TO the seller, who is the presser there.
+    const quick = read('src/components/quick-create.tsx');
+    expect(quick).toContain("t('addressSelfNobody')");
+    expect(quick).toContain("t('addressSelfMuted')");
+    expect(quick).not.toContain("t('addressNobody')");
   });
 
   it('the reminder has ONE home: the footer imports it, never restates it', () => {

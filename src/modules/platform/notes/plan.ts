@@ -124,7 +124,9 @@ function stepsFor(caption: string, files: NoteFile[]): NoteSend[] {
  *   - the files: every part, in note order and then part order;
  *   - text ≤ 1024 with any file → the caption rides the first file; otherwise
  *     the text goes first (split, never cut) and the files after it, bare —
- *     always contiguous, so nothing else lands between them in the chat.
+ *     always contiguous, so nothing else lands between them in the chat (a
+ *     card that stops part-way holds the seller's other rows back until its
+ *     remainder has gone — the drain's `heldFor`, review P1-DLV-4).
  *
  * `notes` arrive read through the visibility rule and in their order, `files`
  * in note order then part order. `messages` is counted from the SAME steps

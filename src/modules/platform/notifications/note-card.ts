@@ -49,6 +49,15 @@ export function noteCardOf(payload: Record<string, unknown>): NoteCard | null {
 }
 
 /**
+ * The first word of a step's failure when OUR OWN bytes could not be read —
+ * the object store said no (a missing key, a MinIO 5xx, a reset to it) before
+ * or while the upload was streamed. Written by the zametka sender
+ * (telegram/note-send.ts `stepFailure`), read here; a constant beside the
+ * verdict, so the two can never spell it apart.
+ */
+export const SOURCE_UNREADABLE = 'source_unreadable';
+
+/**
  * What one step's failure means for the row — the price channel's rule
  * (calc/channel-send.ts) for the same reason: a message that may already be
  * in the chat is never sent again by the machine.
@@ -56,8 +65,12 @@ export function noteCardOf(payload: Record<string, unknown>): NoteCard | null {
  *   - `pause`     — a 429, or the bot's token refused: the drain's own pause,
  *                   the row handed back with its cursor untouched;
  *   - `retry`     — Telegram answered «no» to THIS attempt (a 4xx, a 500/503),
- *                   or the connect itself failed (nothing left the machine):
- *                   the drain counts an attempt and the next run starts here;
+ *                   or the connect itself failed (nothing left the machine),
+ *                   or our own file could not be read (the multipart body
+ *                   never completed, so Telegram cannot have made a message
+ *                   of it): the drain counts an attempt and the next run
+ *                   starts here — and when the bytes never come back, the
+ *                   budget runs out and the row says which file it was;
  *   - `ambiguous` — our deadline, a reset socket, a 502/504: the message may
  *                   be in the chat. Marked `maybe`, stepped over, never
  *                   repeated — a duplicate forward to a customer is worse than
@@ -74,6 +87,9 @@ export function cardStepVerdict(answer: {
   if (answer.botDown || answer.status === 401 || answer.status === 404) return 'pause';
   if (answer.status === 0) {
     if (answer.description === 'no_bot_token') return 'retry';
+    // Asked BEFORE the connect-phase words: a reset to MinIO reads «ECONNRESET»
+    // too, and that one is ours, not Telegram's (review P1-DLV-2).
+    if (answer.description.startsWith(SOURCE_UNREADABLE)) return 'retry';
     return CONNECT_PHASE.test(answer.description) ? 'retry' : 'ambiguous';
   }
   if (answer.status === 502 || answer.status === 504) return 'ambiguous';

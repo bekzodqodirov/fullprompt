@@ -8,6 +8,7 @@ import {
   rememberFileId,
 } from '../notes/service';
 import { cachedFileId, notePlan, planMessageCount, type NoteFile, type NoteSend } from '../notes/plan';
+import { SOURCE_UNREADABLE } from '../notifications/note-card';
 import { MEDIA_GROUP_MIN } from './limits';
 
 /**
@@ -138,8 +139,16 @@ export async function sendPlan(
     try {
       ids = await attemptStep(api, chatId, step, opts.silent === true);
     } catch (err) {
-      logger.warn({ err, kind: step.kind, index }, 'note plan step not sent');
-      return { sent, failed: failed + 1, stop: { index, ...stepFailure(err) } };
+      // The words, redacted — never the raw error: grammy's HttpError carries
+      // node-fetch's own error, whose message IS the request URL, and that
+      // URL holds the bot's token (review P1-DLV-1). The drain stores these
+      // words as the row's `error` and logs them; the token reaches neither.
+      const failure = stepFailure(err, api.token);
+      logger.warn(
+        { kind: step.kind, index, status: failure.status, description: failure.description },
+        'note plan step not sent',
+      );
+      return { sent, failed: failed + 1, stop: { index, ...failure } };
     }
     sent += 1;
     await opts.onStep?.(index, ids);
@@ -153,20 +162,84 @@ export async function sendPlan(
  * is spelled out, because «was this a refused CONNECT (nothing left the
  * machine) or a cut-off answer (the message may be in the chat)» is decided on
  * those words (the price channel's rule).
+ *
+ * Two things are decided HERE, before the words leave this file:
+ *   - our own file that could not be read is said as such
+ *     (`SOURCE_UNREADABLE` first, then which file): a missing key or a MinIO
+ *     reset is not «an answer that never came» (review P1-DLV-2) — the
+ *     multipart body never completed, so nothing can be in the chat;
+ *   - the bot's token is cut out of every word kept (`redactToken`):
+ *     node-fetch's message is the request URL, `…/bot<TOKEN>/sendPhoto`.
  */
-function stepFailure(err: unknown): Omit<PlanStop, 'index'> {
+export function stepFailure(err: unknown, token?: string): Omit<PlanStop, 'index'> {
   if (err instanceof GrammyError) {
-    return { status: err.error_code, description: err.description, retryAfter: err.parameters?.retry_after ?? null };
+    return {
+      status: err.error_code,
+      description: redactToken(err.description, token),
+      retryAfter: err.parameters?.retry_after ?? null,
+    };
   }
+  const unreadable = unreadableIn(err);
+  if (unreadable) {
+    return {
+      status: 0,
+      description: redactToken([unreadable.message, ...causeWords(unreadable.cause)].join(' '), token),
+      retryAfter: null,
+    };
+  }
+  const words = causeWords(err instanceof HttpError ? err.error : err);
+  if (err instanceof HttpError) words.unshift(err.message);
+  return { status: 0, description: redactToken(words.join(' ') || String(err), token), retryAfter: null };
+}
+
+/** The code/errno/message words of an error and its causes — what CONNECT_PHASE reads. */
+function causeWords(err: unknown): string[] {
   const words: string[] = [];
-  let cause: unknown = err instanceof HttpError ? err.error : err;
+  let cause: unknown = err;
   for (let depth = 0; cause && depth < 4; depth += 1) {
     const one = cause as { message?: unknown; code?: unknown; errno?: unknown; cause?: unknown };
     for (const part of [one.code, one.errno, one.message]) if (typeof part === 'string') words.push(part);
     cause = one.cause;
   }
-  if (err instanceof HttpError) words.unshift(err.message);
-  return { status: 0, description: words.join(' ') || String(err), retryAfter: null };
+  return words;
+}
+
+/**
+ * The bot's token out of any words we keep. A fetch error's message is its
+ * request URL (`http://…/bot123456:AA…/sendMessage`), and grammy keeps it out
+ * of its own message on purpose (`sensitiveLogs`) — so the cause chain we
+ * spell out must cut it too: by shape (`/bot<anything>`), and by the token's
+ * own text wherever else it might sit.
+ */
+export function redactToken(text: string, token?: string): string {
+  let out = text.replace(/\/bot[^/\s]+/g, '/bot<token>');
+  if (token) out = out.split(token).join('<token>');
+  return out;
+}
+
+/**
+ * Our OWN bytes could not be read: the object store refused the key, or the
+ * stream it gave broke while Telegram was being sent it. Thrown by `ownBytes`
+ * and handed back by grammy unchanged as `HttpError.error` (its multipart
+ * stream reports a source's failure through the call's own rejection).
+ */
+class SourceUnreadable extends Error {
+  readonly code = 'SOURCE_UNREADABLE';
+  constructor(file: Pick<NoteFile, 'fileName' | 'storageKey'>, cause: unknown) {
+    super(`${SOURCE_UNREADABLE} ${file.fileName} (${file.storageKey}):`, { cause });
+    this.name = 'SourceUnreadable';
+  }
+}
+
+/** The `SourceUnreadable` in an error's chain, if one is there (grammy wraps it once). */
+function unreadableIn(err: unknown): SourceUnreadable | null {
+  let cause: unknown = err;
+  for (let depth = 0; cause && depth < 4; depth += 1) {
+    if (cause instanceof SourceUnreadable) return cause;
+    const one = cause as { error?: unknown; cause?: unknown };
+    cause = one.error ?? one.cause;
+  }
+  return null;
 }
 
 /** The drain's sends go through a grammy Api of their own (it has no bot); made once per token. */
@@ -201,11 +274,12 @@ async function sendStep(api: Api, chatId: bigint, step: NoteSend, silent: boolea
       try {
         return await attemptStep(api, chatId, step, silent);
       } catch (again) {
-        logger.warn({ err: again, kind: step.kind }, 'note send failed after 429');
+        // The redacted words, never the raw error — its fetch cause is the token's URL (P1-DLV-1).
+        logger.warn({ kind: step.kind, description: stepFailure(again, api.token).description }, 'note send failed after 429');
         return null;
       }
     }
-    logger.warn({ err, kind: step.kind }, 'note send failed');
+    logger.warn({ kind: step.kind, description: stepFailure(err, api.token).description }, 'note send failed');
     return null;
   }
 }
@@ -245,30 +319,40 @@ async function sendMedia(
   silent: boolean,
 ): Promise<number[]> {
   if (step.files.length >= MEDIA_GROUP_MIN) {
-    const media = await Promise.all(
-      step.files.map(async (file, index) => ({
-        type: step.as === 'photo' ? ('photo' as const) : ('document' as const),
-        media: await source(file),
-        ...(index === 0 && step.caption ? { caption: step.caption } : {}),
-      })),
-    );
-    // The response is an ARRAY, one message per item, and the ids must be
-    // mapped back BY THE PLAN'S OWN INDEX. Get that wrong and one warehouse's
-    // address sheet is cached onto another warehouse's note — a customer is
-    // then sent the wrong address, silently, with a cache that looks healthy.
-    // So: only when the lengths agree, and only positionally.
-    const out = await api.sendMediaGroup(
-      chat,
-      media as Parameters<Api['sendMediaGroup']>[1],
-      quietly(undefined, silent),
-      signal,
-    );
-    if (out.length === step.files.length) {
-      for (let i = 0; i < out.length; i += 1) {
-        await cacheFrom(step.files[i]!, out[i], step.as);
+    try {
+      return await sendGroup(api, chat, step, signal, silent);
+    } catch (err) {
+      // A media group is all-or-nothing on a refusal: when Telegram says «no»,
+      // no member of it is in the chat, so ONE resend — still as one call, so
+      // the album stays an album — cannot double anything. The single photo
+      // below has had both repairs since 📌 shipped; an album had neither, and
+      // the new-client card merges every ticked note's files into one
+      // (review P1-DLV-3).
+      const cached = step.files.filter((file) => cachedFileId(file) !== null);
+      if (isUnknownFileId(err) && cached.length > 0) {
+        // Which member's id Telegram forgot is not said, so every cached one
+        // is cleared and the whole group goes as bytes.
+        for (const file of cached) await forgetFileId(file.partId).catch(() => {});
+        const fresh = step.files.map((file) => ({ ...file, telegramFileId: null, telegramSentAs: null }));
+        return await sendGroup(api, chat, { ...step, files: fresh }, AbortSignal.timeout(SEND_TIMEOUT_MS), silent);
       }
+      if (step.as === 'photo' && isPhotoShapeRefusal(err)) {
+        // Which member Telegram refused is not said either, so the group goes
+        // as DOCUMENTS this once — and the downgrade is NOT persisted: the
+        // culprit is unknown, and persisting would turn good photos into
+        // documents for every later tap. Sourced as documents, so an id
+        // Telegram minted for a PHOTO is never offered to a document slot.
+        const asDocuments = step.files.map((file) => ({ ...file, sendAs: 'document' as const }));
+        return await sendGroup(
+          api,
+          chat,
+          { ...step, as: 'document', files: asDocuments },
+          AbortSignal.timeout(SEND_TIMEOUT_MS),
+          silent,
+        );
+      }
+      throw err;
     }
-    return idsOf(out);
   }
 
   const file = step.files[0]!;
@@ -314,15 +398,99 @@ async function sendMedia(
   }
 }
 
+/** One media group, sent; its ids cached by the plan's own index. */
+async function sendGroup(
+  api: Api,
+  chat: number,
+  step: Extract<NoteSend, { kind: 'media' }>,
+  signal: AbortSignal,
+  silent: boolean,
+): Promise<number[]> {
+  const media = await Promise.all(
+    step.files.map(async (file, index) => ({
+      type: step.as === 'photo' ? ('photo' as const) : ('document' as const),
+      media: await source(file),
+      ...(index === 0 && step.caption ? { caption: step.caption } : {}),
+    })),
+  );
+  // The response is an ARRAY, one message per item, and the ids must be
+  // mapped back BY THE PLAN'S OWN INDEX. Get that wrong and one warehouse's
+  // address sheet is cached onto another warehouse's note — a customer is
+  // then sent the wrong address, silently, with a cache that looks healthy.
+  // So: only when the lengths agree, and only positionally.
+  const out = await api.sendMediaGroup(
+    chat,
+    media as Parameters<Api['sendMediaGroup']>[1],
+    quietly(undefined, silent),
+    signal,
+  );
+  if (out.length === step.files.length) {
+    for (let i = 0; i < out.length; i += 1) {
+      await cacheFrom(step.files[i]!, out[i], step.as);
+    }
+  }
+  return idsOf(out);
+}
+
 /**
  * The id Telegram already has for these bytes, or the bytes themselves —
  * streamed, never buffered, so a 25 MB document is not held in the one Node
  * process that also serves every screen.
+ *
+ * The stored file is read through `ownBytes`, which says so when OUR read is
+ * what broke (`SourceUnreadable`) — the store refusing the key, or its stream
+ * breaking mid-upload — so the drain can tell «our bytes never came» from
+ * «Telegram's answer never came» (review P1-DLV-2).
  */
 async function source(file: NoteFile): Promise<InputFile | string> {
   const cached = cachedFileId(file);
   if (cached) return cached;
-  return new InputFile(() => getStorage().getStream(file.storageKey), file.fileName);
+  const stored = new InputFile(() => getStorage().getStream(file.storageKey), file.fileName);
+  return new InputFile(ownBytes(stored, file), file.fileName);
+}
+
+/**
+ * The stored file's bytes, as grammy will stream them, with every failure OF
+ * THE READ tagged. Iterated by hand, not by `for await`, so only the store's
+ * own errors are ours: an abort grammy throws in at the `yield` is grammy's,
+ * and passes through untagged.
+ */
+async function* ownBytes(stored: InputFile, file: NoteFile): AsyncGenerator<Uint8Array, void, undefined> {
+  let data: Uint8Array | Iterable<Uint8Array> | AsyncIterable<Uint8Array>;
+  try {
+    data = await stored.toRaw();
+  } catch (err) {
+    throw new SourceUnreadable(file, err);
+  }
+  if (data instanceof Uint8Array) {
+    yield data;
+    return;
+  }
+  const iterator: AsyncIterator<Uint8Array> | Iterator<Uint8Array> =
+    Symbol.asyncIterator in data
+      ? (data as AsyncIterable<Uint8Array>)[Symbol.asyncIterator]()
+      : (data as Iterable<Uint8Array>)[Symbol.iterator]();
+  let finished = false;
+  try {
+    for (;;) {
+      let next: IteratorResult<Uint8Array>;
+      try {
+        next = await iterator.next();
+      } catch (err) {
+        finished = true;
+        throw new SourceUnreadable(file, err);
+      }
+      if (next.done) {
+        finished = true;
+        return;
+      }
+      yield next.value;
+    }
+  } finally {
+    // Stopped part-way (an abort, a refused upload): close the store's stream,
+    // or a file handle / a MinIO socket is left open for the process's life.
+    if (!finished) await Promise.resolve(iterator.return?.()).catch(() => {});
+  }
 }
 
 async function cacheFrom(

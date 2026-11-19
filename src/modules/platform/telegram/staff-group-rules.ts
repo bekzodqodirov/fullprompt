@@ -53,7 +53,7 @@ export function botCanPost(member: { status: string; can_send_messages?: boolean
  * Exported for the new-client card's cursor (notifications/note-card.ts), the
  * other platform sender that must never post twice.
  */
-export const CONNECT_PHASE =/\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|UND_ERR_CONNECT_TIMEOUT)\b/;
+export const CONNECT_PHASE = /\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|UND_ERR_CONNECT_TIMEOUT)\b/;
 /** A refusal about the GROUP, not the post — the bot was removed or silenced. */
 const GROUP_REFUSAL =
   /chat not found|not enough rights|have no rights|not a member|CHAT_WRITE_FORBIDDEN|bot was kicked|CHAT_RESTRICTED|group chat was deactivated/i;

@@ -65,7 +65,11 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   await page.locator('main form button[type="submit"]').first().click();
   // Saving lands on the new client CARD so the assigned code is visible
   // (owner: the list hid what code the system gave).
-  await expect(page).toHaveURL(/\/admin\/clients\/[0-9a-f-]{36}$/);
+  // The address card (0151): when it did not go to the seller, the outcome
+  // rides the address — and here it never can, because no demo person has a
+  // linked Telegram, so the card's sentence is on the page.
+  await expect(page).toHaveURL(/\/admin\/clients\/[0-9a-f-]{36}(\?manzil=(presser|nobody|muted|failed))?$/);
+  await expect(page.getByTestId('address-card-flash')).toBeVisible();
   // The heading, not any text on the page: a custom LOOKUP field pointing at
   // clients is a configuration the owner may legitimately add, and it puts
   // every client's name into an <option> on this very card.

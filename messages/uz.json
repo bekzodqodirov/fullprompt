@@ -653,7 +653,8 @@
     "addressResend": "📨 Manzil xabarini menga yuborish",
     "addressResent": "✅ Yuborildi — Telegramingizni oching.",
     "addressNoChat": "⚠ Telegramingiz botga ulanmagan — avval Profil bo‘limidan ulang.",
-    "addressFailed": "⚠ Yuborib bo‘lmadi — qaytadan urinib ko‘ring."
+    "addressFailed": "⚠ Yuborib bo‘lmadi — qaytadan urinib ko‘ring.",
+    "addressInactive": "⚠ Bu kod o‘chirilgan — manzil xabari yuborilmaydi."
   },
   "users": {
     "title": "Xodimlar",
@@ -4594,8 +4595,12 @@
     },
     "back": "← Orqaga",
     "actions": "Tezkor harakatlar",
-    "addressPresser": "Manzil xabari sotuvchiga bormaydi (Telegrami ulanmagan yoki bu xabarlarni o‘chirgan) — u sizga yuborildi.",
-    "addressNobody": "Manzil xabari hech kimga yuborilmadi: sotuvchining Telegrami ulanmagan yoki u bu xabarlarni o‘chirgan. Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasidan oling."
+    "addressPresser": "Sotuvchining Telegrami ulanmagan — manzil xabari sizga yuborildi.",
+    "addressMuted": "Sotuvchi bu xabarlarni profilida o‘chirgan — manzil xabari yuborilmadi.",
+    "addressNobody": "Sotuvchining Telegrami botga ulanmagan — manzil xabari hech kimga yuborilmadi. Mijoz kartasidagi «📨 Manzil xabarini menga yuborish» tugmasidan oling.",
+    "addressFailed": "Manzil xabarini yuborib bo‘lmadi — mijoz kartasidan «📨» bilan qayta yuboring.",
+    "addressSelfMuted": "Siz bu xabarlarni profilingizda o‘chirgansiz — manzil xabari yuborilmadi (Profil → Telegram xabarlari).",
+    "addressSelfNobody": "Telegramingiz botga ulanmagan — manzil xabari yuborilmadi (Profil → Telegram)."
   },
   "routing": {
     "title": "Arizalar taqsimoti",
