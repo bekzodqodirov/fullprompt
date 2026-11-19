@@ -1,5 +1,84 @@
 # CHANGELOG
 
+## 2026-11-19 — Yangi kodga manzil xabari va to'liq «Hisob tayyor»
+
+Sizning so'zlaringiz: «klient code ochilganda sklad adresi zametkada bor yokida shunday joy qilib ber … code berganda
+shu adreslar va botga ssilka qoshilib berilsin telegramga kelsin sotuvchilar shuni ozini pereslat qilishsin» va
+«sotuvchilarga hsob kelganda … narxni oziemas toliqroq qaysi klient qaysi bitim yokida crm qaysi lid qanday tovar …
+leadga ssilka kelsin». Javoblaringiz: hammasi ⭐, faqat 5 («Xitoy sklad» zametkasida 3 manzil va rasm bor) va 9
+($/kub ham qo'shilsin).
+
+**Migratsiya bor: 0151.** Deploydan keyin son **152** bo'lishi, `/api/version` bugungi vaqtni ko'rsatishi kerak.
+Qadamlar: `docs/UPDATE.md` → «Yangi kodga manzil xabari va to'liq «Hisob tayyor» (2026-11-19, 0151)».
+
+### Yangi mijoz kodi ochilganda
+- Kodni ochgan zahoti **mijozning sotuvchisiga** staff botda xabar keladi:
+  - avval sotuvchiga ko'rsatma: «🆕 GS777 · Ism / Pastdagi N ta xabarni belgilab mijozga forward qiling ⬇️» va mijoz
+    kartasini ochadigan tugma;
+  - keyin mijozga ketadigan qism: «🆕 Yangi mijozga» belgisi qo'yilgan zametkalar (sizning «Xitoy sklad» — 3 manzil
+    va rasm), oxirida tizim o'zi qo'shadi:
+    «Markirovka / 唛头: GS777», sizning eslatmangiz («Yuklaringizni joʻnatishdan oldin GS kodini … 发货前请不要忘记标注GS编码（唛头）。»)
+    va botga ssilka.
+  - Sotuvchi shu qismni belgilab mijozga forward qiladi — ichida hech qanday ichki ssilka yoki tugma yo'q.
+- Qayerdan kod ochilsa: «+» tugmasi, Mijozlar sahifasidagi forma, lid «Yutildi». Excel importida — **yo'q**.
+- **Botga ssilka hamma uchun bitta.** Mijoz bosadi → bot salomlashib raqamini so'raydi → raqam kartadagi bilan bir xil
+  bo'lsa, o'zi ulanadi (shu raqamdagi hamma kodlari bilan). Ssilka sir emas: zavodga yetib borsa ham, hech kim boshqaning
+  yukini ko'rmaydi. Raqam kartadagidan boshqa bo'lsa — bot «topilmadi, menejeringizga murojaat qiling» deydi va raqamni
+  kartaga **ofis** qo'shadi (oldingidek).
+- Sotuvchining Telegrami botga ulanmagan bo'lsa — xabar kodni ochgan odamga boradi va ekranda shunday yoziladi. Sotuvchi
+  bu xabarni profilida o'chirgan bo'lsa — hech kimga yuborilmaydi va ekranda aytiladi. Sotuvchining o'zi ochgan bo'lsa,
+  gap «Telegramingiz…» deb unga qaratiladi.
+- Ko'rsatmada ogohlantirishlar: kartada telefon yo'q bo'lsa («botdagi havola uni ulay olmaydi»), hech qaysi zametka
+  belgilanmagan bo'lsa («bu xabarda sklad manzili yo'q»), bot ssilkasi qo'shilmagan bo'lsa, mijoz botga allaqachon
+  ulangan bo'lsa.
+- **Eski mijozlar uchun:** mijoz kartasida «📨 Manzil xabarini menga yuborish» tugmasi — bosgan odamning Telegramiga
+  xuddi shu xabar keladi. O'chirilgan kodda tugma chiqmaydi.
+- Profilda yangi katak: «Yangi mijoz xabari» — sotuvchi xohlasa o'chiradi.
+- Rasm yoki fayl serverdan o'qilmay qolsa, qolgan qismi baribir ketadi va oxirida bitta qator keladi: «⚠ N ta fayl
+  o‘qilmadi va yuborilmadi — yuqoridagi xabar to‘liq emas…» — shunda «📨» bilan qayta oling.
+- Deploy paytida xabar yarmida uzilib qolsa, qayta ishga tushganda qolgan joyidan davom etadi, bir xil rasm ikki marta
+  ketmaydi, va shu sotuvchining boshqa xabarlari o'rtaga kirib qolmaydi.
+
+### Zametkalar
+- Kompaniya zametkasida (hammaga ko'rinadigan) «🆕 Yangi mijozga yuborilsin» belgisi. Belgini «Sozlamalar» huquqi borlar
+  qo'yadi. Bir nechta zametka belgilansa, hammasi bitta xabar bo'lib, tartibi bo'yicha ketadi.
+- Belgili zametkani saqlaganda yoki belgilaganda eslatma chiqadi: AI sotuvchi bilimida ham Xitoy manzillari bor —
+  o'zgarsa, u yerda ham tuzating (ssilkasi bilan).
+- Belgili zametkani «Shaxsiy» qilsangiz, belgi olib tashlanadi (tasdiq oynasida aytiladi).
+
+### Hisob kelganda sotuvchiga
+- «🧮 Hisob tayyor» (VED muhrlaganda) va «✅ Hisoblash tayyor» (VED «Готово» bosganda) endi to'liq:
+  ```
+  🧮 Hisob tayyor — V2: B-00123
+  👤 Mijoz: GS777 · Bobur aka
+  📋 Kurtkalar partiyasi
+  🛃 Rastamojka · Yiwu → Toshkent
+  📦 Kurtka, Shim, Krossovka +4 · 1 250 kg · 8.4 m³
+  💵 $4 820.00 · $573.81/m³
+  ⏳ 25.11.2026 gacha amal qiladi
+  [↗️ Bitimni ochish]
+  ```
+- Lid bo'lsa — lid nomi, telefoni va kompaniyasi (lidni ocha oladigan odamga).
+- **$/kub** (sizning 9): muhrlanganda — hisobning o'z $/kub'i; «Готово» javobida — summa ÷ so'rovdagi kub. Faqat dollarda;
+  kub yo'q bo'lsa chiqmaydi.
+- «Olindi», «qaytarildi», «qayta hisoblanmoqda» xabarlari ham shu sarlavhani oladi.
+- Summa bilan $/kub bitta yozuvda chiqadi ($4 820.00 — kanaldagi kabi), bir sent ham boshqacha yaxlitlanmaydi.
+- Tugma endi aniq: «↗️ Lidni ochish» / «↗️ Bitimni ochish» / VED'ga «↗️ Hisobni ochish», va har kimga o'zi ocha oladigan
+  sahifani ochadi (oldin ba'zilarga ochilmaydigan sahifa ochilardi).
+- Xabar hisobni so'ragan sotuvchiga va — bitim yoki lid hozir boshqa sotuvchida bo'lsa — unga ham boradi (AI sotuvchi
+  narx beradigan ishlarga qo'shimcha xabar yo'q).
+- Muhrlash, olish, qaytarish yoki qayta hisoblashdan keyin biror yozuv xato bersa ham, xabar yo'qolmaydi.
+
+### Bilib qo'ying
+- AI sotuvchining Xitoy manzillari va zametka — ikki alohida nusxa. Manzil o'zgarsa, ikkalasini ham tuzating.
+- Raqami kartadagidan boshqa mijozni sotuvchi o'zi ulay olmaydi — ofis raqamni kartaga qo'shadi.
+
+### Sizga ikki savol (⭐ = hozir shunday qurilgan)
+1. Sotuvchi «Yangi mijoz xabari»ni profilida o'chira olsinmi? **a)** ha, o'chira oladi va bu sizga hech qayerda
+   ko'rinmaydi ⭐ · **b)** ha, lekin kim o'chirganini sizga ko'rsataylik · **c)** yo'q, bu xabarni o'chirib bo'lmasin.
+2. Mijozning Telegram raqami kartadagidan boshqa bo'lsa: **a)** ofis raqamni kartaga qo'shadi, keyin mijoz o'zi ulanadi
+   ⭐ · **b)** sotuvchiga ham kartaga raqam qo'shish ruxsatini beraylik.
+
 ## 2026-11-18 — Sotuvchilar skladdagi yuklarni, furalarni va skladlarni ko'radi
 
 Sizning so'zingiz: «sotuvchilarga ham skladdagi yuklarni korishga ruxsat ochib berish kerak furalarga va skladlarni
