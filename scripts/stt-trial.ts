@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
-import { attachments, tgMessageFlags, tgMessages } from '../src/modules/platform/db/schema';
+import { attachments, tgChatRules, tgMessageFlags, tgMessages } from '../src/modules/platform/db/schema';
 import { getStorage } from '../src/modules/platform/files/storage';
 
 /**
@@ -43,12 +43,15 @@ import { getStorage } from '../src/modules/platform/files/storage';
  * the mounted folder, never the database or the object store.
  *
  * WHAT LEAVES, and nothing else: an INCOMING customer voice note — a
- * `tg_message` attachment, `audio/*`, named `voice_<msgId>.<ext>` (the name the
- * listener gives a voice note and nothing else), on a message whose direction
- * is 'in' and that the customer has not deleted. His permission (16.1) is for
- * customers' voice notes; a photo id pasted by mistake, an audio FILE the
- * customer sent (a forwarded call recording, an mp3), a call recording or our
- * own side's note is refused by name and never sent. Every provider gets the SAME bytes,
+ * `tg_message` attachment, `audio/*`, named `voice_<msgId>.<ext>` where msgId is
+ * THAT message's own Telegram id (the name the listener gives a voice note and
+ * nothing else), on a message whose direction is 'in', that the customer has
+ * not deleted, in a chat its holder has not marked personal («🚫 Shaxsiy»).
+ * His permission (16.1) is for customers' voice notes; a photo id pasted by
+ * mistake, an audio FILE the customer sent (a forwarded call recording, an mp3
+ * — even one its sender named `voice_123.ogg`), a call recording, our own
+ * side's note or a note from a chat the holder said is not business is refused
+ * by name and never sent. Every provider gets the SAME bytes,
  * untranscoded (the image has no ffmpeg, critic §2); the one change is the NAME
  * — Telegram stores `voice_<id>.oga` and OpenAI decides the format by the
  * extension and lists `.ogg`, not `.oga` [critic §2, m], so the file goes as
@@ -75,7 +78,12 @@ import { getStorage } from '../src/modules/platform/files/storage';
  * the audio goes in; unset = `file`). The answer is read by looking for a
  * `text` / `transcript` / `transcription` string, at the top or inside
  * `result` / `data`; a service that answers with a job id to poll is not
- * followed — its raw answer is printed so the lead sees its shape.
+ * followed — its raw answer is printed so the lead sees its shape. A 200 whose
+ * body says it failed (`error`, `success: false`, `status: "error"`) is a
+ * failure, not an empty transcript — M6 counts «» as a trap passed — and every
+ * empty transcript keeps the raw answer beside it, so a failure shape this
+ * reader does not know is still visible to the person scoring. Only the
+ * ORIGIN of STT_UZ_URL is ever printed or written: a token may sit in its path.
  *
  * UNVERIFIED: every endpoint, header, field and model name below is the
  * provider's own as read from critic-stt.md §2 (search extracts) and from
@@ -129,8 +137,23 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
  * line between his permission (customers' voice notes) and a forwarded call
  * recording or an mp3 under the same `audio/*` — the same thing `mediaOf`
  * (agent/context.ts) reads it by.
+ *
+ * The shape alone is only the first fence: an audio FILE keeps the name its
+ * SENDER gave it (`givenName || …` in tgMediaPlan), so a customer's recording
+ * called `voice_42.ogg` matches it too. What a sender cannot choose is the id
+ * of the message carrying it — our side's id, minted by Telegram when it
+ * arrives — and both writers name the note after exactly that message
+ * (tg-listen's `saveMediaFor` and tg-import's backfill both call
+ * `tgMediaPlan(msg.media, msg.id)` and pin the file to that message's row).
  */
 const VOICE_NOTE_NAME = /^voice_\d+\.[a-z0-9]+$/iu;
+
+/** Exactly `voice_<this message's tg id>.<ext>` — a digit more, a digit less or a leading zero is somebody else's name. */
+function isVoiceNoteOf(fileName: string, tgMessageId: bigint | null): boolean {
+  if (tgMessageId === null || !VOICE_NOTE_NAME.test(fileName)) return false;
+  // The stem ends at the dot, so `voice_12.` cannot be the start of `voice_123.oga`.
+  return fileName.startsWith(`voice_${tgMessageId.toString()}.`);
+}
 
 type ProviderName = 'elevenlabs' | 'openai' | 'uz';
 type Lang = 'auto' | 'uz' | 'ru';
@@ -187,10 +210,13 @@ function redactKeys(s: string): string {
 }
 
 /**
- * STT_UZ_URL as a secret: whole (as typed and as normalised) and by each query
- * value — a service may take its token as `?key=…` under any name, and an error
- * text (undici's among them) may quote the address it was given. Longest first,
- * so the whole address goes before its pieces.
+ * STT_UZ_URL as a secret: whole (as typed and as normalised), by each query
+ * value — a service may take its token as `?key=…` under any name — and by each
+ * LONG path segment, since another takes it as `/v1/<token>/stt`; an error text
+ * (undici's among them, or the service echoing the path it was asked) may quote
+ * any of them. Sixteen characters is past every path word a service names its
+ * endpoint with («transcriptions» is 14) and short of any token worth the name.
+ * Longest first, so the whole address goes before its pieces.
  */
 function urlSecrets(): { whole: string[]; parts: string[] } {
   const raw = process.env.STT_UZ_URL?.trim();
@@ -209,6 +235,15 @@ function urlSecrets(): { whole: string[]; parts: string[] } {
         parts.push(decodeURIComponent(v.replace(/\+/gu, ' ')));
       } catch {
         // a malformed escape — the raw form above is the one an error would quote
+      }
+    }
+    for (const segment of u.pathname.split('/')) {
+      if (segment.length < 16) continue;
+      parts.push(segment);
+      try {
+        parts.push(decodeURIComponent(segment));
+      } catch {
+        // a malformed escape — the raw segment is already on the list
       }
     }
   } catch {
@@ -238,9 +273,16 @@ function redact(s: string): string {
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
-/** A URL as printed: no user, no password, no query — STT_UZ_URL may carry a token in any of them. */
-function shownUrl(u: URL): string {
-  return `${u.origin}${u.pathname}`;
+/**
+ * A URL as printed: no user, no password, no query — and for «uz» no path
+ * either. ElevenLabs' and OpenAI's paths are written in this file; STT_UZ_URL's
+ * is typed by him off a service's page, and a token in it (`/v1/<token>/stt`)
+ * would otherwise go to the screen and into --out on every run. The redaction
+ * catches long segments in failure texts, but a heading the lead copies into a
+ * chat is not a failure text.
+ */
+function shownUrl(u: URL, showPath: boolean): string {
+  return showPath ? `${u.origin}${u.pathname}` : u.origin;
 }
 
 // ── the three providers behind one shape ─────────────────────────────────────
@@ -253,6 +295,8 @@ interface Heard {
 interface Provider {
   name: ProviderName;
   url: URL;
+  /** False for «uz»: its address is his, typed off a service's page, and may carry a token in the path. */
+  showPath: boolean;
   model: string | null;
   headers: Record<string, string>;
   form(file: Blob, fileName: string, lang: Lang): FormData;
@@ -281,6 +325,26 @@ function findText(v: unknown, depth = 0): string | null {
   return null;
 }
 
+const FAILED_STATUS = new Set(['error', 'failed', 'fail']);
+
+/**
+ * A 2xx whose BODY says it failed — `{"status":"error","text":""}`,
+ * `{"success":false}`, `{"error":…}`. Several services answer every request 200
+ * and put the refusal inside, and the `text: ""` many of them carry beside it
+ * would otherwise be scored as an empty transcript: M6's trap «passed» by a
+ * provider that never heard the note. Read at the same levels `findText` reads
+ * a transcript from, so a wrapped answer cannot carry its text past its own
+ * error. `status: "ok" | "success" | "completed"` and `error: null` are not failures.
+ */
+function failedInBody(v: unknown, depth = 0): boolean {
+  if (depth > 3 || !v || typeof v !== 'object' || Array.isArray(v)) return false;
+  if (field(v, 'error')) return true;
+  if (field(v, 'success') === false) return true;
+  const status = str(field(v, 'status'));
+  if (status !== null && FAILED_STATUS.has(status.trim().toLowerCase())) return true;
+  return ['result', 'data', 'response'].some((k) => failedInBody(field(v, k), depth + 1));
+}
+
 type Built = { ok: true; provider: Provider } | { ok: false; message: string };
 
 function buildProvider(name: ProviderName, model: string | null): Built {
@@ -298,6 +362,7 @@ function buildProvider(name: ProviderName, model: string | null): Built {
       provider: {
         name,
         url: new URL(ELEVENLABS_URL),
+        showPath: true,
         model: m,
         headers: { 'xi-api-key': key },
         form(file, fileName, lang) {
@@ -328,6 +393,7 @@ function buildProvider(name: ProviderName, model: string | null): Built {
       provider: {
         name,
         url: new URL(OPENAI_URL),
+        showPath: true,
         model: m,
         headers: { Authorization: `Bearer ${key}` },
         form(file, fileName, lang) {
@@ -381,6 +447,7 @@ function buildProvider(name: ProviderName, model: string | null): Built {
     provider: {
       name,
       url,
+      showPath: false,
       model,
       headers: header ? { [header]: key } : { Authorization: `Bearer ${key}` },
       form(file, fileName, lang) {
@@ -543,13 +610,48 @@ interface NoteResult {
   ok: boolean;
   /** «» is an answer: silence and noise SHOULD come back empty (M6). */
   text: string | null;
+  /**
+   * When `text` is «»: the provider's whole answer, redacted and clipped — so the person scoring M6 sees an
+   * empty transcript was a transcript, and not an error shape `failedInBody` does not know. Null otherwise.
+   */
+  emptyAnswer: string | null;
   detectedLanguage: string | null;
   error: string | null;
   /** Why it was never sent (not counted against the provider). */
   notSent: string | null;
 }
 
-async function send(provider: Provider, bytes: Buffer, contentType: string, fileName: string, lang: Lang) {
+interface Sent {
+  ms: number;
+  status: number | null;
+  heard: Heard | null;
+  timedOut: boolean;
+  error: string | null;
+  /** Set only when the transcript came back empty — see NoteResult.emptyAnswer. */
+  emptyAnswer: string | null;
+}
+
+/** A provider's whole answer as one redacted line — never a transcript, so the patterns may run over it. */
+const rawShown = (raw: string) => clip(redact(raw.trim()), 300) || '(empty body)';
+
+/**
+ * A transcript that came back. The text gets the exact keys only (see `redact`); the language is the
+ * PROVIDER's free string — printed and written beside the transcript, so it is fenced like any other text a
+ * service sends: redacted, and clipped to what a language label needs.
+ */
+function heardFrom(ms: number, status: number, heard: Heard, raw: string): Sent {
+  const text = redactKeys(heard.text);
+  return {
+    ms,
+    status,
+    heard: { text, language: heard.language === null ? null : clip(redact(heard.language), 40) },
+    timedOut: false,
+    error: null,
+    emptyAnswer: text.trim() === '' ? rawShown(raw) : null,
+  };
+}
+
+async function send(provider: Provider, bytes: Buffer, contentType: string, fileName: string, lang: Lang): Promise<Sent> {
   // A copy into a plain ArrayBuffer view: a Node Buffer may sit on a shared pool the Blob must not see.
   const file = new Blob([new Uint8Array(bytes)], { type: contentType });
   const controller = new AbortController();
@@ -568,48 +670,39 @@ async function send(provider: Provider, bytes: Buffer, contentType: string, file
     });
     const raw = await res.text();
     const ms = Math.round(performance.now() - t0);
+    const failed = (error: string): Sent => ({ ms, status: res.status, heard: null, timedOut: false, error, emptyAnswer: null });
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location');
       let where = '(no Location)';
       if (location) {
         try {
-          where = shownUrl(new URL(location, provider.url));
+          where = shownUrl(new URL(location, provider.url), provider.showPath);
         } catch {
           where = '(an unreadable Location)';
         }
       }
-      return {
-        ms,
-        status: res.status,
-        heard: null,
-        timedOut: false,
-        error: redact(`redirected to ${where} — not followed (the key and the note would go along); if that is the service's own address, its endpoint has moved`),
-      };
+      return failed(
+        redact(`redirected to ${where} — not followed (the key and the note would go along); if that is the service's own address, its endpoint has moved`),
+      );
     }
-    if (!res.ok) return { ms, status: res.status, heard: null, timedOut: false, error: errorOf(raw) };
+    if (!res.ok) return failed(errorOf(raw));
     let answer: unknown = raw;
     try {
       answer = JSON.parse(raw);
     } catch {
       // A plain-text answer is the transcript itself when the service says it is text.
       if (/^text\/plain\b/iu.test(res.headers.get('content-type') ?? '')) {
-        return { ms, status: res.status, heard: { text: redactKeys(raw.trim()), language: null }, timedOut: false, error: null };
+        return heardFrom(ms, res.status, { text: raw.trim(), language: null }, raw);
       }
     }
+    // Before the reader: `{"status":"error","text":""}` carries a text key, and read() would call it a transcript.
+    if (failedInBody(answer)) return failed(`answered ${res.status}, but the body says it failed: ${errorOf(raw)}`);
     const heard = provider.read(answer);
-    if (!heard) {
-      return {
-        ms,
-        status: res.status,
-        heard: null,
-        timedOut: false,
-        error: `answered, but no transcript in it: ${clip(redact(raw.trim()), 300)}`,
-      };
-    }
-    return { ms, status: res.status, heard: { text: redactKeys(heard.text), language: heard.language }, timedOut: false, error: null };
+    if (!heard) return failed(`answered, but no transcript in it: ${rawShown(raw)}`);
+    return heardFrom(ms, res.status, heard, raw);
   } catch (err) {
     const timedOut = controller.signal.aborted;
-    return { ms: Math.round(performance.now() - t0), status: null, heard: null, timedOut, error: netErrorOf(err, timedOut) };
+    return { ms: Math.round(performance.now() - t0), status: null, heard: null, timedOut, error: netErrorOf(err, timedOut), emptyAnswer: null };
   } finally {
     clearTimeout(timer);
   }
@@ -642,6 +735,10 @@ function summarize(notes: NoteResult[]) {
   const sent = notes.filter((n) => n.notSent === null);
   const okMs = sent.filter((n) => n.ok && n.ms !== null).map((n) => n.ms!).sort((a, b) => a - b);
   const timeouts = sent.filter((n) => n.timedOut).length;
+  // Every note the provider did not ANSWER, not only our own abort: a dropped connection (status null), a 5xx,
+  // 408 and 429 are each a provider that was not there for that note. A 4xx refusal (a bad key, a format it
+  // will not take) answered, and is a failure the lead reads, not a speed.
+  const absent = sent.filter((n) => !n.ok && (n.status === null || n.status >= 500 || n.status === 408 || n.status === 429)).length;
   const timed = sent.filter((n) => n.durationSec !== null);
   return {
     notes: notes.length,
@@ -654,9 +751,10 @@ function summarize(notes: NoteResult[]) {
     medianMs: percentile(okMs, 50),
     p95Ms: percentile(okMs, 95),
     maxMs: okMs.length ? okMs[okMs.length - 1]! : null,
-    // …and the same p95 with every timeout counted as the full REQUEST_MS beside it: a provider that drops the
-    // long notes must not read faster on M8 than one that answers them slowly.
-    p95WithTimeoutsMs: timeouts ? percentile([...okMs, ...Array<number>(timeouts).fill(REQUEST_MS)].sort((a, b) => a - b), 95) : null,
+    absent,
+    // …and the same p95 with every absence counted as the full REQUEST_MS beside it: a provider that drops the
+    // long notes — by timing out, by a 503 or by a 429 — must not read faster on M8 than one that answers them slowly.
+    p95WithAbsentMs: absent ? percentile([...okMs, ...Array<number>(absent).fill(REQUEST_MS)].sort((a, b) => a - b), 95) : null,
     audioSecKnown: Math.round(timed.reduce((s, n) => s + n.durationSec!, 0) * 10) / 10,
     notesWithDuration: timed.length,
     bytesSent: sent.reduce((s, n) => s + (n.bytes ?? 0), 0),
@@ -674,7 +772,8 @@ function printNote(i: number, total: number, n: NoteResult): void {
   const answer = n.status === null ? 'no answer' : `HTTP ${n.status}`;
   const language = n.detectedLanguage ? `  (language ${n.detectedLanguage})` : '';
   console.log(`    ${n.provider}${n.model ? ` ${n.model}` : ''} → ${answer} in ${n.ms} ms${language}`);
-  if (n.ok) console.log(n.text ? `    «${n.text.replace(/\s*\n\s*/gu, ' / ')}»` : '    «» (empty — silence or noise should come back exactly so)');
+  if (n.ok && n.text) console.log(`    «${n.text.replace(/\s*\n\s*/gu, ' / ')}»`);
+  else if (n.ok) console.log(`    «» (empty — silence or noise should come back exactly so)\n    raw answer: ${n.emptyAnswer}`);
   else console.log(`    FAILED: ${n.error}`);
 }
 
@@ -716,7 +815,7 @@ async function main(): Promise<number> {
   console.log(`READ-ONLY — bazaga ham, fayllar omboriga ham hech narsa yozilmaydi; ovozli xabarlar faqat «${provider.name}» ga yuboriladi.`);
   console.log(
     `provider ${provider.name}${provider.model ? ` · model ${provider.model}` : ''} · language ${args.lang} · ` +
-      `${shownUrl(provider.url)} · ${ids.length} note(s), one at a time, ${REQUEST_MS / 1000} s each at most\n`,
+      `${shownUrl(provider.url, provider.showPath)} · ${ids.length} note(s), one at a time, ${REQUEST_MS / 1000} s each at most\n`,
   );
 
   const rows = await db.transaction(async (tx) => {
@@ -730,11 +829,18 @@ async function main(): Promise<number> {
         contentType: attachments.contentType,
         sizeBytes: attachments.sizeBytes,
         direction: tgMessages.direction,
+        tgMessageId: tgMessages.tgMessageId,
         deletedAt: tgMessageFlags.deletedAt,
+        // The holder's own answer about this chat — one row per (manager, peer) by its unique index.
+        chatDecision: tgChatRules.decision,
       })
       .from(attachments)
       .leftJoin(tgMessages, and(eq(attachments.entityType, 'tg_message'), eq(tgMessages.id, attachments.entityId)))
       .leftJoin(tgMessageFlags, eq(tgMessageFlags.messageId, tgMessages.id))
+      .leftJoin(
+        tgChatRules,
+        and(eq(tgChatRules.managerUserId, tgMessages.managerUserId), eq(tgChatRules.peerId, tgMessages.peerId)),
+      )
       .where(inArray(attachments.id, ids));
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -748,7 +854,7 @@ async function main(): Promise<number> {
       provider: provider.name,
       model: provider.model,
       lang: args.lang,
-      endpoint: shownUrl(provider.url),
+      endpoint: shownUrl(provider.url, provider.showPath),
       startedAt,
       finishedAt,
       summary: summarize(notes),
@@ -776,6 +882,7 @@ async function main(): Promise<number> {
       timedOut: false,
       ok: false,
       text: null,
+      emptyAnswer: null,
       detectedLanguage: null,
       error: null,
       notSent: null,
@@ -786,8 +893,12 @@ async function main(): Promise<number> {
     if (!row) note = refuse('no attachment with this id');
     else if (row.entityType !== 'tg_message') note = refuse(`not a Telegram message's file (it belongs to «${row.entityType}»)`);
     else if (!row.contentType.toLowerCase().startsWith('audio/')) note = refuse(`not audio (${row.contentType})`);
-    else if (!VOICE_NOTE_NAME.test(row.fileName)) note = refuse(`an audio file («${clip(row.fileName, 60)}»), not a voice note`);
     else if (row.direction === null) note = refuse('its message row is gone');
+    // «🚫 Shaxsiy» is the holder saying this chat is not business — his permission covers customers, and a
+    // person the holder took off the books is not one, whatever rows the chat still has.
+    else if (row.chatDecision === 'exclude') note = refuse('chat shaxsiy deb belgilangan — the holder marked this chat personal («🚫 Shaxsiy»)');
+    // After the row check: the name is judged against its own message's id, which a gone row does not have.
+    else if (!isVoiceNoteOf(row.fileName, row.tgMessageId)) note = refuse(`an audio file («${clip(row.fileName, 60)}»), not a voice note`);
     else if (row.direction !== 'in') note = refuse("our side's note, not a customer's");
     else if (row.deletedAt !== null) note = refuse('the customer deleted this message');
     else if (row.sizeBytes > MAX_NOTE_BYTES) note = refuse(`${row.sizeBytes} bytes — larger than any voice note`);
@@ -815,6 +926,7 @@ async function main(): Promise<number> {
           timedOut: r.timedOut,
           ok: r.heard !== null,
           text: r.heard?.text ?? null,
+          emptyAnswer: r.emptyAnswer,
           detectedLanguage: r.heard?.language ?? null,
           error: r.error,
         };
@@ -829,7 +941,10 @@ async function main(): Promise<number> {
   write(new Date().toISOString());
   console.log(`\n== ${provider.name}${provider.model ? ` (${provider.model})` : ''}, language ${args.lang}`);
   console.log(`   sent ${s.sent} · ok ${s.ok} · failed ${s.failed} · not sent ${s.notSent}`);
-  const late = s.timeouts ? ` · ${s.timeouts} timeout(s); p95 counting them as ${REQUEST_MS} ms: ${s.p95WithTimeoutsMs} ms` : ' · 0 timeouts';
+  const late = s.absent
+    ? ` · ${s.absent} unanswered (${s.timeouts} timeout(s), the rest no connection / 5xx / 408 / 429); ` +
+      `p95 counting them as ${REQUEST_MS} ms: ${s.p95WithAbsentMs} ms`
+    : ' · 0 unanswered';
   console.log(
     s.medianMs === null
       ? `   time: no answer came back${late}`

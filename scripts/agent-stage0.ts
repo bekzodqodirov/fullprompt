@@ -199,6 +199,22 @@ function classOf(input: {
   return 'talk';
 }
 
+/** A money line nobody vouched for as a VED total — a balance, a fact's price, a table figure. */
+const ANY_MONEY_LINE: AutoLedgerLine = { kind: 'money', origin: null, tool: null, role: null };
+/** A VED price's total (`calcLine` above). */
+const VED_TOTAL_LINE: AutoLedgerLine = { kind: 'money', origin: 'tool', tool: CALC_PRICE_TOOL_NAME, role: 'total' };
+
+/**
+ * The classes a draft his ✏️ rewrote MAY have had. `submitOwnText` (decide.ts:1455-1462) keeps the AI's words in
+ * `proposed_body` and leaves the memory and the notes as they were, but writes `ledger: []` over the policy — so
+ * whether the AI's reply carried a money line is gone. `classOf` asks of the ledger only whether a money line is a
+ * VED total and whether one is not, so every ledger the reply could have had lands on one of three: none, an ordinary
+ * money line (a VED total beside it changes nothing — the reply is `price` either way), a VED total alone.
+ */
+function classesWithLedgerLost(input: Omit<Parameters<typeof classOf>[0], 'ledger'>): DraftClass[] {
+  return [...new Set([[], [ANY_MONEY_LINE], [VED_TOTAL_LINE]].map((ledger) => classOf({ ...input, ledger })))];
+}
+
 const NEAR_LANGUAGES = ['uz', 'uz_cyrl', 'ru'];
 
 /**
@@ -253,7 +269,12 @@ function nightBars(cls: DraftClass, nightPrices: NightPrices): boolean {
  * for a class the chosen setting does not bar (§6.2), and `language` for a talk draft by §6.2. A machine press that
  * lost INSIDE its approval (`auto-send.ts` `pressOne`, :907-911) writes its code to `outcome` and leaves `reasons` as
  * the scheduling stored them (empty — it was admitted): that code is a reason too, `press:<code>`, kept unless it is
- * `auto_warning` over `questions` alone. Nothing new is ADDED: 1a's `loop` and complaint reader are not judged here.
+ * `auto_warning` over `questions` alone. A countdown that a person or the chat ended before the press — 'stopped'
+ * (⏸, ✏️, ❌, 🙋, ✍️, 📝, a disarm: auto-send.ts :764, :1100-1105, config.ts :254, decide.ts :789) or 'gone'
+ * (superseded :1078-1082, no longer pending :859, `not_live` :910) — is `held:<outcome>` for every class but talk:
+ * 1a keeps `agent_auto_config.hold_sec` for them, so the same stop lands inside the same hold again. Talk goes at
+ * once under 1a, before any stop could land, and is judged as before (the Eslatma says so). Nothing new is ADDED:
+ * 1a's `loop` and complaint reader are not judged here.
  */
 function reasonsLeft(input: {
   reasons: readonly string[];
@@ -288,7 +309,30 @@ function reasonsLeft(input: {
     const [code = '', detail] = input.outcome.split(/:(.*)/su);
     if (!(code === 'auto_warning' && detail !== undefined && eyeOnly(detail.split(',')))) left.push(`press:${code}`);
   }
+  if ((input.state === 'stopped' || input.state === 'gone') && input.cls !== 'talk') left.push(`held:${input.outcome ?? input.state}`);
   return left;
+}
+
+type Judged = { kind: 'goes' } | { kind: 'held'; left: string[] } | { kind: 'unknown'; maybe: string[] };
+
+/** Stands for a warning code his ✏️ erased that was not `questions` — any code `eyeOnly` does not let through. */
+const ERASED_WARNING = '?';
+
+/**
+ * 1a's answer for one draft, from every reading of what his ✏️ erased. Not edited: one reading. Edited: the AI's
+ * stored `reasons` are still the AI's (the verdict row is written in `createDraft`'s transaction, before any ✏️), but
+ * `policy.warnings` is now HIS text's (`ownerPolicyFor`) and the ledger is empty — so `warnings` is judged both ways
+ * (every erased code `questions`, or one that is not) and the class over `classesWithLedgerLost`. The readings are
+ * ordered (talk's leftover ⊆ price's ⊆ calc_price's; `warnings` let through ⊆ kept), so their common part is the
+ * smallest one's: empty everywhere → goes; something common → held by it; otherwise the answer hangs on what the edit
+ * erased — UNKNOWN, counted on neither side.
+ */
+function judge(base: Omit<Parameters<typeof reasonsLeft>[0], 'cls' | 'warningCodes'>, classes: readonly DraftClass[], warningCodes: readonly (readonly string[] | null)[]): Judged {
+  const lefts = classes.flatMap((cls) => warningCodes.map((codes) => reasonsLeft({ ...base, cls, warningCodes: codes })));
+  const union = [...new Set(lefts.flat())];
+  if (union.length === 0) return { kind: 'goes' };
+  const common = union.filter((r) => lefts.every((l) => l.includes(r)));
+  return common.length > 0 ? { kind: 'held', left: common } : { kind: 'unknown', maybe: union };
 }
 
 function histogram(lists: readonly (readonly string[])[]): [string, number][] {
