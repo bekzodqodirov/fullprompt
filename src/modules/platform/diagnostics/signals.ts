@@ -71,6 +71,44 @@ export async function diskSignals(): Promise<DiskSignal[]> {
   return rows.map((r) => ({ key: r.key as DiskSignalKey, level: r.level, detail: r.detail }));
 }
 
+/**
+ * A fault said ONCE and taken back once (stage 1a §4.5 — the AI seller's liveness alarm, key `agent:liveness`): the
+ * row stands while the fault does. `raiseSignal` writes it or moves its detail, and answers TRUE only for the write
+ * that OPENED the row (`xmax = 0` — the claim, #599): two sweeps at once, or a sweep every minute while it stands,
+ * tell nobody twice. `since` is written once, like the bot's. Generic on purpose — the key is free text (0115 put no
+ * CHECK on it), so a later watch needs no migration; `diskSignals` reads `disk:%` and `botRefused` its own key, so
+ * neither picks another's row up.
+ */
+export async function raiseSignal(key: string, detail: string | null): Promise<boolean> {
+  const text = detail === null ? null : detail.slice(0, 300) || null;
+  const rows = await db.execute<{ opened: boolean }>(sql`
+    INSERT INTO system_signals (key, detail) VALUES (${key}, ${text})
+    ON CONFLICT (key) DO UPDATE SET detail = EXCLUDED.detail, updated_at = now()
+    RETURNING (xmax = 0) AS opened`);
+  return [...rows][0]?.opened === true;
+}
+
+/** The fault cleared: the row goes, and TRUE only for the call that took it (the one «it is over» to say). */
+export async function clearSignal(key: string): Promise<boolean> {
+  const gone = await db.delete(systemSignals).where(eq(systemSignals.key, key)).returning({ key: systemSignals.key });
+  return gone.length > 0;
+}
+
+export interface StandingSignal {
+  since: Date;
+  detail: string | null;
+  updatedAt: Date;
+}
+
+/** Is this fault standing now — the screens' read of a row `raiseSignal` wrote (the home's red row, the AI page). */
+export async function signalStanding(key: string): Promise<StandingSignal | null> {
+  const [row] = await db
+    .select({ since: systemSignals.since, detail: systemSignals.detail, updatedAt: systemSignals.updatedAt })
+    .from(systemSignals)
+    .where(eq(systemSignals.key, key));
+  return row ?? null;
+}
+
 /** The same rows as key → level (80 / 90), for the hourly check. */
 export async function diskLevels(): Promise<Map<DiskSignalKey, number>> {
   return new Map((await diskSignals()).map((s) => [s.key, s.level]));

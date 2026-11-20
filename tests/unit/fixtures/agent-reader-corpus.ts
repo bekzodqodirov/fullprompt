@@ -32,6 +32,11 @@
  *                     script, one event a line — see `LOOP_DANGEROUS` below.
  *  - `avia_days`    — the flight's days a reply states, through the policy and the gate (run `memoryFor`'s company
  *                     rule, `aviaDaySources`, from `agent_avia_days` — stage 1a P7, J2): his «3-5 kun» and no other.
+ *  - `full_truck`   — the big-cargo signal's words (stage 1a §4.5, his 3 b «fura desa»; big-cargo `saysFullTruck`) over
+ *                     the CUSTOMER's lines: `held` = the signal is raised (the people he chose hear of it), `goes` = no
+ *                     signal. Here `dangerous` is the other way round from every reader above — a plain «fura kerak»
+ *                     the reader MISSES is the case his answer exists for; a word that pings a colleague about a
+ *                     washing machine is `ordinary` (one needless ping a chat a week).
  *
  * `kind`: `dangerous` — the WRONG answer lets something reach a customer that must not (a price nobody read, a
  * hand-over in an air chat, a Tashkent price for another destination, a reply in the wrong language, his figure
@@ -66,7 +71,8 @@ export type Reader =
   | 'calc_claim'
   | 'phone'
   | 'loop'
-  | 'avia_days';
+  | 'avia_days'
+  | 'full_truck';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -2109,6 +2115,66 @@ const AVIA_DAYS_ORDINARY: readonly Row[] = [
   ['ad203', 'Авиа: от 1 кг, примерно 3-5 дней.', P_AD, r('ru')],
   ['ad204', 'By air it takes about 3-5 days — an estimate, not a promise.', P_AD, r('en')],
   ['ad205', 'Авиа билан тахминан 3-5 кунда етиб боради.', P_AD, r('uz_cyrl')],
+// ── full_truck: the big-cargo signal's words (stage 1a §4.5; his 3 b — «20 kubdan yoki fura desa») ──────────────
+// Written by hand before `saysFullTruck` existed. A customer who asks for a WHOLE truck, in any of the six languages,
+// any case ending, with or without a size: the signal must go (dangerous to miss). A machine in the goods, a
+// truck said NOT to be needed, a word that only begins like «fura»: no signal (ordinary).
+const P_FT = 'stage1a:§4.5 full truck';
+const FULL_TRUCK_DANGEROUS: readonly Row[] = [
+  ['ft001', 'Assalomu alaykum, Yiwudan fura kerak', P_FT],
+  ['ft002', "Bizga to'liq mashina kerak, Guanchjoudan Toshkentga", P_FT],
+  ['ft003', 'To‘liq mashina qancha turadi?', P_FT],
+  ['ft004', 'toliq mashina bormi', P_FT],
+  ['ft005', 'Furaga qancha olasiz?', P_FT],
+  ['ft006', '2 ta fura yuk bor', P_FT],
+  ['ft007', 'FURA KERAK', P_FT],
+  ['ft008', "fura bilan yuborsak bo'ladimi? 60 kub", P_FT],
+  ['ft009', 'Bizga fura kerak, LCL emas', P_FT],
+  ['ft010', "Mashina to'liq bo'ladi, 80 kub atrofida", P_FT],
+  ['ft011', 'Butun mashinani olamiz', P_FT],
+  ['ft012', 'Фурага қанча оласиз?', P_FT],
+  ['ft013', 'тўлиқ машина керак', P_FT],
+  ['ft014', 'Фура нужна из Иу в Ташкент', P_FT],
+  ['ft015', 'Сколько стоит фура до Ташкента?', P_FT],
+  ['ft016', 'Нужна полная машина', P_FT],
+  ['ft017', 'Целую машину сколько стоит?', P_FT],
+  ['ft018', 'Отдельную машину можно заказать?', P_FT],
+  ['ft019', 'Нужна фура, не сборный груз', P_FT],
+  ['ft020', 'Фуры есть на этой неделе?', P_FT],
+  ['ft021', 'We need a full truck from Guangzhou', P_FT],
+  ['ft022', 'Price for FTL to Tashkent?', P_FT],
+  ['ft023', 'whole truck please', P_FT],
+  ['ft024', 'one full truckload from Yiwu', P_FT],
+  ['ft025', '我们需要整车到塔什干', P_FT],
+  ['ft026', '整柜多少钱', P_FT],
+  ['ft027', 'یک کامیون کامل لازم داریم', P_FT],
+  ['ft028', 'salom\nfura kerak edi', P_FT],
+  ['ft029', 'Furada olib kelib berasizmi?', P_FT],
+  ['ft030', 'Фура нужна? Да, нужна', P_FT],
+];
+const FULL_TRUCK_ORDINARY: readonly Row[] = [
+  ['ft101', 'Tikuv mashinasi olib kelmoqchiman', P_FT],
+  ['ft102', 'Kir yuvish mashinasi narxi qancha', P_FT],
+  ['ft103', 'Yuk mashinasi uchun ehtiyot qismlar, 1 kub', P_FT],
+  ['ft104', 'Fura kerak emas, 2 kub yuk bor', P_FT],
+  ['ft105', 'Fura shart emas, sborniy bo‘lsa ham bo‘ladi', P_FT],
+  ['ft106', 'Фура не нужна, у нас 3 куба', P_FT],
+  ['ft107', 'Не нужна фура, сборный груз', P_FT],
+  ['ft108', 'Not a full truck, just 2 cbm', P_FT],
+  ['ft109', "We don't need a full truck", P_FT],
+  ['ft110', 'LTL please, 3 cbm', P_FT],
+  ['ft111', 'Фурнитура для мебели, 2 куба', P_FT],
+  ['ft112', 'Фураж для скота', P_FT],
+  ['ft113', 'Furazolidon tabletkalari', P_FT],
+  ['ft114', 'Mashina detallari bor, 2 kub', P_FT],
+  ['ft115', '不需要整车，3个方', P_FT],
+  ['ft116', 'کامیون کامل نیست، فقط ۲ متر مکعب', P_FT],
+  ['ft117', 'Less than a full truck, about 5 cbm', P_FT],
+  ['ft118', 'Без фуры, сборным грузом', P_FT],
+  ['ft119', 'Avtomashina ehtiyot qismlari bor', P_FT],
+  ['ft120', 'To‘liq ma’lumot yuboring, mashina detali bor', P_FT],
+  ['ft121', 'Kecha furada keldi, rahmat', P_FT],
+  ['ft122', 'Fura uchun shinalar kerak', P_FT],
 ];
 
 export const READER_CORPUS: readonly ReaderCase[] = [
@@ -2144,4 +2210,6 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('loop', 'ordinary', LOOP_ORDINARY),
   ...rows('avia_days', 'dangerous', AVIA_DAYS_DANGEROUS),
   ...rows('avia_days', 'ordinary', AVIA_DAYS_ORDINARY),
+  ...rows('full_truck', 'dangerous', FULL_TRUCK_DANGEROUS),
+  ...rows('full_truck', 'ordinary', FULL_TRUCK_ORDINARY),
 ];

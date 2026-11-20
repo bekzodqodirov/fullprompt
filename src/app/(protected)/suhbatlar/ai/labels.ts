@@ -22,7 +22,7 @@ import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
  * bundles under `agentAi`.
  */
 
-export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'bilimlar', 'saboqlar', 'sozlamalar'] as const;
+export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'tekshiruv', 'bilimlar', 'saboqlar', 'kimga', 'sozlamalar'] as const;
 export type AgentSection = (typeof AGENT_SECTIONS)[number];
 
 export const SECTION_KEYS: Record<AgentSection, string> = {
@@ -31,6 +31,9 @@ export const SECTION_KEYS: Record<AgentSection, string> = {
   bilimlar: 'section.bilimlar',
   // «📝 Tuzatish» — what he taught the AI (0148, spec SPEC-P1-v2 §3.6).
   saboqlar: 'section.saboqlar',
+  // Stage 1a (§4.5): the evening sample to mark, and who the machine tells.
+  tekshiruv: 'section.tekshiruv',
+  kimga: 'section.kimga',
   sozlamalar: 'section.sozlamalar',
 };
 
@@ -40,6 +43,15 @@ export function sectionOf(raw: string | undefined): AgentSection {
 
 /** Every refusal code an action on the page can return. */
 export type AgentErrorCode =
+  // Stage 1a's «Kim javob beradi» and «Kunlik tekshiruv» (signal-actions.ts) — their own codes, each its words.
+  | 'designation_unknown_topic'
+  | 'designation_too_many'
+  | 'designation_not_staff'
+  | 'bad_big_cargo'
+  | 'bad_liveness'
+  | 'sample_not_found'
+  | 'sample_already'
+  | 'sample_forbidden'
   | DecideRefusal
   | AgentConfigRefusal
   | KbRefusal
@@ -83,6 +95,15 @@ export type AgentErrorCode =
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
+  // stage 1a (signal-actions.ts)
+  designation_unknown_topic: 'errors.designation_unknown_topic',
+  designation_too_many: 'errors.designation_too_many',
+  designation_not_staff: 'errors.designation_not_staff',
+  bad_big_cargo: 'errors.bad_big_cargo',
+  bad_liveness: 'errors.bad_liveness',
+  sample_not_found: 'errors.sample_not_found',
+  sample_already: 'errors.sample_already',
+  sample_forbidden: 'errors.sample_forbidden',
   // decideDraft / submitOwnText
   not_found: 'errors.not_found',
   not_account_holder: 'errors.not_account_holder',

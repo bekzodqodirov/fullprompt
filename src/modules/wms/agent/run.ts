@@ -735,6 +735,17 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
         target: [agentConversations.managerUserId, agentConversations.peerId],
         set: { locale, updatedAt: new Date() },
       });
+    // A big load tells the people he chose (stage 1a §4.5, his 3 b) — once the draft is written, «AI javob
+    // tayyorladi», and never at the draft's cost: its own catch. Dynamic, like the sweep's steps: the signal's
+    // modules are the job's, not every run's import.
+    if (written.kind === 'written') {
+      try {
+        const { signalBigCargo } = await import('./big-cargo');
+        await signalBigCargo(ctx, loop.outcomes, now());
+      } catch (err) {
+        logger.warn({ err, runId }, '[agent] big-cargo signal failed');
+      }
+    }
     // `question_gone` is an answer's redraft's alone (`answers`), never this run's — stood down all the same if it came.
     const stood = written.kind === 'written' ? null : written.kind;
     settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };

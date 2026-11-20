@@ -3,6 +3,7 @@ import type { AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import * as autoMoney from '@/modules/wms/agent/auto-money';
 import { withAviaDaysNow } from '@/modules/wms/agent/avia-days';
 import * as complaint from '@/modules/wms/agent/complaint';
+import * as bigCargo from '@/modules/wms/agent/big-cargo';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import * as digits from '@/modules/wms/agent/digits';
 import * as kb from '@/modules/wms/agent/kb';
@@ -463,6 +464,9 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
       return loopHeld(c.input);
     case 'avia_days':
       return pressed(reply, c.input);
+    case 'full_truck':
+      // The customer's lines, one per line of the case — the burst `bigCargoOf` reads (stage 1a §4.5).
+      return bigCargo.saysFullTruck(c.input.split('\n')) ? 'held' : 'goes';
   }
 }
 

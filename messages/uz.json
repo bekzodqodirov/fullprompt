@@ -6903,7 +6903,7 @@
     "lessonSave": "Saboqni saqlash",
     "lessonsHint": "AI ga bergan tuzatishlaringiz. AI ularni har bir javobdan oldin, qoidalardan keyin o‘qiydi: qoidaga zid kelsa — qoida ustun. Saboq — ko‘rsatma, fakt emas: undagi raqam javobga chiqmaydi (fakt bo‘lsa «Bilimlar»ga yozing). Yangi saboq — AI kartasidagi «📝 Tuzatish» orqali.",
     "lessonsCount": "Promptda: {n} / {max} ta saboq · {chars} / {maxChars} belgi",
-    "lessonsCost": "Chegara: {max} ta saboq va {maxChars} belgi (taxminan 12 ta uzun saboq) — eng yangilari o‘qiladi, sig‘maganlari «sig‘madi» deb belgilanadi. Saboqlar AI har javobda o‘qiydigan doimiy qismga qo‘shiladi: saboq o‘zgargandan keyingi birinchi javob va 5 daqiqadan uzoq tanaffusdan keyingi javob shu qismni to‘liq narxda (1,25 baravar) qayta o‘qiydi, va bu kunlik AI byudjetiga kiradi. To‘la ro‘yxat bu qismni deyarli ikki baravar kattalashtiradi.",
+    "lessonsCost": "Chegara: {max} ta saboq va {maxChars} belgi (taxminan 12 ta uzun saboq) — eng yangilari o‘qiladi, sig‘maganlari «sig‘madi» deb belgilanadi. Saboqlar AI har javobda o‘qiydigan doimiy qismga qo‘shiladi: saboq o‘zgargandan keyingi birinchi javob va 5 daqiqadan uzoq tanaffusdan keyingi javob shu qismni to‘liq narxda (1,25 baravar) qayta o‘qiydi, va bu kunlik tokenlar chegarasiga kiradi (xato halqasidan himoya, pul chegarasi emas). To‘la ro‘yxat bu qismni deyarli ikki baravar kattalashtiradi.",
     "lessonsEmpty": "Hali saboq yo‘q. AI kartasidagi «📝 Tuzatish»ni bosib, u qayerda xato qilganini yozing.",
     "lessonsNotReady": "Baza hali yangilanmagan — saboqlar yo‘q.",
     "lessonInPrompt": "promptda",

@@ -467,11 +467,12 @@ describe('the VED answer’s run (§2.3)', () => {
     expect(calcAnswerSourceKey({ requestId: 'r', anchor: 'answer', anchorId: 'r' })).toBe('calc:r:answer');
   });
 
-  it('every outcome that leaves no draft is said — the «too old» in the week the run kept (K2); a draft or a duplicate says nothing', () => {
+  it('every outcome that leaves no draft is said — the «too old» in the week the run kept (K2); a cap as the loop guard it is, never «byudjet» (stage 1a §4.6); a draft or a duplicate says nothing', () => {
     expect(calcAnswerWhy({ outcome: 'refused', reason: 'human_active' })).toMatch(/o'zingiz yozayapsiz/u);
     expect(calcAnswerWhy({ outcome: 'skipped', reason: 'no_fresh_inbound' })).toMatch(/7 kun/u);
     expect(calcAnswerWhy({ outcome: 'refused', reason: 'too_old' })).toMatch(/7 kun/u);
-    expect(calcAnswerWhy({ outcome: 'capped', reason: 'daily_token_cap' })).toMatch(/byudjet/u);
+    expect(calcAnswerWhy({ outcome: 'capped', reason: 'daily_token_cap' })).toMatch(/pul chegarasi emas/u);
+    expect(calcAnswerWhy({ outcome: 'capped', reason: 'daily_token_cap' })).not.toMatch(/byudjet/u);
     expect(calcAnswerWhy({ outcome: 'error', reason: 'x' })).toMatch(/xato/u);
     expect(calcAnswerWhy({ outcome: 'no_reply' })).toMatch(/javob kerak emas/u);
     expect(calcAnswerWhy({ outcome: 'stood_down', reason: 'editing' })).toMatch(/✏️/u);

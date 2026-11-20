@@ -117,7 +117,7 @@ export function pageDrawsSend(d: Pick<WebDraft, 'blocked' | 'status' | 'ownText'
   return cardDrawsSend(d);
 }
 
-function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
+export function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   if (d.clientId) return `/suhbatlar/${d.clientId}`;
   if (d.leadId) return `/crm/leads/${d.leadId}#tg-thread`;
   return null;
@@ -184,7 +184,7 @@ export interface WebViewer {
  * draft card carries the customer's lines, the reply and our last message: a
  * previous owner's personal chats are not his to read here (K10).
  */
-function draftsSeenBy(viewer: WebViewer) {
+export function draftsSeenBy(viewer: WebViewer) {
   return seesAllTg(viewer) ? undefined : eq(agentDrafts.managerUserId, viewer.id);
 }
 

@@ -58,4 +58,11 @@ export const KNOWN_HELD: ReadonlyMap<string, string> = new Map<string, string>([
   ['hn220', 'numeral_unread: the machine presses no Chinese numeral run — «早上十点» is ten o’clock and a run all the same'],
   ['hn221', 'numeral_unread: the machine presses no Chinese numeral run — «晚上十点» is ten o’clock and a run all the same'],
   ['hn222', 'numeral_unread: the machine presses no Chinese numeral run — «三家» counts factories and is a run all the same'],
+
+  // ── full_truck: the big-cargo signal (stage 1a §4.5) ────────────────────────────────────────────────────────────
+  // «Fura» said of a load already delivered, or of goods FOR trucks, reads like «fura» asked for: the reader cannot
+  // tell a past or a purpose from a request without the grammar no rule here reads, and a miss is the dangerous
+  // direction (his 3 b). The cost is one needless ping a chat a week to the people he chose.
+  ['ft121', 'a truck said of a load already delivered: «furada keldi» cannot be told from «furada olib keling» — one ping a week'],
+  ['ft122', 'goods FOR trucks: «fura uchun shinalar» cannot be told from «fura uchun narx» — one ping a week'],
 ]);

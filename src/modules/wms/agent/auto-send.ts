@@ -1709,7 +1709,7 @@ export async function workAccountOf(userId: string): Promise<boolean> {
  * in as, so «the holder's alone» left the boxes greyed for the one person who decides them. None of these sends a
  * message: arming does, and arming keeps its own rule (`mayArmAuto`).
  */
-function mayTuneAuto(actor: AutoActor, ownerUserId: string | null): boolean {
+export function mayTuneAuto(actor: AutoActor, ownerUserId: string | null): boolean {
   return (ownerUserId !== null && actor.id === ownerUserId) || actor.roles.includes('super_admin');
 }
 
@@ -1718,7 +1718,7 @@ function mayTuneAuto(actor: AutoActor, ownerUserId: string | null): boolean {
  * super_admin while the holder is the designated AI seat (`holderIsSeat`) — the seat is the company's machine
  * account and no person's own (2026-11-15). Read inside the arming transaction too.
  */
-async function mayArmAuto(actor: AutoActor, ownerUserId: string | null, handle: Db | Tx = db): Promise<boolean> {
+export async function mayArmAuto(actor: AutoActor, ownerUserId: string | null, handle: Db | Tx = db): Promise<boolean> {
   if (ownerUserId === null) return false;
   if (actor.id === ownerUserId) return true;
   if (!actor.roles.includes('super_admin')) return false;

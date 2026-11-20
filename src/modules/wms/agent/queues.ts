@@ -35,6 +35,11 @@ export const JOB_AGENT_AFTER_SENT = 'agent.after_sent';
 /** Its retries — a database error only; a refusal by the steps' own rules completes the job (§3.2). */
 export const AFTER_SENT_RETRY_LIMIT = 3;
 
+/** Stage 1a §4.5: the morning line at 08:40 Tashkent (yesterday, by reason) to the «rahbar va o‘rinbosar» pair. */
+export const JOB_AGENT_MORNING = 'agent.morning';
+/** …and the evening sample at 20:10 Tashkent (his 9 a): ten of the machine's replies to mark. */
+export const JOB_AGENT_SAMPLE = 'agent.sample';
+
 /** A customer's message landed on the agent owner's account. */
 export interface AgentInboundJob {
   managerUserId: string;

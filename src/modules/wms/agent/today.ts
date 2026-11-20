@@ -64,6 +64,22 @@ export async function dayRunCounts(
 export type DayCap = 'daily_draft_cap' | 'chat_runs' | 'daily_token_cap';
 
 /**
+ * Each cap in his words — ONE map for the cap's notice (drafts `notifyCapReached`) and the morning line that names
+ * every cap the day tripped (stage 1a §4.5). The token cap is a guard against a runaway loop and never a money stop
+ * (his 10 c, «nothing stops on dollars»; §4.6): it is not called a budget anywhere.
+ */
+export const CAP_WORDS: Record<DayCap, string> = {
+  daily_draft_cap: 'bugungi qoralamalar soni',
+  chat_runs: 'bitta mijoz uchun kunlik chegara',
+  daily_token_cap: 'bugungi tokenlar chegarasi (xato halqasidan himoya, pul chegarasi emas)',
+};
+
+/** A stored cap reason in his words — a reason this build does not know says what it is, never a code. */
+export function capWordOf(reason: string): string {
+  return Object.hasOwn(CAP_WORDS, reason) ? CAP_WORDS[reason as DayCap] : 'bugungi AI chegarasi';
+}
+
+/**
  * Which cap a run reserved NOW would meet, in the reservation's own order, or
  * null. One home for the reservation (run `reserve`, under its lock) and for
  * a press that promises a card some future run will write (decide

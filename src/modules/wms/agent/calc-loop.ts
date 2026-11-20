@@ -386,7 +386,8 @@ export function noQuestionWhy(out: RunResult, maxAgeMs: number = AGENT_LIMITS.an
     case 'refused':
       return out.reason === 'too_old' ? tooOldWords(maxAgeMs) : NO_DRAFT_WORDS[out.reason];
     case 'capped':
-      return 'bugungi AI byudjeti tugadi';
+      // A cap is a guard against a runaway loop, never a money stop (stage 1a §4.6, his 10 c) — not «the budget».
+      return 'bugungi AI chegarasi tugadi (xato halqasidan himoya, pul chegarasi emas)';
     case 'error':
       return 'AI xato qildi';
     case 'no_reply':

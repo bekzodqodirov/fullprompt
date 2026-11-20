@@ -58,7 +58,7 @@ import { CATEGORY_KEYS, errorKey } from './labels';
  * `errorValues`: what a refusal's sentence is filled with — a form whose refusal names its bounds hands them here
  * (the daily count, the account limits), so no bundle types a constant a second time. Unused by every other key.
  */
-function useAction(errorValues?: Record<string, number>) {
+export function useAction(errorValues?: Record<string, number>) {
   const t = useTranslations('agentAi');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +80,7 @@ function useAction(errorValues?: Record<string, number>) {
   return { pending, error, note, run };
 }
 
-function Feedback({ error, note }: { error: string | null; note: string | null }) {
+export function Feedback({ error, note }: { error: string | null; note: string | null }) {
   return (
     <>
       {error && (

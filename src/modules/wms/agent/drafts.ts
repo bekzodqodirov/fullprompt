@@ -570,17 +570,17 @@ export async function writeNotice(ctx: AgentContext, reason: string): Promise<vo
   });
 }
 
-/** The first refusal of the day for a cap — said once (fit-1). */
+/**
+ * The first refusal of the day for a cap — said once (fit-1). In the cap's own words (today `CAP_WORDS`): the token
+ * cap is a loop guard he may raise, never «the AI budget» (stage 1a §4.6 — nothing stops on dollars, his 10 c).
+ */
 export async function notifyCapReached(ownerUserId: string, reason: string): Promise<void> {
-  const words: Record<string, string> = {
-    daily_draft_cap: 'bugungi qoralamalar soni',
-    daily_token_cap: 'bugungi AI byudjeti',
-    chat_runs: 'bitta mijoz uchun kunlik chegara',
-  };
+  // Dynamic: the cap's words live beside the caps (today.ts), a module this one has no other edge to.
+  const { capWordOf } = await import('./today');
   await notifyStaffTelegram({
     userIds: [ownerUserId],
     type: 'AgentCapReached',
-    text: `⛔ AI sotuvchi: ${words[reason] ?? reason} tugadi — qolgan xabarlarga bugun o'zingiz javob bering. Chegarani «Suhbatlar → AI sotuvchi» sahifasida o'zgartirish mumkin.`,
+    text: `⛔ AI sotuvchi: ${capWordOf(reason)} tugadi — qolgan xabarlarga bugun o'zingiz javob bering. Chegarani «Suhbatlar → AI sotuvchi» sahifasida o'zgartirish mumkin (xohlasangiz oshiring).`,
   });
 }
 

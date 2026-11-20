@@ -82,6 +82,9 @@ import {
   type AgentSection,
 } from './labels';
 import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
+import { livenessStanding } from '@/modules/wms/agent/liveness';
+import { sampleUnmarkedToday } from '@/modules/wms/agent/sample';
+import { KimgaSection, SampleSection } from './signal-sections';
 
 /**
  * The AI sotuvchi's page (docs/AI-SOTUVCHI.md §17.12, review build-13): ONE
@@ -112,7 +115,8 @@ function tashkentWhen(d: Date): string {
   });
 }
 
-const STRIP = 'grid grid-cols-2 gap-1 rounded-xl bg-surface-sunken p-1 sm:grid-cols-5';
+// Seven tabs since stage 1a (§4.5's «Kunlik tekshiruv» and «Kim javob beradi»): three a row on a phone, four wider.
+const STRIP = 'grid grid-cols-3 gap-1 rounded-xl bg-surface-sunken p-1 sm:grid-cols-4';
 
 type T = Awaited<ReturnType<typeof getTranslations<'agentAi'>>>;
 
@@ -207,12 +211,21 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
   }
 
   const running = agentRunning(config);
-  const [drafts, owner] = await Promise.all([webDrafts(actor), ownerAccountState(config.ownerUserId)]);
+  const [drafts, owner, unmarked, liveness] = await Promise.all([
+    webDrafts(actor),
+    ownerAccountState(config.ownerUserId),
+    // The evening sample's replies still to mark (stage 1a §4.5) — the tab's badge.
+    sampleUnmarkedToday(actor).catch(() => 0),
+    // «AI sotuvchi javob bermayapti» standing (§4.5 item 4) — said only while the agent runs.
+    running ? livenessStanding(new Date()).catch(() => null) : Promise.resolve(null),
+  ]);
   const counts: Record<AgentSection, number> = {
     kutilmoqda: drafts.pending.length,
     savollar: drafts.questions.length + drafts.remember.length,
+    tekshiruv: unmarked,
     bilimlar: 0,
     saboqlar: 0,
+    kimga: 0,
     sozlamalar: 0,
   };
   const settingsAlarm = owner?.pausedAt != null || (running && (owner?.connected === false || owner?.listenerBehind === true));
@@ -232,6 +245,12 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
             <ClearPauseButton accountId={owner.accountId} />
           )}
         </div>
+      )}
+
+      {liveness && (
+        <p className="card border-bad/40 bg-bad/10 text-sm font-bold text-bad [overflow-wrap:anywhere]" data-testid="agent-liveness-banner">
+          {t('livenessStanding', { n: liveness.n, minutes: liveness.minutes })}
+        </p>
       )}
 
       <nav aria-label={t('title')} className={STRIP} data-testid="agent-tabs">
@@ -325,6 +344,10 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
       {section === 'bilimlar' && <KnowledgeSection t={t} config={config} viewer={actor} />}
 
       {section === 'saboqlar' && <LessonsSection t={t} />}
+
+      {section === 'tekshiruv' && <SampleSection viewer={actor} />}
+
+      {section === 'kimga' && <KimgaSection viewer={actor} config={config} />}
 
       {section === 'sozlamalar' && (
         <SettingsSection

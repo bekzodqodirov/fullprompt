@@ -642,6 +642,60 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
      «dead card» alarm (a draft that waits on a card nobody received): that stays stated-not-built (§10).
   P4 builds the setting's box (`agent_liveness_minutes`, §3.3) beside the big-cargo boxes.
 
+**P4, as built (2026-11-20, branch `toliq-1a-p4` off `59f17415` — re-fitted to the code where the bullets above
+differ; what the next package must know is last).**
+- **Big cargo** (`agent/big-cargo.ts`): `saysFullTruck` is the free-text reader, with its corpus reader `full_truck`
+  (30 dangerous = a whole truck asked for and missed, 22 ordinary = no signal; two ordinary on the ratchet, ft121 /
+  ft122 — a past delivery and goods FOR trucks, one ping a week). A negation reaches only its own clause.
+  **Re-fit:** the volume must be stated in THIS burst (or priced by this run) — `newestMeasure` over the whole window
+  re-signalled last week's «25 kub» every Monday on a «salom». **Re-fit:** the claim key names the account too,
+  `big_cargo:<manager>:<peer>:<Monday>` (one chat = one account and one peer). `sendSignal` (`agent/signals.ts`)
+  computes the recipients and each text BEFORE its transaction (`designated()` reads the pool), then claims and
+  queues the copies in ONE transaction (`queueStaffTelegram(tx, …)`), the drain kicked after. The lead's card is
+  `/crm/leads/<id>` (links.ts), the client's `/admin/clients/<id>` only for `mayOpenClientCard` AND (`seesAllClients`
+  or the client's own seller). Called from `handleInbound` after the locale write, by dynamic import, only for a
+  WRITTEN draft, in its own try/catch.
+- **Morning line** (`agent/morning.ts`): scoped to the HOLDER's drafts, runs and samples (the account the AI speaks
+  from). One reason per held reply = its first code in `[...AUTO_REFUSALS, ...COMING_REFUSALS, ...RETIRED_REFUSALS]`
+  (deduped, so P1/P2/P3 moving codes keeps it right); words: a short morning noun where one reads better
+  (`MORNING_WORDS`), else `refusalWordOf` — so the loop is «suhbat aylanib qoldi» (J33) through the gate's own map.
+  A reply the machine pressed counts as «o'zi ketdi» only when its outbox row is `sent` (#1106); the morning's own
+  states for a ⏸, a person's decision, a disarm, a moved chat, no verdict. «Javobsiz» = `unansweredLines` from
+  yesterday's start to 10 minutes ago, any hour, judged by `livenessOf` (a waiting draft is not «javobsiz»). An empty
+  day sends nothing; at night nothing. The cap's words have ONE home now, `today.ts` `CAP_WORDS` / `capWordOf`
+  (the notice and the morning line).
+- **§4.6 words:** «byudjet» left the cap notice (`drafts.ts`, via `capWordOf`), `calc-loop.ts` and
+  `owner-answer-job.ts` («bugungi AI chegarasi tugadi (xato halqasidan himoya, pul chegarasi emas)»), and a sixth
+  place no list named — `agentAi.lessonsCost` in all four bundles. A unit fence reads every string under `agent/`.
+- **Sample** (`agent/sample.ts`): drawn under a per-day advisory lock and refused when the day has one; the weekly
+  sample (after 30 days, Fridays) reaches back six days and never re-draws a sampled reply. The line goes to the
+  pair members the arming rule admits, else rank 1 (J17); 👍/👎 asks `mayArmAuto` of the reply's own holder.
+  **`mayArmAuto` and `mayTuneAuto` are now EXPORTED from `auto-send.ts`** (one word each — no second copy of the
+  rule). **`draftsSeenBy` and `chatHrefOf` are exported from `web-page.ts`** (the page's own sight for the rows).
+- **Liveness** (`agent/liveness.ts`): `raiseSignal` / `clearSignal` / `signalStanding` in
+  `platform/diagnostics/signals.ts` as written above. **Re-fit (honesty, #1106):** the clearing line is «✅ Javobsiz
+  kutayotgan mijoz qolmadi — «AI sotuvchi javob bermayapti» ogohlantirishi yopildi.», never «AI yana javob
+  beryapti» — the same zero comes when HE answered them while the AI is still down. **Re-fit:** while the row
+  stands the window is the anchor's day (24 h), not two hours — a line the alarm was raised for keeps it standing
+  until somebody answers it, never until it ages out. **Re-fit:** a suites' switch `AGENT_LIVENESS=off` in
+  vitest.config AND the Playwright server env (the `AGENT_TARIFF_NOTICE` precedent): the alarm is one state row any
+  sweep raises by the real clock's hour; the alarm's own tests switch it on. The e2e spec that draws the home's red
+  row must insert and remove the row itself (the server's sweep no longer touches it). The page's banner and the
+  home's row (`components/system-signals.tsx`, `data-testid="ai-liveness"`) are drawn only while the agent runs.
+- **Page** (`suhbatlar/ai`): two TABS, `tekshiruv` (badge = the newest sample's unmarked rows the reader may see) and
+  `kimga`, in `signal-sections.tsx` (server) and `signal-ui.tsx` (client), their actions in
+  `agent/signal-actions.ts` (own gate — `web-actions.ts`'s `run()` cannot be exported from a 'use server' file),
+  writers in `agent/signal-settings.ts`, the panel's reads in `agent/signal-page.ts`. `useAction` and `Feedback` are
+  exported from `agent-ui.tsx`. The strip is `grid-cols-3 sm:grid-cols-4` (seven tabs).
+- **For the next package / the merge:** (1) P1 changed `autoFeedback(staffId, …)` to `autoFeedback(actor, …)` —
+  after P1 is picked, `sample.ts` `markSample` must call `autoFeedback(actor, input.draftId, now)`; until then a
+  super_admin on the seat is admitted by the sample's door and refused by the card's (`forbidden`). (2) P2's new
+  `Ineligible` member `loop` does not compile in `liveness.ts` `INELIGIBLE_LIVENESS` until it is classified —
+  `loop: 'by_design'` (the loop notice tells him; a loop is not a dead machine). (3) The reader corpus's `Reader`
+  union and the runner's two lists gain `full_truck` here and `language_money` in P1 — a mechanical merge.
+  (4) E2E owed: `m9zzzg` — «Kim javob beradi» saved and put back as a final TEST, «Kunlik tekshiruv» renders; the
+  home's liveness row put in and taken out by the spec (`AGENT_LIVENESS` is off on the server).
+
 ### 4.6 His 10 c and the fuses in `agent/limits.ts` — KEEP, do not raise, make loud (the re-wording below is P4's: it owns the morning line that names the trips)
 
 | Fuse | Value, where | Ruling |
