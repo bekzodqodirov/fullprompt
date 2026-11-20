@@ -13,7 +13,8 @@ import { getSetting } from '@/modules/platform/settings/service';
 import { parseOrigins } from '@/modules/platform/http/origins';
 import { recentOffers, sitePanel } from '@/modules/wms/crm/site-assign';
 import { gateCounters } from '@/modules/wms/crm/site-assign-gate';
-import { LEAD_TEAMS } from '@/modules/wms/crm/site-assign-rules';
+import { LEAD_TEAMS, siteAiAsks } from '@/modules/wms/crm/site-assign-rules';
+import { SEAT_REFUSAL_WORDS } from '@/modules/wms/agent/seat-candidate';
 import { FieldMapPanel } from './field-map-panel';
 import { RotaForm } from './rota-form';
 import { RouteList } from './route-list';
@@ -109,6 +110,12 @@ export default async function TaqsimotPage() {
       <SitePanel
         people={people}
         next={LEAD_TEAMS.map((team) => {
+          // The door's own order (`assignForTag`): the seat first where the choice covers this team and the seat
+          // takes one now, else the roster's pick.
+          const seat = site.ai.seat;
+          if (seat?.ok && siteAiAsks(site.ai.mode, team)) {
+            return { team, username: seat.username, name: seat.name, units: null, widened: false, ai: true };
+          }
           const pick = site.next[team];
           return {
             team,
@@ -116,8 +123,18 @@ export default async function TaqsimotPage() {
             name: pick.chosen?.name ?? null,
             units: pick.chosen?.units ?? null,
             widened: pick.widened,
+            ai: false,
           };
         })}
+        ai={{
+          mode: site.ai.mode,
+          truth:
+            site.ai.mode !== 'all' || !site.ai.seat
+              ? null
+              : site.ai.seat.ok
+                ? { ok: true }
+                : { ok: false, reason: SEAT_REFUSAL_WORDS[site.ai.seat.reason] },
+        }}
         offers={offers.map((offer) => ({
           id: offer.id,
           at: clock.format(offer.createdAt),

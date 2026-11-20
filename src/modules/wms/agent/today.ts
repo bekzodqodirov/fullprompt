@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { AGENT_LIMITS, dailySendCeiling } from './limits';
@@ -119,24 +119,40 @@ export async function sendsToday(
   dayCap: number,
 ): Promise<{ used: number; ceiling: number }> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
-  const [used] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM agent_outbox
-     WHERE manager_user_id = ${managerUserId}
-       AND status IN (${sql.join(
-         OUTBOX_GOING.map((s) => sql`${s}`),
-         sql`, `,
-       )})
-       AND queued_at >= ${dayStart}::timestamptz`);
+  const [used] = await db.execute<{ n: number }>(sql`SELECT ${agentSendsSinceSql(sql`${managerUserId}`, dayStart)} AS n`);
   // His own average daily sends over the 30 days before the agent started (his Q11 ⭐).
   let ownAverage: number = dayCap;
   if (startedAt) {
-    const from = new Date(startedAt.getTime() - 30 * 86_400_000);
     const [own] = await db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n FROM tg_messages m
-       WHERE m.manager_user_id = ${managerUserId} AND m.direction = 'out'
-         AND m.sent_at >= ${from.toISOString()}::timestamptz AND m.sent_at < ${startedAt.toISOString()}::timestamptz
-         AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id)`);
-    ownAverage = Number(own?.n ?? 0) / 30;
+      SELECT ${ownSendsBeforeStartSql(sql`${managerUserId}`, sql`${startedAt.toISOString()}::timestamptz`)} AS n`);
+    ownAverage = Number(own?.n ?? 0) / OWN_SENDS_DAYS;
   }
   return { used: Number(used?.n ?? 0), ceiling: dailySendCeiling({ startedAt, ownAverage, now, dayCap }) };
+}
+
+/** The days of his own sending the ramp averages over (his Q11 ⭐: the 30 days before the agent started). */
+export const OWN_SENDS_DAYS = 30;
+
+/**
+ * The two counts `sendsToday` is made of, as scalar fragments — so a reader that must ask them inside ONE statement
+ * on a transaction (the website's seat question, `seat-candidate.ts`, under the `lead_assign` lock and its 400 ms
+ * budget) counts exactly what the ✅, the gate and the page count, never a copy of the predicate (#513). `manager`
+ * and `startedAt` are SQL expressions in the caller's row: a bound value, or a column of its own.
+ */
+export function agentSendsSinceSql(manager: SQL, dayStartIso: string): SQL<number> {
+  return sql<number>`(SELECT count(*)::int FROM agent_outbox ao
+     WHERE ao.manager_user_id = ${manager}
+       AND ao.status IN (${sql.join(
+         OUTBOX_GOING.map((s) => sql`${s}`),
+         sql`, `,
+       )})
+       AND ao.queued_at >= ${dayStartIso}::timestamptz)`;
+}
+
+/** His own (human) sends from the account in the `OWN_SENDS_DAYS` before `startedAt` — the ramp's numerator. */
+export function ownSendsBeforeStartSql(manager: SQL, startedAt: SQL): SQL<number> {
+  return sql<number>`(SELECT count(*)::int FROM tg_messages m
+     WHERE m.manager_user_id = ${manager} AND m.direction = 'out'
+       AND m.sent_at >= ${startedAt} - make_interval(days => ${OWN_SENDS_DAYS}) AND m.sent_at < ${startedAt}
+       AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id))`;
 }

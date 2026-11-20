@@ -52,6 +52,8 @@ export default async function BroadcastPage({
     managerId: typeof params.hodim === 'string' && params.hodim ? params.hodim : undefined,
     codes: splitTags(typeof params.kod === 'string' ? params.kod : ''),
     query: typeof params.q === 'string' && params.q.trim() ? params.q.trim().slice(0, 100) : undefined,
+    // «Sotuvchisi yo'q mijozlar» (his 7 b): only the tick's own value means yes — anything else is «not asked».
+    noManager: params.sotuvchisiz === '1' ? true : undefined,
   });
   const audience: Audience = parsed.success
     ? parsed.data
@@ -69,7 +71,8 @@ export default async function BroadcastPage({
   const filtered =
     audience.sectors.length + audience.cargoKinds.length + audience.locales.length + audience.codes.length > 0 ||
     Boolean(audience.managerId) ||
-    Boolean(audience.query);
+    Boolean(audience.query) ||
+    audience.noManager === true;
 
   return (
     <div className="mx-auto max-w-3xl space-y-3">
@@ -174,6 +177,18 @@ export default async function BroadcastPage({
             </select>
           </label>
         </div>
+        {/* His 7 b: the chats no seller of ours answers — the one audience the AI's number is told to. Per chat: a
+            person holding a seller's code is that seller's customer and is not in it (J13). */}
+        <label className="chip chip-neutral cursor-pointer gap-1 text-sm">
+          <input
+            type="checkbox"
+            name="sotuvchisiz"
+            value="1"
+            defaultChecked={audience.noManager === true}
+            data-testid="broadcast-no-manager"
+          />
+          {t('noManager')}
+        </label>
         <div className="flex flex-wrap items-center gap-2">
           <button type="submit" className="btn-secondary">
             {t('apply')}

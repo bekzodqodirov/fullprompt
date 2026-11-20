@@ -44,6 +44,7 @@ import {
 } from './auto-send';
 import { deleteLesson, editLesson, lessonFromPage, lessonSavedWords, openLesson, setLessonActive, type LessonResult } from './lessons';
 import { SendCapsError, setSendCaps } from './send-caps';
+import { setClientAiContact } from './seat-contact';
 import { confirmTariff, TariffConfirmError } from './tariff-watch';
 
 /**
@@ -284,6 +285,16 @@ export async function agentOwnerAction(userId: string | null): Promise<AgentActi
 export async function agentSeatAction(userId: string | null): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
     await setAgentSeat(actor, userId && /^[0-9a-f-]{36}$/iu.test(userId) ? userId : null, ctx);
+  });
+}
+
+/**
+ * «AI raqamini ko'rsatish» (stage 1a «Hajm», his 7 b) — a super_admin's tick (the service asks `mayGovernAgent`):
+ * clients with no seller of their own are shown the AI's @handle in the bot and the Mini App.
+ */
+export async function agentClientContactAction(on: boolean): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    await setClientAiContact(actor, on === true, ctx);
   });
 }
 

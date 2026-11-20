@@ -85,6 +85,8 @@ import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
 import { livenessStanding } from '@/modules/wms/agent/liveness';
 import { sampleUnmarkedToday } from '@/modules/wms/agent/sample';
 import { KimgaSection, SampleSection } from './signal-sections';
+import { readClientAiContact } from '@/modules/wms/agent/seat-contact';
+import { ClientContactToggle } from './client-contact';
 
 /**
  * The AI sotuvchi's page (docs/AI-SOTUVCHI.md §17.12, review build-13): ONE
@@ -596,6 +598,8 @@ async function SettingsSection({
     readAgentTalkHoldSec(),
     readAgentNightPrices(),
   ]);
+  // «AI raqamini ko'rsatish» (stage 1a «Hajm», his 7 b): a settings row, read for the one role that may tick it.
+  const clientContact = superAdmin ? await readClientAiContact() : false;
   // Asked only where 0148 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
   const tariff = caps.ready
     ? { unconfirmed: await tariffUnconfirmed(new Date()), fingerprint: await currentTariffFingerprint() }
@@ -709,6 +713,9 @@ async function SettingsSection({
             </p>
             <p className="text-xs text-ink-500">{t('seatHint')}</p>
             {config.ownerUserId && <SeatButtons holderId={config.ownerUserId} holds={seat.state === 'holds'} named={seat.state !== 'none'} />}
+          </div>
+          <div className="border-t border-line pt-2">
+            <ClientContactToggle current={clientContact} />
           </div>
         </section>
       )}

@@ -772,6 +772,50 @@ paired string edit:
   <ism>», no phone, `https://t.me/<verified fresh handle>`; no verified fresh handle → the office contact as today.
   A client WITH a seller never sees it (his «sotuvchilarning o'z mijozlariga aytilmaydi»).
 
+**P5, as built (2026-11-20, the building session — re-fitted to the code where the bullets above differ).**
+- **The seat question** is `agent/seat-candidate.ts`: `SEAT_REFUSALS` (14, a closed union, in the order the verdict
+  asks) with `SEAT_REFUSAL_WORDS` (Uzbek, in code — J26 put every bundle word in K, and the K line `routing.site.aiCannot`
+  takes `{reason}`), `seatVerdictOf` (pure, every clause), `readSeatFacts` (ONE statement on the handle it is given) and
+  `seatCandidate(handle, now)` — the facts read in `handle.transaction(sp => …)`, a SAVEPOINT on the door's transaction
+  (J23: a 57014 timeout or any error aborts the savepoint alone and is `unreadable`; measured in the integration test by
+  a second session holding `agent_send_caps` ACCESS EXCLUSIVE). Beyond §4.7's list, the verdict also asks what the gate
+  refuses account-wide at scheduling — «Ish raqami», the CRM's send switch, a flood wait, the listener CURRENT (pump AND
+  catch-up, `listenerIsCurrent`, the ✅'s rule, not the pump alone) — and that the seat is a colleague (`canLogIn`: the
+  door's reused-tag branch answers only for one). The day: `dailySendCeiling` over the stored `day_cap` (the ramp
+  included), `SEAT_HEADROOM` = 10. NOT asked: the auto layer's own `per_day` (NULL by his «chegara qoyma»; its count
+  lives in `auto-send.ts`, which this file may not import) and the run fuses (`daily_draft_cap`, tokens) — the liveness
+  alarm is the net for both.
+- **`today.ts`** now exports the two counts `sendsToday` is made of as fragments (`agentSendsSinceSql`,
+  `ownSendsBeforeStartSql`, `OWN_SENDS_DAYS`) so the seat's one statement counts exactly what the ✅ counts (#513);
+  `sendsToday` itself is behaviour-neutral.
+- **The door** (`assignForTag`, third parameter `now`): the choice is read on the POOL before the transaction
+  (`readLeadAssignAi` — a refused shape and a failed read are `off`); inside, `siteAiAsks(mode, team)` (site-assign-rules,
+  every team but `buying`) → `seatCandidate(tx, now)` → the seat's offer (`capturable: true`, `ranking: {ai: true}`) or
+  the roster with `ranking.ai = false, aiReason` (why the AI did not, for «nega Aliga?»). The writer is
+  `setLeadAssignAi` (audited, a same value writes nothing) under the taqsimot page's own gate (`admin.settings.manage`
+  — the roster it bypasses is written there too, and the K description names no other door); the radio posts only
+  `off` / `all` and anything else is `off`.
+- **The panel**: `sitePanel().ai = {mode, seat}` (the door's own `seatCandidate`, asked only while `all`); the choice is
+  its own form and action (`SiteAiChoice`, `saveSiteAiAction`), the truth line draws `SEAT_REFUSAL_WORDS`, and the
+  «keyingi» line of a covered team names the seat when it takes one.
+- **«Sotuvchisi yo'q» (J13)** is ONE fragment in platform, `platform/clients/sellerless.ts` `sellerlessChatSql(chat)`:
+  no `linked` code of the chat on an ACTIVE client has a seller `canLogInSql` admits. The broadcast's `noManager`
+  (optional in the schema, so a stored audience reads «not asked») is a GET tick on the audience form
+  (`?sotuvchisiz=1`, beside every other audience filter — the plan put it on the composer, which only sends), and the
+  composer keeps it when the office un-ticks codes (a code linked to two chats). `managersFor(clientIds, chatId,
+  now)` — `chatId` REQUIRED (`null` = never the seat: the forward of a customer's words passes it, because who RECEIVES
+  them is a seller or the office); the seat comes from `agent/seat-contact.ts` `seatContactFor` (one statement: the
+  switch, the persona, seat = holder, the predicate, `reachableAt` with no typed fallback) and fills only codes that
+  drew no live seller. A chat holding a seller's code is never shown it; an INACTIVE code's seller is still drawn for
+  that code, as before (the predicate counts active codes — J13's own words).
+- **`client_ai_contact`**: `setClientAiContact` (`mayGovernAgent`, audited) behind `agentClientContactAction`
+  (web-actions, its own function), drawn by `suhbatlar/ai/client-contact.tsx` inside the super_admin «AI egasi» card.
+  The seat's name on a customer's card is `seatDisplayName(persona)` = `SEAT_TITLE` («GSR sotuv menejeri») + the
+  setting — P3 owns the persona's reader; if it mints one, `seat-contact.ts` should read it there.
+- **Not built here**: the e2e lines of §7 (`m9zz-sayt-taqsimot` at 360 px in `ru`) — the lead's, with the stage's
+  Playwright run. Listener closure grew by four light files (`clients/sellerless`, `agent/seat-candidate`,
+  `agent/seat-contact`, `agent/today`) — tg-listen is rebuilt anyway.
+
 ## 5. Doors and sight
 
 | Thing | Who | Predicate |
