@@ -238,7 +238,9 @@ function urlSecrets(): { whole: string[]; parts: string[] } {
       }
     }
     for (const segment of u.pathname.split('/')) {
-      if (segment.length < 16) continue;
+      // 8 and longer: the service's own path words («transcribe», «v1/stt») are short or harmless to hide, while
+      // a 12-character token echoed in an error was left in the clear at 16.
+      if (segment.length < 8) continue;
       parts.push(segment);
       try {
         parts.push(decodeURIComponent(segment));
@@ -336,9 +338,19 @@ const FAILED_STATUS = new Set(['error', 'failed', 'fail']);
  * a transcript from, so a wrapped answer cannot carry its text past its own
  * error. `status: "ok" | "success" | "completed"` and `error: null` are not failures.
  */
+function saysError(e: unknown): boolean {
+  if (e === true) return true;
+  if (typeof e === 'string') return e.trim() !== '';
+  if (Array.isArray(e)) return e.length > 0;
+  if (e && typeof e === 'object') return Object.keys(e).length > 0;
+  return false;
+}
+
 function failedInBody(v: unknown, depth = 0): boolean {
   if (depth > 3 || !v || typeof v !== 'object' || Array.isArray(v)) return false;
-  if (field(v, 'error')) return true;
+  // An `error` that SAYS something — `true`, a sentence, a non-empty object or list. `{"error": {}}` or `[]` beside a
+  // transcript is a service filling its schema, not a failure (an empty one is no answer of the service's).
+  if (saysError(field(v, 'error'))) return true;
   if (field(v, 'success') === false) return true;
   const status = str(field(v, 'status'));
   if (status !== null && FAILED_STATUS.has(status.trim().toLowerCase())) return true;
@@ -772,7 +784,7 @@ function printNote(i: number, total: number, n: NoteResult): void {
   const answer = n.status === null ? 'no answer' : `HTTP ${n.status}`;
   const language = n.detectedLanguage ? `  (language ${n.detectedLanguage})` : '';
   console.log(`    ${n.provider}${n.model ? ` ${n.model}` : ''} → ${answer} in ${n.ms} ms${language}`);
-  if (n.ok && n.text) console.log(`    «${n.text.replace(/\s*\n\s*/gu, ' / ')}»`);
+  if (n.ok && n.text !== null && n.text.trim() !== '') console.log(`    «${n.text.replace(/\s*\n\s*/gu, ' / ')}»`);
   else if (n.ok) console.log(`    «» (empty — silence or noise should come back exactly so)\n    raw answer: ${n.emptyAnswer}`);
   else console.log(`    FAILED: ${n.error}`);
 }

@@ -288,6 +288,8 @@ function reasonsLeft(input: {
   language: string | null;
   guess: Guess;
   nightPrices: NightPrices;
+  /** The AI's own words reached the customer: approved with no text of his (`final_body` NULL). */
+  aiWordsWent: boolean;
 }): string[] {
   const left: string[] = [];
   for (const r of input.reasons) {
@@ -310,7 +312,11 @@ function reasonsLeft(input: {
     const [code = '', detail] = input.outcome.split(/:(.*)/su);
     if (!(code === 'auto_warning' && detail !== undefined && eyeOnly(detail.split(',')))) left.push(`press:${code}`);
   }
-  if ((input.state === 'stopped' || input.state === 'gone') && input.cls !== 'talk') left.push(`held:${input.outcome ?? input.state}`);
+  // His ✅ during the countdown (`owner_send`, decide.ts :966 / auto-send.ts :764) — or ✏️ with nothing typed, then ✅
+  // (the row keeps `owner_edit`, decide.ts :1035-1038) — sent the AI's own words: under 1a the hold ends in the same
+  // press, so that is not a stop.
+  const stoppedByHim = (input.state === 'stopped' || input.state === 'gone') && input.outcome !== 'owner_send' && !input.aiWordsWent;
+  if (stoppedByHim && input.cls !== 'talk') left.push(`held:${input.outcome ?? input.state}`);
   return left;
 }
 
@@ -429,11 +435,27 @@ async function verdicts(q: Q, args: Args): Promise<number> {
     // His ✏️ (decide.ts `submitOwnText`, :1455-1462) wrote his text's warnings over the AI's and emptied the ledger:
     // the stored ones say nothing about the AI's reply, so the edited readings are taken instead (`judge`).
     const edited = r.edited === true;
-    const classes = edited ? classesWithLedgerLost(facts) : [classOf({ ...facts, ledger: ledgerLinesOf(r.ledger) })];
+    // The erased ledger can move the answer only when the gate wrote `money` (a line no tool vouched for): every vouched
+    // line came from a tool call `classOf` reads anyway, so without `money` the class is exact on an empty ledger.
+    const classes = !edited
+      ? [classOf({ ...facts, ledger: ledgerLinesOf(r.ledger) })]
+      : reasons.includes('money')
+        ? classesWithLedgerLost(facts)
+        : [classOf({ ...facts, ledger: [] })];
     const warningReadings = edited && reasons.includes('warnings') ? [EYE_ONLY_WARNINGS, [ERASED_WARNING]] : [warningCodes];
     const guess = guessOf(r.customer_locale);
     const verdict = judge(
-      { reasons, state: r.state, outcome: r.outcome, category: r.category, notes, language: r.language, guess, nightPrices },
+      {
+        reasons,
+        state: r.state,
+        outcome: r.outcome,
+        category: r.category,
+        notes,
+        language: r.language,
+        guess,
+        nightPrices,
+        aiWordsWent: r.status === 'approved' && r.own_body === null,
+      },
       classes,
       warningReadings,
     );
@@ -464,7 +486,12 @@ async function verdicts(q: Q, args: Args): Promise<number> {
   // Talk goes at once under 1a, so today's stop during the hold does not count against it — but the stop was his
   // word on THAT reply, and the number must not hide it.
   const talkStopped = judged.filter(
-    (j) => j.verdict.kind === 'goes' && (j.r.state === 'stopped' || j.r.state === 'gone') && j.classes.every((c) => c === 'talk'),
+    (j) =>
+      j.verdict.kind === 'goes' &&
+      (j.r.state === 'stopped' || j.r.state === 'gone') &&
+      j.r.outcome !== 'owner_send' &&
+      !(j.r.status === 'approved' && j.r.own_body === null) &&
+      j.classes.every((c) => c === 'talk'),
   ).length;
   if (talkStopped > 0) {
     console.log(`  shundan ${talkStopped} tasi bugun kutish paytida to'xtatilgan yoki almashtirilgan suhbat javobi (Eslatmaga qarang)`);
@@ -487,14 +514,17 @@ async function verdicts(q: Q, args: Args): Promise<number> {
       console.log(`      ogohlantirishlar${j.edited ? " (✏️ matningizniki — AI javobiniki o'chgan)" : ''}: ${j.warningCodes.join(', ')}`);
     }
     const v = j.verdict;
-    const stoppedTalk = v.kind === 'goes' && (j.r.state === 'stopped' || j.r.state === 'gone') ? ` (bugun kutishda: ${j.r.outcome ?? j.r.state})` : '';
+    const stoppedTalk =
+      v.kind === 'goes' && (j.r.state === 'stopped' || j.r.state === 'gone') && j.r.outcome !== 'owner_send' && !(j.r.status === 'approved' && j.r.own_body === null)
+        ? ` (bugun kutishda: ${j.r.outcome ?? j.r.state})`
+        : '';
     console.log(
       `      → ${
         v.kind === 'goes'
           ? `o'zi ketardi${stoppedTalk}`
           : v.kind === 'held'
             ? `baribir kutardi: ${v.left.join(', ')}`
-            : `tahrirlangan — noma'lum: ✏️ AI javobining ${j.reasons.includes('warnings') ? 'ogohlantirishlari va ' : ''}pul qatorlarini o'chirgan; kutsa — ${v.maybe.join(', ')}`
+            : `tahrirlangan — noma'lum: ✏️ AI javobining ${j.reasons.includes('money') ? "pul qatorlari va ogohlantirishlarini" : 'ogohlantirishlarini'} o'chirgan; kutsa — ${v.maybe.join(', ')}`
       }`,
     );
     console.log(`      javob (AI): «${clip(j.r.body, 60)}»`);
@@ -505,7 +535,8 @@ async function verdicts(q: Q, args: Args): Promise<number> {
       "`language`i bugungi qoida bilan saqlanganicha qoldi (1a uni o'zgartirmaydi). 1a qo'shadigan ikki yangi sabab — `loop`\n" +
       "va shikoyat o'quvchisi — hisoblanmadi: ular faqat qo'shadi, shu tomondan «o'zi ketardi» yuqori chegara.\n" +
       "Hamma joyda AI yozgan javob baholandi. ✏️ bilan tahrirlangan qoralamada AI javobining ogohlantirishlari sizning\n" +
-      "matningiznikiga almashgan va pul qatorlari o'chgan; natija shularga bog'liq bo'lsa — «tahrirlangan — noma'lum»,\n" +
+      "matningiznikiga almashgan (va pul qatorlari o'chgan — bu faqat `money` sababi bor joyda muhim); natija shunga\n" +
+      "bog'liq bo'lsa — «tahrirlangan — noma'lum»,\n" +
       "ikki tomonga ham qo'shilmadi, shuning uchun yuqoridagi son oraliq.\n" +
       "Bosishda rad etilganlar (`press:…`) qanday yozilgan bo'lsa qoldi (faqat `auto_warning` — `questions`ning o'zi —\n" +
       "olib tashlandi); suhbat javobi 1a da kutmaydi, shuning uchun unga bosishda yozilgan rad tegmasligi mumkin — bunday\n" +
