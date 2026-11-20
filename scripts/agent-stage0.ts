@@ -28,9 +28,10 @@ import { draftWorthy } from '../src/modules/wms/agent/worthy';
  *   docker compose run --rm migrate pnpm exec tsx scripts/agent-stage0.ts volume   [--days 14] [--user <uuid>]
  *
  * `verdicts` — the gate's stored refusals of one Tashkent day, and per draft what stage 1a would still
- * hold it for: the «9 tadan nechta» number of the page, and his ticks and floors as stored.
- * `media` — how many customer bursts carry a photo, a file, a voice note, or nothing but those (the eyes
- * and ears of stage 2 are sized by it). `audience` — who writes to the account. `volume` — a day's load.
+ * hold it for: the «9 tadan nechta» number of the page (a range when his ✏️ erased what an answer hangs on), and his
+ * ticks and floors as stored.
+ * `media` — how many customer bursts carry a photo, a file, a voice note, a medium nothing was stored for (a link
+ * preview, a sticker), or nothing but those (the eyes and ears of stage 2 are sized by it). `audience` — who writes to the account. `volume` — a day's load.
  *
  * The whole run is ONE transaction opened READ ONLY — postgres refuses any write a bug could try — so
  * the first line it prints says so. The helpers live here and import only pure functions from src
@@ -327,7 +328,11 @@ const ERASED_WARNING = '?';
  * smallest one's: empty everywhere → goes; something common → held by it; otherwise the answer hangs on what the edit
  * erased — UNKNOWN, counted on neither side.
  */
-function judge(base: Omit<Parameters<typeof reasonsLeft>[0], 'cls' | 'warningCodes'>, classes: readonly DraftClass[], warningCodes: readonly (readonly string[] | null)[]): Judged {
+function judge(
+  base: Omit<Parameters<typeof reasonsLeft>[0], 'cls' | 'warningCodes'>,
+  classes: readonly DraftClass[],
+  warningCodes: readonly (readonly string[] | null)[],
+): Judged {
   const lefts = classes.flatMap((cls) => warningCodes.map((codes) => reasonsLeft({ ...base, cls, warningCodes: codes })));
   const union = [...new Set(lefts.flat())];
   if (union.length === 0) return { kind: 'goes' };
@@ -445,12 +450,29 @@ async function verdicts(q: Q, args: Args): Promise<number> {
   const states = histogram(judged.map((j) => [j.r.state ?? 'rad (rejalashtirishda)']));
   if (states.length > 0) console.log(`  holatlar: ${states.map(([s, n]) => `${s} ${n}`).join(' · ')}`);
 
-  const goes = judged.filter((j) => j.left.length === 0).length;
-  console.log(`\n1a dan keyin: o'zi ketardi ${goes} / ${rows.length} · baribir kutardi ${rows.length - goes} / ${rows.length}`);
-  const leftHist = histogram(judged.map((j) => j.left));
+  const count = (kind: Judged['kind']) => judged.filter((j) => j.verdict.kind === kind).length;
+  const goes = count('goes');
+  const held = count('held');
+  const unknown = count('unknown');
+  const n = rows.length;
+  // A range, never a guess: an edited draft whose answer hangs on what the ✏️ erased sits on neither side.
+  const span = (lo: number) => (unknown === 0 ? `${lo}` : `${lo}–${lo + unknown}`);
+  console.log(
+    `\n1a dan keyin: o'zi ketardi ${span(goes)} / ${n} · baribir kutardi ${span(held)} / ${n}` +
+      (unknown > 0 ? ` · tahrirlangan — noma'lum: ${unknown} ta (hech qaysi tomonga qo'shilmadi)` : ''),
+  );
+  // Talk goes at once under 1a, so today's stop during the hold does not count against it — but the stop was his
+  // word on THAT reply, and the number must not hide it.
+  const talkStopped = judged.filter(
+    (j) => j.verdict.kind === 'goes' && (j.r.state === 'stopped' || j.r.state === 'gone') && j.classes.every((c) => c === 'talk'),
+  ).length;
+  if (talkStopped > 0) {
+    console.log(`  shundan ${talkStopped} tasi bugun kutish paytida to'xtatilgan yoki almashtirilgan suhbat javobi (Eslatmaga qarang)`);
+  }
+  const leftHist = histogram(judged.map((j) => (j.verdict.kind === 'held' ? j.verdict.left : [])));
   if (leftHist.length > 0) {
-    console.log('Kutishga qoladigan sabablar:');
-    for (const [r, n] of leftHist) console.log(`  ${r.padEnd(22)} ${pad(n, 4)}`);
+    console.log('Kutishga qoladigan sabablar (aniq kutganlar):');
+    for (const [r, c] of leftHist) console.log(`  ${r.padEnd(22)} ${pad(c, 4)}`);
   }
 
   console.log('\nHar bir qoralama:');
@@ -458,20 +480,40 @@ async function verdicts(q: Q, args: Args): Promise<number> {
     const conf = j.r.confidence === null ? '—' : j.r.confidence;
     const guess = j.guess === null ? "taxmin yo'q" : `mijoz: ${j.guess.locale ?? '?'}${j.guess.confident ? ' (aniq)' : j.guess.leans ? ' (moyil)' : ' (taxmin)'}`;
     console.log(
-      `  ${j.r.at}  ${j.r.draft_id}  ${j.r.kind}/${j.r.status}  turi: ${j.r.category ?? '—'}  til: ${j.r.language ?? '—'} (${guess})  ishonch: ${conf}  sinf: ${j.cls}  holat: ${j.r.state ?? '—'}${j.r.outcome ? ` (${j.r.outcome})` : ''}`,
+      `  ${j.r.at}  ${j.r.draft_id}  ${j.r.kind}/${j.r.status}  turi: ${j.r.category ?? '—'}  til: ${j.r.language ?? '—'} (${guess})  ishonch: ${conf}  sinf: ${j.classes.join(' yoki ')}  holat: ${j.r.state ?? '—'}${j.r.outcome ? ` (${j.r.outcome})` : ''}`,
     );
     console.log(`      saqlangan: ${j.reasons.length > 0 ? j.reasons.join(', ') : '—'}`);
-    if (j.warningCodes && j.warningCodes.length > 0) console.log(`      ogohlantirishlar: ${j.warningCodes.join(', ')}`);
-    console.log(`      → ${j.left.length === 0 ? "o'zi ketardi" : `baribir kutardi: ${j.left.join(', ')}`}`);
-    console.log(`      javob: «${clip(j.r.body, 60)}»`);
+    if (j.warningCodes && j.warningCodes.length > 0) {
+      console.log(`      ogohlantirishlar${j.edited ? " (✏️ matningizniki — AI javobiniki o'chgan)" : ''}: ${j.warningCodes.join(', ')}`);
+    }
+    const v = j.verdict;
+    const stoppedTalk = v.kind === 'goes' && (j.r.state === 'stopped' || j.r.state === 'gone') ? ` (bugun kutishda: ${j.r.outcome ?? j.r.state})` : '';
+    console.log(
+      `      → ${
+        v.kind === 'goes'
+          ? `o'zi ketardi${stoppedTalk}`
+          : v.kind === 'held'
+            ? `baribir kutardi: ${v.left.join(', ')}`
+            : `tahrirlangan — noma'lum: ✏️ AI javobining ${j.reasons.includes('warnings') ? 'ogohlantirishlari va ' : ''}pul qatorlarini o'chirgan; kutsa — ${v.maybe.join(', ')}`
+      }`,
+    );
+    console.log(`      javob (AI): «${clip(j.r.body, 60)}»`);
+    if (j.r.own_body !== null) console.log(`      ✏️ sizning matningiz: «${clip(j.r.own_body, 60)}»`);
   }
   console.log(
     `\nEslatma: \`night\` §6.2 bo'yicha sinfga qarab, agent_night_prices = ${nightPrices} bilan olindi; narxli javobning\n` +
       "`language`i bugungi qoida bilan saqlanganicha qoldi (1a uni o'zgartirmaydi). 1a qo'shadigan ikki yangi sabab — `loop`\n" +
       "va shikoyat o'quvchisi — hisoblanmadi: ular faqat qo'shadi, shu tomondan «o'zi ketardi» yuqori chegara.\n" +
+      "Hamma joyda AI yozgan javob baholandi. ✏️ bilan tahrirlangan qoralamada AI javobining ogohlantirishlari sizning\n" +
+      "matningiznikiga almashgan va pul qatorlari o'chgan; natija shularga bog'liq bo'lsa — «tahrirlangan — noma'lum»,\n" +
+      "ikki tomonga ham qo'shilmadi, shuning uchun yuqoridagi son oraliq.\n" +
       "Bosishda rad etilganlar (`press:…`) qanday yozilgan bo'lsa qoldi (faqat `auto_warning` — `questions`ning o'zi —\n" +
-      "olib tashlandi); suhbat javobi 1a da kutmaydi, shuning uchun kutish paytida yuz bergan rad (masalan `taken_over`)\n" +
-      "unga tegmasligi mumkin — bunday qatorlarda son past bo'lishi mumkin.",
+      "olib tashlandi); suhbat javobi 1a da kutmaydi, shuning uchun unga bosishda yozilgan rad tegmasligi mumkin — bunday\n" +
+      "qatorlarda son past bo'lishi mumkin.\n" +
+      "Kutish paytida to'xtatilgan (⏸ ✏️ ❌ 🙋 ✍️ 📝, o'chirish) yoki almashtirilgan qoralama: narxli sinf 1a da ham shu\n" +
+      "kutishni kutadi, to'xtatish yana bo'lardi — `held:<sabab>` bilan kutganlar qatorida. Suhbat javobi (talk) esa 1a da\n" +
+      "darhol ketadi — to'xtatishga vaqt qolmasdi — shuning uchun «o'zi ketardi»da qoldi; lekin to'xtatish sizning shu\n" +
+      "javobga bergan so'zingiz edi: qatorda «bugun kutishda: …» deb, yuqorida soni bilan ko'rsatildi.",
   );
 
   await storedSettings(q);
@@ -716,16 +758,22 @@ interface MediaCount {
   photo: number;
   file: number;
   voice: number;
+  other: number;
   mediaOnly: number;
   voiceOnly: number;
 }
 
-const ZERO_MEDIA: MediaCount = { bursts: 0, photo: 0, file: 0, voice: 0, mediaOnly: 0, voiceOnly: 0 };
+const ZERO_MEDIA: MediaCount = { bursts: 0, photo: 0, file: 0, voice: 0, other: 0, mediaOnly: 0, voiceOnly: 0 };
 
 /**
- * One burst into the counts. Photo = 'photo'; file = 'document' or a stored medium of no readable type ('other');
- * voice = 'voice' or 'audio' — `draftWorthy` counts the two together (`voice_only`). Media-ONLY = the burst holds
- * no words at all: `draftWorthy`'s own `media_only` / `voice_only`, so «only media» is what the worker sees.
+ * One burst into the counts. Photo = 'photo'; file = 'document' — a file the listener STORED (an invoice, a sheet, a
+ * clip: `mediaOf` reads every stored type that is neither image nor audio as one); voice = 'voice' or 'audio' —
+ * `draftWorthy` counts the two together (`voice_only`). Other = 'other', its own column and never a file: Telegram
+ * said the line carries media and nothing was stored beside it (census.ts `mediaWord` — `has_media` with no
+ * attachment), because `tgMediaPlan` (telegram-import.ts :583-690) keeps photos, voice and audio, and files storage
+ * accepts, and nothing else — a link preview, a sticker, a location, a contact, a round video, a file over the cap or
+ * of a refused type. Stage 2's eyes have no bytes to read there. Media-ONLY = the burst holds no words at all:
+ * `draftWorthy`'s own `media_only` / `voice_only`, so «only media» is what the worker sees, whatever the column.
  */
 function addBurst(c: MediaCount, b: Burst): MediaCount {
   const kinds = new Set(b.lines.map((l) => l.media));
@@ -737,15 +785,16 @@ function addBurst(c: MediaCount, b: Burst): MediaCount {
   return {
     bursts: c.bursts + 1,
     photo: c.photo + (kinds.has('photo') ? 1 : 0),
-    file: c.file + (kinds.has('document') || kinds.has('other') ? 1 : 0),
+    file: c.file + (kinds.has('document') ? 1 : 0),
     voice: c.voice + (kinds.has('voice') || kinds.has('audio') ? 1 : 0),
+    other: c.other + (kinds.has('other') ? 1 : 0),
     mediaOnly: c.mediaOnly + (only ? 1 : 0),
     voiceOnly: c.voiceOnly + (only && verdict.reason === 'voice_only' ? 1 : 0),
   };
 }
 
 const mediaRow = (c: MediaCount) =>
-  `${pad(c.bursts, 6)} ${pad(c.photo, 5)} ${pad(c.file, 5)} ${pad(c.voice, 5)} ${pad(c.mediaOnly, 6)} (${c.voiceOnly})`;
+  `${pad(c.bursts, 6)} ${pad(c.photo, 5)} ${pad(c.file, 5)} ${pad(c.voice, 5)} ${pad(c.other, 7)} ${pad(c.mediaOnly, 6)} (${c.voiceOnly})`;
 
 async function media(q: Q, args: Args): Promise<number> {
   const w = await windowOf(q, args);
@@ -766,8 +815,12 @@ async function media(q: Q, args: Args): Promise<number> {
   }
   console.log(`Mijoz bo'laklaridagi media — hisob ${w.owner}, ${w.fromDay} dan ${args.days} kun (Toshkent)`);
   console.log("bo'lak = bizning oxirgi xabarimizdan keyingi mijoz xabarlari (census qoidasi); «faqat media (ovoz)» = so'zsiz bo'laklar, qavsda faqat ovozlilari");
-  console.log(`\nkun          — hamma bo'laklar ————————————————  — yangi chatning 1-bo'lagi ————————————`);
-  console.log(`             bo'lak  rasm  fayl  ovoz  faqat-media   bo'lak  rasm  fayl  ovoz  faqat-media`);
+  console.log(
+    "fayl = saqlangan hujjat (invoys, jadval, video…); boshqa = Telegram media degan, lekin hech narsa saqlanmagan: havola, stiker,\n" +
+      "joylashuv yoki kontakt, dumaloq video, juda katta yoki saqlanmaydigan turdagi fayl — AI uni o'qiy olmaydi",
+  );
+  console.log(`\nkun          — hamma bo'laklar ————————————————————————  — yangi chatning 1-bo'lagi ————————————————————`);
+  console.log(`             bo'lak  rasm  fayl  ovoz  boshqa  faqat-media   bo'lak  rasm  fayl  ovoz  boshqa  faqat-media`);
   for (const day of [...all.keys()].sort()) {
     console.log(`${day}  ${mediaRow(all.get(day)!)}   ${mediaRow(first.get(day) ?? ZERO_MEDIA)}`);
   }
