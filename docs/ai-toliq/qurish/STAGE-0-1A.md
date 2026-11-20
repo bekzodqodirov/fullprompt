@@ -926,6 +926,14 @@ him as a file, so «sen aytgandek» on question 82 is an answer with the list in
 
 Questions 1-3 (design §11.3) are recorded in `STAGE-4-6.md` «His answers» and in the design's §11.3.
 
+**The judge's three questions (2026-11-20, his «savolga sen aytganing bolsin»)** — every ⭐: the avia flight clause is
+dropped, only «taxminan 3-5 kun» is said (J2); the deputy does NOT open the AI page — the rank-2 copies carry counts with
+no link (J17); the speech trial uses only his own account and the AI seat's (J16, `--accounts`).
+
+**The start gate's server read (2026-11-20, his paste):** ledger **151**, `/api/version` build `2026-11-18 14:36 UTC` —
+built after PR #155 merged (14:33 UTC), so production holds everything through DECISIONS #1806. His checkout is
+**`~/gsr`** (not `~/fullprompt`): every command he is sent starts `cd ~/gsr`.
+
 ## Verified references
 
 Checked at HEAD `bf37150c` (the plan was read at `bdd81f51`; only `docs/` differs between the two). About 230
