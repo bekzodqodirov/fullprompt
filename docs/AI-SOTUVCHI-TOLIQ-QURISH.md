@@ -46,6 +46,18 @@ they disagree re-fit the plan, never the code.
    1a takes both off ordinary talk (his 11 a), so it would go at once. `qurish/STAGE-0-1A.md` §4.1 «K1, as
    measured» and §6.3 hold the list and his three choices; the question is in `COVERAGE.md` §E's «1a dan oldin»
    group and in §F's first message. Show him the list — do not decide it for him.
+6. **Another session's open work that meets stage 1c.** When this was written PR #156 («Yangi kodga manzil xabari +
+   to'liq "Hisob tayyor"», migration 0151, DECISIONS #1807-#1815) was OPEN as a draft. When a client code is minted —
+   by the quick «+», the client form or `winLead`'s mint block — it sends the client's SELLER a staff-bot card carrying
+   the company notes ticked «yangi mijoz uchun» (the China addresses), the marking, the GS reminder and a bot link, to
+   forward to the customer. If it is merged before you build 1c, three seams must be ruled in 1c's re-read, not
+   discovered on the first live code: (a) **one source for the addresses** — the AI's closing turn quotes the
+   receiving-address knowledge facts, that card quotes the ticked notes, and #156 itself calls them «two copies»;
+   (b) **who gets the card when the AI opened the code** — through `winLead` the seller is the seat, so the card is
+   seat mail and must go through 1c's `readdress` to the pair, and the customer must not be sent the addresses
+   twice (once by the AI, once forwarded by a person); (c) **its «Hisob tayyor» ping** skips the seller «when the AI
+   sotuvchi speaks for the job» — read that predicate before 1b's case answers and stage 4's quote record lean on it.
+   Read the journal's tail on the day: if #156 merged, the next migration number moved with it.
 
 ## 3. The stages
 

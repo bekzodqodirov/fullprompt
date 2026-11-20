@@ -166,6 +166,12 @@ At HEAD `auto-send.ts:851 pressOne` is reached only from the minute sweep (`:922
 
 ### 4.6 1c — P6 «Kod» and P7 «Pochta»
 
+> **Before P6 and P7 — read the contract's start gate item 6.** Another session's PR #156 (open as a draft on
+> 2026-11-20) sends the seller a «new code» card with the ticked China-address notes whenever `winLead` mints a code.
+> If it is on main when you start 1c, rule three seams first: one source for the addresses (the card's notes vs the
+> closing turn's knowledge facts), the card through `readdress` when the seller is the seat (and never the addresses
+> twice to one customer), and its calc ping's «AI speaks for the job» predicate.
+
 **P6.** `ACTS.open_code` in `agent/acts.ts` + `agent/closing.ts` (new, pure: the blocks).
 - **Offered** only when the probe is ready and `positionOf('open_code') !== 'odam'`; then prompt rule 12 (`prompt.ts:85`, «GS kodni … o'zi ochadi» — the owner's name stands there today, ⟨1a⟩ makes it «rahbar») reads «mijoz jo'natishga qaror qilsa — open_code; kod va manzilni o'zing YOZMA». Position `odam` = today's rule 12, byte for byte.
 - **Input**: `{commit_ref, city_ref}` — two message refs of the customer's own lines. Nothing numeric, no name, no code.
