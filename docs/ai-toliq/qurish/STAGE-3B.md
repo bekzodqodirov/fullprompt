@@ -437,3 +437,10 @@ another city is refused inside the price tools and goes to him (19 c); no dollar
 names Telegram Business (12 a); `staff/` is untouched (31 c); alarms go to `designated('supervisor')`; one
 additive migration, numbered «next after the journal's tail», with its probe (`agentGuardReady`), inserting no
 row.
+
+## Seam check
+
+2026-11-20 — the seams of this plan with the other later plans (`STAGE-3A.md`, `STAGE-3B.md`, `STAGE-4-6.md`,
+`STAGE-7-9.md`) and with what `STAGE-1B-1C.md` mints and reserves, written to the lead's rulings R1-R9 of the same
+day. Docs only — nothing was run. Each numbered step below was appended as it was finished; a step that is missing
+was not reached.

@@ -360,3 +360,10 @@ pair's typing still pauses the AI; nothing climbs at night (4 a); no word rule o
 ceiling; `staff/**`, KPI and the rating are untouched (31 c); one additive migration with its probe
 (`agentInboxReady`), numbered «next after the journal's tail», and `agent_routing` ships `pair` — nothing is
 flipped for him.
+
+## Seam check
+
+2026-11-20 — the seams of this plan with the other later plans (`STAGE-3A.md`, `STAGE-3B.md`, `STAGE-4-6.md`,
+`STAGE-7-9.md`) and with what `STAGE-1B-1C.md` mints and reserves, written to the lead's rulings R1-R9 of the same
+day. Docs only — nothing was run. Each numbered step below was appended as it was finished; a step that is missing
+was not reached.

@@ -376,3 +376,10 @@ the floor and a VED figure on no card of sight ≠ `all`; every «who» is `desi
 no Telegram Business; G2's discount and credit words stay holds; three additive migrations, each with its probe
 (`agentQuotesReady`, `agentClosingReady`, `agentMoneyReady`), each «next after the journal's tail», none
 writing a position or flipping a tick.
+
+## Seam check
+
+2026-11-20 — the seams of this plan with the other later plans (`STAGE-3A.md`, `STAGE-3B.md`, `STAGE-4-6.md`,
+`STAGE-7-9.md`) and with what `STAGE-1B-1C.md` mints and reserves, written to the lead's rulings R1-R9 of the same
+day. Docs only — nothing was run. Each numbered step below was appended as it was finished; a step that is missing
+was not reached.
