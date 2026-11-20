@@ -858,6 +858,23 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
   listener can load 63 of the agent module's files — `auto-send`, `auto-gate`, `auto-card`, `decide`, `drafts`,
   `card-io` among them (`settle-hooks` → `card-io`): the card it redraws after a send prints `AUTO_REFUSAL_WORDS`,
   so an old listener would print «sababi noma'lum» for `loop` / `complaint`. One more reason, not a new step.
+- **The knowledge, right after the listener and before anything else (P7, J2).** Until it runs his live seed fact
+  `avia@1` («taxminan 2–5 kun, reys boʻlsa 2 kun») is a general fact in every prompt, beside rule 9's «3-5 … avia uchun
+  boshqa muddat aytma», and the policy counts its figures as the company's (run `memoryFor`) — so a reply saying «2-5»
+  is still vouched. The seed's versioning inserts `avia@2` (no day count) and retires an untouched `@1`; the first
+  command only lists, the second writes:
+
+  ```bash
+  cd ~/gsr && docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts          # the list must name «+ avia@2»
+  cd ~/gsr && docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts --apply  # «inserted: … avia@2»
+  ```
+
+  Then two chores, read with him: (1) on «Suhbatlar → AI sotuvchi → Bilimlar», any live avia fact he wrote or edited
+  himself (source `owner` — the seed never touches it) that still states a day count: edit it to say no days, or
+  retire it — while it stands, its days are vouched in every chat whatever the setting says; (2) any reply still
+  waiting for his ✅ that was written before the seed ran and states «2-5» or «reys bo'lsa 2 kun»: ❌ or ✏️ it. A
+  reply's own run's company rule and avia tool are judged again by today's pair at every press (policy-input
+  `policyFor`, avia-days `withAviaDaysNow`), but the old fact's figures are in its stored memory and still vouch for it.
 - He touches, in order: «Kim javob beradi» (himself and his deputy under «Rahbar va o'rinbosar», whoever hears «Katta yuk»);
   «AI ismi»; the two hold boxes and the night choice if he wants other than the defaults. NOTHING is flipped for him:
   the kind ticks are his from stage 0 («Narx» and «Hisoblatish»; «VED narxi» only after his markup answer, §4.0),
@@ -926,7 +943,11 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
 - **Stated, not built here:** the 15-minute climb to the deputy and a second presser (1b/3a); several messages and
   the holding line (1b); the Q31 setting; per-chat caps as settings; `hand_back` and `price` kinds going alone;
   a dead-card alarm; reading any file; the seller's price outranking the table (8 b); the balance going alone (25 b);
-  «3-5 kun» for avia (§11.3 of the design, open); the offer sentence is not enforced by code.
+  the offer sentence is not enforced by code. **Avia's days are built (P7, his 2 b, J2): «taxminan 3-5 kun», the
+  setting `agent_avia_days`; what stays stated:** J2's drop of the flight clause is in what the AI is TOLD (rule 9, the
+  avia tool, the seed), not a check — a reply that says it on a day inside his range («reys bo'lsa 3 kun») is vouched
+  like the range itself, in every language (a check would be a new reader: corpus rows of both kinds first); and an
+  avia fact he wrote himself vouches for its own days (§9's chore), the setting does not overrule his words.
 
 ## 11. Questions the builder must still ask him (Uzbek, numbered; ⭐ = what is built meanwhile)
 

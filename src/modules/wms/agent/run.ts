@@ -14,6 +14,7 @@ import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } fro
 import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type EligibilityFacts, type Ineligible } from './eligibility';
 import { anchorMaxAgeMsForTrigger, type OwnerTrigger } from './anchor-clock';
+import { aviaDaySources, COMPANY_RULE } from './avia-days';
 import { generalFacts, kbSearch, type KbHit } from './kb';
 import type { PromptLesson } from './lesson-rules';
 import { promptLessons } from './lessons';
@@ -755,8 +756,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
  * The figures the PROMPT dictates (incident 2026-10-29): rule 8 tells the
  * model the truck takes «eng kamida 1 kub yoki 100 kg», rule 9 the flight
  * «eng kamida 1 kg … taxminan 3-5 kun» — from `AGENT_LIMITS`, the numbers the
- * tools obey, and the flight's days from his setting (`aviaDaySources`, stage
- * 1a P7). Their only source in the policy was the seeded knowledge, which
+ * tools obey, and the flight's days from his setting (avia-days
+ * `aviaDaySources`, stage 1a P7 — and his setting again at every press,
+ * `withAviaDaysNow`). Their only source in the policy was the seeded knowledge, which
  * he may retire or re-word: then the reply said the minimum it was told to
  * say and lost its ✅ for it. The company's rule is a source of its own,
  * whatever the knowledge holds — said as the kinds it is (a measure, the
@@ -768,23 +770,11 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
  * «Avia orqali eng kamida 100 kg» (the flight takes 1 kg), and shapeless, for
  * «Sizning 100 kg yukingiz Toshkentga yetib keldi» — a weight nobody stated.
  */
-const COMPANY_RULE = 'kompaniya qoidasi';
 const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
   { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'm3', said: 'minimum' },
   { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'kg', said: 'minimum' },
   { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'kg', said: 'minimum' },
 ];
-
-/**
- * The flight's days as the company's rule (stage 1a P7, J2): the pair rule 9 TOLD this run (`LoopResult.aviaDays`, his
- * setting `agent_avia_days`), each a day count said of the flight — and nothing else. The old «2–5 kun» and the flight
- * clause he did not repeat («reys bo‘lsa 2 kun») are then a day nobody vouches for; a run that told no days (a tayyor
- * matn) vouches for none.
- */
-function aviaDaySources(days: AviaDays | null): NumberSource[] {
-  if (days === null) return [];
-  return [days.min, days.max].map((value): NumberSource => ({ value, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' }));
-}
 
 /**
  * The language the customer CONFIDENTLY said earlier in the chat's window, before this burst (fix pass 7, the check #4):

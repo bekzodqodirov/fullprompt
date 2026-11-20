@@ -687,8 +687,10 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
  * («3–5», «3 - 5») are folded first, then the setting's own shape decides (`aviaDaysRange`: N from 1, M up to 60, N
  * below M — a range, never one figure, which would read as a promise); anything else is refused, never guessed at.
  * Audited under the settings' entity id. Read once per run (settings `aviaDays`): the next run's rule 9, avia tool and
- * company rule say it. A draft written before keeps the days its own run was told — its stored sources, which ✅
- * re-reads — as a ✅ on any figure judges the evidence the card showed.
+ * company rule say it. A draft written before is judged again by the new pair at ✅ and at the machine's press
+ * (policy-input `policyFor`, avia-days `withAviaDaysNow`): one that states the old days loses its ✅ there and its card
+ * says why — nothing is retired here, because whether a reply SAYS a day takes reading its body (the rate's drafts are
+ * known by their label alone, `setAviaRate`).
  */
 export async function setAviaDays(actor: AgentActor, raw: string, ctx: AuditContext): Promise<string> {
   const { SETTINGS_AUDIT_ID, aviaDaysRange, getSetting, setSetting } = await import('../../platform/settings/service');

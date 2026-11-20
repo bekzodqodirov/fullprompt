@@ -2,14 +2,16 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AVIA_DAYS_DEFAULT, type AviaDays } from '@/modules/platform/settings/service';
+import { withAviaDaysNow } from '@/modules/wms/agent/avia-days';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { servedText, type KbHit } from '@/modules/wms/agent/kb';
 import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
+import type { NumberSource } from '@/modules/wms/agent/numbers';
 import { checkAgentReply } from '@/modules/wms/agent/policy';
 import { stableHead } from '@/modules/wms/agent/prompt';
 import { memoryFor, type ComposeReply } from '@/modules/wms/agent/run';
 import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
-import { aviaToolSpec, runTool, TOOL_SPECS, toolSpecsFor, type ToolEnv } from '@/modules/wms/agent/tools';
+import { aviaToolSpec, runTool, TOOL_SPECS, toolSpecsFor, type ToolEnv, type ToolOutcome } from '@/modules/wms/agent/tools';
 import { agentRules } from '@/modules/wms/agent/web-page';
 
 /**
@@ -82,10 +84,19 @@ const SEEDED: KbHit[] = SEED_FACTS.map((f, i) => ({
   urls: [],
 }));
 
+/** The memory a run that was told `days` stores for a reply (its tools' outcomes given). */
+function memOf(reply: string, days: AviaDays | null, outcomes: ToolOutcome[] = [], facts: KbHit[] = SEEDED) {
+  const ctx = ctxWith('Avia bilan necha kunda keladi?');
+  return memoryFor(ctx, { compose: compose(reply), tools: [], outcomes, usage, aviaDays: days }, facts, 'gsr-t');
+}
+
 /** The policy's verdict over a reply, on the memory a run that was told `days` stores (no tool called). */
 function blocksOf(reply: string, days: AviaDays | null): string[] {
-  const ctx = ctxWith('Avia bilan necha kunda keladi?');
-  const mem = memoryFor(ctx, { compose: compose(reply), tools: [], outcomes: [], usage, aviaDays: days }, SEEDED, 'gsr-t');
+  return blocksBy(reply, memOf(reply, days));
+}
+
+/** The policy's verdict over a reply, on a stored memory's sources as given. */
+function blocksBy(reply: string, mem: { sources: NumberSource[]; hasEstimate: boolean }): string[] {
   return checkAgentReply({
     body: reply,
     language: 'uz',
@@ -188,6 +199,67 @@ describe('the company rule vouches for the days the run was told, and nothing el
   });
 });
 
+describe('a draft from before a change is judged by today’s pair at ✅ and at the machine’s press (review N2)', () => {
+  // A run told the OLD pair — before the deploy «2-5» (and the flight clause), or before he typed «4-7» — with the avia
+  // tool called, so both the company rule's rows and the tool's carry its days, as a stored draft's memory does.
+  const OLD: AviaDays = { min: 2, max: 5 };
+  const toldOld = async (reply: string) => {
+    const ctx = ctxWith('Avia bilan 30 kg', [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }]);
+    const out = await runTool('avia_estimate', { weight_ref: 'w1' }, env(ctx, OLD));
+    return memOf(reply, OLD, [out as ToolOutcome]);
+  };
+
+  it('its own run’s days vouched for it; brought to today’s «3-5», «2-5» and «reys bo‘lsa 2 kun» are unsourced', async () => {
+    for (const reply of ['Avia bilan taxminan 2-5 kunda yetib boradi.', 'Avia bilan taxminan 3-5 kunda, reys bo‘lsa 2 kunda yetib boradi.']) {
+      const mem = await toldOld(reply);
+      // As stored: the old pair was the run's, and the check at the write let it through.
+      expect(blocksBy(reply, mem), reply).not.toContain('number_unsourced:2');
+      // As the press reads it now.
+      expect(blocksBy(reply, { ...mem, sources: withAviaDaysNow(mem.sources, AVIA_DAYS_DEFAULT) }), reply).toContain('number_unsourced:2');
+    }
+    const ok = 'Avia bilan taxminan 3-5 kunda yetib boradi.';
+    const mem = await toldOld(ok);
+    expect(blocksBy(ok, { ...mem, sources: withAviaDaysNow(mem.sources, AVIA_DAYS_DEFAULT) })).toEqual([]);
+  });
+
+  it('each row keeps its own shape and place — the company rule’s and the tool’s, with their origin, tool and unit', async () => {
+    const mem = await toldOld('x');
+    const now = withAviaDaysNow(mem.sources, OTHER);
+    expect(now).toHaveLength(mem.sources.length);
+    const setting = (s: NumberSource) => s.kind === 'duration' && (s.label === 'avia muddati' || s.label === 'kompaniya qoidasi');
+    mem.sources.forEach((s, i) => {
+      expect(now[i], String(i)).toEqual(setting(s) ? { ...s, value: s.value === OLD.min ? OTHER.min : OTHER.max } : s);
+    });
+    // The seeded truck facts' own days («15–25 kun») are a fact's and stay as they were.
+    expect(now.filter(setting).map((s) => [s.label, s.origin, s.value])).toEqual([
+      ['avia muddati', 'tool', OTHER.min],
+      ['avia muddati', 'tool', OTHER.max],
+      ['kompaniya qoidasi', 'kb', OTHER.min],
+      ['kompaniya qoidasi', 'kb', OTHER.max],
+    ]);
+  });
+
+  it('on a draft told today’s pair nothing moves; a tayyor matn, which vouched for no day, gains none', () => {
+    for (const days of [AVIA_DAYS_DEFAULT, OTHER]) {
+      const mem = memOf('x', days);
+      expect(withAviaDaysNow(mem.sources, days)).toEqual(mem.sources);
+    }
+    const none = memOf('x', null);
+    expect(withAviaDaysNow(none.sources, AVIA_DAYS_DEFAULT)).toEqual(none.sources);
+    expect(blocksBy('Avia bilan taxminan 3-5 kunda yetib boradi.', { ...none, sources: withAviaDaysNow(none.sources, AVIA_DAYS_DEFAULT) })).toContain(
+      'number_unsourced:3',
+    );
+  });
+
+  it('a knowledge fact’s own day count is his words — untouched (a fact that disagrees is a chore on «Bilimlar», J2)', () => {
+    const own: KbHit = { id: '00000000-0000-4000-8000-000000000799', ref: 'F99', answer: 'Avia orqali odatda 7 kunda yetib boradi.', phones: [], urls: [] };
+    const mem = memOf('x', AVIA_DAYS_DEFAULT, [], [...SEEDED, own]);
+    const now = withAviaDaysNow(mem.sources, OTHER);
+    expect(now.filter((s) => s.label === 'kompaniya bilimi')).toEqual(mem.sources.filter((s) => s.label === 'kompaniya bilimi'));
+    expect(now).toContainEqual(expect.objectContaining({ value: 7, kind: 'duration', label: 'kompaniya bilimi' }));
+  });
+});
+
 describe('the page says the setting’s pair', () => {
   it.each([AVIA_DAYS_DEFAULT, OTHER])('%o', (days) => {
     expect(agentRules({ aviaUsdPerKg: 17, aviaRateSetAt: null }, days).avia).toMatchObject({ minKg: 1, daysMin: days.min, daysMax: days.max });
@@ -232,11 +304,20 @@ describe('ONE reader, nothing else states a flight’s day (fences)', () => {
       .filter((f) => /(?<![\w.])aviaDays\(\)/u.test(f.text) && !f.path.endsWith('settings/service.ts'))
       .map((f) => f.path)
       .sort();
-    expect(callers).toEqual(['src/app/(protected)/suhbatlar/ai/page.tsx', 'src/modules/wms/agent/run.ts']);
+    // …and the policy, which reads it again at every check (review N2): the press judges by today's pair.
+    expect(callers).toEqual(['src/app/(protected)/suhbatlar/ai/page.tsx', 'src/modules/wms/agent/policy-input.ts', 'src/modules/wms/agent/run.ts']);
     const run = strip(readFileSync('src/modules/wms/agent/run.ts', 'utf8'));
     // Both run paths, once each, beside the persona — never inside the loop's rounds.
     expect(run.match(/aviaDays: await aviaDays\(\)/gu)).toHaveLength(2);
     const loop = run.slice(run.indexOf('export async function runLoop'), run.indexOf('async function eligibilityFacts'));
     expect(loop).not.toMatch(/await aviaDays\(/u);
+  });
+
+  it('the policy reads the setting with the world it reads now, and judges the stored sources by it', () => {
+    const input = strip(readFileSync('src/modules/wms/agent/policy-input.ts', 'utf8'));
+    const fn = input.slice(input.indexOf('export async function policyFor('), input.indexOf('export async function ownerPolicyFor('));
+    expect(fn.match(/aviaDays\(\)/gu)).toHaveLength(1);
+    expect(fn).toMatch(/const \[[^\]]*, days\] = await Promise\.all\(\[[\s\S]*aviaDays\(\),\s*\]\);/u);
+    expect(fn).toContain('numberSources: withAviaDaysNow(input.memory.sources, days),');
   });
 });

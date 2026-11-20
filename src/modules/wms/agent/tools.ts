@@ -13,6 +13,7 @@ import { normalizeRowUnit } from '../calc/units';
 import { tariffFor } from '../calc/tariff-read';
 import type { StoredEstimate } from './auto-money';
 import type { CalcPriceMark } from './calc-price';
+import { AVIA_DAYS_LABEL } from './avia-days';
 import { AVIA_RATE_LABEL } from './config';
 import { aviaEstimate, TRUCK_ZONE, truckEstimate, YOLKIRA_GUARDS } from './estimate';
 import { AGENT_LIMITS } from './limits';
@@ -703,8 +704,8 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
     sources: [
       { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'total' },
       { value: rate, kind: 'money', label: AVIA_RATE_LABEL, origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'rate' },
-      { value: daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
-      { value: daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+      { value: daysMin, kind: 'duration', label: AVIA_DAYS_LABEL, origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+      { value: daysMax, kind: 'duration', label: AVIA_DAYS_LABEL, origin: 'tool', tool: 'avia_estimate', mode: 'air' },
       { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool', tool: 'avia_estimate' },
     ],
   };

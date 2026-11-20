@@ -631,9 +631,10 @@ export const AVIA_DAYS_DEFAULT: AviaDays = aviaDaysRange(SETTING_DEFAULTS.agent_
  * The flight's days (stage 1a P7, J2, his 2 b: «3-5 kun» — no «reys bo‘lsa» clause) — the ONE reader of
  * `agent_avia_days`: what the prompt's rule 9, the avia tool (its description, its words, its day sources), the
  * company rule the policy vouches by (run `memoryFor`) and the AI page say, read ONCE per run so every one of them
- * says the same days. The stored value when its shape holds, else the default — a value typed into the table by hand
- * is never guessed at. On the pool: never inside a transaction (#714), and never from the listener — the send step
- * re-prices the flight by its rate alone and states no day.
+ * says the same days — and read again by every policy check (`policyFor`), so a draft written before he changed it is
+ * judged at ✅ by today's pair. The stored value when its shape holds, else the default — a value typed into the table
+ * by hand is never guessed at. On the pool: never inside a transaction (#714), and never from the listener — the send
+ * step re-prices the flight by its rate alone and states no day.
  */
 export async function aviaDays(): Promise<AviaDays> {
   const raw = await getSetting('agent_avia_days');

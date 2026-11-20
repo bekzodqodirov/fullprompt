@@ -1,6 +1,7 @@
 import * as autoGate from '@/modules/wms/agent/auto-gate';
 import type { AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import * as autoMoney from '@/modules/wms/agent/auto-money';
+import { withAviaDaysNow } from '@/modules/wms/agent/avia-days';
 import * as complaint from '@/modules/wms/agent/complaint';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import * as digits from '@/modules/wms/agent/digits';
@@ -177,7 +178,8 @@ function checked(lines: readonly string[], language: AgentLocale, reply: string,
     body: reply,
     language: mem.language,
     customerScript: mem.customerScript,
-    numberSources: mem.sources,
+    // …the flight's days brought to the setting as `policyFor` reads it (stage 1a P7) — the shipped pair, the run's own.
+    numberSources: withAviaDaysNow(mem.sources, AVIA_DAYS),
     removeWhole: [],
     ownCodes: mem.ownCodes ?? [],
     bookCodes: new Set(),

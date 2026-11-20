@@ -863,4 +863,34 @@ describe('a day count is the time of the road the customer asked about (fix roun
       else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
     }
   });
+
+  it('a draft written on the old days does not leave on them: ✅ after he changes them judges today’s pair (review N2)', async () => {
+    await clearChat();
+    await stampAgentPump(accountId, true);
+    // Written and checked on the shipped «3-5» — sendable as it stands.
+    const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+    const out = await handleInbound(job(a), {
+      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 3-5 kunda yetib boradi.')]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+    const d = (await liveDraft())!;
+    await setSetting('agent_avia_days', '4-7', ownerId);
+    try {
+      // His ✅ (and the machine's press, the same door) after he typed «4-7»: the stored «3-5» is a day nobody vouches for.
+      const r = await decideDraft(actor(), d.id, 'send', { digest: await cardDigestOf(d.id) }, ctx());
+      expect(r).toMatchObject({ ok: false, code: 'policy_block' });
+      expect((r as { detail?: string }).detail).toContain('number_unsourced');
+      const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id));
+      expect(after).toMatchObject({ status: 'pending', blocked: true });
+      expect((after!.policy as { blocks: { code: string; detail?: string }[] }).blocks).toContainEqual(
+        expect.objectContaining({ code: 'number_unsourced', detail: '3' }),
+      );
+      expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, d.id))).toEqual([]);
+    } finally {
+      if (aviaDaysRow) await setSetting('agent_avia_days', aviaDaysRow.value, ownerId);
+      else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
+    }
+    await clearChat();
+    await stampAgentPump(accountId, true);
+  });
 });
