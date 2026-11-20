@@ -3923,8 +3923,10 @@ https://claude.ai/artifact/VULstuxzWxKtMJ9YPy3TQM — republish THAT url; the so
 (design §11, verbatim, binding) and said «sen qanday qurishni yozib ket, boshqa model ishni davom ettiradi».** So the
 handoff was written and NOTHING is built: the build contract `docs/AI-SOTUVCHI-TOLIQ-QURISH.md`, seven stage plans in
 `docs/ai-toliq/qurish/` (each written against the code, then its `file:line` references opened, then held against §11,
-then dry-run or seam-checked) and `qurish/COVERAGE.md` (every answer → its stage; 81 questions still to ask him, sent
-in groups before each stage; §F = the first message). **A session that builds reads the contract first and starts with
+then dry-run or seam-checked) and `qurish/COVERAGE.md` (every answer → its stage; 81 questions still to ask him, numbered 1-82, sent
+in groups before each stage; §F = the first message). **The one he must see before 1a's first package merges is
+question 82, «the 55»**: of the 303 dangerous first replies, 55 meet no word rule, and 1a takes the AI's own rating
+and the 2-minute hold off ordinary talk — the list and his three choices are in `qurish/STAGE-0-1A.md` §4.1 / §6.3. **A session that builds reads the contract first and starts with
 stage 0 + 1a.** The flip: judge ACTIONS by what they can cost, not words and not the model's own confidence; rights per
 action in four positions (O'zi / Nazoratda / So'rab / Faqat odam). What no stage may undo — from HIS answers: nobody is
 named in code (who receives a signal, a call-back, a hand-over, a card number — and how the AI's customers are counted
