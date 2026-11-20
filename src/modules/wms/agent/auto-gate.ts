@@ -188,8 +188,10 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
  * wrote — in his words; null for a code nobody knows (the card says so plainly, never printing the code).
  */
 export function refusalWordOf(code: string): string | null {
-  if (Object.hasOwn(AUTO_REFUSAL_WORDS, code)) return AUTO_REFUSAL_WORDS[code as AutoRefusal];
+  // Retired first: while a retired code is still in the gate (until P1 removes it) both maps hold the same word, and
+  // reading this branch first is what lets its test go red the day the word leaves AUTO_REFUSAL_WORDS.
   if (Object.hasOwn(RETIRED_REFUSAL_WORDS, code)) return RETIRED_REFUSAL_WORDS[code as RetiredRefusal];
+  if (Object.hasOwn(AUTO_REFUSAL_WORDS, code)) return AUTO_REFUSAL_WORDS[code as AutoRefusal];
   if (Object.hasOwn(COMING_REFUSAL_WORDS, code)) return COMING_REFUSAL_WORDS[code as ComingRefusal];
   return null;
 }

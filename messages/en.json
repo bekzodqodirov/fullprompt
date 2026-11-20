@@ -788,7 +788,7 @@
     "ownDoorPage": {
       "agentAi": "Chats → AI seller",
       "crmSettings": "CRM → Settings",
-      "taqsimot": "Admin → Lead distribution"
+      "taqsimot": "Clients & sales → Lead routing"
     },
     "badValueMarkupKind": "Invalid value — write percent or fixed. Nothing was saved.",
     "badValueMarkup": "Invalid value — a percent 0.01 to 100 (at most 2 decimals) or whole dollars 1 to 5000. Nothing was saved.",

@@ -37,8 +37,8 @@ export const NIGHT_SILENT_TYPES: ReadonlySet<string> = new Set([
   'ClientLotDisputed',
   'ClientLotConfirmed',
   // Stage 1a (0151): his 4 a — «cards to colleagues wait for the morning». A big-cargo signal written at 02:00 is
-  // read at 08:00 without having woken the colleague he designated, and the evening sample's line (20:10) reaches a
-  // phone already quiet. Deliberately NOT here: `AgentLiveness` rings (customers are waiting in working hours — the
+  // read at 08:00 without having woken the colleague he designated; the evening sample's line is sent at 20:10, which
+  // is before the quiet hours (22:00-08:00), so this only matters if it is ever sent late. Deliberately NOT here: `AgentLiveness` rings (customers are waiting in working hours — the
   // one alarm of 1a whose silence costs a customer), and `AgentMorning` is scheduled at 08:40 and never sent at night.
   'AgentSignal',
   'AgentSample',

@@ -1306,7 +1306,8 @@ export function autoDisarmAlarmText(reason: StepDownReason): string {
 /**
  * The people the agent's own alarms reach: its holder and every super_admin who can log in (`usersWithRoles` asks
  * `canLogInSql`). ONE reader, extracted from `stepDown` (stage 1a §3.2): it is also the LAST fallback of
- * `designated()` (agent/designations.ts), so «nobody was designated» means exactly today's audience — and the role
+ * `designated()` (agent/designations.ts), so «nobody was designated» means today's audience (the fallback asks the
+ * holder's `canLogIn` too, so a holder who cannot log in is left out there, where `stepDown` still names him) — and the role
  * key it names stays here, in the one line that already held it, never in the designations' file (design §11.2).
  * Holder first; nobody twice. Reads the pool — never inside a transaction.
  */
