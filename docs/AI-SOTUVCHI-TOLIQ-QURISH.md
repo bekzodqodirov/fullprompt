@@ -39,6 +39,13 @@ they disagree re-fit the plan, never the code.
    dump he was sent came back without band 11). Stage 0's scripts read them.
 4. Open with him (design §11.3): the markup on a VED price (empty), avia inside «$9-17/kg», whether cargo is
    received in Kashgar. None blocks stage 1a.
+5. **The 55 — the one thing he must see before 1a's first package merges.** The dry run of stage 1a measured the
+   303 dangerous first replies against today's rules: 244 are held by a word rule, and 55 meet NO rule at all (a
+   credit promised in unlisted words, a soft discount, a free service, a customs promise, a deadline without a
+   figure). Today such a reply, if the AI ever wrote it, waits behind the AI's own rating and his 2-minute ⏸; stage
+   1a takes both off ordinary talk (his 11 a), so it would go at once. `qurish/STAGE-0-1A.md` §4.1 «K1, as
+   measured» and §6.3 hold the list and his three choices; the question is in `COVERAGE.md` §E's «1a dan oldin»
+   group and in §F's first message. Show him the list — do not decide it for him.
 
 ## 3. The stages
 
@@ -98,6 +105,26 @@ one family of word rules only after its own evidence is in and he has seen it.
 - A figure that was heard or read from a file satisfies no tool until the customer confirms it in text.
 - Every stage with a migration has a readiness probe, so a half-applied deploy degrades instead of throwing; a new
   column on an old hot table is SQL-only that release.
+
+**From the dry run of 2026-11-20 (the lead's rulings on what the plans left open — the plans are written to them):**
+
+- **The seat's mail** (1c): one function re-addresses every notification written to the seat as a PERSON, called by
+  every writer of such a row; writers that address a role are on a counted allow-list and one fence lists every
+  write site. Both of the pair receive it, each copy drawn for its own reader's sight (law 4).
+- **Two readers of the designation table** (1a): one with the fallback chain, for signals and alarms; one that
+  returns the topic's own rows with their rank and nothing else, for DOORS — who may press ✅, write from the AI's
+  number, approve knowledge. An empty table never widens a door beyond today's rule.
+- **The loop detector** never counts a text-less line (a photo-only burst) as «the same line again».
+- **The number of messages in one answer** (his coming answer to question 13) counts everything the customer
+  receives at once — prose, a tayyor matn, the holding line.
+- **A tayyor matn is not judged for script** (its frame is approved per language; what it quotes is the
+  customer's own text). Prose is judged as today.
+- **One writer of a right's position**, and no migration or deploy ever writes a position.
+- **Stage 1a builds a small liveness alarm** — a customer wrote in working hours, the AI is on, nothing was drafted
+  or sent in time → one line to the pair. The critics made it the condition for taking the card and the hold off
+  ordinary talk.
+- **e2e spec names in the plans are proposals**: on the day take the next free prefix after the directory's last
+  file, and keep the AI specs in stage order.
 
 **From this repository's own history (CLAUDE.md, in force):** the verification ritual in CI's order on a fresh
 database; `pnpm typecheck` and lint before every push; a test for a fix is shown RED without it, by string edit and
