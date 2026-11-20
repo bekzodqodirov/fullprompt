@@ -1,6 +1,6 @@
 # To'liq AI sotuvchi — the target product (design v2, BEFORE any code)
 
-Status: **DRAFT awaiting the owner's answers. Nothing here is built.** Written 2026-11-19 on his «hozirdan toliq ai
+Status: **ANSWERED on 2026-11-20 (§11, binding) — nothing is built yet; the build is handed to another session (`docs/AI-SOTUVCHI-TOLIQ-QURISH.md`).** Written 2026-11-19 on his «hozirdan toliq ai
 sotuvchi qurishni strukturasini qur … ishni qurishni boshlashdan oldin hammasini aniqlashtirib olaylik», after his
 «hozir AI sotuvchi emas salomlashadgan bot yasab qoyibsanku». What exists today is `docs/AI-SOTUVCHI.md` §17-§18.9.
 
@@ -225,9 +225,78 @@ Chat Automation on a spare number (what the customer sees; coexistence with the 
 speech-to-text on 25 real notes, three services, the protocol of `critic-stt.md` §4 · how the cheaper and the stronger
 reader do on the same 20 real papers, with cost per paper · his real volume and media share from the server.
 
-## 11. His answers
+## 11. His answers — 2026-11-20, BINDING
 
-_(none yet — the page was sent to him on 2026-11-19)_
+His message, verbatim (copied from the page's answer box, plus one sentence):
+
+> AI sotuvchi — javoblarim:
+> 1b · 2a · 3b (hardcoded qilma kimni belgilash sistemani ozidan bolsin.) · 4a · 5b · 6c · 7b · 8b · 9a · 10c · 11a ·
+> 12a · 13a · 14b · 15a · 16b · 17c · 18 (qashqar va horgos narxlari bir xilda) · 19c · 20a (buni saytda belgilash
+> imkoni bolsin) · 21a · 22a · 23c · 24a · 25b · 26a · 27a · 28a · 29b · 30a · 31c (bunis istemada belgilab ketish
+> imkoni bolishi kerak) · 32a
+> AI ismi: Bekzod · O'rinbosar: Abduboriy · SIM kimda: bekzod · Avia: saytda $9-17/kg, 3-5 kun
+>
+> sen qanday qurishni yozib ket boshqa model ishni davom ettiradi
+
+**He handed the build to another session.** The build contract is `docs/AI-SOTUVCHI-TOLIQ-QURISH.md` with one plan
+per stage in `docs/ai-toliq/qurish/`. Everything below overrides §1-§10 wherever they differ.
+
+### 11.1 The answers, as rules
+
+| Q | His answer | What is built |
+|---|---|---|
+| name | «Bekzod» | The persona is «GSR sotuv menejeri Bekzod». It never says it is a person. |
+| 1 | b | Own name as above; asked «botmisiz?» it answers ITSELF with one honest line («Ha, GSRning AI yordamchisiman, kerak bo'lsa menejerni chaqiraman») and goes on. Reverses 11-11's «botmisiz → to me» — he saw the ⚠. |
+| 2 | a | A bare «narxi qancha?» with kub and kg: the table figure at once, then «rastamojka bilan hisoblab beraymi?»; a «ha» or an invoice sends the job to the VED. |
+| 3 | b + note | Table prices go alone; from 20 kub, or when the customer says «to'liq mashina / fura», the AI still answers and a signal goes out. **Who receives it is chosen in the system, never written in code** (his note) — and the threshold is a setting too. Today's own ceiling (above 100 m³ / 20 t → the VED) stays. |
+| 4 | a | At night (22:00-08:00) it answers a customer who writes; it never writes first; cards to colleagues wait for the morning. Reverses 11-11's «tunda yo'q» — he saw the ⚠. |
+| 5 | b | What the AI cannot decide goes to him; a card unanswered for 15 minutes in working hours (09:00-19:00) goes to his deputy too. Only the two of them write from the AI number. Deputy: **Abduboriy** (a person chosen in settings, not a name in code). |
+| 6 | **c** | Every cargo visitor who presses «Telegram» on the website goes to the AI; sellers get none from the site. «Sotib olib berish» stays with people. (Not the recommended option — his choice.) The AI must never make the site answer nobody: when the seat cannot take a visitor (account paused, listener down, AI off) the old roster answers. |
+| 7 | b | Clients WITHOUT a seller get one message through the company bot (the «Savdo → Xabar yuborish» screen) and the AI number is shown to them where their manager would be; sellers' own customers are not told. |
+| 8 | b | A colleague's customer on the AI number: status, addresses, table prices alone; money, discount and a new deal go to that seller as a card and the answer returns through the AI; the seller's price outranks the table. |
+| 9 | a | Ten of its messages with 👍/👎 every evening for the first month, then weekly. |
+| 10 | **c** | **No daily money limit.** The meter and the 20:00 line stay; nothing stops on dollars. (The existing run/token fuses are a separate matter — see the build contract.) |
+| 11 | a | Ordinary talk goes at once; a price (table or VED) waits 2 minutes with ⏸. He saw the ⚠ (11-11: 2 minutes for everything). |
+| 12 | **a** | **The session only.** No Chat Automation trial, no business bot — §5's second bullet and the «official road» half of stage 7 are OUT. |
+| 13 | a | The speech trial on 25 real notes with three services (ElevenLabs, OpenAI, a service in Uzbekistan). Until one passes: the AI tells the customer «ovozni hozir eshita olmayapman, yozib yuboring» and he gets a card. If one passes: read-back of the whole fact sheet and a typed «ha» before any price or address. |
+| 14 | b | By topic: customs → the VED on duty · «where is the truck / why late» → logist · «pul tushdimi» → accountant · pickup → warehouse manager · price, discount, complaint → him. 15 minutes in working hours, then him and the deputy. The VED's card never carries a client price. |
+| 15 | a | «Telefon qiling»: the AI takes the number and a convenient hour, opens a task for a person and says «menejerimiz qo'ng'iroq qiladi». Who — a setting (he left the box empty). |
+| 16 | b | The GS code alone when the customer commits: at most 10 a day (a setting), and for the first two weeks each code is shown to him the same minute with one tap to cancel. Reverses «kodni o'zim ochaman» — he saw the ⚠. The road still ships the one-tap version first (stage 1c) and turns this on at stage 5. |
+| 17 | c | The avia address: **he gives it each time**, as today. Nothing changes. |
+| 18 | note | «Qashqar va Xorgos narxlari bir xilda» — a cargo that starts in Horgos is priced by the Kashgar column. Whether cargo is RECEIVED in Kashgar today is still unanswered (his address card names Ivu, Guanchjou and Xorgos only) — asked again; until then a Kashgar origin gets its price and the address question goes to him. |
+| 19 | c | Another city of delivery: each to him, as today. |
+| 20 | a + note | It sells yo'lkira, rastamojka/podklyuch and avia only. For factory pickup and «sotib olib berish» it collects the details and hands over. **To whom — chosen in the system** (his note «saytda belgilash imkoni bo'lsin»). |
+| 21 | a | It names the ways to pay and that payment is in Tashkent before pickup; the card number comes from a person (who — a setting). |
+| 22 | a | An official price told too low: up to $50 the customer keeps it; above, corrected with an apology; he is told either way. |
+| 23 | **c** | Discount alone, ONLY out of the amount he adds on top of the VED's price. He saw the ⚠. **His markup is empty** (he typed none), so today the room is zero and every discount request is a one-tap card to him — asked again (11.3). A table (yo'lkira) price has no markup, so a discount on it is always his card. |
+| 24 | a | A quote left unanswered: two reminders (next working day, day 5-7), then it stops; daytime only; 10 a day in all; «yozmang» = never again; one block stops them for everybody. He saw the ⚠. |
+| 25 | b | The balance alone when the customer asks, in a phone-proven chat; the amount said once when the cargo is ready, through the company bot when the customer has it. He saw both ⚠. |
+| 26 | a | The Friday greeting from the AI number only to people who wrote to it in the last 90 days (≤ 10 a day shared with Q24, a text per person, once a month per customer); everybody else through the company bot with a «🔕 kerak emas» button; each campaign approved once. |
+| 27 | a | No road news unasked. |
+| 28 | a | In the company bot («💬 Menejer») the AI answers status, addresses and standard questions; the rest goes to the customer's seller as today. |
+| 29 | **b** | The price the AI told is written on the lead/deal card with its validity; the PDF goes from the AI number (not through the bot). Reverses 6 b — he saw the ⚠. |
+| 30 | a | A reserve number is prepared (a real SIM). |
+| 31 | **c** + note | AI-won customers are counted like a seller's — as today — **and this is a setting** («sistemada belgilab ketish imkoni bo'lishi kerak»): company-owned / handed to a seller after the first cargo / counted like a seller. So the seat STAYS in KPI, the rating and the congratulations until he switches it; §6's «out of pay and rating from 1a» is withdrawn. |
+| 32 | a | The order of §7. |
+| SIM | «bekzod» | The seat's SIM and phone are with him. |
+| avia | «saytda $9-17/kg, 3-5 kun» | Avia is said as on the website: $9-17 a kg, 3-5 days. Today the AI says kg × $17 and 2-5 days, and the vendored site table says $9-12 and 5-10 days — how ONE cargo is priced inside that range is asked again (11.3). |
+
+### 11.2 The thread through his notes — «do not hardcode who»
+
+Three of his notes say the same thing (3, 20, 31): **who receives what, and how the AI's customers are counted, is
+chosen on a screen**. The build therefore carries one designation table from stage 1a on — topic → people, with
+the supervisor pair as the fallback — and every hand-over in §1 reads it: the big-cargo signal, the call-back task,
+factory pickup and «sotib olib berish», the card number, a big customer's seller, the four topic owners of Q14.
+No person's name, id or role key appears in code or in a migration.
+
+### 11.3 Still open with him (asked 2026-11-20)
+
+1. **The markup** on a VED price — empty today, so Q23 c gives the AI no room.
+2. **Avia inside «$9-17/kg»** — a range said to the customer, or a rate per kind of goods?
+3. **Kashgar** — do we receive cargo there now, and at which address?
+
+Not blockers for stage 1a. Until answered: no markup (his A1), avia as today with «3-5 kun» only after his word,
+a Kashgar address from him.
 
 ## 12. How the page was checked before it went out
 

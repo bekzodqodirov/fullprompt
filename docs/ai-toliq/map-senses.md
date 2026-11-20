@@ -80,7 +80,7 @@ it; `tg_messages` has no duration column — `\d tg_messages`).
 
 ## 2. Existing model readers of images / PDF / Excel
 
-All are direct `new Anthropic()` calls outside the `callModel` seam, all on `ANALYST_MODEL` (`claude-opus-5`).
+All are direct `new Anthropic()` calls outside the `callModel` seam, all on `ANALYST_MODEL` (`the heavy-tier model`).
 
 ### 2.1 `src/modules/wms/calc/intake-ai.ts: analyzeIntake` — the staff bot's «🧮 Hisoblatish» / «🤖 AI rastamojka»
 
@@ -252,9 +252,9 @@ goods lines the customer TYPED.
   text block (the agent's opening chat block). No 1-hour TTL anywhere.
 - Blocks: text / tool_use / tool_result(string) / opaque (thinking passed back verbatim). No image, no document, no
   `thinking`/`effort`/`output_config` parameter on the seam, `strict` on tools supported.
-- Models: `ANALYST_MODEL = 'claude-opus-5'`, `STAFF_MODEL = 'claude-sonnet-5'`.
-- Price map `MODEL_USD_PER_MTOK` ($/MTok): opus-5 `{input 5, output 25, cacheRead 0.5, cacheWrite 6.25}`,
-  sonnet-5 `{input 2, output 10, cacheRead 0.2, cacheWrite 2.5}`; `approxMicroUsd` returns null for a model with no
+- Models: `ANALYST_MODEL = 'the heavy-tier model'`, `STAFF_MODEL = 'the fast-tier model'`.
+- Price map `MODEL_USD_PER_MTOK` ($/MTok): heavy tier `{input 5, output 25, cacheRead 0.5, cacheWrite 6.25}`,
+  fast tier `{input 2, output 10, cacheRead 0.2, cacheWrite 2.5}`; `approxMicroUsd` returns null for a model with no
   entry (screens then print calls and no dollars).
 - `aiConfigured()` = `ANTHROPIC_API_KEY` present.
 
@@ -262,13 +262,13 @@ goods lines the customer TYPED.
 
 | Feature | File:function | Model | max_tokens | Stream | Deadline |
 |---|---|---|---|---|---|
-| **AI sotuvchi run** | `agent/run.ts: runLoop` via `callModel` | sonnet-5 | 1 500 per round, ≤ `maxToolRounds` 6 | no | 60 s/call, `LOOP_WALL_MS` 90 s |
-| Staff AI yordamchi | `platform/ai/assistant.ts` | sonnet-5 (opus-5 for analyst roles) | 2 048, `MAX_ROUNDS` 6 | no | 60 s/call, 120 s wall |
-| Intake reading | `calc/intake-ai.ts: analyzeIntake` | opus-5 | 32 000, effort medium | yes | 150 s (20 s thread door) |
-| Tarkib file reading | `receipts/tarkib-read-ai.ts` | opus-5 | 32 000, effort medium | yes | 150 s |
-| TNVED suggestion / grouping | `tnved/service.ts` | opus-5 | 16 000 / 8 192 | no | 60 s |
-| Import-row pick | `calc/prefill-ai.ts: pickImportRows` | opus-5 | 4 096 | no | 60 s |
-| «Oldingi narx» 🤖 | `finance/similar-ai.ts` | opus-5 | 1 024 | no | 60 s |
+| **AI sotuvchi run** | `agent/run.ts: runLoop` via `callModel` | fast tier | 1 500 per round, ≤ `maxToolRounds` 6 | no | 60 s/call, `LOOP_WALL_MS` 90 s |
+| Staff AI yordamchi | `platform/ai/assistant.ts` | fast tier (heavy tier for analyst roles) | 2 048, `MAX_ROUNDS` 6 | no | 60 s/call, 120 s wall |
+| Intake reading | `calc/intake-ai.ts: analyzeIntake` | heavy tier | 32 000, effort medium | yes | 150 s (20 s thread door) |
+| Tarkib file reading | `receipts/tarkib-read-ai.ts` | heavy tier | 32 000, effort medium | yes | 150 s |
+| TNVED suggestion / grouping | `tnved/service.ts` | heavy tier | 16 000 / 8 192 | no | 60 s |
+| Import-row pick | `calc/prefill-ai.ts: pickImportRows` | heavy tier | 4 096 | no | 60 s |
+| «Oldingi narx» 🤖 | `finance/similar-ai.ts` | heavy tier | 1 024 | no | 60 s |
 
 ### 5.3 Ledgers
 
@@ -304,7 +304,7 @@ Sizes: rules ≈ 6.7k chars (`prompt.ts` l.71-95) + style guide ≤ 1 500 (`styl
 **≈ 6.5-9k tokens of cached head**. Chat block: a few hundred tokens for a new chat, up to `historyTotalChars`
 24 000 ≈ 8k tokens. Output: ≤ 1 500/round, typically 150-250 per tool round and 400-700 for `compose_reply`.
 
-| Run | Arithmetic (sonnet-5) | ≈ $ |
+| Run | Arithmetic (fast tier) | ≈ $ |
 |---|---|---|
 | warm head (another run < 5 min ago), 2-3 rounds | head read 8k×0.2 + chat write 1.5k×2.5 + reads + 800 out×10 | **0.015** |
 | cold head, 2-3 rounds | write 9.5k×2.5 + read 9.5k×0.2 + 800 out×10 | **0.03-0.04** |
@@ -315,10 +315,10 @@ is single-digit dollars a day; the cap of 3M counted tokens ≈ $6-10/day at thi
 
 ### 5.6 What eyes would add (estimate)
 
-Vision tokens ≈ one token per 28×28 px patch (provider cost guide); sonnet-5 takes up to 2576 px / 4 784 tokens an
+Vision tokens ≈ one token per 28×28 px patch (provider cost guide); fast tier takes up to 2576 px / 4 784 tokens an
 image.
 
-| Addition | Tokens | $ on sonnet-5 (in the run) | $ on opus-5 (existing readers) |
+| Addition | Tokens | $ on fast tier (in the run) | $ on heavy tier (existing readers) |
 |---|---|---|---|
 | 1 photo reduced to 1568 px (`reduceForModel`) | ≈ 2 350 (4:3) … 3 140 (square) | 0.005-0.006 fresh; 0.0005 per later round if cached | 0.012-0.016 |
 | 12 photos (the bot's cap) | ≈ 28-38k | 0.06-0.075 | 0.14-0.19 |

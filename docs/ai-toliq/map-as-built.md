@@ -79,8 +79,8 @@ Telegram profile, the company's tariff except through the two estimate tools, th
 
 ### 1.4 Model, calls, caps
 
-- **Model**: `STAFF_MODEL = 'claude-sonnet-5'` (`src/modules/platform/ai/model.ts:91`) for every run; `ANALYST_MODEL`
-  (`claude-opus-5`) only for the style proposal script. No extended thinking, no effort setting.
+- **Model**: `STAFF_MODEL = 'the fast-tier model'` (`src/modules/platform/ai/model.ts:91`) for every run; `ANALYST_MODEL`
+  (`the heavy-tier model`) only for the style proposal script. No extended thinking, no effort setting.
 - **Calls per run**: 1…6 (`AGENT_LIMITS.maxToolRounds = 6`); the loop ends on the terminal strict tool `compose_reply`
   (`run.ts:253-297`). `maxTokens: 1_500` per call. Wall clock `LOOP_WALL_MS = 90_000`; SDK call timeout 60 s,
   `maxRetries: 1` (`model.ts:160-167`). Failures: `wall_clock`, `max_tokens`, `no_compose`, `too_many_rounds` →

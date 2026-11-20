@@ -26,9 +26,9 @@ the 20:00 «🤖 AI (oxirgi 24 soat)» line already hold the truth for today —
 
 | Input | Value | Source |
 |---|---|---|
-| Cheaper model (`claude-sonnet-5`, the AI seller's) | in $2 · out $10 · cache read $0.20 · cache write $2.50 per M tokens | **code**: `platform/ai/model.ts MODEL_USD_PER_MTOK` |
-| Stronger model (`claude-opus-5`, every document reader) | in $5 · out $25 · read $0.50 · write $6.25 | **code**, same map |
-| Smallest tier (`claude-haiku-5-5`) | in $0.10 · out $0.50; counts ≈ 30 % more tokens | **outside**: the provider's list as cached 2026-11-03; not in the code's map |
+| Cheaper model (`the fast-tier model`, the AI seller's) | in $2 · out $10 · cache read $0.20 · cache write $2.50 per M tokens | **code**: `platform/ai/model.ts MODEL_USD_PER_MTOK` |
+| Stronger model (`the heavy-tier model`, every document reader) | in $5 · out $25 · read $0.50 · write $6.25 | **code**, same map |
+| Smallest tier (`the smallest-tier model`) | in $0.10 · out $0.50; counts ≈ 30 % more tokens | **outside**: the provider's list as cached 2026-11-03; not in the code's map |
 | Batch (answer within a day) | −50 % on every token | **outside**: provider reference |
 | Cache | 5-minute life only; one cache per model; 1-hour write costs 2× | **code** (`ephemeral`) + provider reference |
 | Run shape | ≤ 6 rounds, 1 500 output tokens a round, chat block cached per run, ≤ 24 000 chars of history | **code**: `agent/run.ts`, `agent/limits.ts` |
