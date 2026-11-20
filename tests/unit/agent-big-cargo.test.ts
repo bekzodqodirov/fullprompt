@@ -107,12 +107,13 @@ describe('once per chat per week', () => {
 });
 
 describe('where the run calls it (§4.5) — after the draft is written, in its own catch', () => {
-  it('handleInbound calls it only for a WRITTEN draft, after writeDraft, inside a try whose catch only logs', () => {
+  it('handleInbound calls it only for a WRITTEN draft, after the one write site, inside a try whose catch only logs', () => {
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
     const body = src.slice(src.indexOf('export async function handleInbound'), src.indexOf('export async function handleInbound') + 20_000);
-    const write = body.indexOf('const written = await writeDraft(');
+    // The run's one write site is P1's `writeReply` (it writes, then presses a reply that goes at once — J3, J10).
+    const write = body.indexOf('const written = await writeReply(');
     const call = body.indexOf('await signalBigCargo(ctx, loop.outcomes, now());');
-    expect(write, 're-anchor: writeDraft').toBeGreaterThan(0);
+    expect(write, 're-anchor: writeReply').toBeGreaterThan(0);
     expect(call, 're-anchor: the signal call').toBeGreaterThan(write);
     const around = body.slice(body.lastIndexOf("if (written.kind === 'written') {", call), body.indexOf('}\n    }', call) + 8);
     expect(around).toMatch(/try \{\s*const \{ signalBigCargo \} = await import\('\.\/big-cargo'\);\s*await signalBigCargo\(ctx, loop\.outcomes, now\(\)\);\s*\} catch \(err\) \{\s*logger\.warn\(/u);
