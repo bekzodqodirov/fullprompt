@@ -298,6 +298,10 @@ No person's name, id or role key appears in code or in a migration.
 Not blockers for stage 1a. Until answered: no markup (his A1), avia as today with «3-5 kun» only after his word,
 a Kashgar address from him.
 
+**Answered 2026-11-20** («3 HOZIRCHA qashqarda yuk qabul qilmaymiz / qolgani sen aytgandek»): 1 → empty for now (c); 2 → one rate,
+«3-5 kun» (2a 1, 2b 1); 3 → **cargo is not received in Kashgar for now** — no Kashgar address exists to give. Where
+each is built: `qurish/STAGE-4-6.md` «His answers».
+
 ## 12. How the page was checked before it went out
 
 Three independent checkers (facts against the repo and the critiques; Uzbek, cross-references and consistency;

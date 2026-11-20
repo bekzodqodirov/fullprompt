@@ -114,6 +114,22 @@ Ledger + 1. **tg-listen MUST be rebuilt** (the adapter, the send step). Scripts 
 8. **50 $ gacha farq saqlanganda** narx VED narxidan past bo'lib qolsa: a) ⭐ o'zi yoziladi, sizga xabar keladi (qoidangiz shu) · b) har biri bitta tugma bilan sizdan.
 9. **01.01.2027 qatorlarini oldindan tasdiqlash** tugmasi kerakmi? a) ⭐ ha · b) yo'q, 1-yanvarda o'zim bosaman.
 
+### His answers (2026-11-20, to the first message — `COVERAGE.md` §E questions 1-3)
+
+Verbatim: «3 HOZIRCHA qashqarda yuk qabul qilmaymiz / qolgani sen aytgandek».
+
+- **1 (the markup) → ⭐ c, empty for now.** No markup: a VED price is told as the VED gave it, and every discount
+  request is his card (23 c's room is zero). The stage-0 advice stands: «VED narxi» stays unticked until a markup is
+  typed — with it ticked and the markup empty, the VED's floor is told by itself and lands on the card a seller reads.
+- **2a (avia price) → ⭐ 1.** One rate, kg × `agent_config.avia_usd_per_kg`; no range is said. Nothing to build.
+- **2b (avia days) → ⭐ 1, «3-5 kun».** P7 «Avia kunlari» (`agent_avia_days`, one reader `aviaDays()`) is free of
+  this part's kernel and rides stage 1a's deploy (§4.8 step 1).
+- **3 (Kashgar) → «HOZIRCHA qashqarda yuk qabul qilmaymiz».** Not the ⭐ (which assumed Kashgar receives): today no
+  cargo is received in Kashgar, so there is no Kashgar address to give and a customer who asks to bring cargo to
+  Kashgar is told it is not received there for now. Stage 1a's prompt (P3) says it; this part's «Kashgar-column
+  price» is for a HORGOS start only (his 18 note) until he says Kashgar receives — `withOriginAddressRule` keeps
+  forcing the question to him for any origin with no receiving fact, Kashgar included.
+
 ---
 
 # PART 5 — «Savdoni o'zi yopadi»

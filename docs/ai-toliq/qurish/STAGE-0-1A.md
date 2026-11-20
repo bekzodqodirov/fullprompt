@@ -853,6 +853,25 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
    c) avval shu gaplar qoidalarga qo'shiladi, 1a undan keyin chiqadi. *Narxi:* 1a bir necha kunga kechikadi; faqat ro'yxatdagi gaplar ushlanadi (boshqacha aytilgan va'da baribir o'tadi); va ba'zi oddiy javoblar ham sizning ✅ingizni kutib qoladi — nechtaligini oldindan o'lchab ko'rsatamiz.
    *(For the builder: the counts above are the dry run's — replace them with K1's own before sending; attach the 55 as text, three per class in the message and the rest in a file. What is built under each letter: §4.1 «K1, as measured». In `qurish/COVERAGE.md` §E this question belongs to the group «1a dan oldin» and to the first message.)*
 
+## His answers (2026-11-20, to the first message — `COVERAGE.md` §F, questions 1-10 and 82)
+
+Verbatim: «3 HOZIRCHA qashqarda yuk qabul qilmaymiz / qolgani sen aytgandek» — sent after the list of the 59 (`qurish/K1-OCHIQ-59.md`) reached
+him as a file, so «sen aytgandek» on question 82 is an answer with the list in his hand (§6.3), not silence.
+
+| § E | This plan's § 11 | His answer | What is built |
+|---|---|---|---|
+| 4 | 1 | ⭐ a | `agent_night_prices` = `table`: a table price goes at night after its hold, a VED price waits for the morning |
+| 5 | 2 | ⭐ a | «hisoblatishga yubordim» (class `calc`) waits the price hold with ⏸ |
+| 6 | 4 | ⭐ a | «Kunlik tekshiruv» on the page, one reminder in Telegram |
+| 7a | 5 | ⭐ 1 | website «Umumiy» visitors go to the seat too |
+| 7b | 5 | ⭐ 1 | `lead_assign_ai` ships `off`; he switches it on after stage 2 |
+| 8 | 6 | ⭐ a | the one-time text to seller-less clients names the persona only |
+| 9 | 7 | ⭐ a | a Cyrillic first message with no language shown: the first reply waits for one ✅ |
+| 10 | 8 | ⭐ a | Persian and Chinese tayyor matn: he approves each once by its Uzbek gloss |
+| 82 | 9 | ⭐ a | talk goes at once (`agent_talk_hold_sec` = 0); the evening sample is the net; P1 may be cherry-picked |
+
+Questions 1-3 (design §11.3) are recorded in `STAGE-4-6.md` «His answers» and in the design's §11.3.
+
 ## Verified references
 
 Checked at HEAD `bf37150c` (the plan was read at `bdd81f51`; only `docs/` differs between the two). About 230
