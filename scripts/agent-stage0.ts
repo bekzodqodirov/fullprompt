@@ -95,7 +95,7 @@ async function tableExists(q: Q, name: string): Promise<boolean> {
 
 const pad = (v: string | number, n: number) => String(v).padStart(n);
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
-const show = (v: unknown) => (v === null || v === undefined ? 'NULL' : v instanceof Date ? v.toISOString() : String(v));
+const show = (v: unknown) => (v === null || v === undefined ? 'NULL' : String(v));
 
 /** At most `n` code points of a text on one line — never half an emoji (#1115's `clipText` lesson). */
 function clip(text: string, n: number): string {
@@ -155,7 +155,7 @@ type DraftClass = 'talk' | 'price' | 'calc_price' | 'calc';
 
 /**
  * Stage 1a's class of a draft (plan §4.1 K6 `autoClassOf`), from what is stored. `auto-gate.ts` `moneyVerdict`
- * (:477) is module-private, so its `present` / `calcPriced` / `estimateMoney` are restated here line for line over
+ * (:484) is module-private, so its `present` / `calcPriced` / `estimateMoney` are restated here line for line over
  * the stored ledger, `memory.hasEstimate` and the run's tool calls — the PROXY the plan's «money-free» means. It
  * fails closed the way K6 does: any money present, a money word the gate could not read (`money_unread`,
  * `numeral_unread` as the gate stored them, or a currency beside a quantity in the words), or any act but a
@@ -358,21 +358,24 @@ async function verdicts(q: Q, args: Args): Promise<number> {
 
 /** His ticks and floors exactly as stored — a NULL printed as NULL, with the constant it falls back to beside it. */
 async function storedSettings(q: Q): Promise<void> {
-  console.log('\nSaqlangan sozlamalar (qanday turgan bo‘lsa):');
+  // A moment as a Tashkent wall clock, rendered by postgres: the shared client hands timestamps back as raw text
+  // (drizzle's driver makes their parser transparent), so a Date is never assumed here.
+  const tk = (col: string) => q.unsafe(`to_char(${col} AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM-DD HH24:MI') AS ${col}`);
+  console.log("\nSaqlangan sozlamalar (qanday turgan bo'lsa; vaqtlar Toshkent bo'yicha):");
   let owner: string | null = null;
   if (await tableExists(q, 'agent_config')) {
     const [c] = await q<
       {
         mode: string;
         owner: string | null;
-        session_exclusive_at: Date | null;
-        started_at: Date | null;
+        session_exclusive_at: string | null;
+        started_at: string | null;
         human_pause_min: number;
         daily_draft_cap: number;
         daily_token_cap: number;
         avia_usd_per_kg: string | null;
       }[]
-    >`SELECT mode, owner_user_id::text AS owner, session_exclusive_at, started_at, human_pause_min,
+    >`SELECT mode, owner_user_id::text AS owner, ${tk('session_exclusive_at')}, ${tk('started_at')}, human_pause_min,
              daily_draft_cap, daily_token_cap, avia_usd_per_kg::text AS avia_usd_per_kg
         FROM agent_config WHERE id = 1`;
     if (c) {
@@ -394,8 +397,8 @@ async function storedSettings(q: Q): Promise<void> {
   console.log(`  AI o'rni (settings ${AGENT_SEAT_KEY}): ${show(seatId)} · egasi shu o'rinmi: ${seatId !== null && owner !== null && seatId.toLowerCase() === owner ? 'ha' : "yo'q"}`);
 
   if (owner && (await tableExists(q, 'tg_accounts'))) {
-    const accs = await q<{ status: string; work_account: boolean; last_seen_at: Date | null }[]>`
-      SELECT status, work_account, last_seen_at FROM tg_accounts WHERE manager_user_id = ${owner}::uuid`;
+    const accs = await q<{ status: string; work_account: boolean; last_seen_at: string | null }[]>`
+      SELECT status, work_account, ${tk('last_seen_at')} FROM tg_accounts WHERE manager_user_id = ${owner}::uuid`;
     if (accs.length === 0) console.log("  egasining Telegram akkaunti: ulanmagan (qator yo'q)");
     for (const a of accs) console.log(`  egasining Telegram akkaunti: holat=${a.status} · «Ish raqami»=${a.work_account ? 'ha' : "yo'q"} · oxirgi ko'rinish=${show(a.last_seen_at)}`);
   }
@@ -403,20 +406,20 @@ async function storedSettings(q: Q): Promise<void> {
   if (await tableExists(q, 'agent_auto_config')) {
     const [a] = await q<
       {
-        armed_at: Date | null;
+        armed_at: string | null;
         hold_sec: number;
         per_day: number | null;
         max_chars: number;
         min_confidence: string;
         categories: string[];
-        disarmed_at: Date | null;
+        disarmed_at: string | null;
         disarm_reason: string | null;
       }[]
-    >`SELECT armed_at, hold_sec, per_day, max_chars, min_confidence::text AS min_confidence, categories, disarmed_at, disarm_reason
+    >`SELECT ${tk('armed_at')}, hold_sec, per_day, max_chars, min_confidence::text AS min_confidence, categories, ${tk('disarmed_at')}, disarm_reason
         FROM agent_auto_config WHERE id = 1`;
     if (a) {
       console.log(
-        `  agent_auto_config: yoqilgan=${a.armed_at ? `ha (${a.armed_at.toISOString()})` : "yo'q"} · turlar={${a.categories.join(',')}} · ` +
+        `  agent_auto_config: yoqilgan=${a.armed_at ? `ha (${a.armed_at})` : "yo'q"} · turlar={${a.categories.join(',')}} · ` +
           `kutish=${a.hold_sec} s · min ishonch=${a.min_confidence} · kuniga=${a.per_day === null ? 'NULL (cheklanmagan)' : a.per_day} · ` +
           `max belgi=${a.max_chars} · o'chirilgan=${show(a.disarmed_at)}${a.disarm_reason ? ` (${a.disarm_reason})` : ''}`,
       );
@@ -428,8 +431,8 @@ async function storedSettings(q: Q): Promise<void> {
   }
 
   if (await tableExists(q, 'agent_send_caps')) {
-    const [s] = await q<{ day_cap: number | null; hour_cap: number | null; tariff_confirmed_at: Date | null }[]>`
-      SELECT day_cap, hour_cap, tariff_confirmed_at FROM agent_send_caps WHERE id = 1`;
+    const [s] = await q<{ day_cap: number | null; hour_cap: number | null; tariff_confirmed_at: string | null }[]>`
+      SELECT day_cap, hour_cap, ${tk('tariff_confirmed_at')} FROM agent_send_caps WHERE id = 1`;
     const cap = (v: number | null | undefined, fallback: number) => (v === null || v === undefined ? `NULL (doimiy ${fallback})` : String(v));
     console.log(
       `  agent_send_caps: kunlik=${cap(s?.day_cap, AGENT_LIMITS.perDay)} · soatlik=${cap(s?.hour_cap, AGENT_LIMITS.perHour)} · ` +
@@ -522,7 +525,7 @@ interface Burst {
 }
 
 /**
- * The bursts, split by `censusDays`' own rule (census.ts:46): the customer's lines since our last out row, dated by
+ * The bursts, split by `censusDays`' own rule (census.ts:42): the customer's lines since our last out row, dated by
  * the LAST line, judged against whether our last line asked. `censusDays` hands back only per-day counts, so the
  * split is restated — and checked against it below: a census that moved its rule turns this into an error, never
  * into two different pilots (#513).

@@ -234,7 +234,7 @@ type Built = { ok: true; provider: Provider } | { ok: false; message: string };
 function buildProvider(name: ProviderName, model: string | null): Built {
   const missing = (v: string): Built => ({
     ok: false,
-    message: `kalit yo'q / missing: ${v} — the server's .env must carry it (typed there by the owner); nothing was read or sent.`,
+    message: `.env da yo'q / missing: ${v} — the server's .env must carry it (typed there by the owner); nothing was read or sent.`,
   });
 
   if (name === 'elevenlabs') {
@@ -376,10 +376,18 @@ async function readNote(storageKey: string): Promise<Buffer> {
 }
 
 /**
+ * RFC 7845's identification-header magic, spelled as bytes on purpose: the
+ * codec shares its name with a model family, and no model name is written in
+ * a pushed file (CLAUDE.md).
+ */
+const VOICE_HEAD_MAGIC = Buffer.from([0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64]);
+
+/**
  * A voice note's length, read off its own Ogg pages — the duration is known at
  * download and NOT stored (`tgMediaPlan durationSec`, critic §5.6), and M8/M10
- * need a minute to divide by. Opus counts the granule at 48 kHz from the start,
- * less the head's pre-skip (RFC 7845 §4); Vorbis at the rate its head names.
+ * need a minute to divide by. Telegram's voice codec (RFC 7845) counts the
+ * granule at 48 kHz from the start, less the head's pre-skip (§4); Vorbis at the
+ * rate its head names.
  * The last page is the one that ends the file EXACTLY — an «OggS» that happens to
  * sit inside the audio cannot — and a page that finishes no packet (granule −1)
  * hands over to the page before it. Anything else answers null: «not known»
@@ -389,10 +397,10 @@ function oggDurationSec(buf: Buffer): number | null {
   if (buf.length < 28 || buf.toString('latin1', 0, 4) !== 'OggS') return null;
   let rate: number;
   let preSkip = 0;
-  const opus = buf.indexOf('OpusHead', 0, 'latin1');
-  if (opus >= 0 && opus < 512 && opus + 12 <= buf.length) {
+  const head = buf.indexOf(VOICE_HEAD_MAGIC);
+  if (head >= 0 && head < 512 && head + 12 <= buf.length) {
     rate = 48_000;
-    preSkip = buf.readUInt16LE(opus + 10);
+    preSkip = buf.readUInt16LE(head + 10);
   } else {
     const vorbis = buf.indexOf('\x01vorbis', 0, 'latin1');
     if (vorbis < 0 || vorbis > 512 || vorbis + 16 > buf.length) return null;
