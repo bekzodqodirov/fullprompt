@@ -27,6 +27,7 @@ import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { agentSweep, retireOnHumanReply } from '@/modules/wms/agent/jobs';
+import { AI_HONEST_LINE } from '@/modules/wms/agent/policy';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
@@ -308,17 +309,21 @@ describe('a run drafts a reply and posts its card', () => {
     expect(r).toMatchObject({ ok: false, code: 'policy_block' });
   });
 
-  it('«siz botmisiz?» drafts nothing — a notice instead (his Q4 ⭐)', async () => {
+  it('«siz botmisiz?» alone: the run answers with the honest line, even when the model wrote nothing (stage 1a, his 1 b)', async () => {
+    // DELIBERATE EDIT (stage 1a P3): no notice any more — the code answers the question itself (run `withBotAnswer`).
     const a = await inbound('Siz botmisiz?');
-    const model = scripted([compose('x')]);
+    const model = scripted([compose('', { reply_needed: false, category: 'greeting' })]);
     const out = await handleInbound(job(a), { callModel: model });
-    expect(out).toMatchObject({ outcome: 'notice', reason: 'bot_question' });
-    expect(model.requests).toHaveLength(0);
+    expect(out).toMatchObject({ outcome: 'draft' });
+    expect(model.requests).toHaveLength(1);
+    const d = await liveDraft();
+    expect(d!.proposedBody).toBe(AI_HONEST_LINE.uz.text);
+    expect((d!.policy as { honestLine?: unknown }).honestLine).toBe(true);
     const notices = await db
       .select()
       .from(notifications)
       .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentNotice')));
-    expect(notices).toHaveLength(1);
+    expect(notices).toHaveLength(0);
   });
 
   it('«rahmat» after our statement costs no run, and leaves a ledger row the sweep will not re-ask', async () => {

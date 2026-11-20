@@ -12,6 +12,7 @@ import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, cardTe
 import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
 import { anchorAgeWords, anchorMaxAgeMsFor } from './anchor-clock';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
+import { systemCardLine, systemGlossUz } from './system-reply';
 import type { ComposedAction, DraftPolicyJson } from './types';
 import { CANCELLED_BY_HOLDER } from './web-thread';
 import { openCalcCapFor } from '../../platform/settings/calc-cap';
@@ -519,8 +520,11 @@ export function renderDraftCardFull(
     blocks: live ? (p.blocks ?? []) : [],
     warnings: p.warnings ?? [],
     // The VED price's own line (§2.2) — the holder's card only, and never one of the notes the gate counts.
+    // …a tayyor matn's own line (stage 1a P3, J33): what the customer sent and that the code answered — drawn from
+    // `policy.system` here, never stored as a note (a note outside the eye-only list would stop the very reply it
+    // explains);
     // …and once the reply WENT, what it settled on the card (§2.4): «💳 Kartaga yozildi: 1 359 $», or why not.
-    notes: [...(card.calcLine ? [card.calcLine] : []), ...afterSentLines(d), ...(p.notes ?? []), ...extraNotes],
+    notes: [...(card.calcLine ? [card.calcLine] : []), ...systemLines(p, o), ...afterSentLines(d), ...(p.notes ?? []), ...extraNotes],
     reply: d.finalBody ?? d.proposedBody ?? '',
     gloss: d.finalBody ? null : d.glossUz,
     ledger: d.finalBody ? [] : (p.ledger ?? []),
@@ -538,6 +542,13 @@ export function renderDraftCardFull(
   return first.tooLong && drawn(false) && (d.status === 'editing' || autoCountingDown(opts.auto, d, true))
     ? fitCard(input(false), live)
     : first;
+}
+
+/** A tayyor matn's card line (system-reply `systemCardLine`) — «ketdi» once its outbox row is sent. */
+function systemLines(p: Partial<DraftPolicyJson>, o: OutboxRow | null): string[] {
+  const reason = p.system;
+  if (reason !== 'voice' && reason !== 'media' && reason !== 'pashto') return [];
+  return [systemCardLine(reason, o?.status === 'sent', systemGlossUz(reason))];
 }
 
 /** The card's text alone — `renderDraftCardFull` for a reader that draws no buttons. */

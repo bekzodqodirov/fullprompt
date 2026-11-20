@@ -5,7 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { P2_CATEGORIES, TICKED_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
 import { AUTO_PER_DAY_MAX, AUTO_PRICE_HOLD } from '@/modules/wms/agent/auto-send';
-import { AGENT_1A_BOUNDS, AGENT_NIGHT_PRICES, readAgentNightPrices, readAgentTalkHoldSec, type AgentNightPrices } from '@/modules/platform/settings/service';
+import { AGENT_1A_BOUNDS, AGENT_NIGHT_PRICES, readAgentNightPrices, readAgentPersonaName, readAgentTalkHoldSec, type AgentNightPrices } from '@/modules/platform/settings/service';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { webLessons } from '@/modules/wms/agent/lessons';
@@ -59,6 +59,7 @@ import {
   NumbersForm,
   OpenLimitForm,
   OwnerPicker,
+  PersonaForm,
   SeatButtons,
   RememberButtons,
   RetireButton,
@@ -467,6 +468,25 @@ const LESSON_CHIP = {
  * or was typed in the bot and never confirmed. The cap and what a lesson costs are said here, where he decides how
  * many to keep; a new lesson is given on a card, where the mistake is.
  */
+/**
+ * The persona's name (stage 1a P3, his answer 1: «GSR sotuv menejeri <ism>») — everyone who opens the page reads what
+ * the AI calls itself; a super_admin writes it (config `setAgentPersonaName`, the seat's own door). Its own section and
+ * its own read, so no other package's block carries it.
+ */
+async function PersonaSection({ t, superAdmin }: { t: T; superAdmin: boolean }) {
+  const name = await readAgentPersonaName();
+  return (
+    <section className="card space-y-2" data-testid="agent-persona">
+      <h2 className="section-title">{t('personaTitle')}</h2>
+      <p className="text-sm [overflow-wrap:anywhere]" data-testid="agent-persona-name">
+        {name || t('personaNone')}
+      </p>
+      <p className="text-xs text-ink-500">{t('personaHint', { max: AGENT_1A_BOUNDS.personaMax })}</p>
+      {superAdmin && <PersonaForm current={name} max={AGENT_1A_BOUNDS.personaMax} />}
+    </section>
+  );
+}
+
 async function LessonsSection({ t }: { t: T }) {
   const data = await webLessons();
   // 0148 has not landed: there are no lessons and the prompt reads none — said, never a 42P01.
@@ -666,6 +686,8 @@ async function SettingsSection({
           </div>
         </section>
       )}
+
+      <PersonaSection t={t} superAdmin={superAdmin} />
 
       <section className="card space-y-2" data-testid="agent-today">
         <h2 className="section-title">{t('todayTitle')}</h2>

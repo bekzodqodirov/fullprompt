@@ -46,6 +46,7 @@ function eligible(): AutoGateInput {
       warningCodes: [],
       noteCodes: [],
       systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'greeting',
       language: 'uz',
@@ -156,6 +157,8 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   warnings: (i) => (i.draft.warningCodes = ['avia_maybe']),
   notes: (i) => (i.draft.noteCodes = ['calc_open']),
   actions: (i) => (i.draft.actionTypes = ['calc_submit']),
+  // Rule 11's «hisoblatishga yubordim» with no calculation sent (stage 1a J9) — the reply's own words are the fact.
+  calc_claim_unbacked: (i) => (i.draft.body = 'Hisoblatishga yubordim, javob kelishi bilan aytaman.'),
   calc_identity: (i) => (calcSubmit(i).calc!.unproven = true),
   calc_foreign: (i) => (calcSubmit(i).calc!.foreign = true),
   calc_refused: (i) => (calcSubmit(i).calc!.refused = true),
@@ -185,6 +188,12 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   complaint: (i) => (i.draft.category = 'complaint'),
   status_unbacked: (i) => (i.draft.category = 'status'),
   language: (i) => (i.draft.language = 'en'),
+  // A Persian tayyor matn he has not approved (stage 1a J27): the language admits it, the approval does not.
+  ready_text_unapproved: (i) => {
+    i.draft.systemAck = true;
+    i.draft.language = 'fa';
+    i.draft.customerLocale = { locale: 'fa', confident: true };
+  },
   media: (i) => (i.burstMedia = true),
   too_long: (i) => (i.draft.body = 'x'.repeat(401)),
   stranger: (i) => (i.chat.hasOwner = false),
@@ -223,13 +232,19 @@ describe('the gate', () => {
     expect(autoVerdict(input)).toEqual({ eligible: false, reasons: [code] });
   });
 
+  /**
+   * Stage 1a P3's two (J9, J27) each need an input every other row overwrites — the reply's words, and a Persian reply
+   * the `language` row turns English — so each is asked on its own by the `%s` row above, and beside the others here.
+   */
+  const OWN_INPUT = new Set<AutoRefusal>(['calc_claim_unbacked', 'ready_text_unapproved']);
+
   it('collects EVERY reason, in the one stable order — never the first alone', () => {
     const input = eligible();
     for (const code of [...AUTO_REFUSALS].reverse()) {
       // The quote's own facts are asked of a quote the money clause admitted — the second input below;
       // status_unbacked, category and the two body-reading refusals are set by hand at the end.
       // The night is set by hand too (stage 1a): its own change makes a quote, which the money refusal here would hide.
-      if (QUOTE_ONLY.has(code) || CALC_ONLY.has(code) || CALC_PRICE_ONLY.has(code) || ['complaint', 'status_unbacked', 'money_unread', 'too_long', 'night'].includes(code)) continue;
+      if (QUOTE_ONLY.has(code) || CALC_ONLY.has(code) || CALC_PRICE_ONLY.has(code) || ['complaint', 'status_unbacked', 'money_unread', 'too_long', 'night'].includes(code) || OWN_INPUT.has(code)) continue;
       ONE_CHANGE[code](input);
     }
     // DELIBERATE EDIT (stage 1a §6.2): the complaint is the burst's own words here (P3's reader, `complaint`) — the
@@ -240,7 +255,7 @@ describe('the gate', () => {
     input.draft.body = `Narxi bir necha dollar. ${'x'.repeat(400)}`;
     const out = autoVerdict(input);
     expect(out.eligible).toBe(false);
-    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r)));
+    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r) && !OWN_INPUT.has(r)));
     // A calculation's own five, all at once, in the same order (SPEC-P2-v2 §1.1).
     const c = calcSubmit(eligible());
     c.calc = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
@@ -253,6 +268,11 @@ describe('the gate', () => {
     q.money.foreignDestination = true;
     q.draft.body = '5 kub, 800 kg yukingiz uchun taxminan 960 $.';
     expect(autoVerdict(q).reasons).toEqual(AUTO_REFUSALS.filter((r) => QUOTE_ONLY.has(r)));
+    // Stage 1a P3's two together, and in the order: a claim of a sent calculation in a Persian tayyor matn.
+    const p3 = eligible();
+    ONE_CHANGE.ready_text_unapproved(p3);
+    p3.draft.body = 'برای محاسبه فرستادم، به محض دریافت جواب اطلاع می‌دهم.';
+    expect(autoVerdict(p3).reasons).toEqual(['calc_claim_unbacked', 'ready_text_unapproved']);
   });
 
   it('at the press the three facts the ✅ asks itself are not the gate’s (null): the scheduling alone judges them', () => {

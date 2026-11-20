@@ -111,6 +111,7 @@ import { QUESTION_DECIDED_WORDS, handleOwnerAnswer } from '@/modules/wms/agent/o
 import { JOB_AGENT_INBOUND, JOB_AGENT_OWNER_ANSWER, type AgentOwnerAnswerJob } from '@/modules/wms/agent/queues';
 import { ANSWER_STILL_HIS, handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
 import { webDrafts } from '@/modules/wms/agent/web-page';
+import { OWNER_WORD } from '@/modules/wms/agent/persona';
 import { HAND_BACK_RETRY_S } from '@/modules/wms/agent/calc-loop';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
@@ -601,7 +602,8 @@ describe('the redraft from his answer (spec §2.2)', () => {
       } as ModelResponse;
     }) as CallModel;
     const out = await handleOwnerAnswer(job, { callModel: reading, now: () => T1 });
-    expect(opening).toContain('VAZIFA: Bekzodning javobi (manba');
+    // Stage 1a P3: the owner by his position, never his name (persona `OWNER_WORD`).
+    expect(opening).toContain(`VAZIFA: Savolga ${OWNER_WORD}ning javobi (manba`);
     expect(opening).toContain('«Ha, suyuqlik olmaymiz»');
     expect(opening).toContain('«Suyuqlik olamizmi?»');
     const [card] = await cardRows((out as { draftId: string }).draftId);

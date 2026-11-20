@@ -16,7 +16,9 @@ import { AVIA_RATE_LABEL } from './config';
 import { aviaEstimate, TRUCK_ZONE, truckEstimate, YOLKIRA_GUARDS } from './estimate';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
-import { namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
+import { namedOrigin, namesKashgar, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
+import { OWNER_WORD } from './persona';
+import { KASHGAR_REFUSAL } from './prompt';
 import { customerSources, extractNumbers, factSources, type NumberSource } from './numbers';
 import { warehouseSentencesText } from './policy';
 import type { AgentContext, MeasureCandidate } from './context';
@@ -221,7 +223,7 @@ export const TOOL_SPECS: ModelToolSpec[] = [
       "category — javob nima haqida: greeting — faqat salomlashish, minnatdorchilik yoki xayrlashish; status — mijozning o'z yuki qayerda yoki qachon keladi; " +
       "faq — kompaniya haqida umumiy savol (manzil, ish tartibi, qoidalar, taqiqlangan tovar); qualification — yuk haqida ma'lumot so'rash (nima, necha kub/kg, qayerdan, qayerga); " +
       "price — narx aytilgan yoki so'ralgan har qanday javob; complaint — shikoyat, norozilik, pul yoki zarar talabi; other — boshqasi. " +
-      "confidence — 0 dan 1 gacha son: Bekzod shu matnni HECH O'ZGARTIRMAY yuborish ehtimoli, sening bahoing (0.8 = shunday 10 ta javobdan 8 tasini o'zgartirmay yuboradi). Oshirib yuborma: shubha bo'lsa past qo'y.",
+      `confidence — 0 dan 1 gacha son: ${OWNER_WORD} shu matnni HECH O'ZGARTIRMAY yuborish ehtimoli, sening bahoing (0.8 = shunday 10 ta javobdan 8 tasini o'zgartirmay yuboradi). Oshirib yuborma: shubha bo'lsa past qo'y.`,
     strict: true,
     input_schema: obj({
       reply_needed: { type: 'boolean' },
@@ -391,7 +393,7 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
     case 'own_balance': {
       if (!id.clientId) return { ok: false, text: "Bu chat hali mijoz kodiga bog'lanmagan — yuk va balans yo'q.", sources: [] };
       if (!id.cargoAllowed) {
-        return { ok: false, text: "Bu chatning raqami mijoz kartasida yo'q — yuk va balansni Bekzodning o'zi aytadi.", sources: [] };
+        return { ok: false, text: `Bu chatning raqami mijoz kartasida yo'q — yuk va balansni ${OWNER_WORD}ning o'zi aytadi.`, sources: [] };
       }
       if (name === 'cargo_status') {
         const parts: string[] = [];
@@ -553,6 +555,8 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   // The company's floor comes before every other question: below BOTH halves
   // nothing is accepted, whichever road it would take (his 2026-10-24).
   if (belowTruckMinimumFacts({ weightKg: kg, volumeM3: m3 })) return belowTruckMinimum();
+  // Kashgar receives no cargo for now (J24): no price and no job — never the western refusal's «send it to the VED».
+  if (namesKashgar(inboundText(ctx))) return { ok: false, text: KASHGAR_REFUSAL, sources: [] };
   const origin = originZone(ctx, await env.chinaPlaces());
   if (origin === 'western') return refuse("Qashqar/Urumchi/Xorgos yo'nalishi saytda narxlanmagan");
   if (origin === 'unknown') return refuse("qayerdan jo'natilishi aytilmagan — so'ra");
@@ -633,7 +637,7 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
   if (rate === null || !(rate > 0)) {
     return {
       ok: false,
-      text: "Avia narxi hozir belgilanmagan — narx AYTMA: needs_owner=true, owner_question'da Bekzoddan avia narxini so'ra.",
+      text: `Avia narxi hozir belgilanmagan — narx AYTMA: needs_owner=true, owner_question'da ${OWNER_WORD}dan avia narxini so'ra.`,
       sources: [],
     };
   }
@@ -669,9 +673,9 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
       `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
       `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI. ` +
       (env.priceArmed
-        ? `Faqat narxni ayt: avia manzilini AYTMA, bilimdagi ombor manzilini ham, omborga yuborishni ham aytma — manzilni Bekzod beradi. ` +
+        ? `Faqat narxni ayt: avia manzilini AYTMA, bilimdagi ombor manzilini ham, omborga yuborishni ham aytma — manzilni ${OWNER_WORD} beradi. ` +
           `Mijoz manzilni yoki qayerga yuborishni so'rasa — needs_owner=true, ${ask}`
-        : `Avia uchun manzilni AI aytmaydi — avia manzilini AYTMA, bilimdagi ombor manzilini ham: manzilni Bekzod beradi. ` +
+        : `Avia uchun manzilni AI aytmaydi — avia manzilini AYTMA, bilimdagi ombor manzilini ham: manzilni ${OWNER_WORD} beradi. ` +
           `needs_owner=true, ${ask}`),
     estimate: true,
     air: { kg, origin },
@@ -724,6 +728,10 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // VED either: «hisoblatishga yubordim» would be accepting the cargo.
   if (TRUCK_SECTIONS.includes(section) && belowTruckMinimumFacts(facts)) {
     return { ...belowTruckMinimum(), checklist: { section, facts, complete: false, fromOurWarehouse } };
+  }
+  // …and neither does a truck job from Kashgar (J24), answered the way the minimum is: never complete, so no job lands.
+  if (TRUCK_SECTIONS.includes(section) && (namesKashgar(inbound.map((m) => m.body).join('\n')) || namesKashgar(facts.fromCity))) {
+    return { ok: true, text: KASHGAR_REFUSAL, sources: [], checklist: { section, facts, complete: false, fromOurWarehouse } };
   }
   const goodsIn = Array.isArray(input.goods) ? (input.goods as Record<string, unknown>[]) : [];
   const goods: CalcGoodsFact[] = [];

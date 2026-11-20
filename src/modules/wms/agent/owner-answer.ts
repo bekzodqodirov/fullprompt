@@ -5,6 +5,7 @@ import { holdsNumeral, normalizeDigits } from './digits';
 import { personalBitsWithBook } from './kb';
 import { phonesIn, urlsIn } from './numbers';
 import { keptFileSql } from './outbox-store';
+import { OWNER_WORD } from './persona';
 import { asksAnew } from './send-step';
 import { knownNamesForMask } from './style';
 import { isNudge } from './worthy';
@@ -92,8 +93,8 @@ const QUESTION_SHOWN_CHARS = 400;
 export function ownerAnswerInstruction(text: string, question: string | null = null): string {
   const asked = (question ?? '').replace(/\s+/gu, ' ').trim();
   const shown = [...asked].length > QUESTION_SHOWN_CHARS ? `${[...asked].slice(0, QUESTION_SHOWN_CHARS).join('')}…` : asked;
-  const about = shown ? ` Bu — sening Bekzodga bergan shu savolingga javob (savol manba emas, undagi sonni ishlatma): «${shown}».` : '';
-  return `Bekzodning javobi (manba — undagi raqamni o'zgartirmay ishlat): «${text.trim()}».${about} Shu javob asosida mijozning so'nggi savoliga mijoz tilida va alifbosida qisqa javob yoz.`;
+  const about = shown ? ` Bu — sening ${OWNER_WORD}ga bergan shu savolingga javob (savol manba emas, undagi sonni ishlatma): «${shown}».` : '';
+  return `Savolga ${OWNER_WORD}ning javobi (manba — undagi raqamni o'zgartirmay ishlat): «${text.trim()}».${about} Shu javob asosida mijozning so'nggi savoliga mijoz tilida va alifbosida qisqa javob yoz.`;
 }
 
 /**

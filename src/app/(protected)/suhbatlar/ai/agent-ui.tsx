@@ -29,6 +29,7 @@ import {
   agentOpenLimitAction,
   agentOwnTextAction,
   agentOwnerAction,
+  agentPersonaAction,
   agentSeatAction,
   agentRememberAction,
   agentRetireFactAction,
@@ -39,7 +40,7 @@ import {
 } from '@/modules/wms/agent/web-actions';
 // The kinds' one home (a pure module): never the gate, which would pull the send step into this bundle.
 import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
-// The lesson's limits — a pure module too (zero imports).
+// The lesson's limits — a pure module too (its one import, the owner's word, has none).
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { CATEGORY_KEYS, errorKey } from './labels';
 
@@ -582,6 +583,44 @@ export function MarkupConfirmButton({ rule }: { rule: string }) {
       <button type="button" className="btn-secondary" disabled={pending} data-testid="agent-markup-confirm" onClick={() => run(() => agentMarkupConfirmAction(rule))}>
         {t('markupConfirm')}
       </button>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * The persona's name (stage 1a P3) — a super_admin's box: letters and single spaces up to `max`, or empty for no name.
+ * The service folds white space and refuses anything else in words (`bad_persona`).
+ */
+export function PersonaForm({ current, max }: { current: string; max: number }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ max });
+  const [value, setValue] = useState(current);
+  return (
+    <div className="space-y-1" data-testid="agent-persona-form">
+      <label className="label" htmlFor="agent-persona-input">
+        {t('personaTitle')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="agent-persona-input"
+          className="input min-w-0 flex-1"
+          maxLength={max}
+          value={value}
+          disabled={pending}
+          onChange={(event) => setValue(event.target.value)}
+          data-testid="agent-persona-input"
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || value.trim() === current}
+          data-testid="agent-persona-save"
+          onClick={() => run(() => agentPersonaAction(value))}
+        >
+          {t('save')}
+        </button>
+      </div>
       <Feedback error={error} note={null} />
     </div>
   );

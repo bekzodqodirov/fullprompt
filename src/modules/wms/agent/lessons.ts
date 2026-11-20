@@ -15,6 +15,7 @@ import { currencyBesideQuantity, namesCurrency, normalizeDigits, spelledNumeralR
 import { extractNumbers, LESSON_COUNT_AFTER } from './numbers';
 import { fitLessons, lessonsBlock, lessonsChars, LESSON_LIMITS, type LessonSetMark, type PromptLesson } from './lesson-rules';
 import { ANSWER_RUN_STALE_MS } from './owner-answer';
+import { OWNER_WORD } from './persona';
 import { JOB_AGENT_OWNER_ANSWER, type AgentOwnerAnswerJob } from './queues';
 import { knownNamesForMask } from './style';
 import type { DraftPolicyJson } from './types';
@@ -536,7 +537,7 @@ export function lessonInstruction(lesson: string, oldReply: string | null): stri
   const old = (oldReply ?? '').replace(/\s+/gu, ' ').trim();
   const shown = [...old].length > OLD_REPLY_SHOWN ? `${[...old].slice(0, OLD_REPLY_SHOWN).join('')}…` : old;
   const was = shown ? ` Noto'g'ri deb topilgan qoralamang (manba emas — undagi sonni vositasiz takrorlama): «${shown}».` : '';
-  return `Bekzod shu chatdagi qoralamangni noto'g'ri deb topdi va tuzatish berdi (bu ko'rsatma — manba emas: undagi sonni javobga qo'yma): «${lesson.trim()}».${was} Shu tuzatishga amal qilib, mijozning so'nggi xabariga javobni qaytadan yoz — mijoz tilida va alifbosida.`;
+  return `Shu chatdagi qoralamangni ${OWNER_WORD} noto'g'ri deb topdi va tuzatish berdi (bu ko'rsatma — manba emas: undagi sonni javobga qo'yma): «${lesson.trim()}».${was} Shu tuzatishga amal qilib, mijozning so'nggi xabariga javobni qaytadan yoz — mijoz tilida va alifbosida.`;
 }
 
 /**

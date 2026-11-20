@@ -178,7 +178,7 @@ describe('P1: a list’s own numbers are no figures', () => {
   });
 
   it('the prompt asks for «•» bullets, and the checklist hands the model the same shape', async () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     expect(head).not.toMatch(/raqamlangan ro'yxat/u);
     expect(head).toMatch(/har bir bandi "•" belgisi bilan/u);
     const ctx = ctxOf(['Rastamojka kerak, kurtka'], 'latin');
@@ -370,7 +370,7 @@ describe('P9: the CALCULATION being free is no free extra', () => {
   });
 
   it('the prompt names the everyday phrasings that are blocked, and the true one to use', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     for (const phrase of ['"qulay narx"', '"yaxshi narx"', '"hech qanday muammo bo\'lmaydi"', '"без проблем"', '"выгодные цены"', '"hisoblash uchun pul olinmaydi"']) {
       expect(head).toContain(phrase);
     }
@@ -751,7 +751,7 @@ describe('review — G2 reads the vague count in its genitive', () => {
 
 describe('review — the prompt says what the check now does', () => {
   it('rule 3’s single question is a preference the card warns about, and the header says warnings do not stop a draft', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     expect(head).not.toMatch(/ko'pi bilan BITTA/u);
     expect(head).toMatch(/Imkon qadar savol belgisi bitta bo'lsin — bir nechtasi ogohlantirish/u);
     expect(head).toMatch(/"ogohlantirish" deyilgani to'xtatmaydi/u);
@@ -1491,7 +1491,7 @@ describe('fourth check — a small count the reply enumerates right after it is 
   });
 
   it('the prompt asks for figures in digits and for counts of warehouses, roads and questions in words', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     expect(head).toContain('Narx, kub, kg, kun, sana va foizni raqam bilan yoz');
     expect(head).toContain('nechta ombor, yo\'l, variant yoki savol borligini esa so\'z bilan yoz');
     expect(head).not.toContain('Sonni raqam bilan yoz.');
@@ -1987,6 +1987,7 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
         warningCodes: [],
         noteCodes: [],
         systemAck: false,
+        honestLine: false,
         actionTypes: [],
         category: 'faq',
         language,
@@ -2086,6 +2087,7 @@ function gate(
       warningCodes: r.warnings.map((w) => w.code),
       noteCodes: [],
       systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'faq',
       language,

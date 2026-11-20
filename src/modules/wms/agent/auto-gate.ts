@@ -1,5 +1,6 @@
 import type { AgentNightPrices } from '../../platform/settings/service';
 import { isEstimateTool, saysTashkent } from './auto-money';
+import { claimsCalcSent } from './calc-claim';
 import { currencyBesideQuantity } from './digits';
 import type { CalcPriceGateFacts } from './calc-price';
 import type { PolicyCode } from './policy';
@@ -53,6 +54,8 @@ export const AUTO_REFUSALS = [
   'warnings',
   'notes',
   'actions',
+  // «Hisoblatishga yubordim» with no calculation sent (stage 1a, J9) — a false claim of an act, beside the acts.
+  'calc_claim_unbacked',
   // A calculation the machine lands by itself (SPEC-P2-v2 §1.1) — asked only of a draft judged as `calc`.
   'calc_identity',
   'calc_foreign',
@@ -84,6 +87,8 @@ export const AUTO_REFUSALS = [
   'complaint',
   'status_unbacked',
   'language',
+  // A Persian or Chinese tayyor matn he has not approved (stage 1a, J27) — the language's own refusal, beside it.
+  'ready_text_unapproved',
   'media',
   'too_long',
   'stranger',
@@ -124,18 +129,15 @@ export const RETIRED_REFUSAL_WORDS: Record<RetiredRefusal, string> = {
  * The refusals stage 1a ADDS (§6.2, J9, J27, J33), named and worded in the kernel so no package words one twice. None
  * is in `AUTO_REFUSALS` yet, because nothing emits it: the gate's own test drives every member of that list by its own
  * fact, and a code with no fact cannot stand there. Each moves into `AUTO_REFUSALS`, with its word, in the package that
- * gives it its fact — `calc_claim_unbacked` and `ready_text_unapproved` P3. (`complaint` moved with P1: its fact is the
- * label or the burst's words, `AutoGateInput.complaint`; `loop` moved with P2's detector.)
+ * gave it its fact — `complaint` P1 (the label or the burst's words, `AutoGateInput.complaint`), `loop` P2 (the
+ * detector), `calc_claim_unbacked` and `ready_text_unapproved` P3 (the reply's own words, the tayyor matn's mark). All
+ * four have moved: the list stays, empty, as the one place a later stage's coming refusal is named first.
  */
-export const COMING_REFUSALS = ['calc_claim_unbacked', 'ready_text_unapproved'] as const;
+export const COMING_REFUSALS = [] as const;
 
 export type ComingRefusal = (typeof COMING_REFUSALS)[number];
 
 export const COMING_REFUSAL_WORDS: Record<ComingRefusal, string> = {
-  // J9: «hisoblatishga yubordim» said with no calculation sent — a false claim to the customer.
-  calc_claim_unbacked: 'javobda «hisoblatishga yubordim» deyilgan, lekin hisoblatish yuborilmagan',
-  // J27: a Persian or Chinese tayyor matn goes by itself only once he approved it.
-  ready_text_unapproved: 'fors/xitoy tayyor matni hali tasdiqlanmagan',
 };
 
 /** Each refusal in his words — the ONE map the card and the page print (never a code). */
@@ -149,6 +151,8 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   warnings: 'kartada ogohlantirish bor',
   notes: 'kartada izoh bor',
   actions: 'javob bilan birga amal bor (hisoblatish yoki AI o‘chirish)',
+  // J9: «hisoblatishga yubordim» said with no calculation sent — a false claim to the customer.
+  calc_claim_unbacked: 'javobda «hisoblatishga yubordim» deyilgan, lekin hisoblatish yuborilmagan',
   calc_identity: 'chat telefon bilan tasdiqlanmagan — hisoblatishni o‘zingiz yuboring',
   calc_foreign: 'bu boshqa sotuvchining mijozi yoki lidi',
   calc_refused: 'VED navbati bu hisoblatishni olmaydi (lid yopilgan yoki ochiq so‘rovlar to‘la)',
@@ -173,6 +177,8 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   complaint: 'mijoz shikoyat yoki menejer so‘radi — sizga qoldi',
   status_unbacked: 'yuk holati tekshirilmagan',
   language: 'mijoz tili aniq emas yoki javob boshqa tilda',
+  // J27: a Persian or Chinese tayyor matn goes by itself only once he approved it.
+  ready_text_unapproved: 'fors/xitoy tayyor matni hali tasdiqlanmagan',
   media: 'mijoz rasm, ovozli xabar yoki fayl yuborgan',
   too_long: 'javob juda uzun',
   stranger: 'chat mijoz yoki lidga bog‘lanmagan',
@@ -237,6 +243,9 @@ export const AUTO_LANGUAGES = ['uz', 'uz_cyrl', 'ru', 'en', 'fa', 'zh'] as const
  * guess that differs refuses, and an unconfident one keeps today's rule.
  */
 export const AUTO_STRICT_LANGUAGES = ['en', 'fa', 'zh'] as const;
+
+/** The languages of a tayyor matn he cannot read himself (J27, his 10 ⭐ a) — each such one waits for his ✅. */
+export const READY_TEXT_UNREAD = ['fa', 'zh'] as const;
 
 /**
  * The tools whose output is a PRICE or a balance (tools.ts TOOL_SPECS). Judged by OUTCOME since 0148 (spec
@@ -331,6 +340,11 @@ export interface AutoGateInput {
     noteCodes: readonly string[] | null;
     /** The reply is a tayyor matn the code wrote (`policy.system`, stage 1a P3) — not the model's words. */
     systemAck: boolean;
+    /**
+     * The code put the honest line in front of the model's reply, or wrote it alone (`policy.honestLine`, run
+     * `withBotAnswer` — the customer asked whether we are a bot): a tayyor matn too, in the reply's language.
+     */
+    honestLine: boolean;
     actionTypes: readonly string[];
     category: string | null;
     language: string | null;
@@ -525,6 +539,9 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // it is judged exactly as before: an action, refused.
   const calc = isCalcSubmitOnly(draft.actionTypes) && config.categories.includes('calc');
   if (draft.actionTypes.some((a) => a !== 'set_followup' && !(calc && a === 'calc_submit'))) hit.add('actions');
+  // Rule 11's «hisoblatishga yubordim» with no calculation beside it (J9): the customer would be told his job went to
+  // the VED when nothing went. Asked of the words that would go — the machine's — at the scheduling and the press.
+  if (!draft.actionTypes.includes('calc_submit') && claimsCalcSent(draft.body)) hit.add('calc_claim_unbacked');
   if (calc) {
     const f = input.calc ?? CALC_FACTS_UNREAD;
     if (f.unproven) hit.add('calc_identity');
@@ -582,6 +599,11 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // answered in Uzbek by themselves. Zero dangerous let through is the contract's (§4), so the relaxation waits for
   // his answer with that list in his hand; the class split stands (`language_money` holds a price where it is).
   if (!languageAdmits(draft.language, draft.customerLocale)) hit.add('language');
+  // A tayyor matn in Persian or Chinese — a system line or the honest line (J27): he reads neither, and his answer 10
+  // is that he approves each once by its Uzbek gloss. Until that list exists (stage 1b) every such reply is his card.
+  if ((draft.systemAck || draft.honestLine) && (READY_TEXT_UNREAD as readonly string[]).includes(draft.language ?? '')) {
+    hit.add('ready_text_unapproved');
+  }
   // Not asked of a calculation (§1.1, judge regress 8): the burst's invoice IS the material — it goes to the VED with
   // the job (calc-files), and the reply («yubordim») claims nothing about reading it.
   // A VED answer's price asks it over the lines newer than the job's LANDING instead (§2.3): the request burst's own

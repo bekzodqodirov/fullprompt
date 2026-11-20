@@ -23,6 +23,7 @@ import {
   lessonWhyRow,
 } from '@/modules/wms/agent/lessons';
 import { chatBlock, runTail, stableHead } from '@/modules/wms/agent/prompt';
+import { OWNER_WORD } from '@/modules/wms/agent/persona';
 import { agentStats, type StatsDraftRow } from '@/modules/wms/agent/stats';
 import { STOP_AUTO_WORDS } from '@/modules/wms/agent/auto-send';
 
@@ -94,7 +95,7 @@ describe('which lessons the prompt carries (spec §3.3 — the cap, binding)', (
 
 describe('where the lessons sit: the cached head, and nowhere else (spec §3.3 — placement)', () => {
   const lessons = [lesson(2, 'Mijoz «salom» desa, darrov narx so‘rama.'), lesson(1, 'Tovar nomini bilmay turib hisoblatishga yuborma.')];
-  const base = { styleGuide: null, facts: [], priceArmed: false, calcPricing: false } as const;
+  const base = { styleGuide: null, facts: [], priceArmed: false, calcPricing: false, persona: '' } as const;
   const bare = stableHead({ ...base, lessons: [] });
   const taught = stableHead({ ...base, lessons });
 
@@ -108,13 +109,14 @@ describe('where the lessons sit: the cached head, and nowhere else (spec §3.3 �
   it('the block sits right under the rules — after rule 16, before his style and the company facts — under the heading that keeps the rules above it', () => {
     const at = taught.indexOf(LESSONS_HEADING);
     expect(at).toBeGreaterThan(taught.indexOf('16. Har run compose_reply bilan tugaydi.'));
-    expect(at).toBeLessThan(taught.indexOf('BEKZODNING USLUBI'));
+    expect(at).toBeLessThan(taught.indexOf(`${OWNER_WORD.toUpperCase()}NING USLUBI`));
     expect(at).toBeLessThan(taught.indexOf('KOMPANIYA BILIMLARI'));
     // The spec's own wording: a rule wins a conflict, and the three always-his questions stay his.
+    // Stage 1a P3: the owner by his position (persona `OWNER_WORD`), never his name.
     expect(LESSONS_HEADING).toBe(
-      'BEKZODNING TUZATISHLARI (QOIDALARdan keyin turadi: zid kelsa — qoida ustun; 10, 12, 13-qoidalarda doim needs_owner=true):',
+      `${OWNER_WORD.toUpperCase()}NING TUZATISHLARI (QOIDALARdan keyin turadi: zid kelsa — qoida ustun; 10, 12, 13-qoidalarda doim needs_owner=true):`,
     );
-    expect(taught).toContain(`${LESSONS_HEADING}\n- Mijoz «salom» desa, darrov narx so‘rama.\n- Tovar nomini bilmay turib hisoblatishga yuborma.\n\nBEKZODNING USLUBI`);
+    expect(taught).toContain(`${LESSONS_HEADING}\n- Mijoz «salom» desa, darrov narx so‘rama.\n- Tovar nomini bilmay turib hisoblatishga yuborma.\n\n${OWNER_WORD.toUpperCase()}NING USLUBI`);
   });
 
   it('the same lesson set gives a byte-identical head — the cache is written once', () => {

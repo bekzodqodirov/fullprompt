@@ -743,6 +743,31 @@ export async function setCalcOpenLimit(actor: AgentActor, raw: string, ctx: Audi
 }
 
 /**
+ * The persona's name (stage 1a P3, his answer 1: «GSR sotuv menejeri <ism>»; `agent_persona_name`) — the super_admin
+ * role's, the seat's own door (`mayGovernAgent`): the name the AI gives every customer is a decision about the company,
+ * as naming the seat is. Validated by the setting's own shape (letters and single spaces, at most 40 — a digit, a dot or
+ * an emoji would be spoken to customers as written); white space folded first; '' clears it (no name). Audited under the
+ * settings' entity id. Read once per run (settings `readAgentPersonaName`): the next run's head carries it.
+ */
+export async function setAgentPersonaName(actor: AgentActor, raw: string, ctx: AuditContext): Promise<string> {
+  if (!mayGovernAgent(actor)) throw new AgentConfigError('forbidden');
+  const { SETTINGS_AUDIT_ID, getSetting, personaNameValid, setSetting } = await import('../../platform/settings/service');
+  const value = raw.trim().replace(/\s+/gu, ' ');
+  if (!personaNameValid(value)) throw new AgentConfigError('bad_value');
+  const before = await getSetting('agent_persona_name');
+  if (before === value) return value;
+  await setSetting('agent_persona_name', value, actor.id);
+  await writeAudit(db, ctx, {
+    entityType: 'settings',
+    entityId: SETTINGS_AUDIT_ID,
+    action: 'update',
+    before: { agent_persona_name: before },
+    after: { agent_persona_name: value },
+  });
+  return value;
+}
+
+/**
  * His markup on the VED's answer (SPEC-P2-v2 §2.1, his «foiz yokida fix summa qoshib ayitshni belgilash»; §00 A1: an
  * EMPTY value is «no markup» — the AI quotes the VED's own figure). ONE writer for the two own-door keys: the AI's
  * holder or a super_admin (`mayRunAgent`), the whole rule validated (`calcMarkupRuleValid` — a percent 0.01..100 with

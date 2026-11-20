@@ -6,6 +6,7 @@ import { agentConversations, agentRuns, clients, tgChatRules, tgMessageFlags, tg
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import { readAgentPersonaName } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { lateNote } from './card';
@@ -26,11 +27,12 @@ import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecsFor, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
-import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
+import { asksIfBot, draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
+import { isSystemLine, systemLocaleOf, systemReasonOf, systemReplyFor } from './system-reply';
 import { customerLabel, draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
-import type { ForcedQuestion, NoteCode } from './types';
+import type { ForcedQuestion, NoteCode, SystemReplyReason } from './types';
 import { autoPlanFor, autoShapeOf, calcActArmed, pressNow, priceActArmed } from './auto-send';
 import { namesForeignPlace } from './destination';
 import {
@@ -48,7 +50,7 @@ import {
   type NumberSource,
   type TravelMode,
 } from './numbers';
-import { hanOnly, nameWordsOf, type PolicyResult } from './policy';
+import { AI_HONEST_LINE, CUSTOMS_OFFER_SENTENCE, hanOnly, nameWordsOf, type PolicyResult } from './policy';
 import { AGENT_LOCALES } from './locale';
 
 /**
@@ -104,6 +106,11 @@ export interface ComposeReply {
    * through ✏️, so its card offers no «✍️ Savolga javob». Kept on the draft's policy (drafts `draftFromRun`).
    */
   forcedQuestion?: ForcedQuestion;
+  /**
+   * The code put the honest line in front of this reply, or wrote it alone (`withBotAnswer` — the customer asked whether
+   * we are a bot, his 1 b): kept on the draft's policy as `honestLine`, which the gate reads as a tayyor matn (J27).
+   */
+  honestLine?: true;
 }
 
 interface LoopResult {
@@ -223,6 +230,8 @@ export async function runLoop(input: {
    * head is then the same bytes — an edit on the page mid-run cannot move the cache between two rounds.
    */
   lessons: readonly PromptLesson[];
+  /** The persona's name (`agent_persona_name`, stage 1a P3), read ONCE for the run like the lessons: '' = no name. */
+  persona: string;
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
@@ -261,6 +270,7 @@ export async function runLoop(input: {
         priceArmed: input.priceArmed,
         calcPricing: input.calcPricing,
         lessons: input.lessons,
+        persona: input.persona,
       }),
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
@@ -412,7 +422,7 @@ async function eligibilityFacts(
  * today's tokens ≤ daily_token_cap. The lock is its own statement inside the
  * transaction, the INSERT carries the counts in its WHERE (#707's shape).
  */
-async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfig, now: Date): Promise<'ok' | 'duplicate' | 'capped' | string> {
+async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfig, now: Date, model: string | null): Promise<'ok' | 'duplicate' | 'capped' | string> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${CAP_LOCK}))`);
@@ -426,7 +436,7 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
         trigger: 'inbound',
         anchorTgMessageId: BigInt(job.anchorTgMessageId),
         attempt,
-        model: STAFF_MODEL,
+        model,
       })
       .onConflictDoNothing()
       .returning({ id: agentRuns.id });
@@ -458,7 +468,33 @@ async function attemptFor(job: AgentInboundJob): Promise<number> {
   return EDIT_ATTEMPT_BASE + Number(row?.n ?? 0);
 }
 
-const lastOutAsked = (ctx: AgentContext) => /[?؟？]\s*$/u.test(ctx.lastOut?.body ?? '');
+/** Our own words in a line, folded the one way both sides of a comparison are: case, apostrophes, white space. */
+const ourFold = (t: string) =>
+  t
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/['‘’ʻʼ`]/gu, "'")
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+/** What a line may end with after its last word: white space, emoji and their joiners. */
+const TRAILING_DECOR = /[\s\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}]+$/u;
+
+/** The customs offer in every language, folded once (J1). */
+const OFFERS = Object.values(CUSTOMS_OFFER_SENTENCE).map(ourFold);
+
+/**
+ * Did our last line ASK the customer something? — then his «ok» or «ha» is an answer and deserves a reply
+ * (`draftWorthy`'s `lastOutAsked`). It ends in a question mark, whatever emoji or space follows it; or it carries rule
+ * 8's customs offer in any language, wherever in the line (J1): a reply that put a sentence after the offer made the
+ * customer's «ha» to it a closing, dropped — and his 2 a's job never reached the VED.
+ */
+export function ourLineAsks(body: string | null | undefined): boolean {
+  const text = (body ?? '').replace(TRAILING_DECOR, '');
+  if (/[?؟？]$/u.test(text)) return true;
+  const folded = ourFold(text);
+  return OFFERS.some((o) => folded.includes(o));
+}
 
 /**
  * The run's tool calls and its tokens, written onto its ledger row the moment the model loop returns — before the
@@ -525,13 +561,15 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     return { outcome: 'rescheduled', reason: 'peer_typing' };
   }
 
-  const worthy = draftWorthy(
-    ctx.burst.map((m) => ({ text: m.body, media: m.media })),
-    lastOutAsked(ctx),
-  );
-  if (!worthy.worthy) {
+  const burst = ctx.burst.map((m) => ({ text: m.body, media: m.media }));
+  const worthy = draftWorthy(burst, ourLineAsks(ctx.lastOut?.body));
+  // A burst the model cannot answer — a voice note, a photo or a file, Pashto — gets the code's tayyor matn (stage 1a
+  // P3, system-reply.ts) through the same run as any reply: eligibility, the caps, the policy, the gate, one draft writer.
+  // Once per silence: when our last line already was one, the customer was told — and the voice or the Pashto still
+  // reaches HIM, as before, so a customer sending five voice notes is never answered by nobody.
+  const system: SystemReplyReason | null = systemReasonOf(worthy, burst);
+  if (!worthy.worthy && (system === null || isSystemLine(ctx.lastOut?.body))) {
     if ('notice' in worthy) {
-      // «Botmisiz?» is no step-down since stage 1a (his 1 b ⚠): it turns no chat off and disarms nothing.
       if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
       return { outcome: 'notice', reason: worthy.reason };
     }
@@ -539,7 +577,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     await runLedgerRow(job, attempt, 'refused', worthy.reason);
     return { outcome: 'skipped', reason: worthy.reason };
   }
-  if (worthy.greetingOnly && ageMs < AGENT_LIMITS.greetingWaitMs) {
+  if (worthy.worthy && worthy.greetingOnly && ageMs < AGENT_LIMITS.greetingWaitMs) {
     await reschedule(job, attempt, (AGENT_LIMITS.greetingWaitMs - ageMs) / 1000, deps, 'greeting');
     return { outcome: 'rescheduled', reason: 'greeting_only' };
   }
@@ -554,7 +592,8 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     return { outcome: 'refused', reason: elig.reason };
   }
 
-  const reserved = await reserve(job, attempt, config, t);
+  // A tayyor matn calls no model: its run row names none, and its tokens are zero — counted by the caps like any run.
+  const reserved = await reserve(job, attempt, config, t, system ? null : STAFF_MODEL);
   if (reserved === 'duplicate') return { outcome: 'stood_down', reason: 'duplicate' };
   if (reserved.startsWith('capped:')) {
     const fresh = await runLedgerRow(job, attempt, 'capped', reserved.slice(7));
@@ -577,7 +616,11 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const calcArmed = await calcActArmed();
     // …and whether it quotes the VED's answers with his markup (SPEC-P2-v2 §2.3): a chat with an answered linked job.
     const calcPricing = await calcPricingFor(ctx);
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, calcPricing, calcRequestId: null, lessons: taught.lessons });
+    // A tayyor matn calls no model (stage 1a P3): its reply is the code's, its tokens zero, and every step below is the
+    // one any reply takes. The model's run reads the persona's name once, like the lessons.
+    const loop = system
+      ? systemLoop(ctx, system)
+      : await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, calcPricing, calcRequestId: null, lessons: taught.lessons, persona: await readAgentPersonaName() });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -586,7 +629,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
     await settleToolCalls(runId, settle);
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
+    // «Botmisiz?» answered by code before anything judges the reply (his 1 b): the honest line in front of it — or, when
+    // the model wrote nothing (the burst asked only that), as the reply itself. A tayyor matn is the code's whole reply:
+    // no road rule reads it («send it as text» is no hand-over in a flight's chat).
+    const drafted = system ? loop.compose : withBotAnswer(withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act), ctx);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
@@ -611,7 +657,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       notes.push(many);
       noteCodes.push('calc_price_many');
     }
-    const rail = railNote(ctx, c);
+    // A note that names a road's price is no note a «write it as text» line can be about (§4.4 finding 2: a tayyor
+    // matn's card carries no note but the late one).
+    const rail = system ? null : railNote(ctx, c);
     if (rail) {
       notes.push(rail);
       noteCodes.push('rail');
@@ -629,7 +677,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       noteCodes.unshift('late');
     }
 
-    const input = { runId, ctx, compose: c, policy, memory, actions, notes, noteCodes, lessonSet: taught.mark, calcCardLine: calcCardLineOf(loop.outcomes) };
+    // A tayyor matn read none of his lessons: its draft says so (§3.7 counts a lesson's rate by the drafts that read it).
+    const lessonSet = system ? null : taught.mark;
+    const input = { runId, ctx, compose: c, policy, memory, actions, notes, noteCodes, lessonSet, calcCardLine: calcCardLineOf(loop.outcomes), system };
     // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
@@ -640,6 +690,8 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       notes.push(...autoPlan.cardNotes);
       noteCodes.push(...(autoPlan.cardNoteCodes ?? []));
     }
+    // The ONE site a reply of this run is written — the model's and the code's tayyor matn alike (J10): whatever
+    // follows a write (P1's press of a reply that goes at once) follows every reply.
     const written = await writeReply({ ...input, autoPlan }, loop.tools, now);
     // The customer's language, remembered for the next «ok» — only what his message SAID (fix pass 6, the hunt #3), read
     // over his whole burst as the memory reads it (fix pass 7, `localeToRemember`).
@@ -1633,6 +1685,50 @@ export function aviaOwnerQuestion(air: AviaCargo): string {
 }
 
 /**
+ * A run of the CODE for a burst the model cannot answer (stage 1a P3, system-reply.ts): the tayyor matn as the loop's
+ * reply, in the language the chat leans on — what he said or the chat remembers, else its script (§4.4 finding 3: an
+ * Uzbek Latin line to a Cyrillic chat is `wrong_script`) — with no tool and no token.
+ */
+function systemLoop(ctx: AgentContext, reason: SystemReplyReason): LoopResult {
+  const locale = systemLocaleOf(customerLocaleOf(ctx).locale, ctx.customerScript);
+  return {
+    compose: systemReplyFor({ reason, locale, peerId: ctx.peerId }),
+    tools: [],
+    outcomes: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  };
+}
+
+/**
+ * «Botmisiz?» answered by CODE (his 1 b ⚠, stage 1a §4.4): when the customer's burst asks whether we are a bot
+ * (worthy `asksIfBot`), the honest line goes in FRONT of the reply, in the reply's language — said whatever the model
+ * wrote, so it is said (rule 17 tells the model the line is added; `ai_denial` still reads the whole text). Once: a
+ * reply that already carries the line gets no second one. A burst that is ONLY the question leaves the model nothing
+ * to answer — rule 15 lets it say `reply_needed=false`, and the run would end `no_reply` where he used to get a notice —
+ * so an empty reply BECOMES the line, in the language the chat leans on (system-reply `systemLocaleOf`). Runs on both
+ * run paths, before the empty-reply test and before the policy. The mark (`honestLine`) makes the gate read the reply
+ * as a tayyor matn: a Persian or Chinese one is his card until he approved it (J27).
+ */
+export function withBotAnswer(
+  c: ComposeReply,
+  ctx: Pick<AgentContext, 'burst' | 'anchor' | 'messages' | 'storedLocale' | 'customerScript'>,
+): ComposeReply {
+  if (!ctx.burst.some((m) => asksIfBot(m.body))) return c;
+  const empty = !c.replyNeeded || c.replyText.trim() === '';
+  if (empty) {
+    const language = systemLocaleOf(customerLocaleOf(ctx).locale, ctx.customerScript);
+    const line = AI_HONEST_LINE[language];
+    return { ...c, replyNeeded: true, replyText: line.text, language, glossUz: line.glossUz, honestLine: true };
+  }
+  const line = AI_HONEST_LINE[c.language];
+  if (c.replyText.includes(line.text)) return { ...c, honestLine: true };
+  // The translation he reads covers the line too — only where the model wrote one (a Persian reply with none stays
+  // `gloss_missing`: its own part is still unread).
+  const glossUz = c.glossUz && line.glossUz ? `${line.glossUz}\n${c.glossUz}` : c.glossUz;
+  return { ...c, replyText: `${line.text}\n${c.replyText}`, glossUz, honestLine: true };
+}
+
+/**
  * His «Temir yo'l mendan so'rasin» (2026-10-24): a burst that asks about rail
  * is HIS question whatever the model composed — the draft is forced
  * `needs_owner` and carries the question for him when the model asked none.
@@ -2024,6 +2120,7 @@ export async function runOwnerTriggered(
     const taught = await promptLessons();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
     const act = { priceArmed: await priceActArmed() };
+    const persona = await readAgentPersonaName();
     const loop = await runLoop({
       ctx,
       config,
@@ -2038,6 +2135,7 @@ export async function runOwnerTriggered(
       calcPricing: await calcPricingFor(ctx),
       calcRequestId: input.calcAnswer?.requestId ?? null,
       lessons: taught.lessons,
+      persona,
     });
     settle = {
       inputTokens: loop.usage.inputTokens,
@@ -2047,7 +2145,8 @@ export async function runOwnerTriggered(
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
     await settleToolCalls(runId, settle);
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
+    // «Botmisiz?» answered by code on this path too (his 1 b) — before the empty-reply test and the policy.
+    const drafted = withBotAnswer(withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act), ctx);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };

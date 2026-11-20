@@ -43,6 +43,7 @@ function eligible(): AutoGateInput {
       warningCodes: [],
       noteCodes: [],
       systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'greeting',
       language: 'uz',
@@ -196,11 +197,15 @@ describe('the refusal words of the stage — retired, coming, one home each (K6)
       expect(COMING_REFUSAL_WORDS[code]).not.toMatch(/^[a-z_]+$/u);
       expect(AUTO_REFUSALS as readonly string[]).not.toContain(code);
     }
-    // `loop` moved with its fact (P2's detector): it stands in the gate now, with the one word J33 fixed, and in one list only.
-    expect(AUTO_REFUSALS as readonly string[]).toContain('loop');
-    expect(COMING_REFUSALS as readonly string[]).not.toContain('loop');
+    // Every coming refusal moved with its fact — `loop` (P2's detector), `calc_claim_unbacked` and `ready_text_unapproved`
+    // (P3, J9 and J27): in the gate now, with their words, and in one list only.
+    for (const code of ['loop', 'calc_claim_unbacked', 'ready_text_unapproved'] as const) {
+      expect(AUTO_REFUSALS as readonly string[]).toContain(code);
+      expect(COMING_REFUSALS as readonly string[]).not.toContain(code);
+      expect(refusalWordOf(code)).toBe(AUTO_REFUSAL_WORDS[code]);
+    }
     expect(AUTO_REFUSAL_WORDS.loop).toBe('suhbat aylanib qoldi');
-    expect(COMING_REFUSAL_WORDS.ready_text_unapproved).toBe('fors/xitoy tayyor matni hali tasdiqlanmagan');
+    expect(AUTO_REFUSAL_WORDS.ready_text_unapproved).toBe('fors/xitoy tayyor matni hali tasdiqlanmagan');
   });
 
   it('a stored row naming one prints its words on the card, never «sababi noma’lum»', () => {

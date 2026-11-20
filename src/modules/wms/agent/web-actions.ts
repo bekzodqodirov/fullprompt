@@ -16,6 +16,7 @@ import {
   setAgentMode,
   setAgentNumbers,
   setAgentOwner,
+  setAgentPersonaName,
   setAgentSeat,
   setAviaRate,
   setCalcMarkup,
@@ -280,6 +281,21 @@ export async function agentOpenLimitAction(raw: string): Promise<AgentActionResu
       await setCalcOpenLimit(actor, typeof raw === 'string' ? raw : '', ctx);
     } catch (err) {
       if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_open_limit' };
+      throw err;
+    }
+  });
+}
+
+/**
+ * The persona's name (stage 1a P3, `agent_persona_name`) — the super_admin role's (the service asks `mayGovernAgent`); a
+ * value the setting's shape refuses is this box's own code, naming the bound.
+ */
+export async function agentPersonaAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAgentPersonaName(actor, typeof raw === 'string' ? raw : '', ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_persona' };
       throw err;
     }
   });

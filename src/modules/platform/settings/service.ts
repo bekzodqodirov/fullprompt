@@ -644,6 +644,16 @@ export async function readAgentNightPrices(): Promise<AgentNightPrices> {
   return SETTING_VALIDATORS.agent_night_prices!(String(raw)) ? (String(raw) as AgentNightPrices) : SETTING_DEFAULTS.agent_night_prices;
 }
 
+/**
+ * The persona's name as the AI says it (stage 1a P3): the stored value when it has the setting's shape, else none — a
+ * row written by hand that the shape refuses is never spoken to a customer. Read on the pool, once per run and at each
+ * policy check; never inside a transaction.
+ */
+export async function readAgentPersonaName(): Promise<string> {
+  const raw = await getSetting('agent_persona_name');
+  return typeof raw === 'string' && personaNameValid(raw) ? raw : '';
+}
+
 export async function getAllSettings(): Promise<Record<SettingKey, unknown>> {
   const rows = await db.select().from(settings);
   const result: Record<string, unknown> = { ...SETTING_DEFAULTS };

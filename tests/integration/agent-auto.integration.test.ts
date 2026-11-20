@@ -866,7 +866,8 @@ describe('the step-downs', () => {
 
   it('«botmisiz?» in a chat the machine never answered changes nothing', async () => {
     const q = await inbound('Siz botmisiz?');
-    expect(await handleInbound(job(q), { callModel: scripted([compose()]), now: () => T0 })).toMatchObject({ outcome: 'notice' });
+    // DELIBERATE EDIT (stage 1a P3): the question is answered by a run now (the honest line), never a notice.
+    expect(await handleInbound(job(q), { callModel: scripted([compose()]), now: () => T0 })).toMatchObject({ outcome: 'draft' });
     expect(await db.select().from(agentAutoChats).where(eq(agentAutoChats.managerUserId, ownerId))).toHaveLength(0);
     expect((await readAutoConfig())!.armed).toBe(true);
   });

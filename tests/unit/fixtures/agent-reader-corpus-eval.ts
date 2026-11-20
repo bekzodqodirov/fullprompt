@@ -1,6 +1,7 @@
 import * as autoGate from '@/modules/wms/agent/auto-gate';
 import type { AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import * as autoMoney from '@/modules/wms/agent/auto-money';
+import * as complaint from '@/modules/wms/agent/complaint';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import * as digits from '@/modules/wms/agent/digits';
 import * as kb from '@/modules/wms/agent/kb';
@@ -17,6 +18,7 @@ import * as run from '@/modules/wms/agent/run';
 import type { ComposeReply } from '@/modules/wms/agent/run';
 import * as seed from '@/modules/wms/agent/seed-kb';
 import type { ToolOutcome } from '@/modules/wms/agent/tools';
+import * as worthy from '@/modules/wms/agent/worthy';
 import type { ReaderCase, Observed } from './agent-reader-corpus';
 
 /**
@@ -127,6 +129,7 @@ function eligibleInput(): AutoGateInput {
       warningCodes: [],
       noteCodes: [],
       systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'faq',
       language: 'uz',
@@ -386,6 +389,29 @@ function loopHeld(script: string): Observed {
   return verdict.signals.length > 0 || verdict.held ? 'held' : 'goes';
 }
 
+/** «Botmisiz?» (stage 1a P3, J6): does any line of the customer's burst ask whether we are a bot? */
+function botQuestion(lines: readonly string[]): Observed {
+  return lines.some((l) => worthy.asksIfBot(l)) ? 'held' : 'goes';
+}
+
+/**
+ * «Hisoblatishga yubordim» with no calculation sent (J9): the reply as the gate reads it, with no `calc_submit` beside
+ * it, the customer's language confidently the reply's — held for any reason (the gate's `calc_claim_unbacked`).
+ */
+function calcClaim(language: AgentLocale, reply: string): Observed {
+  const input = eligibleInput();
+  input.draft.language = language;
+  input.draft.customerLocale = { locale: language, confident: true };
+  input.draft.body = reply;
+  return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
+}
+
+/** A Pashto burst (J7), as the run decides it: `draftWorthy` over the customer's lines, text only. */
+function pashto(lines: readonly string[]): Observed {
+  const w = worthy.draftWorthy(lines.map((text) => ({ text, media: null })), false);
+  return !w.worthy && w.reason === 'pashto' ? 'held' : 'goes';
+}
+
 /** What the reader under test makes of the case — throws when the reader does not exist at this commit. */
 export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observed {
   const reply = (c.context?.reply ?? 'uz') as AgentLocale;
@@ -414,6 +440,14 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
       return hanCheck(c.input);
     case 'lesson':
       return lessons.lessonShapeRefusal(c.input)?.code === 'money' ? 'held' : 'goes';
+    case 'bot_question':
+      return botQuestion(c.input.split('\n'));
+    case 'pashto':
+      return pashto(c.input.split('\n'));
+    case 'complaint':
+      return complaint.complaintIn(c.input.split('\n')) ? 'held' : 'goes';
+    case 'calc_claim':
+      return calcClaim(reply, c.input);
     case 'phone':
       return ownerAnswer.answerTextRefusal(c.input)?.what === 'phone' ? 'held' : 'goes';
     case 'loop':

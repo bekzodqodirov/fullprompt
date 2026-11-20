@@ -9,6 +9,7 @@ import { foreignPhones } from '@/modules/wms/agent/policy';
 import { answerNoDraftWhy, questionSeenAt } from '@/modules/wms/agent/owner-answer-job';
 import { burstSeenAt } from '@/modules/wms/agent/drafts';
 import { stableHead } from '@/modules/wms/agent/prompt';
+import { OWNER_WORD } from '@/modules/wms/agent/persona';
 import { memoryFor, withAviaGuard, withRailRule, type ComposeReply, type RunResult } from '@/modules/wms/agent/run';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 
@@ -409,12 +410,13 @@ describe('the redraft’s instruction (§2.2, judge learn)', () => {
     const text = 'Ha, suyuqlik olmaymiz — faqat quruq yuk';
     const i = ownerAnswerInstruction(`  ${text}  `);
     expect(i).toContain(`«${text}»`);
-    expect(i).toMatch(/^Bekzodning javobi \(manba/u);
+    // Stage 1a P3: the owner by his position (persona `OWNER_WORD`), never his name — DELIBERATE EDIT of the wording.
+    expect(i.startsWith(`Savolga ${OWNER_WORD}ning javobi (manba`)).toBe(true);
   });
 
   it('the AI’s own question rides beside it — his «Ha» answers THAT sentence — after his words, named as no source, clipped', () => {
     const i = ownerAnswerInstruction('Ha, olamiz', 'Mijoz shisha idish yubormoqchi —\n mo‘rt yuk olamizmi?');
-    expect(i).toMatch(/^Bekzodning javobi \(manba — undagi raqamni o'zgartirmay ishlat\): «Ha, olamiz»\./u);
+    expect(i.startsWith(`Savolga ${OWNER_WORD}ning javobi (manba — undagi raqamni o'zgartirmay ishlat): «Ha, olamiz».`)).toBe(true);
     expect(i).toContain('(savol manba emas, undagi sonni ishlatma): «Mijoz shisha idish yubormoqchi — mo‘rt yuk olamizmi?»');
     expect(i.indexOf('«Ha, olamiz»')).toBeLessThan(i.indexOf('savol manba emas'));
     // No question (a draft from before the round, an empty one): the answer alone, as before.
@@ -426,8 +428,8 @@ describe('the redraft’s instruction (§2.2, judge learn)', () => {
   });
 
   it('prompt rule 1 says the task’s answer is a source too — in the cached head, once', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
-    expect(head.match(/VAZIFAdagi Bekzodning javobi ham manba/gu)?.length).toBe(1);
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
+    expect(head.split(`VAZIFAdagi ${OWNER_WORD}ning javobi ham manba`)).toHaveLength(2);
   });
 });
 

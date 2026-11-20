@@ -663,10 +663,11 @@ describe('draftWorthy (fit-1)', () => {
     expect(draftWorthy([m('rahmat'), m('👍')], false)).toEqual({ worthy: false, reason: 'closing' });
     expect(draftWorthy([m('ok')], true)).toEqual({ worthy: true, greetingOnly: false });
   });
-  it('a notice, not a draft, for voice, Pashto and «are you a bot»', () => {
+  it('no run of the model for voice or Pashto; «are you a bot» is answered by a run since stage 1a (his 1 b)', () => {
     expect(draftWorthy([m(null, 'voice')], false)).toMatchObject({ reason: 'voice_only', notice: true });
     expect(draftWorthy([m('ستاسو بار څه وخت راځي')], false)).toMatchObject({ reason: 'pashto', notice: true });
-    expect(draftWorthy([m('Siz botmisiz?')], false)).toMatchObject({ reason: 'bot_question', notice: true });
+    // DELIBERATE EDIT (stage 1a P3): the honest line is put in front of the run's reply (run `withBotAnswer`).
+    expect(draftWorthy([m('Siz botmisiz?')], false)).toEqual({ worthy: true, greetingOnly: false });
   });
   it('a greeting-only burst is marked so the worker waits for the question', () => {
     expect(draftWorthy([m('Assalomu alaykum')], false)).toEqual({ worthy: true, greetingOnly: true });

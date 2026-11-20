@@ -1,7 +1,10 @@
+import { OWNER_WORD } from './persona';
+
 /**
  * His lessons («📝 Tuzatish», spec SPEC-P1-v2 §3: «hato qilgan joyini men aytib ketay va u ozi organib boradgan
  * bolsin») — the PURE rules: what one lesson may be, which of them fit the prompt, and the bytes they become there.
- * Zero imports, so the prompt, the page and the tests read one rule and the browser bundle can read the limits.
+ * One import — the owner's word (persona.ts, itself import-free) — so the prompt, the page and the tests read one rule
+ * and the browser bundle can read the limits.
  *
  * A lesson is an INSTRUCTION, never a source: a figure in one vouches for nothing a reply says (G1 reads the tools,
  * the customer's own lines and the knowledge — never this block).
@@ -26,8 +29,7 @@ export interface PromptLesson {
  * The block's heading (§3.3, binding wording): the lessons stand BELOW the rules — a rule wins a conflict, and no
  * lesson lifts the three questions that are always his (rail's price, a GS code, a complaint).
  */
-export const LESSONS_HEADING =
-  'BEKZODNING TUZATISHLARI (QOIDALARdan keyin turadi: zid kelsa — qoida ustun; 10, 12, 13-qoidalarda doim needs_owner=true):';
+export const LESSONS_HEADING = `${OWNER_WORD.toUpperCase()}NING TUZATISHLARI (QOIDALARdan keyin turadi: zid kelsa — qoida ustun; 10, 12, 13-qoidalarda doim needs_owner=true):`;
 
 /** One lesson as one line: its own line breaks folded, so no lesson can draw a heading or a second bullet. */
 export function lessonLine(text: string): string {

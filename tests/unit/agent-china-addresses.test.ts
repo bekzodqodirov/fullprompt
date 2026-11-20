@@ -914,7 +914,7 @@ describe('the road is what we quoted, whatever the words name — the third revi
 describe('written down for the model', () => {
   it('the prompt gives the warehouse address as the fact has it, and never a flight\'s', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     expect(head).toMatch(/bilimdagidek, xitoycha qismini o'zgartirmay va tarjima qilmay, GS kod eslatmasi bilan/u);
     expect(head).toMatch(/avia manzilini HECH QACHON aytma/u);
     expect(head).toContain('owner_question="Avia: <tovar>, <kg> kg, <qayerdan> — manzilni bering"');
@@ -927,7 +927,7 @@ describe('written down for the model', () => {
   it('nothing claims avia cargo is not received in China — he said only that he gives its address (review D7)', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
     const { readFileSync } = await import('node:fs');
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     const tool = readFileSync('src/modules/wms/agent/tools.ts', 'utf8');
     for (const text of [head, tool, answer('china_points@4')]) {
       expect(text).not.toMatch(/YUBORILMAYDI|yuborilmaydi —|manzillar EMAS/u);
@@ -963,7 +963,10 @@ describe('written down for the model', () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
     // His price act is read once per run and given to the rule (spec SPEC-P1-v2 §1.2) — the same `act` on both paths.
-    const path = /const drafted = withAviaRule\(withRailRule\(loop\.compose, ctx\), loop, ctx, act\);[\s\S]*?body: drafted\.replyText,[\s\S]*?const c = withAviaGuard\(drafted, policy, loop, ctx\);\s*const \{ actions, notes \} = validateActions\(c,/gu;
+    // DELIBERATE EDIT (stage 1a P3): the honest line (`withBotAnswer`) wraps the avia rule's draft on both paths, and the
+    // inbound path's tayyor matn (`system`) takes none of the three — its reply is the code's, never a road's.
+    const path =
+      /const drafted = (?:system \? loop\.compose : )?withBotAnswer\(withAviaRule\(withRailRule\(loop\.compose, ctx\), loop, ctx, act\), ctx\);[\s\S]*?body: drafted\.replyText,[\s\S]*?const c = withAviaGuard\(drafted, policy, loop, ctx\);\s*const \{ actions, notes \} = validateActions\(c,/gu;
     expect(src.match(path)?.length).toBe(2);
   });
 

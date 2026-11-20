@@ -80,6 +80,12 @@ export interface DraftPolicyJson {
    */
   system?: SystemReplyReason;
   /**
+   * The code put the honest line in front of the model's reply, or wrote it alone (stage 1a P3, run `withBotAnswer` —
+   * the customer asked whether we are a bot). A tayyor matn like `system`: the gate holds a Persian or Chinese one for
+   * his ✅ (`ready_text_unapproved`, J27). Absent = no honest line.
+   */
+  honestLine?: true;
+  /**
    * A forcing rule put this question to him — rail's price, or the flight's address (spec SPEC-P1-v2 §2.2, run
    * `withRailRule` / `withAviaQuestion`): his answer goes verbatim through ✏️, so the card draws no «✍️ Savolga javob».
    * Absent = the model asked it itself (or no question at all).

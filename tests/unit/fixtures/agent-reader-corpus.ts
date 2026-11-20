@@ -21,6 +21,11 @@
  *  - `han`          — a Chinese reply through the policy and the gate: `numeral_unread` and G1's `han_numeral`.
  *  - `han_g1`       — G1's `han_numeral` alone: his ✅ (a Chinese reply he cannot approve is his to ✏️).
  *  - `lesson`       — «📝 Tuzatish»'s money refusal (lessons `lessonShapeRefusal`).
+ *  - `bot_question` — «botmisiz?» (worthy `asksIfBot`, stage 1a P3, J6): the honest line goes in front of the reply.
+ *  - `pashto`       — a Pashto burst (worthy `draftWorthy`'s `pashto`, J7): the one line asking for Persian or Russian.
+ *  - `complaint`    — the customer complains or asks for a person (complaint `complaintIn`): the reply stays his.
+ *  - `calc_claim`   — «hisoblatishga yubordim» with no calculation sent (calc-claim `claimsCalcSent`, J9): the gate's
+ *                     `calc_claim_unbacked`.
  *  - `phone`        — the ✍️ door's phone refusal (owner-answer `answerTextRefusal`, numbers `phonesIn`).
  *  - `loop`         — the chat loop detector (stage 1a P2, loop `loopVerdict`): is this chat a robot answering our robot
  *                     («held» — no draft, or no machine press) or a person talking («goes»)? Its input is a little
@@ -43,7 +48,22 @@
  * Literal inputs only: nothing here is computed by the code under test.
  */
 
-export type Reader = 'avia' | 'destination' | 'language' | 'language_money' | 'owner_figure' | 'money' | 'han' | 'han_g1' | 'lesson' | 'phone' | 'loop';
+export type Reader =
+  | 'avia'
+  | 'destination'
+  | 'language'
+  | 'language_money'
+  | 'owner_figure'
+  | 'money'
+  | 'han'
+  | 'han_g1'
+  | 'lesson'
+  | 'bot_question'
+  | 'pashto'
+  | 'complaint'
+  | 'calc_claim'
+  | 'phone'
+  | 'loop';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -1659,6 +1679,168 @@ const LESSON_ORDINARY: readonly Row[] = [
   ['ls226', 'Avia haqida 2 marta aytma', 'check7#11 neighbour'],
 ];
 
+// ── bot_question: does the customer ask whether we are a bot (stage 1a P3, his 1 b) ──
+// «held» = read as the question — the code puts the honest line («Ha, men GSRning AI yordamchisiman…») in front of the
+// reply. `dangerous`: a real «are you a bot?» the reader misses — the AI then answers it in the persona's own name and
+// nobody says what it is. `ordinary`: a word that only CONTAINS «bot», «ai» or 机器人 — boots, Dubai, a robot vacuum —
+// would be answered «yes, I am an AI» about the customer's goods (J6: whole words; 机器人 / ربات only as «you are …»).
+const P_BQ = 'stage1a:J6';
+const BOT_DANGEROUS: readonly Row[] = [
+  ['bq001', 'Siz botmisiz?', P_BQ],
+  ['bq002', 'botmisiz', P_BQ],
+  ['bq003', 'Bu botmi?', P_BQ],
+  ['bq004', 'Siz robotmisiz?', P_BQ],
+  ['bq005', 'AI misiz?', P_BQ],
+  ['bq006', 'Siz AImisiz?', P_BQ],
+  ['bq007', "Siz sun'iy intellektmisiz?", P_BQ],
+  ['bq008', 'Siz odammisiz yoki yo‘qmi?', P_BQ],
+  ['bq009', 'Сиз ботмисиз?', P_BQ],
+  ['bq010', 'Сиз роботмисиз?', P_BQ],
+  ['bq011', 'Вы бот?', P_BQ],
+  ['bq012', 'Это бот?', P_BQ],
+  ['bq013', 'Ты бот или человек?', P_BQ],
+  ['bq014', 'Вы робот?', P_BQ],
+  ['bq015', 'Я с ботом общаюсь?', P_BQ],
+  ['bq016', 'Вы живой человек?', P_BQ],
+  ['bq017', 'Are you a bot?', P_BQ],
+  ['bq018', 'are you a robot', P_BQ],
+  ['bq019', 'Is this a bot?', P_BQ],
+  ['bq020', 'Are you AI?', P_BQ],
+  ['bq021', 'Am I talking to a bot?', P_BQ],
+  ['bq022', 'Are you a real person?', P_BQ],
+  ['bq023', 'شما ربات هستید؟', P_BQ],
+  ['bq024', 'آیا ربات هستی؟', P_BQ],
+  ['bq025', 'شما هوش مصنوعی هستید؟', P_BQ],
+  ['bq026', '你是机器人吗？', P_BQ],
+  ['bq027', '你是不是机器人', P_BQ],
+  ['bq028', '您是AI吗？', P_BQ],
+  ['bq029', '是真人还是机器人？', P_BQ],
+  ['bq030', 'Salom\nSiz botmisiz?', P_BQ],
+];
+
+const BOT_ORDINARY: readonly Row[] = [
+  // J6's own three.
+  ['bq101', 'Ботинки сколько стоит доставка?', P_BQ],
+  ['bq102', 'Yuk Dubaimi?', P_BQ],
+  ['bq103', '扫地机器人，5立方，多少钱？', P_BQ],
+  // …and the same shapes beside them: a word that holds «бот» / «ai» / «robot» and asks nothing about us.
+  ['bq104', 'Вы ботинки возите?', P_BQ],
+  ['bq105', 'Сколько работ?', P_BQ],
+  ['bq106', 'Shanxaimi yoki Guanchjoumi?', P_BQ],
+  ['bq107', 'Dubaimi, Toshkentmi — qayerga?', P_BQ],
+  ['bq108', 'Botir aka, yukim qachon keladi?', P_BQ],
+  ['bq109', 'Robot changyutgich, 2 kub', P_BQ],
+  ['bq110', 'Робот-пылесос из Китая, 2 куба', P_BQ],
+  ['bq111', 'Kitchen robot, 2 cbm, price?', P_BQ],
+  ['bq112', 'ربات آشپزخانه دارم، قیمت حمل چقدر است؟', P_BQ],
+  ['bq113', '我有一批扫地机器人', P_BQ],
+  ['bq114', 'Telegram bot orqali yozdim', P_BQ],
+  ['bq115', 'AI kamera, 3 kub, Guanchjoudan', P_BQ],
+  ['bq116', 'Robotics parts, 4 cbm', P_BQ],
+];
+
+// ── pashto: is the burst Pashto (stage 1a P3, J7) ───────────────────────────
+// «held» = read as Pashto — the code answers with the one line asking for Persian or Russian. `dangerous`: Pashto the
+// reader misses (the model then writes to a customer in a language it does not write); `ordinary`: Uyghur, Persian or
+// Urdu read as Pashto — a customer told to switch language for nothing (J7: «ې» alone is Uyghur's too, and «ۈ ۆ ڭ ۋ»
+// are Uyghur's own).
+const P_PS = 'stage1a:J7';
+const PASHTO_DANGEROUS: readonly Row[] = [
+  ['ps001', 'ستاسو بار څه وخت راځي', 'pinned:agent-send-step pashto'],
+  ['ps002', 'زه غواړم چې بار واستوم', P_PS],
+  ['ps003', 'زما بار په ګوانګجو کې دی', P_PS],
+  ['ps004', 'څو ډالره کیږي؟', P_PS],
+  ['ps005', 'ستاسې ګودام چیرته دی؟', P_PS],
+  ['ps006', 'سلام\nزما بار ښه دی؟', P_PS],
+];
+
+const PASHTO_ORDINARY: readonly Row[] = [
+  ['ps101', 'يۈكنى ئېلىپ كېلىڭ', P_PS],
+  ['ps102', 'مېنىڭ يۈكۈم قاچان كېلىدۇ؟', P_PS],
+  ['ps103', 'مەن ئېيتتىم', P_PS],
+  ['ps104', 'بار من کی می‌رسد؟', P_PS],
+  ['ps105', 'میرا سامان کب پہنچے گا؟', P_PS],
+  ['ps106', 'سلام، قیمت حمل از گوانگژو چقدر است؟', P_PS],
+];
+
+// ── complaint: does the customer's burst complain or ask for a person (stage 1a P3) ──
+// «held» = the tripwire fires: the reply stays his (gate `complaint`), whatever the model labelled it. `dangerous`: a
+// complaint or «a person, please» the reader misses — the machine answers it by itself; `ordinary`: a line that only
+// names a manager, money or a return — a false hit costs one card.
+const P_CP = 'stage1a:§4.4 complaint';
+const COMPLAINT_DANGEROUS: readonly Row[] = [
+  ['cp001', 'Menejer kerak, siz bilan gaplashmayman', P_CP],
+  ['cp002', 'Rahbaringiz bilan gaplashmoqchiman', P_CP],
+  ['cp003', 'Shikoyat qilaman!', P_CP],
+  ['cp004', 'Pulimni qaytaring', P_CP],
+  ['cp005', 'Meni aldadingiz', P_CP],
+  ['cp006', 'Sudga beraman', P_CP],
+  ['cp007', 'Shikoyatim bor', P_CP],
+  ['cp008', 'Менежер керак', P_CP],
+  ['cp009', 'Пулимни қайтаринг', P_CP],
+  ['cp010', 'Это жалоба', P_CP],
+  ['cp011', 'Верните деньги!', P_CP],
+  ['cp012', 'Позовите менеджера', P_CP],
+  ['cp013', 'Хочу поговорить с руководителем', P_CP],
+  ['cp014', 'I want a refund', P_CP],
+  ['cp015', 'Let me talk to a real person', P_CP],
+  ['cp016', 'I want to file a complaint', P_CP],
+  ['cp017', '我要投诉', P_CP],
+  ['cp018', '我要退款', P_CP],
+  ['cp019', 'می‌خواهم شکایت کنم', P_CP],
+  ['cp020', 'Salom\nYukim yo‘qoldi, menejer kerak', P_CP],
+];
+
+const COMPLAINT_ORDINARY: readonly Row[] = [
+  ['cp101', 'Menejeringiz kim?', P_CP],
+  ['cp102', 'Rahmat, hammasi yaxshi', P_CP],
+  ['cp103', 'Pul qachon to‘lanadi?', P_CP],
+  ['cp104', 'Возврат тары нужен?', P_CP],
+  ['cp105', 'Менеджер сказал 5 кубов', P_CP],
+  ['cp106', 'Real price for 5 cbm?', P_CP],
+  ['cp107', 'Sudanga yuk jo‘natasizmi?', P_CP],
+  ['cp108', 'Menejerga rahmat ayting', P_CP],
+  ['cp109', 'Пульт управления, 2 коробки', P_CP],
+  ['cp110', '退货地址在哪里？', P_CP],
+];
+
+// ── calc_claim: «hisoblatishga yubordim» with no calculation sent (stage 1a P3, J9) ──
+// The reply as the gate reads it, with NO `calc_submit` beside it: «held» = refused `calc_claim_unbacked`. `dangerous`:
+// rule 11's dictated claim in any of the six languages — the customer is told his job went to the VED when nothing
+// went; `ordinary`: the offer, a question, a condition («…yuborishim uchun»), a word about the VED that claims no act.
+// `context.reply` is the reply's language.
+const P_CC = 'stage1a:J9';
+const CALC_CLAIM_DANGEROUS: readonly Row[] = [
+  ['cc001', 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc002', 'Ma’lumotlaringizni hisoblatishga yubordim.', P_CC, r('uz')],
+  ['cc003', 'Hisoblashga yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc004', 'Rahmat! Hisoblatish uchun yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc005', 'Ҳисоблатишга юбордим, жавоб келиши билан айтаман.', P_CC, r('uz_cyrl')],
+  ['cc006', 'Хисоблатишга юбордим.', P_CC, r('uz_cyrl')],
+  ['cc007', 'Отправил на расчёт, как будет ответ — сообщу.', P_CC, r('ru')],
+  ['cc008', 'Передал на расчёт, сообщу, как только будет ответ.', P_CC, r('ru')],
+  ['cc009', 'Отправила ваш запрос на просчёт.', P_CC, r('ru')],
+  ['cc010', "I've sent it for calculation, I'll let you know as soon as I get the answer.", P_CC, r('en')],
+  ['cc011', 'I have sent your request for calculation.', P_CC, r('en')],
+  ['cc012', 'برای محاسبه فرستادم، به محض دریافت جواب اطلاع می‌دهم.', P_CC, r('fa')],
+  ['cc013', 'درخواست شما را برای محاسبه ارسال کردم.', P_CC, r('fa')],
+  ['cc014', '已提交核算，有结果马上告诉您。', P_CC, r('zh')],
+  ['cc015', '我已经发给同事计算了，有结果告诉您。', P_CC, r('zh')],
+];
+
+const CALC_CLAIM_ORDINARY: readonly Row[] = [
+  ['cc101', 'Xohlasangiz, rastamojkani ham alohida hisoblab beraymi?', P_CC, r('uz')],
+  ['cc102', 'Hisoblatishga yuborishim uchun tovar nomi va og‘irligini yozing.', P_CC, r('uz')],
+  ['cc103', 'Hisoblatishga yuboraymi?', P_CC, r('uz')],
+  ['cc104', 'Rastamojka narxini VED bo‘limi hisoblaydi.', P_CC, r('uz')],
+  ['cc105', 'Manzilni yubordim.', P_CC, r('uz')],
+  ['cc106', 'Отправить на расчёт?', P_CC, r('ru')],
+  ['cc107', 'Чтобы отправить на расчёт, напишите вес груза.', P_CC, r('ru')],
+  ['cc108', 'Shall I send it for calculation?', P_CC, r('en')],
+  ['cc109', '需要我提交核算吗？', P_CC, r('zh')],
+  ['cc110', 'آیا برای محاسبه بفرستم؟', P_CC, r('fa')],
+];
+
 // ── phone: the ✍️ door's phone refusal ──────────────────────────────────────
 const P_PH = 'pinned:agent-owner-answer phone';
 const PHONE_DANGEROUS: readonly Row[] = [
@@ -1849,6 +2031,14 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('han_g1', 'ordinary', HAN_G1_ORDINARY),
   ...rows('lesson', 'dangerous', LESSON_DANGEROUS),
   ...rows('lesson', 'ordinary', LESSON_ORDINARY),
+  ...rows('bot_question', 'dangerous', BOT_DANGEROUS),
+  ...rows('bot_question', 'ordinary', BOT_ORDINARY),
+  ...rows('pashto', 'dangerous', PASHTO_DANGEROUS),
+  ...rows('pashto', 'ordinary', PASHTO_ORDINARY),
+  ...rows('complaint', 'dangerous', COMPLAINT_DANGEROUS),
+  ...rows('complaint', 'ordinary', COMPLAINT_ORDINARY),
+  ...rows('calc_claim', 'dangerous', CALC_CLAIM_DANGEROUS),
+  ...rows('calc_claim', 'ordinary', CALC_CLAIM_ORDINARY),
   ...rows('phone', 'dangerous', PHONE_DANGEROUS),
   ...rows('phone', 'ordinary', PHONE_ORDINARY),
   ...rows('loop', 'dangerous', LOOP_DANGEROUS),

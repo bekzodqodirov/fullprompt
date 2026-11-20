@@ -14,6 +14,7 @@ import {
   WAREHOUSE_SENTENCES,
   type PolicyInput,
 } from '@/modules/wms/agent/policy';
+import { OWNER_WORD } from '@/modules/wms/agent/persona';
 import { sameTextWarning, stripOfDraftPolicy } from '@/modules/wms/agent/policy-input';
 import { priceReplyText } from '@/modules/wms/agent/price-reply';
 import { memoryFor, railChat, railNote, withRailRule, type ComposeReply } from '@/modules/wms/agent/run';
@@ -480,7 +481,7 @@ describe('K18 — rail in the reply or anywhere in the chat’s window', () => {
     const c = compose("Temir yo'l bilan taxminan 330 $ bo'ladi. Boj va QQS alohida hisoblanadi.");
     expect(withRailRule(c, ctx)).toMatchObject({ needsOwner: true });
     const policy = checkAgentReply({ ...base, body: c.replyText, ...quote });
-    expect(policy.blocks).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: '330 $ — temir yo‘l narxini Bekzod aytadi' }));
+    expect(policy.blocks).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: `330 $ — temir yo‘l narxini ${OWNER_WORD} aytadi` }));
   });
 
   it('a truck chat with no rail anywhere keeps its sources', () => {

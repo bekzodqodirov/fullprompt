@@ -402,7 +402,7 @@ describe('the two warehouse sentences, said in natural words and in every langua
   });
 
   it('the model is told both sentences in all six languages in the prompt (the tool: agent-answers.integration)', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     for (const l of AGENT_LOCALES) {
       expect(head, l).toContain(WAREHOUSE_SENTENCES[l].condition);
       expect(head, l).toContain(WAREHOUSE_SENTENCES[l].factory);

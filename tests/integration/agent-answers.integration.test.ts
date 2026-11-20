@@ -50,6 +50,7 @@ import { priceReplyText } from '@/modules/wms/agent/price-reply';
 import { AGENT_LOCALES } from '@/modules/wms/agent/locale';
 import { WAREHOUSE_SENTENCES } from '@/modules/wms/agent/policy';
 import { JOB_AGENT_HAND_BACK } from '@/modules/wms/agent/queues';
+import { KASHGAR_REFUSAL } from '@/modules/wms/agent/prompt';
 import { handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
 import { RAIL_OWNER_QUESTION } from '@/modules/wms/agent/worthy';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
@@ -374,8 +375,10 @@ describe('rail is his question (his «Temir yo‘l mendan so‘rasin»)', () => 
 });
 
 describe('an agent calculation lands like a seller’s — every action, the company’s certificate, the named zone', () => {
-  it('✅ lands the job with has_certificate, on Kashgar’s zone, and runs the follow-up and the mute too', async () => {
-    const a = await inbound('Qashqardan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
+  // DELIBERATE EDIT (stage 1a P3, J24): this case named Kashgar; his «HOZIRCHA qashqarda yuk qabul qilmaymiz» refuses a
+  // Kashgar job now (the next case), so the named western zone that still lands is Horgos — the same shape, its own zone.
+  it('✅ lands the job with has_certificate from Horgos, and runs the follow-up and the mute too', async () => {
+    const a = await inbound('Xorgosdan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
     const tomorrow = tashkentDay(new Date(Date.now() + 86_400_000));
     const out = await handleInbound(job(a), {
       callModel: scripted([
@@ -403,14 +406,16 @@ describe('an agent calculation lands like a seller’s — every action, the com
     const r = await decideDraft(actor(), d!.id, 'send', { digest: await cardDigestOf(d!.id) }, ctx());
     expect(r).toMatchObject({ ok: true, status: 'approved' });
     const [req] = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(d!.id)));
-    expect(req).toMatchObject({ hasCertificate: true, freightZone: 'kashgar' });
+    // Horgos is named, and the action carries it — but the request keeps only a zone the tariff prices (calc service
+    // `tariffZones`), and this database's tariff has no Horgos column: the VED chooses, never a guess.
+    expect(req).toMatchObject({ hasCertificate: true, freightZone: null });
     const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
     expect(note!.note).toContain("Kelib chiqish sertifikati: kompaniya o'zi oladi");
     expect(note!.note).not.toContain('Xitoydagi omborimizdan');
     // The cited line carries its Tashkent date (#1627) — an old shipment's words read as old to the VED.
     const [cited] = await db.select({ sentAt: tgMessages.sentAt }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, a)));
     const [y, mo, dd] = tashkentDay(cited!.sentAt).split('-');
-    expect(note!.note).toContain(`${dd}.${mo}.${y}: Qashqardan Toshkentga podklyuch kerak`);
+    expect(note!.note).toContain(`${dd}.${mo}.${y}: Xorgosdan Toshkentga podklyuch kerak`);
 
     // Every action ran, and only then is it 'done' (A10).
     const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d!.id));
@@ -419,6 +424,30 @@ describe('an agent calculation lands like a seller’s — every action, the com
     expect(conv!.mutedAt).not.toBeNull();
     const [client] = await db.select({ next: clients.nextActionAt }).from(clients).where(eq(clients.id, clientId));
     expect(String(client!.next)).toBe(tomorrow);
+  });
+
+  it('a Kashgar job does not land (J24): the checklist answers his words, never complete, so no calc_submit is kept', async () => {
+    const a = await inbound('Qashqardan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
+    const tomorrow = tashkentDay(new Date(Date.now() + 86_400_000));
+    const out = await handleInbound(job(a), {
+      callModel: scripted([
+        { name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] } },
+        compose('Hisoblatishga yubordim, javob kelishi bilan aytaman.', {
+          category: 'qualification',
+          next_step: 'calc',
+          actions: [
+            { type: 'calc_submit', section: 'podklyuch', cited_message_refs: ['#1'], date: '', note: '' },
+            { type: 'set_followup', section: '', cited_message_refs: [], date: tomorrow, note: 'javobni aytish' },
+          ],
+        }),
+      ]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft' });
+    const d = await liveDraft();
+    expect((d!.actions as { type: string }[]).map((x) => x.type)).toEqual(['set_followup']);
+    const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.peerId, PEER));
+    const calls = run!.toolCalls as { name: string; ok: boolean; text: string }[];
+    expect(calls.find((x) => x.name === 'calc_checklist')).toMatchObject({ ok: true, text: KASHGAR_REFUSAL });
   });
 });
 

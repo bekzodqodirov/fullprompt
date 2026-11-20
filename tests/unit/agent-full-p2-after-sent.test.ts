@@ -167,7 +167,7 @@ describe('the model learns the lead’s stage — on the chat block’s lead lin
   });
 
   it('the cached head and the run’s tail never carry it: the head is the same bytes whatever stage a lead is on', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
     expect(head).not.toMatch(/bosqich: /u);
     // One STATIC sentence tells the model what the line is (cache-safe: the same bytes for every chat).
     expect(head).toContain(LEAD_STAGE_RULE);

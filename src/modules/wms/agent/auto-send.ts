@@ -51,6 +51,7 @@ import {
 import type { CalcSubmitAction } from './calc-submit';
 import type { CalcPriceGateFacts } from './calc-price';
 import { cardDigest, digestBody } from './card';
+import { complaintIn } from './complaint';
 import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
@@ -244,6 +245,11 @@ export function systemAckOf(policy: { system?: unknown }): boolean {
   return (SYSTEM_REPLY_REASONS as readonly unknown[]).includes(policy.system);
 }
 
+/** The code put the honest line in this reply (stage 1a P3, `policy.honestLine`): `true` and nothing else. */
+export function honestLineOf(policy: { honestLine?: unknown }): boolean {
+  return policy.honestLine === true;
+}
+
 function confidenceOf(raw: string | number | null): number | null {
   if (raw === null) return null;
   const n = Number(raw);
@@ -315,6 +321,28 @@ async function burstHadMedia(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' 
               AND o.tg_message_id < ${String(d.anchorTgMessageId)}::bigint), 0)
     ) AS media`);
   return rows[0]?.media === true;
+}
+
+/**
+ * What the customer wrote in the burst the draft answers — his lines since our last message, up to the one the draft
+ * answers: the rows `burstHadMedia` reads, their text. The complaint tripwire reads them (stage 1a P3, complaint.ts), at
+ * the scheduling and again at the press.
+ */
+async function burstTexts(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId'>): Promise<string[]> {
+  const rows = await db.execute<{ body: string | null }>(sql`
+    SELECT m.body FROM tg_messages m
+      LEFT JOIN tg_message_flags f ON f.message_id = m.id
+     WHERE m.manager_user_id = ${d.managerUserId}::uuid AND m.peer_id = ${String(d.peerId)}::bigint
+       AND m.direction = 'in' AND f.deleted_at IS NULL
+       AND m.tg_message_id <= ${String(d.anchorTgMessageId)}::bigint
+       AND m.tg_message_id > coalesce((
+         SELECT max(o.tg_message_id) FROM tg_messages o
+           LEFT JOIN tg_message_flags of2 ON of2.message_id = o.id
+          WHERE o.manager_user_id = ${d.managerUserId}::uuid AND o.peer_id = ${String(d.peerId)}::bigint
+            AND o.direction = 'out' AND of2.deleted_at IS NULL
+            AND o.tg_message_id < ${String(d.anchorTgMessageId)}::bigint), 0)
+     ORDER BY m.tg_message_id`);
+  return rows.map((r) => r.body ?? '');
 }
 
 /**
@@ -396,6 +424,7 @@ export async function autoFactsFor(
       warningCodes: warningCodesOf(policy.warnings),
       noteCodes: noteCodesOf(policy),
       systemAck: systemAckOf(policy),
+      honestLine: honestLineOf(policy),
       actionTypes: actions.map((a) => (typeof a?.type === 'string' ? a.type : '?')),
       category: d.category,
       language: d.language,
@@ -447,8 +476,8 @@ export async function autoFactsFor(
     // The chat loop (stage 1a P2), judged when the reply would go: word for word one of our last sends here, or a
     // chat he was told loops less than the window before (the hold, J33).
     loop: await gateLoopFor({ managerUserId: d.managerUserId, peerId: d.peerId, anchorTgMessageId: d.anchorTgMessageId, body: digestBody(d) }, opts.at),
-    // Stage 1a's other chat fact, read by its package (P3's complaint tripwire): none yet.
-    complaint: false,
+    // The customer complains or asks for a person in his own words (P3, complaint.ts) — the stored burst, read now.
+    complaint: complaintIn(await burstTexts(d)),
     // His night setting, on the pool like every fact here — never inside the transaction that records the verdict.
     nightPrices: await readAgentNightPrices(),
     pressedToday: (await autoPressedToday(d.managerUserId, opts.now)) + queued,

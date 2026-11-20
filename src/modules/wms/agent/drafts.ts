@@ -13,7 +13,7 @@ import { estimatesStand } from './estimate-check';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
 import type { LessonSetMark } from './lesson-rules';
-import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson, NoteCode } from './types';
+import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson, NoteCode, SystemReplyReason } from './types';
 
 export type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
 import type { ComposeReply } from './run';
@@ -447,6 +447,8 @@ export interface RunDraftInput {
   calcAnswer?: { requestId: string } | null;
   /** The holder's card line for the VED prices the run's `calc_price` quoted (§2.2) — `policy.card.calcLine`. */
   calcCardLine?: string | null;
+  /** The reply is the code's tayyor matn for this burst (stage 1a P3, system-reply.ts) — kept as `policy.system`. */
+  system?: SystemReplyReason | null;
 }
 
 /**
@@ -499,6 +501,9 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       ...(input.fromLesson ? { fromLesson: input.fromLesson } : {}),
       ...(input.lessonSet ? { lessons: input.lessonSet } : {}),
       ...(input.calcAnswer ? { calcAnswer: input.calcAnswer } : {}),
+      // A tayyor matn the code wrote (stage 1a P3): the whole reply, or the honest line in front of the model's.
+      ...(input.system ? { system: input.system } : {}),
+      ...(compose.honestLine ? { honestLine: true as const } : {}),
     },
     blocked: !policy.ok,
     needsOwner: compose.needsOwner,
@@ -538,10 +543,14 @@ export async function writeDraft(
 
 export { cardMemory };
 
+/**
+ * Since stage 1a the first voice note or Pashto message of a silence is answered with a tayyor matn and its card IS the
+ * notice (system-reply.ts); these words come only for the bursts after it, while the customer's last answer from us is
+ * still that line. «Botmisiz?» left: it is answered (run `withBotAnswer`).
+ */
 const NOTICE_WORDS: Record<string, string> = {
-  voice_only: "🎤 Mijoz ovozli xabar yubordi — AI eshitmaydi, o'zingiz javob bering.",
-  pashto: "🌐 Mijoz pushtu tilida yozdi — AI javob yozmaydi, o'zingiz javob bering.",
-  bot_question: "🤖 Mijoz «siz botmisiz?» deb so'radi — qoralama yozilmadi, o'zingiz javob bering.",
+  voice_only: "🎤 Mijoz yana ovozli xabar yubordi — AI eshitmaydi, «yozib yuboring» deb aytilgan. O'zingiz javob bering.",
+  pashto: "🌐 Mijoz yana pushtu tilida yozdi — «fors yoki rus tilida yozing» deb aytilgan. O'zingiz javob bering.",
 };
 
 /**

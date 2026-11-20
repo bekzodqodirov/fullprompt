@@ -7,7 +7,8 @@ import { CALC_PRICE_REFUSAL_WORDS, markupRuleOf, statedCalcMarks, storedMarksOf,
 import { calcAnswerSourceKey, calcAnswerWhy } from '@/modules/wms/agent/calc-loop';
 import { calcAnswerOverLive } from '@/modules/wms/agent/drafts';
 import { checkAgentReply, WAREHOUSE_SENTENCES, type PolicyInput } from '@/modules/wms/agent/policy';
-import { CALC_PRICE_RULE, chatBlock, stableHead } from '@/modules/wms/agent/prompt';
+import { CALC_PRICE_RULE, chatBlock, CUSTOMS_YES_RULE, stableHead } from '@/modules/wms/agent/prompt';
+import { OWNER_WORD } from '@/modules/wms/agent/persona';
 import { calcCardLineOf, memoryFor, type ComposeReply } from '@/modules/wms/agent/run';
 import { CALC_PRICE_TOOL, TOOL_SPECS, toolSpecsFor, type ToolOutcome } from '@/modules/wms/agent/tools';
 
@@ -170,6 +171,7 @@ function eligible(): AutoGateInput {
       warningCodes: [],
       noteCodes: [],
       systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'price',
       language: 'uz',
@@ -420,22 +422,25 @@ describe('the run’s memory of a VED price (§2.3) and G11 on it', () => {
 });
 
 describe('the prompt and the tools with the VED price off — byte for byte (§2.3, §4.3)', () => {
-  const head = (calcPricing: boolean) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing, lessons: [] });
+  const head = (calcPricing: boolean) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing, lessons: [], persona: '' });
 
   it('rule 11 gains ONE sentence when on; off, today’s rule 11 ends where it always did', () => {
     expect(head(false)).not.toContain(CALC_PRICE_RULE);
-    expect(head(false)).toContain("Kelib chiqish sertifikatini HECH QACHON so'rama — uni kompaniyaning o'zi oladi.\n12.");
-    expect(head(true)).toBe(head(false).replace("uni kompaniyaning o'zi oladi.\n12.", `uni kompaniyaning o'zi oladi.${CALC_PRICE_RULE}\n12.`));
+    // Stage 1a P3: rule 11 ends on its «ha → podklyuch» sentence (CUSTOMS_YES_RULE) now, and the VED one still follows it.
+    expect(head(false)).toContain(`Kelib chiqish sertifikatini HECH QACHON so'rama — uni kompaniyaning o'zi oladi.${CUSTOMS_YES_RULE}\n12.`);
+    expect(head(true)).toBe(
+      head(false).replace(`uni kompaniyaning o'zi oladi.${CUSTOMS_YES_RULE}\n12.`, `uni kompaniyaning o'zi oladi.${CUSTOMS_YES_RULE}${CALC_PRICE_RULE}\n12.`),
+    );
     expect(CALC_PRICE_RULE).not.toMatch(/\d/u);
   });
 
   it('the chat’s calc line says «calc_price beradi» only when on; off and absent are the same bytes', () => {
     const ctx = ctxWith([{ requestId: 'r1', section: 'rastamojka', createdAt: new Date(), status: 'answered' }]);
     expect(chatBlock(ctx)).toBe(chatBlock(ctx, { calcPricing: false }));
-    expect(chatBlock(ctx)).toContain('rastamojka: javob kelgan (narxni Bekzod aytadi)');
+    expect(chatBlock(ctx)).toContain(`rastamojka: javob kelgan (narxni ${OWNER_WORD} aytadi)`);
     const on = chatBlock(ctx, { calcPricing: true });
     expect(on).toContain('rastamojka: javob kelgan — narxni calc_price beradi');
-    expect(on.replace('javob kelgan — narxni calc_price beradi', 'javob kelgan (narxni Bekzod aytadi)')).toBe(chatBlock(ctx));
+    expect(on.replace('javob kelgan — narxni calc_price beradi', `javob kelgan (narxni ${OWNER_WORD} aytadi)`)).toBe(chatBlock(ctx));
   });
 
   it('the tools: off is today’s list (the same objects, the same order), on adds calc_price alone', () => {

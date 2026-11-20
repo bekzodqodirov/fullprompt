@@ -1,7 +1,7 @@
 import { and, eq, gte, inArray, ne } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentDrafts, agentOutbox, clients, users } from '../../platform/db/schema';
-import { getSetting } from '../../platform/settings/service';
+import { getSetting, readAgentPersonaName } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import type { StoredEstimate } from './auto-money';
@@ -197,11 +197,14 @@ export async function policyFor(input: {
   /** Names and codes of THIS customer — stripped from the fingerprint. */
   strip: string[];
 }): Promise<PolicyResult> {
-  const [bookCodes, staffNames, counts, codePrefix, addresses] = await Promise.all([
+  const [bookCodes, staffNames, counts, codePrefix, personaName, addresses] = await Promise.all([
     bookCodesIn(input.body),
     staffNamesExcept(input.memory.managerName, input.managerUserId),
     sendCounts(input.managerUserId, input.peerId, input.body, input.strip),
     getSetting('client_code_prefix'),
+    // The AI's own name, read now like the colleagues it is told apart from (stage 1a P3): its introduction is no
+    // colleague named, even when the AI's seat makes the owner a colleague who shares that first name.
+    readAgentPersonaName(),
     // Read now, not remembered: the address he corrects this morning is the one an older draft's ✅ refuses.
     // …and whenever the reply itself speaks of the flight (#1540): the warning reads the reply too.
     input.memory.aviaOnly === true || input.memory.aviaMentioned === true || airMentionIn(input.body)
@@ -224,6 +227,7 @@ export async function policyFor(input: {
     staffNames,
     // The words of the customer's own name (the codes in `strip` carry digits): greeting him is not naming a colleague.
     customerNames: input.strip.filter((s) => /\p{L}/u.test(s) && !/\d/u.test(s)),
+    personaName,
     canary: input.memory.canary,
     ...counts,
     hasEstimate: input.memory.hasEstimate,
