@@ -695,7 +695,7 @@ describe('eligibleForRun (§17.4)', () => {
     anchorMaxAgeMs: AGENT_LIMITS.anchorMaxAgeMs,
     anchorAutoSent: false,
     lastOutAt: null,
-    anchorRepeats: false,
+    loop: false,
   };
   it('passes a fresh customer question', () => expect(eligibleForRun(f)).toEqual({ ok: true }));
   it.each([
@@ -706,7 +706,8 @@ describe('eligibleForRun (§17.4)', () => {
     [{ humanActive: true }, 'human_active'],
     [{ anchorAutoSent: true }, 'auto_sent'],
     [{ lastOutAt: new Date(now.getTime() - 62_000) }, 'echo'],
-    [{ anchorRepeats: true }, 'repeat'],
+    // Stage 1a P2: the chat loop detector replaced «the same line again» (`repeat`, which stopped the FIRST «Salom?»).
+    [{ loop: true }, 'loop'],
     [{ anchorSentAt: new Date(now.getTime() - 25 * 3_600_000) }, 'too_old'],
   ] as const)('refuses %o → %s', (patch, reason) => {
     expect(eligibleForRun({ ...f, ...patch })).toEqual({ ok: false, reason });

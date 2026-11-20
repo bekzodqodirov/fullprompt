@@ -199,6 +199,8 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
     quote(i).at = NIGHT;
     i.nightPrices = 'none';
   },
+  // The reply about to go is word for word one of our last sends here (stage 1a P2, loop `own_repeat`).
+  loop: (i) => (i.loop = true),
   daily_cap: (i) => (i.pressedToday = 30),
   // The ✅'s own refusals that are already facts at the scheduling (fix pass A, C8).
   budget_spent: (i) => (i.budgetLeft = 0),

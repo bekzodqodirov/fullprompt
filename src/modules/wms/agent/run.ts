@@ -11,12 +11,13 @@ import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { lateNote } from './card';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
 import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
-import { eligibleForRun, type Ineligible } from './eligibility';
+import { eligibleForRun, type EligibilityFacts, type Ineligible } from './eligibility';
 import { anchorMaxAgeMsForTrigger, type OwnerTrigger } from './anchor-clock';
 import { generalFacts, kbSearch, type KbHit } from './kb';
 import type { PromptLesson } from './lesson-rules';
 import { promptLessons } from './lessons';
 import { AGENT_LIMITS } from './limits';
+import { loopFactsFor, loopNoticeOnce, loopVerdict, type LoopSignal } from './loop';
 import { detectLocale, dominantScript, greetingLean, uzbekEndingLean, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
@@ -26,7 +27,7 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecs
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
+import { customerLabel, draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
 import type { ForcedQuestion, NoteCode } from './types';
@@ -297,8 +298,17 @@ export async function runLoop(input: {
   throw new Error('too_many_rounds');
 }
 
-/** Facts about this chat for `eligibleForRun`, read now. */
-async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Date) {
+/**
+ * Facts about this chat for `eligibleForRun`, read now — and which chat-loop signals tripped (`loopSignals`, for the
+ * notice). `loopRead` is REQUIRED: an inbound run asks the loop of its anchor; an owner-triggered run answers no
+ * inbound burst and reads none, so the statement is never run for a fact it throws away.
+ */
+async function eligibilityFacts(
+  ctx: AgentContext,
+  config: AgentConfig,
+  now: Date,
+  loopRead: 'anchor' | 'none',
+): Promise<EligibilityFacts & { loopSignals: readonly LoopSignal[] }> {
   const [acc] = await db.execute<{ id: string }>(sql`SELECT id FROM tg_accounts WHERE manager_user_id = ${ctx.managerUserId}`);
   const guard = acc ? await readGuard(acc.id) : null;
   const [conv] = await db
@@ -364,8 +374,9 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
   }
 
   const anchor = ctx.anchor!;
-  const prevInbound = ctx.messages.filter((m) => m.direction === 'in' && m.id !== anchor.id).slice(-3);
-  const norm = (t: string) => t.trim().toLowerCase();
+  // The chat loop (stage 1a P2, loop.ts): the anchor's words a third time, or fast answers to three of our sends.
+  const loopSignals =
+    loopRead === 'anchor' ? loopVerdict(await loopFactsFor(db, ctx.managerUserId, ctx.peerId, anchor.tgMessageId, now, null)).signals : [];
   return {
     now,
     agentOn: agentRunning(config),
@@ -386,7 +397,8 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     anchorMaxAgeMs: anchorMaxAgeMsForTrigger('inbound'),
     anchorAutoSent: anchor.autoSent,
     lastOutAt: ctx.lastOut?.sentAt ?? null,
-    anchorRepeats: anchor.body.trim() !== '' && prevInbound.some((m) => norm(m.body) === norm(anchor.body)),
+    loop: loopSignals.length > 0,
+    loopSignals,
   };
 }
 
@@ -528,9 +540,12 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     return { outcome: 'rescheduled', reason: 'greeting_only' };
   }
 
-  const elig = eligibleForRun(await eligibilityFacts(ctx, config, t));
+  const eligFacts = await eligibilityFacts(ctx, config, t, 'anchor');
+  const elig = eligibleForRun(eligFacts);
   if (!elig.ok) {
     await runLedgerRow(job, attempt, 'refused', elig.reason);
+    // The one refusal here he is told of (J33): a loop is his to look at — said once per bucket, never throwing.
+    if (elig.reason === 'loop') await sayLoop(ctx, eligFacts.loopSignals);
     return { outcome: 'refused', reason: elig.reason };
   }
 
@@ -1775,6 +1790,28 @@ export function validateActions(
   return { actions, notes, noteCodes };
 }
 
+/**
+ * A run refused as a chat loop tells him once per window bucket (J33, loop `loopNoticeOnce`): the chat by its code and
+ * name, never the customer's words. A notice that cannot be written is logged and the refusal stands — the loop is
+ * held either way.
+ */
+async function sayLoop(ctx: AgentContext, signals: readonly LoopSignal[]): Promise<void> {
+  try {
+    await loopNoticeOnce({
+      managerUserId: ctx.managerUserId,
+      peerId: ctx.peerId,
+      clientId: ctx.identity.clientId,
+      leadId: ctx.identity.leadId,
+      anchorAt: ctx.anchor!.sentAt,
+      anchorTgMessageId: ctx.anchor!.tgMessageId,
+      signals,
+      label: customerLabel(ctx),
+    });
+  } catch (err) {
+    logger.warn({ err, peer: String(ctx.peerId) }, '[agent] loop notice not written');
+  }
+}
+
 /** The first cap refusal of the day says so once (fit-1). */
 async function capNoticeOnce(ctx: AgentContext, reason: string, now: Date): Promise<void> {
   const dayStart = tashkentDayStart(tashkentDay(now));
@@ -1920,14 +1957,14 @@ export async function runOwnerTriggered(
   // with 🙋, a colleague's phone, a muted chat, a paused account get no
   // hand-back draft either. Minus the clauses about the ANCHOR — this run was
   // started by the VED, not by the customer's newest message, so «is it still
-  // the newest», «an auto-reply», «an echo of ours», «a repeat» do not apply.
+  // the newest», «an auto-reply», «an echo of ours», «a loop» do not apply.
   const elig = eligibleForRun({
-    ...(await eligibilityFacts(ctx, config, t)),
+    ...(await eligibilityFacts(ctx, config, t, 'none')),
     anchorMaxAgeMs: maxAgeMs,
     anchorIsNewest: true,
     anchorAutoSent: false,
     lastOutAt: null,
-    anchorRepeats: false,
+    loop: false,
   });
   if (!elig.ok) {
     // A refusal that passes by itself (a tg-listen rebuild) is recorded

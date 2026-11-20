@@ -93,6 +93,9 @@ export const AUTO_REFUSALS = [
   'chat_muted',
   'not_work_account',
   'night',
+  // The chat loop (stage 1a P2, loop.ts `own_repeat` and the hold after a loop notice): in the slot the two-in-a-row
+  // rule held — the detector replaces it (§4.3).
+  'loop',
   'daily_cap',
   'budget_spent',
   'sending_disabled',
@@ -121,16 +124,14 @@ export const RETIRED_REFUSAL_WORDS: Record<RetiredRefusal, string> = {
  * The refusals stage 1a ADDS (§6.2, J9, J27, J33), named and worded in the kernel so no package words one twice. None
  * is in `AUTO_REFUSALS` yet, because nothing emits it: the gate's own test drives every member of that list by its own
  * fact, and a code with no fact cannot stand there. Each moves into `AUTO_REFUSALS`, with its word, in the package that
- * gives it its fact — `loop` P2, `calc_claim_unbacked` and `ready_text_unapproved` P3. (`complaint` moved with P1: its
- * fact is the label or the burst's words, `AutoGateInput.complaint`.)
+ * gives it its fact — `calc_claim_unbacked` and `ready_text_unapproved` P3. (`complaint` moved with P1: its fact is the
+ * label or the burst's words, `AutoGateInput.complaint`; `loop` moved with P2's detector.)
  */
-export const COMING_REFUSALS = ['loop', 'calc_claim_unbacked', 'ready_text_unapproved'] as const;
+export const COMING_REFUSALS = ['calc_claim_unbacked', 'ready_text_unapproved'] as const;
 
 export type ComingRefusal = (typeof COMING_REFUSALS)[number];
 
 export const COMING_REFUSAL_WORDS: Record<ComingRefusal, string> = {
-  // J33: one word for the one loop — the notice, the morning line and this card say the same.
-  loop: 'suhbat aylanib qoldi',
   // J9: «hisoblatishga yubordim» said with no calculation sent — a false claim to the customer.
   calc_claim_unbacked: 'javobda «hisoblatishga yubordim» deyilgan, lekin hisoblatish yuborilmagan',
   // J27: a Persian or Chinese tayyor matn goes by itself only once he approved it.
@@ -182,6 +183,9 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   not_work_account: 'raqam «Ish raqami» deb belgilanmagan',
   // J31: a reply the night alone held is judged again at the first working minute — never «yours in the morning».
   night: 'tun — ertalab qayta tekshiriladi',
+  // J33: one word for the one loop — the notice (loop `LOOP_NOTICE`), the morning line, the 🔁 follow-up's «why no
+  // question» (calc-loop `NO_DRAFT_WORDS`) and this card say the same.
+  loop: 'suhbat aylanib qoldi',
   daily_cap: 'bugungi o‘zi yuborish chegarasi tugadi',
   budget_spent: 'bugungi AI yuborish chegarasi tugagan',
   sending_disabled: 'CRM’dan Telegramga yuborish o‘chirilgan',
@@ -418,7 +422,11 @@ export interface AutoGateInput {
    * night's last hold is a night reply whatever its due time (the second check). At the press it is `at` itself.
    */
   now: Date;
-  /** The chat is caught in a loop (stage 1a P2 `loop.ts`) — the kernel reads none yet: false. */
+  /**
+   * The reply about to go is, folded, one of our last sends to this chat in the loop window, or the chat is inside the
+   * half hour a loop notice promised (stage 1a P2, loop `gateLoopFor`). The anchor's two loop signals are eligibility's:
+   * such a run drafts nothing.
+   */
   loop: boolean;
   /**
    * The customer's burst asks for a person or complains (stage 1a P3 `complaint.ts`; false until it lands). The gate
@@ -592,9 +600,10 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // The pump's own night (send-step `isTashkentNight`, AGENT_LIMITS' hours), for the classes it bars (`nightBars`, his
   // 4 a): such a card waits for the morning. Judged at the moment the reply would go AND at the moment its card is
   // queued (the second check): a card queued in the night arrives without a sound, and a countdown on it would run his
-  // ⏸ window on a message nothing announced. Talk is never barred — and two replies in a row are no rule of their own
-  // any more: the loop detector (P2) takes that slot.
+  // ⏸ window on a message nothing announced. Talk is never barred.
   if (nightBars(cls, input.nightPrices) && (isTashkentNight(input.at) || isTashkentNight(input.now))) hit.add('night');
+  // Two replies in a row are no rule of their own any more: the loop detector (P2) takes that slot.
+  if (input.loop) hit.add('loop');
   // NULL = no daily count (his «7 chegara qoyma»); the account's own send caps still bound the day (`budget_spent`).
   if (config.perDay !== null && input.pressedToday >= config.perDay) hit.add('daily_cap');
   if (input.budgetLeft !== null && input.budgetLeft <= 0) hit.add('budget_spent');

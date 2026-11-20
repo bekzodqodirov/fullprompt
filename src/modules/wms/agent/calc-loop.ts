@@ -27,6 +27,7 @@ import { calcFromOurWarehouse } from './types';
 import { anchorAgeWords, anchorMaxAgeMsForTrigger } from './anchor-clock';
 import { isTashkentNight, nextTashkentMorning } from './send-step';
 import { AGENT_LIMITS } from './limits';
+import { AUTO_REFUSAL_WORDS } from './auto-gate';
 import type { Ineligible } from './eligibility';
 import type { RunDeps, RunResult } from './run';
 
@@ -324,7 +325,10 @@ export const NO_DRAFT_WORDS: Record<Ineligible, string> = {
   too_old: tooOldWords(AGENT_LIMITS.anchorMaxAgeMs),
   auto_sent: 'mijozning avto-javobi',
   echo: 'aks-sado',
+  // A stored refusal from before stage 1a — `eligibleForRun` says `loop` now.
   repeat: 'takror xabar',
+  // J33: the one word for the one loop — the card's own (auto-gate `AUTO_REFUSAL_WORDS`).
+  loop: AUTO_REFUSAL_WORDS.loop,
 };
 
 export interface HandBackDeps extends RunDeps {

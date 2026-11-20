@@ -40,8 +40,12 @@ export interface EligibilityFacts {
   anchorAutoSent: boolean;
   /** Our newest out message's time, for the echo window. */
   lastOutAt: Date | null;
-  /** The anchor repeats one of the peer's previous three messages word for word. */
-  anchorRepeats: boolean;
+  /**
+   * The chat is a robot answering our robot (stage 1a P2, loop.ts): the anchor's words a third time in the window, or
+   * fast answers to three of our sends — the facts of `loopVerdict`, asked of the line this run answers. It replaced
+   * `repeat` (the anchor equal to one of the previous three lines), which stopped a customer's FIRST «Salom?».
+   */
+  loop: boolean;
 }
 
 export type Ineligible =
@@ -59,7 +63,10 @@ export type Ineligible =
   | 'too_old'
   | 'auto_sent'
   | 'echo'
-  | 'repeat';
+  // No longer said by `eligibleForRun` (stage 1a P2): `loop` took its place. Kept so a stored `agent_runs.error` of
+  // 'repeat' still reads in his words (calc-loop `NO_DRAFT_WORDS`).
+  | 'repeat'
+  | 'loop';
 
 export function eligibleForRun(f: EligibilityFacts): { ok: true } | { ok: false; reason: Ineligible } {
   const no = (reason: Ineligible) => ({ ok: false as const, reason });
@@ -80,6 +87,6 @@ export function eligibleForRun(f: EligibilityFacts): { ok: true } | { ok: false;
       f.anchorSentAt.getTime() >= f.lastOutAt.getTime()) {
     return no('echo');
   }
-  if (f.anchorRepeats) return no('repeat');
+  if (f.loop) return no('loop');
   return { ok: true };
 }

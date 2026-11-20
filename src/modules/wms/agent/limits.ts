@@ -80,6 +80,18 @@ export const AGENT_LIMITS = {
   greetingWaitMs: 60_000,
   /** An inbound this soon after our out row is a robot answering a robot (ban-4). */
   echoWindowMs: 5_000,
+  /**
+   * The chat loop detector (stage 1a §4.3, loop.ts) — what replaced «the same line again» (`repeat`) and «two machine
+   * replies in a row» (`streak`). Every rule looks back `windowMs` from the line it judges. `sameInbound`: the anchor's
+   * words this many times before it — the FIRST repeat is answered (an impatient customer), the second is a loop.
+   * `fastMs` / `fastSends`: an answer this soon after one of our sends, to this many DISTINCT sends (J8). The 10 s is
+   * measured on his own chats in the first live week (stated) — a person who reads and answers that fast three times
+   * in half an hour is rare, an away-message does it every time. `ownSends`: the reply about to go may not be word for
+   * word one of our last this-many sends. `clockSlackMs`: our send is stamped on our clock after Telegram took it, an
+   * answer by Telegram's whole second — an away-message that answers in the same second can read this much BEFORE
+   * the send it answers.
+   */
+  loop: { windowMs: 30 * 60_000, sameInbound: 2, fastMs: 10_000, fastSends: 3, ownSends: 3, clockSlackMs: 2_000 } as const,
   /** Typing time = clamp(base + chars/charsPerSec, min, max) (ban-7 — folklore numbers, stated). */
   typingBaseMs: 2_000,
   typingCharsPerSec: 30,

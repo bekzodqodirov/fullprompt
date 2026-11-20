@@ -22,6 +22,9 @@
  *  - `han_g1`       — G1's `han_numeral` alone: his ✅ (a Chinese reply he cannot approve is his to ✏️).
  *  - `lesson`       — «📝 Tuzatish»'s money refusal (lessons `lessonShapeRefusal`).
  *  - `phone`        — the ✍️ door's phone refusal (owner-answer `answerTextRefusal`, numbers `phonesIn`).
+ *  - `loop`         — the chat loop detector (stage 1a P2, loop `loopVerdict`): is this chat a robot answering our robot
+ *                     («held» — no draft, or no machine press) or a person talking («goes»)? Its input is a little
+ *                     script, one event a line — see `LOOP_DANGEROUS` below.
  *
  * `kind`: `dangerous` — the WRONG answer lets something reach a customer that must not (a price nobody read, a
  * hand-over in an air chat, a Tashkent price for another destination, a reply in the wrong language, his figure
@@ -40,7 +43,7 @@
  * Literal inputs only: nothing here is computed by the code under test.
  */
 
-export type Reader = 'avia' | 'destination' | 'language' | 'language_money' | 'owner_figure' | 'money' | 'han' | 'han_g1' | 'lesson' | 'phone';
+export type Reader = 'avia' | 'destination' | 'language' | 'language_money' | 'owner_figure' | 'money' | 'han' | 'han_g1' | 'lesson' | 'phone' | 'loop';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -1728,6 +1731,81 @@ const onMoney = (list: readonly Row[]): readonly Row[] =>
 const LANGUAGE_MONEY_DANGEROUS: readonly Row[] = onMoney(LANGUAGE_DANGEROUS);
 const LANGUAGE_MONEY_ORDINARY: readonly Row[] = onMoney(LANGUAGE_ORDINARY);
 
+// ── loop: a robot answering our robot, or a person talking (stage 1a P2) ───
+// The input is a script, one event a line: `<mark> <second> <text>`, seconds counted from one fixed start.
+//   `>` a line of the customer's — no text = a photo, a file or a voice note with no caption; the LAST one is the line
+//       the run answers (the anchor);
+//   `<` one of OUR machine sends to this chat (an `agent_outbox` row that went — whoever pressed it);
+//   `~` the customer's typing as the listener stamps it — only the newest stamp is kept, so the last `~` wins;
+//   `=` the reply about to go (the gate's `own_repeat`), at the second it would go.
+// `dangerous`: the machine answers a robot again — the account's ban risk (ban-4); `ordinary`: a person is stopped.
+const P_LOOP = 'stage1a:§4.3';
+const J8 = 'stage1a:J8';
+const LOOP_DANGEROUS: readonly Row[] = [
+  // An away-message: the same words a second after each of our sends — `same_inbound` and `fast_peer` both.
+  ['lp001', '< 0 Assalomu alaykum! Yukingiz haqida yozing.\n> 2 Здравствуйте! Сейчас не могу ответить, напишу позже.\n< 40 Qaysi shahardan jo‘natasiz?\n> 41 Здравствуйте! Сейчас не могу ответить, напишу позже.\n< 80 Yuk necha kub?\n> 81 Здравствуйте! Сейчас не могу ответить, напишу позже.', P_LOOP],
+  // The same line a third time, slowly — the first repeat was answered, the second stops (`same_inbound` alone).
+  ['lp002', '> 0 Salom\n< 20 Assalomu alaykum! Qanday yordam bera olaman?\n> 300 Salom\n< 320 Assalomu alaykum! Yuk bo‘yicha savolingizni yozing.\n> 900 Salom', P_LOOP],
+  // The fold: case and a run of spaces do not make another line.
+  ['lp003', '> 0 Xabaringiz qabul qilindi.\n< 30 Yukingiz qayerdan?\n> 400 xabaringiz  qabul qilindi.\n< 430 Necha kub?\n> 800 XABARINGIZ QABUL QILINDI.', P_LOOP],
+  // A responder that stamps a counter: every line differs, each lands a second after one of our sends (`fast_peer`).
+  ['lp004', '< 0 Assalomu alaykum!\n> 1 Ticket #4101 received. We will reply soon.\n< 30 Yukingiz qayerdan?\n> 31 Ticket #4102 received. We will reply soon.\n< 60 Necha kub?\n> 61 Ticket #4103 received. We will reply soon.', J8],
+  // Our reply about to go is one we just sent, word for word (`own_repeat`).
+  ['lp005', '> 0 Salom\n< 15 Assalomu alaykum! Qanday yordam bera olaman?\n> 60 Salom?\n= 75 Assalomu alaykum! Qanday yordam bera olaman?', P_LOOP],
+  // …and the fold is the same for our words.
+  ['lp006', '> 0 Salom\n< 15 Assalomu alaykum! Qanday yordam bera olaman?\n> 60 Salom?\n= 75 assalomu alaykum!  QANDAY yordam bera olaman?', P_LOOP],
+  // A Chinese away-message.
+  ['lp007', '< 0 您好！请问有什么可以帮您？\n> 1 您好，我现在不在，稍后回复您。\n< 30 请问货物从哪里发？\n> 31 您好，我现在不在，稍后回复您。\n< 60 一共多少立方？\n> 61 您好，我现在不在，稍后回复您。', P_LOOP],
+  // A person typed once, long before — every send after that stamp was answered by something that never types.
+  ['lp008', '~ 0\n< 10 Assalomu alaykum!\n> 11 Auto: received 1\n< 40 Yukingiz qayerdan?\n> 41 Auto: received 2\n< 70 Necha kub?\n> 72 Auto: received 3', J8],
+  // Ten seconds after a send still counts.
+  ['lp009', '< 0 Assalomu alaykum!\n> 10 Bot: so‘rovingiz qabul qilindi (1)\n< 40 Yukingiz qayerdan?\n> 50 Bot: so‘rovingiz qabul qilindi (2)\n< 80 Necha kub?\n> 90 Bot: so‘rovingiz qabul qilindi (3)', J8],
+  // Three fast answers among slow ones: the slow ones do not cancel the fast.
+  ['lp010', '< 0 Assalomu alaykum!\n> 2 Auto-reply A\n< 30 Qayerdan?\n> 55 Yiwudan\n< 90 Necha kub?\n> 93 Auto-reply B\n< 120 Og‘irligi?\n> 160 800 kg\n< 200 Rahmat!\n> 204 Auto-reply C', J8],
+  // The same line three times with other lines between it.
+  ['lp011', '> 0 Menga qo‘ng‘iroq qiling\n< 20 Albatta, menejerimiz bog‘lanadi.\n> 100 Iltimos\n> 200 Menga qo‘ng‘iroq qiling\n< 220 Menejerimiz tez orada qo‘ng‘iroq qiladi.\n> 400 Menga qo‘ng‘iroq qiling', P_LOOP],
+  // Our earlier send, not the last one, about to go again — still one of the last three.
+  ['lp012', '< 0 Rahmat! 😊\n> 30 ok\n< 60 Yana savol bo‘lsa yozing.\n> 90 ok\n= 100 Rahmat! 😊', P_LOOP],
+  // An English away-message, slowly.
+  ['lp013', "> 0 Thanks for your message! I'm away and will reply soon.\n< 20 Hello! How can we help?\n> 300 Thanks for your message! I'm away and will reply soon.\n< 320 Please tell us about your cargo.\n> 700 Thanks for your message! I'm away and will reply soon.", P_LOOP],
+  // An answer stamped in the very second of our send (Telegram dates are whole seconds) is after it.
+  ['lp014', '< 0 Assalomu alaykum!\n> 0 Avtojavob: hozir bandman.\n< 30 Yukingiz qayerdan?\n> 30 Avtojavob: hozir bandman!\n< 60 Necha kub?\n> 60 Avtojavob: hozir bandman!!', J8],
+];
+const LOOP_ORDINARY: readonly Row[] = [
+  // The FIRST repeat is answered — an impatient customer.
+  ['lo001', '> 0 Salom\n< 20 Assalomu alaykum! Qanday yordam bera olaman?\n> 300 Salom', P_LOOP],
+  // Three caption-less photos in a row — the invoice page by page — are never «the same line again».
+  ['lo002', '> 0\n> 3\n> 6', 'stage1a:§4.3 the text-less guard'],
+  // …nor is a caption-less file after two equal texts.
+  ['lo003', '> 0 Mana invoys\n< 20 Rahmat, ko‘rib chiqamiz.\n> 60 Mana invoys\n< 80 Rahmat, oldik.\n> 120', 'stage1a:§4.3 the text-less guard'],
+  // Three sizes — three lines, never one wording with its figures blanked.
+  ['lo004', '> 0 5 kub narxi qancha?\n< 20 Yukingiz qayerdan?\n> 60 7 kub narxi qancha?\n< 80 Qaysi shahardan?\n> 120 10 kub narxi qancha?', 'stage1a:§4.3 not textFingerprint'],
+  // Three quick lines after ONE of our sends — a person answering a question in pieces.
+  ['lo005', '< 0 Yukingiz qayerdan va necha kub?\n> 4 ha\n> 6 Yiwudan\n> 9 5 kub 800 kg', J8],
+  // Three quick answers, the person typing before the last.
+  ['lo006', '< 0 Qayerdan?\n> 6 Yiwudan\n< 30 Necha kub?\n> 36 5 kub\n< 60 Og‘irligi?\n~ 63\n> 67 800 kg', J8],
+  // Four quick answers — only the newest typing is kept, and a send it came after may have been typed to.
+  ['lo007', '< 0 Qayerdan?\n> 6 Yiwudan\n< 30 Necha kub?\n> 36 5 kub\n< 60 Og‘irligi?\n> 66 800 kg\n< 90 Qachon jo‘natasiz?\n~ 93\n> 97 Ertaga', 'stage1a:J8 (the one stamp)'],
+  // Our reply with other figures is another reply.
+  ['lo008', '> 0 5 kub 800 kg narxi?\n< 20 5 kub, 800 kg yukingiz uchun Toshkentgacha taxminan 960 $.\n> 60 7 kub 900 kg-chi?\n= 80 7 kub, 900 kg yukingiz uchun Toshkentgacha taxminan 1100 $.', 'stage1a:§4.3 not textFingerprint'],
+  // An old window clears: the two equal lines are more than 30 minutes before the anchor.
+  ['lo009', '> 0 Salom\n< 20 Assalomu alaykum!\n> 300 Salom\n< 320 Assalomu alaykum! Savolingizni yozing.\n> 2400 Salom', P_LOOP],
+  // …and so does our own words sent more than 30 minutes ago.
+  ['lo010', '< 0 Assalomu alaykum! Qanday yordam bera olaman?\n> 1900 Salom\n= 1920 Assalomu alaykum! Qanday yordam bera olaman?', P_LOOP],
+  // Our words four sends ago are not among the last three.
+  ['lo011', '< 0 Yana savol bo‘lsa yozing.\n> 30 5 kub\n< 60 Qayerdan?\n> 90 Yiwudan\n< 120 Og‘irligi?\n> 150 800 kg\n< 180 Hisoblab aytaman.\n> 210 ok\n= 230 Yana savol bo‘lsa yozing.', P_LOOP],
+  // Two quick answers to two sends — three distinct sends are needed.
+  ['lo012', '< 0 Qayerdan?\n> 3 Yiwu\n< 30 Necha kub?\n> 33 5', J8],
+  // A person answering in fifteen to twenty seconds.
+  ['lo013', '< 0 Qayerdan?\n> 15 Yiwudan\n< 40 Necha kub?\n> 60 5 kub\n< 90 Og‘irligi?\n> 110 800 kg', J8],
+  // «Salom» / «salom»: the first repeat, folded.
+  ['lo014', '> 0 Salom\n< 20 Assalomu alaykum!\n> 200 salom', P_LOOP],
+  // An impatient «?» a second time.
+  ['lo015', '> 0 Narxi qancha?\n< 20 Yukingiz necha kub?\n> 120 ?\n< 140 Kub va kg ni yozing, iltimos.\n> 240 ?', P_LOOP],
+  // Invoice pages a second apart after ONE send.
+  ['lo016', '< 0 Invoysni yuboring, iltimos.\n> 5\n> 6\n> 7\n> 8', J8],
+];
+
 export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('avia', 'dangerous', AVIA_DANGEROUS),
   ...rows('avia', 'ordinary', AVIA_ORDINARY),
@@ -1749,4 +1827,6 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('lesson', 'ordinary', LESSON_ORDINARY),
   ...rows('phone', 'dangerous', PHONE_DANGEROUS),
   ...rows('phone', 'ordinary', PHONE_ORDINARY),
+  ...rows('loop', 'dangerous', LOOP_DANGEROUS),
+  ...rows('loop', 'ordinary', LOOP_ORDINARY),
 ];

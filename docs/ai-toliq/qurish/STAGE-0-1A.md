@@ -423,6 +423,42 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
 `:709` — the last pins `repeat` and is rewritten). P2 also wires the gate's `loop` fact: one line in `autoFactsFor`
 (`auto-send.ts`, P1's file — the kernel leaves `loop: false` there for P2 to replace).
 
+**P2, as built (2026-11-20, the building session — re-fitted to the code where the text above differs).**
+- **One home.** `agent/loop.ts`: pure `loopFold`, `loopVerdict(facts) → { signals }` (`same_inbound`, `fast_peer`,
+  `own_repeat`, one stable order); ONE reader `loopFactsFor(handle, managerUserId, peerId, anchorTgMessageId, now,
+  draftBody)` — one statement: the anchor row read by its id, his live earlier lines, our `agent_outbox` rows that went
+  (timed by the thread's copy), the one typing stamp; `ownRepeatFor` (the gate); `loopBucketStart`, `loopSignalKey`,
+  `LOOP_NOTICE`, `loopNoticeOnce`. Constants `AGENT_LIMITS.loop` (`windowMs` 30 min, `sameInbound` 2, `fastMs` 10 s,
+  `fastSends` 3, `ownSends` 3, `clockSlackMs` 2 s).
+- **J8 with the one stamp the listener keeps.** A send owns the lines from its moment to the next send's and only the
+  first is its answer; three DISTINCT sends. `agent_conversations.peer_typing_at` is the NEWEST stamp only, so a pair
+  counts only when that stamp is OLDER than its send — for a send after it nothing was typed, for a send before it
+  nobody can tell, and the doubt goes to the person (the literal «typing between the send and the line» would count
+  the first three of four typed quick answers: corpus `lo007`). The clock slack: our send is stamped on our clock
+  after Telegram took it, an answer by Telegram's whole second — without it an away-message answering in the same
+  second is before its send (and the anchor's own send after the anchor).
+- **The 5-second `echo` stays and wins**: an answer inside 5 s of our newest out line is refused `echo` (silently) before
+  the loop is asked, so `fast_peer` meets the robots that answer in 5-10 s, and the ones before the anchor.
+- **Stateless, as §4.3 says.** The refusal holds while the window's facts hold; a NEW, different line inside the 30
+  minutes after a `same_inbound` trip is answered. J33's sentence («AI 30 daqiqa bu chatga javob yozmaydi») is true of
+  the looping lines and of a robot (which answers only our sends); it is not a hold on the chat. A sticky hold would
+  read the claim row back as a rule and turn a false trip (a person writing «?» three times) into thirty silent
+  minutes — the lead's to choose; not built.
+- **Eligibility.** `EligibilityFacts.loop: boolean` (was `anchorRepeats`); `eligibilityFacts(…, loopRead: 'anchor' |
+  'none')` REQUIRED — the owner-triggered run passes `'none'` and runs no statement. `Ineligible` keeps `repeat` for
+  stored rows; `NO_DRAFT_WORDS.loop` is `AUTO_REFUSAL_WORDS.loop`. A `loop` refusal is `agent_runs.outcome = 'refused',
+  error = 'loop'` (P4's liveness alarm classes it), and `handleInbound` then calls `sayLoop` → `loopNoticeOnce`: the
+  probe BEFORE the transaction, then claim (`agent_signals`, topic `loop`, `facts.signals` — the 10 s is measured from
+  them) and the AgentNotice (to the holder, `extra.peerId`, the chat's code and name, no customer text) in ONE
+  transaction; a failure is logged and the refusal stands.
+- **The gate.** `loop` stands in `AUTO_REFUSALS` right after `streak` (P1 deletes `streak`; the cherry-pick meets one
+  adjacent-line conflict there, in `autoVerdict`, in `AUTO_REFUSAL_WORDS` and in `agent-auto-gate.test.ts` ONE_CHANGE);
+  its fact is `ownRepeatFor` only — the anchor's two signals are eligibility's, which an owner-triggered draft never
+  asked.
+- **Tests.** Reader corpus reader `loop` (14 dangerous `lp…`, 16 ordinary `lo…`, a script per case), unit
+  `agent-loop-detector.test.ts` (describe «the CHAT loop detector … never the model's tool loop»), integration
+  `agent-chat-loop.integration.test.ts` (the stem `agent-loop` stays the tool loop's).
+
 ### 4.4 P3 «Ovoz» — persona, the Q2 rule, system replies (owns `prompt.ts`, `tools.ts` texts, `worthy.ts`, new `agent/system-reply.ts`, `agent/complaint.ts`, the worthy branch of `run.ts:475-493`)
 
 - **System replies** (`system-reply.ts`): `SYSTEM_LINES: Record<'voice' | 'media' | 'pashto', Record<AgentLocale, {text, glossUz}>>`

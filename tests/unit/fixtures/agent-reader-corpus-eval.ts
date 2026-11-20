@@ -7,6 +7,7 @@ import * as kb from '@/modules/wms/agent/kb';
 import type { KbHit } from '@/modules/wms/agent/kb';
 import * as lessons from '@/modules/wms/agent/lessons';
 import * as locale from '@/modules/wms/agent/locale';
+import * as loop from '@/modules/wms/agent/loop';
 import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import * as numbers from '@/modules/wms/agent/numbers';
 import * as ownerAnswer from '@/modules/wms/agent/owner-answer';
@@ -351,6 +352,34 @@ function hanCheck(reply: string): Observed {
   return result.blocks.some((b) => b.code === 'number_unverifiable' && b.detail === 'han_numeral') ? 'held' : 'goes';
 }
 
+/** The corpus's whole chats start here; a script's seconds are counted from it (agent-reader-corpus.ts `LOOP_DANGEROUS`). */
+const LOOP_T0 = Date.parse('2026-11-20T07:00:00Z');
+
+/**
+ * A loop case's script read into the detector's facts, exactly as `loopFactsFor` hands them over: the LAST customer
+ * line is the anchor, the ones before it his earlier lines, `<` our sends, the last `~` the one typing stamp kept, and
+ * `=` the reply about to go. Then the verdict — any signal is «held».
+ */
+function loopHeld(script: string): Observed {
+  const at = (sec: string) => new Date(LOOP_T0 + Number(sec) * 1000);
+  const lines: { at: Date; body: string }[] = [];
+  const sends: { at: Date; body: string }[] = [];
+  let typingAt: Date | null = null;
+  let draft: { at: Date; body: string } | null = null;
+  for (const row of script.split('\n')) {
+    const m = /^([<>~=]) (\d+)(?: (.*))?$/u.exec(row);
+    if (!m) throw new Error(`a loop script line the eval cannot read: «${row}»`);
+    const [, mark, sec, text = ''] = m;
+    if (mark === '>') lines.push({ at: at(sec!), body: text });
+    else if (mark === '<') sends.push({ at: at(sec!), body: text });
+    else if (mark === '~') typingAt = at(sec!);
+    else draft = { at: at(sec!), body: text };
+  }
+  const anchor = lines.at(-1) ?? null;
+  const facts = { anchor, inbound: lines.slice(0, -1), sends, typingAt, draft };
+  return loop.loopVerdict(facts).signals.length > 0 ? 'held' : 'goes';
+}
+
 /** What the reader under test makes of the case — throws when the reader does not exist at this commit. */
 export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observed {
   const reply = (c.context?.reply ?? 'uz') as AgentLocale;
@@ -381,6 +410,8 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
       return lessons.lessonShapeRefusal(c.input)?.code === 'money' ? 'held' : 'goes';
     case 'phone':
       return ownerAnswer.answerTextRefusal(c.input)?.what === 'phone' ? 'held' : 'goes';
+    case 'loop':
+      return loopHeld(c.input);
   }
 }
 
