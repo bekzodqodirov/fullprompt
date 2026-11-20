@@ -798,8 +798,9 @@ async function approvedByAuto(draftId: string): Promise<boolean> {
  * approved by HIS press → stopped as his; still pending → waiting again (the
  * next sweep presses it, judged afresh); anything else → gone. A row a stop
  * moved meanwhile is no longer 'pressing', and nothing here revives it.
+ * True: the row is waiting again for a draft that still waits.
  */
-async function settleFromDraft(draftId: string, now: Date): Promise<void> {
+async function settleFromDraft(draftId: string, now: Date): Promise<boolean> {
   const [d] = await db
     .select({ status: agentDrafts.status, decidedBy: agentDrafts.decidedBy, decidedAt: agentDrafts.decidedAt })
     .from(agentDrafts)
@@ -810,10 +811,12 @@ async function settleFromDraft(draftId: string, now: Date): Promise<void> {
   } else if (d?.status === 'approved') {
     await db.update(agentAutoVerdicts).set({ state: 'stopped', outcome: 'owner_send', stoppedAt: d.decidedAt ?? now, stoppedBy: d.decidedBy }).where(pressing);
   } else if (d?.status === 'pending') {
-    await db.update(agentAutoVerdicts).set({ state: 'waiting', claimedAt: null }).where(pressing);
+    const back = await db.update(agentAutoVerdicts).set({ state: 'waiting', claimedAt: null }).where(pressing).returning({ id: agentAutoVerdicts.draftId });
+    return back.length > 0;
   } else {
     await db.update(agentAutoVerdicts).set({ state: 'gone', outcome: d?.status ?? 'deleted' }).where(pressing);
   }
+  return false;
 }
 
 /**
@@ -1018,7 +1021,12 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
       if ((await pressAndRing({ draftId: row.draft_id, digest: row.digest }, now)) === 'pressed') pressed += 1;
     } catch (err) {
       logger.error({ err, draftId: row.draft_id }, '[agent] auto press failed');
-      await settleFromDraft(row.draft_id, now).catch(() => undefined);
+      // A press that throws never reaches `pressAndRing`'s ring: a hold-0 reply whose press keeps throwing would wait
+      // for ever on a card that was written silent (review nit 2). The sweep is the net — the run's own press
+      // (`pressNow`) throwing once is retried here within the minute, and only THIS failure rings, so a single blip
+      // never announces «o‘zi ketmadi» about a reply that goes a minute later. Rung once (`ringSilentCard`'s flag).
+      const back = await settleFromDraft(row.draft_id, now).catch(() => false);
+      if (back) await ringSilentCard(row.draft_id).catch((e: unknown) => logger.warn({ err: e, draftId: row.draft_id }, '[agent] silent card not rung'));
     }
   }
   if (batch.length > 0) logger.info({ claimed: batch.length, pressed }, '[agent] auto presses');
@@ -1030,7 +1038,9 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
  * ITS row — only while it waits and is due — and presses it on the spot with the tool calls in its hand, so a talk
  * reply never waits for the minute sweep. The sweep stays the net: what this does not press (a row it did not claim,
  * a process killed between the write and the press) the sweep presses. A press that throws settles its row from the
- * draft (`settleFromDraft`, as the sweep does) — never a row left 'pressing' for five minutes. Null: nothing claimed.
+ * draft (`settleFromDraft`, as the sweep does) — never a row left 'pressing' for five minutes — and rings nothing yet:
+ * the sweep presses it again within the minute, and its own failure is the one that rings the silent card
+ * (`pressDueAutos`). Null: nothing claimed.
  */
 export async function pressNow(draftId: string, now: Date, tools: readonly ToolCall[]): Promise<PressOutcome | null> {
   if (!(await agentAutoReady())) return null;
@@ -1075,6 +1085,13 @@ export const AUTO_NOT_GONE_NOTICE = '⏱ AI javobi o‘zi ketmadi — kartani ko
  * the same draft finds no silent copy and says nothing.
  */
 export async function ringSilentCard(draftId: string): Promise<'rang' | 'unsent' | 'none'> {
+  // Only a reply that still WAITS for him rings (review nit 5): a press that lost to his own ✅, ❌ or 🙋 in the same
+  // moment is decided — «o‘zi ketmadi — kartani ko‘ring» about the reply he just sent would be a false alarm.
+  const [d] = await db
+    .select({ status: agentDrafts.status, managerUserId: agentDrafts.managerUserId, peerId: agentDrafts.peerId, policy: agentDrafts.policy })
+    .from(agentDrafts)
+    .where(eq(agentDrafts.id, draftId));
+  if (!d || d.status !== 'pending') return 'none';
   const rows = await db
     .update(notifications)
     .set({ payload: sql`${notifications.payload} || '{"silent": false}'::jsonb` })
@@ -1088,11 +1105,6 @@ export async function ringSilentCard(draftId: string): Promise<'rang' | 'unsent'
     .returning({ status: notifications.status, userId: notifications.userId });
   if (rows.length === 0) return 'none';
   if (rows.every((r) => r.status === 'pending')) return 'unsent';
-  const [d] = await db
-    .select({ managerUserId: agentDrafts.managerUserId, peerId: agentDrafts.peerId, policy: agentDrafts.policy })
-    .from(agentDrafts)
-    .where(eq(agentDrafts.id, draftId));
-  if (!d) return 'none';
   const label = ((d.policy ?? {}) as Partial<DraftPolicyJson>).card?.customerLabel ?? null;
   await notifyStaffTelegram({
     userIds: [d.managerUserId],

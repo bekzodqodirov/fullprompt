@@ -180,7 +180,8 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   human_active: 'suhbatni 🙋 bilan o‘zingiz oldingiz',
   chat_muted: 'bu suhbatda AI o‘chirilgan',
   not_work_account: 'raqam «Ish raqami» deb belgilanmagan',
-  night: 'tun — ertalab o‘zingiz qaror qilasiz',
+  // J31: a reply the night alone held is judged again at the first working minute — never «yours in the morning».
+  night: 'tun — ertalab qayta tekshiriladi',
   daily_cap: 'bugungi o‘zi yuborish chegarasi tugadi',
   budget_spent: 'bugungi AI yuborish chegarasi tugagan',
   sending_disabled: 'CRM’dan Telegramga yuborish o‘chirilgan',

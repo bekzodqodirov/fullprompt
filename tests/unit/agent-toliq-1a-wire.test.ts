@@ -217,3 +217,42 @@ describe('his boxes, by the names he was promised (J34)', () => {
     for (const action of ['agentAutoTalkHoldAction', 'agentAutoPriceHoldAction', 'agentAutoNightAction']) expect(ui, action).toContain(action);
   });
 });
+
+describe('the page’s 👎 follows the service’s door (review nit 3)', () => {
+  const page = parse('src/app/(protected)/suhbatlar/ai/page.tsx');
+
+  /** The JSX attribute `name` on every `<tag … />` of the page, as written. */
+  function attrOf(tag: string, name: string): string[] {
+    const out: string[] = [];
+    const walk = (n: ts.Node): void => {
+      if ((ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) && n.tagName.getText() === tag) {
+        for (const a of n.attributes.properties) {
+          if (ts.isJsxAttribute(a) && a.name.getText() === name && a.initializer && ts.isJsxExpression(a.initializer)) out.push(a.initializer.expression!.getText());
+        }
+      }
+      ts.forEachChild(n, walk);
+    };
+    walk(page);
+    return out;
+  }
+
+  it('drawn for the row’s own account OR a super_admin while the holder is the AI seat — `autoFeedback` asks `mayArmAuto`', () => {
+    // The condition guarding <AutoBadButton …/>: the left side of its `&&`.
+    const guards: string[] = [];
+    const walk = (n: ts.Node): void => {
+      if (ts.isJsxSelfClosingElement(n) && n.tagName.getText() === 'AutoBadButton') {
+        let p: ts.Node = n.parent;
+        while (ts.isParenthesizedExpression(p)) p = p.parent;
+        if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) guards.push(p.left.getText());
+      }
+      ts.forEachChild(n, walk);
+    };
+    walk(page);
+    expect(guards).toEqual(['(row.managerUserId === viewerId || markAnyBad)']);
+    // …the seat half is the arm button's own (`mayArmAuto`: a super_admin while the holder IS the seat).
+    expect(attrOf('AutoSection', 'markAnyBad')).toEqual(["superAdmin && seat.state === 'holds'"]);
+    expect(attrOf('AutoSection', 'mayArm')).toEqual(["holder || (superAdmin && seat.state === 'holds')"]);
+    const send = parse('src/modules/wms/agent/auto-send.ts');
+    expect(callsOf(functionNamed(send, 'autoFeedback')!, 'mayArmAuto')).toHaveLength(1);
+  });
+});

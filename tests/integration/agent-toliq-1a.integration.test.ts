@@ -69,7 +69,19 @@ const forced = vi.hoisted(() => ({
   skipPress: false,
   storedTools: false,
   beforePress: null as null | ((draftId: string) => Promise<void>),
+  decideThrows: false,
 }));
+// A machine press that THROWS (review nit 2): the ✅ itself fails — a database blip, a bug — on every attempt.
+vi.mock('@/modules/wms/agent/decide', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/wms/agent/decide')>();
+  return {
+    ...real,
+    decideDraft: async (...args: Parameters<typeof real.decideDraft>) => {
+      if (forced.decideThrows) throw new Error('forced: the press throws');
+      return real.decideDraft(...args);
+    },
+  };
+});
 vi.mock('@/modules/wms/agent/auto-send', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/modules/wms/agent/auto-send')>();
   return {
@@ -291,7 +303,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   __forgetAgentAutoReady();
-  Object.assign(forced, { breakVerdict: false, skipPress: false, storedTools: false, beforePress: null });
+  Object.assign(forced, { breakVerdict: false, skipPress: false, storedTools: false, beforePress: null, decideThrows: false });
   await clearChats();
   await db
     .update(agentConfig)
@@ -331,7 +343,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-  Object.assign(forced, { breakVerdict: false, skipPress: false, storedTools: false, beforePress: null });
+  Object.assign(forced, { breakVerdict: false, skipPress: false, storedTools: false, beforePress: null, decideThrows: false });
 });
 
 const KICKS_FROM = new Date().toISOString();
@@ -458,6 +470,40 @@ describe('a hold-0 press that does not go rings (§4.2)', () => {
     expect(await ringSilentCard(d.id)).toBe('none');
     expect(await notices()).toHaveLength(1);
   });
+
+  it('a press that keeps THROWING: the run’s own failure is retried quietly; the sweep’s failure rings — once (review nit 2)', async () => {
+    forced.decideThrows = true;
+    const d = await drafted();
+    // The run's press threw: the row waits again, due — and nothing rang yet (the sweep retries within the minute).
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'waiting' });
+    const [card] = await cardsOf(d.id);
+    expect((card!.payload as { silent?: unknown }).silent).toBe(true);
+    await sent(card!.id, T0, d.id, false);
+    expect(await notices()).toHaveLength(0);
+    // The sweep's press throws too: the reply now waits for him — ONE ringing notice, and the row still waits.
+    expect(await pressDueAutos(new Date(T0.getTime() + 60_000))).toBe(0);
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'waiting' });
+    expect(await notices()).toHaveLength(1);
+    expect(String(((await notices())[0]!.payload as { text?: unknown }).text)).toContain(AUTO_NOT_GONE_NOTICE);
+    expect(await pressDueAutos(new Date(T0.getTime() + 120_000))).toBe(0);
+    expect(await notices()).toHaveLength(1);
+    // The blip passes: the next sweep presses it.
+    forced.decideThrows = false;
+    expect(await pressDueAutos(new Date(T0.getTime() + 180_000))).toBe(1);
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'pressed' });
+  });
+
+  it('a reply he already decided never rings — no «o‘zi ketmadi» about the reply he just sent (review nit 5)', async () => {
+    forced.skipPress = true;
+    const d = await drafted();
+    const [card] = await cardsOf(d.id);
+    await sent(card!.id, T0, d.id, false);
+    expect((card!.payload as { silent?: unknown }).silent).toBe(true);
+    // His ✅ won: the draft is decided — the press that lost to it says nothing.
+    await db.update(agentDrafts).set({ status: 'approved', decidedBy: ownerId, decidedAt: T0 }).where(eq(agentDrafts.id, d.id));
+    expect(await ringSilentCard(d.id)).toBe('none');
+    expect(await notices()).toHaveLength(0);
+  });
 });
 
 describe('the press asks the gate’s own warning predicate (ONE list)', () => {
@@ -538,6 +584,28 @@ describe('the night bars a class by his setting; the morning judges it again (hi
     await sent(copies[0]!.id, at(8, 0, 5), d.id, true);
     expect(await pressDueAutos(at(8, 3, 10))).toBe(1);
     expect(await outboxOf(d.id)).toMatchObject({ status: 'agent' });
+  });
+
+  it('re-judged, then the customer writes again: the night copy left naming the superseded draft is closed too — no countdown, no live ✅ for a reply that will never go', async () => {
+    await setSetting('agent_night_prices', 'none', ownerId);
+    const d = await quoted({ now: NIGHT });
+    const [nightCard] = await cardsOf(d.id);
+    await sent(nightCard!.id, new Date(NIGHT.getTime() + 5_000), d.id, false);
+    await db.update(agentAutoVerdicts).set({ createdAt: NIGHT }).where(eq(agentAutoVerdicts.draftId, d.id));
+    expect(await pressDueAutos(at(8, 0))).toBe(0);
+    const copies = await cardsOf(d.id);
+    expect(copies).toHaveLength(2);
+    await sent(copies[0]!.id, at(8, 0, 10), d.id, true);
+    // The night copy counts down like the fresh one — both are this draft's.
+    expect((copies[1]!.payload as { live?: unknown }).live).toBe(true);
+    // 08:01: a new line; the new draft rides the NEWEST copy (`cardRowFor`), the night copy stays the old draft's.
+    forced.skipPress = true;
+    const d2 = await drafted({ now: at(8, 1) });
+    expect((await db.select({ status: agentDrafts.status }).from(agentDrafts).where(eq(agentDrafts.id, d.id)))[0]!.status).toBe('superseded');
+    expect((await cardsOf(d2.id)).map((r) => r.id)).toContain(copies[0]!.id);
+    const left = await cardsOf(d.id);
+    expect(left.map((r) => r.id)).toEqual([nightCard!.id]);
+    expect(left[0]!.payload).toMatchObject({ live: false, autoAt: null });
   });
 });
 

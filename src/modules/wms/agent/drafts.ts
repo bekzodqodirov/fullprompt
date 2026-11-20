@@ -409,7 +409,11 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`) — or, for
     // the question his ✍️ answer was for, «✍️ Javobingiz olindi — AI qayta yozdi» (STALE_WORDS `owner_answered`), and
     // for the reply his lesson rewrote, «📝 Saboq bo‘yicha AI qayta yozdi» (`owner_lesson`).
-    if (closeOld && superseded) {
+    // …and on the ride path too: a draft can stand on TWO copies since stage 1a (the morning re-judge rings a fresh
+    // copy of a night card, auto-send `ringCardAgain`), and the ride re-points only the newest — the older copy still
+    // names the superseded draft and would keep its countdown and its ✅ for a reply that will never go. The redraw
+    // reaches every row still naming it, and finds none on a draft that had one copy.
+    if ((closeOld || out.retargeted) && superseded) {
       const { refreshAgentCard } = await import('./card-io');
       await refreshAgentCard(superseded).catch((err: unknown) => logger.warn({ err }, '[agent] old card not closed'));
     }

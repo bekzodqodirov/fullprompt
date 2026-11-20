@@ -610,6 +610,7 @@ async function SettingsSection({
           auto={auto}
           viewerId={actor.id}
           mayArm={holder || (superAdmin && seat.state === 'holds')}
+          markAnyBad={superAdmin && seat.state === 'holds'}
           mayTune={holder || superAdmin}
           mayDisarm={holder || superAdmin}
           running={running}
@@ -834,6 +835,7 @@ function AutoSection({
   auto,
   viewerId,
   mayArm,
+  markAnyBad,
   mayTune,
   mayDisarm,
   running,
@@ -845,6 +847,11 @@ function AutoSection({
   viewerId: string;
   /** The holder, or a super_admin while the holder is the AI seat (`setAutoArmed`'s own rule). */
   mayArm: boolean;
+  /**
+   * A super_admin while the holder is the AI seat: 👎 on any reply the machine sent — `autoFeedback`'s own door
+   * (`mayArmAuto`). On the seat nobody signs in as the holder, so «the row's own account» alone drew 👎 for nobody.
+   */
+  markAnyBad: boolean;
   /** The holder or any super_admin — the kinds, the daily count (2026-11-15). */
   mayTune: boolean;
   mayDisarm: boolean;
@@ -977,7 +984,7 @@ function AutoSection({
                       👎 {t('autoBadGiven')}
                     </span>
                   ) : (
-                    row.managerUserId === viewerId && <AutoBadButton draftId={row.draftId} />
+                    (row.managerUserId === viewerId || markAnyBad) && <AutoBadButton draftId={row.draftId} />
                   )}
                   {row.chatHref && (
                     <Link href={row.chatHref} className="ml-auto font-semibold text-brand-700 underline">

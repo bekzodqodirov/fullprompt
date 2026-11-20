@@ -71,6 +71,11 @@ export interface CalibrationDraftRow extends StatsDraftRow {
  * answer, no warning, no note, no money, no action but a follow-up date.
  * The rest — the account, the chat, the hour, the photos in the burst —
  * the gate asks live; this is the backtest's honest subset.
+ *
+ * It measures the PRE-1a rule, on purpose (docs/ai-toliq/qurish/STAGE-0-1A.md §10): since stage 1a the gate reads
+ * neither the label nor «any warning, any note» (auto-gate `autoClassOf`, `stopsMachine`) — a reply goes by what it
+ * DOES. This is a record tool (`scripts/agent-calibration.ts`), not a gate: its «≥ 0.80» table is the old rule's
+ * «would have gone», and no longer «what goes today».
  */
 export function cleanForAuto(r: Pick<CalibrationDraftRow, 'kind' | 'category' | 'blocked' | 'needsOwner' | 'warnings' | 'notes' | 'money' | 'actions'>): boolean {
   return (

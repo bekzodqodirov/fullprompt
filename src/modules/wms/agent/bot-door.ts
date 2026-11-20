@@ -1330,6 +1330,18 @@ const NIGHT_PRICE_WORDS: Record<AgentNightPrices, string> = {
 };
 
 /**
+ * The night as it concerns the price boxes he TICKED (the gate's `nightBars`): his setting's own sentence when both
+ * are ticked, one price's half when only one is — never «VED narxi ertalab» about a price that never goes by itself.
+ * Null when neither is ticked: no price goes, day or night.
+ */
+function nightPriceWords(price: boolean, vedPrice: boolean, night: AgentNightPrices): string | null {
+  if (price && vedPrice) return NIGHT_PRICE_WORDS[night];
+  if (price) return night === 'none' ? 'jadval narxi o‘zi ketmaydi — ertalab' : 'jadval narxi ham ketadi';
+  if (vedPrice) return night === 'all' ? 'VED narxi ham ketadi' : 'VED narxi o‘zi ketmaydi — ertalab';
+  return null;
+}
+
+/**
  * What arming promises — the page's own sentence (`agentAi.autoArmConfirm`, `autoNumbers`), so the bot and the page
  * never tell him two things (stage 1a, J22): ordinary talk goes by itself at once — or after the hold he set — day and
  * night, and the AI never writes first; a price waits on its card with ⏸, at night as his setting says; a complaint
@@ -1352,10 +1364,20 @@ export function autoArmedWords(
     ...(c.categories.includes('calc') ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi (kechasi — ertalab)'] : []),
   ];
   const kept = [`${stays} har doim sizga qoladi`, ...goes].join('; ');
-  const talkGoes = talk.talkHoldSec === 0 ? 'darhol' : `${holdWords(talk.talkHoldSec)} kutib`;
+  // A talk hold above 0 waits on its card like a price does: ⏸ is said with it, or a text with no price box ticked
+  // would never name the button that stops a reply.
+  const talkGoes = talk.talkHoldSec === 0 ? 'darhol o‘zi ketadi' : `${holdWords(talk.talkHoldSec)} kutib o‘zi ketadi (⏸ bilan to‘xtatasiz)`;
+  // The price hold is said only for what may go by itself under it — a ticked price box, a ticked calculation (the
+  // gate's `holdSecFor`: every class but talk waits the price hold) — and the night only for the ticked prices: with
+  // nothing ticked, «narx … o‘zi ketadi» beside «narx … har doim sizga qoladi» told him two opposite things (review D3).
+  const waits = [...(price || vedPrice ? ['narx'] : []), ...(c.categories.includes('calc') ? ['hisoblatish'] : [])].join(' va ');
+  const night = nightPriceWords(price, vedPrice, talk.nightPrices);
+  const held = waits
+    ? `${waits.charAt(0).toUpperCase()}${waits.slice(1)} kartada ${holdWords(c.holdSec)} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing${night ? `; kechasi ${night}` : ''}. `
+    : '';
   return (
-    `🤖 O‘zi yuborish yoqildi: oddiy javob ${talkGoes} o‘zi ketadi — kechasi ham (AI hech qachon birinchi yozmaydi). ` +
-    `Narx kartada ${holdWords(c.holdSec)} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing; kechasi ${NIGHT_PRICE_WORDS[talk.nightPrices]}. ` +
+    `🤖 O‘zi yuborish yoqildi: oddiy javob ${talkGoes} — kechasi ham (AI hech qachon birinchi yozmaydi). ` +
+    held +
     `${day}; ${kept}.`
   );
 }

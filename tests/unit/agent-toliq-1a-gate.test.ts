@@ -224,6 +224,11 @@ describe('the night bars a class by his setting (his 4 a)', () => {
     expect(go(mixed).reasons).toEqual(['night']);
   });
 
+  it('its word says the morning judges it again (J31) — never «yours to decide in the morning»', () => {
+    expect(AUTO_REFUSAL_WORDS.night).toBe('tun — ertalab qayta tekshiriladi');
+    expect(AUTO_REFUSAL_WORDS.night).not.toMatch(/o‘zingiz/u);
+  });
+
   it('the second check: a barred class written in the night’s last hold waits — its card goes now, silently', () => {
     const c = calc();
     c.now = new Date('2026-11-12T02:58:00Z'); // 07:58
