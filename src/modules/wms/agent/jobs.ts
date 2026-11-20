@@ -512,8 +512,8 @@ export async function agentSweep(
     //     clears. After the deploy-gap pass, which has just re-queued what it can. Its own catch: an alarm never costs
     //     the sweep's other answers.
     try {
-      const { sweepUnanswered } = await import('./liveness');
-      unanswered = await sweepUnanswered(config, now);
+      const { agentOnSince, sweepUnanswered } = await import('./liveness');
+      unanswered = await sweepUnanswered(config, now, await agentOnSince());
     } catch (err) {
       logger.error({ err }, '[agent] liveness check failed');
     }
@@ -557,6 +557,17 @@ export async function agentSweep(
       } satisfies AgentInboundJob, { retryLimit: 0, startAfter: INBOUND_START_AFTER_S });
       waiting.add(`${e.peerId}:${e.anchor}`);
       retried += 1;
+    }
+  } else if (!agentRunning(config)) {
+    // 3b's other half: he switched the AI off — no customer is its to answer, so an alarm raised before is taken
+    // down without a word (the P4 review's 8: left standing, it would silence the next real one for a day after he
+    // switches it back on). Not when only the key is missing: then the AI is down while it is meant to run, and the
+    // alarm is true. Its own catch.
+    try {
+      const { standDownLiveness } = await import('./liveness');
+      await standDownLiveness();
+    } catch (err) {
+      logger.error({ err }, '[agent] liveness stand-down failed');
     }
   }
 

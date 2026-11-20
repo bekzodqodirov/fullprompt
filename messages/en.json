@@ -6903,7 +6903,7 @@
     "lessonSave": "Save lesson",
     "lessonsHint": "Your corrections for the AI. It reads them before every reply, after the rules: where a lesson contradicts a rule, the rule wins. A lesson is an instruction, not a fact: a number in it never reaches a reply (put facts under «Knowledge»). A new lesson is given with «📝 Correct the AI» on an AI card here («📝 Tuzatish» in the bot).",
     "lessonsCount": "In the prompt: {n} / {max} lessons · {chars} / {maxChars} characters",
-    "lessonsCost": "Limit: {max} lessons and {maxChars} characters (about 12 long lessons) — the newest are read, the rest are marked «did not fit». Lessons join the standing part the AI reads on every reply: the first reply after a lesson changes, and a reply after a pause longer than 5 minutes, read that part again at full price (1.25×), and that counts against the daily token cap (a guard against runaway loops, not a money limit). A full list nearly doubles that part.",
+    "lessonsCost": "Limit: {max} lessons and {maxChars} characters (about 12 long lessons) — the newest are read, the rest are marked «did not fit». Lessons join the standing part the AI reads on every reply: the first reply after a lesson changes, and a reply after a pause longer than 5 minutes, read that part again at full price (1.25×), and that counts against the daily AI budget. A full list nearly doubles that part.",
     "lessonsEmpty": "No lessons yet. Press «📝 Tuzatish» on an AI card and write where it was wrong.",
     "lessonsNotReady": "The database is not updated yet — no lessons.",
     "lessonInPrompt": "in the prompt",

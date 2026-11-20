@@ -116,14 +116,32 @@ describe('where the sweep calls it — step 3b, in its own catch, inside the run
     const sweep = src.slice(src.indexOf('export async function agentSweep'));
     const branch = sweep.indexOf('if (agentRunning(config) && aiConfigured()) {');
     const gap = sweep.indexOf('// 3. The deploy gap');
-    const step = sweep.indexOf('await sweepUnanswered(config, now);');
+    const step = sweep.indexOf('await sweepUnanswered(config, now, await agentOnSince());');
     const retry = sweep.indexOf('// 4. An errored ASK');
     expect(branch, 're-anchor').toBeGreaterThan(0);
     expect(gap).toBeGreaterThan(branch);
     expect(step).toBeGreaterThan(gap);
     expect(step).toBeLessThan(retry);
     const around = sweep.slice(sweep.lastIndexOf('try {', step), sweep.indexOf('}', sweep.indexOf('catch (err)', step)) + 1);
-    expect(around).toMatch(/try \{\s*const \{ sweepUnanswered \} = await import\('\.\/liveness'\);\s*unanswered = await sweepUnanswered\(config, now\);\s*\} catch \(err\) \{\s*logger\.error\(/u);
+    expect(around).toMatch(
+      /try \{\s*const \{ agentOnSince, sweepUnanswered \} = await import\('\.\/liveness'\);\s*unanswered = await sweepUnanswered\(config, now, await agentOnSince\(\)\);\s*\} catch \(err\) \{\s*logger\.error\(/u,
+    );
+  });
+
+  it('while the AI does not run, the sweep takes a standing alarm down — never when only the key is missing (the P4 review’s 8)', () => {
+    const src = readFileSync('src/modules/wms/agent/jobs.ts', 'utf8');
+    const sweep = src.slice(src.indexOf('export async function agentSweep'));
+    const off = sweep.indexOf('} else if (!agentRunning(config)) {');
+    expect(off, 're-anchor: the off branch').toBeGreaterThan(sweep.indexOf('if (agentRunning(config) && aiConfigured()) {'));
+    const body = sweep.slice(off, sweep.indexOf('// 5. Strangers'));
+    expect(body).toMatch(/const \{ standDownLiveness \} = await import\('\.\/liveness'\);\s*await standDownLiveness\(\);/u);
+  });
+
+  it('the morning counts «Javobsiz» only while the AI runs, from the moment it was switched on (the P4 review’s 2)', () => {
+    const src = readFileSync('src/modules/wms/agent/morning.ts', 'utf8');
+    const job = src.slice(src.indexOf('export async function sendMorningLine'));
+    expect(job).toContain('const waiting: MorningWaiting = agentRunning(config) ? { since: await agentOnSince() } : null;');
+    expect(job).toContain('morningFacts(addDays(tashkentDay(now), -1), config.ownerUserId, now, waiting)');
   });
 
   it('nothing but the signals module writes the state table: the alarm asks its writer pair', () => {

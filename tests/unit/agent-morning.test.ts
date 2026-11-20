@@ -136,6 +136,16 @@ describe('morningLine — counts only, and they add up', () => {
     expect(morningEmpty(facts({ drafts: 0, went: 0, waited: [], unmarkedSamples: 0, unanswered: 1 }))).toBe(false);
     expect(morningLine(facts({ drafts: 0, went: 0, waited: [], unanswered: 1 }), false).split('\n')[0]).toBe('🌅 AI sotuvchi, kecha (19.11): javob yozilmadi.');
   });
+
+  it('the AI switched off (`unanswered` null): only what it DID makes a line — no «Javobsiz», no greeting for a waiting customer or an undone mark (the P4 review’s 2)', () => {
+    const off = facts({ drafts: 0, went: 0, waited: [], unanswered: null, unmarkedSamples: 4 });
+    expect(morningEmpty(off)).toBe(true);
+    // Switched off in the evening after a working day: the day's line goes, without «Javobsiz».
+    const ranThenOff = facts({ unanswered: null });
+    expect(morningEmpty(ranThenOff)).toBe(false);
+    expect(morningLine(ranThenOff, false)).not.toMatch(/Javobsiz/u);
+    expect(morningLine(facts({ unanswered: 0 }), false)).toContain('Javobsiz: 0.');
+  });
 });
 
 describe('the token cap is a loop guard, never a budget (§4.6 — his 10 c, J21)', () => {

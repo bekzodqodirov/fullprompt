@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SAMPLE_DAILY_DAYS, SAMPLE_SIZE, sampleDue, sampleLineText, sampleSpan } from '@/modules/wms/agent/sample';
+import { SAMPLE_DAILY_DAYS, SAMPLE_DRAW_MINUTES, SAMPLE_SIZE, sampleDue, sampleLineText, sampleSpan } from '@/modules/wms/agent/sample';
 
 /**
  * «Kunlik tekshiruv» (stage 1a §4.5, his 9 a): the cadence, the span, the line. The draw (pressed and sent only,
@@ -29,9 +29,19 @@ describe('the cadence — daily for the first month, then Fridays (his 9 a; deri
     expect(SAMPLE_SIZE).toBe(10);
   });
 
-  it('a daily sample is that Tashkent day; a weekly one the Friday and the six days before it', () => {
-    expect(sampleSpan('2026-11-24', 'daily')).toEqual({ from: new Date('2026-11-23T19:00:00Z'), to: new Date('2026-11-24T19:00:00Z') });
-    expect(sampleSpan('2027-01-01', 'weekly')).toEqual({ from: new Date('2026-12-25T19:00:00Z'), to: new Date('2027-01-01T19:00:00Z') });
+  it('draw to draw: a daily sample is the 24 hours before its 20:10, a weekly one the seven days — no evening hour is left out (the P4 review’s 4)', () => {
+    expect(sampleSpan('2026-11-24', 'daily')).toEqual({ from: new Date('2026-11-23T15:10:00Z'), to: new Date('2026-11-24T15:10:00Z') });
+    expect(sampleSpan('2027-01-01', 'weekly')).toEqual({ from: new Date('2026-12-25T15:10:00Z'), to: new Date('2027-01-01T15:10:00Z') });
+    // Consecutive spans meet: yesterday's end is today's start, and a Friday's end the next Friday's start.
+    expect(sampleSpan('2026-11-25', 'daily').from).toEqual(sampleSpan('2026-11-24', 'daily').to);
+    expect(sampleSpan('2027-01-08', 'weekly').from).toEqual(sampleSpan('2027-01-01', 'weekly').to);
+  });
+
+  it('the span’s minute is the schedule’s: 20:10 Tashkent = 15:10 UTC, as `registerAgentWorkers` schedules the job', () => {
+    expect(SAMPLE_DRAW_MINUTES).toBe(20 * 60 + 10);
+    const src = readFileSync('src/modules/wms/agent/jobs.ts', 'utf8');
+    const utc = SAMPLE_DRAW_MINUTES - 5 * 60; // Tashkent is UTC+5 all year (no summer time)
+    expect(src).toContain(`await boss.schedule(JOB_AGENT_SAMPLE, '${utc % 60} ${Math.floor(utc / 60)} * * *');`);
   });
 });
 
@@ -44,6 +54,17 @@ describe('the line — a count, how long it takes, the tab', () => {
     expect(sampleLineText(10, 'daily', false)).not.toMatch(/https?:/u);
     expect(sampleLineText(3, 'weekly', false)).toMatch(/^🔎 Haftalik tekshiruv: 3 ta javob — 2 daqiqa\./u);
     expect(sampleLineText(1, 'daily', false)).toMatch(/— 1 daqiqa/u);
+  });
+});
+
+describe('the 👎 button asks first, as the card’s own does (the P4 review’s 3)', () => {
+  it('a second 👎 in seven days switches «o‘zi yuborish» off — the confirm that says so comes before the press', () => {
+    const src = readFileSync('src/app/(protected)/suhbatlar/ai/signal-ui.tsx', 'utf8');
+    const buttons = src.slice(src.indexOf('export function SampleMarkButtons'));
+    const confirm = buttons.indexOf("if (!window.confirm(t('autoBadConfirm'))) return;");
+    expect(confirm, 're-anchor: the confirm').toBeGreaterThan(0);
+    expect(confirm).toBeLessThan(buttons.indexOf("agentSampleMarkAction(day, draftId, 'bad')"));
+    expect(buttons.indexOf("agentSampleMarkAction(day, draftId, 'bad')")).toBeLessThan(buttons.indexOf('data-testid="agent-sample-bad"'));
   });
 });
 

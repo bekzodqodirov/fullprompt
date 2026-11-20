@@ -1,11 +1,11 @@
 import { sql } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import { clearSignal, raiseSignal, signalStanding } from '../../platform/diagnostics/signals';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { getSetting, SETTING_DEFAULTS, SETTING_VALIDATORS } from '../../platform/settings/service';
 import { quietHour } from '../../platform/telegram/send';
-import type { AgentConfig } from './config';
+import { AGENT_CONFIG_AUDIT_ID, type AgentConfig } from './config';
 import { designated } from './designations';
 import type { Ineligible } from './eligibility';
 import { INTERRUPTED_RUN_MS } from './jobs';
@@ -106,12 +106,14 @@ export interface WaitingLine {
 }
 
 /**
- * The holder's chats bound to a card whose NEWEST line is inbound and was written in [`from`, `to`] — «the newest
+ * The holder's chats bound to a card whose NEWEST live line is inbound and was written in [`from`, `to`] — «the newest
  * line is inbound» is the whole of «nothing was sent»: our reply, his own typing or his robot would be an out line
  * after it — each with the newest run of THAT anchor (`anchor_tg_message_id`, the key the deploy-gap pass reads, never
- * the chat's newest run: yesterday's draft would hide today's silence), judged by `livenessOf`. `workingHours`: only
- * lines written outside the house's one night clock (`quietHour`, 22:00-08:00 Tashkent — never a second clock). ONE
- * statement on the pool.
+ * the chat's newest run: yesterday's draft would hide today's silence), judged by `livenessOf`. «Live» as the run
+ * reads the chat (`chatMessages`, leak-8): a line the customer deleted is not his newest — its run stands down
+ * `not_newest` and writes no row, so counting it would raise an alarm nothing can answer, standing a day and
+ * silencing the real ones meanwhile (the P4 review's 1). `workingHours`: only lines written outside the house's one
+ * night clock (`quietHour`, 22:00-08:00 Tashkent — never a second clock). ONE statement on the pool.
  */
 export async function unansweredLines(
   holderId: string,
@@ -132,6 +134,7 @@ export async function unansweredLines(
         FROM tg_messages m
        WHERE m.manager_user_id = ${holderId}::uuid
          AND m.sent_at >= ${window.from.toISOString()}::timestamptz
+         AND NOT EXISTS (SELECT 1 FROM tg_message_flags f WHERE f.message_id = m.id AND f.deleted_at IS NOT NULL)
        ORDER BY m.peer_id, m.sent_at DESC, m.tg_message_id DESC
     )
     SELECT n.peer_id::text AS peer_id, n.tg_message_id::text AS tg_message_id,
@@ -177,6 +180,26 @@ export async function readLivenessMinutes(): Promise<number> {
 /** How far back a line can still be the alarm's: step 3's own set made wider in time (§4.5). */
 export const LIVENESS_WINDOW_MS = 2 * 60 * 60_000;
 
+/**
+ * Since when the AI has been answering: the newest switch INTO «shadow» in the agent's own audit (`setAgentMode`
+ * writes one per press, before → after; a press that found it on already is not a switch). A line written before it
+ * was written while the AI was off — it was never queued for an answer and never will be, so it is no silence of
+ * the AI's: switched back on in working hours, the alarm would otherwise ring at once for every line of the hours it
+ * was off, and the morning would count them (the P4 review's 2 and 8). Null when no switch is recorded: every line
+ * counts, as before. One indexed read (`audit_entity_idx`) on the pool; `on` is for the test's rolled-back
+ * transaction — the audit trail takes no DELETE.
+ */
+export async function agentOnSince(on: Db | Tx = db): Promise<Date | null> {
+  const [row] = await on.execute<{ at_ms: number }>(sql`
+    SELECT (extract(epoch FROM created_at) * 1000)::float8 AS at_ms
+      FROM audit_log
+     WHERE entity_type = 'agent_config' AND entity_id = ${AGENT_CONFIG_AUDIT_ID}::uuid
+       AND after->>'mode' = 'shadow' AND before->>'mode' IS DISTINCT FROM 'shadow'
+     ORDER BY created_at DESC
+     LIMIT 1`);
+  return row ? new Date(Number(row.at_ms)) : null;
+}
+
 /** What the state row carries: how many customers wait, and since when the oldest of them does. */
 export interface LivenessDetail {
   n: number;
@@ -216,7 +239,7 @@ export function livenessAlarmText(d: LivenessDetail, now: Date, withPage: boolea
 /**
  * …and the one line when it clears. Said as what is TRUE when it clears — no customer of the working hours is left
  * waiting — never «the AI answers again»: the same zero comes when he answered them himself while the AI is still
- * down (#1106: a claim nobody has).
+ * down (#1106: a claim nobody has). It goes without a ring (`payload.silent`), at any hour: good news wakes nobody.
  */
 export const LIVENESS_CLEARED_TEXT = '✅ Javobsiz kutayotgan mijoz qolmadi — «AI sotuvchi javob bermayapti» ogohlantirishi yopildi.';
 
@@ -225,9 +248,11 @@ export const LIVENESS_CLEARED_TEXT = '✅ Javobsiz kutayotgan mijoz qolmadi — 
  * its own try/catch (`agentSweep`). Reads the setting once; 0 takes a standing alarm down without a word (he
  * switched it off). Not standing: lines of the last two hours. Standing: of the last day (the anchor's own reply
  * window) — a line the alarm was raised for keeps it standing until somebody answers it, never until it ages out of
- * two hours. Returns how many customers wait.
+ * two hours. Never a line written before `onSince` (`agentOnSince` — REQUIRED, the caller reads it: null = no switch
+ * recorded). The alarm opened after 22:00 (a 21:5x line past its minutes) goes without a ring — nobody is awake to
+ * act, the night rule this alarm keeps for the lines themselves. Returns how many customers wait.
  */
-export async function sweepUnanswered(config: Pick<AgentConfig, 'ownerUserId'>, now: Date): Promise<number> {
+export async function sweepUnanswered(config: Pick<AgentConfig, 'ownerUserId'>, now: Date, onSince: Date | null): Promise<number> {
   if (!livenessOn()) return 0;
   const holderId = config.ownerUserId;
   const minutes = await readLivenessMinutes();
@@ -236,15 +261,15 @@ export async function sweepUnanswered(config: Pick<AgentConfig, 'ownerUserId'>, 
     return 0;
   }
   const standing = await signalStanding(LIVENESS_SIGNAL_KEY);
-  const reach = standing ? AGENT_LIMITS.anchorMaxAgeMs : LIVENESS_WINDOW_MS;
+  const reach = now.getTime() - (standing ? AGENT_LIMITS.anchorMaxAgeMs : LIVENESS_WINDOW_MS);
   const lines = await unansweredLines(
     holderId,
-    { from: new Date(now.getTime() - reach), to: new Date(now.getTime() - minutes * 60_000), workingHours: true },
+    { from: new Date(onSince ? Math.max(reach, onSince.getTime()) : reach), to: new Date(now.getTime() - minutes * 60_000), workingHours: true },
     now,
   );
   if (lines.length === 0) {
     if (standing && (await clearSignal(LIVENESS_SIGNAL_KEY))) {
-      await notifyStaffTelegram({ userIds: await designated('supervisor'), type: 'AgentLiveness', text: LIVENESS_CLEARED_TEXT });
+      await notifyStaffTelegram({ userIds: await designated('supervisor'), type: 'AgentLiveness', text: LIVENESS_CLEARED_TEXT, extra: { silent: true } });
       logger.info('[agent] liveness alarm cleared');
     }
     return 0;
@@ -254,11 +279,28 @@ export async function sweepUnanswered(config: Pick<AgentConfig, 'ownerUserId'>, 
   // The write that OPENED the row tells — both ranks of the pair, or the fallback chain when he named nobody.
   const recipients = await designated('supervisor');
   const readers = await agentPageReaders(recipients, config);
+  const night = quietHour(now);
   for (const userId of recipients) {
-    await notifyStaffTelegram({ userIds: [userId], type: 'AgentLiveness', text: livenessAlarmText(detail, now, readers.has(userId)) });
+    await notifyStaffTelegram({
+      userIds: [userId],
+      type: 'AgentLiveness',
+      text: livenessAlarmText(detail, now, readers.has(userId)),
+      ...(night ? { extra: { silent: true } } : {}),
+    });
   }
   logger.warn({ waiting: detail.n }, '[agent] liveness alarm raised');
   return lines.length;
+}
+
+/**
+ * The sweep while the AI does NOT run (he switched it off): a standing alarm is taken down, without a word — he
+ * knows it is off, and no customer is its to answer. Left standing it would silence the next real alarm for a day
+ * once he switches it back on (`raiseSignal` answers TRUE only for the write that opens the row). The suites'
+ * switch leaves the row as it is.
+ */
+export async function standDownLiveness(): Promise<void> {
+  if (!livenessOn()) return;
+  if (await clearSignal(LIVENESS_SIGNAL_KEY)) logger.info('[agent] liveness alarm taken down: the agent is off');
 }
 
 /**

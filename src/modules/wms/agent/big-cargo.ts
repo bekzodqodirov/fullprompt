@@ -36,11 +36,12 @@ const CLAUSE_BREAK = /[.,;:!?\n؟。，！？；、]|\s(?:lekin|ammo|biroq|ле�
 const WORD = /[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu;
 
 /**
- * «Fura» with its case endings, in both Uzbek scripts and in Russian — and nothing that only begins like it:
- * «furazolidon», «фурнитура», «фураж» are goods (`full_truck` corpus).
+ * «Fura» with its endings in their Uzbek order — the plural, then whose («furangiz», «furamiz», «furalaringiz»,
+ * «furasi»), then the case, then a particle («furangizga», «furalarimizmi») — in both Uzbek scripts, and Russian's
+ * cases; and nothing that only begins like it: «furazolidon», «фурнитура», «фураж» are goods (`full_truck` corpus).
  */
 const TRUCK_WORD =
-  /^(?:fura(?:lar)?(?:ga|da|dan|ni|ning|si|siga|sida|sidan|dagi|day|mi|chi|li)?|фура(?:лар)?(?:га|да|дан|ни|нинг|си|сига|сида|ми|чи)?|фур(?:ы|е|у|ой|ою|ам|ами|ах)?|ftl)$/u;
+  /^(?:fura(?:lar(?:im|ing|i|imiz|ingiz)?|m|ng|si|miz|ngiz)?(?:ga|da|dan|ni|ning|niki|dagi|day|chi|li)?(?:mi|chi)?|фура(?:лар(?:им|инг|и|имиз|ингиз)?|м|нг|си|миз|нгиз)?(?:га|да|дан|ни|нинг|ники|даги|дай|чи|ли)?(?:ми|чи)?|фур(?:ы|е|у|ой|ою|ам|ами|ах)?|ftl)$/u;
 
 /** A truck — said after an adjective that makes it a WHOLE one («to‘liq mashina», «полную машину», «full truck»). */
 const VEHICLE_WORD =
@@ -62,9 +63,19 @@ const NEG_AFTER = /^(?:emas|kerakmas|shartmas|yo'q|yoq|bo'lmaydi|эмас|кер
 const HAN_WHOLE = /整车|整柜/gu;
 const HAN_NEG = /[不没無无非]/u;
 
+/**
+ * «Or» — a negation right after it closes a question («фура нужна или нет?», «fura bo'ladimi yoki yo'q?», «FTL or
+ * not?», «کامیون کامل یا نه؟») and takes nothing back: the customer is asking for the truck.
+ */
+const OR_WORD = /^(?:или|либо|yoki|yo|ёки|ё|or|یا)$/u;
+
+/** A negation word at `i` that is not the tail of «… or not». */
+const negationAt = (words: readonly string[], i: number, neg: RegExp) =>
+  neg.test(words[i]!) && !(i > 0 && OR_WORD.test(words[i - 1]!));
+
 function negated(words: readonly string[], from: number, to: number): boolean {
-  for (let i = Math.max(0, from - 3); i < from; i += 1) if (NEG_BEFORE.test(words[i]!)) return true;
-  for (let i = to + 1; i <= Math.min(words.length - 1, to + 3); i += 1) if (NEG_AFTER.test(words[i]!)) return true;
+  for (let i = Math.max(0, from - 3); i < from; i += 1) if (negationAt(words, i, NEG_BEFORE)) return true;
+  for (let i = to + 1; i <= Math.min(words.length - 1, to + 3); i += 1) if (negationAt(words, i, NEG_AFTER)) return true;
   return false;
 }
 

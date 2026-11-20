@@ -225,7 +225,12 @@ export function SampleMarkButtons({ day, draftId }: { day: string; draftId: stri
         type="button"
         className="btn-secondary"
         disabled={pending}
-        onClick={() => run(() => agentSampleMarkAction(day, draftId, 'bad'))}
+        onClick={() => {
+          // The card's own 👎 and its confirm (the P4 review's 3): a second 👎 in seven days switches «o‘zi yuborish»
+          // off, and the confirm is where he is told so.
+          if (!window.confirm(t('autoBadConfirm'))) return;
+          run(() => agentSampleMarkAction(day, draftId, 'bad'));
+        }}
         data-testid="agent-sample-bad"
       >
         👎 {t('sampleBad')}

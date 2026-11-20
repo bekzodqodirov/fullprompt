@@ -6,10 +6,11 @@ import { quietHour } from '../../platform/telegram/send';
 import { addDays, tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { AUTO_REFUSALS, COMING_REFUSALS, RETIRED_REFUSALS, refusalWordOf } from './auto-gate';
 import { NO_DRAFT_WORDS } from './calc-loop';
-import { agentAutoReady, agentToliq1aReady, readAgentConfig } from './config';
+import { agentAutoReady, agentRunning, agentToliq1aReady, readAgentConfig } from './config';
 import { designated } from './designations';
 import type { Ineligible } from './eligibility';
-import { unansweredLines } from './liveness';
+import { agentOnSince, unansweredLines } from './liveness';
+import { SAMPLE_UNMARKED } from './sample';
 import { agentPageReaders, agentPageUrl } from './signals';
 import { capWordOf } from './today';
 
@@ -130,8 +131,12 @@ export interface MorningFacts {
   notDrafted: Counted[];
   /** Lines a daily cap stopped, by cap. */
   caps: Counted[];
-  /** Customers whose newest line, written since yesterday's start, nobody answered and nothing will (liveness). */
-  unanswered: number;
+  /**
+   * Customers whose newest line, written since yesterday's start (and since the AI was last switched on), nobody
+   * answered and nothing will (liveness); null when the AI does not run now — no customer is its to answer, and the
+   * line leaves «Javobsiz» out.
+   */
+  unanswered: number | null;
   /** Evening samples older than 48 h with no mark; null one migration behind 0151. */
   unmarkedSamples: number | null;
 }
@@ -144,10 +149,17 @@ function counted(map: Map<string, number>): Counted[] {
 export const MORNING_UNANSWERED_AFTER_MS = 10 * 60_000;
 
 /**
- * The facts of one Tashkent day for the agent's ACCOUNT (its holder — the account the AI speaks from) — four
- * statements on the pool.
+ * Whose silence «Javobsiz» counts: null — the AI does not run NOW, so no waiting customer is its to answer (the P4
+ * review's 2: switched off, every card chat ending in the customer's «rahmat» read as «javobsiz» and greeted him
+ * every morning); else the lines written since it was switched on (`agentOnSince`; `since` null = no switch recorded).
  */
-export async function morningFacts(day: string, holderId: string, now: Date): Promise<MorningFacts> {
+export type MorningWaiting = { since: Date | null } | null;
+
+/**
+ * The facts of one Tashkent day for the agent's ACCOUNT (its holder — the account the AI speaks from) — four
+ * statements on the pool. `waiting` is REQUIRED: the caller says whether the AI runs.
+ */
+export async function morningFacts(day: string, holderId: string, now: Date, waiting: MorningWaiting): Promise<MorningFacts> {
   const from = tashkentDayStart(day).toISOString();
   const to = tashkentDayStart(addDays(day, 1)).toISOString();
   const autoReady = await agentAutoReady();
@@ -186,25 +198,47 @@ export async function morningFacts(day: string, holderId: string, now: Date): Pr
     const into = r.outcome === 'capped' ? caps : notDrafted;
     into.set(r.error ?? 'unknown', (into.get(r.error ?? 'unknown') ?? 0) + Number(r.n));
   }
-  const unanswered = await unansweredLines(
-    holderId,
-    { from: new Date(from), to: new Date(now.getTime() - MORNING_UNANSWERED_AFTER_MS), workingHours: false },
-    now,
-  );
+  const dayFrom = new Date(from).getTime();
+  const unanswered = waiting
+    ? await unansweredLines(
+        holderId,
+        {
+          from: new Date(waiting.since ? Math.max(dayFrom, waiting.since.getTime()) : dayFrom),
+          to: new Date(now.getTime() - MORNING_UNANSWERED_AFTER_MS),
+          workingHours: false,
+        },
+        now,
+      )
+    : null;
   let unmarkedSamples: number | null = null;
   if (await agentToliq1aReady()) {
     // Older than 48 h: a sample of day D is drawn at 20:10, so the first morning past two days is D + 3.
     const [row] = await db.execute<{ n: number }>(sql`
       SELECT count(*)::int AS n FROM agent_samples
-       WHERE manager_user_id = ${holderId}::uuid AND mark IS NULL AND day <= ${addDays(tashkentDay(now), -3)}::date`);
+       WHERE manager_user_id = ${holderId}::uuid AND ${SAMPLE_UNMARKED} AND day <= ${addDays(tashkentDay(now), -3)}::date`);
     unmarkedSamples = Number(row?.n ?? 0);
   }
-  return { day, drafts: drafts.length, went, waited: counted(waited), notDrafted: counted(notDrafted), caps: counted(caps), unanswered: unanswered.length, unmarkedSamples };
+  return {
+    day,
+    drafts: drafts.length,
+    went,
+    waited: counted(waited),
+    notDrafted: counted(notDrafted),
+    caps: counted(caps),
+    unanswered: unanswered ? unanswered.length : null,
+    unmarkedSamples,
+  };
 }
 
-/** Nothing happened and nothing waits: no line is sent (an agent switched off does not greet him every morning). */
+/**
+ * Nothing happened and nothing waits: no line is sent. An agent switched off (`unanswered` null) does not greet him
+ * every morning — only what it DID yesterday makes its line then; a customer waiting and a mark left undone are not
+ * the AI's while it does not run.
+ */
 export function morningEmpty(f: MorningFacts): boolean {
-  return f.drafts === 0 && f.notDrafted.length === 0 && f.caps.length === 0 && f.unanswered === 0 && (f.unmarkedSamples ?? 0) === 0;
+  if (f.drafts > 0 || f.notDrafted.length > 0 || f.caps.length > 0) return false;
+  if (f.unanswered === null) return true;
+  return f.unanswered === 0 && (f.unmarkedSamples ?? 0) === 0;
 }
 
 const groupsOf = (list: readonly Counted[], word: (code: string) => string) => list.map((g) => `${g.n} — ${word(g.code)}`).join(', ');
@@ -228,7 +262,7 @@ export function morningLine(f: MorningFacts, withPage: boolean): string {
   const notDraftedN = f.notDrafted.reduce((s, g) => s + g.n, 0);
   if (notDraftedN > 0) lines.push(`Javob yozilmagan xabarlar: ${notDraftedN} (${groupsOf(f.notDrafted, noDraftWordOf)}).`);
   if (f.caps.length > 0) lines.push(`⛔ Chegara tugadi: ${f.caps.map((g) => `${capWordOf(g.code)} — ${g.n} ta xabar`).join(', ')}.`);
-  lines.push(`Javobsiz: ${f.unanswered}.`);
+  if (f.unanswered !== null) lines.push(`Javobsiz: ${f.unanswered}.`);
   if (f.unmarkedSamples !== null && f.unmarkedSamples > 0) lines.push(`Belgilanmagan tekshiruv: ${f.unmarkedSamples} ta.`);
   if (withPage) lines.push(agentPageUrl());
   return lines.join('\n');
@@ -236,13 +270,15 @@ export function morningLine(f: MorningFacts, withPage: boolean): string {
 
 /**
  * The 08:40 job. Never at night (a late run of the schedule waits for the next morning), never for an agent with no
- * account, never an empty line. Outside any transaction: `designated()` reads the pool.
+ * account, never an empty line — and «Javobsiz» only while the AI runs, over the lines written since it was switched
+ * on. Outside any transaction: `designated()` reads the pool.
  */
 export async function sendMorningLine(now: Date = new Date()): Promise<number> {
   if (quietHour(now)) return 0;
   const config = await readAgentConfig();
   if (!config?.ownerUserId) return 0;
-  const facts = await morningFacts(addDays(tashkentDay(now), -1), config.ownerUserId, now);
+  const waiting: MorningWaiting = agentRunning(config) ? { since: await agentOnSince() } : null;
+  const facts = await morningFacts(addDays(tashkentDay(now), -1), config.ownerUserId, now, waiting);
   if (morningEmpty(facts)) return 0;
   const recipients = await designated('supervisor');
   const readers = await agentPageReaders(recipients, config);

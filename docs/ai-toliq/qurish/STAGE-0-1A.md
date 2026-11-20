@@ -666,7 +666,8 @@ differ; what the next package must know is last).**
   (the notice and the morning line).
 - **§4.6 words:** «byudjet» left the cap notice (`drafts.ts`, via `capWordOf`), `calc-loop.ts` and
   `owner-answer-job.ts` («bugungi AI chegarasi tugadi (xato halqasidan himoya, pul chegarasi emas)»), and a sixth
-  place no list named — `agentAi.lessonsCost` in all four bundles. A unit fence reads every string under `agent/`.
+  place no list named — `agentAi.lessonsCost` in all four bundles (moved to K after the review — J26, below). A unit
+  fence reads every string under `agent/`.
 - **Sample** (`agent/sample.ts`): drawn under a per-day advisory lock and refused when the day has one; the weekly
   sample (after 30 days, Fridays) reaches back six days and never re-draws a sampled reply. The line goes to the
   pair members the arming rule admits, else rank 1 (J17); 👍/👎 asks `mayArmAuto` of the reply's own holder.
@@ -695,6 +696,40 @@ differ; what the next package must know is last).**
   union and the runner's two lists gain `full_truck` here and `language_money` in P1 — a mechanical merge.
   (4) E2E owed: `m9zzzg` — «Kim javob beradi» saved and put back as a final TEST, «Kunlik tekshiruv» renders; the
   home's liveness row put in and taken out by the spec (`AGENT_LIVENESS` is off on the server).
+
+**P4, after its review (2026-11-20, the fix pass on `toliq-1a-p4`).** Ten findings, eight fixed, each red-proven by a
+paired string edit:
+- **Liveness reads LIVE lines only** — `unansweredLines`' newest-line CTE skips a line the customer deleted
+  (`tg_message_flags.deleted_at`), as `chatMessages` does: a deleted newest line's run stands down `not_newest` with no
+  ledger row, so it raised an alarm nothing could answer, standing a day and silencing the real ones (and the
+  morning's «Javobsiz» counted it).
+- **«Since the AI was switched on»** — `agentOnSince()` (liveness.ts) = the newest audit row on the agent's config that
+  switched `mode` INTO 'shadow' (`before` not 'shadow'); null = none recorded. `sweepUnanswered(config, now, onSince)`
+  takes it as a REQUIRED third argument (the sweep reads it; the tests pass literals — a real-time audit row of another
+  file must not move a literal-clock test), and never reads a line written before it. While the agent is NOT running
+  the sweep calls `standDownLiveness()` — the row is taken down without a word (not when only the key is missing: then
+  the alarm is true).
+- **The morning while the AI is off** — `morningFacts(day, holder, now, waiting)`, `waiting: { since } | null`
+  REQUIRED; `sendMorningLine` passes null when `!agentRunning(config)`: «Javobsiz» is not counted (`unanswered: null`,
+  the line leaves it out), and an off day with nothing DONE sends nothing — a waiting customer or an undone mark no
+  longer greets him every morning.
+- **The night** — an alarm opened in the quiet hours goes `silent` (a 21:5x line past its minutes); the «qolmadi» line
+  is silent at any hour (`payload.silent`, the drain's queue-time half of the night rule).
+- **The sample's span is draw to draw** — `sampleSpan(day)` = [20:10 the day before, 20:10 that day) (weekly: seven
+  days), `SAMPLE_DRAW_MINUTES` pinned to the job's `'10 15 * * *'` by a unit test: a calendar day drawn at 20:10 left
+  20:10-24:00 out of every sample.
+- **The card's 👎 is a mark** — `SAMPLE_UNMARKED` (sample.ts) = no mark AND no card 👎 on the reply's verdict: the
+  badge, the page's older count and the morning's count read it; the view draws such a row «xato»; a 👍 on it is
+  refused `already` in the UPDATE itself. The sample's 👎 asks `agentAi.autoBadConfirm` first, as the card's does.
+- **`saysFullTruck`** — «… или нет», «yoki yo‘q», «or not», «یا نه»: a negation right after an «or» word is a question
+  tag (`OR_WORD`), both sides of the hit; «fura» takes the possessive endings before the case ones («furangiz»,
+  «furalaringizga», «furamiz»; Uzbek Cyrillic too). Corpus `full_truck`: 44 dangerous / 25 ordinary, ratchet unchanged.
+- **Moved out, owed to K (J26)** — the `agentAi.lessonsCost` rewording is reverted here (the bundles equal the base);
+  its four strings are in `e84ed45d`'s diff of `messages/*.json`, to land in K with `agentAi.lessonsCost` added to the
+  key list of `agent-toliq-1a-settings.test.ts`'s «the token cap is called a loop guard» test.
+- **Not here** — the e2e (finding 6) stays owed to the merged tree: `m9zzzg` is P1's and P4's together and the
+  strip's tabs come from P1, P3 and P5; measured there at 360 px in `ru`. Step 3 (the deploy gap) also re-queues a
+  deleted newest line every sweep for 30 minutes (each run stands down with no row) — not P4's file; stated.
 
 ### 4.6 His 10 c and the fuses in `agent/limits.ts` — KEEP, do not raise, make loud (the re-wording below is P4's: it owns the morning line that names the trips)
 

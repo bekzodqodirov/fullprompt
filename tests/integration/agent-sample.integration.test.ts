@@ -18,7 +18,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { __forgetAgentToliq1aReady, __pretendAgentToliq1aBehind, __restoreAgentConfig, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
-import { drawSample, markSample, sampleView, sendSample } from '@/modules/wms/agent/sample';
+import { drawSample, markSample, sampleUnmarkedToday, sampleView, sendSample } from '@/modules/wms/agent/sample';
 import { dropDrainKicksSince } from './drain-kicks';
 
 /**
@@ -213,6 +213,18 @@ describe('the draw — what the customer got from the machine, at most ten, once
     ]);
     expect(rows.map((r) => r.draftId)).not.toContain(old);
   });
+
+  it('a reply pressed after one evening’s draw is in the next evening’s sample — no hour is left out (the P4 review’s 4)', async () => {
+    const monday = await reply({ at: new Date('2026-11-16T08:00:00Z') });
+    expect(await drawSample('2026-11-16', 'daily')).toBe(1);
+    // 21:00 Tashkent on Monday — after Monday's 20:10 draw, before Tuesday's.
+    const evening = await reply({ at: new Date('2026-11-16T16:00:00Z') });
+    expect(await drawSample(DAY, 'daily')).toBe(1);
+    expect((await sampled()).map((r) => [r.day, r.draftId])).toEqual([
+      ['2026-11-16', monday],
+      [DAY, evening],
+    ]);
+  });
 });
 
 describe('the line — to whom the arming rule lets mark (J17)', () => {
@@ -267,6 +279,18 @@ describe('the marks', () => {
     expect(off).toMatchObject({ reason: 'feedback' });
     const [row] = await sampled();
     expect(row!.mark).toBe('bad');
+  });
+
+  it('a reply whose card was already given 👎 is judged: no 👍 contradicts it, the page draws it «xato», the badge does not count it (the P4 review’s 9)', async () => {
+    const id = await reply({});
+    await drawSample(DAY, 'daily');
+    await db.update(agentAutoVerdicts).set({ feedback: 'bad', feedbackAt: AT }).where(eq(agentAutoVerdicts.draftId, id));
+    expect(await sampleUnmarkedToday({ id: ids.holder, roles: [] })).toBe(0);
+    expect(await markSample({ id: ids.holder, roles: [] }, { day: DAY, draftId: id, mark: 'good' }, AT)).toEqual({ ok: false, code: 'already' });
+    const [row] = await sampled();
+    expect(row!.mark).toBeNull();
+    const view = await sampleView({ id: ids.holder, roles: [] });
+    expect(view.rows[0]).toMatchObject({ draftId: id, mark: 'bad' });
   });
 });
 

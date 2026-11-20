@@ -186,7 +186,7 @@ describe('morningFacts — yesterday, as the database says it', () => {
     // A customer who wrote at 23:30 Tashkent and got nothing: «Javobsiz» counts the night too.
     peerSeq += 1n;
     await line(peerSeq, new Date('2026-11-16T18:30:00Z'));
-    const f = await morningFacts(DAY, ids.holder, MORNING);
+    const f = await morningFacts(DAY, ids.holder, MORNING, { since: null });
     expect(f.drafts).toBe(7);
     expect(f.went).toBe(2);
     expect(f.waited).toEqual([
@@ -208,6 +208,18 @@ describe('morningFacts — yesterday, as the database says it', () => {
     expect(f.unanswered).toBe(3);
   });
 
+  it('«Javobsiz» counts only while the AI runs, and only lines written since it was switched on (the P4 review’s 2 and 8)', async () => {
+    peerSeq += 1n;
+    await line(peerSeq, new Date('2026-11-16T05:00:00Z')); // 10:00 Tashkent
+    peerSeq += 1n;
+    await line(peerSeq, new Date('2026-11-16T09:00:00Z')); // 14:00 Tashkent
+    expect((await morningFacts(DAY, ids.holder, MORNING, { since: null })).unanswered).toBe(2);
+    // Switched on at 12:00 Tashkent: the 10:00 line was written while it was off.
+    expect((await morningFacts(DAY, ids.holder, MORNING, { since: new Date('2026-11-16T07:00:00Z') })).unanswered).toBe(1);
+    // Switched off now: nobody is the AI's to answer.
+    expect((await morningFacts(DAY, ids.holder, MORNING, null)).unanswered).toBeNull();
+  });
+
   it('samples left unmarked past 48 hours are counted; a fresher one is not', async () => {
     await draft({ eligible: true, state: 'pressed', dueAt: NOON, pressedAt: NOON }, 'sent');
     const [d1] = await db.select({ id: agentDrafts.id, peerId: agentDrafts.peerId }).from(agentDrafts).where(eq(agentDrafts.managerUserId, ids.holder));
@@ -215,7 +227,10 @@ describe('morningFacts — yesterday, as the database says it', () => {
       { day: '2026-11-14', draftId: d1!.id, managerUserId: ids.holder, peerId: d1!.peerId, pos: 1 },
       { day: '2026-11-15', draftId: d1!.id, managerUserId: ids.holder, peerId: d1!.peerId, pos: 1 },
     ]);
-    expect((await morningFacts(DAY, ids.holder, MORNING)).unmarkedSamples).toBe(1);
+    expect((await morningFacts(DAY, ids.holder, MORNING, { since: null })).unmarkedSamples).toBe(1);
+    // The card's own 👎 on that reply is its «xato» too — the sample is judged, not undone (the P4 review's 9).
+    await db.update(agentAutoVerdicts).set({ feedback: 'bad', feedbackAt: NOON }).where(eq(agentAutoVerdicts.draftId, d1!.id));
+    expect((await morningFacts(DAY, ids.holder, MORNING, { since: null })).unmarkedSamples).toBe(0);
   });
 });
 
@@ -238,6 +253,19 @@ describe('sendMorningLine — the pair, at 08:40, never at night', () => {
       expect(text).not.toContain(REPLY_WORDS);
     }
     expect(await morningOf(ids.holder)).toEqual([]);
+  });
+
+  it('with the AI switched off, a customer whose chat ends in his own «rahmat» is no reason to greet him every morning (the P4 review’s 2)', async () => {
+    await db.update(agentConfig).set({ mode: 'off' }).where(eq(agentConfig.id, 1));
+    peerSeq += 1n;
+    await line(peerSeq, NOON);
+    expect(await sendMorningLine(MORNING)).toBe(0);
+    expect(await morningOf(ids.boss)).toEqual([]);
+    // …and a day it worked, switched off in the evening, still has its line — without «Javobsiz».
+    await theDay();
+    expect(await sendMorningLine(MORNING)).toBe(2);
+    const [boss] = await morningOf(ids.boss);
+    expect(boss).not.toMatch(/Javobsiz/u);
   });
 
   it('at night it sends nothing; an empty day sends nothing', async () => {

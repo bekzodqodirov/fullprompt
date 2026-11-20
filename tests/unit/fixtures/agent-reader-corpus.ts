@@ -2151,6 +2151,22 @@ const FULL_TRUCK_DANGEROUS: readonly Row[] = [
   ['ft028', 'salom\nfura kerak edi', P_FT],
   ['ft029', 'Furada olib kelib berasizmi?', P_FT],
   ['ft030', 'Фура нужна? Да, нужна', P_FT],
+  // The review of P4 (2026-11-20): «or not» closing a question is a tag, never a negation — and «fura» takes the
+  // possessive endings before its case ones («furangiz», «furalaringiz», «furamiz»).
+  ['ft031', 'Фура нужна или нет?', P_FT],
+  ['ft032', 'Можно фуру или нет?', P_FT],
+  ['ft033', "Fura bo'ladimi yoki yo'q?", P_FT],
+  ['ft034', 'Is FTL possible or not?', P_FT],
+  ['ft035', 'Furangiz bormi?', P_FT],
+  ['ft036', "Furalaringiz bo'shmi?", P_FT],
+  ['ft037', 'Bizning furamiz tayyor', P_FT],
+  ['ft038', 'Фурангиз борми?', P_FT],
+  ['ft039', 'Furangizga qancha olasiz?', P_FT],
+  ['ft040', 'Full truck or not, how much is it?', P_FT],
+  ['ft041', 'کامیون کامل یا نه؟', P_FT],
+  ['ft042', 'Fura kerakmi yoki emas?', P_FT],
+  ['ft043', 'Нужна или нет фура?', P_FT],
+  ['ft044', 'Furalarimiz 2 ta, Yiwuda turibdi', P_FT],
 ];
 const FULL_TRUCK_ORDINARY: readonly Row[] = [
   ['ft101', 'Tikuv mashinasi olib kelmoqchiman', P_FT],
@@ -2175,6 +2191,11 @@ const FULL_TRUCK_ORDINARY: readonly Row[] = [
   ['ft120', 'To‘liq ma’lumot yuboring, mashina detali bor', P_FT],
   ['ft121', 'Kecha furada keldi, rahmat', P_FT],
   ['ft122', 'Fura uchun shinalar kerak', P_FT],
+  // The possessive endings widen «fura», never its stem into a prefix: goods that begin like it stay goods.
+  ['ft123', 'Furazolidoningiz bormi?', P_FT],
+  ['ft124', 'Фурнитурангиз борми, 2 куб', P_FT],
+  // A negation the customer meant stays one when no «or» stands right before it.
+  ['ft125', 'Fura kerak emas, yoki sborniy, yoki avia', P_FT],
 ];
 
 export const READER_CORPUS: readonly ReaderCase[] = [

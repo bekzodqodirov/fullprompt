@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { clearSignal, signalStanding } from '@/modules/platform/diagnostics/signals';
 import {
@@ -16,9 +17,10 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { setSetting } from '@/modules/platform/settings/service';
-import { __restoreAgentConfig, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
+import { AGENT_CONFIG_AUDIT_ID, __restoreAgentConfig, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { agentSweep } from '@/modules/wms/agent/jobs';
-import { LIVENESS_CLEARED_TEXT, LIVENESS_SIGNAL_KEY, livenessStanding, sweepUnanswered } from '@/modules/wms/agent/liveness';
+import { agentOnSince, LIVENESS_CLEARED_TEXT, LIVENESS_SIGNAL_KEY, livenessStanding, sweepUnanswered } from '@/modules/wms/agent/liveness';
+import { markDeleted } from '@/modules/wms/crm/message-flags';
 import { dropDrainKicksSince } from './drain-kicks';
 
 /**
@@ -95,6 +97,14 @@ const alarms = (userId: string) =>
     .where(and(eq(notifications.userId, userId), eq(notifications.type, 'AgentLiveness')))
     .then((rows) => rows.map((r) => (r.text as { text: string }).text));
 
+/** Each copy's payload, oldest first — what the drain reads for `silent`. */
+const payloads = (userId: string) =>
+  db
+    .select({ payload: notifications.payload, createdAt: notifications.createdAt })
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), eq(notifications.type, 'AgentLiveness')))
+    .then((rows) => rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((r) => r.payload as { text: string; silent?: boolean }));
+
 const config = () => ({ ownerUserId: ids.holder });
 
 beforeAll(async () => {
@@ -148,7 +158,7 @@ describe('a customer left unanswered in working hours', () => {
   it('a line 15 minutes old with no run: ONE alarm to each rank of the pair and one state row; the next sweep says nothing more', async () => {
     const peer = nextPeer();
     await line(peer, 'in', new Date(NOW.getTime() - 15 * MIN));
-    expect(await sweepUnanswered(config(), NOW)).toBe(1);
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(1);
     const row = await signalStanding(LIVENESS_SIGNAL_KEY);
     expect(row).not.toBeNull();
     const bossSaw = await alarms(ids.boss);
@@ -161,22 +171,51 @@ describe('a customer left unanswered in working hours', () => {
     expect(deputySaw[0]).toBe('⚠️ AI sotuvchi javob bermayapti: 1 ta mijoz 15 daqiqadan beri kutyapti.');
     expect(await livenessStanding(NOW)).toEqual({ n: 1, minutes: 15 });
 
-    expect(await sweepUnanswered(config(), new Date(NOW.getTime() + MIN))).toBe(1);
+    expect(await sweepUnanswered(config(), new Date(NOW.getTime() + MIN), null)).toBe(1);
     expect(await alarms(ids.boss)).toHaveLength(1);
     expect(await alarms(ids.deputy)).toHaveLength(1);
+    // In working hours the alarm rings — no `silent` on the copy.
+    expect((await payloads(ids.boss))[0]!.silent).toBeUndefined();
+  });
+
+  it('only lines written since the AI was last switched on — a line of the hours it was off is no silence of its own', async () => {
+    const before = nextPeer();
+    await line(before, 'in', new Date(NOW.getTime() - 40 * MIN));
+    const after = nextPeer();
+    await line(after, 'in', new Date(NOW.getTime() - 15 * MIN));
+    // Switched on 20 minutes ago: the 40-minute-old line was written while it was off and was never queued.
+    expect(await sweepUnanswered(config(), NOW, new Date(NOW.getTime() - 20 * MIN))).toBe(1);
+    expect(await alarms(ids.boss)).toEqual([expect.stringMatching(/^⚠️ AI sotuvchi javob bermayapti: 1 ta mijoz 15 daqiqadan/u)]);
+    await clearSignal(LIVENESS_SIGNAL_KEY);
+    // No switch recorded: every line counts, as before.
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(2);
+  });
+
+  it('at night the alarm goes without a ring (a 21:50 line past its minutes at 22:05); the «qolmadi» line never rings', async () => {
+    const peer = nextPeer();
+    const lateDay = new Date('2026-11-17T16:50:00Z'); // 21:50 Tashkent — a working-hour line
+    const anchor = await line(peer, 'in', lateDay);
+    expect(await sweepUnanswered(config(), new Date(lateDay.getTime() + 15 * MIN), null)).toBe(1);
+    const [alarm] = await payloads(ids.boss);
+    expect(alarm!.text).toMatch(/^⚠️/u);
+    expect(alarm!.silent).toBe(true);
+    await runFor(peer, anchor, 'draft', null, new Date(lateDay.getTime() + 16 * MIN));
+    expect(await sweepUnanswered(config(), new Date(lateDay.getTime() + 17 * MIN), null)).toBe(0);
+    const cleared = (await payloads(ids.boss)).find((p) => p.text === LIVENESS_CLEARED_TEXT);
+    expect(cleared?.silent).toBe(true);
   });
 
   it('a draft for that anchor takes the row away and ONE «qolmadi» line goes to the same people', async () => {
     const peer = nextPeer();
     const anchor = await line(peer, 'in', new Date(NOW.getTime() - 15 * MIN));
-    await sweepUnanswered(config(), NOW);
+    await sweepUnanswered(config(), NOW, null);
     await runFor(peer, anchor, 'draft', null, new Date(NOW.getTime() + MIN));
-    expect(await sweepUnanswered(config(), new Date(NOW.getTime() + 2 * MIN))).toBe(0);
+    expect(await sweepUnanswered(config(), new Date(NOW.getTime() + 2 * MIN), null)).toBe(0);
     expect(await signalStanding(LIVENESS_SIGNAL_KEY)).toBeNull();
     expect(await alarms(ids.boss)).toEqual([expect.stringMatching(/^⚠️/u), LIVENESS_CLEARED_TEXT]);
     expect(await alarms(ids.deputy)).toEqual([expect.stringMatching(/^⚠️/u), LIVENESS_CLEARED_TEXT]);
     // …once: a further quiet sweep says nothing.
-    await sweepUnanswered(config(), new Date(NOW.getTime() + 3 * MIN));
+    await sweepUnanswered(config(), new Date(NOW.getTime() + 3 * MIN), null);
     expect(await alarms(ids.boss)).toHaveLength(2);
   });
 
@@ -187,7 +226,7 @@ describe('a customer left unanswered in working hours', () => {
     await runFor(a, await line(a, 'in', new Date(NOW.getTime() - 20 * MIN)), 'refused', 'listener_behind', new Date(NOW.getTime() - 19 * MIN));
     await runFor(b, await line(b, 'in', new Date(NOW.getTime() - 20 * MIN)), 'error', 'boom', new Date(NOW.getTime() - 19 * MIN));
     await runFor(c, await line(c, 'in', new Date(NOW.getTime() - 20 * MIN)), 'reserved', null, new Date(NOW.getTime() - 19 * MIN));
-    expect(await sweepUnanswered(config(), NOW)).toBe(3);
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(3);
   });
 
   it('yesterday’s draft of the same chat does not hide today’s silence — the run is the ANCHOR’s', async () => {
@@ -196,7 +235,7 @@ describe('a customer left unanswered in working hours', () => {
     await runFor(peer, old, 'draft', null, new Date(NOW.getTime() - 26 * 60 * MIN + MIN));
     await line(peer, 'out', new Date(NOW.getTime() - 25 * 60 * MIN));
     await line(peer, 'in', new Date(NOW.getTime() - 15 * MIN));
-    expect(await sweepUnanswered(config(), NOW)).toBe(1);
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(1);
   });
 
   it('nobody designated: the fallback is told — the account holder first', async () => {
@@ -206,7 +245,7 @@ describe('a customer left unanswered in working hours', () => {
     // `designated()` falls back to the agent's alarm audience, read off the CONFIG's holder.
     await db.update(agentConfig).set({ ownerUserId: ids.holder }).where(eq(agentConfig.id, 1));
     try {
-      await sweepUnanswered(config(), NOW);
+      await sweepUnanswered(config(), NOW, null);
       expect(await alarms(ids.holder)).toHaveLength(1);
       expect(await alarms(ids.deputy)).toHaveLength(0);
     } finally {
@@ -220,7 +259,7 @@ describe('no alarm', () => {
     const peer = nextPeer();
     const late = new Date('2026-11-17T18:30:00Z');
     await line(peer, 'in', late);
-    expect(await sweepUnanswered(config(), new Date(late.getTime() + 20 * MIN))).toBe(0);
+    expect(await sweepUnanswered(config(), new Date(late.getTime() + 20 * MIN), null)).toBe(0);
     expect(await signalStanding(LIVENESS_SIGNAL_KEY)).toBeNull();
   });
 
@@ -230,7 +269,7 @@ describe('no alarm', () => {
     const ours = nextPeer();
     await line(ours, 'in', new Date(NOW.getTime() - 30 * MIN));
     await line(ours, 'out', new Date(NOW.getTime() - 20 * MIN));
-    expect(await sweepUnanswered(config(), NOW)).toBe(0);
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(0);
     expect(await alarms(ids.boss)).toHaveLength(0);
   });
 
@@ -239,18 +278,47 @@ describe('no alarm', () => {
     await runFor(mine, await line(mine, 'in', new Date(NOW.getTime() - 15 * MIN)), 'refused', 'human_active', new Date(NOW.getTime() - 14 * MIN));
     const young = nextPeer();
     await line(young, 'in', new Date(NOW.getTime() - 5 * MIN));
-    expect(await sweepUnanswered(config(), NOW)).toBe(0);
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(0);
   });
 
   it('with the setting at 0 — and a standing row is taken down without a word', async () => {
     const peer = nextPeer();
     await line(peer, 'in', new Date(NOW.getTime() - 15 * MIN));
-    await sweepUnanswered(config(), NOW);
+    await sweepUnanswered(config(), NOW, null);
     expect(await signalStanding(LIVENESS_SIGNAL_KEY)).not.toBeNull();
     await setSetting('agent_liveness_minutes', 0, null);
-    expect(await sweepUnanswered(config(), NOW)).toBe(0);
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(0);
     expect(await signalStanding(LIVENESS_SIGNAL_KEY)).toBeNull();
     expect(await alarms(ids.boss)).toHaveLength(1);
+  });
+
+  it('for a line the customer deleted — its run stands down and writes no row, so nothing could ever answer it', async () => {
+    const peer = nextPeer();
+    const asked = await line(peer, 'in', new Date(NOW.getTime() - 60 * MIN));
+    await runFor(peer, asked, 'draft', null, new Date(NOW.getTime() - 59 * MIN));
+    await line(peer, 'out', new Date(NOW.getTime() - 50 * MIN));
+    const gone = await line(peer, 'in', new Date(NOW.getTime() - 15 * MIN));
+    expect(await markDeleted(ids.holder, [gone])).toBe(1);
+    expect(await sweepUnanswered(config(), NOW, null)).toBe(0);
+    expect(await signalStanding(LIVENESS_SIGNAL_KEY)).toBeNull();
+    expect(await alarms(ids.boss)).toHaveLength(0);
+  });
+
+  it('with the agent switched off, a standing alarm is taken down without a word (it would silence the next real one)', async () => {
+    const peer = nextPeer();
+    await line(peer, 'in', new Date(NOW.getTime() - 15 * MIN));
+    await sweepUnanswered(config(), NOW, null);
+    expect(await signalStanding(LIVENESS_SIGNAL_KEY)).not.toBeNull();
+    await db.update(agentConfig).set({ ownerUserId: ids.holder, mode: 'off' }).where(eq(agentConfig.id, 1));
+    try {
+      await agentSweep(new Date(NOW.getTime() + MIN));
+      expect(await signalStanding(LIVENESS_SIGNAL_KEY)).toBeNull();
+      // The alarm only — no «qolmadi»: nobody answered them, he switched the AI off.
+      expect(await alarms(ids.boss)).toHaveLength(1);
+      expect(await alarms(ids.deputy)).toHaveLength(1);
+    } finally {
+      await __restoreAgentConfig(configSnapshot);
+    }
   });
 
   it('with the agent switched off: the sweep does not reach the step', async () => {
@@ -272,10 +340,32 @@ describe('no alarm', () => {
     await line(peer, 'in', new Date(NOW.getTime() - 15 * MIN));
     process.env.AGENT_LIVENESS = 'off';
     try {
-      expect(await sweepUnanswered(config(), NOW)).toBe(0);
+      expect(await sweepUnanswered(config(), NOW, null)).toBe(0);
       expect(await signalStanding(LIVENESS_SIGNAL_KEY)).toBeNull();
     } finally {
       process.env.AGENT_LIVENESS = 'on';
     }
+  });
+});
+
+describe('agentOnSince — the newest switch INTO «shadow» in the agent’s audit', () => {
+  it('a press that found it on already is not a switch; a switch off after it does not move it (rolled back — the audit takes no DELETE)', async () => {
+    class RolledBack extends Error {}
+    const at = (iso: string) => new Date(iso);
+    const audit = (before: string, after: string, iso: string) =>
+      sql`INSERT INTO audit_log (entity_type, entity_id, action, before, after, created_at)
+          VALUES ('agent_config', ${AGENT_CONFIG_AUDIT_ID}::uuid, 'update',
+                  ${JSON.stringify({ mode: before })}::jsonb, ${JSON.stringify({ mode: after })}::jsonb, ${iso}::timestamptz)`;
+    let seen: Date | null = null;
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.execute(audit('off', 'shadow', '2999-01-01T09:00:00Z'));
+        await tx.execute(audit('shadow', 'shadow', '2999-01-02T09:00:00Z'));
+        await tx.execute(audit('shadow', 'off', '2999-01-03T09:00:00Z'));
+        seen = await agentOnSince(tx);
+        throw new RolledBack();
+      }),
+    ).rejects.toBeInstanceOf(RolledBack);
+    expect(seen).toEqual(at('2999-01-01T09:00:00Z'));
   });
 });

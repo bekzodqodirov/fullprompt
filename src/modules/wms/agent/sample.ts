@@ -36,17 +36,41 @@ export type SampleCadence = 'daily' | 'weekly';
 
 /**
  * Is a sample due today, and over which span? Pure. No sample ever, or the first one under `SAMPLE_DAILY_DAYS`
- * old: every day, the day's replies. After that: Fridays only, the week's (that Friday and the six days before it).
+ * old: every day, the replies since the last evening's draw. After that: Fridays only, the week's (`sampleSpan`).
  */
 export function sampleDue(today: string, firstDay: string | null): SampleCadence | null {
   if (firstDay === null || calendarDaysBetween(firstDay, today) < SAMPLE_DAILY_DAYS) return 'daily';
   return new Date(`${today}T12:00:00Z`).getUTCDay() === FRIDAY ? 'weekly' : null;
 }
 
-/** The days a sample of `day` draws its replies from. */
+/**
+ * The minute a sample is drawn, Tashkent: 20:10 (his 9 a, «har kuni kechqurun»). `registerAgentWorkers` schedules
+ * the job as '10 15 * * *' UTC; a unit test holds the two together.
+ */
+export const SAMPLE_DRAW_MINUTES = 20 * 60 + 10;
+
+const drawAt = (day: string) => new Date(tashkentDayStart(day).getTime() + SAMPLE_DRAW_MINUTES * 60_000);
+
+/**
+ * The replies a sample of `day` draws from: the 24 hours before its draw (weekly: the seven days before it) — draw to
+ * draw, so a reply pressed after one evening's draw is in the next one's. A calendar day drawn at 20:10 left
+ * 20:10-24:00 out of EVERY sample (the P4 review's 4), and those are the hours hold-0 talk goes on into. A day the job
+ * never ran is not reached back for — its replies are in no sample (stated).
+ */
 export function sampleSpan(day: string, cadence: SampleCadence): { from: Date; to: Date } {
-  return { from: tashkentDayStart(cadence === 'weekly' ? addDays(day, -6) : day), to: tashkentDayStart(addDays(day, 1)) };
+  return { from: drawAt(addDays(day, cadence === 'weekly' ? -7 : -1)), to: drawAt(day) };
 }
+
+/**
+ * The card's own 👎 on a sampled reply (`autoFeedback` — the same counter as the sample's): it IS a «xato», so the
+ * row is judged and its 👍 would contradict it (the P4 review's 9). `${agentSamples}.draft_id`, never
+ * `${agentSamples.draftId}`: the subquery's own table has a `draft_id`, and drizzle renders a single-table select's
+ * columns unqualified (#128).
+ */
+const CARD_SAID_BAD = sql`EXISTS (SELECT 1 FROM agent_auto_verdicts fv WHERE fv.draft_id = ${agentSamples}.draft_id AND fv.feedback = 'bad')`;
+
+/** A sampled reply nobody has judged — no mark here and no 👎 on its card: the badge, the page's count, the morning's. */
+export const SAMPLE_UNMARKED = sql`(${agentSamples}.mark IS NULL AND NOT ${CARD_SAID_BAD})`;
 
 /** A draft's ledger holds a money line — the stored policy's own rows (numbers `LedgerEntry`, `kind: 'money'`). */
 const MONEY_REPLY = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(
@@ -139,7 +163,7 @@ export type SampleMarkRefusal = 'not_ready' | 'not_found' | 'already' | 'forbidd
  * 👍 / 👎 on one sampled reply. The door is the arming rule (`mayArmAuto`, asked of the reply's own holder). 👎 is the
  * card's 👎 first (`autoFeedback` — the chat off for 30 days, two in seven days disarm); only when it took (or the
  * card's 👎 had already been given) is the mark written, so the two never disagree. A reply marked already answers
- * `already`.
+ * `already` — and so does a 👍 on a reply whose card was given 👎 (in the same statement that writes it).
  */
 export async function markSample(
   actor: { id: string; roles: readonly string[] },
@@ -164,7 +188,14 @@ export async function markSample(
   const marked = await db
     .update(agentSamples)
     .set({ mark: input.mark, markedBy: actor.id, markedAt: now })
-    .where(and(eq(agentSamples.day, input.day), eq(agentSamples.draftId, input.draftId), isNull(agentSamples.mark)))
+    .where(
+      and(
+        eq(agentSamples.day, input.day),
+        eq(agentSamples.draftId, input.draftId),
+        isNull(agentSamples.mark),
+        input.mark === 'good' ? sql`NOT ${CARD_SAID_BAD}` : undefined,
+      ),
+    )
     .returning({ draftId: agentSamples.draftId });
   return marked.length > 0 ? { ok: true, disarmed } : { ok: false, code: 'already' };
 }
@@ -209,7 +240,7 @@ export async function sampleView(viewer: WebViewer & { roles: readonly string[] 
   const seen = draftsSeenBy(viewer);
   const select = () =>
     db
-      .select({ s: agentSamples, d: agentDrafts, reply: agentOutbox.body, customer: tgMessages.body })
+      .select({ s: agentSamples, d: agentDrafts, reply: agentOutbox.body, customer: tgMessages.body, cardBad: sql<boolean>`${CARD_SAID_BAD}` })
       .from(agentSamples)
       .innerJoin(agentDrafts, eq(agentDrafts.id, agentSamples.draftId))
       .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentSamples.draftId))
@@ -224,14 +255,14 @@ export async function sampleView(viewer: WebViewer & { roles: readonly string[] 
   const [today, older, olderCount] = await Promise.all([
     select().where(and(eq(agentSamples.day, day), seen)).orderBy(asc(agentSamples.pos)),
     select()
-      .where(and(sql`${agentSamples.day} < ${day}::date`, isNull(agentSamples.mark), seen))
+      .where(and(sql`${agentSamples.day} < ${day}::date`, SAMPLE_UNMARKED, seen))
       .orderBy(desc(agentSamples.day), asc(agentSamples.pos))
       .limit(OLDER_SHOWN),
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(agentSamples)
       .innerJoin(agentDrafts, eq(agentDrafts.id, agentSamples.draftId))
-      .where(and(sql`${agentSamples.day} < ${day}::date`, isNull(agentSamples.mark), seen)),
+      .where(and(sql`${agentSamples.day} < ${day}::date`, SAMPLE_UNMARKED, seen)),
   ]);
   const holders = [...new Set([...today, ...older].map((r) => r.s.managerUserId))];
   const marks = new Map<string, boolean>();
@@ -243,7 +274,8 @@ export async function sampleView(viewer: WebViewer & { roles: readonly string[] 
       pos: r.s.pos,
       customer: clipText((r.customer ?? '').trim() || '—', 500),
       reply: (r.reply ?? r.d.finalBody ?? r.d.proposedBody ?? '').trim(),
-      mark: r.s.mark === 'good' || r.s.mark === 'bad' ? r.s.mark : null,
+      // The card's 👎 is this row's «xato» too — drawn as marked, with no 👍 to contradict it.
+      mark: r.s.mark === 'good' || r.s.mark === 'bad' ? r.s.mark : r.cardBad ? 'bad' : null,
       mayMark: marks.get(r.s.managerUserId) === true,
       chatHref: chatHrefOf(r.d),
     }),
@@ -260,7 +292,7 @@ export async function sampleUnmarkedToday(viewer: WebViewer): Promise<number> {
     .select({ n: sql<number>`count(*)::int` })
     .from(agentSamples)
     .innerJoin(agentDrafts, eq(agentDrafts.id, agentSamples.draftId))
-    .where(and(eq(agentSamples.day, newest.day), isNull(agentSamples.mark), draftsSeenBy(viewer)));
+    .where(and(eq(agentSamples.day, newest.day), SAMPLE_UNMARKED, draftsSeenBy(viewer)));
   return Number(row?.n ?? 0);
 }
 
