@@ -33,8 +33,10 @@ import {
   autoFeedback,
   setAutoArmed,
   setAutoCategories,
-  setAutoMinConfidence,
+  setAutoNightPrices,
   setAutoPerDay,
+  setAutoPriceHold,
+  setAutoTalkHold,
   stopAuto,
   stopAutoForEdit,
 } from './auto-send';
@@ -448,17 +450,39 @@ export async function agentAutoPerDayAction(raw: string): Promise<AgentActionRes
 }
 
 /**
- * The confidence floor a reply must reach to go by itself (2026-11-15), typed as a whole percent. The holder's or a
- * super_admin's — the service asks. A number out of its bounds is THIS box's own code, as the daily count's is.
+ * How long ordinary talk waits on its card (stage 1a, «Oddiy javob kutishi (soniya)», 0-600; 0 = at once) and how
+ * long a price does («Narx kutishi», 30-600). The holder's or a super_admin's — the services ask. An empty box is no
+ * number here (`capOf` null → NaN): each box has a value, and a number out of its bounds is that box's own code.
  */
-export async function agentAutoMinConfidenceAction(raw: string): Promise<AgentActionResult> {
+export async function agentAutoTalkHoldAction(raw: string): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
-    const s = typeof raw === 'string' ? raw.trim().replace(/\s*%$/u, '') : '';
-    const pct = /^\d{1,3}$/u.test(s) ? Number(s) : Number.NaN;
     try {
-      await setAutoMinConfidence(actor, pct, ctx);
+      await setAutoTalkHold(actor, capOf(raw) ?? Number.NaN, ctx);
     } catch (err) {
-      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_confidence' : `auto_${err.code}` };
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_talk_hold' : `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+export async function agentAutoPriceHoldAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoPriceHold(actor, capOf(raw) ?? Number.NaN, ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_price_hold' : `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/** Which prices go by themselves at night (stage 1a, his 4 a): `none`, `table` or `all`. The holder's or a super_admin's. */
+export async function agentAutoNightAction(value: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoNightPrices(actor, typeof value === 'string' ? value : '', ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_night' : `auto_${err.code}` };
       throw err;
     }
   });
@@ -507,7 +531,7 @@ export async function agentAutoStopAction(draftId: string): Promise<AgentActionR
 /** 👎 «Xato edi» on a reply the machine sent — the bot's op `f`. */
 export async function agentAutoFeedbackAction(draftId: string): Promise<AgentActionResult> {
   return run(async ({ actor }) => {
-    const r = await autoFeedback(actor.id, draftId);
+    const r = await autoFeedback(actor, draftId);
     // Said by the page itself: the row reads «👎», and a step-down shows as the panel's «o‘chiq» with its reason.
     if (!r.ok) return { ok: false, error: r.code === 'not_ready' ? 'auto_not_ready' : `auto_fb_${r.code}` };
   });

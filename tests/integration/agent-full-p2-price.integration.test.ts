@@ -145,6 +145,7 @@ let stageId = '';
 let agentSnapshot: AgentConfig | null = null;
 let autoSnapshot: AutoConfig | null = null;
 let sendingBefore = false;
+let talkHoldBefore: unknown = 0;
 /**
  * The account's day and hour of AI sends (0148's caps, CONFIGURATION — put back in `finally`): this file approves one
  * fresh holder's replies past the 80 of `AGENT_LIMITS.perDay`, and every chain it mints carries a «yubordim» SENT 40
@@ -422,6 +423,9 @@ beforeAll(async () => {
   autoSnapshot = await readAutoConfig();
   if (!agentSnapshot || !autoSnapshot) throw new Error('0138/0145 are not applied on this database');
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
+  // DELIBERATE EDIT (stage 1a, his 11 a): talk goes at once by default now; this file's subject is a reply that waits
+  // its card, so its talk waits the price's own hold (`agent_talk_hold_sec`, put back below — #183).
+  talkHoldBefore = await getSetting('agent_talk_hold_sec');
   for (const key of SETTING_KEYS) settingsBefore.set(key, await rawSetting(key));
   const [caps] = await db.select({ dayCap: agentSendCaps.dayCap, hourCap: agentSendCaps.hourCap }).from(agentSendCaps).where(eq(agentSendCaps.id, 1));
   capsBefore = { dayCap: caps?.dayCap ?? null, hourCap: caps?.hourCap ?? null };
@@ -449,6 +453,7 @@ beforeAll(async () => {
     })
     .where(eq(agentConfig.id, 1));
   await setSetting('tg_sending_enabled', true, holderId);
+  await setSetting('agent_talk_hold_sec', HOLD_MS / 1000, holderId);
   await putSetting('quote_valid_days', 30);
 });
 
@@ -490,6 +495,7 @@ afterAll(async () => {
     await __restoreAgentConfig(agentSnapshot);
     await __restoreAutoConfig(autoSnapshot);
     await setSetting('tg_sending_enabled', sendingBefore, null);
+    await setSetting('agent_talk_hold_sec', talkHoldBefore as number, null);
     for (const [key, value] of settingsBefore) await putSetting(key, value);
     await db.update(agentSendCaps).set(capsBefore).where(eq(agentSendCaps.id, 1));
     await db.update(users).set({ active: false }).where(inArray(users.id, [holderId, colleagueId]));
@@ -760,7 +766,9 @@ describe('the machine’s price — drafted, pressed and sent past our own «yub
     expect((await verdictOf(draftId))!.reasons).toContain('notes');
   });
 
-  it('two machine replies already in the chat: the price waits for him (`streak`, his §7 Q8 ⭐)', async () => {
+  it('two machine replies already in the chat no longer hold the price (stage 1a: the streak is deleted — the loop detector takes its slot)', async () => {
+    // DELIBERATE EDIT (stage 1a §6.2): his §7 Q8 ⭐ «two in a row, then he speaks» left the gate with its reader;
+    // a robot-to-robot chat is P2's loop detector's, in the same deploy.
     const c = await answeredChain();
     for (let i = 0; i < 2; i++) {
       const [d] = await db
@@ -771,7 +779,10 @@ describe('the machine’s price — drafted, pressed and sent past our own «yub
       await db.insert(agentAutoVerdicts).values({ draftId: d!.id, managerUserId: holderId, peerId: c.chat.peer, eligible: true, state: 'pressed', dueAt: at, pressedAt: at });
     }
     const draftId = await priceDraft(c);
-    expect((await verdictOf(draftId))!.reasons).toEqual(['streak']);
+    expect((await verdictOf(draftId))!.reasons).not.toContain('streak');
+    expect(await verdictOf(draftId)).toMatchObject({ eligible: true, reasons: [] });
+    // A row left counting down is the next test's sweep input (#154): this one leaves the layer here.
+    await db.update(agentAutoVerdicts).set({ state: 'gone', outcome: 'test' }).where(eq(agentAutoVerdicts.draftId, draftId));
   });
 });
 

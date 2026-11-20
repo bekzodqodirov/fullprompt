@@ -398,7 +398,9 @@ describe('a late card says so (C11)', () => {
     const run = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
     const handle = run.slice(run.indexOf('export async function handleInbound('), run.indexOf('export async function __runsFor('));
     expect(handle).toContain('origin: job.origin');
-    expect(handle.indexOf('notes.unshift(late)')).toBeLessThan(handle.indexOf('await writeDraft({'));
+    // DELIBERATE EDIT (stage 1a, J10): the run writes its reply through ONE write-and-press site (`writeReply`).
+    expect(handle.indexOf('await writeReply({')).toBeGreaterThan(0);
+    expect(handle.indexOf('notes.unshift(late)')).toBeLessThan(handle.indexOf('await writeReply({'));
   });
 });
 

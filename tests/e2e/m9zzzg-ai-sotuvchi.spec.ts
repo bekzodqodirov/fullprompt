@@ -141,10 +141,20 @@ test('the owner is offered the page, reads the card and is given no ✅ on a col
   await expect(auto.getByTestId('agent-auto-today')).toBeVisible();
   await expect(auto.getByTestId('agent-auto-holder-only')).toBeVisible();
   await expect(auto.getByTestId('agent-auto-arm')).toHaveCount(0);
-  await expect(auto.getByTestId('agent-auto-category-faq')).toBeEnabled();
+  // DELIBERATE EDIT (stage 1a §4.2): the four ordinary kinds are boxes no more — ordinary talk goes unticked; the three
+  // he ticks stay (a table price, a calculation, a VED price).
+  await expect(auto.getByTestId('agent-auto-category-faq')).toHaveCount(0);
+  await expect(auto.getByTestId('agent-auto-category-price')).toBeEnabled();
   await expect(auto.getByTestId('agent-auto-categories-save')).toBeDisabled();
   // DELIBERATE EDIT (stage 1a kernel, J26): the confidence floor's box left the page — the gate stops reading it.
   await expect(auto.getByTestId('agent-auto-confidence')).toHaveCount(0);
+  // Stage 1a (J34): his box for ordinary talk, by the name he was promised, 0 by default — and the price hold, the night.
+  const talkHold = auto.getByTestId('agent-auto-talk-hold');
+  await expect(talkHold).toContainText(/Oddiy javob kutishi \(soniya\)|Ожидание обычного ответа|ordinary reply|普通回复/iu);
+  await expect(talkHold.getByTestId('agent-auto-talk-hold-input')).toHaveValue('0');
+  await expect(talkHold.getByTestId('agent-auto-talk-hold-input')).toBeEnabled();
+  await expect(auto.getByTestId('agent-auto-price-hold-input')).toHaveValue('120');
+  await expect(auto.getByTestId('agent-auto-night-select')).toHaveValue('table');
   await fitsThePhone(page);
 });
 
@@ -272,7 +282,8 @@ test('the holder is offered «O‘zi yuborish», and is told BEFORE any press wh
   await expect(auto.getByTestId('agent-auto-needs-running')).toBeVisible();
   await expect(auto.getByTestId('agent-auto-needs-work')).toBeVisible();
   await expect(auto.getByTestId('agent-auto-arm')).toBeDisabled();
-  await expect(auto.getByTestId('agent-auto-category-faq')).toBeEnabled();
+  // DELIBERATE EDIT (stage 1a §4.2): the kinds he ticks are the three — the ordinary four are stored, never boxes.
+  await expect(auto.getByTestId('agent-auto-category-price')).toBeEnabled();
   await fitsThePhone(page);
   // A wrong NUMBER is said as a number (review of 0148 as built): the daily count and the account limits each
   // name their own bounds — the kinds form's «…отметьте хотя бы один вид» told a person who had typed a number

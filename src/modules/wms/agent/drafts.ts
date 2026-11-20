@@ -356,20 +356,28 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     // A card too long to show what ✅ approves draws no ✅ — the text says so, and the keyboard agrees (card-io).
     const { text, tooLong } = renderDraftCardFull(row, null, [], { auto });
     const sendable = cardDrawsSend({ blocked: row.blocked || tooLong, status: row.status, ownText: false });
-    const extra = cardExtra({
-      id: row.id,
-      body: row.proposedBody ?? '',
-      actions: n.actions,
-      blocked: !sendable,
-      live: true,
-      kind: row.kind,
-      // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
-      auto: autoPayload(auto, row, sendable),
-      // A question the model raised (spec §2.2) offers «✍️ Savolga javob».
-      ask: cardAsks(row),
-      // The machine's words offer «📝 Tuzatish» (§3.1) — never a 💵 price, which is his own figure.
-      teach: cardTeaches(row),
-    });
+    const extra = {
+      ...cardExtra({
+        id: row.id,
+        body: row.proposedBody ?? '',
+        actions: n.actions,
+        blocked: !sendable,
+        live: true,
+        kind: row.kind,
+        // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
+        auto: autoPayload(auto, row, sendable),
+        // A question the model raised (spec §2.2) offers «✍️ Savolga javob».
+        ask: cardAsks(row),
+        // The machine's words offer «📝 Tuzatish» (§3.1) — never a 💵 price, which is his own figure.
+        teach: cardTeaches(row),
+      }),
+      // A reply that goes at once arrives without a sound (stage 1a §4.2) — only what waits for him rings. Asked of the
+      // verdict as RECORDED (J4): a plan whose row the savepoint refused has no press coming, and its card must ring.
+      // Written on EVERY card, true or false: a re-pointed row merges this payload into the old one (below), and a key
+      // written only when true would silence the next draft's card — the one that waits for him. A press that does not
+      // go after all takes the silence back (auto-send `ringSilentCard`).
+      silent: auto?.state === 'waiting' && n.autoPlan?.holdSec === 0,
+    };
     // His answer's redraft never rides the question's card (§2.2), nor his lesson's rewrite the card it replaces
     // (§3.4): a push of its own, the old card closed after.
     const old = live && !n.answers && !n.redrafts ? await cardRowFor(tx, live.id) : null;

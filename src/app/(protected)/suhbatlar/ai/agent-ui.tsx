@@ -8,8 +8,11 @@ import {
   agentAutoArmAction,
   agentAutoCategoriesAction,
   agentAutoFeedbackAction,
+  agentAutoNightAction,
   agentAutoPerDayAction,
+  agentAutoPriceHoldAction,
   agentAutoStopAction,
+  agentAutoTalkHoldAction,
   agentAviaRateAction,
   agentDecideAction,
   agentEditFactAction,
@@ -836,8 +839,11 @@ export function AutoCategoriesForm({
 }) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
-  const [chosen, setChosen] = useState<string[]>([...current]);
-  const changed = chosen.length !== current.length || chosen.some((c) => !current.includes(c));
+  // Only the boxes drawn (stage 1a: the three he still ticks) — the four ordinary kinds are stored by the writer
+  // whatever is posted, and a box nobody can see must not make a save look changed.
+  const stored = current.filter((c) => (kinds as readonly string[]).includes(c));
+  const [chosen, setChosen] = useState<string[]>(stored);
+  const changed = chosen.length !== stored.length || chosen.some((c) => !stored.includes(c));
   return (
     <div className="space-y-2" data-testid="agent-auto-categories">
       <p className="text-sm font-semibold">{t('autoCategoriesTitle')}</p>
@@ -862,7 +868,7 @@ export function AutoCategoriesForm({
         <button
           type="button"
           className="btn-secondary"
-          disabled={pending || !changed || chosen.length === 0}
+          disabled={pending || !changed}
           data-testid="agent-auto-categories-save"
           onClick={() => run(() => agentAutoCategoriesAction(chosen))}
         >
@@ -915,6 +921,140 @@ export function AutoPerDayForm({ current, editable, max }: { current: number | n
           disabled={pending || !changed}
           data-testid="agent-auto-per-day-save"
           onClick={() => run(() => agentAutoPerDayAction(value))}
+        >
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * A hold in whole seconds (stage 1a, his 11 a): the box the talk hold and the price hold share. Controlled — a refusal
+ * keeps what he typed (#463); the service says the bounds in words.
+ */
+function HoldBox({
+  id,
+  label,
+  hint,
+  current,
+  editable,
+  bounds,
+  save,
+}: {
+  id: string;
+  label: string;
+  hint: string;
+  current: number;
+  editable: boolean;
+  bounds: { min: number; max: number };
+  save: (raw: string) => Promise<AgentActionResult>;
+}) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ min: bounds.min, max: bounds.max });
+  const [value, setValue] = useState(String(current));
+  const changed = value.trim() !== String(current);
+  return (
+    <div className="space-y-1" data-testid={id}>
+      <label className="label" htmlFor={`${id}-input`}>
+        {label}
+      </label>
+      <input
+        id={`${id}-input`}
+        className="input"
+        inputMode="numeric"
+        value={value}
+        disabled={!editable || pending}
+        onChange={(event) => setValue(event.target.value)}
+        data-testid={`${id}-input`}
+      />
+      <p className="text-xs text-ink-500">{hint}</p>
+      {editable && (
+        <button type="button" className="btn-secondary" disabled={pending || !changed} data-testid={`${id}-save`} onClick={() => run(() => save(value))}>
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** «Oddiy javob kutishi (soniya)» (J34): 0 — ordinary talk goes at once, day and night; a number brings back ⏸. */
+export function AutoTalkHoldForm({ current, editable, max }: { current: number; editable: boolean; max: number }) {
+  const t = useTranslations('agentAi');
+  return (
+    <HoldBox
+      id="agent-auto-talk-hold"
+      label={t('autoTalkHoldLabel')}
+      hint={t('autoTalkHoldHint', { max })}
+      current={current}
+      editable={editable}
+      bounds={{ min: 0, max }}
+      save={agentAutoTalkHoldAction}
+    />
+  );
+}
+
+/** «Narx kutishi (soniya)»: the layer's own hold, which a price — table or VED — waits on its card with ⏸. */
+export function AutoPriceHoldForm({ current, editable, bounds }: { current: number; editable: boolean; bounds: { min: number; max: number } }) {
+  const t = useTranslations('agentAi');
+  return (
+    <HoldBox
+      id="agent-auto-price-hold"
+      label={t('autoPriceHoldLabel')}
+      hint={t('autoPriceHoldHint', { min: bounds.min, max: bounds.max })}
+      current={current}
+      editable={editable}
+      bounds={bounds}
+      save={agentAutoPriceHoldAction}
+    />
+  );
+}
+
+/**
+ * Which prices go by themselves at night (stage 1a, his 4 a): one choice of three, each in his words (the page hands
+ * them in, translated — the values are the setting's own). Talk is never barred at night; the hint says so.
+ */
+export function AutoNightForm({
+  current,
+  editable,
+  options,
+}: {
+  current: string;
+  editable: boolean;
+  options: readonly { value: string; label: string }[];
+}) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [value, setValue] = useState(current);
+  return (
+    <div className="space-y-1" data-testid="agent-auto-night">
+      <label className="label" htmlFor="agent-auto-night-select">
+        {t('autoNightLabel')}
+      </label>
+      <select
+        id="agent-auto-night-select"
+        className="input"
+        value={value}
+        disabled={!editable || pending}
+        onChange={(event) => setValue(event.target.value)}
+        data-testid="agent-auto-night-select"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-ink-500">{t('autoNightHint')}</p>
+      {editable && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || value === current}
+          data-testid="agent-auto-night-save"
+          onClick={() => run(() => agentAutoNightAction(value))}
         >
           {t('save')}
         </button>

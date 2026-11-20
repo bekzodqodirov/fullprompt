@@ -1629,8 +1629,9 @@ describe('a wrong NUMBER on the settings page is said as a number (review of 014
       ]) {
         expect(await agentSendCapsAction(values), JSON.stringify(values)).toEqual({ ok: false, error: 'auto_bad_caps' });
       }
-      // The kinds form keeps the sentence that was always its own.
-      expect(await agentAutoCategoriesAction([])).toEqual({ ok: false, error: 'auto_bad_value' });
+      // The kinds form keeps the sentence that was always its own — for a kind that does not exist. DELIBERATE EDIT
+      // (stage 1a §4.2): none of the three ticked is a choice now (the four ordinary kinds are stored), so it is no refusal.
+      expect(await agentAutoCategoriesAction(['complaint'])).toEqual({ ok: false, error: 'auto_bad_value' });
       expect((await readAutoConfig())?.perDay).toBe(autoBefore?.perDay);
       expect((await readSendCaps()).stored).toEqual(capsBefore.stored);
     } finally {

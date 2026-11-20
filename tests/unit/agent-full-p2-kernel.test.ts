@@ -109,18 +109,21 @@ describe('the seven kinds and who may name them (§1.1, §4.4)', () => {
 
   it('arming says what goes and what stays from the STORED kinds — never «narx stays yours» once a price box is ticked', () => {
     const FOUR = ['greeting', 'qualification', 'faq', 'status'];
-    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR })).toContain('narx, shikoyat va savolli javoblar har doim sizga qoladi');
-    const ved = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'calc_price'] });
-    expect(ved).not.toContain('narx, shikoyat');
-    expect(ved).toContain('yo‘lkira va avia narxi, shikoyat va savolli javoblar har doim sizga qoladi');
+    // DELIBERATE EDIT (stage 1a, J22): the words take the talk hold and the night setting, and «savolli javoblar» left
+    // them (a reply with a question in it goes by itself now) — what stays is «… va shikoyat».
+    const TALK = { talkHoldSec: 0, nightPrices: 'table' as const };
+    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, TALK)).toContain('narx va shikoyat har doim sizga qoladi');
+    const ved = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'calc_price'] }, TALK);
+    expect(ved).not.toContain('narx va shikoyat');
+    expect(ved).toContain('yo‘lkira va avia narxi va shikoyat har doim sizga qoladi');
     // Whatever the markup — an empty one quotes the VED's own figure (his §00 A1; fix pass 4: «ustama qo‘shilgan» was false then).
     expect(ved).toContain('VED javobidagi narx (sozlamadagi ustama bilan, bo‘sh bo‘lsa ustamasiz) qoidalar ruxsat bersa o‘zi ketadi');
     expect(ved).not.toContain('ustama qo‘shilgan');
-    const both = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price', 'calc_price', 'calc'] });
-    expect(both).toContain('shikoyat va savolli javoblar har doim sizga qoladi');
-    expect(both).not.toMatch(/narxi?, shikoyat/u);
+    const both = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price', 'calc_price', 'calc'] }, TALK);
+    expect(both).toContain('shikoyat har doim sizga qoladi');
+    expect(both).not.toMatch(/narxi? va shikoyat/u);
     expect(both).toContain('hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi');
-    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR })).not.toContain('hisoblatish');
+    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, TALK)).not.toContain('hisoblatish');
   });
 });
 

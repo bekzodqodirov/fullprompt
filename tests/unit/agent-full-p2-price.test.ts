@@ -159,7 +159,7 @@ describe('law 4 — what leaves calc-price is the client price (§2.2, §2.6)', 
 /** The eligible greeting, as agent-auto-gate builds it — the money clause's second branch is turned on below. */
 function eligible(): AutoGateInput {
   return {
-    config: { armed: true, categories: ['greeting', 'qualification', 'faq', 'status'], maxChars: 400, minConfidence: 0.8, perDay: null },
+    config: { armed: true, categories: ['greeting', 'qualification', 'faq', 'status'], maxChars: 400, perDay: null },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -192,7 +192,6 @@ function eligible(): AutoGateInput {
     workAccount: true,
     at: new Date('2026-11-12T07:00:00Z'),
     now: new Date('2026-11-12T07:00:00Z'),
-    streak: 0,
     loop: false,
     complaint: false,
     nightPrices: 'table',
@@ -210,8 +209,8 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
   };
 
   it('a calc line goes only with «VED narxi» ticked — never on «Narx» alone; both ticks pass', () => {
-    // Refused money keeps the model's own label (`price`), which is no kind he ticked here either.
-    expect(autoVerdict(eligible()).reasons).toEqual(['money', 'category']);
+    // DELIBERATE EDIT (stage 1a §6.2): the ticked label is gone — the price box alone keeps an unticked VED price his.
+    expect(autoVerdict(eligible()).reasons).toEqual(['money']);
     expect(autoVerdict(ticked(eligible(), 'price')).reasons).toEqual(['money']);
     expect(autoVerdict(ticked(eligible(), 'calc_price'))).toEqual({ eligible: true, reasons: [] });
     expect(autoVerdict(ticked(eligible(), 'calc_price', 'price'))).toEqual({ eligible: true, reasons: [] });
@@ -250,7 +249,8 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     i.draft.estimatesStored = true;
     i.tools = [...i.tools, { name: 'yolkira_estimate', ok: true, estimate: true }];
     i.draft.body = 'Rastamojka 1 359 $. 5 kub, 800 kg yukingiz uchun Toshkentgacha taxminan 960 $. Boj va QQS alohida hisoblanadi.';
-    expect(autoVerdict(i).reasons).toEqual(['money', 'category']);
+    // DELIBERATE EDIT (stage 1a §6.2): no label refusal beside it — the unticked «Narx» is the money clause's own.
+    expect(autoVerdict(i).reasons).toEqual(['money']);
     i.config.categories = [...i.config.categories, 'price'];
     expect(autoVerdict(i)).toEqual({ eligible: true, reasons: [] });
   });
@@ -290,10 +290,11 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     expect(autoVerdict(i).reasons).toEqual(['media']);
   });
 
-  it('the model’s label rule stands: a «complaint» quoting the VED price stays his', () => {
+  it('the model’s label rule stands: a «complaint» quoting the VED price stays his (stage 1a: as `complaint`)', () => {
     const i = ticked(eligible(), 'calc_price');
     i.draft.category = 'complaint';
-    expect(autoVerdict(i).reasons).toEqual(['category']);
+    // DELIBERATE EDIT (stage 1a §6.2): the complaint is its own refusal now.
+    expect(autoVerdict(i).reasons).toEqual(['complaint']);
   });
 });
 

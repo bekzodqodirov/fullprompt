@@ -342,15 +342,17 @@ describe('words — every code said, never printed', () => {
   });
 
   const FOUR = ['greeting', 'qualification', 'faq', 'status'];
+  /** Stage 1a's defaults: talk at once, a table price at night (his ⭐ a of questions 82 and 1). */
+  const TALK = { talkHoldSec: 0, nightPrices: 'table' as const };
 
   it('arming says the numbers the press keeps', () => {
-    expect(autoArmedWords({ holdSec: 120, perDay: 30, categories: FOUR })).toContain('2 daqiqa');
-    expect(autoArmedWords({ holdSec: 90, perDay: 30, categories: FOUR })).toContain('90 soniya');
-    expect(autoArmedWords({ holdSec: 120, perDay: 30, categories: FOUR })).toContain('30 ta');
+    expect(autoArmedWords({ holdSec: 120, perDay: 30, categories: FOUR }, TALK)).toContain('2 daqiqa');
+    expect(autoArmedWords({ holdSec: 90, perDay: 30, categories: FOUR }, TALK)).toContain('90 soniya');
+    expect(autoArmedWords({ holdSec: 120, perDay: 30, categories: FOUR }, TALK)).toContain('30 ta');
   });
 
   it('…and «no daily count» as such, never «at most null a day» (0148, his «7 chegara qoyma»)', () => {
-    const words = autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR });
+    const words = autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, TALK);
     expect(words).toContain('Kunlik chegara yo‘q');
     expect(words).not.toMatch(/null|ko‘pi bilan\s+ta/u);
     expect(autoTodayWords(7, null)).toBe('7, chegara yo‘q');
@@ -358,11 +360,26 @@ describe('words — every code said, never printed', () => {
   });
 
   it('«the price stays yours» is said only while the price box is not ticked — never a promise the next reply breaks', () => {
-    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR })).toContain('narx, shikoyat va savolli javoblar har doim sizga qoladi');
-    const priced = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price'] });
-    expect(priced).not.toContain('narx, shikoyat');
-    expect(priced).toContain('shikoyat va savolli javoblar har doim sizga qoladi');
+    // DELIBERATE EDIT (stage 1a, J22): a reply with a question in it goes by itself now (`questions` only informs him),
+    // so «savolli javoblar» left the sentence — the page's own words say «shikoyat har doim sizga qoladi».
+    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, TALK)).toContain('narx va shikoyat har doim sizga qoladi');
+    const priced = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price'] }, TALK);
+    expect(priced).not.toContain('narx va shikoyat');
+    expect(priced).toContain('VED narxi va shikoyat har doim sizga qoladi');
     expect(priced).toContain('o‘zi ketadi');
+  });
+
+  it('arming says what the page says (stage 1a, J22): talk at once — or after his hold — day and night; a price waits with ⏸; the night as he set it', () => {
+    const now = autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, TALK);
+    expect(now).toContain('oddiy javob darhol o‘zi ketadi — kechasi ham (AI hech qachon birinchi yozmaydi)');
+    expect(now).toContain('Narx kartada 2 daqiqa kutadi');
+    expect(now).toContain('⏸');
+    expect(now).toContain('kechasi jadval narxi ketadi, VED narxi ertalab');
+    expect(now).not.toMatch(/tunda yo‘q|savolli/u);
+    const held = autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, { talkHoldSec: 90, nightPrices: 'none' });
+    expect(held).toContain('oddiy javob 90 soniya kutib o‘zi ketadi');
+    expect(held).toContain('kechasi hech qaysi narx o‘zi ketmaydi — ertalab');
+    expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, { talkHoldSec: 0, nightPrices: 'all' })).toContain('kechasi jadval va VED narxi ketadi');
   });
 });
 

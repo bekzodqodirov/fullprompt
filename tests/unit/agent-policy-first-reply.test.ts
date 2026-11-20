@@ -1976,7 +1976,7 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
   const goes = (lines: readonly string[], script: ScriptName, language: AgentLocale) => {
     const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, 'x'), tools: [], outcomes: [], usage }, FACTS, 'gsr-t');
     return autoVerdict({
-      config: { armed: true, categories: ['faq'], maxChars: 400, minConfidence: 0.8, perDay: null },
+      config: { armed: true, categories: ['faq'], maxChars: 400, perDay: null },
       agentOn: true,
       draft: {
         kind: 'reply',
@@ -2009,7 +2009,6 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
       workAccount: true,
       at: new Date('2026-11-11T07:00:00Z'),
       now: new Date('2026-11-11T07:00:00Z'),
-      streak: 0,
       loop: false,
       complaint: false,
       nightPrices: 'table',
@@ -2076,7 +2075,7 @@ function gate(
   const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, reply), tools: [], outcomes: [], usage }, FACTS, 'gsr-t');
   const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
   const input: AutoGateInput = {
-    config: { armed: true, categories: FIVE, maxChars: 400, minConfidence: 0.8, perDay: null },
+    config: { armed: true, categories: FIVE, maxChars: 400, perDay: null },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -2110,7 +2109,6 @@ function gate(
     workAccount: true,
     at: new Date('2026-11-11T07:00:00Z'),
     now: new Date('2026-11-11T07:00:00Z'),
-    streak: 0,
     loop: false,
     complaint: false,
     nightPrices: 'table',

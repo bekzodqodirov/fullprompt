@@ -26,11 +26,11 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecs
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction } from './drafts';
+import { draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
 import type { ForcedQuestion, NoteCode } from './types';
-import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, calcActArmed, priceActArmed } from './auto-send';
+import { autoPlanFor, autoShapeOf, calcActArmed, pressNow, priceActArmed } from './auto-send';
 import { namesForeignPlace } from './destination';
 import {
   airMentionIn,
@@ -444,6 +444,44 @@ async function attemptFor(job: AgentInboundJob): Promise<number> {
 
 const lastOutAsked = (ctx: AgentContext) => /[?؟？]\s*$/u.test(ctx.lastOut?.body ?? '');
 
+/**
+ * The run's tool calls and its tokens, written onto its ledger row the moment the model loop returns — before the
+ * draft (stage 1a, J3). A reply that goes at once is pressed seconds later, by this run or by the minute sweep, and
+ * either reads what the run CALLED: a cargo-status reply judged on a row whose calls were still unwritten (the run's
+ * `finally` writes them last) is refused `status_unbacked`. The `finally` writes them again, with the outcome; a
+ * failure here only logs — the press of this very run holds the calls in its hand anyway.
+ */
+async function settleToolCalls(runId: string, settle: Partial<typeof agentRuns.$inferInsert>): Promise<void> {
+  const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, toolCalls } = settle;
+  await db
+    .update(agentRuns)
+    .set({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, toolCalls })
+    .where(eq(agentRuns.id, runId))
+    .catch((err: unknown) => logger.warn({ err, runId }, '[agent] run tool calls not written early'));
+}
+
+/**
+ * The ONE site a reply reaches his card and — when its plan goes at once (a hold of 0: ordinary talk, his 11 a) — is
+ * pressed on the spot, with the tool calls this run made (J3, J10). Both run paths write through it, and so does a
+ * tayyor matn the code writes (stage 1a P3): one door, so no reply that goes at once is written past its press. The
+ * press is never a reason for the run to fail: it logs, and the minute sweep is the net (auto-send `pressNow`).
+ */
+async function writeReply(
+  draft: Parameters<typeof writeDraft>[0],
+  tools: readonly { name: string; ok: boolean; estimate: boolean }[],
+  now: () => Date,
+): Promise<WriteDraftResult> {
+  const written = await writeDraft(draft);
+  if (written.kind === 'written' && draft.autoPlan?.eligible === true && draft.autoPlan.holdSec === 0) {
+    try {
+      await pressNow(written.draftId, now(), tools);
+    } catch (err) {
+      logger.error({ err, draftId: written.draftId }, '[agent] reply not pressed at once — the sweep will');
+    }
+  }
+  return written;
+}
+
 export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): Promise<RunResult> {
   const now = deps.now ?? (() => new Date());
   if (!(await agentTablesReady())) return { outcome: 'skipped', reason: 'not_ready' };
@@ -477,12 +515,8 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   );
   if (!worthy.worthy) {
     if ('notice' in worthy) {
-      if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) {
-        await writeNotice(ctx, worthy.reason);
-        // «Botmisiz?» after an AUTO reply (§18.3 step-down): that chat leaves «o'zi yuborish» for 30 days,
-        // and a second such chat in a week disarms it. Once per anchor — the ledger row's own claim.
-        if (worthy.reason === 'bot_question') await autoStepDownOnBotQuestion(ctx.managerUserId, ctx.peerId, t);
-      }
+      // «Botmisiz?» is no step-down since stage 1a (his 1 b ⚠): it turns no chat off and disarms nothing.
+      if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
       return { outcome: 'notice', reason: worthy.reason };
     }
     // A ledger row, so the sweep's deploy-gap pass does not ask again every minute.
@@ -531,6 +565,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
+    await settleToolCalls(runId, settle);
     const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
@@ -585,7 +620,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       notes.push(...autoPlan.cardNotes);
       noteCodes.push(...(autoPlan.cardNoteCodes ?? []));
     }
-    const written = await writeDraft({ ...input, autoPlan });
+    const written = await writeReply({ ...input, autoPlan }, loop.tools, now);
     // The customer's language, remembered for the next «ok» — only what his message SAID (fix pass 6, the hunt #3), read
     // over his whole burst as the memory reads it (fix pass 7, `localeToRemember`).
     const locale = localeToRemember(ctx);
@@ -1965,6 +2000,7 @@ export async function runOwnerTriggered(
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
+    await settleToolCalls(runId, settle);
     const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
@@ -2048,13 +2084,17 @@ export async function runOwnerTriggered(
       notes.push(...autoPlan.cardNotes);
       noteCodes.push(...(autoPlan.cardNoteCodes ?? []));
     }
-    const written = await writeDraft({
-      ...draftInput,
-      autoPlan,
-      answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
-      redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
-      calcChain: input.calcChain ?? null,
-    });
+    const written = await writeReply(
+      {
+        ...draftInput,
+        autoPlan,
+        answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
+        redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
+        calcChain: input.calcChain ?? null,
+      },
+      loop.tools,
+      now,
+    );
     const stood = written.kind === 'written' ? null : written.kind;
     // A VED answer's price held behind another live reply gives its source key back (fix pass 5): the price is re-queued
     // until that reply is decided, under the same key — still one draft per standing anchor. The bill stays on the row.

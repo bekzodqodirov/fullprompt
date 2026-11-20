@@ -34,3 +34,16 @@ export const LABEL_CATEGORIES: readonly AutoCategory[] = AUTO_SEND_CATEGORIES.fi
 
 /** The kinds a server one migration behind 0149 cannot store (its CHECK refuses them). */
 export const P2_CATEGORIES: readonly AutoCategory[] = OUTCOME_CATEGORIES;
+
+/**
+ * The four kinds of ordinary talk (stage 1a, STAGE-0-1A.md §4.2, his 11 a): no longer READ by the gate — ordinary talk
+ * goes by itself unticked, its class decided by what it does (auto-gate `autoClassOf`) — but always STORED: 0149's
+ * CHECK wants at least one kind, and a migration never flips what he stored. So his box saves the three below and the
+ * writer adds these four every time (auto-send `setAutoCategories`).
+ */
+export const ORDINARY_CATEGORIES = ['greeting', 'qualification', 'faq', 'status'] as const satisfies readonly AutoCategory[];
+
+/** The three kinds he still ticks (the page's boxes since stage 1a): a table price, a calculation, a VED price. */
+export const TICKED_CATEGORIES: readonly AutoCategory[] = AUTO_SEND_CATEGORIES.filter(
+  (c) => !(ORDINARY_CATEGORIES as readonly string[]).includes(c),
+);

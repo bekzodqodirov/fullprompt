@@ -5,6 +5,7 @@ import { agentConversations, agentDrafts, clients, notifications, tgChatRules, t
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
+import { readAgentNightPrices, readAgentTalkHoldSec, type AgentNightPrices } from '../../platform/settings/service';
 import type { AgentOp as BotAgentOp } from '../../platform/telegram/staff-bot';
 import { phoneSiblingClients } from '../client-cabinet/service';
 import { digestBody, hitWords } from './card';
@@ -333,7 +334,7 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     case 'f': {
       // 👎 — the reply the machine sent was wrong: that chat leaves the layer for 30 days; two in a week
       // disarm it (its alarm comes to him and every super_admin as a message of its own).
-      const r = await autoFeedback(staffId, id);
+      const r = await autoFeedback(actor, id);
       if (!r.ok) return { toast: AUTO_FEEDBACK_WORDS[r.code].slice(0, 190) };
       // 👎 arms NOTHING (spec SPEC-P1-v2 §3.5): a text wait armed here would take his next unrelated text — a
       // «GS777» lookup, a question for the AI yordamchi — and make it a rule in every prompt. Why it was wrong is
@@ -1302,7 +1303,9 @@ async function autoCommand(
   }
   try {
     const c: AutoConfig = await setAutoArmed(actor, sub === 'on', { actorId: staffId });
-    return sub === 'on' ? autoArmedWords(c) : '⏹ O‘zi yuborish o‘chirildi — har bir javobni o‘zingiz ✅ bilan yuborasiz.';
+    return sub === 'on'
+      ? autoArmedWords(c, { talkHoldSec: await readAgentTalkHoldSec(), nightPrices: await readAgentNightPrices() })
+      : '⏹ O‘zi yuborish o‘chirildi — har bir javobni o‘zingiz ✅ bilan yuborasiz.';
   } catch (err) {
     if (err instanceof AutoConfigError) return AUTO_CONFIG_WORDS[err.code];
     throw err;
@@ -1314,29 +1317,46 @@ export function autoTodayWords(today: number, perDay: number | null): string {
   return perDay === null ? `${today}, chegara yo‘q` : `${today}/${perDay}`;
 }
 
+/** «2 daqiqa» / «90 soniya» — a hold as he reads it (the page's `holdWords`). */
+function holdWords(sec: number): string {
+  return sec % 60 === 0 ? `${sec / 60} daqiqa` : `${sec} soniya`;
+}
+
+/** What the night lets go by itself, by his setting — the page's own three sentences (`agentAi.autoNight.*`). */
+const NIGHT_PRICE_WORDS: Record<AgentNightPrices, string> = {
+  none: 'hech qaysi narx o‘zi ketmaydi — ertalab',
+  table: 'jadval narxi ketadi, VED narxi ertalab',
+  all: 'jadval va VED narxi ketadi',
+};
+
 /**
- * What arming promises — the numbers the press keeps (hold, per day), the night, ⏸, and what stays his. The
- * price stays his only while he has not ticked it (0148): the sentence is built from the stored kinds, never
- * a promise the next reply breaks.
+ * What arming promises — the page's own sentence (`agentAi.autoArmConfirm`, `autoNumbers`), so the bot and the page
+ * never tell him two things (stage 1a, J22): ordinary talk goes by itself at once — or after the hold he set — day and
+ * night, and the AI never writes first; a price waits on its card with ⏸, at night as his setting says; a complaint
+ * stays his. What may go and what stays is built from the STORED kinds, never a promise the next reply breaks.
  */
-export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categories'>): string {
-  const hold = c.holdSec % 60 === 0 ? `${c.holdSec / 60} daqiqa` : `${c.holdSec} soniya`;
+export function autoArmedWords(
+  c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categories'>,
+  talk: { talkHoldSec: number; nightPrices: AgentNightPrices },
+): string {
   const day = c.perDay === null ? 'Kunlik chegara yo‘q' : `Kuniga ko‘pi bilan ${c.perDay} ta`;
   const price = c.categories.includes('price');
   const vedPrice = c.categories.includes('calc_price');
   // What stays his and what may go, from the stored kinds (SPEC-P2-v2 §4.4): «narx» is said to stay only while
   // neither price box is ticked — the truck/avia estimate and the VED's answer with his markup are two boxes.
-  const stays = price && vedPrice ? 'shikoyat va savolli javoblar' : price ? 'VED narxi, shikoyat va savolli javoblar' : vedPrice ? 'yo‘lkira va avia narxi, shikoyat va savolli javoblar' : 'narx, shikoyat va savolli javoblar';
+  const stays = price && vedPrice ? 'shikoyat' : price ? 'VED narxi va shikoyat' : vedPrice ? 'yo‘lkira va avia narxi va shikoyat' : 'narx va shikoyat';
   const goes = [
     ...(price ? ['taxminiy yo‘lkira va avia narxi qoidalar ruxsat bersa o‘zi ketadi'] : []),
     // Whatever the markup — an empty one quotes the VED's own figure (his §00 A1, fix pass 4).
     ...(vedPrice ? ['VED javobidagi narx (sozlamadagi ustama bilan, bo‘sh bo‘lsa ustamasiz) qoidalar ruxsat bersa o‘zi ketadi'] : []),
-    ...(c.categories.includes('calc') ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi'] : []),
+    ...(c.categories.includes('calc') ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi (kechasi — ertalab)'] : []),
   ];
   const kept = [`${stays} har doim sizga qoladi`, ...goes].join('; ');
+  const talkGoes = talk.talkHoldSec === 0 ? 'darhol' : `${holdWords(talk.talkHoldSec)} kutib`;
   return (
-    `🤖 O‘zi yuborish yoqildi: mos javob kartasi ${hold} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing. ` +
-    `${day}, tunda yo‘q; ${kept}.`
+    `🤖 O‘zi yuborish yoqildi: oddiy javob ${talkGoes} o‘zi ketadi — kechasi ham (AI hech qachon birinchi yozmaydi). ` +
+    `Narx kartada ${holdWords(c.holdSec)} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing; kechasi ${NIGHT_PRICE_WORDS[talk.nightPrices]}. ` +
+    `${day}; ${kept}.`
   );
 }
 

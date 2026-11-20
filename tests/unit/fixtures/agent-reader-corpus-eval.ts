@@ -115,7 +115,7 @@ const NOON = new Date('2026-11-11T07:00:00Z');
 /** Everything the gate reads, set to what goes. */
 function eligibleInput(): AutoGateInput {
   return {
-    config: { armed: true, categories: [...FIVE], maxChars: 2000, minConfidence: 0.8, perDay: 1000 },
+    config: { armed: true, categories: [...FIVE], maxChars: 2000, perDay: 1000 },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -149,7 +149,6 @@ function eligibleInput(): AutoGateInput {
     workAccount: true,
     at: NOON,
     now: NOON,
-    streak: 0,
     loop: false,
     complaint: false,
     nightPrices: 'table',

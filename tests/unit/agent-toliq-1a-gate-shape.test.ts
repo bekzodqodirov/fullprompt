@@ -32,7 +32,7 @@ const NOON = new Date('2026-11-11T07:00:00Z');
 
 function eligible(): AutoGateInput {
   return {
-    config: { armed: true, categories: ['greeting', 'qualification', 'faq', 'status'], maxChars: 400, minConfidence: 0.8, perDay: null },
+    config: { armed: true, categories: ['greeting', 'qualification', 'faq', 'status'], maxChars: 400, perDay: null },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -65,7 +65,6 @@ function eligible(): AutoGateInput {
     workAccount: true,
     at: NOON,
     now: NOON,
-    streak: 0,
     loop: false,
     complaint: false,
     nightPrices: 'table',
@@ -191,7 +190,7 @@ describe('the refusal words of the stage — retired, coming, one home each (K6)
     }
   });
 
-  it('the four the stage adds have words now, and none stands in the gate before the package that gives it a fact', () => {
+  it('the ones the stage adds have words now, and none stands in the gate before the package that gives it a fact', () => {
     for (const code of COMING_REFUSALS) {
       expect(refusalWordOf(code)).toBe(COMING_REFUSAL_WORDS[code]);
       expect(COMING_REFUSAL_WORDS[code]).not.toMatch(/^[a-z_]+$/u);
@@ -203,7 +202,8 @@ describe('the refusal words of the stage — retired, coming, one home each (K6)
 
   it('a stored row naming one prints its words on the card, never «sababi noma’lum»', () => {
     expect(autoRefusalWords({ outcome: 'loop', reasons: ['loop'] })).toBe(COMING_REFUSAL_WORDS.loop);
-    expect(autoRefusalWords({ outcome: 'streak,complaint', reasons: [] })).toBe(`${RETIRED_REFUSAL_WORDS.streak}; ${COMING_REFUSAL_WORDS.complaint}`);
+    // DELIBERATE EDIT (stage 1a P1): `complaint` got its fact and moved into the gate, its word with it.
+    expect(autoRefusalWords({ outcome: 'streak,complaint', reasons: [] })).toBe(`${RETIRED_REFUSAL_WORDS.streak}; ${AUTO_REFUSAL_WORDS.complaint}`);
     expect(refusalWordOf('no_such_code')).toBeNull();
   });
 

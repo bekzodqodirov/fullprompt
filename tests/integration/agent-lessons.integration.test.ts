@@ -102,6 +102,7 @@ let otherClientCode = '';
 let agentSnapshot: AgentConfig | null = null;
 let autoSnapshot: AutoConfig | null = null;
 let sendingBefore = false;
+let talkHoldBefore: unknown = 0;
 let msgSeq = 12_000n;
 let botMsgSeq = 90_000;
 
@@ -304,6 +305,9 @@ beforeAll(async () => {
   agentSnapshot = await readAgentConfig();
   autoSnapshot = await readAutoConfig();
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
+  // DELIBERATE EDIT (stage 1a, his 11 a): talk goes at once by default now; this file's subject is a reply that waits
+  // its card, so its talk waits the price's own hold (`agent_talk_hold_sec`, put back below — #183).
+  talkHoldBefore = await getSetting('agent_talk_hold_sec');
   ownerId = await makeUser(`Tuzatish egasi ${SUFFIX}`, 'super_admin', '01');
   colleagueId = await makeUser(`Tuzatish hamkasbi ${SUFFIX}`, 'super_admin', '02');
   sellerId = await makeUser(`Tuzatish sotuvchisi ${SUFFIX}`, 'sales_manager', '03');
@@ -321,6 +325,7 @@ beforeAll(async () => {
   otherClientCode = `LT${SUFFIX}`;
   await db.insert(clients).values({ clientCode: otherClientCode, name: `Shohruhmirzo Valiyev ${NAME_TAG}`, phones: [`+99899${SUFFIX}22`] });
   await setSetting('tg_sending_enabled', true, ownerId);
+  await setSetting('agent_talk_hold_sec', HOLD_MS / 1000, ownerId);
 });
 
 beforeEach(async () => {
@@ -368,6 +373,7 @@ afterAll(async () => {
   await __restoreAgentConfig(agentSnapshot);
   await __restoreAutoConfig(autoSnapshot);
   await setSetting('tg_sending_enabled', sendingBefore, ownerId);
+  await setSetting('agent_talk_hold_sec', talkHoldBefore as number, ownerId);
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, colleagueId, sellerId]));
 });
 

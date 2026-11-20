@@ -159,7 +159,9 @@ type ChatFactsRow = {
  *   anchor        — the stored row the reply answers, its delete flag, and
  *                   whether it was edited after the draft read it (regression-10);
  *   human_replied — an OUT row after the anchor that is not an AI send: his
- *                   phone, a colleague on his account, or the CRM;
+ *                   phone, a colleague on his account, or the CRM — or a
+ *                   CRM reply still queued or being sent, typed after the
+ *                   anchor (stage 1a, J11);
  *   peer_has_written — G7 per PEER (ban-8): an inbound from THIS Telegram
  *                   person on this account, never `clientHasWritten`, whose
  *                   «any peer of the client» is null for a lead and too wide
@@ -211,7 +213,7 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
       ${msOf(sql`a.sent_at`)} AS anchor_sent_ms,
       (f.deleted_at IS NOT NULL) AS anchor_deleted,
       (a.edited_at IS NOT NULL AND (d.anchor_edited_at IS NULL OR a.edited_at > d.anchor_edited_at)) AS anchor_edited,
-      EXISTS (
+      (EXISTS (
         SELECT 1 FROM tg_messages o
          WHERE o.manager_user_id = ${m} AND o.peer_id = ${p}
            AND o.direction = 'out' AND o.tg_message_id > ${anchor}
@@ -219,7 +221,14 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
              SELECT 1 FROM agent_outbox x
               WHERE x.manager_user_id = o.manager_user_id AND x.peer_id = o.peer_id
                 AND x.tg_message_id = o.tg_message_id)
-      ) AS human_replied,
+      ) OR EXISTS (
+        -- A person's CRM reply still on its way (stage 1a, J11): queued or being sent, typed after the line this row
+        -- answers. A talk reply goes at once now, so his own answer written while the model ran is not yet a stored
+        -- message — and without this the customer would get both.
+        SELECT 1 FROM tg_outbox q
+         WHERE q.manager_user_id = ${m} AND q.peer_id = ${p}
+           AND q.status IN ('queued', 'sending') AND q.queued_at > a.sent_at
+      )) AS human_replied,
       d.kind AS draft_kind,
       CASE WHEN jsonb_typeof(d.policy -> 'calcAnswer' -> 'requestId') = 'string'
            THEN d.policy -> 'calcAnswer' ->> 'requestId' END AS calc_answer_request,

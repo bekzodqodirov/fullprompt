@@ -10,6 +10,7 @@ import type { CancelRefusal } from '@/modules/wms/agent/web-thread';
 import type { RetireRefusal } from '@/modules/wms/agent/web-kb';
 import type { TariffConfirmRefusal } from '@/modules/wms/agent/tariff-watch';
 import type { ClearRefusal } from '@/modules/wms/crm/account-guard';
+import type { AgentNightPrices } from '@/modules/platform/settings/service';
 import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
 
 /**
@@ -59,10 +60,13 @@ export type AgentErrorCode =
   // words like `not_found` with the draft decisions and a switch is not a draft.
   | `auto_${AutoConfigRefusal}`
   // A number out of bounds in the daily-count box and in the account-limit boxes (web-actions): each its own
-  // sentence, naming its bounds — `auto_bad_value` is the kinds form's «tick at least one».
+  // sentence, naming its bounds — `auto_bad_value` is the kinds form's own. Stage 1a's two holds and the night choice
+  // (web-actions `agentAutoTalkHoldAction`, `…PriceHoldAction`, `…NightAction`) likewise.
   | 'auto_bad_per_day'
-  | 'auto_bad_confidence'
   | 'auto_bad_caps'
+  | 'auto_bad_talk_hold'
+  | 'auto_bad_price_hold'
+  | 'auto_bad_night'
   // The AI seat's open-calc cap (SPEC-P2-v2 §1.3, web-actions `agentOpenLimitAction`): a whole number 1..200.
   | 'bad_open_limit'
   // His markup on the VED's answer (SPEC-P2-v2 §2.1, web-actions `agentMarkupAction`): a rule out of its bounds.
@@ -153,8 +157,10 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_not_work_account: 'errors.auto_not_work_account',
   auto_bad_value: 'errors.auto_bad_value',
   auto_bad_per_day: 'errors.auto_bad_per_day',
-  auto_bad_confidence: 'errors.auto_bad_confidence',
   auto_bad_caps: 'errors.auto_bad_caps',
+  auto_bad_talk_hold: 'errors.auto_bad_talk_hold',
+  auto_bad_price_hold: 'errors.auto_bad_price_hold',
+  auto_bad_night: 'errors.auto_bad_night',
   auto_stop_not_found: 'errors.auto_stop_not_found',
   auto_stop_not_account_holder: 'errors.auto_stop_not_account_holder',
   auto_stop_pressed: 'errors.auto_stop_pressed',
@@ -261,3 +267,10 @@ export function autoDisarmKey(reason: string | null): string | null {
   if (reason.startsWith('forced:')) return AUTO_DISARM_KEYS[forcedKindOf(reason)];
   return (AUTO_DISARM_KEYS as Record<string, string>)[reason] ?? 'autoOff.unknown';
 }
+
+/** Which prices go by themselves at night (stage 1a, `agent_night_prices`) — each choice in his words. */
+export const NIGHT_PRICE_KEYS: Record<AgentNightPrices, string> = {
+  none: 'autoNight.none',
+  table: 'autoNight.table',
+  all: 'autoNight.all',
+};

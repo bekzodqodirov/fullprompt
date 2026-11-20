@@ -2,10 +2,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { P2_CATEGORIES, TICKED_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
-import { AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
-import { readAgentTalkHoldSec } from '@/modules/platform/settings/service';
+import { AUTO_PER_DAY_MAX, AUTO_PRICE_HOLD } from '@/modules/wms/agent/auto-send';
+import { AGENT_1A_BOUNDS, AGENT_NIGHT_PRICES, readAgentNightPrices, readAgentTalkHoldSec, type AgentNightPrices } from '@/modules/platform/settings/service';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { webLessons } from '@/modules/wms/agent/lessons';
@@ -43,7 +43,10 @@ import {
   AutoArmButtons,
   AutoBadButton,
   AutoCategoriesForm,
+  AutoNightForm,
   AutoPerDayForm,
+  AutoPriceHoldForm,
+  AutoTalkHoldForm,
   AviaRateForm,
   DraftActions,
   FactEditor,
@@ -66,6 +69,7 @@ import {
 } from './agent-ui';
 import {
   AGENT_SECTIONS,
+  NIGHT_PRICE_KEYS,
   PAUSE_KIND_KEYS,
   autoDisarmKey,
   SCOPE_KEYS,
@@ -529,7 +533,7 @@ async function SettingsSection({
   owner: Awaited<ReturnType<typeof ownerAccountState>>;
 }) {
   const superAdmin = actor.roles.includes('super_admin');
-  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps, seat, talkHoldSec] = await Promise.all([
+  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps, seat, talkHoldSec, nightPrices] = await Promise.all([
     agentToday(config),
     openCalcsFor(config.ownerUserId),
     tariffMismatchSeen(),
@@ -542,8 +546,9 @@ async function SettingsSection({
     readSendCaps(),
     // The AI seat (SPEC-P2-v2 K4) — a settings row, so it reads on any server.
     seatPanel(),
-    // Stage 1a's talk hold — a settings row too.
+    // Stage 1a's talk hold and night choice — settings rows too.
     readAgentTalkHoldSec(),
+    readAgentNightPrices(),
   ]);
   // Asked only where 0148 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
   const tariff = caps.ready
@@ -609,6 +614,7 @@ async function SettingsSection({
           mayDisarm={holder || superAdmin}
           running={running}
           talkHoldSec={talkHoldSec}
+          nightPrices={nightPrices}
         />
       )}
 
@@ -832,6 +838,7 @@ function AutoSection({
   mayDisarm,
   running,
   talkHoldSec,
+  nightPrices,
 }: {
   t: T;
   auto: AutoPanel;
@@ -844,6 +851,8 @@ function AutoSection({
   running: boolean;
   /** How long ordinary talk waits (stage 1a, `agent_talk_hold_sec`; 0 = at once). */
   talkHoldSec: number;
+  /** Which prices go by themselves at night (stage 1a, `agent_night_prices`). */
+  nightPrices: AgentNightPrices;
 }) {
   const c = auto.config;
   const off = autoDisarmKey(c.disarmReason);
@@ -902,13 +911,25 @@ function AutoSection({
       <AutoArmButtons armed={c.armed} canArm={mayArm} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
       <div className="border-t border-line pt-2">
         {/* «Narx» is a box only where 0148's CHECK admits it, «Hisoblatish» and «VED narxi» only where 0149's does —
-            one migration behind, the boxes that server can store. */}
+            one migration behind, the boxes that server can store. Stage 1a: the four ordinary kinds are boxes no
+            more — ordinary talk goes unticked, and the writer stores them every time. */}
         <AutoCategoriesForm
           current={c.categories}
           editable={mayTune}
-          kinds={AUTO_SEND_CATEGORIES.filter(
+          kinds={TICKED_CATEGORIES.filter(
             (k) => (auto.fullReady || k !== 'price') && (auto.p2Ready || !(P2_CATEGORIES as readonly string[]).includes(k)),
           )}
+        />
+      </div>
+      {/* Stage 1a (his 11 a, 4 a; J34): how long ordinary talk waits (0 — at once), how long a price waits, and which
+          prices the night lets go — the holder's or a super_admin's, as every number of the layer. */}
+      <div className="space-y-3 border-t border-line pt-2">
+        <AutoTalkHoldForm current={talkHoldSec} editable={mayTune} max={AGENT_1A_BOUNDS.talkHoldMax} />
+        <AutoPriceHoldForm current={c.holdSec} editable={mayTune} bounds={AUTO_PRICE_HOLD} />
+        <AutoNightForm
+          current={nightPrices}
+          editable={mayTune}
+          options={AGENT_NIGHT_PRICES.map((value) => ({ value, label: t(NIGHT_PRICE_KEYS[value] as 'autoNight.none') }))}
         />
       </div>
       {auto.fullReady && (
