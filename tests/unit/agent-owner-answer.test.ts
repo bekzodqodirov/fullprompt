@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { cardAsks, cardExtra } from '@/modules/wms/agent/card';
 import { ANSWER_STATUS_LINE, ANSWER_TAKEN_LINE, FROM_ANSWER_LINE, answeredNow, renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
@@ -136,7 +137,7 @@ describe('his answer is a source, read as a fact is — for one redraft (spec §
 });
 
 describe('the redraft’s memory carries his answer as SOURCES and nothing else (§2.2)', () => {
-  const loop = { compose: compose(), tools: [], outcomes: [], usage };
+  const loop = { compose: compose(), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT };
 
   it('his figures are in the stored sources, origin «owner» — so his ✅ and the press re-run the policy on them', () => {
     const memory = memoryFor(ctxWith('Atir olib kelasizmi?'), loop, [], 'gsr-t', 'VED 1200 $ hisobladi, 3 kunda tayyor');
@@ -428,7 +429,7 @@ describe('the redraft’s instruction (§2.2, judge learn)', () => {
   });
 
   it('prompt rule 1 says the task’s answer is a source too — in the cached head, once', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     expect(head.split(`VAZIFAdagi ${OWNER_WORD}ning javobi ham manba`)).toHaveLength(2);
   });
 });

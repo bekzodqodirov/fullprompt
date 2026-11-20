@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { ambiguousPrice, noQuestionWhy, typedPriceUsd } from '@/modules/wms/agent/calc-loop';
 import { renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
@@ -61,6 +62,7 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   priceArmed: false,
   calcArmed: false,
   calcPricing: false,
+  aviaDays: AVIA_DAYS_DEFAULT,
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {
@@ -174,7 +176,7 @@ describe('rail: the spellings customers type, and no machine figure on a rail an
     const ctx = ctxWith("Temir yo'l bilan 40 kg qancha?", [{ ref: 'w1', kind: 'weight', value: 40, messageRef: '#1' }]);
     const avia = await runTool('avia_estimate', { weight_ref: 'w1' }, env(ctx, 17));
     expect(avia.sources.some((s) => s.kind === 'money')).toBe(true);
-    const memory = memoryFor(ctx, { compose: compose(), tools: [], outcomes: [avia], usage }, [], 'gsr-test');
+    const memory = memoryFor(ctx, { compose: compose(), tools: [], outcomes: [avia], usage, aviaDays: AVIA_DAYS_DEFAULT }, [], 'gsr-test');
     expect(memory.sources.some((s) => s.kind === 'money')).toBe(false);
     expect(memory.hasEstimate).toBe(false);
     const result = checkAgentReply({

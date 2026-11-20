@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { EYE_ONLY_WARNINGS } from '@/modules/wms/agent/auto-gate';
 import { customerScriptOf, type AgentContext, type ChatMessage, type MeasureCandidate } from '@/modules/wms/agent/context';
 import { AGENT_LOCALES, type AgentLocale } from '@/modules/wms/agent/locale';
@@ -114,7 +115,7 @@ const compose = (language: AgentLocale, replyText: string): ComposeReply => ({
 function judge(language: AgentLocale, reply: string) {
   const ctx = chat([ASK[language]]);
   const c = compose(language, reply);
-  const mem = memoryFor(ctx, { compose: c, tools: [{ name: 'yolkira_estimate', ok: true, text: '', estimate: true }], outcomes: [TRUCK], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }, [], 'gsr-test');
+  const mem = memoryFor(ctx, { compose: c, tools: [{ name: 'yolkira_estimate', ok: true, text: '', estimate: true }], outcomes: [TRUCK], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, aviaDays: AVIA_DAYS_DEFAULT }, [], 'gsr-test');
   const input: PolicyInput = {
     body: reply,
     language: mem.language,
@@ -209,7 +210,7 @@ describe('J1: «ha» to the offer is an answer, wherever the offer stands in our
 });
 
 describe('the head: rule 8 carries the offer, rule 11 the «ha», rules 17 and 18 — one copy of each, the same bytes', () => {
-  const head = (persona = '') => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona });
+  const head = (persona = '') => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona, aviaDays: AVIA_DAYS_DEFAULT });
 
   it('rule 8 carries the offer in every language, interpolated, as the LAST sentence of the reply — and Kashgar', () => {
     const h = head();
@@ -263,6 +264,7 @@ describe('J24: Kashgar receives no cargo for now — the truck tool and the chec
     priceArmed: true,
     calcArmed: false,
     calcPricing: false,
+    aviaDays: AVIA_DAYS_DEFAULT,
   });
   const truck = (line: string) => runTool('yolkira_estimate', { weight_ref: 'w1', volume_ref: 'v1' }, env(chat([line], measures)));
   const checklist = (line: string, section: string) =>

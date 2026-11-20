@@ -30,6 +30,8 @@
  *  - `loop`         — the chat loop detector (stage 1a P2, loop `loopVerdict`): is this chat a robot answering our robot
  *                     («held» — no draft, or no machine press) or a person talking («goes»)? Its input is a little
  *                     script, one event a line — see `LOOP_DANGEROUS` below.
+ *  - `avia_days`    — the flight's days a reply states, through the policy and the gate (run `memoryFor`'s company
+ *                     rule, `aviaDaySources`, from `agent_avia_days` — stage 1a P7, J2): his «3-5 kun» and no other.
  *
  * `kind`: `dangerous` — the WRONG answer lets something reach a customer that must not (a price nobody read, a
  * hand-over in an air chat, a Tashkent price for another destination, a reply in the wrong language, his figure
@@ -63,7 +65,8 @@ export type Reader =
   | 'complaint'
   | 'calc_claim'
   | 'phone'
-  | 'loop';
+  | 'loop'
+  | 'avia_days';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -2084,6 +2087,28 @@ const LOOP_ORDINARY: readonly Row[] = [
   ['lo020', '> 0 Salom\n> 4 Salom\n< 25 Assalomu alaykum! Qanday yordam bera olaman?\n> 400 Salom', 'stage1a:§4.3 answered repeats'],
   // The half hour he was told of is over: a new line is answered again.
   ['lo021', '> 0 Xabaringiz qabul qilindi.\n< 20 Yukingiz qayerdan?\n> 300 Xabaringiz qabul qilindi.\n< 320 Necha kub?\n> 600 Xabaringiz qabul qilindi.\n! 605\n> 2410 Yana savolim bor', 'stage1a:J33 the hold ends'],
+// ── avia_days: the flight's days a reply states (stage 1a P7, J2, his 2 b «3-5 kun») ──────────────────────────
+// Through the policy and the gate, on the memory a run stores with the setting's own days (`agent_avia_days`, shipped
+// «3-5»): the company's rule vouches for the range he gave and nothing else — the old «2–5 kun», and «reys bo‘lsa 2
+// kun» (the flight clause he did not repeat), are a day count nobody vouched for any more, in any language.
+const P_AD = 'stage1a:J2';
+const AVIA_DAYS_DANGEROUS: readonly Row[] = [
+  ['ad001', "Avia bilan taxminan 2-5 kunda yetib boradi — bu taxmin, va'da emas.", P_AD, r('uz')],
+  ['ad002', "Avia orqali yetib borishi taxminan 2–5 kun, reys bo'lsa 2 kun — bu taxmin, va'da emas.", P_AD, r('uz')],
+  ['ad003', "Avia bilan taxminan 3-5 kun, reys bo'lsa 2 kunda yetib boradi.", P_AD, r('uz')],
+  ['ad004', 'Авиа — примерно 2-5 дней, это не обещание.', P_AD, r('ru')],
+  ['ad005', 'By air it takes about 2-5 days — an estimate, not a promise.', P_AD, r('en')],
+  ['ad006', 'Авиа билан тахминан 2-5 кунда етиб боради.', P_AD, r('uz_cyrl')],
+  ['ad007', 'Avia bilan taxminan 2 kunda yetib boradi.', P_AD, r('uz')],
+  ['ad008', 'Авиа примерно 3-5 дней, а если есть рейс — 2 дня.', P_AD, r('ru')],
+];
+
+const AVIA_DAYS_ORDINARY: readonly Row[] = [
+  ['ad201', "Avia bilan taxminan 3-5 kunda yetib boradi — bu taxmin, va'da emas.", P_AD, r('uz')],
+  ['ad202', 'Avia orqali eng kamida 1 kg qabul qilamiz, yetib borishi taxminan 3–5 kun.', P_AD, r('uz')],
+  ['ad203', 'Авиа: от 1 кг, примерно 3-5 дней.', P_AD, r('ru')],
+  ['ad204', 'By air it takes about 3-5 days — an estimate, not a promise.', P_AD, r('en')],
+  ['ad205', 'Авиа билан тахминан 3-5 кунда етиб боради.', P_AD, r('uz_cyrl')],
 ];
 
 export const READER_CORPUS: readonly ReaderCase[] = [
@@ -2117,4 +2142,6 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('phone', 'ordinary', PHONE_ORDINARY),
   ...rows('loop', 'dangerous', LOOP_DANGEROUS),
   ...rows('loop', 'ordinary', LOOP_ORDINARY),
+  ...rows('avia_days', 'dangerous', AVIA_DAYS_DANGEROUS),
+  ...rows('avia_days', 'ordinary', AVIA_DAYS_ORDINARY),
 ];

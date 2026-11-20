@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { cardDigest, cardExtra, digestBody } from '@/modules/wms/agent/card';
 import { renderDraftCard, type DraftRow } from '@/modules/wms/agent/card-io';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
@@ -69,6 +70,7 @@ const env = (ctx: AgentContext, aviaUsdPerKg: number | null = 17): ToolEnv => ({
   priceArmed: false,
   calcArmed: false,
   calcPricing: false,
+  aviaDays: AVIA_DAYS_DEFAULT,
 });
 
 function compose(over: Partial<ComposeReply> = {}): ComposeReply {
@@ -155,9 +157,9 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
         // Each names the tool that made it (0148, spec §1.1): the auto layer asks which tool vouched for a money line.
         { value: 637.5, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'total' },
         { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'rate' },
-        // The days are a FLIGHT's — never a truck's figure (fix round).
-        { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
-        { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+        // The days are a FLIGHT's — never a truck's figure (fix round) — and the run's own (stage 1a P7, `agent_avia_days`).
+        { value: AVIA_DAYS_DEFAULT.min, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+        { value: AVIA_DAYS_DEFAULT.max, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
       ]),
     );
   });
@@ -174,7 +176,7 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
 
   it('an avia figure makes G11 apply — unhedged is blocked, hedged passes', async () => {
     const out = await runTool('avia_estimate', { weight_ref: 'w1' }, env(aviaCtx, 17));
-    const loop = { compose: compose(), tools: [], outcomes: [out], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+    const loop = { compose: compose(), tools: [], outcomes: [out], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, aviaDays: AVIA_DAYS_DEFAULT };
     const memory = memoryFor(aviaCtx, loop, [], 'gsr-test');
     expect(memory.hasEstimate).toBe(true);
     const check = (body: string) =>
@@ -202,7 +204,8 @@ describe('the truck’s minimum and avia (his 7, 2026-10-24)', () => {
     expect(check('Avia 637.5 $.').blocks.map((b) => b.code)).toContain('estimate_unhedged');
     // His fourth set «2» withdrew K32 for the flight: its address is his, so no warehouse condition is asked.
     expect(memory.fromOurWarehouse).toBe(false);
-    expect(check('Avia bilan taxminan 637.5 $, 2-5 kun. Boj va QQS alohida hisoblanadi.').ok).toBe(true);
+    // The days the tool said (stage 1a P7: his 2 b «3-5 kun», the setting's shipped default) — the old «2-5» is not.
+    expect(check('Avia bilan taxminan 637.5 $, 3-5 kun. Boj va QQS alohida hisoblanadi.').ok).toBe(true);
   });
 
   it('the toolset offers avia_estimate taking a REFERENCE, never a figure', () => {
@@ -245,7 +248,7 @@ describe('rail is his question', () => {
   });
 
   it('the prompt says it too — the AI never quotes rail', () => {
-    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' })).toContain(RAIL_OWNER_QUESTION);
+    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT })).toContain(RAIL_OWNER_QUESTION);
   });
 });
 
@@ -268,7 +271,7 @@ describe('the certificate is the company’s (his 9)', () => {
     expect(actions).toHaveLength(1);
     // Nothing reads it since his «9» — and a stored «certificate: null» would only say the AI asked.
     expect(actions[0]).not.toHaveProperty('certificate');
-    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' })).toMatch(/sertifikatini HECH QACHON so'rama/u);
+    expect(stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT })).toMatch(/sertifikatini HECH QACHON so'rama/u);
   });
 });
 

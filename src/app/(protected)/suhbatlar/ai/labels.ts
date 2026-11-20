@@ -73,6 +73,8 @@ export type AgentErrorCode =
   | 'bad_markup'
   // The persona's name (stage 1a P3, web-actions `agentPersonaAction`): not letters and single spaces, or too long.
   | 'bad_persona'
+  // The flight's days (stage 1a P7, web-actions `agentAviaDaysAction`): not «N-M» whole days, N below M, M up to 60.
+  | 'bad_avia_days'
   | `auto_stop_${Exclude<StopAutoRefusal, 'not_ready'>}`
   | `auto_fb_${Exclude<AutoFeedbackRefusal, 'not_ready'>}`
   // «📝 Tuzatish» (web-actions `agentLesson…`, lessons.ts): their own codes too — «empty» and «too long» there
@@ -130,6 +132,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   bad_open_limit: 'errors.bad_open_limit',
   bad_markup: 'errors.bad_markup',
   bad_persona: 'errors.bad_persona',
+  bad_avia_days: 'errors.bad_avia_days',
   markup_changed: 'errors.markup_changed',
   // «✅ Tarif to'g'ri»: the column changed since the page was drawn (tariff-watch `confirmTariff`).
   tariff_changed: 'errors.tariff_changed',

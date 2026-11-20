@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { autoVerdict, AUTO_REFUSALS, type AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import { cardLineOf, centsOf, markupPrice, ruleString, ruleWords, workedExample, type MarkupRule } from '@/modules/wms/agent/calc-markup';
@@ -356,6 +357,7 @@ describe('the run’s memory of a VED price (§2.3) and G11 on it', () => {
     tools: outcomes.map(() => ({ name: CALC_PRICE_TOOL, ok: true, text: '', estimate: false })),
     outcomes,
     usage,
+    aviaDays: AVIA_DAYS_DEFAULT,
   });
 
   it('the prices are kept, the client total is the only money source, and no estimate flag is set', () => {
@@ -422,7 +424,7 @@ describe('the run’s memory of a VED price (§2.3) and G11 on it', () => {
 });
 
 describe('the prompt and the tools with the VED price off — byte for byte (§2.3, §4.3)', () => {
-  const head = (calcPricing: boolean) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing, lessons: [], persona: '' });
+  const head = (calcPricing: boolean) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
 
   it('rule 11 gains ONE sentence when on; off, today’s rule 11 ends where it always did', () => {
     expect(head(false)).not.toContain(CALC_PRICE_RULE);
@@ -444,11 +446,16 @@ describe('the prompt and the tools with the VED price off — byte for byte (§2
   });
 
   it('the tools: off is today’s list (the same objects, the same order), on adds calc_price alone', () => {
-    const off = toolSpecsFor({ calcPricing: false });
+    // DELIBERATE EDIT (stage 1a P7): the avia tool now tells the run's OWN days (`agent_avia_days`), so `toolSpecsFor`
+    // builds that one entry per run — equal to the list's own at the shipped days; every other entry is still the
+    // list's own object, in its order.
+    const off = toolSpecsFor({ calcPricing: false, aviaDays: AVIA_DAYS_DEFAULT });
     expect(off.map((t) => t.name)).not.toContain(CALC_PRICE_TOOL);
     expect(off).toEqual(TOOL_SPECS.filter((t) => t.name !== CALC_PRICE_TOOL));
-    expect(off.every((t, i) => t === TOOL_SPECS.filter((x) => x.name !== CALC_PRICE_TOOL)[i])).toBe(true);
-    expect(toolSpecsFor({ calcPricing: true })).toBe(TOOL_SPECS);
+    expect(off.every((t, i) => t.name === 'avia_estimate' || t === TOOL_SPECS.filter((x) => x.name !== CALC_PRICE_TOOL)[i])).toBe(true);
+    const on = toolSpecsFor({ calcPricing: true, aviaDays: AVIA_DAYS_DEFAULT });
+    expect(on).toEqual(TOOL_SPECS);
+    expect(on.every((t, i) => t.name === 'avia_estimate' || t === TOOL_SPECS[i])).toBe(true);
     const spec = TOOL_SPECS.find((t) => t.name === CALC_PRICE_TOOL)!;
     expect(Object.keys((spec.input_schema as { properties: object }).properties)).toEqual([]);
   });

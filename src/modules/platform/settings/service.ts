@@ -610,12 +610,34 @@ export function personaNameValid(raw: string): boolean {
  * `aviaDaysMax`, N below M — a range, never one figure (a single number reads as a promise). Null = not that shape;
  * a reader treats a stored value it cannot read as the default.
  */
-export function aviaDaysRange(raw: string): { min: number; max: number } | null {
+export function aviaDaysRange(raw: string): AviaDays | null {
   const m = /^([1-9]\d?)-([1-9]\d?)$/u.exec(raw);
   if (!m) return null;
   const min = Number(m[1]);
   const max = Number(m[2]);
   return min < max && max <= AGENT_1A_BOUNDS.aviaDaysMax ? { min, max } : null;
+}
+
+/** An air shipment's whole days, as `aviaDaysRange` reads them: N below M. */
+export interface AviaDays {
+  readonly min: number;
+  readonly max: number;
+}
+
+/** The shipped «3-5» (his 2 b), read by the same shape — what a stored value nobody can read falls back to. */
+export const AVIA_DAYS_DEFAULT: AviaDays = aviaDaysRange(SETTING_DEFAULTS.agent_avia_days)!;
+
+/**
+ * The flight's days (stage 1a P7, J2, his 2 b: «3-5 kun» — no «reys bo‘lsa» clause) — the ONE reader of
+ * `agent_avia_days`: what the prompt's rule 9, the avia tool (its description, its words, its day sources), the
+ * company rule the policy vouches by (run `memoryFor`) and the AI page say, read ONCE per run so every one of them
+ * says the same days. The stored value when its shape holds, else the default — a value typed into the table by hand
+ * is never guessed at. On the pool: never inside a transaction (#714), and never from the listener — the send step
+ * re-prices the flight by its rate alone and states no day.
+ */
+export async function aviaDays(): Promise<AviaDays> {
+  const raw = await getSetting('agent_avia_days');
+  return aviaDaysRange(String(raw)) ?? AVIA_DAYS_DEFAULT;
 }
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {

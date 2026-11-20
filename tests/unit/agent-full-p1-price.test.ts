@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { FreightBand } from '@/modules/wms/calc/pricing';
 import { OWNER_TARIFF_BANDS } from '@/modules/wms/calc/tariff-seed';
 import { parseCallback, buttonsFor } from '@/modules/platform/telegram/staff-bot';
@@ -186,6 +187,7 @@ const env = (ctx: AgentContext, priceArmed: boolean): ToolEnv => ({
   priceArmed,
   calcArmed: false,
   calcPricing: false,
+  aviaDays: AVIA_DAYS_DEFAULT,
 });
 
 describe('the avia tool’s words, his price act off and on (spec §1.2)', () => {
@@ -217,8 +219,8 @@ describe('the avia tool’s words, his price act off and on (spec §1.2)', () =>
 });
 
 describe('the head (spec §1.2, §1.8): rule 9 changes only with his price act; rule 8 asks the load and «Toshkentgacha»', () => {
-  const off = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
-  const on = stableHead({ styleGuide: null, facts: [], priceArmed: true, calcPricing: false, lessons: [], persona: '' });
+  const off = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
+  const on = stableHead({ styleGuide: null, facts: [], priceArmed: true, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
   const rule = (head: string, n: number) => head.split('\n').find((l) => l.startsWith(`${n}. `))!;
 
   it('off, rule 9’s address sentence is today’s, word for word', () => {
@@ -425,7 +427,7 @@ describe('the destination (spec §1.8): any city or region other than Tashkent, 
       usedFactIds: [],
       citedMessageRefs: [],
     };
-    const loop = { compose, tools: [], outcomes: [], usage };
+    const loop = { compose, tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT };
     expect(memoryFor({ ...ctx, messages: [earlier, ...ctx.messages] }, loop, [], 'gsr-t').foreignDestination).toBe(true);
     expect(memoryFor({ ...ctx, messages: [ours, ...ctx.messages] }, loop, [], 'gsr-t').foreignDestination).toBe(false);
     expect(memoryFor(ctx, loop, [], 'gsr-t').foreignDestination).toBe(false);
@@ -458,10 +460,10 @@ describe('the memory keeps every figure the run quoted (spec §1.3)', () => {
       usedFactIds: [],
       citedMessageRefs: [],
     });
-    const kept = memoryFor(ctx, { compose: compose('x'), tools: [], outcomes: [out], usage }, [], 'gsr-t');
+    const kept = memoryFor(ctx, { compose: compose('x'), tools: [], outcomes: [out], usage, aviaDays: AVIA_DAYS_DEFAULT }, [], 'gsr-t');
     expect(kept.estimates).toEqual([out.priced]);
     const rail = ctxWith("Temir yo'l bilan 37.5 kg qancha?", [{ ref: 'w1', kind: 'weight', value: 37.5, messageRef: '#1' }]);
-    expect(memoryFor(rail, { compose: compose('x'), tools: [], outcomes: [out], usage }, [], 'gsr-t').estimates).toEqual([]);
+    expect(memoryFor(rail, { compose: compose('x'), tools: [], outcomes: [out], usage, aviaDays: AVIA_DAYS_DEFAULT }, [], 'gsr-t').estimates).toEqual([]);
   });
 });
 

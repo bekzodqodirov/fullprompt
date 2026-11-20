@@ -111,7 +111,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
-import { getSetting, setSetting } from '@/modules/platform/settings/service';
+import { AVIA_DAYS_DEFAULT, getSetting, setSetting } from '@/modules/platform/settings/service';
 import { pressDueAutos, readAutoConfig, stopAuto, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
 import { CALC_FILES_MAX, chatFilesForJob, copyChatFilesToNote } from '@/modules/wms/agent/calc-files';
 import { calcLinkReplySent } from '@/modules/wms/agent/calc-loop';
@@ -845,7 +845,7 @@ describe('the law’s figure is asked before the job goes, while the act is arme
     const lead = await freshLead();
     for (const body of lines) await inbound(peer, { leadId: lead }, body);
     const ctx = await loadContext(holderId, peer, null);
-    const env: ToolEnv = { ctx, day: '2026-11-14', aviaUsdPerKg: null, kb: async () => [], chinaPlaces: async () => new Set(), priceArmed: false, calcArmed, calcPricing: false };
+    const env: ToolEnv = { ctx, day: '2026-11-14', aviaUsdPerKg: null, kb: async () => [], chinaPlaces: async () => new Set(), priceArmed: false, calcArmed, calcPricing: false, aviaDays: AVIA_DAYS_DEFAULT };
     return runTool('calc_checklist', { section: 'rastamojka', goods }, env);
   }
 

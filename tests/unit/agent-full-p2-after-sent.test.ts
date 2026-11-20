@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 
 /** The listener's seam calls pg-boss's sender; it is caught here — this file starts no boss. */
 const sent = vi.hoisted(() => ({ calls: [] as unknown[][], fail: false }));
@@ -167,7 +168,7 @@ describe('the model learns the lead’s stage — on the chat block’s lead lin
   });
 
   it('the cached head and the run’s tail never carry it: the head is the same bytes whatever stage a lead is on', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '' });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     expect(head).not.toMatch(/bosqich: /u);
     // One STATIC sentence tells the model what the line is (cache-safe: the same bytes for every chat).
     expect(head).toContain(LEAD_STAGE_RULE);

@@ -682,6 +682,36 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
 }
 
 /**
+ * The flight's days on /suhbatlar/ai (stage 1a P7, his 2 b: «3-5 kun»; `agent_avia_days`) — the avia rate's door: the
+ * AI's holder or a super_admin (`mayRunAgent`). Typed as «N-M» whole days; spaces and a typed dash of another kind
+ * («3–5», «3 - 5») are folded first, then the setting's own shape decides (`aviaDaysRange`: N from 1, M up to 60, N
+ * below M — a range, never one figure, which would read as a promise); anything else is refused, never guessed at.
+ * Audited under the settings' entity id. Read once per run (settings `aviaDays`): the next run's rule 9, avia tool and
+ * company rule say it. A draft written before keeps the days its own run was told — its stored sources, which ✅
+ * re-reads — as a ✅ on any figure judges the evidence the card showed.
+ */
+export async function setAviaDays(actor: AgentActor, raw: string, ctx: AuditContext): Promise<string> {
+  const { SETTINGS_AUDIT_ID, aviaDaysRange, getSetting, setSetting } = await import('../../platform/settings/service');
+  const days = aviaDaysRange(raw.replace(/\s+/gu, '').replace(/[‐‑‒–—−]/gu, '-'));
+  if (days === null) throw new AgentConfigError('bad_value');
+  if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
+  const config = await readAgentConfig();
+  if (!mayRunAgent(actor, config)) throw new AgentConfigError('forbidden');
+  const value = `${days.min}-${days.max}`;
+  const before = await getSetting('agent_avia_days');
+  if (before === value) return value;
+  await setSetting('agent_avia_days', value, actor.id);
+  await writeAudit(db, ctx, {
+    entityType: 'settings',
+    entityId: SETTINGS_AUDIT_ID,
+    action: 'update',
+    before: { agent_avia_days: before },
+    after: { agent_avia_days: value },
+  });
+  return value;
+}
+
+/**
  * «Bu akkaunt — AI sotuvchi (alohida hodim)» (SPEC-P2-v2 K4): the super_admin names the account the AI speaks from as
  * the AI's own seat — a settings row (`agent_seat_user_id`, platform/settings/agent-seat.ts), never a column on
  * agent_config. The named user must BE the current holder at the press: the config row is taken FOR UPDATE first,

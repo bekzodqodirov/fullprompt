@@ -1,6 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { htmlToPlain } from '../../platform/telegram/format';
 import type { ModelToolSpec } from '../../platform/ai/model';
+import { AVIA_DAYS_DEFAULT, type AviaDays } from '../../platform/settings/service';
 import { db } from '../../platform/db/client';
 import { warehouses } from '../../platform/db/schema';
 import { balanceMessages, cargoMessages } from '../client-cabinet/bot-text';
@@ -72,6 +73,11 @@ export interface ToolEnv {
    * this reply may state. Absent (an inbound run): every answered chain of the chat, each named by its goods.
    */
   calcRequestId?: string | null;
+  /**
+   * The flight's days (`agent_avia_days`, stage 1a P7, his 2 b «3-5 kun»), read once per run by the one reader (settings
+   * `aviaDays`): what the avia tool says and writes as its day sources — the same pair as the head's rule 9.
+   */
+  aviaDays: AviaDays;
 }
 
 /**
@@ -144,6 +150,20 @@ const obj = (properties: Record<string, unknown>, required: string[] = Object.ke
 });
 
 export const SECTIONS = ['yolkira', 'rastamojka', 'podklyuch'] as const;
+/**
+ * The avia tool as the model is offered it (stage 1a P7, J2): its days are the run's own (`agent_avia_days`, his 2 b
+ * «3-5 kun»), and no flight clause — «reys bo‘lsa 2 kun» was never repeated by him. `TOOL_SPECS` holds it at the
+ * shipped default so the closed list names every tool; a run is offered ITS days by `toolSpecsFor`, the same pair the
+ * head's rule 9 and the tool's own words say.
+ */
+export function aviaToolSpec(days: AviaDays): ModelToolSpec {
+  return {
+    name: 'avia_estimate',
+    description: `Faqat avia (samolyot, Xitoy → O'zbekiston) yo'lkirasi: og'irlik × avia tarifi ($/kg). Raqam bermaysan: og'irlik havolasini (w1) berasan. Eng kamida ${AGENT_LIMITS.avia.minKg} kg. Muddat taxminan ${days.min}-${days.max} kun — va'da emas. Bojxona, QQS bu narxga kirmaydi.`,
+    input_schema: obj({ weight_ref: { type: 'string' } }),
+  };
+}
+
 /** The tool that states a VED answer's client price (§2.3) — offered only while the run quotes them (`toolSpecsFor`). */
 export const CALC_PRICE_TOOL = 'calc_price';
 export const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'] as const;
@@ -185,12 +205,7 @@ export const TOOL_SPECS: ModelToolSpec[] = [
       `Faqat yo'lkira (Xitoy → O'zbekiston, mashina) uchun saytdagi kalkulyator narxi. Raqam bermaysan: kontekstdagi o'lchov havolalarini (w1, v1, d1) berasan. Bojxona, QQS bu narxga kirmaydi. Mashina eng kamida ${AGENT_LIMITS.minShipment.m3} kub yoki ${AGENT_LIMITS.minShipment.kg} kg yuk oladi. Rad etsa — hisoblatishga yuborish kerak.`,
     input_schema: obj({ weight_ref: { type: 'string' }, volume_ref: { type: 'string' } }),
   },
-  {
-    name: 'avia_estimate',
-    description:
-      `Faqat avia (samolyot, Xitoy → O'zbekiston) yo'lkirasi: og'irlik × avia tarifi ($/kg). Raqam bermaysan: og'irlik havolasini (w1) berasan. Eng kamida ${AGENT_LIMITS.avia.minKg} kg. Muddat taxminan ${AGENT_LIMITS.avia.daysMin}-${AGENT_LIMITS.avia.daysMax} kun, reys bo'lsa ${AGENT_LIMITS.avia.daysMin} kun — va'da emas. Bojxona, QQS bu narxga kirmaydi.`,
-    input_schema: obj({ weight_ref: { type: 'string' } }),
-  },
+  aviaToolSpec(AVIA_DAYS_DEFAULT),
   {
     name: 'calc_checklist',
     description:
@@ -253,10 +268,12 @@ export const TOOL_SPECS: ModelToolSpec[] = [
 
 /**
  * The tools a run offers (SPEC-P2-v2 §2.3): `TOOL_SPECS` — the closed list the leak-11 fence pins — less `calc_price`
- * unless the run quotes VED answers (`calcPricing`). Off, exactly today's list, byte for byte.
+ * unless the run quotes VED answers (`calcPricing`), with the avia tool telling the run's own days (`aviaDays`, read
+ * once per run — stage 1a P7). Every other entry is the list's own object, in its order.
  */
-export function toolSpecsFor(act: { calcPricing: boolean }): ModelToolSpec[] {
-  return act.calcPricing ? TOOL_SPECS : TOOL_SPECS.filter((t) => t.name !== CALC_PRICE_TOOL);
+export function toolSpecsFor(act: { calcPricing: boolean; aviaDays: AviaDays }): ModelToolSpec[] {
+  const avia = aviaToolSpec(act.aviaDays);
+  return TOOL_SPECS.filter((t) => act.calcPricing || t.name !== CALC_PRICE_TOOL).map((t) => (t.name === avia.name ? avia : t));
 }
 
 /** The customer's own figures — every number they wrote, as values a tool input must match. */
@@ -615,7 +632,8 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
 
 /**
  * Avia (his 2026-10-24: «Avia hozir kg uchun 17$ dan», «avia uchun 1kg
- * minimum», «2-5 kun ichida … reysimiz bolsa 2 kun»): the customer's own
+ * minimum»; the days his 2 b of 2026-11-20, «3-5 kun» — his setting
+ * `agent_avia_days`, with no «reys bo‘lsa» clause): the customer's own
  * kilos, by REFERENCE, times the rate on /suhbatlar/ai. The rate is a money
  * source, the total is one, the days are duration sources — and an estimate,
  * so G11 asks for «taxminan» and «boj, QQS alohida» exactly as on the truck.
@@ -647,7 +665,8 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
   const stale = staleRefs(ctx, [weight]);
   if (stale) return { ok: false, text: stale, sources: [] };
   const kg = weight.value;
-  const { minKg, daysMin, daysMax } = AGENT_LIMITS.avia;
+  const { minKg } = AGENT_LIMITS.avia;
+  const { min: daysMin, max: daysMax } = env.aviaDays;
   // ONE arithmetic for the quote and the re-price at every send (estimate.ts, spec §1.3).
   const priced = aviaEstimate({ kg, rate });
   if (!priced.ok) {
@@ -670,8 +689,8 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
   return {
     ok: true,
     text:
-      `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
-      `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI. ` +
+      `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun ` +
+      `— va'da emas. Boj va QQS bu narxga KIRMAYDI. ` +
       (env.priceArmed
         ? `Faqat narxni ayt: avia manzilini AYTMA, bilimdagi ombor manzilini ham, omborga yuborishni ham aytma — manzilni ${OWNER_WORD} beradi. ` +
           `Mijoz manzilni yoki qayerga yuborishni so'rasa — needs_owner=true, ${ask}`

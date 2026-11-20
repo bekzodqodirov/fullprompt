@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { isCalcSubmitOnly } from '@/modules/wms/agent/auto-gate';
 import { landedUnsentLine, LANDED_UNSENT, LANDING_CLAIM } from '@/modules/wms/agent/card-io';
 import { CALC_FILES_MAX, calcFileCopyId, filesMaterialLine, missingFilesNote } from '@/modules/wms/agent/calc-files';
@@ -256,6 +257,7 @@ describe('the checklist with the act off is today’s, byte for byte (§1.6, §4
     priceArmed: false,
     calcArmed: false,
   calcPricing: false,
+    aviaDays: AVIA_DAYS_DEFAULT,
   });
 
   it('a complete line with no unit: the very text and facts the checklist wrote before the unit existed', async () => {

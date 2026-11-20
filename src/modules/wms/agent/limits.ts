@@ -41,8 +41,11 @@ export const AGENT_LIMITS = {
    * BOTH is not accepted, so no figure is quoted for it — the reply says the minimum instead. Avia has its own.
    */
   minShipment: { m3: 1, kg: 100 } as const,
-  /** Avia has its own minimum and time (his 2026-10-24 «avia uchun 1kg minimum», «2-5 kun … reysimiz bolsa 2 kun»). */
-  avia: { minKg: 1, daysMin: 2, daysMax: 5 } as const,
+  /**
+   * Avia has its own minimum (his 2026-10-24 «avia uchun 1kg minimum»). Its days are NOT here any more: they are his
+   * setting `agent_avia_days` (stage 1a P7, his 2 b «3-5 kun»), read by ONE reader (settings `aviaDays`) once per run.
+   */
+  avia: { minKg: 1 } as const,
   /**
    * The truck's days once the website's table has run out (spec SPEC-P1-v2 §1.6, ⭐ Q5 a — asked of him): the
    * snapshot's own 15-25 (site-estimate `SITE_TARIFF.truck.days`). Before its `validThrough` the website says

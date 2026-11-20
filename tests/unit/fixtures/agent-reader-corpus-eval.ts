@@ -17,6 +17,7 @@ import type { PolicyInput } from '@/modules/wms/agent/policy';
 import * as run from '@/modules/wms/agent/run';
 import type { ComposeReply } from '@/modules/wms/agent/run';
 import * as seed from '@/modules/wms/agent/seed-kb';
+import { SETTING_DEFAULTS, aviaDaysRange } from '@/modules/platform/settings/service';
 import type { ToolOutcome } from '@/modules/wms/agent/tools';
 import * as worthy from '@/modules/wms/agent/worthy';
 import type { ReaderCase, Observed } from './agent-reader-corpus';
@@ -82,6 +83,12 @@ const compose = (language: AgentLocale, replyText: string, category = 'faq'): Co
 });
 
 const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
+/**
+ * The flight's days a run is told and vouches for (stage 1a P7, `agent_avia_days`): the setting's own default, as
+ * production ships it — every loop below carries them the way `runLoop` hands them to `memoryFor`.
+ */
+const AVIA_DAYS = aviaDaysRange(SETTING_DEFAULTS.agent_avia_days)!;
 
 /** The seeded knowledge as a run's prompt serves it (kb `hitOf`). */
 function facts(): KbHit[] {
@@ -165,7 +172,7 @@ function eligibleInput(): AutoGateInput {
 
 /** The policy over a reply, on the memory a real run stores (`policyFor`'s mapping). */
 function checked(lines: readonly string[], language: AgentLocale, reply: string, outcomes: ToolOutcome[] = []) {
-  const mem = run.memoryFor(ctxOf(lines), { compose: compose(language, reply), tools: [], outcomes, usage }, facts(), 'gsr-t');
+  const mem = run.memoryFor(ctxOf(lines), { compose: compose(language, reply), tools: [], outcomes, usage, aviaDays: AVIA_DAYS }, facts(), 'gsr-t');
   const input: PolicyInput = {
     body: reply,
     language: mem.language,
@@ -288,7 +295,7 @@ function asQuote(input: AutoGateInput): AutoGateInput {
 
 /** The truck quote the money clause admits, to a customer who wrote these lines (`memoryFor`'s `foreignDestination`). */
 function destination(lines: readonly string[]): Observed {
-  const mem = run.memoryFor(ctxOf(lines), { compose: compose('uz', 'x', 'price'), tools: [], outcomes: [], usage }, [], 'gsr-t');
+  const mem = run.memoryFor(ctxOf(lines), { compose: compose('uz', 'x', 'price'), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS }, [], 'gsr-t');
   const input = asQuote(eligibleInput());
   input.money.foreignDestination = mem.foreignDestination === true;
   return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
@@ -334,7 +341,7 @@ function language(
     }
     ctx = laterTurn(prior, lines, kept);
   }
-  const mem = run.memoryFor(ctx, { compose: compose(reply, 'x'), tools: [], outcomes: [], usage }, [], 'gsr-t');
+  const mem = run.memoryFor(ctx, { compose: compose(reply, 'x'), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS }, [], 'gsr-t');
   const input = quote ? asQuote(eligibleInput()) : eligibleInput();
   input.draft.language = reply;
   if (!quote) input.draft.body = 'x';
@@ -452,6 +459,8 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
       return ownerAnswer.answerTextRefusal(c.input)?.what === 'phone' ? 'held' : 'goes';
     case 'loop':
       return loopHeld(c.input);
+    case 'avia_days':
+      return pressed(reply, c.input);
   }
 }
 

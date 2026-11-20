@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { AGENT_OPS, buttonsFor, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { calibrationCells, categoryVerdicts, type CalibrationDraftRow } from '@/modules/wms/agent/calibration';
 import { cardExtra, cardTeaches } from '@/modules/wms/agent/card';
@@ -95,7 +96,7 @@ describe('which lessons the prompt carries (spec §3.3 — the cap, binding)', (
 
 describe('where the lessons sit: the cached head, and nowhere else (spec §3.3 — placement)', () => {
   const lessons = [lesson(2, 'Mijoz «salom» desa, darrov narx so‘rama.'), lesson(1, 'Tovar nomini bilmay turib hisoblatishga yuborma.')];
-  const base = { styleGuide: null, facts: [], priceArmed: false, calcPricing: false, persona: '' } as const;
+  const base = { styleGuide: null, facts: [], priceArmed: false, calcPricing: false, persona: '', aviaDays: AVIA_DAYS_DEFAULT } as const;
   const bare = stableHead({ ...base, lessons: [] });
   const taught = stableHead({ ...base, lessons });
 

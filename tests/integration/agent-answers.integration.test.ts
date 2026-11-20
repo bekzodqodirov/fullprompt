@@ -33,6 +33,7 @@ import {
   events,
   notifications,
   roles,
+  settings,
   tasks,
   tgAccountGuard,
   tgAccounts,
@@ -78,6 +79,8 @@ let accountId = '';
 let clientId = '';
 let snapshot: AgentConfig | null = null;
 let sendingBefore = false;
+/** The flight's days as the table held them (stage 1a P7) — a setting is CONFIGURATION too (#183). */
+let aviaDaysRow: { value: unknown } | null = null;
 let msgSeq = 5000n;
 const madeDeals: string[] = [];
 const madeRequests: string[] = [];
@@ -209,6 +212,8 @@ async function clearChat() {
 beforeAll(async () => {
   snapshot = await readAgentConfig();
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
+  const [days] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, 'agent_avia_days'));
+  aviaDaysRow = days ?? null;
   ownerId = await makeUser(`AI javoblar ${SUFFIX}`, 'super_admin', '01');
   vedId = await makeUser(`VED javoblar ${SUFFIX}`, 'ved_manager', '02');
   const [acc] = await db
@@ -285,6 +290,8 @@ afterAll(async () => {
   await db.delete(clients).where(eq(clients.id, clientId));
   await __restoreAgentConfig(snapshot);
   await setSetting('tg_sending_enabled', sendingBefore, ownerId);
+  if (aviaDaysRow) await setSetting('agent_avia_days', aviaDaysRow.value, ownerId);
+  else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, vedId]));
 });
 
@@ -350,7 +357,8 @@ describe('avia — his rate × the customer’s kilos, hedged like the truck', (
     const out = await handleInbound(job(a), {
       callModel: scripted([
         { name: 'avia_estimate', input: { weight_ref: 'w1' } },
-        compose('Avia bilan taxminan 680 $ bo‘ladi, yetib borishi 2-5 kun. Boj va QQS alohida hisoblanadi.'),
+        // The days the run was told (stage 1a P7: his 2 b «3-5 kun», the setting's shipped default) — «2-5» no longer.
+        compose('Avia bilan taxminan 680 $ bo‘ladi, yetib borishi 3-5 kun. Boj va QQS alohida hisoblanadi.'),
       ]),
     });
     expect(out).toMatchObject({ outcome: 'draft', blocked: false });
@@ -804,9 +812,55 @@ describe('a day count is the time of the road the customer asked about (fix roun
 
   it('…while the same five, asked about avia, is the flight’s and passes', async () => {
     const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+    // His 2 b days (stage 1a P7, the setting's shipped default «3-5») — the tool's own pair since the setting.
     const out = await handleInbound(job(a), {
-      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 2-5 kunda yetib boradi.')]),
+      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 3-5 kunda yetib boradi.')]),
     });
     expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+  });
+
+  it('the old «2-5» and the flight clause «reys bo‘lsa 2 kun» are no flight’s any more (stage 1a P7, J2)', async () => {
+    for (const reply of ['Odatda 2-5 kunda yetib boradi.', 'Odatda 3-5 kunda, reys bo‘lsa 2 kunda yetib boradi.']) {
+      const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+      const out = await handleInbound(job(a), { callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose(reply)]) });
+      expect(out, reply).toMatchObject({ outcome: 'draft', blocked: true });
+      const blocks = ((await liveDraft())!.policy as { blocks: { code: string; detail?: string }[] }).blocks;
+      expect(blocks, reply).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: '2' }));
+      await clearChat();
+      await stampAgentPump(accountId, true);
+    }
+  });
+
+  it('the run says HIS days — the head, the tool’s offer, its words and the memory — read once from the setting (stage 1a P7)', async () => {
+    await setSetting('agent_avia_days', '4-7', ownerId);
+    try {
+      const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+      const model = scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 4-7 kunda yetib boradi.')]);
+      const out = await handleInbound(job(a), { callModel: model });
+      expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+      // Every round of the run was told the same pair: rule 9, and the avia tool as offered.
+      expect(model.requests.length).toBe(2);
+      for (const req of model.requests) {
+        expect(req.systemCached).toContain('muddat taxminan 4-7 kun');
+        expect(req.systemCached).not.toMatch(/reys bo/u);
+        const avia = req.tools.find((t) => t.name === 'avia_estimate')!;
+        expect(avia.description).toContain('Muddat taxminan 4-7 kun');
+        expect(avia.description).not.toMatch(/reys bo/u);
+      }
+      // …and the tool's own words came back with them.
+      const toolResult = model.requests[1]!.messages.flatMap((m) => m.content).find((b) => b.type === 'tool_result');
+      expect(JSON.stringify(toolResult)).toContain('taxminan 4-7 kun');
+      // The shipped «3-5» is no flight's while he says 4-7.
+      await clearChat();
+      await stampAgentPump(accountId, true);
+      const b = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+      const old = await handleInbound(job(b), {
+        callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 3-5 kunda yetib boradi.')]),
+      });
+      expect(old).toMatchObject({ outcome: 'draft', blocked: true });
+    } finally {
+      if (aviaDaysRow) await setSetting('agent_avia_days', aviaDaysRow.value, ownerId);
+      else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
+    }
   });
 });

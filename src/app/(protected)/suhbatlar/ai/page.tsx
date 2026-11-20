@@ -5,7 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { P2_CATEGORIES, TICKED_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
 import { AUTO_PER_DAY_MAX, AUTO_PRICE_HOLD } from '@/modules/wms/agent/auto-send';
-import { AGENT_1A_BOUNDS, AGENT_NIGHT_PRICES, readAgentNightPrices, readAgentPersonaName, readAgentTalkHoldSec, type AgentNightPrices } from '@/modules/platform/settings/service';
+import { AGENT_1A_BOUNDS, AGENT_NIGHT_PRICES, aviaDays, readAgentNightPrices, readAgentPersonaName, readAgentTalkHoldSec, type AgentNightPrices, type AviaDays } from '@/modules/platform/settings/service';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { webLessons } from '@/modules/wms/agent/lessons';
@@ -47,6 +47,7 @@ import {
   AutoPerDayForm,
   AutoPriceHoldForm,
   AutoTalkHoldForm,
+  AviaDaysForm,
   AviaRateForm,
   DraftActions,
   FactEditor,
@@ -341,12 +342,13 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
 /**
  * «AI qoidalari» (§17.14 e): what the agent follows that is not a fact — the
  * truck's minimum, avia's minimum, time and rate, rail, the certificate. Every
- * number is `agentRules`, i.e. the constant or the config the agent itself
- * reads; the avia rate is the one editable here (the page's own door, the
- * owner or the super_admin role, is `setAviaRate`'s too).
+ * number is `agentRules`, i.e. the constant, the config or the setting the agent
+ * itself reads; the avia rate and the flight's days (stage 1a P7, read by the one
+ * reader `aviaDays`) are the two editable here (the page's own door, the owner
+ * or the super_admin role, is `setAviaRate`'s and `setAviaDays`'s too).
  */
-function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
-  const rules = agentRules(config);
+function RulesCard({ t, config, days }: { t: T; config: AgentConfig; days: AviaDays }) {
+  const rules = agentRules(config, days);
   const { avia, truckMin } = rules;
   return (
     <section className="card space-y-2" data-testid="agent-rules">
@@ -371,6 +373,7 @@ function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
         <li data-testid="agent-rule-certificate">📄 {t('ruleCertificate')}</li>
       </ul>
       <AviaRateForm current={avia.usdPerKg} />
+      <AviaDaysForm current={`${days.min}-${days.max}`} max={AGENT_1A_BOUNDS.aviaDaysMax} />
     </section>
   );
 }
@@ -421,7 +424,7 @@ async function KnowledgeSection({ t, config, viewer }: { t: T; config: AgentConf
   const { facts, retired } = await webKbFacts(viewer);
   return (
     <>
-      <RulesCard t={t} config={config} />
+      <RulesCard t={t} config={config} days={await aviaDays()} />
       <MarkupCard t={t} view={await calcMarkupView()} />
       <p className="text-sm text-ink-500">{t('knowledgeHint')}</p>
       <FactForm />

@@ -18,6 +18,7 @@ import {
   setAgentOwner,
   setAgentPersonaName,
   setAgentSeat,
+  setAviaDays,
   setAviaRate,
   setCalcMarkup,
   setCalcOpenLimit,
@@ -229,6 +230,21 @@ export async function agentAviaRateAction(raw: string): Promise<AgentActionResul
   const value = text === '' ? null : /^\d{1,3}(?:[.,]\d{1,2})?$/u.test(text) ? Number(text.replace(',', '.')) : Number.NaN;
   return run(async ({ actor, ctx }) => {
     await setAviaRate(actor, value, ctx);
+  });
+}
+
+/**
+ * The flight's days (stage 1a P7, `agent_avia_days`, his 2 b «3-5 kun») — the avia rate's door (the service asks
+ * `mayRunAgent`); a value the setting's shape refuses is this box's own code, naming the bound.
+ */
+export async function agentAviaDaysAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAviaDays(actor, typeof raw === 'string' ? raw : '', ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_avia_days' };
+      throw err;
+    }
   });
 }
 

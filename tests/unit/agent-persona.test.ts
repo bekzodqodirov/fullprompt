@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { OWNER_WORD, personaWordsOf } from '@/modules/wms/agent/persona';
 import { AI_HONEST_LINE, checkAgentReply, type PolicyInput } from '@/modules/wms/agent/policy';
@@ -14,7 +15,7 @@ import { withBotAnswer, type ComposeReply } from '@/modules/wms/agent/run';
  * paths, even when the model wrote nothing; and the persona's own name is no colleague named.
  */
 
-const head = (persona: string) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona });
+const head = (persona: string) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona, aviaDays: AVIA_DAYS_DEFAULT });
 
 /** A file's source with comments taken out (#725: a fence must never match the sentence explaining itself). */
 function code(path: string): ts.SourceFile {

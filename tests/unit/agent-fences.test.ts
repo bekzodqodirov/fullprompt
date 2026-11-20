@@ -454,7 +454,8 @@ describe('a code is one token on a carton — never «word + number», never a p
   it('the company’s own seeded facts carry no personal bit', async () => {
     const { personalBits } = await import('@/modules/wms/agent/kb');
     const { SEED_FACTS } = await import('@/modules/wms/agent/seed-kb');
-    for (const key of ['min_shipment@1', 'tashkent_map@1', 'avia@1', 'certificate@1', 'transit@1']) {
+    // avia@2 (stage 1a P7): the seed's avia fact, its day count gone to his setting.
+    for (const key of ['min_shipment@1', 'tashkent_map@1', 'avia@2', 'certificate@1', 'transit@1']) {
       const f = SEED_FACTS.find((s) => s.key === key)!;
       expect(personalBits(`${f.question}\n${f.answer}`), key).toEqual([]);
     }

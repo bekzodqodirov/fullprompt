@@ -13,6 +13,7 @@ import {
   agentAutoPriceHoldAction,
   agentAutoStopAction,
   agentAutoTalkHoldAction,
+  agentAviaDaysAction,
   agentAviaRateAction,
   agentDecideAction,
   agentEditFactAction,
@@ -583,6 +584,45 @@ export function MarkupConfirmButton({ rule }: { rule: string }) {
       <button type="button" className="btn-secondary" disabled={pending} data-testid="agent-markup-confirm" onClick={() => run(() => agentMarkupConfirmAction(rule))}>
         {t('markupConfirm')}
       </button>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * The flight's days (stage 1a P7, his 2 b «3-5 kun») — the avia rate's box and door: «N-M» whole days, N below M, M up
+ * to `max`. The service folds spaces and a typed dash and refuses anything else in words (`bad_avia_days`).
+ */
+export function AviaDaysForm({ current, max }: { current: string; max: number }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ max });
+  const [value, setValue] = useState(current);
+  return (
+    <div className="space-y-1" data-testid="agent-avia-days">
+      <label className="label" htmlFor="agent-avia-days-input">
+        {t('aviaDaysLabel')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="agent-avia-days-input"
+          className="input min-w-0 flex-1"
+          inputMode="numeric"
+          value={value}
+          disabled={pending}
+          onChange={(event) => setValue(event.target.value)}
+          data-testid="agent-avia-days-input"
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || value.trim() === current}
+          data-testid="agent-avia-days-save"
+          onClick={() => run(() => agentAviaDaysAction(value))}
+        >
+          {t('save')}
+        </button>
+      </div>
+      <p className="text-xs text-ink-500">{t('aviaDaysHint', { max })}</p>
       <Feedback error={error} note={null} />
     </div>
   );

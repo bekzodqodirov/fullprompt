@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { EYE_ONLY_WARNINGS } from '@/modules/wms/agent/auto-gate';
 import { customerScriptOf, type AgentContext, type ChatMessage } from '@/modules/wms/agent/context';
 import { AGENT_LOCALES, type AgentLocale } from '@/modules/wms/agent/locale';
@@ -80,7 +81,7 @@ const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteT
 
 /** The policy over a reply, on the memory a real run stores (`policyFor`'s mapping, the world read as empty). */
 function judge(ctx: AgentContext, c: ComposeReply) {
-  const mem = memoryFor(ctx, { compose: c, tools: [], outcomes: [], usage }, [], 'gsr-test');
+  const mem = memoryFor(ctx, { compose: c, tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT }, [], 'gsr-test');
   const input: PolicyInput = {
     body: c.replyText,
     language: mem.language,

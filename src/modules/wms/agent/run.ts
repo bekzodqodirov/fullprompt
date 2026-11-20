@@ -6,7 +6,7 @@ import { agentConversations, agentRuns, clients, tgChatRules, tgMessageFlags, tg
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
-import { readAgentPersonaName } from '../../platform/settings/service';
+import { aviaDays, readAgentPersonaName, type AviaDays } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { lateNote } from './card';
@@ -118,6 +118,12 @@ interface LoopResult {
   tools: { name: string; ok: boolean; text: string; estimate: boolean }[];
   outcomes: ToolOutcome[];
   usage: ModelUsage;
+  /**
+   * The flight's days this run TOLD the model — rule 9 and the avia tool (stage 1a P7, `agent_avia_days`) — and so the
+   * days the company rule vouches for in its memory (`memoryFor`). Null for a run that told the model nothing: a tayyor
+   * matn (`systemLoop`) states no day, and nothing then vouches for one. REQUIRED, so no loop forgets which days it was.
+   */
+  aviaDays: AviaDays | null;
 }
 
 const CAP_LOCK = 'agent_run_cap';
@@ -232,6 +238,11 @@ export async function runLoop(input: {
   lessons: readonly PromptLesson[];
   /** The persona's name (`agent_persona_name`, stage 1a P3), read ONCE for the run like the lessons: '' = no name. */
   persona: string;
+  /**
+   * The flight's days (`agent_avia_days`, stage 1a P7), read ONCE for the run like the persona: rule 9, the avia tool's
+   * offer, its words and its day sources say this pair in every round, and the loop hands it on to `memoryFor`.
+   */
+  aviaDays: AviaDays;
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
@@ -259,6 +270,7 @@ export async function runLoop(input: {
     calcArmed: input.calcArmed,
     calcPricing: input.calcPricing,
     calcRequestId: input.calcRequestId,
+    aviaDays: input.aviaDays,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
@@ -271,10 +283,11 @@ export async function runLoop(input: {
         calcPricing: input.calcPricing,
         lessons: input.lessons,
         persona: input.persona,
+        aviaDays: input.aviaDays,
       }),
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
-      tools: toolSpecsFor({ calcPricing: input.calcPricing }),
+      tools: toolSpecsFor({ calcPricing: input.calcPricing, aviaDays: input.aviaDays }),
       maxTokens: 1_500,
     });
     if (res.usage) {
@@ -286,7 +299,7 @@ export async function runLoop(input: {
     messages.push({ role: 'assistant', content: res.content });
     const uses = res.content.filter((b): b is Extract<ModelBlock, { type: 'tool_use' }> => b.type === 'tool_use');
     const compose = uses.find((u) => u.name === 'compose_reply');
-    if (compose) return { compose: parseCompose(compose.input), tools, outcomes, usage };
+    if (compose) return { compose: parseCompose(compose.input), tools, outcomes, usage, aviaDays: input.aviaDays };
     if (uses.length === 0) throw new Error(res.stopReason === 'max_tokens' ? 'max_tokens' : 'no_compose');
     const results: ModelBlock[] = [];
     for (const u of uses) {
@@ -619,10 +632,26 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     // …and whether it quotes the VED's answers with his markup (SPEC-P2-v2 §2.3): a chat with an answered linked job.
     const calcPricing = await calcPricingFor(ctx);
     // A tayyor matn calls no model (stage 1a P3): its reply is the code's, its tokens zero, and every step below is the
-    // one any reply takes. The model's run reads the persona's name once, like the lessons.
+    // one any reply takes. The model's run reads the persona's name once, like the lessons — and the flight's days
+    // (stage 1a P7), which the head, the avia tool and the memory then all say alike.
     const loop = system
       ? systemLoop(ctx, system)
-      : await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, calcPricing, calcRequestId: null, lessons: taught.lessons, persona: await readAgentPersonaName() });
+      : await runLoop({
+          ctx,
+          config,
+          facts,
+          day,
+          canary,
+          callModel,
+          now,
+          priceArmed: act.priceArmed,
+          calcArmed,
+          calcPricing,
+          calcRequestId: null,
+          lessons: taught.lessons,
+          persona: await readAgentPersonaName(),
+          aviaDays: await aviaDays(),
+        });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -725,8 +754,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
 /**
  * The figures the PROMPT dictates (incident 2026-10-29): rule 8 tells the
  * model the truck takes «eng kamida 1 kub yoki 100 kg», rule 9 the flight
- * «eng kamida 1 kg … taxminan 2-5 kun» — from `AGENT_LIMITS`, the numbers the
- * tools obey. Their only source in the policy was the seeded knowledge, which
+ * «eng kamida 1 kg … taxminan 3-5 kun» — from `AGENT_LIMITS`, the numbers the
+ * tools obey, and the flight's days from his setting (`aviaDaySources`, stage
+ * 1a P7). Their only source in the policy was the seeded knowledge, which
  * he may retire or re-word: then the reply said the minimum it was told to
  * say and lost its ✅ for it. The company's rule is a source of its own,
  * whatever the knowledge holds — said as the kinds it is (a measure, the
@@ -743,9 +773,18 @@ const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
   { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'm3', said: 'minimum' },
   { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'kg', said: 'minimum' },
   { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'kg', said: 'minimum' },
-  { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
-  { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
 ];
+
+/**
+ * The flight's days as the company's rule (stage 1a P7, J2): the pair rule 9 TOLD this run (`LoopResult.aviaDays`, his
+ * setting `agent_avia_days`), each a day count said of the flight — and nothing else. The old «2–5 kun» and the flight
+ * clause he did not repeat («reys bo‘lsa 2 kun») are then a day nobody vouches for; a run that told no days (a tayyor
+ * matn) vouches for none.
+ */
+function aviaDaySources(days: AviaDays | null): NumberSource[] {
+  if (days === null) return [];
+  return [days.min, days.max].map((value): NumberSource => ({ value, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' }));
+}
 
 /**
  * The language the customer CONFIDENTLY said earlier in the chat's window, before this burst (fix pass 7, the check #4):
@@ -822,7 +861,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // payment fact names money, and joined to the rest it made every street
   // number and hour of every other fact a price nobody may repeat.
   for (const f of facts) sources.push(...factSources(f.answer, 'kompaniya bilimi'));
-  sources.push(...COMPANY_RULE_SOURCES);
+  sources.push(...COMPANY_RULE_SOURCES, ...aviaDaySources(loop.aviaDays));
   // His answer's figures — but never money in a rail chat (his price, his ✏️; rail is a forced question anyway).
   if (ownerAnswer !== null) sources.push(...ownerAnswerSources(ownerAnswer).filter((s) => !rail || s.kind !== 'money'));
   const urls = [...facts.flatMap((f) => f.urls), ...loop.outcomes.flatMap((o) => o.allowedUrls ?? [])];
@@ -1698,6 +1737,7 @@ function systemLoop(ctx: AgentContext, reason: SystemReplyReason): LoopResult {
     tools: [],
     outcomes: [],
     usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    aviaDays: null,
   };
 }
 
@@ -2138,6 +2178,7 @@ export async function runOwnerTriggered(
       calcRequestId: input.calcAnswer?.requestId ?? null,
       lessons: taught.lessons,
       persona,
+      aviaDays: await aviaDays(),
     });
     settle = {
       inputTokens: loop.usage.inputTokens,

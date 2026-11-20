@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SEED_FACTS } from '@/modules/wms/agent/seed-kb';
-import { extractNumbers, PHONE_RE, urlsIn } from '@/modules/wms/agent/numbers';
+import { extractNumbers, factSources, PHONE_RE, urlsIn } from '@/modules/wms/agent/numbers';
+import { servedText } from '@/modules/wms/agent/kb';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
 import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
 
@@ -50,10 +51,23 @@ describe('the seeded knowledge', () => {
     const byKey = new Map(SEED_FACTS.map((f) => [f.key, normalizeDigits(f.answer)]));
     const { m3, kg } = AGENT_LIMITS.minShipment;
     expect(byKey.get('min_shipment@1')).toContain(`${m3} kub yoki ${kg} kg`);
-    const avia = byKey.get('avia@1')!;
+    // DELIBERATE EDIT (stage 1a P7, J2): avia@2 states the minimum and NO day count — the days are his setting.
+    const avia = byKey.get('avia@2')!;
     expect(avia).toContain(`${AGENT_LIMITS.avia.minKg} kg`);
-    expect(avia).toContain(`${AGENT_LIMITS.avia.daysMin}–${AGENT_LIMITS.avia.daysMax} kun`);
+    expect(avia).toMatch(/taxminiy — va['ʼ]da emas/u);
     expect(byKey.get('certificate@1')).toMatch(/kompaniyamiz oʻzi/u);
+  });
+
+  it('states no flight’s day count — the days are his setting, and @2 supersedes the @1 that said «2–5, reys bo‘lsa 2» (stage 1a P7, J2)', () => {
+    // A day count in a fact is a second copy the setting never moves, and the policy vouches for it in every chat.
+    for (const f of SEED_FACTS) {
+      const air = factSources(servedText(f.question, f.answer), 'kompaniya bilimi').filter((s) => s.kind === 'duration' && s.mode === 'air');
+      expect(air, f.key).toEqual([]);
+    }
+    // The seed keeps @2 alone: its versioning retires an untouched @1 (seedKb's UPDATE, the integration test's).
+    const avia = SEED_FACTS.filter((f) => f.key.startsWith('avia@')).map((f) => f.key);
+    expect(avia).toEqual(['avia@2']);
+    expect(SEED_FACTS.map((f) => f.answer).join('\n')).not.toMatch(/reys bo/u);
   });
 
   it('the China points fact defers the customer nowhere and names HIS three warehouses (K27, his 10 b and fourth set)', () => {

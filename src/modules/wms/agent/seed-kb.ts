@@ -136,9 +136,14 @@ export const SEED_FACTS: readonly SeedFact[] = [
     answer: 'Avto orqali eng kamida 1 kub yoki 100 kg dan yuk qabul qilamiz.',
   },
   {
-    key: 'avia@1',
+    // @1 said «taxminan 2–5 kun, reys boʻlsa 2 kun»; his 2 b (2026-11-20) is «3-5 kun» with no flight clause. The days
+    // are HIS SETTING now (`agent_avia_days`, stage 1a P7, J2) — the prompt's rule 9, the avia tool and the company
+    // rule say them from its one reader. A fact holding a day count would be a second copy that never moves when he
+    // changes the setting, and every prompt reads it and the policy vouches for it: so @2 states none, and the seed's
+    // versioning retires an untouched @1 (his own edited copy stays — a chore on deploy day).
+    key: 'avia@2',
     question: 'Avia orqali yuborsa boʻladimi? Necha kunda keladi?',
-    answer: 'Avia orqali 1 kg dan qabul qilamiz; yetib borishi taxminan 2–5 kun, reys boʻlsa 2 kun — bu taxmin, vaʼda emas.',
+    answer: 'Avia orqali 1 kg dan qabul qilamiz. Yetib borish muddati taxminiy — vaʼda emas.',
   },
   {
     key: 'certificate@1',
