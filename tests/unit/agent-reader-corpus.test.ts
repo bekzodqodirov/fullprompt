@@ -34,7 +34,7 @@ describe('the corpus itself', () => {
   });
 
   it('every reader the round named has cases of both kinds', () => {
-    const readers: Reader[] = ['avia', 'destination', 'language', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'phone'];
+    const readers: Reader[] = ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'phone'];
     for (const reader of readers) {
       const of = READER_CORPUS.filter((c) => c.reader === reader);
       expect(of.some((c) => c.kind === 'dangerous'), reader).toBe(true);
@@ -43,7 +43,7 @@ describe('the corpus itself', () => {
   });
 });
 
-for (const reader of ['avia', 'destination', 'language', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'phone'] as const) {
+for (const reader of ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'phone'] as const) {
   describe(`reader: ${reader}`, () => {
     for (const c of READER_CORPUS.filter((x) => x.reader === reader)) {
       const known = KNOWN_HELD.get(c.id);

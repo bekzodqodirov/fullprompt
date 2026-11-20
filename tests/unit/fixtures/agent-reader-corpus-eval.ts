@@ -272,16 +272,21 @@ function aviaAsks(reply: string, priceArmed: boolean): Observed {
   return c.needsOwner ? 'held' : 'goes';
 }
 
-/** The truck quote the money clause admits, to a customer who wrote these lines (`memoryFor`'s `foreignDestination`). */
-function destination(lines: readonly string[]): Observed {
-  const mem = run.memoryFor(ctxOf(lines), { compose: compose('uz', 'x', 'price'), tools: [], outcomes: [], usage }, [], 'gsr-t');
-  const input = eligibleInput();
+/** The truck quote the money clause admits (he ticked «Narx»): a priced yo'lkira estimate, its total the one money line. */
+function asQuote(input: AutoGateInput): AutoGateInput {
   input.draft.category = 'price';
   input.draft.body = '5 kub, 1000 kg yukingiz uchun Toshkentgacha taxminan 800 $. Boj va QQS alohida hisoblanadi.';
   input.draft.ledger = [{ kind: 'money', origin: 'tool', tool: 'yolkira_estimate', role: 'total' }];
   input.draft.hasEstimate = true;
   input.draft.estimatesStored = true;
   input.tools = [{ name: 'yolkira_estimate', ok: true, estimate: true }];
+  return input;
+}
+
+/** The truck quote the money clause admits, to a customer who wrote these lines (`memoryFor`'s `foreignDestination`). */
+function destination(lines: readonly string[]): Observed {
+  const mem = run.memoryFor(ctxOf(lines), { compose: compose('uz', 'x', 'price'), tools: [], outcomes: [], usage }, [], 'gsr-t');
+  const input = asQuote(eligibleInput());
   input.money.foreignDestination = mem.foreignDestination === true;
   return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
 }
@@ -301,7 +306,11 @@ function laterTurn(before: readonly string[], lines: readonly string[], stored: 
   return { ...ctxOf(lines, stored), messages, history: messages, anchor: now.at(-1)!, burst: now };
 }
 
-/** The language clause on the memory a real run stores (`memoryFor`'s `customerLocale`). */
+/**
+ * The language clause on the memory a real run stores (`memoryFor`'s `customerLocale`) — on a reply with no money in
+ * it (stage 1a: the class `autoClassOf` calls talk), or with `quote`, on a truck quote the money clause admits
+ * (`language_money`, J19: a price keeps today's language rule whatever the talk rule becomes).
+ */
 function language(
   lines: readonly string[],
   stored: AgentLocale | null,
@@ -309,6 +318,7 @@ function language(
   before?: string,
   remember?: boolean,
   approved?: AgentLocale,
+  quote = false,
 ): Observed {
   let ctx = ctxOf(lines, stored);
   if (before !== undefined) {
@@ -322,9 +332,9 @@ function language(
     ctx = laterTurn(prior, lines, kept);
   }
   const mem = run.memoryFor(ctx, { compose: compose(reply, 'x'), tools: [], outcomes: [], usage }, [], 'gsr-t');
-  const input = eligibleInput();
+  const input = quote ? asQuote(eligibleInput()) : eligibleInput();
   input.draft.language = reply;
-  input.draft.body = 'x';
+  if (!quote) input.draft.body = 'x';
   input.draft.customerLocale = mem.customerLocale ?? null;
   return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
 }
@@ -351,6 +361,7 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
     case 'destination':
       return destination(c.input.split('\n'));
     case 'language':
+    case 'language_money':
       return language(
         c.input.split('\n'),
         (c.context?.stored ?? null) as AgentLocale | null,
@@ -358,6 +369,7 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
         c.context?.before,
         c.context?.remember,
         c.context?.approved as AgentLocale | undefined,
+        c.reader === 'language_money',
       );
     case 'owner_figure':
       return ownerFigure(c.input);

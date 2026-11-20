@@ -32,6 +32,16 @@ export const KNOWN_HELD: ReadonlyMap<string, string> = new Map<string, string>([
   ['lg300', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
   ['lg378', 'a FIRST message that says no language — a code, a number with its unit, an emoji, a caption, an unmarked line — with nothing stored and nothing said before it in the window: the guess leans on nothing, and the reply is his (fix pass 7, the check #4 — the stated trade)'],
 
+  // ── language_money (stage 1a, J19): the same rows on a priced reply — a price keeps today's language rule ───────
+  // Each is the `language` row of the same number held for the same reason, now on a truck quote: what an ordinary
+  // talk reply might one day be let through on, a price never is (STAGE-0-1A.md §6.2, «`language` stays strict on
+  // money messages»).
+  ['lm221', 'as lg221, on a quote: an English greeting over unmarked words is an unconfident guess, and a price keeps today’s rule'],
+  ['lm224', 'as lg224, on a quote: an English greeting over unmarked words is an unconfident guess, and a price keeps today’s rule'],
+  ...(['lm287', 'lm288', 'lm289', 'lm290', 'lm291', 'lm292', 'lm293', 'lm294', 'lm295', 'lm296', 'lm297', 'lm298', 'lm299', 'lm300', 'lm378'] as const).map(
+    (id) => [id, `as lg${id.slice(2)}, on a quote: a FIRST message that says no language leans on nothing, and a price keeps today’s rule`] as [string, string],
+  ),
+
   // ── avia (fix pass 6) ───────────────────────────────────────────────────────────────────────────────────────────
   // A statement naming a Chinese place holds, whatever its verb (the hunt #1): «Ваш груз на складе в Иу» cannot be told
   // from «Ждём ваш груз на складе в Гуанчжоу» or «Отправка груза — в наш офис в Иу» without reading Russian's cases.

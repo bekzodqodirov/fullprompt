@@ -9,7 +9,12 @@
  *                     HIM («held») or go with the price act armed («goes»)? With the act OFF every quoted flight asks
  *                     him, whatever the reply — the runner checks that too, for every case.
  *  - `destination`  — `memoryFor`'s `foreignDestination` (destination `namesForeignPlace`) under an admitted quote.
- *  - `language`     — `memoryFor`'s `customerLocale` (locale `detectLocale`) under the gate's language clause.
+ *  - `language`     — `memoryFor`'s `customerLocale` (locale `detectLocale`) under the gate's language clause, on a
+ *                     reply with no money in it — the class stage 1a judges as talk (auto-gate `autoClassOf`).
+ *  - `language_money` — the same lines, the same labels, judged on an admitted truck QUOTE (stage 1a, J19): whatever
+ *                     the talk rule becomes, a money message keeps today's language rule byte for byte, so every
+ *                     label here is the `language` row's own (written by hand for today's rule) — mirrored, never
+ *                     computed.
  *  - `owner_figure` — his ✍️ answer (owner-answer `answerHoldsFigure`, digits `holdsNumeral`) under `owner_figure`.
  *  - `money`        — a reply through the policy and the gate: `money_unread` (digits `currencyBesideQuantity`) and the
  *                     word-numeral G1 beside it.
@@ -35,7 +40,7 @@
  * Literal inputs only: nothing here is computed by the code under test.
  */
 
-export type Reader = 'avia' | 'destination' | 'language' | 'owner_figure' | 'money' | 'han' | 'han_g1' | 'lesson' | 'phone';
+export type Reader = 'avia' | 'destination' | 'language' | 'language_money' | 'owner_figure' | 'money' | 'han' | 'han_g1' | 'lesson' | 'phone';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -1713,6 +1718,16 @@ const PHONE_ORDINARY: readonly Row[] = [
   ['ph232', 'Yuk 15.11.2026 kuni keladi', 'check1:date'],
 ];
 
+// ── language_money: the language rows on a PRICED reply (stage 1a, J19 — «language stays strict on money») ──
+// Each row is the `language` row of the same number, its id `lm` for `lg`: the same customer's lines, the same stored
+// language, the same reply's language and the same hand-written label, judged on a truck quote the money clause admits
+// (eval `languageMoney`). Today's rule holds the dangerous ones on talk and on money alike; the day the talk rule is
+// relaxed, these rows are what keeps the price's language where it is.
+const onMoney = (list: readonly Row[]): readonly Row[] =>
+  list.map(([id, input, source, context]) => [`lm${id.slice(2)}`, input, `${source} · on a quote`, context] as const);
+const LANGUAGE_MONEY_DANGEROUS: readonly Row[] = onMoney(LANGUAGE_DANGEROUS);
+const LANGUAGE_MONEY_ORDINARY: readonly Row[] = onMoney(LANGUAGE_ORDINARY);
+
 export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('avia', 'dangerous', AVIA_DANGEROUS),
   ...rows('avia', 'ordinary', AVIA_ORDINARY),
@@ -1720,6 +1735,8 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('destination', 'ordinary', DESTINATION_ORDINARY),
   ...rows('language', 'dangerous', LANGUAGE_DANGEROUS),
   ...rows('language', 'ordinary', LANGUAGE_ORDINARY),
+  ...rows('language_money', 'dangerous', LANGUAGE_MONEY_DANGEROUS),
+  ...rows('language_money', 'ordinary', LANGUAGE_MONEY_ORDINARY),
   ...rows('owner_figure', 'dangerous', OWNER_DANGEROUS),
   ...rows('owner_figure', 'ordinary', OWNER_ORDINARY),
   ...rows('money', 'dangerous', MONEY_DANGEROUS),
