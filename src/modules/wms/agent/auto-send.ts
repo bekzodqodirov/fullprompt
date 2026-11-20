@@ -54,7 +54,7 @@ import { cardDigest, digestBody } from './card';
 import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
-import { ownRepeatFor } from './loop';
+import { gateLoopFor } from './loop';
 import { readSendCaps } from './send-caps';
 import { isTashkentNight } from './send-step';
 import { sendWindowFor } from './send-window';
@@ -444,8 +444,9 @@ export async function autoFactsFor(
     workAccount: acc?.work === true,
     at: opts.at,
     now: opts.now,
-    // The chat loop (stage 1a P2): the reply about to go is word for word one of our last sends here — read now.
-    loop: await ownRepeatFor({ managerUserId: d.managerUserId, peerId: d.peerId, anchorTgMessageId: d.anchorTgMessageId, body: digestBody(d) }, opts.now),
+    // The chat loop (stage 1a P2), judged when the reply would go: word for word one of our last sends here, or a
+    // chat he was told loops less than the window before (the hold, J33).
+    loop: await gateLoopFor({ managerUserId: d.managerUserId, peerId: d.peerId, anchorTgMessageId: d.anchorTgMessageId, body: digestBody(d) }, opts.at),
     // Stage 1a's other chat fact, read by its package (P3's complaint tripwire): none yet.
     complaint: false,
     // His night setting, on the pool like every fact here — never inside the transaction that records the verdict.

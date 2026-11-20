@@ -357,27 +357,33 @@ const LOOP_T0 = Date.parse('2026-11-20T07:00:00Z');
 
 /**
  * A loop case's script read into the detector's facts, exactly as `loopFactsFor` hands them over: the LAST customer
- * line is the anchor, the ones before it his earlier lines, `<` our sends, the last `~` the one typing stamp kept, and
- * `=` the reply about to go. Then the verdict — any signal is «held».
+ * line is the anchor, the ones before it his earlier lines (`>` with no words, and every `@`, came with a file), `<`
+ * our sends, the last `~` the one typing stamp kept, the last `!` the moment he was told, and `=` the reply about to
+ * go. Judged at the `=` reply's second, else the anchor's. Then the verdict — any signal, or the hold, is «held».
  */
 function loopHeld(script: string): Observed {
   const at = (sec: string) => new Date(LOOP_T0 + Number(sec) * 1000);
-  const lines: { at: Date; body: string }[] = [];
+  const lines: { at: Date; body: string; media: boolean }[] = [];
   const sends: { at: Date; body: string }[] = [];
   let typingAt: Date | null = null;
+  let toldAt: Date | null = null;
   let draft: { at: Date; body: string } | null = null;
   for (const row of script.split('\n')) {
-    const m = /^([<>~=]) (\d+)(?: (.*))?$/u.exec(row);
+    const m = /^([<>~=@!]) (\d+)(?: (.*))?$/u.exec(row);
     if (!m) throw new Error(`a loop script line the eval cannot read: «${row}»`);
     const [, mark, sec, text = ''] = m;
-    if (mark === '>') lines.push({ at: at(sec!), body: text });
+    if (mark === '>') lines.push({ at: at(sec!), body: text, media: text === '' });
+    else if (mark === '@') lines.push({ at: at(sec!), body: text, media: true });
     else if (mark === '<') sends.push({ at: at(sec!), body: text });
     else if (mark === '~') typingAt = at(sec!);
+    else if (mark === '!') toldAt = at(sec!);
     else draft = { at: at(sec!), body: text };
   }
   const anchor = lines.at(-1) ?? null;
-  const facts = { anchor, inbound: lines.slice(0, -1), sends, typingAt, draft };
-  return loop.loopVerdict(facts).signals.length > 0 ? 'held' : 'goes';
+  const now = draft?.at ?? anchor?.at ?? new Date(LOOP_T0);
+  const facts = { anchor, inbound: lines.slice(0, -1), sends, typingAt, toldAt, now, draft };
+  const verdict = loop.loopVerdict(facts);
+  return verdict.signals.length > 0 || verdict.held ? 'held' : 'goes';
 }
 
 /** What the reader under test makes of the case — throws when the reader does not exist at this commit. */

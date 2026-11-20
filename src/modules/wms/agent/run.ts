@@ -17,7 +17,7 @@ import { generalFacts, kbSearch, type KbHit } from './kb';
 import type { PromptLesson } from './lesson-rules';
 import { promptLessons } from './lessons';
 import { AGENT_LIMITS } from './limits';
-import { loopFactsFor, loopNoticeOnce, loopVerdict, type LoopSignal } from './loop';
+import { loopFactsFor, loopNoticeOnce, loopVerdict, type LoopVerdict } from './loop';
 import { detectLocale, dominantScript, greetingLean, uzbekEndingLean, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
@@ -299,16 +299,17 @@ export async function runLoop(input: {
 }
 
 /**
- * Facts about this chat for `eligibleForRun`, read now — and which chat-loop signals tripped (`loopSignals`, for the
- * notice). `loopRead` is REQUIRED: an inbound run asks the loop of its anchor; an owner-triggered run answers no
- * inbound burst and reads none, so the statement is never run for a fact it throws away.
+ * Facts about this chat for `eligibleForRun`, read now — and the chat-loop verdict itself (`loopVerdict`: which
+ * signals tripped and whether he was already told, for the notice). `loopRead` is REQUIRED: an inbound run asks the
+ * loop of its anchor; an owner-triggered run answers no inbound burst and reads none, so the statement is never run
+ * for a fact it throws away (the gate still asks such a draft about the hold).
  */
 async function eligibilityFacts(
   ctx: AgentContext,
   config: AgentConfig,
   now: Date,
   loopRead: 'anchor' | 'none',
-): Promise<EligibilityFacts & { loopSignals: readonly LoopSignal[] }> {
+): Promise<EligibilityFacts & { loopVerdict: LoopVerdict }> {
   const [acc] = await db.execute<{ id: string }>(sql`SELECT id FROM tg_accounts WHERE manager_user_id = ${ctx.managerUserId}`);
   const guard = acc ? await readGuard(acc.id) : null;
   const [conv] = await db
@@ -375,8 +376,11 @@ async function eligibilityFacts(
 
   const anchor = ctx.anchor!;
   // The chat loop (stage 1a P2, loop.ts): the anchor's words a third time, or fast answers to three of our sends.
-  const loopSignals =
-    loopRead === 'anchor' ? loopVerdict(await loopFactsFor(db, ctx.managerUserId, ctx.peerId, anchor.tgMessageId, now, null)).signals : [];
+  // …or he was told so less than the window ago, and the notice promised the AI keeps out (J33).
+  const loopRan: LoopVerdict =
+    loopRead === 'anchor'
+      ? loopVerdict(await loopFactsFor(db, ctx.managerUserId, ctx.peerId, anchor.tgMessageId, now, null))
+      : { signals: [], held: false, fastDelaysMs: [] };
   return {
     now,
     agentOn: agentRunning(config),
@@ -397,8 +401,8 @@ async function eligibilityFacts(
     anchorMaxAgeMs: anchorMaxAgeMsForTrigger('inbound'),
     anchorAutoSent: anchor.autoSent,
     lastOutAt: ctx.lastOut?.sentAt ?? null,
-    loop: loopSignals.length > 0,
-    loopSignals,
+    loop: loopRan.signals.length > 0 || loopRan.held,
+    loopVerdict: loopRan,
   };
 }
 
@@ -544,8 +548,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   const elig = eligibleForRun(eligFacts);
   if (!elig.ok) {
     await runLedgerRow(job, attempt, 'refused', elig.reason);
-    // The one refusal here he is told of (J33): a loop is his to look at — said once per bucket, never throwing.
-    if (elig.reason === 'loop') await sayLoop(ctx, eligFacts.loopSignals);
+    // The one refusal here he is told of (J33): a loop is his to look at — said once, never throwing. A line refused
+    // because he WAS told (the hold) is not said again: the notice already promised the half hour.
+    if (elig.reason === 'loop' && !eligFacts.loopVerdict.held) await sayLoop(ctx, eligFacts.loopVerdict, t);
     return { outcome: 'refused', reason: elig.reason };
   }
 
@@ -1791,22 +1796,26 @@ export function validateActions(
 }
 
 /**
- * A run refused as a chat loop tells him once per window bucket (J33, loop `loopNoticeOnce`): the chat by its code and
- * name, never the customer's words. A notice that cannot be written is logged and the refusal stands — the loop is
- * held either way.
+ * A run refused as a chat loop tells him once (J33, loop `loopNoticeOnce`): the chat by its code and name, never the
+ * customer's words — and from that moment (`at`, the run's clock) the AI keeps out of the chat for the window. A
+ * notice that cannot be written, or that reaches nobody, is logged and the refusal stands: the looping line is held
+ * either way, and only a notice somebody was queued starts the hold.
  */
-async function sayLoop(ctx: AgentContext, signals: readonly LoopSignal[]): Promise<void> {
+async function sayLoop(ctx: AgentContext, verdict: LoopVerdict, at: Date): Promise<void> {
   try {
-    await loopNoticeOnce({
+    const said = await loopNoticeOnce({
       managerUserId: ctx.managerUserId,
       peerId: ctx.peerId,
       clientId: ctx.identity.clientId,
       leadId: ctx.identity.leadId,
       anchorAt: ctx.anchor!.sentAt,
       anchorTgMessageId: ctx.anchor!.tgMessageId,
-      signals,
+      at,
+      signals: verdict.signals,
+      fastDelaysMs: verdict.fastDelaysMs,
       label: customerLabel(ctx),
     });
+    if (said === 'unheard') logger.info({ peer: String(ctx.peerId) }, '[agent] loop not told: the holder gets no notice');
   } catch (err) {
     logger.warn({ err, peer: String(ctx.peerId) }, '[agent] loop notice not written');
   }

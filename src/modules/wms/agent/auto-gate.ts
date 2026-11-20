@@ -93,8 +93,8 @@ export const AUTO_REFUSALS = [
   'chat_muted',
   'not_work_account',
   'night',
-  // The chat loop (stage 1a P2, loop.ts `own_repeat` and the hold after a loop notice): in the slot the two-in-a-row
-  // rule held — the detector replaces it (§4.3).
+  // The chat loop (stage 1a P2, loop.ts `gateLoopFor`): the reply about to go is one of our last sends, word for word,
+  // or the chat is inside the half hour he was told the AI keeps out (J33). In the slot the two-in-a-row rule held.
   'loop',
   'daily_cap',
   'budget_spent',
@@ -423,9 +423,9 @@ export interface AutoGateInput {
    */
   now: Date;
   /**
-   * The reply about to go is, folded, one of our last sends to this chat in the loop window, or the chat is inside the
-   * half hour a loop notice promised (stage 1a P2, loop `gateLoopFor`). The anchor's two loop signals are eligibility's:
-   * such a run drafts nothing.
+   * The reply about to go is, folded, one of our last sends to this chat in the loop window (`own_repeat`), or he was
+   * told this chat loops less than the window before it would go — the notice's half hour (J33). Stage 1a P2, loop
+   * `gateLoopFor`. The anchor's two loop signals are eligibility's: such a run drafts nothing.
    */
   loop: boolean;
   /**

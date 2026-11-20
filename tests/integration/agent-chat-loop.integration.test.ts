@@ -29,16 +29,17 @@ import {
   readAgentConfig,
   type AgentConfig,
 } from '@/modules/wms/agent/config';
-import { LOOP_NOTICE, loopBucketStart, loopSignalKey } from '@/modules/wms/agent/loop';
+import { LOOP_NOTICE, loopBucketStart, loopNoticeOnce, loopSignalKey } from '@/modules/wms/agent/loop';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
 /**
  * The CHAT loop detector against a real database (stage 1a P2 «Halqa», §4.3, J8, J33) — not the model's tool loop of
  * agent-loop.integration. What a hand-built fact cannot show: the one statement `loopFactsFor` reads (the anchor, his
- * earlier lines, our sends timed by the thread's copy), the run refused `loop` before any model call, the notice said
- * ONCE per bucket through its `agent_signals` claim and naming the chat the purge blanks it by, nothing said one
- * migration behind, and the gate's `own_repeat` read off the stored sends.
+ * earlier lines with their file flag, our sends timed by the thread's copy — an 'unknown' one too — and the notice's
+ * claim), the run refused `loop` before any model call, the notice said ONCE through its `agent_signals` claim and
+ * naming the chat the purge blanks it by, the half hour it promises kept (J33) and then over, a notice nobody hears
+ * taken back, nothing said one migration behind, and the gate's `loop` read off the stored sends and the claim.
  *
  * agent_config is CONFIGURATION (#183): snapshotted and put back. The fixture users are deactivated, never deleted.
  */
@@ -66,15 +67,18 @@ async function makeUser(name: string, role: string, tail: string): Promise<strin
   return u!.id;
 }
 
-async function line(direction: 'in' | 'out', body: string, at: Date): Promise<bigint> {
+async function line(direction: 'in' | 'out', body: string, at: Date, hasMedia = false): Promise<bigint> {
   msgSeq += 1n;
-  await db.insert(tgMessages).values({ clientId, managerUserId: ownerId, peerId: PEER, tgMessageId: msgSeq, direction, body, sentAt: at });
+  await db.insert(tgMessages).values({ clientId, managerUserId: ownerId, peerId: PEER, tgMessageId: msgSeq, direction, body, sentAt: at, hasMedia });
   return msgSeq;
 }
 
-/** One of OUR machine sends: the approved draft, its outbox row that went, and the thread's copy. */
-async function machineSend(body: string, at: Date): Promise<void> {
-  const tgId = await line('out', body, at);
+/**
+ * One of OUR machine sends: the approved draft and its outbox row. 'sent' went, with the thread's copy; 'unknown' was
+ * handed to Telegram and its answer lost — no copy, no `sent_at`, only the claim before the send.
+ */
+async function machineSend(body: string, at: Date, status: 'sent' | 'unknown' = 'sent'): Promise<void> {
+  const tgId = status === 'sent' ? await line('out', body, at) : (msgSeq += 1n);
   const [draft] = await db
     .insert(agentDrafts)
     .values({ managerUserId: ownerId, peerId: PEER, clientId, anchorTgMessageId: tgId - 1n, status: 'approved', proposedBody: body, decidedAt: at, decidedBy: ownerId })
@@ -88,11 +92,18 @@ async function machineSend(body: string, at: Date): Promise<void> {
     randomId: BigInt(`9${SUFFIX}${tgId}`),
     answersTgMessageId: tgId - 1n,
     queuedBy: ownerId,
-    status: 'sent',
-    tgMessageId: tgId,
-    sentAt: at,
+    status,
+    stepClaimedAt: at,
+    tgMessageId: status === 'sent' ? tgId : null,
+    sentAt: status === 'sent' ? at : null,
   });
 }
+
+/** The notice's claims of this chat, as the hold reads them. */
+const claims = () => db.select().from(agentSignals).where(eq(agentSignals.peerId, PEER));
+
+/** Half an hour and a minute pass since he was told: every claim of this chat moves back by that much. */
+const holdOver = () => db.execute(sql`UPDATE agent_signals SET created_at = created_at - interval '31 minutes' WHERE peer_id = ${String(PEER)}::bigint`);
 
 const job = (anchor: bigint) => ({ managerUserId: ownerId, peerId: String(PEER), anchorTgMessageId: String(anchor), origin: 'live' as const });
 
@@ -200,19 +211,26 @@ afterAll(async () => {
 
 const AWAY = 'Xabaringiz qabul qilindi, tez orada javob beramiz.';
 
+/** An away-message answered by us twice, its third line the anchor — the loop `same_inbound` stops. */
+async function awayLoop(): Promise<bigint> {
+  await line('in', AWAY, min(1));
+  await machineSend('Assalomu alaykum! Yukingiz haqida yozing.', min(2));
+  // The first answered repeat is answered again: no loop yet.
+  await line('in', AWAY, min(4));
+  await machineSend('Qaysi shahardan jo‘natasiz?', min(5));
+  return line('in', AWAY, min(8));
+}
+
 describe('the chat loop, run by run (stage 1a P2)', () => {
-  it('the second repeat is refused `loop` before the model, and he is told ONCE per bucket — by the chat the purge finds it by', async () => {
-    await line('in', AWAY, min(1));
-    // The first repeat is answered: no loop yet.
-    await line('in', AWAY, min(4));
-    const third = await line('in', AWAY, min(8));
+  it('the second answered repeat is refused `loop` before the model, and he is told ONCE — by the chat the purge finds it by', async () => {
+    const third = await awayLoop();
     const model = never();
     expect(await handleInbound(job(third), { callModel: model })).toEqual({ outcome: 'refused', reason: 'loop' });
     expect(model.requests).toHaveLength(0);
     const [run] = await db.select().from(agentRuns).where(and(eq(agentRuns.peerId, PEER), eq(agentRuns.anchorTgMessageId, third)));
     expect(run).toMatchObject({ outcome: 'refused', error: 'loop' });
 
-    let said = await loopNotices();
+    const said = await loopNotices();
     expect(said).toHaveLength(1);
     const payload = said[0]!.payload as { text: string; peerId?: string };
     expect(payload.text.split('\n')[0]).toBe(LOOP_NOTICE);
@@ -220,30 +238,119 @@ describe('the chat loop, run by run (stage 1a P2)', () => {
     // No customer text on the card.
     expect(payload.text).not.toContain(AWAY);
     expect(payload.peerId).toBe(String(PEER));
-    const [claim] = await db.select().from(agentSignals).where(eq(agentSignals.peerId, PEER));
-    expect(claim).toMatchObject({ topic: 'loop', managerUserId: ownerId, clientId, dedupeKey: loopSignalKey(PEER, min(8)) });
-    expect((claim!.facts as { signals: string[] }).signals).toEqual(['same_inbound']);
-
-    // A fourth time in the same bucket: refused again, said no more.
-    const fourth = await line('in', AWAY, min(20));
-    expect(await handleInbound(job(fourth), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
-    said = await loopNotices();
-    expect(said).toHaveLength(1);
-    // The next bucket says it again.
-    const fifth = await line('in', AWAY, min(31));
-    expect(await handleInbound(job(fifth), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
-    expect(await loopNotices()).toHaveLength(2);
-    expect(await db.select().from(agentSignals).where(eq(agentSignals.peerId, PEER))).toHaveLength(2);
+    const [claim] = await claims();
+    expect(claim).toMatchObject({ topic: 'loop', managerUserId: ownerId, clientId, dedupeKey: loopSignalKey(ownerId, PEER, min(8)) });
+    expect(claim!.facts).toMatchObject({ signals: ['same_inbound'], fastDelaysMs: [] });
   });
 
-  it('one migration behind (no 0151): the run is still refused `loop`, nothing is claimed or said, nothing throws', async () => {
+  it('the half hour he was told of holds the chat — a NEW line is not answered (J33) — and once it is over the AI answers again', async () => {
+    const third = await awayLoop();
+    expect(await handleInbound(job(third), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
+    // The customer writes something new a minute later: no loop of its own, but the notice said the AI keeps out.
+    const fresh = await line('in', 'Menga narxini ayting, 5 kub', min(9));
+    const model = never();
+    expect(await handleInbound(job(fresh), { callModel: model })).toEqual({ outcome: 'refused', reason: 'loop' });
+    expect(model.requests).toHaveLength(0);
+    // …and the away-message again: held, and he is not told twice — not even from the next bucket, whose key is free.
+    const fourth = await line('in', AWAY, min(20));
+    expect(await handleInbound(job(fourth), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
+    await machineSend('Necha kub?', min(25));
+    const nextBucket = await line('in', AWAY, min(30));
+    expect(await handleInbound(job(nextBucket), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
+    expect(await loopNotices()).toHaveLength(1);
+    expect(await claims()).toHaveLength(1);
+
+    // The half hour passes: a new line is answered.
+    await holdOver();
+    const later = await line('in', 'Narxi qancha bo‘ladi?', min(32));
+    expect(await handleInbound(job(later), { callModel: answers('Yuk necha kub va necha kg?') })).toMatchObject({ outcome: 'draft' });
+    // …and a fresh trip — the away-message answered twice before it — is told afresh, in its own bucket.
+    await machineSend('Yuk necha kub va necha kg?', min(33));
+    await line('in', AWAY, min(34));
+    await machineSend('Qayerdan jo‘natasiz?', min(35));
+    const again = await line('in', AWAY, min(40));
+    expect(await handleInbound(job(again), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
+    expect(await loopNotices()).toHaveLength(2);
+    expect((await claims()).map((c) => c.dedupeKey).sort()).toEqual([loopSignalKey(ownerId, PEER, min(8)), loopSignalKey(ownerId, PEER, min(40))].sort());
+  });
+
+  it('the half hour is counted from the moment he was told, on the run’s clock — the claim’s own moment', async () => {
+    const third = await awayLoop();
+    const toldAt = min(8);
+    expect(
+      await loopNoticeOnce({
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId,
+        leadId: null,
+        anchorAt: min(8),
+        anchorTgMessageId: third,
+        at: toldAt,
+        signals: ['same_inbound'],
+        fastDelaysMs: [],
+        label: `HQ${SUFFIX}`,
+      }),
+    ).toBe('said');
+    const [claim] = await claims();
+    expect(claim!.createdAt.toISOString()).toBe(toldAt.toISOString());
+    // Told an hour ago by that clock: the half hour is long over, and a new line is answered now.
+    const fresh = await line('in', 'Menga narxini ayting, 5 kub', min(9));
+    expect(await handleInbound(job(fresh), { callModel: answers('Yuk qayerdan?') })).toMatchObject({ outcome: 'draft' });
+  });
+
+  it('a notice that reaches nobody is taken back, claim and all — no promise, no hold; the looping line is refused all the same', async () => {
+    const third = await awayLoop();
+    // The holder cannot log in (a seat with its login off, a leaver): the card is queued to nobody.
+    await db.update(users).set({ active: false }).where(eq(users.id, ownerId));
+    try {
+      expect(await handleInbound(job(third), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
+      expect(await claims()).toHaveLength(0);
+      expect(
+        await loopNoticeOnce({
+          managerUserId: ownerId,
+          peerId: PEER,
+          clientId,
+          leadId: null,
+          anchorAt: min(8),
+          anchorTgMessageId: third,
+          at: new Date(),
+          signals: ['same_inbound'],
+          fastDelaysMs: [],
+          label: `HQ${SUFFIX}`,
+        }),
+      ).toBe('unheard');
+    } finally {
+      await db.update(users).set({ active: true }).where(eq(users.id, ownerId));
+    }
+    expect(await claims()).toHaveLength(0);
+    expect(await loopNotices()).toHaveLength(0);
+    // Nothing was promised: a new line is answered.
+    const fresh = await line('in', 'Menga narxini ayting, 5 kub', min(9));
+    expect(await handleInbound(job(fresh), { callModel: answers('Yuk qayerdan?') })).toMatchObject({ outcome: 'draft' });
+  });
+
+  it('one migration behind (no 0151): the run is still refused `loop`, nothing is claimed or said, nothing held, nothing throws', async () => {
     __pretendAgentToliq1aBehind();
-    await line('in', AWAY, min(1));
-    await line('in', AWAY, min(4));
-    const third = await line('in', AWAY, min(8));
+    const third = await awayLoop();
     expect(await handleInbound(job(third), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
     expect(await loopNotices()).toHaveLength(0);
-    expect(await db.select().from(agentSignals).where(eq(agentSignals.peerId, PEER))).toHaveLength(0);
+    expect(await claims()).toHaveLength(0);
+  });
+
+  it('the same question with no answer of ours between (his chat, the listener down) is no loop — and three photos under one caption neither', async () => {
+    await line('in', 'Narxi qancha?', min(1));
+    await line('in', 'Narxi qancha?', min(2));
+    const third = await line('in', 'Narxi qancha?', min(3));
+    expect(await handleInbound(job(third), { callModel: answers('Yuk necha kub?') })).toMatchObject({ outcome: 'draft' });
+
+    await clearChat();
+    const caption = 'Shu tovarni olib kelasizmi?';
+    await line('in', caption, min(1), true);
+    await machineSend('Ha, olib kelamiz. Necha kub?', min(2));
+    await line('in', caption, min(4), true);
+    await machineSend('Yuk qayerdan?', min(5));
+    const photo = await line('in', caption, min(8), true);
+    expect(await handleInbound(job(photo), { callModel: answers('Rasmlarni oldik. Necha kub?') })).toMatchObject({ outcome: 'draft' });
   });
 
   it('fast answers to three of our sends (J8): refused `loop` — an answer 7 s on, past the 5-second echo, each a new line', async () => {
@@ -255,8 +362,9 @@ describe('the chat loop, run by run (stage 1a P2)', () => {
       anchor = await line('in', `Ticket #41${i} received. We will reply soon.`, sec(at, 7));
     }
     expect(await handleInbound(job(anchor), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'loop' });
-    const [claim] = await db.select().from(agentSignals).where(eq(agentSignals.peerId, PEER));
-    expect((claim!.facts as { signals: string[] }).signals).toEqual(['fast_peer']);
+    const [claim] = await claims();
+    // Which signal, and each counted answer's delay — what J8's first live week measures the 10 s by.
+    expect(claim!.facts).toMatchObject({ signals: ['fast_peer'], fastDelaysMs: [7000, 7000, 7000] });
   });
 
   it('…while a person who typed his answers is answered: the typing stamp after our sends', async () => {
@@ -271,7 +379,7 @@ describe('the chat loop, run by run (stage 1a P2)', () => {
     await db.insert(agentConversations).values({ managerUserId: ownerId, peerId: PEER, peerTypingAt: sec(min(4), 5) });
     const out = await handleInbound(job(anchor), { callModel: answers('Og‘irligi qancha?') });
     expect(out).toMatchObject({ outcome: 'draft' });
-    expect(await db.select().from(agentSignals).where(eq(agentSignals.peerId, PEER))).toHaveLength(0);
+    expect(await claims()).toHaveLength(0);
   });
 });
 
@@ -309,5 +417,38 @@ describe('the gate’s `loop` — own_repeat, read off the stored sends (stage 1
     expect(other.loop).toBe(false);
     const later = min(2 + 31);
     expect((await autoFactsFor(shape(anchor, quote), { at: later, now: later, config: null })).loop).toBe(false);
+  });
+
+  it('a send whose answer was lost (\'unknown\') may have gone: the same words after it are a repeat too', async () => {
+    const quote = '5 kub, 800 kg yukingiz uchun Toshkentgacha taxminan 960 $.';
+    await line('in', '5 kub 800 kg narxi?', min(1));
+    await machineSend(quote, min(2), 'unknown');
+    const anchor = await line('in', 'Yana bir marta ayting?', min(5));
+    const now = min(6);
+    expect((await autoFactsFor(shape(anchor, quote), { at: now, now, config: null })).loop).toBe(true);
+  });
+
+  it('the hold at the gate (J33): inside the half hour he was told of, any reply waits for his ✅ — judged when it would go', async () => {
+    const anchor = await line('in', '5 kub narxi?', min(9));
+    const reply = '5 kub uchun taxminan 600 $.';
+    const now = new Date();
+    await db.insert(agentSignals).values({
+      topic: 'loop',
+      managerUserId: ownerId,
+      peerId: PEER,
+      clientId,
+      facts: { signals: ['same_inbound'] },
+      dedupeKey: loopSignalKey(ownerId, PEER, min(8)),
+      createdAt: new Date(now.getTime() - 5 * 60_000),
+    });
+    const inside = await autoFactsFor(shape(anchor, reply), { at: now, now, config: null });
+    expect(inside.loop).toBe(true);
+    expect(autoVerdict(inside).reasons).toContain('loop');
+    // A reply that would go only after the half hour is over (its hold counts down past it) is not refused for it.
+    const due = new Date(now.getTime() + 26 * 60_000);
+    expect((await autoFactsFor(shape(anchor, reply), { at: due, now, config: null })).loop).toBe(false);
+    // One migration behind the claim is never read.
+    __pretendAgentToliq1aBehind();
+    expect((await autoFactsFor(shape(anchor, reply), { at: now, now, config: null })).loop).toBe(false);
   });
 });

@@ -3,7 +3,7 @@ import { AUTO_REFUSAL_WORDS, AUTO_REFUSALS } from '@/modules/wms/agent/auto-gate
 import { NO_DRAFT_WORDS } from '@/modules/wms/agent/calc-loop';
 import { eligibleForRun, type EligibilityFacts } from '@/modules/wms/agent/eligibility';
 import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
-import { LOOP_NOTICE, loopBucketStart, loopFold, loopSignalKey, loopVerdict, type LoopFacts, type LoopLine } from '@/modules/wms/agent/loop';
+import { LOOP_NOTICE, loopBucketStart, loopFold, loopSignalKey, loopVerdict, type LoopFacts, type LoopInLine, type LoopLine } from '@/modules/wms/agent/loop';
 
 /**
  * Stage 1a P2 «Halqa» (docs/ai-toliq/qurish/STAGE-0-1A.md §4.3, J8, J33): the detector that replaced eligibility's
@@ -15,25 +15,75 @@ import { LOOP_NOTICE, loopBucketStart, loopFold, loopSignalKey, loopVerdict, typ
 const T0 = Date.parse('2026-11-20T07:00:00Z');
 const at = (sec: number) => new Date(T0 + sec * 1000);
 const ln = (sec: number, body = ''): LoopLine => ({ at: at(sec), body });
+/** A customer's line that came with a photo, a file or a voice note — and its caption. */
+const file = (sec: number, caption = ''): LoopInLine => ({ at: at(sec), body: caption, media: true });
 
-/** A chat: the customer's lines (the last is the anchor), our sends, his newest typing, the reply about to go. */
-function facts(over: { lines: LoopLine[]; sends?: LoopLine[]; typingAt?: Date | null; draft?: LoopLine | null }): LoopFacts {
+/**
+ * A chat: the customer's lines (the last is the anchor; a line with no words came with a file, as the corpus reads
+ * it), our sends, his newest typing, the moment he was told, the reply about to go — judged at the reply's moment,
+ * else the anchor's.
+ */
+function facts(over: {
+  lines: (LoopLine | LoopInLine)[];
+  sends?: LoopLine[];
+  typingAt?: Date | null;
+  toldAt?: Date | null;
+  draft?: LoopLine | null;
+  now?: Date;
+}): LoopFacts {
+  const lines: LoopInLine[] = over.lines.map((l) => ('media' in l ? l : { ...l, media: l.body === '' }));
+  const anchor = lines.at(-1) ?? null;
   return {
-    anchor: over.lines.at(-1) ?? null,
-    inbound: over.lines.slice(0, -1),
+    anchor,
+    inbound: lines.slice(0, -1),
     sends: over.sends ?? [],
     typingAt: over.typingAt ?? null,
+    toldAt: over.toldAt ?? null,
+    now: over.now ?? over.draft?.at ?? anchor?.at ?? new Date(T0),
     draft: over.draft ?? null,
   };
 }
 const signals = (f: LoopFacts) => [...loopVerdict(f).signals];
 
 describe('the CHAT loop detector (stage 1a P2 «Halqa») — the customer’s chat, never the model’s tool loop of agent-loop.integration', () => {
-  describe('same_inbound — the anchor’s words a third time', () => {
+  describe('same_inbound — the anchor’s words a third time, each repeat answered by us', () => {
+    const sends = [ln(20, 'Assalomu alaykum!'), ln(320, 'Savolingizni yozing.')];
+
     it('the FIRST repeat is answered (an impatient customer); the second stops', () => {
-      const sends = [ln(20, 'Assalomu alaykum!')];
       expect(signals(facts({ lines: [ln(0, 'Salom'), ln(300, 'Salom')], sends }))).toEqual([]);
       expect(signals(facts({ lines: [ln(0, 'Salom'), ln(300, 'Salom'), ln(600, 'Salom')], sends }))).toEqual(['same_inbound']);
+    });
+
+    it('a repeat nobody of ours answered is no robot answering our robot — the listener down, his own chat', () => {
+      expect(signals(facts({ lines: [ln(0, 'Narxi qancha?'), ln(60, 'Narxi qancha?'), ln(120, 'Narxi qancha?')] }))).toEqual([]);
+      // One send between the last two only: one answered repeat.
+      expect(signals(facts({ lines: [ln(0, 'Salom'), ln(4, 'Salom'), ln(400, 'Salom')], sends: [ln(25, 'Assalomu alaykum!')] }))).toEqual([]);
+      // …and two answered among three make the loop, whatever stands unanswered beside them.
+      const mixed = [ln(0, 'Salom'), ln(10, 'Salom'), ln(300, 'Salom'), ln(600, 'Salom')];
+      expect(signals(facts({ lines: mixed, sends: [ln(30, 'a'), ln(320, 'b')] }))).toEqual(['same_inbound']);
+    });
+
+    it('a robot answering in the very second of our send: the send reads up to the slack after the next equal line', () => {
+      // Our sends stamped on our clock after Telegram took them; each robot line on Telegram's whole second before.
+      const ours = [ln(20.8, 'Qayerdan?'), ln(300.8, 'Necha kub?')];
+      expect(signals(facts({ lines: [ln(0, 'Avto'), ln(20, 'Avto'), ln(300, 'Avto')], sends: ours }))).toEqual(['same_inbound']);
+    });
+
+    it('a caption is the customer’s words about THAT file — three photos of one product under one question are three lines', () => {
+      const lines = [file(0, 'Shu tovarni olib kelasizmi?'), file(300, 'Shu tovarni olib kelasizmi?'), file(600, 'Shu tovarni olib kelasizmi?')];
+      expect(signals(facts({ lines, sends }))).toEqual([]);
+      // …and neither is an earlier captioned file the same line as a text that repeats its words…
+      const mixed = [file(0, 'Narxi?'), ln(300, 'Narxi?'), ln(600, 'Narxi?')];
+      expect(signals(facts({ lines: mixed, sends }))).toEqual([]);
+      // …nor an anchor that came with a file the same line as two texts before it.
+      expect(signals(facts({ lines: [ln(0, 'Narxi?'), ln(300, 'Narxi?'), file(600, 'Narxi?')], sends }))).toEqual([]);
+    });
+
+    it('a typing stamp at or after the previous equal line: a person typed the anchor (J8); an older one says nothing', () => {
+      const lines = [ln(0, 'GS777'), ln(300, 'GS777'), ln(600, 'GS777')];
+      expect(signals(facts({ lines, sends, typingAt: at(595) }))).toEqual([]);
+      expect(signals(facts({ lines, sends, typingAt: at(300) }))).toEqual([]);
+      expect(signals(facts({ lines, sends, typingAt: at(299) }))).toEqual(['same_inbound']);
     });
 
     it('three caption-less photos in a row are never «the same line again» (the text-less guard)', () => {
@@ -41,34 +91,37 @@ describe('the CHAT loop detector (stage 1a P2 «Halqa») — the customer’s ch
     });
 
     it('…and a caption-less anchor after two equal texts is no repeat of them', () => {
-      expect(signals(facts({ lines: [ln(0, 'Mana invoys'), ln(60, 'Mana invoys'), ln(120)] }))).toEqual([]);
+      expect(signals(facts({ lines: [ln(0, 'Mana invoys'), ln(60, 'Mana invoys'), ln(120)], sends: [ln(20, 'a'), ln(80, 'b')] }))).toEqual([]);
     });
 
     it('«5 kub narxi?» / «7 kub narxi?» / «10 kub narxi?» are three lines — the fold keeps the figures', () => {
       const lines = [ln(0, '5 kub narxi qancha?'), ln(60, '7 kub narxi qancha?'), ln(120, '10 kub narxi qancha?')];
-      expect(signals(facts({ lines }))).toEqual([]);
+      expect(signals(facts({ lines, sends: [ln(20, 'a'), ln(80, 'b')] }))).toEqual([]);
     });
 
     it('the fold: case and a run of spaces make no other line', () => {
       expect(loopFold('  Xabaringiz   QABUL\tqilindi. ')).toBe('xabaringiz qabul qilindi.');
       const lines = [ln(0, 'Xabaringiz qabul qilindi.'), ln(60, 'xabaringiz  qabul qilindi.'), ln(120, 'XABARINGIZ QABUL QILINDI.')];
-      expect(signals(facts({ lines }))).toEqual(['same_inbound']);
+      expect(signals(facts({ lines, sends: [ln(20, 'a'), ln(80, 'b')] }))).toEqual(['same_inbound']);
     });
 
     it('an old window clears: the two equal lines more than 30 minutes before the anchor count for nothing', () => {
       const lines = [ln(0, 'Salom'), ln(300, 'Salom'), ln(300 + 30 * 60 + 1, 'Salom')];
-      expect(signals(facts({ lines }))).toEqual([]);
+      expect(signals(facts({ lines, sends }))).toEqual([]);
       // …while one still inside it counts with the anchor's own.
-      expect(signals(facts({ lines: [ln(0, 'Salom'), ln(300, 'Salom'), ln(30 * 60, 'Salom')] }))).toEqual(['same_inbound']);
+      expect(signals(facts({ lines: [ln(0, 'Salom'), ln(300, 'Salom'), ln(30 * 60, 'Salom')], sends }))).toEqual(['same_inbound']);
     });
   });
 
   describe('fast_peer — answers within 10 s of three DISTINCT sends (J8)', () => {
     const sends = [ln(0, 'Assalomu alaykum!'), ln(30, 'Qayerdan?'), ln(60, 'Necha kub?')];
 
-    it('a responder that stamps a counter: three different lines, a second after each send', () => {
+    it('a responder that stamps a counter: three different lines, a second after each send — each delay recorded', () => {
       const lines = [ln(1, 'Ticket #1'), ln(31, 'Ticket #2'), ln(61, 'Ticket #3')];
       expect(signals(facts({ lines, sends }))).toEqual(['fast_peer']);
+      // The claim keeps them: J8's first live week measures the 10 s by them.
+      expect(loopVerdict(facts({ lines, sends })).fastDelaysMs).toEqual([1000, 1000, 1000]);
+      expect(loopVerdict(facts({ lines: lines.slice(0, 2), sends: sends.slice(0, 2) })).fastDelaysMs).toEqual([]);
     });
 
     it('three quick lines after ONE send are one answer — a person answering in pieces', () => {
@@ -138,6 +191,33 @@ describe('the CHAT loop detector (stage 1a P2 «Halqa») — the customer’s ch
     });
   });
 
+  describe('the hold — he was told, and the notice promised the AI keeps out for the window (J33)', () => {
+    const told = at(605);
+
+    it('a NEW line inside the half hour after the notice is held, whatever it says', () => {
+      const v = loopVerdict(facts({ lines: [ln(700, 'Menga narxini ayting')], toldAt: told }));
+      expect(v).toMatchObject({ signals: [], held: true });
+    });
+
+    it('…to the second the window ends, and no longer', () => {
+      expect(loopVerdict(facts({ lines: [ln(605 + 30 * 60 - 1, 'Salom')], toldAt: told })).held).toBe(true);
+      expect(loopVerdict(facts({ lines: [ln(605 + 30 * 60, 'Salom')], toldAt: told })).held).toBe(false);
+    });
+
+    it('a line written before the notice and judged after it is held too: the promise is about when the AI writes', () => {
+      expect(loopVerdict(facts({ lines: [ln(600, 'Avto 3')], toldAt: told, now: at(606) })).held).toBe(true);
+    });
+
+    it('the gate judges at the moment the reply would go', () => {
+      expect(loopVerdict(facts({ lines: [ln(900, '5 kub narxi?')], toldAt: told, draft: ln(960, '5 kub uchun taxminan 600 $.') })).held).toBe(true);
+      expect(loopVerdict(facts({ lines: [ln(900, '5 kub narxi?')], toldAt: told, draft: ln(2500, '5 kub uchun taxminan 600 $.') })).held).toBe(false);
+    });
+
+    it('never told: nothing held', () => {
+      expect(loopVerdict(facts({ lines: [ln(700, 'Salom')] })).held).toBe(false);
+    });
+  });
+
   describe('eligibility says `loop`, never `repeat` any more — and the stored word stays readable', () => {
     const now = new Date(T0);
     const f: EligibilityFacts = {
@@ -183,9 +263,14 @@ describe('the CHAT loop detector (stage 1a P2 «Halqa») — the customer’s ch
     it('the bucket is the anchor’s moment floored to the window — a fixed bucket, never the sliding start', () => {
       expect(loopBucketStart(new Date('2026-11-20T07:29:59.999Z')).toISOString()).toBe('2026-11-20T07:00:00.000Z');
       expect(loopBucketStart(new Date('2026-11-20T07:30:00.000Z')).toISOString()).toBe('2026-11-20T07:30:00.000Z');
-      expect(loopSignalKey(77n, new Date('2026-11-20T07:12:00Z'))).toBe('loop:77:2026-11-20T07:00:00.000Z');
+      const holder = '0193a000-0000-7000-8000-000000000001';
+      expect(loopSignalKey(holder, 77n, new Date('2026-11-20T07:12:00Z'))).toBe(`loop:${holder}:77:2026-11-20T07:00:00.000Z`);
       // Two lines of one bucket claim one key.
-      expect(loopSignalKey(77n, new Date('2026-11-20T07:01:00Z'))).toBe(loopSignalKey(77n, new Date('2026-11-20T07:28:00Z')));
+      expect(loopSignalKey(holder, 77n, new Date('2026-11-20T07:01:00Z'))).toBe(loopSignalKey(holder, 77n, new Date('2026-11-20T07:28:00Z')));
+      // …and another account's chat with the same peer is another chat: the AI changing hands is told afresh.
+      expect(loopSignalKey('0193a000-0000-7000-8000-000000000002', 77n, new Date('2026-11-20T07:12:00Z'))).not.toBe(
+        loopSignalKey(holder, 77n, new Date('2026-11-20T07:12:00Z')),
+      );
     });
   });
 });

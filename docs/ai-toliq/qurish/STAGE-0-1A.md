@@ -426,9 +426,12 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
 **P2, as built (2026-11-20, the building session — re-fitted to the code where the text above differs).**
 - **One home.** `agent/loop.ts`: pure `loopFold`, `loopVerdict(facts) → { signals }` (`same_inbound`, `fast_peer`,
   `own_repeat`, one stable order); ONE reader `loopFactsFor(handle, managerUserId, peerId, anchorTgMessageId, now,
-  draftBody)` — one statement: the anchor row read by its id, his live earlier lines, our `agent_outbox` rows that went
-  (timed by the thread's copy), the one typing stamp; `ownRepeatFor` (the gate); `loopBucketStart`, `loopSignalKey`,
-  `LOOP_NOTICE`, `loopNoticeOnce`. Constants `AGENT_LIMITS.loop` (`windowMs` 30 min, `sameInbound` 2, `fastMs` 10 s,
+  draftBody)` — one statement: the anchor row read by its id, his live earlier lines (each with `has_media`), our
+  `agent_outbox` rows handed to Telegram ('sent' and 'unknown' — perhaps delivered — timed by the thread's copy, else
+  `sent_at`, else the claim before the send), the one typing stamp, and under the 0151 probe (asked on the caller's
+  handle before the statement) the newest loop claim of the window; `gateLoopFor` (the gate); `loopBucketStart`,
+  `loopSignalKey` (`loop:<account>:<peer>:<bucket>` — the account in it, or a new holder's notice inside a bucket is
+  swallowed by the old one's claim), `LOOP_NOTICE`, `loopNoticeOnce`. Constants `AGENT_LIMITS.loop` (`windowMs` 30 min, `sameInbound` 2, `fastMs` 10 s,
   `fastSends` 3, `ownSends` 3, `clockSlackMs` 2 s).
 - **J8 with the one stamp the listener keeps.** A send owns the lines from its moment to the next send's and only the
   first is its answer; three DISTINCT sends. `agent_conversations.peer_typing_at` is the NEWEST stamp only, so a pair
@@ -439,23 +442,38 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
   second is before its send (and the anchor's own send after the anchor).
 - **The 5-second `echo` stays and wins**: an answer inside 5 s of our newest out line is refused `echo` (silently) before
   the loop is asked, so `fast_peer` meets the robots that answer in 5-10 s, and the ones before the anchor.
-- **Stateless, as §4.3 says.** The refusal holds while the window's facts hold; a NEW, different line inside the 30
-  minutes after a `same_inbound` trip is answered. J33's sentence («AI 30 daqiqa bu chatga javob yozmaydi») is true of
-  the looping lines and of a robot (which answers only our sends); it is not a hold on the chat. A sticky hold would
-  read the claim row back as a rule and turn a false trip (a person writing «?» three times) into thirty silent
-  minutes — the lead's to choose; not built.
+- **`same_inbound`, narrowed (review of the build, 2026-11-20).** An earlier equal line counts only when one of OUR
+  sends lies after it and no later than the next equal line (the anchor for the last; the clock slack again): a repeat
+  nobody of ours answered — the listener down, his human pause, his own chat — is no robot answering our robot. A line
+  that came with a file is never «the same line»: a caption is the customer's words about THAT file, so three photos of
+  one product under one question go (corpus `lo017`); an anchor with a file counts nothing either. And J8's own rule:
+  a typing stamp at or after the previous equal line means a person typed the anchor (`lo019`). `repeat` stopped
+  all of these one line earlier; the narrowing is what makes the hold below affordable.
+- **The hold (J33 binds over §4.3's «Stateless»; review of the build, 2026-11-20).** The notice says «AI 30 daqiqa bu
+  chatga javob yozmaydi», so the claim IS read back: `loopVerdict` answers `held` when the newest loop claim is less
+  than the window before `now` — eligibility refuses `loop` whatever the line says (no model call), and the gate's
+  `loop` (`gateLoopFor`: `own_repeat` OR held, judged at `at`, when the reply would go) leaves a card for his ✅ — a
+  price waiting its hold, his ✍️, a VED answer. Built, a stateless rule let the AI answer the chat he had just been sent
+  to take himself: two voices. A held line is NOT told again (else a held line in the next bucket would mint a second
+  notice and stretch the hold); the next trip after the half hour is told afresh. The hold is counted from the run's
+  clock (the claim's `created_at` = the run's `now`). A notice queued to nobody (the holder cannot log in; an
+  AgentNotice cannot be muted) is rolled back, claim and all — 'unheard', no promise, no hold, the looping lines still
+  refused by their own signals. One migration behind there is no claim and no hold. Corpus marks `@` (a line with a
+  file and its caption) and `!` (the moment he was told); `lp015`-`lp017` (the hold), `lo021` (it ends).
 - **Eligibility.** `EligibilityFacts.loop: boolean` (was `anchorRepeats`); `eligibilityFacts(…, loopRead: 'anchor' |
   'none')` REQUIRED — the owner-triggered run passes `'none'` and runs no statement. `Ineligible` keeps `repeat` for
   stored rows; `NO_DRAFT_WORDS.loop` is `AUTO_REFUSAL_WORDS.loop`. A `loop` refusal is `agent_runs.outcome = 'refused',
   error = 'loop'` (P4's liveness alarm classes it), and `handleInbound` then calls `sayLoop` → `loopNoticeOnce`: the
-  probe BEFORE the transaction, then claim (`agent_signals`, topic `loop`, `facts.signals` — the 10 s is measured from
-  them) and the AgentNotice (to the holder, `extra.peerId`, the chat's code and name, no customer text) in ONE
-  transaction; a failure is logged and the refusal stands.
+  probe BEFORE the transaction, then claim (`agent_signals`, topic `loop`, `facts.signals` and `facts.fastDelaysMs` —
+  each counted fast answer's delay, which J8's first-week measurement reads beside the stored chats) and the
+  AgentNotice (to the holder, `extra.peerId`, the chat's code and name, no customer text) in ONE transaction; a failure
+  is logged and the refusal stands. `eligibilityFacts` hands the whole verdict on (`loopVerdict`); `sayLoop` runs only
+  when the chat is not already held.
 - **The gate.** `loop` stands in `AUTO_REFUSALS` right after `streak` (P1 deletes `streak`; the cherry-pick meets one
   adjacent-line conflict there, in `autoVerdict`, in `AUTO_REFUSAL_WORDS` and in `agent-auto-gate.test.ts` ONE_CHANGE);
-  its fact is `ownRepeatFor` only — the anchor's two signals are eligibility's, which an owner-triggered draft never
-  asked.
-- **Tests.** Reader corpus reader `loop` (14 dangerous `lp…`, 16 ordinary `lo…`, a script per case), unit
+  its fact is `gateLoopFor` — `own_repeat` and the hold, never the anchor's two signals, which are eligibility's and an
+  owner-triggered draft never asked.
+- **Tests.** Reader corpus reader `loop` (19 dangerous `lp…`, 21 ordinary `lo…`, a script per case), unit
   `agent-loop-detector.test.ts` (describe «the CHAT loop detector … never the model's tool loop»), integration
   `agent-chat-loop.integration.test.ts` (the stem `agent-loop` stays the tool loop's).
 

@@ -1737,8 +1737,12 @@ const LANGUAGE_MONEY_ORDINARY: readonly Row[] = onMoney(LANGUAGE_ORDINARY);
 //       the run answers (the anchor);
 //   `<` one of OUR machine sends to this chat (an `agent_outbox` row that went — whoever pressed it);
 //   `~` the customer's typing as the listener stamps it — only the newest stamp is kept, so the last `~` wins;
-//   `=` the reply about to go (the gate's `own_repeat`), at the second it would go.
-// `dangerous`: the machine answers a robot again — the account's ban risk (ban-4); `ordinary`: a person is stopped.
+//   `=` the reply about to go (the gate's `own_repeat`), at the second it would go;
+//   `@` a line of the customer's that came WITH a photo, a file or a voice note, and its caption;
+//   `!` the moment he was told this chat loops (the notice's claim) — the AI then keeps out of it for the window (J33).
+// The script is judged at its anchor's second, or at the `=` reply's when there is one.
+// `dangerous`: the machine answers a robot again — the account's ban risk (ban-4) — or writes inside the half hour he
+// was told it keeps out (J33: two voices to the customer); `ordinary`: a person is stopped.
 const P_LOOP = 'stage1a:§4.3';
 const J8 = 'stage1a:J8';
 const LOOP_DANGEROUS: readonly Row[] = [
@@ -1770,6 +1774,16 @@ const LOOP_DANGEROUS: readonly Row[] = [
   ['lp013', "> 0 Thanks for your message! I'm away and will reply soon.\n< 20 Hello! How can we help?\n> 300 Thanks for your message! I'm away and will reply soon.\n< 320 Please tell us about your cargo.\n> 700 Thanks for your message! I'm away and will reply soon.", P_LOOP],
   // An answer stamped in the very second of our send (Telegram dates are whole seconds) is after it.
   ['lp014', '< 0 Assalomu alaykum!\n> 0 Avtojavob: hozir bandman.\n< 30 Yukingiz qayerdan?\n> 30 Avtojavob: hozir bandman!\n< 60 Necha kub?\n> 60 Avtojavob: hozir bandman!!', J8],
+  // He was told, and the customer then writes something new inside the half hour: the notice said the AI keeps out.
+  ['lp015', '> 0 Xabaringiz qabul qilindi.\n< 20 Yukingiz qayerdan?\n> 300 Xabaringiz qabul qilindi.\n< 320 Necha kub?\n> 600 Xabaringiz qabul qilindi.\n! 605\n> 700 Menga narxini ayting', 'stage1a:J33 the hold'],
+  // …a person typing after a robot's fast answers is still inside it — he was told to look himself.
+  ['lp016', '< 0 Assalomu alaykum!\n> 1 Auto 1\n< 30 Yukingiz qayerdan?\n> 31 Auto 2\n< 60 Necha kub?\n> 61 Auto 3\n! 62\n~ 70\n> 75 Kechirasiz, avtojavob edi. Narxi qancha?', 'stage1a:J33 the hold'],
+  // …and so is a reply about to go there (the gate), on a line that is no loop of its own.
+  ['lp017', '> 0 Salom\n< 20 Assalomu alaykum!\n> 300 Salom\n< 320 Savolingizni yozing.\n> 600 Salom\n! 605\n> 900 5 kub narxi?\n= 960 5 kub uchun taxminan 600 $.', 'stage1a:J33 the hold'],
+  // One unanswered repeat among answered ones: the two answered still make the loop.
+  ['lp018', '> 0 Salom\n> 10 Salom\n< 30 Assalomu alaykum!\n> 300 Salom\n< 320 Savolingizni yozing.\n> 600 Salom', P_LOOP],
+  // A stamp of typing OLDER than the repeats says nothing about them: a robot never types.
+  ['lp019', '~ 0\n> 5 Hozir javob bera olmayman.\n< 25 Yukingiz haqida yozing.\n> 300 Hozir javob bera olmayman.\n< 320 Qayerdan?\n> 600 Hozir javob bera olmayman.', P_LOOP],
 ];
 const LOOP_ORDINARY: readonly Row[] = [
   // The FIRST repeat is answered — an impatient customer.
@@ -1804,6 +1818,16 @@ const LOOP_ORDINARY: readonly Row[] = [
   ['lo015', '> 0 Narxi qancha?\n< 20 Yukingiz necha kub?\n> 120 ?\n< 140 Kub va kg ni yozing, iltimos.\n> 240 ?', P_LOOP],
   // Invoice pages a second apart after ONE send.
   ['lo016', '< 0 Invoysni yuboring, iltimos.\n> 5\n> 6\n> 7\n> 8', J8],
+  // Three photos of one product, each with the same caption, answered between — a person showing goods.
+  ['lo017', '@ 0 Shu tovarni olib kelasizmi?\n< 20 Ha, olib kelamiz. Necha kub?\n@ 300 Shu tovarni olib kelasizmi?\n< 320 Ha. Yuk qayerdan?\n@ 600 Shu tovarni olib kelasizmi?', 'stage1a:§4.3 a line with a file'],
+  // The same question three times with NO send of ours between (the listener down, his human pause, his chat).
+  ['lo018', '> 0 Narxi qancha?\n> 60 Narxi qancha?\n> 120 Narxi qancha?', 'stage1a:§4.3 answered repeats'],
+  // A code typed again: the newest typing stamp is after the previous equal line — a person typed the anchor.
+  ['lo019', '> 0 GS777\n< 20 GS777: yukingiz Yiwu omborida.\n> 600 GS777\n< 620 GS777: yukingiz hali Yiwu omborida.\n~ 1195\n> 1200 GS777', 'stage1a:J8 a typed line is no robot'],
+  // «Salom» twice in a row, one answer, then once more: one answered repeat.
+  ['lo020', '> 0 Salom\n> 4 Salom\n< 25 Assalomu alaykum! Qanday yordam bera olaman?\n> 400 Salom', 'stage1a:§4.3 answered repeats'],
+  // The half hour he was told of is over: a new line is answered again.
+  ['lo021', '> 0 Xabaringiz qabul qilindi.\n< 20 Yukingiz qayerdan?\n> 300 Xabaringiz qabul qilindi.\n< 320 Necha kub?\n> 600 Xabaringiz qabul qilindi.\n! 605\n> 2410 Yana savolim bor', 'stage1a:J33 the hold ends'],
 ];
 
 export const READER_CORPUS: readonly ReaderCase[] = [
