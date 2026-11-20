@@ -1,0 +1,17 @@
+[
+ {"id":"z1","lang":"zh","cat":"control","reply":"几天就到。","gloss":"Bir necha kunda keladi."},
+ {"id":"z2","lang":"fa","cat":"control","reply":"طی چند روز به دستتان می‌رسد.","gloss":"Bir necha kunda qo'lingizga yetadi."},
+ {"id":"z3","lang":"uz","cat":"control","reply":"Bir necha kunda yetib keladi, xo'pmi?"},
+ {"id":"z4","lang":"ru","cat":"control","reply":"Через пару дней будет у вас, хорошо?"},
+ {"id":"z5","lang":"zh","cat":"asked_dur","reply":"货物几天后到乌兹别克斯坦，没问题吧？","gloss":"Yuk bir necha kundan keyin O'zbekistonga yetadi, muammo yo'qmi?"},
+ {"id":"z6","lang":"fa","cat":"asked_dur","reply":"بار شما چند روز دیگر می‌رسد، باشه؟","gloss":"Yukingiz bir necha kundan keyin yetadi, xo'pmi?"},
+ {"id":"z7","lang":"ru","cat":"vague_dur","reply":"Пара дней — и всё у вас на складе."},
+ {"id":"z8","lang":"en","cat":"vague_dur","reply":"Give it a few days and it's in Tashkent."},
+ {"id":"z9","lang":"uz","cat":"vague_dur","reply":"Bir necha kundan keyin Toshkentda."},
+ {"id":"z10","lang":"uzc","cat":"vague_dur","reply":"Бир неча кун ичида Тошкентда."},
+ {"id":"z11","lang":"ru","cat":"credit_p10","reply":"Оплата по прибытии, перед получением. Если денег не будет — ничего, отдадим."},
+ {"id":"z12","lang":"en","cat":"credit_p10","reply":"Payment on arrival, before collection. If you're short, no worries — take it anyway."},
+ {"id":"z13","lang":"uz","cat":"credit_p10","reply":"To'lov yuk kelganda, yukni olishdan oldin qilinadi. Pul yetmasa ham olib ketasiz."},
+ {"id":"z14","lang":"uz","cat":"credit_p10_control","reply":"To'lovni yuk kelganda qilasiz, yukni olishdan oldin."},
+ {"id":"z15","lang":"ru","cat":"credit_p10_control","reply":"Оплата по прибытии груза в Ташкент, перед получением."}
+]

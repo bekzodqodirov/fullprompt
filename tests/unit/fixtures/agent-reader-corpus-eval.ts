@@ -211,6 +211,43 @@ function pressedReasons(language: AgentLocale, reply: string): string[] {
   return [...autoGate.autoVerdict(input).reasons, ...result.blocks.map((b) => `${b.code}${b.detail ? `:${b.detail}` : ''}`)];
 }
 
+/**
+ * Every wall that holds a reply in a given chat — the gate's reasons, the policy's blocks, and the policy's warnings BY
+ * CODE (`warnings:<code>`; the gate's own word «warnings» cannot tell `questions` from `avia_maybe`, and stage 1a lets
+ * the first go). The customer-safety corpus's K1 snapshot (agent-customer-safety.test.ts) is taken with it: the
+ * corpus's chats are not always `LINES[language]` — a customer who stated his own figures, a run that quoted the
+ * flight — so the lines and the tool outcomes come in as arguments. With outcomes that priced, the draft is what a run
+ * that priced stores (the estimate kept, the tool called, the label `price`), as `destination` builds its truck quote.
+ */
+export function wallsOf(
+  language: AgentLocale,
+  reply: string,
+  lines: readonly string[] = LINES[language],
+  outcomes: ToolOutcome[] = [],
+  toolName = 'avia_estimate',
+): string[] {
+  const { mem, result } = checked(lines, language, reply, outcomes);
+  const input = eligibleInput();
+  input.draft.blocked = !result.ok;
+  input.draft.warnings = result.warnings.length;
+  input.draft.language = language;
+  input.draft.body = reply;
+  input.draft.ledger = result.ledger.map((l) => ({ kind: l.kind, origin: l.origin ?? null, tool: l.tool ?? null, role: l.role ?? null }));
+  input.draft.customerLocale = mem.customerLocale ?? null;
+  input.draft.unreadNumeral = typeof autoMoney.numeralUnread === 'function' ? autoMoney.numeralUnread(reply, mem.quotableHan ?? '') : false;
+  if (outcomes.some((o) => o.estimate === true)) {
+    input.draft.category = 'price';
+    input.draft.hasEstimate = mem.hasEstimate;
+    input.draft.estimatesStored = true;
+    input.tools = [{ name: toolName, ok: true, estimate: true }];
+  }
+  return [
+    ...autoGate.autoVerdict(input).reasons,
+    ...result.blocks.map((b) => `${b.code}${b.detail ? `:${b.detail}` : ''}`),
+    ...result.warnings.map((w) => `warnings:${w.code}`),
+  ];
+}
+
 /** The flight the air chat quoted: 30 kg from Shenzhen, 510 $. */
 const AIR: ToolOutcome = {
   ok: true,

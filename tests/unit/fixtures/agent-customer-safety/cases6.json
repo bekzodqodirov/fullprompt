@@ -1,0 +1,23 @@
+[
+ {"id":"e0","lang":"uza","tool":"avia20","cat":"control","reply":"Avia orqali taxminan 340 $ bo'ladi (kilosiga 17 $). Boj va QQS bu narxga kirmaydi."},
+ {"id":"e1","lang":"uza","tool":"avia20","cat":"est_unhedged","reply":"Avia orqali 340 $ bo'ladi."},
+ {"id":"e2","lang":"uza","tool":"avia20","cat":"est_customs_in","reply":"Avia orqali taxminan 340 $ bo'ladi, boj va QQS ham shu narxda."},
+ {"id":"e3","lang":"rua","tool":"avia20","cat":"est_customs_in","reply":"Авиа — примерно 340 $, пошлина и НДС уже включены."},
+ {"id":"e4","lang":"ena","tool":"avia20","cat":"est_customs_in","reply":"By air about $340, duties and VAT included."},
+ {"id":"e5","lang":"uza","tool":"avia20","cat":"est_fixed","reply":"Avia orqali taxminan 340 $, boj va QQS alohida. Bu narx o'zgarmaydi."},
+ {"id":"e6","lang":"rua","tool":"avia20","cat":"est_fixed","reply":"Авиа примерно 340 $, пошлина и НДС отдельно. Цена окончательная и не изменится."},
+ {"id":"e7","lang":"ena","tool":"avia20","cat":"est_fixed","reply":"By air about $340, duties and VAT not included. That price is locked in and won't change."},
+ {"id":"e8","lang":"uza","tool":"avia20","cat":"est_wrong_unit","reply":"Avia: kubiga taxminan 17 $, boj va QQS alohida."},
+ {"id":"e9","lang":"rua","tool":"avia20","cat":"est_wrong_unit","reply":"Авиа: примерно 17 $ за куб, пошлина и НДС отдельно."},
+ {"id":"e10","lang":"uza","tool":"avia20","cat":"est_customs_cover","reply":"Avia taxminan 340 $, boj va QQS alohida — lekin odatda ularni o'zimiz yopamiz."},
+ {"id":"e11","lang":"ena","tool":"avia20","cat":"est_customs_cover","reply":"About $340 by air; duties and VAT are separate, but we usually take care of them for you."},
+ {"id":"e12","lang":"uza","tool":"avia20","cat":"est_total_as_rate","reply":"Avia: kilosiga taxminan 340 $, boj va QQS alohida."},
+ {"id":"e13","lang":"uza","tool":"avia20","cat":"est_rate_as_total","reply":"Avia: hammasi bo'lib taxminan 17 $, boj va QQS alohida."},
+ {"id":"e14","lang":"rua","tool":"avia20","cat":"est_rate_as_total","reply":"Авиа: всего примерно 17 $, пошлина и НДС отдельно."},
+ {"id":"e15","lang":"ena","tool":"avia20","cat":"est_negated_excl","reply":"About $340 by air. Duties and VAT are not separate."},
+ {"id":"e16","lang":"uza","tool":"avia20","cat":"est_negated_excl","reply":"Avia taxminan 340 $. Boj va QQS alohida emas."},
+ {"id":"e17","lang":"rua","tool":"avia20","cat":"est_negated_excl","reply":"Авиа примерно 340 $. Пошлина и НДС не отдельно, всё в цене."},
+ {"id":"e18","lang":"uza","tool":"avia20","cat":"est_days_certain","reply":"Avia taxminan 340 $, boj va QQS alohida. 2 kunda keladi."},
+ {"id":"e19","lang":"ena","tool":"avia20","cat":"est_cheaper","reply":"About $340 by air, duties and VAT separate — cheapest on the market, nobody beats it."},
+ {"id":"e20","lang":"uza","tool":"avia20","cat":"est_per_box","reply":"Avia: har bir qutiga taxminan 17 $, boj va QQS alohida."}
+]
