@@ -14,7 +14,7 @@ import { getStorage } from '../src/modules/platform/files/storage';
  * customers' stored voice notes to ONE speech service and prints what came back,
  * so the trial is measured on his own notes and not on a vendor's benchmark:
  *
- *   docker compose run --rm migrate pnpm exec tsx scripts/stt-trial.ts --ids <file.json> --provider <name> [--out <file>]
+ *   docker compose run --rm migrate pnpm exec tsx scripts/stt-trial.ts --ids <file.json> --accounts <uuid>[,<uuid>] --provider <name> [--out <file>]
  *
  * and in practice, from the folder that holds docker-compose.yml ON THE
  * PRODUCTION SERVER — reachability from there (a German address) is one of the
@@ -22,7 +22,7 @@ import { getStorage } from '../src/modules/platform/files/storage';
  *
  *   mkdir -p .data/stt    # the lead's ids.json goes in here
  *   docker compose run --rm -v "$PWD/.data/stt:/stt" migrate \
- *     pnpm exec tsx scripts/stt-trial.ts --ids /stt/ids.json --provider elevenlabs --out /stt/elevenlabs.json
+ *     pnpm exec tsx scripts/stt-trial.ts --ids /stt/ids.json --accounts <his-user-id>,<seat-user-id> --provider elevenlabs --out /stt/elevenlabs.json
  *   …  --provider openai --out /stt/openai.json
  *   …  --provider uz     --out /stt/uz.json
  *   …  --provider elevenlabs --lang uz --out /stt/elevenlabs-uz.json   # a pinned run, §4 «Run»
@@ -46,7 +46,11 @@ import { getStorage } from '../src/modules/platform/files/storage';
  * `tg_message` attachment, `audio/*`, named `voice_<msgId>.<ext>` where msgId is
  * THAT message's own Telegram id (the name the listener gives a voice note and
  * nothing else), on a message whose direction is 'in', that the customer has
- * not deleted, in a chat its holder has not marked personal («🚫 Shaxsiy»).
+ * not deleted, in a chat its holder has not marked personal («🚫 Shaxsiy»),
+ * on an ACCOUNT named in `--accounts` (the owner names them — ⭐ his own and the
+ * AI seat's; a Telegram conversation is private to the account that holds it,
+ * rounds 20-21, and the person who fills a note's fact sheet must never hear a
+ * customer of an account no screen lets him open).
  * His permission (16.1) is for customers' voice notes; a photo id pasted by
  * mistake, an audio FILE the customer sent (a forwarded call recording, an mp3
  * — even one its sender named `voice_123.ogg`), a call recording, our own
@@ -98,8 +102,8 @@ import { getStorage } from '../src/modules/platform/files/storage';
  */
 
 const USAGE =
-  'usage: pnpm exec tsx scripts/stt-trial.ts --ids <file.json> --provider elevenlabs|openai|uz ' +
-  '[--lang auto|uz|ru] [--model <id>] [--out <file.json>]';
+  'usage: pnpm exec tsx scripts/stt-trial.ts --ids <file.json> --accounts <user-uuid>[,<user-uuid>…] ' +
+  '--provider elevenlabs|openai|uz [--lang auto|uz|ru] [--model <id>] [--out <file.json>]';
 
 // ── the providers' own names (UNVERIFIED — see the header) ────────────────────
 
@@ -160,6 +164,8 @@ type Lang = 'auto' | 'uz' | 'ru';
 
 interface Args {
   ids: string;
+  /** The accounts (users) whose stored notes may leave — required, named by the owner. */
+  accounts: string[];
   provider: ProviderName;
   lang: Lang;
   model: string | null;
@@ -168,6 +174,7 @@ interface Args {
 
 function parseArgs(argv: string[]): Args | null {
   let ids: string | null = null;
+  let accounts: string[] | null = null;
   let provider: ProviderName | null = null;
   let lang: Lang = 'auto';
   let model: string | null = null;
@@ -178,15 +185,19 @@ function parseArgs(argv: string[]): Args | null {
     if (v === undefined || v.startsWith('--')) return null;
     i++;
     if (a === '--ids') ids = v;
-    else if (a === '--out') out = v;
+    else if (a === '--accounts') {
+      const list = v.split(',').map((x) => x.trim());
+      if (list.length === 0 || !list.every((x) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(x))) return null;
+      accounts = list.map((x) => x.toLowerCase());
+    } else if (a === '--out') out = v;
     else if (a === '--provider' && (v === 'elevenlabs' || v === 'openai' || v === 'uz')) provider = v;
     else if (a === '--lang' && (v === 'auto' || v === 'uz' || v === 'ru')) lang = v;
     // A model name goes into a form field and a printed line — nothing shaped like a path or a header.
     else if (a === '--model' && /^[A-Za-z0-9._:-]{1,80}$/u.test(v)) model = v;
     else return null;
   }
-  if (!ids || !provider) return null;
-  return { ids, provider, lang, model, out };
+  if (!ids || !provider || !accounts) return null;
+  return { ids, accounts, provider, lang, model, out };
 }
 
 // ── keys and their redaction ──────────────────────────────────────────────────
@@ -842,6 +853,7 @@ async function main(): Promise<number> {
         sizeBytes: attachments.sizeBytes,
         direction: tgMessages.direction,
         tgMessageId: tgMessages.tgMessageId,
+        account: tgMessages.managerUserId,
         deletedAt: tgMessageFlags.deletedAt,
         // The holder's own answer about this chat — one row per (manager, peer) by its unique index.
         chatDecision: tgChatRules.decision,
@@ -906,6 +918,10 @@ async function main(): Promise<number> {
     else if (row.entityType !== 'tg_message') note = refuse(`not a Telegram message's file (it belongs to «${row.entityType}»)`);
     else if (!row.contentType.toLowerCase().startsWith('audio/')) note = refuse(`not audio (${row.contentType})`);
     else if (row.direction === null) note = refuse('its message row is gone');
+    // Before anything about the note itself: a note on an account he did not name is not ours to send or hear.
+    else if (row.account === null || !args.accounts.includes(row.account.toLowerCase())) {
+      note = refuse("another account's conversation — not named in --accounts");
+    }
     // «🚫 Shaxsiy» is the holder saying this chat is not business — his permission covers customers, and a
     // person the holder took off the books is not one, whatever rows the chat still has.
     else if (row.chatDecision === 'exclude') note = refuse('chat shaxsiy deb belgilangan — the holder marked this chat personal («🚫 Shaxsiy»)');
