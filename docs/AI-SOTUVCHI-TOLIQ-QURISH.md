@@ -45,7 +45,8 @@ they disagree re-fit the plan, never the code.
    figure). Today such a reply, if the AI ever wrote it, waits behind the AI's own rating and his 2-minute ⏸; stage
    1a takes both off ordinary talk (his 11 a), so it would go at once. `qurish/STAGE-0-1A.md` §4.1 «K1, as
    measured» and §6.3 hold the list and his three choices; the question is in `COVERAGE.md` §E's «1a dan oldin»
-   group and in §F's first message. Show him the list — do not decide it for him.
+   group and in §F's first message. Show him the list — do not decide it for him. **Re-measured by K1 on
+   2026-11-20:** 293 dangerous (plus 10 controls), 234 held, **59 open** — the list is `qurish/K1-OCHIQ-59.md`.
 6. **Another session's open work that meets stage 1c.** When this was written PR #156 («Yangi kodga manzil xabari +
    to'liq "Hisob tayyor"», migration 0151, DECISIONS #1807-#1815) was OPEN as a draft. When a client code is minted —
    by the quick «+», the client form or `winLead`'s mint block — it sends the client's SELLER a staff-bot card carrying

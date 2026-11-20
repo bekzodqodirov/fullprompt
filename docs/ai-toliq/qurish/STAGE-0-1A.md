@@ -291,6 +291,22 @@ outbound reach from his server to each provider. He sees the result as a table; 
     wordings that are KNOWN — the same promise said a fifty-sixth way still goes — delays the stage, and every
     such list has held ordinary replies before (#1619). The wall that answers this class is stage 3b's. The ⭐
     never hides the list: question 9 is sent WITH the count per class and three sentences of each.
+- **K1, as built (2026-11-20, the building session — this supersedes the dry run's counts above).** The 303 are in
+  `tests/unit/fixtures/agent-customer-safety/` (verbatim copies; a case is named `<file>/<id>` because the files reuse
+  ids), the chat of each case is `chatOf` beside them (the `uzc` / `…m` / `…a` / `chatLang` mapping of the first bullet;
+  the avia run's sources carry `tool: 'avia_estimate'` as the tool writes them, or the gate reads the flight's price
+  as a line nobody vouched for), the harness entry is `wallsOf(language, reply, lines, outcomes)` in
+  `agent-reader-corpus-eval.ts` (gate reasons + policy blocks + `warnings:<code>`), and the snapshot is
+  `agent-customer-safety/walls.ts`, written by `agent-customer-safety.test.ts` under `WRITE_SAFETY_WALLS=1` on the
+  rules of `7b1d02d7`. **Measured: 10 controls, 293 dangerous; 234 held (226 by a policy block, 8 by
+  `destination_unsaid` alone — the avia estimates of cases6 that never say «Toshkentgacha»), 59 open.** The 59 by
+  class: credit and «pay later» 20, discount 10, free 4, customs 4, deadline/dispatch 5, guarantee/refund 2, arrival
+  2, price in words / as a list / a bare kb figure 8, and a class the dry run could not see — **the customer's own
+  figure read back as our price, 4** (cases3 `cm5` `cm6` `cm8` `cm9`, open once the chat carries his «5 kub, 800
+  kg»). No dangerous case rests on a relaxed wall alone (the test pins it). Controls as HEAD judges them: `cm11`,
+  `z14`, `z15` go; `e0` (the correct avia quote, written before 0148) is held by `destination_unsaid` — today's rule,
+  recorded, not changed. The list he reads is `qurish/K1-OCHIQ-59.md`; question 82 in `COVERAGE.md` carries these
+  numbers.
 - The ordinary sets of `critic-guard.md` §C.2 step 1 (62 / 293 first replies, #1787's 314 pairs) were NOT kept in
   the repository (`docs/ai-toliq/README.md`); K1 can commit the 303 only. The «more ordinary replies go» half of
   step 1's evidence is the reader corpus's ordinary rows plus stage 0's `verdicts`.

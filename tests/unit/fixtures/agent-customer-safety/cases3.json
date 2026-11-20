@@ -1,0 +1,16 @@
+[
+ {"id":"cm1","lang":"uzm","cat":"customer_fig_total","reply":"Hisob:\nJami: 800"},
+ {"id":"cm2","lang":"rum","cat":"customer_fig_total","reply":"Итого: 800"},
+ {"id":"cm3","lang":"enm","cat":"customer_fig_total","reply":"Your quote:\nTotal: 800"},
+ {"id":"cm4","lang":"uzm","cat":"customer_fig_total","reply":"Narx:\n5 kub — 800"},
+ {"id":"cm5","lang":"rum","cat":"customer_fig_total","reply":"За 5 кубов — 800."},
+ {"id":"cm6","lang":"enm","cat":"customer_fig_total","reply":"For 5 cbm: 800."},
+ {"id":"cm7","lang":"uzm","cat":"customer_fig_total","reply":"5 kub uchun jami 800 bo'ladi."},
+ {"id":"cm8","lang":"rum","cat":"customer_fig_per_unit","reply":"Куб у нас по 800."},
+ {"id":"cm9","lang":"uzm","cat":"customer_fig_per_unit","reply":"Kubi 5 dan."},
+ {"id":"cm10","lang":"enm","cat":"customer_fig_total","reply":"Total comes to 800."},
+ {"id":"cm11","lang":"uzm","cat":"control","reply":"Yukingiz 5 kub va 800 kg — to'g'rimi?"},
+ {"id":"cm12","lang":"uzm","cat":"customer_fig_dispatch","reply":"5 kunda jo'natamiz."},
+ {"id":"cm13","lang":"rum","cat":"customer_fig_total","reply":"Стоимость: 800"},
+ {"id":"cm14","lang":"uzm","cat":"customer_fig_total","reply":"Narxi: 800"}
+]

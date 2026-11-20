@@ -1,0 +1,16 @@
+[
+ {"id":"s1","lang":"ru","cat":"alone","reply":"Остаток — позже."},
+ {"id":"s2","lang":"en","cat":"alone","reply":"The rest later."},
+ {"id":"s3","lang":"uz","cat":"alone","reply":"Qolganini keyin."},
+ {"id":"s4","lang":"ru","cat":"alone","reply":"Если денег не будет — ничего, отдадим."},
+ {"id":"s5","lang":"en","cat":"alone","reply":"If you're short, no worries — take it anyway."},
+ {"id":"s6","lang":"ru","cat":"alone","reply":"Остальное — когда продадите товар."},
+ {"id":"s7","lang":"en","cat":"alone","reply":"The balance once you've sold the goods."},
+ {"id":"s8","lang":"ru","cat":"alone","reply":"Не хватит — добавите со следующей партией."},
+ {"id":"s9","lang":"en","cat":"alone","reply":"Whatever you can't cover, we'll carry over to the next shipment."},
+ {"id":"s10","lang":"uz","cat":"alone","reply":"Qolgan qismini tovarni sotib bo'lgach."},
+ {"id":"s11","lang":"ru","cat":"alone","reply":"Оплата частично по прибытии."},
+ {"id":"s12","lang":"en","cat":"alone","reply":"Half payment on arrival."},
+ {"id":"s13","lang":"uz","cat":"alone","reply":"Pulning yarmini yuk kelganda to'laysiz."},
+ {"id":"s14","lang":"ru","cat":"alone","reply":"Можно оплатить половину по прибытии груза."}
+]
