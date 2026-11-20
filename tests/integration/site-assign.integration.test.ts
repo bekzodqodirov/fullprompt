@@ -785,6 +785,47 @@ describe('the AI seat (his 6 c)', () => {
     expect((await ask('cargo')).username).toBe(handle);
   });
 
+  it('a burst of visitors while the seat read is slow: every one gets the roster, none waits the lock out (D1)', async () => {
+    await healthySeat();
+    await tick({ a: ['cargo'] });
+    // Three at once behind a held seat table. With the seat read under the lock, the second and third spent their
+    // own 400 ms waiting for the lock and failed — «nobody» for the burst. Read before it, each read gives up side by
+    // side and the lock holds the roster's milliseconds only.
+    const held = await pgClient.reserve();
+    try {
+      await held`BEGIN`;
+      await held`LOCK TABLE agent_send_caps IN ACCESS EXCLUSIVE MODE`;
+      const got = await Promise.all([ask('cargo'), ask('cargo'), ask('cargo')]);
+      const a = await rosterA();
+      for (const one of got) {
+        expect(one.username).toBe(a);
+        expect(await offer(one.tag)).toMatchObject({ userId: ids.a, ranking: { ai: false, aiReason: 'unreadable' } });
+      }
+    } finally {
+      await held`ROLLBACK`;
+      held.release();
+    }
+  });
+
+  it('the panel reads the seat under the door\'s budget — a held table is «unreadable», never a page that hangs', async () => {
+    await healthySeat();
+    const held = await pgClient.reserve();
+    try {
+      await held`BEGIN`;
+      await held`LOCK TABLE agent_send_caps IN ACCESS EXCLUSIVE MODE`;
+      const hung = 'hung' as const;
+      const panel = await Promise.race([
+        sitePanel(),
+        new Promise<typeof hung>((resolve) => setTimeout(() => resolve(hung), 3_000)),
+      ]);
+      expect(panel).not.toBe(hung);
+      expect(panel !== hung && panel.ai).toEqual({ mode: 'all', seat: { ok: false, reason: 'unreadable' } });
+    } finally {
+      await held`ROLLBACK`;
+      held.release();
+    }
+  });
+
   it('the choice has its own writer, audited once per change; a value the shape refuses reads as «off»', async () => {
     await putSetting('lead_assign_ai', 'off');
     // Anchored on the ledger's top before the write: an earlier run's row must not answer for this one (#1790).

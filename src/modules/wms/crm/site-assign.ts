@@ -314,6 +314,10 @@ export interface AssignInput {
  * @handle first — when `seatCandidate` says it can take one. Its read runs in
  * a SAVEPOINT of this transaction (J23): a failure or the 400 ms budget there
  * aborts the savepoint alone, and the roster below answers exactly as before.
+ * It is asked BEFORE the lock, never under it: the verdict reads no «fewest»,
+ * so it needs no serialising, and a slow seat statement held under the lock
+ * would make every visitor queued behind it spend its own 400 ms waiting for
+ * the lock and fail — «nobody» for a whole advert burst because of the AI.
  * The site is never told «nobody» because of the AI.
  */
 export async function assignForTag(
@@ -324,6 +328,9 @@ export async function assignForTag(
   const mode = await readLeadAssignAi();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL statement_timeout = '400ms'`);
+    // Under the budget and outside the lock: concurrent visitors read the seat side by side, and the section the
+    // lock serialises stays the roster's milliseconds (the paragraph above).
+    const seat: SeatVerdict | null = siteAiAsks(mode, input.team) ? await seatCandidate(tx, now) : null;
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('lead_assign'))`);
     const [existing] = await tx
       .select({
@@ -347,8 +354,7 @@ export async function assignForTag(
     }
 
     let seatRefused: SeatRefusal | null = null;
-    if (siteAiAsks(mode, input.team)) {
-      const seat = await seatCandidate(tx, now);
+    if (seat) {
       if (seat.ok) {
         if (!stillWanted()) return { username: null, reused: false };
         await tx

@@ -11,6 +11,7 @@ import {
 import { seatDisplayName, SEAT_TITLE } from '@/modules/wms/agent/seat-contact';
 import { LEAD_TEAMS, siteAiAsks } from '@/modules/wms/crm/site-assign-rules';
 import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
+import { audienceFromUrl } from '@/modules/platform/broadcast/audience-url';
 
 /**
  * Stage 1a «Hajm» (his 6 c): the AI seat takes a website visitor only when it would answer by itself. The verdict is
@@ -206,6 +207,27 @@ describe('the seat as a client contact', () => {
   });
 });
 
+describe('the broadcast page’s address bar keeps the «no seller» fence (J13)', () => {
+  const tooLong = 'G'.repeat(21); // a code longer than a code: the schema refuses the whole URL
+
+  it('a URL the schema refuses keeps the tick — the AI number’s message never widens to every seller’s customer', () => {
+    expect(audienceFromUrl({ sotuvchisiz: '1', kod: tooLong })).toEqual({
+      sectors: [],
+      cargoKinds: [],
+      locales: [],
+      codes: [],
+      noManager: true,
+    });
+    expect(audienceFromUrl({ sotuvchisiz: '1', hodim: 'qo‘lda-yozilgan' }).noManager).toBe(true);
+  });
+
+  it('without the tick the refused URL falls back as it always has; an accepted one reads as typed', () => {
+    expect(audienceFromUrl({ kod: tooLong })).toEqual({ sectors: [], cargoKinds: [], locales: [], codes: [] });
+    expect(audienceFromUrl({ sotuvchisiz: '1', kod: 'GS1, gs2' })).toMatchObject({ codes: ['GS1', 'gs2'], noManager: true });
+    expect(audienceFromUrl({ sotuvchisiz: 'ha' }).noManager).toBeUndefined();
+  });
+});
+
 describe('the seat files stay light — they join the listener’s closure (site-assign.ts, client-cabinet/service.ts)', () => {
   const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
   for (const file of ['src/modules/wms/agent/seat-candidate.ts', 'src/modules/wms/agent/seat-contact.ts']) {
@@ -227,8 +249,15 @@ describe('the seat files stay light — they join the listener’s closure (site
     expect(body.indexOf('readLeadAssignAi()')).toBeGreaterThan(-1);
     expect(body.indexOf('readLeadAssignAi()')).toBeLessThan(tx);
     expect(body.slice(tx)).toMatch(/siteAiAsks\(mode, input\.team\)[\s\S]*seatCandidate\(tx, now\)/u);
+    // Under the door's budget and BEFORE the lock (the review's D1): a slow seat read held under the lock made every
+    // visitor queued behind it time out on the lock itself — «nobody» because of the AI.
+    const budget = body.indexOf("SET LOCAL statement_timeout = '400ms'");
+    const seat = body.indexOf('seatCandidate(tx, now)');
+    expect(budget).toBeGreaterThan(-1);
+    expect(budget).toBeLessThan(seat);
+    expect(seat).toBeLessThan(body.indexOf("pg_advisory_xact_lock(hashtext('lead_assign'))"));
     // …and before the roster, which answers whenever the seat does not.
-    expect(body.indexOf('seatCandidate(tx, now)')).toBeLessThan(body.indexOf('pickAssignee(input.team, tx, now)'));
+    expect(seat).toBeLessThan(body.indexOf('pickAssignee(input.team, tx, now)'));
   });
 
   it('the broadcast narrowed to ticked codes keeps the «no seller» fence (J13)', () => {
@@ -240,7 +269,9 @@ describe('the seat files stay light — they join the listener’s closure (site
     const src = strip(readFileSync('src/modules/wms/agent/seat-candidate.ts', 'utf8'));
     const start = src.indexOf('export async function seatCandidate(');
     const body = src.slice(start, src.indexOf('\n}\n', start));
-    expect(body).toMatch(/handle\.transaction\(async \(sp\) => readSeatFacts\(sp, now\)\)/u);
+    expect(body).toMatch(/handle\.transaction\(async \(sp\) => \{[\s\S]*return readSeatFacts\(sp, now\);/u);
+    // On the pool (the roster page) the read carries the door's budget itself; inside the door it never sets one.
+    expect(body).toMatch(/if \(handle === db\) await sp\.execute\(sql`SET LOCAL statement_timeout = '400ms'`\)/u);
     expect(body).toMatch(/catch \(err\)[\s\S]*refused\('unreadable'\)/u);
   });
 });

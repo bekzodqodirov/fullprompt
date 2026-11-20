@@ -791,18 +791,24 @@ paired string edit:
 - **The door** (`assignForTag`, third parameter `now`): the choice is read on the POOL before the transaction
   (`readLeadAssignAi` — a refused shape and a failed read are `off`); inside, `siteAiAsks(mode, team)` (site-assign-rules,
   every team but `buying`) → `seatCandidate(tx, now)` → the seat's offer (`capturable: true`, `ranking: {ai: true}`) or
-  the roster with `ranking.ai = false, aiReason` (why the AI did not, for «nega Aliga?»). The writer is
+  the roster with `ranking.ai = false, aiReason` (why the AI did not, for «nega Aliga?»). The seat is read under the
+  400 ms budget but BEFORE the `lead_assign` lock (§4.7 put it after; the review's D1, reproduced: under the lock a slow
+  seat read made every visitor queued behind it time out on the lock itself, three at once → two «nobody»); the
+  verdict reads no «fewest», so it needs no serialising. The writer is
   `setLeadAssignAi` (audited, a same value writes nothing) under the taqsimot page's own gate (`admin.settings.manage`
   — the roster it bypasses is written there too, and the K description names no other door); the radio posts only
   `off` / `all` and anything else is `off`.
-- **The panel**: `sitePanel().ai = {mode, seat}` (the door's own `seatCandidate`, asked only while `all`); the choice is
+- **The panel**: `sitePanel().ai = {mode, seat}` (the door's own `seatCandidate`, asked only while `all`, on the pool
+  with the door's 400 ms budget set in its own transaction — a held table is «o'qib bo'lmadi», never a hung page); the choice is
   its own form and action (`SiteAiChoice`, `saveSiteAiAction`), the truth line draws `SEAT_REFUSAL_WORDS`, and the
   «keyingi» line of a covered team names the seat when it takes one.
 - **«Sotuvchisi yo'q» (J13)** is ONE fragment in platform, `platform/clients/sellerless.ts` `sellerlessChatSql(chat)`:
   no `linked` code of the chat on an ACTIVE client has a seller `canLogInSql` admits. The broadcast's `noManager`
   (optional in the schema, so a stored audience reads «not asked») is a GET tick on the audience form
   (`?sotuvchisiz=1`, beside every other audience filter — the plan put it on the composer, which only sends), and the
-  composer keeps it when the office un-ticks codes (a code linked to two chats). `managersFor(clientIds, chatId,
+  composer keeps it when the office un-ticks codes (a code linked to two chats). The page reads its URL through
+  `platform/broadcast/audience-url.ts` `audienceFromUrl`: a URL the schema refuses still falls back to every linked chat,
+  as before — except that the tick survives it (the review's N2: a code too long in «kod» had dropped the fence). `managersFor(clientIds, chatId,
   now)` — `chatId` REQUIRED (`null` = never the seat: the forward of a customer's words passes it, because who RECEIVES
   them is a seller or the office); the seat comes from `agent/seat-contact.ts` `seatContactFor` (one statement: the
   switch, the persona, seat = holder, the predicate, `reachableAt` with no typed fallback) and fills only codes that

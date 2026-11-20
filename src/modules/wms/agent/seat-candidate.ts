@@ -13,8 +13,9 @@ import { agentSendsSinceSql, OWN_SENDS_DAYS, ownSendsBeforeStartSql } from './to
 
 /**
  * «Can the AI seat take a website visitor right now?» (stage 1a «Hajm», his 6 c) — asked by the website's question
- * (`crm/site-assign.ts` `assignForTag`, inside its transaction, under the `lead_assign` lock and its 400 ms
- * statement budget) and by the roster page's line of truth, so the page never explains a choice the door did not
+ * (`crm/site-assign.ts` `assignForTag`, inside its transaction under its 400 ms statement budget, BEFORE the
+ * `lead_assign` lock — the verdict reads no «fewest», and a slow seat read under the lock would fail every visitor
+ * queued behind it) and by the roster page's line of truth, so the page never explains a choice the door did not
  * make (#513).
  *
  * Yes only when a visitor sent to the AI's @handle is answered BY ITSELF: the seat holds the account the AI speaks
@@ -144,7 +145,7 @@ const at = (value: string | Date | null): Date | null => (value === null ? null 
 
 /**
  * Every fact of the verdict in ONE statement on the handle it is given — inside the website's transaction that is
- * one round trip under the lock, never a pooled read (#714). The holder's account, guard and day are read for the
+ * one round trip on that transaction, never a pooled read (#714). The holder's account, guard and day are read for the
  * HOLDER: the verdict compares the seat with him, and a seat that is not the holder is refused before they matter.
  * His own sends before the start are counted only while the ramp can still run (`dailySendCeiling`).
  */
@@ -241,9 +242,10 @@ export async function readSeatFacts(handle: Db | Tx, now: Date): Promise<SeatFac
 /**
  * The seat's answer (J23). The facts are read in a SAVEPOINT of the handle's transaction (`handle.transaction` on a
  * transaction is a nested one), so a statement that fails or hits the 400 ms budget aborts the savepoint alone and
- * the caller's transaction goes on to the roster — on the pool the same call is an ordinary short transaction. Any
- * error is «no» (`unreadable`), never a throw: one migration behind (a table this reads does not exist yet), a
- * timeout, a fault — the website still gets a person.
+ * the caller's transaction goes on to the roster — on the pool the same call is an ordinary short transaction, and
+ * it carries the door's 400 ms budget itself: the roster page's render must say «o'qib bo'lmadi», not
+ * hang on a lock the website's door would have given up on. Any error is «no» (`unreadable`), never a throw: one
+ * migration behind (a table this reads does not exist yet), a timeout, a fault — the website still gets a person.
  */
 export async function seatCandidate(handle: Db | Tx = db, now: Date = new Date()): Promise<SeatVerdict> {
   // Before any statement: with no key the model answers nobody, and nothing here needs reading to know it.
@@ -251,7 +253,12 @@ export async function seatCandidate(handle: Db | Tx = db, now: Date = new Date()
   if (!aiKey) return refused('no_ai_key');
   let facts: SeatFacts;
   try {
-    facts = await handle.transaction(async (sp) => readSeatFacts(sp, now));
+    facts = await handle.transaction(async (sp) => {
+      // Only on the pool: inside the door's transaction its own budget already stands, and a SET LOCAL in a released
+      // savepoint would outlive it into the caller's transaction.
+      if (handle === db) await sp.execute(sql`SET LOCAL statement_timeout = '400ms'`);
+      return readSeatFacts(sp, now);
+    });
   } catch (err) {
     logger.warn({ err }, '[seat-candidate] the seat could not be read — the roster answers');
     return refused('unreadable');
