@@ -16,7 +16,13 @@ import { AGENT_LIMITS, dailySendCeiling } from './limits';
 export interface DayRunCounts {
   /** Inbound runs that reached a reservation — what `daily_draft_cap` counts. */
   runs: number;
-  /** The same, for one chat — `runsPerChatPerDay`. Zero when no chat was asked about. */
+  /**
+   * The same, for one chat — `runsPerChatPerDay`. Zero when no chat was asked about. A tayyor matn's run (stage 1a P3:
+   * no model, no token — the only inbound run with a null `model`) is not in it: the cap keeps one chatty customer from
+   * spending the day's MODEL budget (money-11), and a customer photographing an invoice page by page while the media
+   * line waits for a ✅ wrote a run per page — twelve, and his typed question was refused `chat_runs` for the day (fix
+   * review D4). Those runs still count in `runs`, the day's drafts.
+   */
   chat: number;
   /** input + output + cache-write tokens of every run — what `daily_token_cap` counts. */
   tokens: number;
@@ -40,7 +46,7 @@ export async function dayRunCounts(
   const [row] = await handle.execute<{ runs: number; chat: number; tokens: string; drafts: number; errors: number }>(sql`
     SELECT
       count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice'))::int AS runs,
-      count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice') ${chatClause})::int AS chat,
+      count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice') AND model IS NOT NULL ${chatClause})::int AS chat,
       coalesce(sum(input_tokens + output_tokens + cache_write_tokens), 0)::bigint::text AS tokens,
       count(*) FILTER (WHERE outcome = 'draft')::int AS drafts,
       count(*) FILTER (WHERE outcome = 'error')::int AS errors

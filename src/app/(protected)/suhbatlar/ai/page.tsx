@@ -463,12 +463,6 @@ const LESSON_CHIP = {
 } as const;
 
 /**
- * «Saboqlar» (0148, spec SPEC-P1-v2 §3.6): what he taught the AI with «📝 Tuzatish» — every lesson, newest first,
- * each marked by whether the prompt carries it today («promptda»), fell past the cap («sig'madi»), is switched off,
- * or was typed in the bot and never confirmed. The cap and what a lesson costs are said here, where he decides how
- * many to keep; a new lesson is given on a card, where the mistake is.
- */
-/**
  * The persona's name (stage 1a P3, his answer 1: «GSR sotuv menejeri <ism>») — everyone who opens the page reads what
  * the AI calls itself; a super_admin writes it (config `setAgentPersonaName`, the seat's own door). Its own section and
  * its own read, so no other package's block carries it.
@@ -487,6 +481,12 @@ async function PersonaSection({ t, superAdmin }: { t: T; superAdmin: boolean }) 
   );
 }
 
+/**
+ * «Saboqlar» (0148, spec SPEC-P1-v2 §3.6): what he taught the AI with «📝 Tuzatish» — every lesson, newest first,
+ * each marked by whether the prompt carries it today («promptda»), fell past the cap («sig'madi»), is switched off,
+ * or was typed in the bot and never confirmed. The cap and what a lesson costs are said here, where he decides how
+ * many to keep; a new lesson is given on a card, where the mistake is.
+ */
 async function LessonsSection({ t }: { t: T }) {
   const data = await webLessons();
   // 0148 has not landed: there are no lessons and the prompt reads none — said, never a 42P01.

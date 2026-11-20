@@ -45,33 +45,49 @@ const UYGHUR = /[ۈۆڭۋ]/u;
 /**
  * «Are you a bot?» in the six languages — as QUESTIONS about us, in whole words (J6). A word that only contains «bot»,
  * «ai» or «机器人» is the customer's goods or a place: «ботинки», «Dubaimi» («Dubai?»), «Shanxaimi», 扫地机器人 (a robot
- * vacuum), «Робот-пылесос», «ربات آشپزخانه» — under stage 1a each would be answered «yes, I am an AI». 机器人 / ربات /
- * «robot» count only inside a «you are …» question; «бот» / «bot» / «ai» only as words of their own.
+ * vacuum), «Робот-пылесос», «ربات آشپزخانه» — under stage 1a each would be answered «yes, I am an AI». «Бот» / «bot» /
+ * «ai» count as words of their own, and so does their compound «чат-бот» / «chatbot» (a word boundary alone had lost
+ * «Вы чат-бот?», and a missed question is silence: rule 17 tells the model the code answers it). A ROBOT is mostly
+ * the customer's goods — «Это робот для уборки?», «Siz robot changyutgich olib kelasizmi?», «Можно отправить робот?» —
+ * so «robot», 机器人 and ربات count only where the sentence says «YOU are» (or «is this») and ends there, or puts «or a
+ * person» after it: «Вы робот?», «Siz robot yoki odam?», «你是机器人吗», «شما ربات هستید؟».
  */
 const B = '(?<![\\p{L}\\p{N}-])';
 const E = '(?![\\p{L}\\p{N}-])';
+/** «bot» as a word, with its compound «chat-bot» / «чатбот» in either script. */
+const BOT = '(?:(?:chat|чат)-?)?(?:bot|бот)';
+/** Where a «you are a robot» sentence ends: a stop, the line's end, or «or …» (a person). */
+const ROBOT_END = '(?=\\s*(?:[?.!,]|$|yoki' + E + '|ёки' + E + '|или' + E + '|or' + E + '))';
 const BOT_QUESTION = new RegExp(
   [
-    // Uzbek, both scripts: «botmisiz», «robotmi», «AImisiz», «odammisiz», «bot emasmi», «siz bot».
-    `${B}(?:bot|robot|odam|ai|бот|робот|одам)\\s*(?:mi|misiz|misan|ми|мисиз|мисан)${E}`,
-    `${B}(?:bot|robot|бот|робот)\\s+(?:emasmi|emasmisiz|эмасми|эмасмисиз)${E}`,
-    `${B}(?:siz|sen|сиз|сен)\\s+(?:bot|robot|бот|робот)${E}`,
+    // Uzbek, both scripts: «botmisiz», «chatbotmisiz», «robotmi», «AImisiz», «odammisiz», «bot emasmi», «siz bot».
+    `${B}(?:${BOT}|robot|odam|ai|робот|одам)\\s*(?:mi|misiz|misan|ми|мисиз|мисан)${E}`,
+    `${B}(?:${BOT}|robot|робот)\\s+(?:emasmi|emasmisiz|эмасми|эмасмисиз)${E}`,
+    `${B}(?:siz|sen|сиз|сен)\\s+${BOT}${E}`,
+    `${B}(?:siz|sen|сиз|сен)\\s+(?:robot|робот)${ROBOT_END}`,
     `${B}sun['‘’ʻ\`]?iy\\s+intellekt(?:mi|misiz|misan)${E}`,
-    // Russian: «вы бот?», «это робот?», «ты бот или человек», «я с ботом общаюсь?», «вы живой человек?», «бот?».
-    `${B}(?:вы|ты|это)\\s+(?:бот|робот|ии|нейросеть|искусственный\\s+интеллект)${E}`,
-    `${B}(?:бот|робот)\\s*\\?`,
-    `${B}с\\s+бот(?:ом)?${E}`,
+    // Russian: «вы бот?», «вы что, чат-бот?», «ты бот или человек», «я с ботом общаюсь?», «вы живой человек?», «бот?».
+    `${B}(?:вы|ты|это)\\s+(?:что,?\\s+)?(?:${BOT}|ии|нейросеть|искусственный\\s+интеллект)${E}`,
+    `${B}(?:вы|ты|это)\\s+(?:что,?\\s+)?робот${ROBOT_END}`,
+    `${B}${BOT}\\s*\\?`,
+    // A bare «Робот?» — only as a sentence of its own: «Можно отправить робот?» is goods.
+    `(?:^|[.!?\\n])\\s*робот\\s*\\?`,
+    `${B}с\\s+${BOT}(?:ом)?${E}`,
     `${B}(?:вы|ты)\\s+(?:живой\\s+|реальный\\s+)?человек${E}`,
-    // English: «are you a bot?», «are you a real person», «is this a bot?», «am I talking to a bot?».
-    `${B}(?:are|r)\\s+(?:you|u)\\s+(?:a\\s+|an\\s+)?(?:real\\s+|live\\s+)?(?:bot|robot|ai|human|person)(?=\\s*(?:[?.!,]|$|or${E}|and${E}))`,
-    `${B}is\\s+(?:this|it)\\s+(?:a\\s+|an\\s+)?(?:bot|robot|ai)(?=\\s*(?:[?.!,]|$|or${E}))`,
-    `${B}(?:talking|chatting|speaking|writing)\\s+(?:to|with)\\s+(?:a\\s+|an\\s+)?(?:bot|robot|ai|human|real\\s+person)${E}`,
-    // Persian: «شما ربات هستید؟», «آیا ربات هستی؟» — never «ربات آشپزخانه» (a kitchen robot).
-    '(?:شما|تو)\\s+(?:یک\\s+)?(?:ربات|هوش\\s+مصنوعی)',
+    // English: «are you a bot?», «are you a chatbot / an AI assistant?», «is this a bot?», «am I talking to a bot?».
+    `${B}(?:are|r)\\s+(?:you|u)\\s+(?:a\\s+|an\\s+)?(?:real\\s+|live\\s+)?(?:(?:chat-?)?bot|robot|ai(?:\\s+(?:assistant|bot))?|virtual\\s+assistant|human|person)(?=\\s*(?:[?.!,]|$|or${E}|and${E}))`,
+    `${B}is\\s+(?:this|it)\\s+(?:a\\s+|an\\s+)?(?:(?:chat-?)?bot|robot|ai(?:\\s+assistant)?)(?=\\s*(?:[?.!,]|$|or${E}))`,
+    `${B}(?:talking|chatting|speaking|writing)\\s+(?:to|with)\\s+(?:a\\s+|an\\s+)?(?:(?:chat-?)?bot|robot|ai|human|real\\s+person)${E}`,
+    // Persian: «شما ربات هستید؟», «آیا ربات هستی؟», «شما ربات یا آدم؟» — never «شما ربات آشپزخانه حمل می‌کنید؟» (you
+    // carry kitchen robots): «you» and «robot» must be followed by the copula, «or», or the question's end.
+    '(?:شما|تو)\\s+(?:یک\\s+)?(?:ربات|هوش\\s+مصنوعی)\\s*(?:هستید|هستی|اید|ای|یا|[?؟]|$)(?![\\p{L}])',
     '(?:ربات|هوش\\s+مصنوعی)\\s*(?:هستی|هستید|ای)(?![\\p{L}])',
-    // Chinese: «你是机器人吗», «你是不是机器人», «您是AI吗», «是真人还是机器人» — never 扫地机器人.
-    '(?:你|您)(?:是|是不是)(?:一个)?(?:机器人|AI|ai|人工智能|真人)',
-    '真人还是机器人|机器人还是真人|是机器人吗',
+    '(?<![\\p{L}])با\\s+(?:یک\\s+)?(?:ربات|هوش\\s+مصنوعی)\\s+(?:صحبت|حرف|چت)',
+    // Chinese: «你是机器人吗», «你们是不是机器人», «您是AI吗», «是真人还是机器人», «我在跟机器人聊天吗» — never 扫地机器人,
+    // and never «这是机器人吗» (is THIS a robot — the goods): the subject is «you».
+    '(?:你|您)们?(?:是|是不是)(?:一个)?(?:机器人|AI|ai|人工智能|真人)',
+    '真人还是机器人|机器人还是真人',
+    '(?:跟|和|与)(?:一个)?(?:机器人|AI|ai|人工智能)(?:在)?(?:聊天|说话|对话)',
   ].join('|'),
   'iu',
 );

@@ -52,6 +52,7 @@ import { WAREHOUSE_SENTENCES } from '@/modules/wms/agent/policy';
 import { JOB_AGENT_HAND_BACK } from '@/modules/wms/agent/queues';
 import { KASHGAR_REFUSAL } from '@/modules/wms/agent/prompt';
 import { handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
+import { zoneForOrigin } from '@/modules/wms/agent/origin';
 import { RAIL_OWNER_QUESTION } from '@/modules/wms/agent/worthy';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
@@ -374,7 +375,7 @@ describe('rail is his question (his «Temir yo‘l mendan so‘rasin»)', () => 
   });
 });
 
-describe('an agent calculation lands like a seller’s — every action, the company’s certificate, the named zone', () => {
+describe('an agent calculation lands like a seller’s — every action, the company’s certificate, the named place', () => {
   // DELIBERATE EDIT (stage 1a P3, J24): this case named Kashgar; his «HOZIRCHA qashqarda yuk qabul qilmaymiz» refuses a
   // Kashgar job now (the next case), so the named western zone that still lands is Horgos — the same shape, its own zone.
   it('✅ lands the job with has_certificate from Horgos, and runs the follow-up and the mute too', async () => {
@@ -396,12 +397,17 @@ describe('an agent calculation lands like a seller’s — every action, the com
     });
     expect(out).toMatchObject({ outcome: 'draft', blocked: false });
     const d = await liveDraft();
-    const actions = d!.actions as { type: string; certificate?: unknown; fromOurWarehouse?: boolean }[];
+    const actions = d!.actions as { type: string; certificate?: unknown; fromOurWarehouse?: boolean; facts?: { fromCity?: string | null } }[];
     expect(actions.map((x) => x.type)).toEqual(['calc_submit', 'set_followup', 'mute']);
     // No certificate field at all (B8): the company obtains it, and nothing reads a choice.
     expect(actions[0]).not.toHaveProperty('certificate');
     // A named city with a warehouse of ours is priced as it always was (his third set «3»).
     expect(actions[0]!.fromOurWarehouse).toBe(false);
+    // The action carries the place the customer named, whose zone is Horgos's own (decide `freightZoneOf` →
+    // `zoneForOrigin`) — the zone the request keeps the day the tariff prices that column (fix review N5: the only
+    // priced western column in this database is Kashgar's, which J24 refuses — so the zone's own landing is pinned at
+    // the unit, agent-answers.test `zoneForOrigin('Xorgos')`, and here only what the queue is handed).
+    expect(zoneForOrigin(actions[0]!.facts?.fromCity ?? null)).toBe('horgos');
 
     const r = await decideDraft(actor(), d!.id, 'send', { digest: await cardDigestOf(d!.id) }, ctx());
     expect(r).toMatchObject({ ok: true, status: 'approved' });

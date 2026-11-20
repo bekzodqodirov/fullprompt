@@ -19,6 +19,11 @@ const COMPLAINT = new RegExp(
   [
     // Uzbek Latin: a manager wanted, the boss, a complaint, money back, deceived, the court.
     `${B}(?:menejer|menedjer|manager)\\p{L}*\\s+(?:kerak|chaqir\\p{L}*|bilan\\s+gaplash\\p{L}*)`,
+    // «…bilan bog‘lab bering» — the asking forms only: «menejer bilan bog‘landim» is a manager already reached.
+    `${B}(?:menejer|menedjer|manager|rahbar|odam)\\p{L}*\\s+bilan\\s+bog['‘’ʻ\`]?la(?:b\\s+ber\\p{L}*|ng\\p{L}*|sh(?:tiring|ing|ish\\s+kerak))${E}`,
+    // «Odam bilan gaplashmoqchiman» — a person wanted; «bir odam bilan gaplashib, keyin yozaman» wants nobody.
+    `${B}odam\\s+bilan\\s+gaplash(?:moqchi\\p{L}*|ish\\s+(?:kerak|mumkin)\\p{L}*|tiring|ing|ay\\p{L}*)${E}`,
+    `${B}(?:firibgar|aldov)\\p{L}*`,
     `${B}rahbar\\p{L}*\\s+bilan`,
     `${B}rahbar\\p{L}*ni\\s+chaqir\\p{L}*`,
     `${B}shikoyat\\p{L}*`,
@@ -32,13 +37,16 @@ const COMPLAINT = new RegExp(
     `${B}шикоят\\p{L}*`,
     `${B}пул(?:им|имиз|ингиз)?(?:ни)?\\s+[қк]айтар\\p{L}*`,
     `${B}алда(?:д|б|й)\\p{L}*`,
+    `${B}(?:фирибгар|алдов)\\p{L}*`,
     // Russian.
     `${B}жалоб\\p{L}*`,
     `${B}жалу(?:юсь|ется|ются)${E}`,
+    `${B}жалова\\p{L}*`,
+    `${B}мошенн\\p{L}*`,
     `${B}верн\\p{L}*\\s+(?:мне\\s+|мои\\s+|наши\\s+)?деньги`,
     `${B}возврат\\p{L}*\\s+(?:денег|средств|оплаты)`,
-    `${B}(?:позовите|позови|дайте|соедините)\\s+(?:с\\s+)?(?:менеджер|руководител|начальник|живого|человек)\\p{L}*`,
-    `${B}(?:поговорить|связаться|общаться)\\s+с\\s+(?:менеджер|руководител|начальник|живым|человеком)\\p{L}*`,
+    `${B}(?:позовите|позови|дайте|соедините|свяжите)\\s+(?:меня\\s+)?(?:с\\s+)?(?:менеджер|руководител|начальник|живого|человек|оператор)\\p{L}*`,
+    `${B}(?:поговорить|связаться|общаться)\\s+с\\s+(?:менеджер|руководител|начальник|живым|человеком|оператор)\\p{L}*`,
     `${B}(?:обманул|обманули|обман)\\p{L}*`,
     `${B}(?:в\\s+суд|суд\\p{L}*\\s+пода\\p{L}*)`,
     // English.
@@ -47,7 +55,7 @@ const COMPLAINT = new RegExp(
     `${B}complain(?:t|ts|ing|ed)?${E}`,
     `${B}(?:real|live|actual)\\s+(?:person|human|manager)${E}`,
     `${B}(?:talk|speak)\\s+(?:to|with)\\s+(?:a\\s+|the\\s+|your\\s+)?(?:manager|boss|supervisor|human)${E}`,
-    `${B}(?:scam|scammed|cheated|lawyer|sue)${E}`,
+    `${B}(?:scam\\p{L}*|fraud\\p{L}*|cheated|lawyer|sue)${E}`,
     // Chinese.
     '投诉|退款|退钱|骗子|骗人|找你们(?:经理|老板|领导)|叫你们(?:经理|老板|领导)|真人客服|人工客服',
     // Persian.

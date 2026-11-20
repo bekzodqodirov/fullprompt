@@ -1716,6 +1716,31 @@ const BOT_DANGEROUS: readonly Row[] = [
   ['bq028', '您是AI吗？', P_BQ],
   ['bq029', '是真人还是机器人？', P_BQ],
   ['bq030', 'Salom\nSiz botmisiz?', P_BQ],
+  // The fix review's D1: the compound «чат-бот» / «chatbot» and «AI assistant» — the whole-word rule (J6) had lost
+  // them, and a missed question ends in silence (rule 17 tells the model the code adds the answer).
+  ['bq031', 'Вы чат-бот?', P_BQ],
+  ['bq032', 'Это чат-бот?', P_BQ],
+  ['bq033', 'Ты чатбот?', P_BQ],
+  ['bq034', 'Siz chatbotmisiz?', P_BQ],
+  ['bq035', 'Bu chat-botmi?', P_BQ],
+  ['bq036', 'Are you a chatbot?', P_BQ],
+  ['bq037', 'Are you an AI assistant?', P_BQ],
+  ['bq038', 'Is this a chatbot?', P_BQ],
+  ['bq039', 'Я с чат-ботом переписываюсь?', P_BQ],
+  ['bq040', 'Сиз чатботмисиз?', P_BQ],
+  ['bq041', 'Am I chatting with a chatbot?', P_BQ],
+  ['bq042', 'Are you a virtual assistant?', P_BQ],
+  ['bq043', 'Вы что, бот?', P_BQ],
+  ['bq044', 'Ты что робот?', P_BQ],
+  // …and «robot» as the question about US stays held while D2 narrows it away from the goods.
+  ['bq045', 'Это робот?', P_BQ],
+  ['bq046', 'Вы робот или человек?', P_BQ],
+  ['bq047', 'Робот?', P_BQ],
+  ['bq048', 'Siz robot?', P_BQ],
+  ['bq049', 'Siz robot yoki odam?', P_BQ],
+  ['bq050', 'شما ربات یا آدم؟', P_BQ],
+  ['bq051', '你们是机器人吗？', P_BQ],
+  ['bq052', '我在跟机器人聊天吗？', P_BQ],
 ];
 
 const BOT_ORDINARY: readonly Row[] = [
@@ -1737,6 +1762,18 @@ const BOT_ORDINARY: readonly Row[] = [
   ['bq114', 'Telegram bot orqali yozdim', P_BQ],
   ['bq115', 'AI kamera, 3 kub, Guanchjoudan', P_BQ],
   ['bq116', 'Robotics parts, 4 cbm', P_BQ],
+  // The fix review's D2: a robot is GOODS unless the sentence says «you are» and ends there — each of these was read as
+  // «are you a bot?» and answered «I am an AI» in front of the price.
+  ['bq117', 'Siz robot changyutgich olib kelasizmi?', P_BQ],
+  ['bq118', 'Это робот для уборки?', P_BQ],
+  ['bq119', 'Вы робот пылесос возите?', P_BQ],
+  ['bq120', 'Можно отправить робот?', P_BQ],
+  ['bq121', 'Сколько стоит доставить робот?', P_BQ],
+  ['bq122', 'شما ربات آشپزخانه حمل می‌کنید؟', P_BQ],
+  ['bq123', '这是机器人吗？', P_BQ],
+  ['bq124', 'Это робот-пылесос?', P_BQ],
+  ['bq125', 'Sen robot changyutgich olib kelasanmi?', P_BQ],
+  ['bq126', '我想运机器人，多少钱？', P_BQ],
 ];
 
 // ── pashto: is the burst Pashto (stage 1a P3, J7) ───────────────────────────
@@ -1789,6 +1826,17 @@ const COMPLAINT_DANGEROUS: readonly Row[] = [
   ['cp018', '我要退款', P_CP],
   ['cp019', 'می‌خواهم شکایت کنم', P_CP],
   ['cp020', 'Salom\nYukim yo‘qoldi, menejer kerak', P_CP],
+  // The fix review's N1: the list leans to holding, and these shapes are common.
+  ['cp021', 'Я буду жаловаться', P_CP],
+  ['cp022', 'Мошенники!', P_CP],
+  ['cp023', 'You are scammers', P_CP],
+  ['cp024', 'This is fraud', P_CP],
+  ['cp025', 'Sizlar firibgarsizlar', P_CP],
+  ['cp026', 'Aldovchilar', P_CP],
+  ['cp027', 'Odam bilan gaplashmoqchiman', P_CP],
+  ['cp028', 'Menejer bilan bog‘lab bering', P_CP],
+  ['cp029', 'Соедините с оператором', P_CP],
+  ['cp030', 'Хочу поговорить с оператором', P_CP],
 ];
 
 const COMPLAINT_ORDINARY: readonly Row[] = [
@@ -1802,6 +1850,10 @@ const COMPLAINT_ORDINARY: readonly Row[] = [
   ['cp108', 'Menejerga rahmat ayting', P_CP],
   ['cp109', 'Пульт управления, 2 коробки', P_CP],
   ['cp110', '退货地址在哪里？', P_CP],
+  // …and their neighbours that ask for nobody: a manager already reached, a person talked to later, an operator quoted.
+  ['cp111', 'Menejer bilan bog‘landim, 5 kub dedi', P_CP],
+  ['cp112', 'Bir odam bilan gaplashib, keyin yozaman', P_CP],
+  ['cp113', 'Оператор сказал, что груз в пути', P_CP],
 ];
 
 // ── calc_claim: «hisoblatishga yubordim» with no calculation sent (stage 1a P3, J9) ──
@@ -1826,6 +1878,18 @@ const CALC_CLAIM_DANGEROUS: readonly Row[] = [
   ['cc013', 'درخواست شما را برای محاسبه ارسال کردم.', P_CC, r('fa')],
   ['cc014', '已提交核算，有结果马上告诉您。', P_CC, r('zh')],
   ['cc015', '我已经发给同事计算了，有结果告诉您。', P_CC, r('zh')],
+  // The fix review's D3: the claim beside a question in the SAME sentence (rule 11's own wording plus «yana savol
+  // bormi?»), and the passive.
+  ['cc016', 'Hisoblatishga yubordim, javob kelishi bilan aytaman — yana biror savol bormi?', P_CC, r('uz')],
+  ['cc017', 'Rahmat! Ma’lumotlarni hisoblatishga yubordim, yana nima kerak?', P_CC, r('uz')],
+  ['cc018', 'Отправил на расчёт — подскажите, ещё что-то нужно?', P_CC, r('ru')],
+  ['cc019', 'Ваш запрос отправлен на расчёт.', P_CC, r('ru')],
+  ['cc020', 'Запрос передан на расчёт, как будет ответ — сообщу.', P_CC, r('ru')],
+  ['cc021', 'Your request has been sent for calculation.', P_CC, r('en')],
+  ['cc022', 'درخواست شما برای محاسبه ارسال شد.', P_CC, r('fa')],
+  ['cc023', 'Hisob-kitobga yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc024', '我已经把资料提交给核算部门了，有结果告诉您。', P_CC, r('zh')],
+  ['cc025', 'Your request was forwarded for calculation, I will let you know.', P_CC, r('en')],
 ];
 
 const CALC_CLAIM_ORDINARY: readonly Row[] = [
@@ -1839,6 +1903,16 @@ const CALC_CLAIM_ORDINARY: readonly Row[] = [
   ['cc108', 'Shall I send it for calculation?', P_CC, r('en')],
   ['cc109', '需要我提交核算吗？', P_CC, r('zh')],
   ['cc110', 'آیا برای محاسبه بفرستم؟', P_CC, r('fa')],
+  // …and the offers a clause split must not turn into claims: a tag question after a present or future verb.
+  ['cc111', '我提交核算，好吗？', P_CC, r('zh')],
+  ['cc112', 'Hisoblatishga yuboraman, xo‘pmi?', P_CC, r('uz')],
+  ['cc113', 'It will be sent for calculation once you send the weight.', P_CC, r('en')],
+  ['cc114', 'Если хотите, отправлю на расчёт.', P_CC, r('ru')],
+  ['cc115', 'Ma’lumot to‘liq bo‘lsa, hisoblatishga yuboraman.', P_CC, r('uz')],
+  ['cc116', 'Agar xohlasangiz, hisoblatishga yuboray?', P_CC, r('uz')],
+  ['cc117', 'Ваш запрос будет отправлен на расчёт, как только пришлёте вес.', P_CC, r('ru')],
+  ['cc118', 'Чтобы запрос был отправлен на расчёт, напишите вес груза.', P_CC, r('ru')],
+  ['cc119', 'Your request will be sent for calculation once we have the weight.', P_CC, r('en')],
 ];
 
 // ── phone: the ✍️ door's phone refusal ──────────────────────────────────────

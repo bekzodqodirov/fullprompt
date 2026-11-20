@@ -79,10 +79,11 @@ export const SYSTEM_LINES: {
       'Юборганингизни олдим, аммо ҳозирча оча олмайман — илтимос, керакли маълумотни матн билан ёзинг.',
       'Раҳмат, олдим, лекин ҳозирча файлни оча олмаяпман — керакли маълумотни ёзиб юборсангиз бўлади.',
     ]),
+    // Russian past tense has a gender, and the persona may be a woman: «получен», never «получил» (fix review N6).
     ru: lines('', [
-      'Файл получил, но пока не могу его открыть — напишите, пожалуйста, нужные данные текстом.',
-      'Получил, но открыть пока не получается — пожалуйста, напишите нужное текстом.',
-      'Спасибо, получил, но файл сейчас открыть не могу — напишите нужную информацию текстом, пожалуйста.',
+      'Файл получен, но пока не могу его открыть — напишите, пожалуйста, нужные данные текстом.',
+      'Получено, но открыть пока не получается — пожалуйста, напишите нужное текстом.',
+      'Спасибо, файл получен, но сейчас открыть его не могу — напишите нужную информацию текстом, пожалуйста.',
     ]),
     en: lines(G_MEDIA, [
       'I got your file, but I can’t open it for now — please type the details you need as text.',
@@ -192,16 +193,40 @@ export function systemReplyFor(input: { reason: SystemReplyReason; locale: Agent
   };
 }
 
-/** Every tayyor matn's text, folded — what «our last line was one» is compared against. */
+/** Every tayyor matn's text, folded, with the reason it answers — what «our line was one, and which» is read against. */
 const fold = (t: string) => t.normalize('NFC').toLowerCase().replace(/\s+/gu, ' ').trim();
-const ALL_LINES = new Set(
-  [...Object.values(SYSTEM_LINES.voice).flat(), ...Object.values(SYSTEM_LINES.media).flat(), ...SYSTEM_LINES.pashto].map((l) => fold(l.text)),
-);
+const LINE_REASON = new Map<string, SystemReplyReason>([
+  ...Object.values(SYSTEM_LINES.voice).flat().map((l) => [fold(l.text), 'voice'] as const),
+  ...Object.values(SYSTEM_LINES.media).flat().map((l) => [fold(l.text), 'media'] as const),
+  ...SYSTEM_LINES.pashto.map((l) => [fold(l.text), 'pashto'] as const),
+]);
+
+/** Which tayyor matn a line of ours is — null for any other line. */
+export function systemReasonOfLine(body: string | null | undefined): SystemReplyReason | null {
+  return LINE_REASON.get(fold(body ?? '')) ?? null;
+}
+
+/** A line of ours is a tayyor matn, whichever. */
+export function isSystemLine(body: string | null | undefined): boolean {
+  return systemReasonOfLine(body) !== null;
+}
 
 /**
- * Our last line in the chat IS a tayyor matn (§4.4 «once per silence»): the burst after it gets no second one — the
- * customer was told already, and a line per photo of a ten-page invoice is a robot talking to itself.
+ * The tayyor matns already said in this SILENCE (§4.4 «once per silence»): our own lines read back from the newest, up
+ * to the first that is not one — a reply of ours is where the silence began. The burst after them gets no second line
+ * OF THE SAME KIND: the customer was told, and a line per photo of a ten-page invoice is a robot talking to itself. A
+ * line of another kind is still owed: a Pashto message after our «can't open the file» has never been asked to write in
+ * Persian or Russian (fix review N2 — «any line said» told him the Pashto line went when it never had), and a photo
+ * after the media line and a voice line is still told (the walk does not stop at the newest line).
  */
-export function isSystemLine(body: string | null | undefined): boolean {
-  return ALL_LINES.has(fold(body ?? ''));
+export function toldInSilence(messages: readonly { direction: 'in' | 'out'; body: string | null }[]): ReadonlySet<SystemReplyReason> {
+  const told = new Set<SystemReplyReason>();
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]!;
+    if (m.direction !== 'out') continue;
+    const reason = systemReasonOfLine(m.body);
+    if (reason === null) break;
+    told.add(reason);
+  }
+  return told;
 }

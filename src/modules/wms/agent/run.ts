@@ -28,7 +28,7 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecs
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
 import { asksIfBot, draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { isSystemLine, systemLocaleOf, systemReasonOf, systemReplyFor } from './system-reply';
+import { systemLocaleOf, systemReasonOf, systemReplyFor, toldInSilence } from './system-reply';
 import { customerLabel, draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
@@ -565,13 +565,15 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   const worthy = draftWorthy(burst, ourLineAsks(ctx.lastOut?.body));
   // A burst the model cannot answer — a voice note, a photo or a file, Pashto — gets the code's tayyor matn (stage 1a
   // P3, system-reply.ts) through the same run as any reply: eligibility, the caps, the policy, the gate, one draft writer.
-  // Once per silence: when our last line already was one, the customer was told — and the voice or the Pashto still
-  // reaches HIM, as before, so a customer sending five voice notes is never answered by nobody.
+  // Once per silence, per kind: when our lines since the silence began already said THIS line, the customer was told —
+  // and the voice or the Pashto still reaches HIM, as before, so a customer sending five voice notes is never answered by
+  // nobody. A voice note beside a sticker is a voice note here too (worthy calls that burst `media_only`).
   const system: SystemReplyReason | null = systemReasonOf(worthy, burst);
-  if (!worthy.worthy && (system === null || isSystemLine(ctx.lastOut?.body))) {
-    if ('notice' in worthy) {
-      if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
-      return { outcome: 'notice', reason: worthy.reason };
+  if (!worthy.worthy && (system === null || toldInSilence(ctx.messages).has(system))) {
+    const notice = system === 'voice' ? 'voice_only' : system === 'pashto' ? 'pashto' : null;
+    if (notice !== null) {
+      if (await runLedgerRow(job, attempt, 'notice', notice)) await writeNotice(ctx, notice);
+      return { outcome: 'notice', reason: notice };
     }
     // A ledger row, so the sweep's deploy-gap pass does not ask again every minute.
     await runLedgerRow(job, attempt, 'refused', worthy.reason);

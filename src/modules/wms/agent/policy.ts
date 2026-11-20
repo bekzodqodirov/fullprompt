@@ -2112,8 +2112,9 @@ export function customsOfferSentencesText(): string {
 /**
  * «Botmisiz?» answered by CODE (his 1 b ⚠, stage 1a §4.4 `withBotAnswer`): one honest line in front of the reply, so
  * it is said whatever the model wrote — never left to the model (rule 17 tells it the line is added). It states what
- * the AI is without a «ha / yo'q»: the same line answers «are you a bot?» and «are you a person?». It promises nothing
- * a stage builds later (no time, no hand-over), and `ai_denial` still reads the whole reply. Persian and Chinese carry
+ * the AI is without a «ha / yo'q»: the same line answers «are you a bot?» and «are you a person?». Its one promise —
+ * «kerak bo‘lsa menejerni chaqiraman», his own words (his 1 b) — is kept today by the card that reaches him and his 🙋;
+ * it names no time and no act a later stage builds, and `ai_denial` still reads the whole reply. Persian and Chinese carry
  * their Uzbek gloss (he cannot read them — and a tayyor matn in them is his card until he approved it, J27).
  */
 export const AI_HONEST_LINE: Record<AgentLocale, { text: string; glossUz: string }> = {

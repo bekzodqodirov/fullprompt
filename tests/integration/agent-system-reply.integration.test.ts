@@ -118,6 +118,41 @@ function untouched(): CallModel & { requests: ModelRequest[] } {
   return fn;
 }
 
+/** A model that answers the burst with an ordinary question — the run's text reply, counted by the chat's cap. */
+function replying(): CallModel & { requests: ModelRequest[] } {
+  const requests: ModelRequest[] = [];
+  const fn = (async (req: ModelRequest): Promise<ModelResponse> => {
+    requests.push(req);
+    return {
+      stopReason: 'tool_use',
+      content: [
+        {
+          type: 'tool_use',
+          id: 't1',
+          name: 'compose_reply',
+          input: {
+            reply_needed: true,
+            reply_text: 'Tushunarli. Yuk Guanchjoudanmi?',
+            language: 'uz',
+            gloss_uz: '',
+            category: 'qualification',
+            confidence: 0.9,
+            needs_owner: false,
+            owner_question: '',
+            next_step: 'qualify',
+            actions: [],
+            used_fact_ids: [],
+            cited_message_refs: [],
+          },
+        },
+      ],
+      usage: { inputTokens: 10, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    };
+  }) as CallModel & { requests: ModelRequest[] };
+  fn.requests = requests;
+  return fn;
+}
+
 async function liveDraft() {
   const [d] = await db
     .select()
@@ -293,6 +328,62 @@ describe('once per silence: the next such burst gets no second line', () => {
     const anchor = await inbound(null, 'sticker');
     expect(await handleInbound(job(anchor), { callModel: untouched() })).toMatchObject({ outcome: 'draft' });
     expect(((await liveDraft())!.policy as DraftPolicyJson).system).toBe('voice');
+  });
+
+  it('…and the next voice note beside a sticker, after the voice line went, still tells HIM (fix review N2)', async () => {
+    await outbound(SYSTEM_LINES.voice.uz[0]!.text);
+    await inbound(null, VOICE);
+    const anchor = await inbound(null, 'sticker');
+    expect(await handleInbound(job(anchor), { callModel: untouched() })).toEqual({ outcome: 'notice', reason: 'voice_only' });
+    expect(await liveDraft()).toBeNull();
+    expect(await notices()).toHaveLength(1);
+  });
+});
+
+describe('once per silence is per KIND of line (fix review N2)', () => {
+  it('Pashto after our media line gets the Pashto line — the customer was never asked to write in Persian or Russian', async () => {
+    // Our line as the pump records it (no person's hand, so the chat is not «his»), half a minute before — not an echo.
+    await outbound(SYSTEM_LINES.media.uz[0]!.text, true);
+    tick += 30;
+    const anchor = await inbound('زما بار په ګوانګجو کې دی');
+    expect(await handleInbound(job(anchor), { callModel: untouched() })).toMatchObject({ outcome: 'draft' });
+    expect(((await liveDraft())!.policy as DraftPolicyJson).system).toBe('pashto');
+    // …and no notice claiming «fors yoki rus tilida yozing» was said.
+    expect(await notices()).toHaveLength(0);
+  });
+
+  it('a photo after our media line AND a voice line since — the media line was said in this silence: no second one', async () => {
+    await outbound(SYSTEM_LINES.media.uz[0]!.text);
+    await inbound(null, VOICE);
+    await outbound(SYSTEM_LINES.voice.uz[0]!.text);
+    const anchor = await inbound(null, PHOTO);
+    expect(await handleInbound(job(anchor), { callModel: untouched() })).toEqual({ outcome: 'skipped', reason: 'media_only' });
+    expect(await liveDraft()).toBeNull();
+  });
+
+  it('a reply of ours ends the silence: a photo after it gets the media line again', async () => {
+    await outbound(SYSTEM_LINES.media.uz[0]!.text, true);
+    await inbound('3 kub, 450 kg');
+    await outbound('Rahmat, qayerdan jo‘natasiz?', true);
+    tick += 30;
+    const anchor = await inbound(null, PHOTO);
+    expect(await handleInbound(job(anchor), { callModel: untouched() })).toMatchObject({ outcome: 'draft' });
+    expect(((await liveDraft())!.policy as DraftPolicyJson).system).toBe('media');
+  });
+});
+
+describe('a tayyor matn spends no model, so it never spends the chat\'s day of runs (fix review D4)', () => {
+  it('a page-by-page invoice while the media line waits, then the typed question: the question reaches the model', async () => {
+    // Each page is its own burst while the line waits for his ✅ (nothing went, so no «once per silence»): a run each.
+    for (let i = 0; i < 13; i += 1) {
+      const page = await inbound(null, PHOTO);
+      expect(await handleInbound(job(page), { callModel: untouched() }), `page ${i + 1}`).toMatchObject({ outcome: 'draft' });
+    }
+    expect((await runsOf()).filter((r) => r.outcome === 'draft' && r.model === null)).toHaveLength(13);
+    const question = await inbound('Narxi qancha bo‘ladi? 3 kub 450 kg, Guanchjoudan');
+    const model = replying();
+    expect(await handleInbound(job(question), { callModel: model })).toMatchObject({ outcome: 'draft' });
+    expect(model.requests).toHaveLength(1);
   });
 });
 

@@ -12,7 +12,9 @@ import {
   systemGlossUz,
   systemLocaleOf,
   systemReasonOf,
+  systemReasonOfLine,
   systemReplyFor,
+  toldInSilence,
   type SystemLine,
 } from '@/modules/wms/agent/system-reply';
 import { draftWorthy, type BurstMessage } from '@/modules/wms/agent/worthy';
@@ -236,6 +238,25 @@ describe('once per silence', () => {
     expect(isSystemLine('Assalomu alaykum! Qanday yordam bera olaman?')).toBe(false);
     expect(isSystemLine(`${SYSTEM_LINES.voice.uz[0]!.text} Narxi 800 $.`)).toBe(false);
     expect(isSystemLine(null)).toBe(false);
+  });
+
+  it('which line was said, per kind, since the silence began — read back to our first line that is not one (fix review N2)', () => {
+    const media = SYSTEM_LINES.media.ru[1]!.text;
+    const voice = SYSTEM_LINES.voice.uz[2]!.text;
+    const pashto = SYSTEM_LINES.pashto[0]!.text;
+    expect(systemReasonOfLine(media)).toBe('media');
+    expect(systemReasonOfLine(voice)).toBe('voice');
+    expect(systemReasonOfLine(pashto)).toBe('pashto');
+    expect(systemReasonOfLine('Narxi qancha?')).toBeNull();
+    // Our media line, then a photo: the media line is said, nothing else.
+    expect([...toldInSilence([msg(media, 'out'), msg('', 'in', 'photo')])]).toEqual(['media']);
+    // Media, then a voice line, then a photo: both said — the walk does not stop at the newest line.
+    expect(new Set(toldInSilence([msg(media, 'out'), msg('', 'in', 'voice'), msg(voice, 'out'), msg('', 'in', 'photo')]))).toEqual(
+      new Set(['media', 'voice']),
+    );
+    // A reply of ours ends the silence: the media line before it was another silence's.
+    expect(toldInSilence([msg(media, 'out'), msg('3 kub', 'in'), msg('Qayerdan?', 'out'), msg('', 'in', 'photo')]).size).toBe(0);
+    expect(toldInSilence([msg('', 'in', 'photo')]).size).toBe(0);
   });
 });
 

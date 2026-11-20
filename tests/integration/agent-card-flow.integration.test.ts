@@ -63,7 +63,7 @@ vi.mock('@/modules/platform/settings/service', async (original) => {
   };
 });
 
-import type { CallModel, ModelResponse } from '@/modules/platform/ai/model';
+import { STAFF_MODEL, type CallModel, type ModelResponse } from '@/modules/platform/ai/model';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { enqueue, getBoss } from '@/modules/platform/jobs/boss';
 import {
@@ -354,6 +354,8 @@ async function newerWhileEditing(me: Owner, agoMs = 30_000): Promise<bigint> {
     attempt: 0,
     outcome: 'stood_down',
     error: 'editing',
+    // The model run that stood down names its model, as `reserve` writes it (see `fillChatDay`).
+    model: STAFF_MODEL,
   });
   return newer;
 }
@@ -373,6 +375,9 @@ async function fillChatDay(me: Owner, n: number): Promise<void> {
       anchorTgMessageId: BigInt(nextMsg()),
       attempt: 0,
       outcome: 'draft' as const,
+      // A model run names its model, as every reserved one does: an inbound run with none is a tayyor matn (stage 1a
+      // P3), which the chat's cap does not count (today `dayRunCounts`) — a fixture without it filled nothing.
+      model: STAFF_MODEL,
     })),
   );
 }
@@ -1339,6 +1344,8 @@ describe('the press promises only the card that is coming, and asks as itself (r
       attempt: 0,
       outcome: 'error',
       error: 'Request timed out.',
+      // A model run, as `reserve` writes it — counted by the chat's cap (see `fillChatDay`).
+      model: STAFF_MODEL,
     });
     await fillChatDay(me, AGENT_LIMITS.runsPerChatPerDay - 1);
     const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
@@ -1350,7 +1357,8 @@ describe('the press promises only the card that is coming, and asks as itself (r
     const me = await owner();
     const [own] = await db
       .insert(agentRuns)
-      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: me.anchor, attempt: 0, outcome: 'draft' })
+      // Model runs, as `reserve` writes them — counted by the chat's cap (see `fillChatDay`).
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: me.anchor, attempt: 0, outcome: 'draft', model: STAFF_MODEL })
       .returning({ id: agentRuns.id });
     const a = await draftFor(me, { runId: own!.id });
     await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
@@ -1363,6 +1371,7 @@ describe('the press promises only the card that is coming, and asks as itself (r
       attempt: 100,
       outcome: 'stood_down',
       error: 'editing',
+      model: STAFF_MODEL,
     });
     await fillChatDay(me, AGENT_LIMITS.runsPerChatPerDay - 2);
     await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${a.draftId}`)));
