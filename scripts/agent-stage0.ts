@@ -363,6 +363,8 @@ async function verdicts(q: Q, args: Args): Promise<number> {
       language: string | null;
       confidence: string | null;
       body: string;
+      own_body: string | null;
+      edited: boolean;
       warnings: unknown;
       notes: unknown;
       ledger: unknown;
@@ -376,7 +378,9 @@ async function verdicts(q: Q, args: Args): Promise<number> {
            to_char(v.created_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS at,
            v.eligible, v.reasons, v.state, v.outcome,
            d.kind, d.status, d.category, d.language, d.confidence::text AS confidence,
-           coalesce(d.final_body, d.proposed_body, '') AS body,
+           -- The AI's words, never his: the gate judged them (the verdict row precedes any ✏️), and 1a is asked about
+           -- what the AI would send. His text is printed beside it, not judged.
+           coalesce(d.proposed_body, '') AS body, d.final_body AS own_body, d.final_body IS NOT NULL AS edited,
            d.policy -> 'warnings' AS warnings, d.policy -> 'notes' AS notes, d.policy -> 'ledger' AS ledger,
            d.policy -> 'memory' -> 'customerLocale' AS customer_locale,
            coalesce(d.policy -> 'memory' ->> 'hasEstimate', 'false') = 'true' AS has_estimate,
@@ -416,28 +420,19 @@ async function verdicts(q: Q, args: Args): Promise<number> {
       ? (r.warnings as { code?: unknown }[]).map((w) => (typeof w?.code === 'string' ? w.code : '?'))
       : null;
     const notes = Array.isArray(r.notes) ? (r.notes as unknown[]).map((n) => (typeof n === 'string' ? n : '')) : null;
-    const cls = classOf({
-      actionTypes,
-      tools: toolCallsOf(r.tool_calls),
-      ledger: ledgerLinesOf(r.ledger),
-      hasEstimate: r.has_estimate === true,
-      reasons,
-      body: r.body,
-    });
+    const facts = { actionTypes, tools: toolCallsOf(r.tool_calls), hasEstimate: r.has_estimate === true, reasons, body: r.body };
+    // His ✏️ (decide.ts `submitOwnText`, :1455-1462) wrote his text's warnings over the AI's and emptied the ledger:
+    // the stored ones say nothing about the AI's reply, so the edited readings are taken instead (`judge`).
+    const edited = r.edited === true;
+    const classes = edited ? classesWithLedgerLost(facts) : [classOf({ ...facts, ledger: ledgerLinesOf(r.ledger) })];
+    const warningReadings = edited && reasons.includes('warnings') ? [EYE_ONLY_WARNINGS, [ERASED_WARNING]] : [warningCodes];
     const guess = guessOf(r.customer_locale);
-    const left = reasonsLeft({
-      reasons,
-      state: r.state,
-      outcome: r.outcome,
-      category: r.category,
-      warningCodes,
-      notes,
-      cls,
-      language: r.language,
-      guess,
-      nightPrices,
-    });
-    return { r, reasons, warningCodes, cls, guess, left };
+    const verdict = judge(
+      { reasons, state: r.state, outcome: r.outcome, category: r.category, notes, language: r.language, guess, nightPrices },
+      classes,
+      warningReadings,
+    );
+    return { r, reasons, warningCodes, edited, classes, guess, verdict };
   });
 
   console.log("\nSaqlangan sabablar (gate yozgan paytdagi; bir qoralamada bir nechta bo'lishi mumkin):");
