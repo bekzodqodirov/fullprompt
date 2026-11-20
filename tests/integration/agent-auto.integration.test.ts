@@ -1619,11 +1619,13 @@ describe('fix pass B — what he sees and presses (C1 C6 C7 C9 C10)', () => {
     // DELIBERATE EDIT (2026-11-15): the hint follows who may ARM — the holder, or a super_admin on the AI seat.
     expect(page).toMatch(/\{!c\.armed && mayArm && !auto\.workAccount && \(/u);
     expect(page).toMatch(/mayArm=\{holder \|\| \(superAdmin && seat\.state === 'holds'\)\}/u);
-    // The kinds, the daily count and the confidence floor: the holder's or any super_admin's (`mayTuneAuto`).
+    // The kinds and the daily count: the holder's or any super_admin's (`mayTuneAuto`).
     expect(page).toMatch(/mayTune=\{holder \|\| superAdmin\}/u);
     expect(page).toMatch(/<AutoCategoriesForm\s+current=\{c\.categories\}\s+editable=\{mayTune\}/u);
     expect(page).toMatch(/<AutoPerDayForm current=\{c\.perDay\} editable=\{mayTune\}/u);
-    expect(page).toMatch(/<AutoConfidenceForm current=\{Math\.round\(c\.minConfidence \* 100\)\} editable=\{mayTune\}/u);
+    // DELIBERATE EDIT (stage 1a kernel, J26): the confidence floor's box left the page with its words — the gate stops
+    // reading the floor (P1 deletes the rule, its writer and its action; STAGE-0-1A.md §4.2).
+    expect(page).not.toMatch(/<AutoConfidenceForm/u);
     expect(page).toMatch(/armBlocked=\{!running \|\| !auto\.workAccount\}/u);
     const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
     const arm = ui.slice(ui.indexOf('data-testid="agent-auto-arm"') - 200, ui.indexOf('data-testid="agent-auto-arm"') + 200);

@@ -4,7 +4,8 @@ import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
-import { AUTO_CONFIDENCE_PCT, AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
+import { AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
+import { readAgentTalkHoldSec } from '@/modules/platform/settings/service';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { webLessons } from '@/modules/wms/agent/lessons';
@@ -42,7 +43,6 @@ import {
   AutoArmButtons,
   AutoBadButton,
   AutoCategoriesForm,
-  AutoConfidenceForm,
   AutoPerDayForm,
   AviaRateForm,
   DraftActions,
@@ -529,7 +529,7 @@ async function SettingsSection({
   owner: Awaited<ReturnType<typeof ownerAccountState>>;
 }) {
   const superAdmin = actor.roles.includes('super_admin');
-  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps, seat] = await Promise.all([
+  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps, seat, talkHoldSec] = await Promise.all([
     agentToday(config),
     openCalcsFor(config.ownerUserId),
     tariffMismatchSeen(),
@@ -542,6 +542,8 @@ async function SettingsSection({
     readSendCaps(),
     // The AI seat (SPEC-P2-v2 K4) — a settings row, so it reads on any server.
     seatPanel(),
+    // Stage 1a's talk hold — a settings row too.
+    readAgentTalkHoldSec(),
   ]);
   // Asked only where 0148 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
   const tariff = caps.ready
@@ -606,6 +608,7 @@ async function SettingsSection({
           mayTune={holder || superAdmin}
           mayDisarm={holder || superAdmin}
           running={running}
+          talkHoldSec={talkHoldSec}
         />
       )}
 
@@ -808,6 +811,11 @@ function holdWords(t: T, sec: number): string {
   return sec % 60 === 0 ? t('autoHoldMin', { n: sec / 60 }) : t('autoHoldSec', { n: sec });
 }
 
+/** How ordinary talk goes (stage 1a, his 11 a): «darhol» at 0, else «2 daqiqa kutib» — never a promise the box denies. */
+function talkWords(t: T, sec: number): string {
+  return sec === 0 ? t('autoTalkAtOnce') : t('autoTalkAfter', { hold: holdWords(t, sec) });
+}
+
 /**
  * «🤖 O‘zi yuborish» (docs/AI-SOTUVCHI.md §18.3, his answer of 2026-11-11): a
  * layer over the shadow mode — whether it is armed and since when, why it was
@@ -823,16 +831,19 @@ function AutoSection({
   mayTune,
   mayDisarm,
   running,
+  talkHoldSec,
 }: {
   t: T;
   auto: AutoPanel;
   viewerId: string;
   /** The holder, or a super_admin while the holder is the AI seat (`setAutoArmed`'s own rule). */
   mayArm: boolean;
-  /** The holder or any super_admin — the kinds, the daily count, the confidence floor (2026-11-15). */
+  /** The holder or any super_admin — the kinds, the daily count (2026-11-15). */
   mayTune: boolean;
   mayDisarm: boolean;
   running: boolean;
+  /** How long ordinary talk waits (stage 1a, `agent_talk_hold_sec`; 0 = at once). */
+  talkHoldSec: number;
 }) {
   const c = auto.config;
   const off = autoDisarmKey(c.disarmReason);
@@ -859,13 +870,15 @@ function AutoSection({
       )}
       <p className="text-xs text-ink-500" data-testid="agent-auto-numbers">
         {/* No daily count is said as such (0148, his «7 chegara qoyma») — never «at most 0 a day». */}
+        {/* Stage 1a (J22): ordinary talk and a price wait apart — the talk hold is a setting (0 = at once), the
+            price keeps the layer's own hold; the confidence floor is no longer said (the gate stops reading it). */}
         {c.perDay === null
-          ? t('autoNumbersNoCap', { hold: holdWords(t, c.holdSec), maxChars: c.maxChars, confidence: Math.round(c.minConfidence * 100) })
+          ? t('autoNumbersNoCap', { talk: talkWords(t, talkHoldSec), priceHold: holdWords(t, c.holdSec), maxChars: c.maxChars })
           : t('autoNumbers', {
-              hold: holdWords(t, c.holdSec),
+              talk: talkWords(t, talkHoldSec),
+              priceHold: holdWords(t, c.holdSec),
               perDay: c.perDay,
               maxChars: c.maxChars,
-              confidence: Math.round(c.minConfidence * 100),
             })}
       </p>
       {/* Armed on a number that is not «Ish raqami» (fix pass B, C9): the gate refuses every reply — the switch
@@ -903,9 +916,6 @@ function AutoSection({
           <AutoPerDayForm current={c.perDay} editable={mayTune} max={AUTO_PER_DAY_MAX} />
         </div>
       )}
-      <div className="border-t border-line pt-2">
-        <AutoConfidenceForm current={Math.round(c.minConfidence * 100)} editable={mayTune} bounds={AUTO_CONFIDENCE_PCT} />
-      </div>
       <p className="border-t border-line pt-2 text-sm [overflow-wrap:anywhere]" data-testid="agent-auto-today">
         {t('autoToday', { sent: auto.today.sent, paused: auto.today.paused, left: auto.today.left })}
         {auto.today.waiting > 0 ? ` · ${t('autoTodayWaiting', { n: auto.today.waiting })}` : ''}

@@ -22,7 +22,21 @@ import { companyMoneySight } from '@/modules/wms/finance/scope';
 const BAD_VALUE_TEXT: Partial<
   Record<
     SettingKey,
-    'badValueReasons' | 'badValueWhole' | 'badValueOrigins' | 'badValueMarkupKind' | 'badValueMarkup' | 'badValueOpenLimit' | 'badValueStage'
+    | 'badValueReasons'
+    | 'badValueWhole'
+    | 'badValueOrigins'
+    | 'badValueMarkupKind'
+    | 'badValueMarkup'
+    | 'badValueOpenLimit'
+    | 'badValueStage'
+    | 'badValuePersona'
+    | 'badValueTalkHold'
+    | 'badValueNightPrices'
+    | 'badValueBigCargo'
+    | 'badValueYesNo'
+    | 'badValueLiveness'
+    | 'badValueAviaDays'
+    | 'badValueSiteAi'
   >
 > = {
   agent_no_contact_reasons: 'badValueReasons',
@@ -38,6 +52,16 @@ const BAD_VALUE_TEXT: Partial<
   agent_calc_open_limit: 'badValueOpenLimit',
   crm_ai_contacted_stage: 'badValueStage',
   crm_ai_quoted_stage: 'badValueStage',
+  // Stage 1a's own-door keys (J20): read-only here like the five above, each with its shape's words.
+  agent_persona_name: 'badValuePersona',
+  agent_talk_hold_sec: 'badValueTalkHold',
+  agent_night_prices: 'badValueNightPrices',
+  agent_big_cargo_m3: 'badValueBigCargo',
+  agent_big_cargo_words: 'badValueYesNo',
+  agent_liveness_minutes: 'badValueLiveness',
+  agent_avia_days: 'badValueAviaDays',
+  client_ai_contact: 'badValueYesNo',
+  lead_assign_ai: 'badValueSiteAi',
 };
 
 /** The two pressed-AI ceilings and the kind each one caps (0144). */

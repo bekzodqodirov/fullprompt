@@ -127,10 +127,22 @@ describe('the seven kinds and who may name them (§1.1, §4.4)', () => {
 describe('settings with a door of their own (K5) and their shapes', () => {
   const KEYS = Object.keys(OWN_DOOR_KEYS) as SettingKey[];
 
-  it('the five own-door keys exist with today’s defaults — everything they steer ships OFF', () => {
-    expect(KEYS.sort()).toEqual(
-      ['agent_calc_markup_kind', 'agent_calc_markup_value', 'agent_calc_open_limit', 'crm_ai_contacted_stage', 'crm_ai_quoted_stage'].sort(),
-    );
+  it('the own-door keys exist, and part 2’s five keep today’s defaults — everything they steer ships OFF', () => {
+    // DELIBERATE EDIT (stage 1a kernel, J20): 1a's own-door keys and a third page — the AI page's eight boxes and the
+    // website's choice on /admin/taqsimot (`agent-toliq-1a-settings.test.ts` holds their shapes). Part 2's five stand.
+    const P2_KEYS = ['agent_calc_markup_kind', 'agent_calc_markup_value', 'agent_calc_open_limit', 'crm_ai_contacted_stage', 'crm_ai_quoted_stage'];
+    const TOLIQ_1A_KEYS = [
+      'agent_persona_name',
+      'agent_talk_hold_sec',
+      'agent_night_prices',
+      'agent_big_cargo_m3',
+      'agent_big_cargo_words',
+      'agent_liveness_minutes',
+      'agent_avia_days',
+      'client_ai_contact',
+      'lead_assign_ai',
+    ];
+    expect(KEYS.sort()).toEqual([...P2_KEYS, ...TOLIQ_1A_KEYS].sort());
     expect(SETTING_DEFAULTS.agent_calc_markup_kind).toBe('percent');
     expect(SETTING_DEFAULTS.agent_calc_markup_value).toBe('');
     expect(SETTING_DEFAULTS.agent_calc_open_limit).toBe(OPEN_CALC_CAP_SEAT_DEFAULT);
@@ -139,7 +151,7 @@ describe('settings with a door of their own (K5) and their shapes', () => {
     for (const key of KEYS) {
       expect(isOwnDoorKey(key)).toBe(true);
       expect(SETTING_VALIDATORS[key], key).toBeTypeOf('function');
-      expect(OWN_DOOR_PAGES[OWN_DOOR_KEYS[key as keyof typeof OWN_DOOR_KEYS]]).toMatch(/^\/(suhbatlar\/ai|crm\/settings)$/u);
+      expect(OWN_DOOR_PAGES[OWN_DOOR_KEYS[key as keyof typeof OWN_DOOR_KEYS]]).toMatch(/^\/(suhbatlar\/ai|crm\/settings|admin\/taqsimot)$/u);
     }
     // The seat and the markup's confirmation are no default key at all — /admin/settings never draws them.
     expect('agent_seat_user_id' in SETTING_DEFAULTS).toBe(false);
@@ -158,7 +170,23 @@ describe('settings with a door of their own (K5) and their shapes', () => {
     // Every own-door key has its refusal words, and every page it names has its link words in all four bundles.
     for (const key of KEYS) expect(page).toMatch(new RegExp(`${key}: 'badValue`, 'u'));
     for (const bundle of [uz, ru, en, zh] as unknown as { settings: Record<string, unknown> }[]) {
-      for (const k of ['ownDoor', 'ownDoorRefused', 'badValueMarkupKind', 'badValueMarkup', 'badValueOpenLimit', 'badValueStage']) {
+      for (const k of [
+        'ownDoor',
+        'ownDoorRefused',
+        'badValueMarkupKind',
+        'badValueMarkup',
+        'badValueOpenLimit',
+        'badValueStage',
+        // Stage 1a's (J20).
+        'badValuePersona',
+        'badValueTalkHold',
+        'badValueNightPrices',
+        'badValueBigCargo',
+        'badValueYesNo',
+        'badValueLiveness',
+        'badValueAviaDays',
+        'badValueSiteAi',
+      ]) {
         expect(typeof bundle.settings[k], k).toBe('string');
       }
       const pages = bundle.settings.ownDoorPage as Record<string, string>;

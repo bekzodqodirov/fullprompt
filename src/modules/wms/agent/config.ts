@@ -201,6 +201,60 @@ export function __pretendAgentFullP2Behind(): void {
   fullP2Ready = false;
 }
 
+let toliq1aReady = false;
+let toliq1aBehind = false;
+
+/** 0151's three tables, as one question — asked by the cached probe and by `agentToliq1aReadyOn`. */
+const toliq1aTablesSql = () => sql`
+  SELECT to_regclass('public.agent_designations') IS NOT NULL
+     AND to_regclass('public.agent_signals') IS NOT NULL
+     AND to_regclass('public.agent_samples') IS NOT NULL AS ok`;
+
+/**
+ * Does 0151 exist — the full AI seller's stage 1a (docs/ai-toliq/qurish/STAGE-0-1A.md §3.1)? Its three tables:
+ * who is told (`agent_designations`), what was said once (`agent_signals`), the evening sample (`agent_samples`).
+ * Cached TRUE only (the `agentFullP2Ready` idiom). One migration behind, `designated()` answers its last fallback,
+ * `designatedRows()` answers `[]`, no signal is claimed, no sample is written and the page draws neither new
+ * section — everything else of 1a is code and settings and works without it.
+ */
+export async function agentToliq1aReady(): Promise<boolean> {
+  if (toliq1aBehind) return false;
+  if (toliq1aReady) return true;
+  if (!(await agentFullP2Ready())) return false;
+  try {
+    return await agentToliq1aReadyOn(db);
+  } catch (err) {
+    logger.warn({ err }, '[agent] 0151 not checked');
+    return false;
+  }
+}
+
+/**
+ * The same answer on the CALLER's handle, for a reader that may stand inside a transaction (`designatedRows`, a
+ * door of a later stage): the cached probe reaches the pool, and a pooled call inside a transaction is #714's
+ * freeze (`tests/unit/tx-pool.test.ts`). `to_regclass` never raises, so asking it inside a transaction aborts
+ * nothing. Honours the cache and the tests' pretence like the probe does.
+ */
+export async function agentToliq1aReadyOn(handle: Db | Tx): Promise<boolean> {
+  if (toliq1aBehind) return false;
+  if (toliq1aReady) return true;
+  const rows = await handle.execute<{ ok: boolean }>(toliq1aTablesSql());
+  toliq1aReady = [...rows][0]?.ok === true;
+  return toliq1aReady;
+}
+
+/** Tests: forget the cached answer (and any pretence below). */
+export function __forgetAgentToliq1aReady(): void {
+  toliq1aReady = false;
+  toliq1aBehind = false;
+}
+
+/** Tests: a server one migration behind 0151 — the probe answers «no» until forgotten (the P1 idiom). */
+export function __pretendAgentToliq1aBehind(): void {
+  toliq1aBehind = true;
+  toliq1aReady = false;
+}
+
 /** Why the layer was disarmed — the person's press, the agent's «off», or a step-down (§18.3). */
 export type AutoDisarmReason =
   | 'manual'
@@ -342,6 +396,22 @@ export class AgentConfigError extends Error {
 
 type AgentActor = { id: string; roles: readonly string[] };
 
+/**
+ * The one audit row id the agent's own settings are written against (every `agent_config` change since 0138) —
+ * named, so a writer in another file (the designations, stage 1a) audits beside them without a second literal.
+ */
+export const AGENT_CONFIG_AUDIT_ID = '00000000-0000-0000-0000-000000000136';
+
+/**
+ * Who names the AI's PEOPLE and its face: the super_admin ROLE (a role predicate, not a permission — #170: a new
+ * code would not reach his customised roles). Extracted from `setAgentSeat`'s inline check (stage 1a §3.2) so the
+ * designations («Kim javob beradi») ask THIS and never restate a role — design §11.2: no role key in their file.
+ * The holder alone is not enough: who receives a signal or a card is the company's choice, not the account's.
+ */
+export function mayGovernAgent(actor: { roles: readonly string[] }): boolean {
+  return actor.roles.includes('super_admin');
+}
+
 async function lockConfig(tx: Tx): Promise<AgentConfig> {
   const [row] = await tx.select().from(agentConfig).where(eq(agentConfig.id, 1)).for('update');
   if (!row) throw new AgentConfigError('not_ready');
@@ -432,7 +502,7 @@ export async function setAgentMode(actor: AgentActor, mode: string, ctx: AuditCo
       .returning();
     await writeAudit(tx, ctx, {
       entityType: 'agent_config',
-      entityId: '00000000-0000-0000-0000-000000000136',
+      entityId: AGENT_CONFIG_AUDIT_ID,
       action: 'update',
       before: { mode: before.mode },
       after: { mode, expired: expiredDraftIds.length, cancelled: cancelledOutboxIds.length },
@@ -474,7 +544,7 @@ export async function setAgentOwner(actor: AgentActor, userId: string | null, ct
       .returning();
     await writeAudit(tx, ctx, {
       entityType: 'agent_config',
-      entityId: '00000000-0000-0000-0000-000000000136',
+      entityId: AGENT_CONFIG_AUDIT_ID,
       action: 'update',
       before: { ownerUserId: before.ownerUserId },
       after: { ownerUserId: userId },
@@ -504,7 +574,7 @@ export async function confirmSessionExclusive(actor: AgentActor, ctx: AuditConte
       .returning();
     await writeAudit(tx, ctx, {
       entityType: 'agent_config',
-      entityId: '00000000-0000-0000-0000-000000000136',
+      entityId: AGENT_CONFIG_AUDIT_ID,
       action: 'update',
       before: { sessionExclusiveAt: before.sessionExclusiveAt?.toISOString() ?? null },
       after: { sessionExclusiveAt: now.toISOString() },
@@ -535,7 +605,7 @@ export async function setAgentNumbers(
       .returning();
     await writeAudit(tx, ctx, {
       entityType: 'agent_config',
-      entityId: '00000000-0000-0000-0000-000000000136',
+      entityId: AGENT_CONFIG_AUDIT_ID,
       action: 'update',
       before: { humanPauseMin: before.humanPauseMin, dailyDraftCap: before.dailyDraftCap, dailyTokenCap: before.dailyTokenCap },
       after: values,
@@ -590,7 +660,7 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
       .returning();
     await writeAudit(tx, ctx, {
       entityType: 'agent_config',
-      entityId: '00000000-0000-0000-0000-000000000136',
+      entityId: AGENT_CONFIG_AUDIT_ID,
       action: 'update',
       before: { aviaUsdPerKg: before.aviaUsdPerKg },
       after: { aviaUsdPerKg: value },
@@ -621,7 +691,7 @@ export async function setAviaRate(actor: AgentActor, value: number | null, ctx: 
  * seat-only act stops (`holderIsSeat` is false) until he names the seat again.
  */
 export async function setAgentSeat(actor: AgentActor, userId: string | null, ctx: AuditContext): Promise<string | null> {
-  if (!actor.roles.includes('super_admin')) throw new AgentConfigError('forbidden');
+  if (!mayGovernAgent(actor)) throw new AgentConfigError('forbidden');
   if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
   const { AGENT_SEAT_KEY, agentSeatUserId } = await import('../../platform/settings/agent-seat');
   const { SETTINGS_AUDIT_ID } = await import('../../platform/settings/service');
@@ -849,7 +919,7 @@ export async function forceAgentOff(reason: ForcedOffReason): Promise<ModeChange
       .returning();
     await writeAudit(tx, { actorId: null }, {
       entityType: 'agent_config',
-      entityId: '00000000-0000-0000-0000-000000000136',
+      entityId: AGENT_CONFIG_AUDIT_ID,
       action: 'update',
       before: { mode: before.mode },
       after: { mode: 'off', reason, expired: expired.length, cancelled: cancelled.length },

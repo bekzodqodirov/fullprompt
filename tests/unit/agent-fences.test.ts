@@ -161,6 +161,12 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
       AgentForcedOff: 'the account switched itself off — no customer in it',
       TgAccountPaused: 'the account was limited — no customer in it',
       AgentTariffNotice: 'the website table runs out and the China column is his to vouch for (0148, §1.6) — no customer in it',
+      // Stage 1a (0151, §4.5): three lines that count and link to the page — never a customer's name, text or phone
+      // (leak-13), so one text serves every recipient and no chat is quoted. `AgentSignal` names a chat's lead and is
+      // blanked by the purge instead (J15).
+      AgentMorning: 'yesterday’s counts by reason and a link to the page — no customer in it (stage 1a §4.5)',
+      AgentSample: 'how many replies wait to be marked tonight and a link to the page — no customer in it (stage 1a §4.5)',
+      AgentLiveness: 'how many customers wait and since when, and a link to the page — no customer in it (stage 1a §4.5)',
     };
     const src = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
     const where = src.slice(src.indexOf('function chatCardsWhere'), src.indexOf('export async function purgeAgentChat'));
@@ -188,6 +194,79 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
           new RegExp(`extra:\\s*\\{[^}]*\\b${key}:\\s*String\\(`, 'u'),
         );
       }
+    }
+  });
+
+  /**
+   * The big-cargo signal (stage 1a, J15): its copies sit on the rows of the colleagues HE designated — never only the
+   * account holder's — so the purge must find it by the CHAT it names (both payload keys) with no recipient term, and
+   * every writer must put both keys in its payload. Zero writers is allowed until P4 lands `sendSignal`; the planted
+   * cases below keep the writer half from being vacuous meanwhile.
+   */
+  const SIGNAL_KEYS = ['managerUserId', 'peerId'] as const;
+  function signalWriterViolations(file: string, src: string): string[] {
+    const out: string[] = [];
+    for (const at of [...src.matchAll(/type:\s*'AgentSignal'/gu)].map((m) => m.index!)) {
+      const call = src.slice(at, src.indexOf('})', at));
+      const extra = /extra:\s*\{([^}]*)\}/u.exec(call)?.[1];
+      if (extra === undefined) {
+        out.push(`${file}: an AgentSignal with no extra`);
+        continue;
+      }
+      if (!/\bmanagerUserId\b/u.test(extra)) out.push(`${file}: an AgentSignal without managerUserId`);
+      if (!/\bpeerId:\s*String\(/u.test(extra)) out.push(`${file}: an AgentSignal without peerId: String(…)`);
+    }
+    return out;
+  }
+
+  it('the purge finds a signal by the chat it names, on every recipient’s row — both keys, no recipient term (J15)', () => {
+    const purge = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
+    const where = purge.slice(purge.indexOf('function chatCardsWhere'), purge.indexOf('export async function purgeAgentChat'));
+    const from = where.indexOf("'AgentSignal'");
+    expect(from, 're-anchor: the purge’s AgentSignal clause').toBeGreaterThan(0);
+    // Up to the next alternative, or to the end of the function when it is the last one.
+    const rest = where.slice(from);
+    const clause = rest.includes('OR (') ? rest.slice(0, rest.indexOf('OR (')) : rest;
+    for (const key of SIGNAL_KEYS) expect(clause, key).toContain(`->>'${key}'`);
+    expect(clause).toContain('${String(input.peerId)}');
+    expect(clause, 'a recipient term would blank the holder’s copy and leave the colleagues’').not.toMatch(/notifications\.userId/u);
+  });
+
+  it('every AgentSignal writer names the chat by both keys the purge matches it by (J15)', () => {
+    const writers = filesUnder('src').filter((file) => /type:\s*'AgentSignal'/u.test(strip(readFileSync(file, 'utf8'))));
+    const violations = writers.flatMap((file) => signalWriterViolations(file, strip(readFileSync(file, 'utf8'))));
+    expect(violations).toEqual([]);
+    // Not vacuous while P4's writer is still to come: a planted writer of each wrong shape is named, the right one is not.
+    const call = (extra: string) => `await notifyStaffTelegram({ userIds, type: 'AgentSignal', text, ${extra} })`;
+    expect(signalWriterViolations('x.ts', call('extra: { managerUserId: holderId, peerId: String(peerId) }'))).toEqual([]);
+    expect(signalWriterViolations('x.ts', call('extra: { peerId: String(peerId) }'))).toHaveLength(1);
+    expect(signalWriterViolations('x.ts', call('extra: { managerUserId: holderId, peerId }'))).toHaveLength(1);
+    expect(signalWriterViolations('x.ts', call('silent: true'))).toHaveLength(1);
+  });
+
+  it('the purge asks 0151’s probe BEFORE its transaction and touches the two 1a tables only under it (J14)', () => {
+    // One migration behind the tables do not exist: a DELETE on them inside the transaction would abort the whole
+    // purge, and «🚫 Shaxsiy» would purge nothing at all.
+    const src = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
+    const body = src.slice(src.indexOf('export async function purgeAgentChat'));
+    const probe = /const (\w+) = await agentToliq1aReady\(\);/u.exec(body);
+    expect(probe, 're-anchor: the 0151 probe in purgeAgentChat').not.toBeNull();
+    expect(probe!.index).toBeLessThan(body.indexOf('db.transaction('));
+    const open = body.indexOf(`if (${probe![1]}) {`);
+    expect(open, 're-anchor: the guarded block').toBeGreaterThan(body.indexOf('db.transaction('));
+    let depth = 0;
+    let close = open;
+    for (let i = body.indexOf('{', open); i < body.length; i += 1) {
+      if (body[i] === '{') depth += 1;
+      else if (body[i] === '}' && --depth === 0) {
+        close = i;
+        break;
+      }
+    }
+    const guarded = body.slice(open, close);
+    for (const table of ['agentSignals', 'agentSamples']) {
+      expect(guarded, `${table} is deleted under the probe`).toContain(`tx.delete(${table})`);
+      expect(body.split(`tx.delete(${table})`).length - 1, `${table} is deleted nowhere else`).toBe(1);
     }
   });
 

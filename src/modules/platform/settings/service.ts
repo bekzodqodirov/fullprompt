@@ -271,6 +271,55 @@ export const SETTING_DEFAULTS = {
    * on /suhbatlar/ai by a super_admin only — raising it is a widening, not a brake.
    */
   agent_calc_open_limit: OPEN_CALC_CAP_SEAT_DEFAULT,
+  /**
+   * The full AI seller's stage 1a (docs/ai-toliq/qurish/STAGE-0-1A.md §3.3) — each OWN-DOOR (`OWN_DOOR_KEYS`): the
+   * generic form below never writes them. The kernel lands the key, its shape and its words; the package that
+   * draws the box writes it (§3.3's last paragraph). A key read inside a transaction is read on that transaction.
+   *
+   * The persona's name (his answer 1, «GSR sotuv menejeri <ism>»): the AI introduces itself as «GSR sotuv menejeri»
+   * with this name, and never says it is a person. Empty = no name. Letters (an Uzbek apostrophe inside a word —
+   * «G‘ayrat» — is a letter of the name) and single spaces, at most 40 characters. Written on /suhbatlar/ai by a
+   * super_admin. A NAME is data: no name of anybody is written in code.
+   */
+  agent_persona_name: '',
+  /**
+   * How long an ORDINARY reply waits on its card before it goes by itself, in seconds (his 11 a «suhbat darhol»,
+   * and his ⭐ a of question 82: 0). 0-600; a price keeps `agent_auto_config.hold_sec` (30-600, 0145). Written on
+   * /suhbatlar/ai by the holder or a super_admin (`mayTuneAuto`), as the price hold is.
+   */
+  agent_talk_hold_sec: 0,
+  /**
+   * Which prices may go by themselves between 22:00 and 08:00 Tashkent (his 4 a ⚠ and question 1 ⭐ a): `none`,
+   * `table` (a truck-table or avia price goes after its hold; a VED price waits for the morning) or `all`.
+   * Ordinary talk is never night-barred; the AI never writes FIRST at night. The holder or a super_admin.
+   */
+  agent_night_prices: 'table' as 'none' | 'table' | 'all',
+  /**
+   * The big-cargo signal's line in kub (his 3 b: «20 kub yoki fura»): a customer who states this much or more makes
+   * the AI answer as ever AND tells the people designated for «Katta yuk signali». 0 = no size signal. 0-200, whole.
+   * A super_admin's, on /suhbatlar/ai.
+   */
+  agent_big_cargo_m3: 20,
+  /** «Fura», «to‘liq mashina» alone also signal (his 3 b), whatever the kub. A super_admin's. */
+  agent_big_cargo_words: true,
+  /**
+   * Minutes a customer's line written in working hours may stand unanswered before ONE alarm goes to the
+   * «rahbar va o‘rinbosar» pair (stage 1a §4.5 — the condition for taking the card off ordinary talk). 0 = off;
+   * otherwise 3-120 (under 3 a healthy run — the debounce plus the model — would alarm). The holder or a super_admin.
+   */
+  agent_liveness_minutes: 10,
+  /**
+   * How long an AIR shipment takes, as «N-M» whole days (his 2 b: «3-5 kun» — no «reys bo‘lsa» clause): ONE reader
+   * hands it to the prompt, the company-rule sources, the avia tool and the page (J2). 1-60 days, N below M. The
+   * holder or a super_admin, on /suhbatlar/ai.
+   */
+  agent_avia_days: '3-5',
+  /**
+   * Show the AI's Telegram to clients with no seller of their own (his 7 b): the bot's «💬 Menejer», the Mini App's
+   * contact card and the pushes' door name the seat. A client WITH a seller never sees it. Ships off. A
+   * super_admin's, on /suhbatlar/ai.
+   */
+  client_ai_contact: false,
   costing_base_currency: 'USD',
   client_code_prefix: 'GS',
   /**
@@ -363,6 +412,14 @@ export const SETTING_DEFAULTS = {
    */
   lead_assign_origins: 'https://gsrlogistics.uz https://www.gsrlogistics.uz',
   /**
+   * Website visitors to the AI seat (his 6 c, stage 1a §4.7): `off` — the least-busy ticked seller, as today; `all`
+   * — every visitor but «Sotib olib berish» goes to the AI when it can take one, and to the roster when it cannot
+   * (never «nobody» because of the AI). Ships `off` (his ⭐ 1: switched on after stage 2). OWN-DOOR: written on
+   * /admin/taqsimot beside the roster it bypasses, where its line of truth («AI hozir qabul qiladi / qila olmaydi»)
+   * is drawn — never as a bare value on the generic form.
+   */
+  lead_assign_ai: 'off' as 'off' | 'all',
+  /**
    * Lost reasons that mean «never again» to the client-finding agent
    * (2026-10-23, docs/AGENT-FEED.md). `;`-separated labels, matched
    * case-insensitively against `leads.lost_reason` — the TEXT chosen at the
@@ -400,6 +457,18 @@ export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boo
   agent_calc_open_limit: (raw) => readOpenCalcLimit(raw) !== null,
   crm_ai_contacted_stage: stageSettingValid,
   crm_ai_quoted_stage: stageSettingValid,
+  // The full AI seller's stage 1a (STAGE-0-1A.md §3.3): every key an own door, every shape here — its writer and
+  // any reader ask ONE rule, and a stored value the shape refuses is read as the default, never guessed.
+  agent_persona_name: personaNameValid,
+  agent_talk_hold_sec: (raw) => wholeIn(raw, 0, AGENT_1A_BOUNDS.talkHoldMax),
+  agent_night_prices: (raw) => (AGENT_NIGHT_PRICES as readonly string[]).includes(raw),
+  agent_big_cargo_m3: (raw) => wholeIn(raw, 0, AGENT_1A_BOUNDS.bigCargoM3Max),
+  agent_big_cargo_words: yesNoValid,
+  agent_liveness_minutes: (raw) =>
+    raw === '0' || wholeIn(raw, AGENT_1A_BOUNDS.livenessMin, AGENT_1A_BOUNDS.livenessMax),
+  agent_avia_days: (raw) => aviaDaysRange(raw) !== null,
+  client_ai_contact: yesNoValid,
+  lead_assign_ai: (raw) => (LEAD_ASSIGN_AI_MODES as readonly string[]).includes(raw),
 };
 
 /**
@@ -415,7 +484,17 @@ export const OWN_DOOR_KEYS = {
   agent_calc_open_limit: 'agentAi',
   crm_ai_contacted_stage: 'crmSettings',
   crm_ai_quoted_stage: 'crmSettings',
-} as const satisfies Partial<Record<SettingKey, 'agentAi' | 'crmSettings'>>;
+  // Stage 1a (§3.3): the AI page's boxes, and the website's choice on the roster page it bypasses (J20 — a THIRD page).
+  agent_persona_name: 'agentAi',
+  agent_talk_hold_sec: 'agentAi',
+  agent_night_prices: 'agentAi',
+  agent_big_cargo_m3: 'agentAi',
+  agent_big_cargo_words: 'agentAi',
+  agent_liveness_minutes: 'agentAi',
+  agent_avia_days: 'agentAi',
+  client_ai_contact: 'agentAi',
+  lead_assign_ai: 'taqsimot',
+} as const satisfies Partial<Record<SettingKey, 'agentAi' | 'crmSettings' | 'taqsimot'>>;
 
 export type OwnDoorKey = keyof typeof OWN_DOOR_KEYS;
 
@@ -423,6 +502,7 @@ export type OwnDoorKey = keyof typeof OWN_DOOR_KEYS;
 export const OWN_DOOR_PAGES: Record<(typeof OWN_DOOR_KEYS)[OwnDoorKey], string> = {
   agentAi: '/suhbatlar/ai',
   crmSettings: '/crm/settings',
+  taqsimot: '/admin/taqsimot',
 };
 
 export function isOwnDoorKey(key: string): key is OwnDoorKey {
@@ -482,10 +562,76 @@ export function wholeNumberSettingValid(raw: string): boolean {
   return /^\d{1,6}$/.test(raw);
 }
 
+/**
+ * Stage 1a's bounds (STAGE-0-1A.md §3.3), ONE home: the shapes above, the writers that draw the boxes and the words
+ * that name the bounds read these, never a second copy. The price hold's own bounds are 0145's CHECK (30-600).
+ */
+export const AGENT_1A_BOUNDS = {
+  talkHoldMax: 600,
+  bigCargoM3Max: 200,
+  livenessMin: 3,
+  livenessMax: 120,
+  aviaDaysMax: 60,
+  personaMax: 40,
+} as const;
+
+/** `agent_night_prices` — which prices go by themselves at night (his 4 a, question 1 ⭐ a: `table`). */
+export const AGENT_NIGHT_PRICES = ['none', 'table', 'all'] as const;
+export type AgentNightPrices = (typeof AGENT_NIGHT_PRICES)[number];
+
+/** `lead_assign_ai` — the website's visitors to the sellers, or to the AI (his 6 c). */
+export const LEAD_ASSIGN_AI_MODES = ['off', 'all'] as const;
+
+/** A whole number in [min, max], written the way a person writes it: digits, no sign, no leading zero. */
+function wholeIn(raw: string, min: number, max: number): boolean {
+  if (!/^(0|[1-9]\d{0,5})$/u.test(raw)) return false;
+  const n = Number(raw);
+  return n >= min && n <= max;
+}
+
+/** A yes / no own-door key as its writer posts it. */
+function yesNoValid(raw: string): boolean {
+  return raw === 'true' || raw === 'false';
+}
+
+/**
+ * The persona's name: empty, or words of letters separated by ONE space, at most `personaMax` characters. An Uzbek
+ * apostrophe between two letters («G‘ayrat», «Ra'no» — five spellings of it are typed) belongs to the word; a digit,
+ * a dot, an emoji or a leading apostrophe does not (the name is spoken to customers as written).
+ */
+export function personaNameValid(raw: string): boolean {
+  if (raw === '') return true;
+  if ([...raw].length > AGENT_1A_BOUNDS.personaMax) return false;
+  return /^[\p{L}\p{M}]+(?:['ʻʼ‘’][\p{L}\p{M}]+)*(?: [\p{L}\p{M}]+(?:['ʻʼ‘’][\p{L}\p{M}]+)*)*$/u.test(raw);
+}
+
+/**
+ * «N-M» whole days of an air shipment (his 2 b: «3-5 kun»), read from the string: N from 1, M up to
+ * `aviaDaysMax`, N below M — a range, never one figure (a single number reads as a promise). Null = not that shape;
+ * a reader treats a stored value it cannot read as the default.
+ */
+export function aviaDaysRange(raw: string): { min: number; max: number } | null {
+  const m = /^([1-9]\d?)-([1-9]\d?)$/u.exec(raw);
+  if (!m) return null;
+  const min = Number(m[1]);
+  const max = Number(m[2]);
+  return min < max && max <= AGENT_1A_BOUNDS.aviaDaysMax ? { min, max } : null;
+}
+
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
   const row = await db.query.settings.findFirst({ where: eq(settings.key, key) });
   if (!row) return SETTING_DEFAULTS[key];
   return row.value as SettingValue<K>;
+}
+
+/**
+ * The ordinary reply's hold in seconds (stage 1a, `agent_talk_hold_sec`), as its readers use it: the stored value
+ * when its shape holds, else the default — a value typed into the table by hand is never guessed at. On the pool:
+ * a reader inside a transaction reads the row on that transaction instead (#714).
+ */
+export async function readAgentTalkHoldSec(): Promise<number> {
+  const raw = await getSetting('agent_talk_hold_sec');
+  return SETTING_VALIDATORS.agent_talk_hold_sec!(String(raw)) ? Number(raw) : SETTING_DEFAULTS.agent_talk_hold_sec;
 }
 
 export async function getAllSettings(): Promise<Record<SettingKey, unknown>> {

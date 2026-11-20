@@ -1254,6 +1254,18 @@ export function autoDisarmAlarmText(reason: StepDownReason): string {
 }
 
 /**
+ * The people the agent's own alarms reach: its holder and every super_admin who can log in (`usersWithRoles` asks
+ * `canLogInSql`). ONE reader, extracted from `stepDown` (stage 1a §3.2): it is also the LAST fallback of
+ * `designated()` (agent/designations.ts), so «nobody was designated» means exactly today's audience — and the role
+ * key it names stays here, in the one line that already held it, never in the designations' file (design §11.2).
+ * Holder first; nobody twice. Reads the pool — never inside a transaction.
+ */
+export async function agentAlarmRecipients(holderId: string | null): Promise<string[]> {
+  const supers = await usersWithRoles(['super_admin']);
+  return [...new Set([...(holderId ? [holderId] : []), ...supers])];
+}
+
+/**
  * Disarm by itself, with ONE alarm to the holder and every super_admin (the
  * account's alarms ride the bot — crm/account-alarm's rule): only when it WAS
  * armed, so a second step-down on the same day is silent. The replies it
@@ -1264,8 +1276,7 @@ async function stepDown(reason: StepDownReason, holderId: string): Promise<boole
   const out = await db.transaction((tx) => disarmAutoInTx(tx, reason, null, { takeBack: true }));
   for (const id of [...out.stoppedDraftIds, ...out.takenBackDraftIds]) await refreshCard(id);
   if (!out.wasArmed) return false;
-  const supers = await usersWithRoles(['super_admin']);
-  await notifyStaffTelegram({ userIds: [holderId, ...supers], type: 'AgentForcedOff', text: autoDisarmAlarmText(reason) });
+  await notifyStaffTelegram({ userIds: await agentAlarmRecipients(holderId), type: 'AgentForcedOff', text: autoDisarmAlarmText(reason) });
   logger.warn({ reason }, '[agent] auto-send disarmed itself');
   return true;
 }

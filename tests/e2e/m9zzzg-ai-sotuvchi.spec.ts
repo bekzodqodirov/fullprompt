@@ -143,8 +143,8 @@ test('the owner is offered the page, reads the card and is given no ✅ on a col
   await expect(auto.getByTestId('agent-auto-arm')).toHaveCount(0);
   await expect(auto.getByTestId('agent-auto-category-faq')).toBeEnabled();
   await expect(auto.getByTestId('agent-auto-categories-save')).toBeDisabled();
-  await expect(auto.getByTestId('agent-auto-confidence-input')).toBeEnabled();
-  await expect(auto.getByTestId('agent-auto-confidence-input')).toHaveValue(/^\d+$/u);
+  // DELIBERATE EDIT (stage 1a kernel, J26): the confidence floor's box left the page — the gate stops reading it.
+  await expect(auto.getByTestId('agent-auto-confidence')).toHaveCount(0);
   await fitsThePhone(page);
 });
 
@@ -282,13 +282,7 @@ test('the holder is offered «O‘zi yuborish», and is told BEFORE any press wh
   await perDay.getByTestId('agent-auto-per-day-save').click();
   await expect(perDay.getByTestId('agent-error')).toContainText('1000');
   await expect(perDay.getByTestId('agent-auto-per-day-input')).toHaveValue('0');
-  // The confidence floor (2026-11-15) names its own bounds the same way, and keeps what he typed.
-  const confidence = auto.getByTestId('agent-auto-confidence');
-  await confidence.getByTestId('agent-auto-confidence-input').fill('40');
-  await confidence.getByTestId('agent-auto-confidence-save').click();
-  await expect(confidence.getByTestId('agent-error')).toContainText('50');
-  await expect(confidence.getByTestId('agent-error')).toContainText('100');
-  await expect(confidence.getByTestId('agent-auto-confidence-input')).toHaveValue('40');
+  // DELIBERATE EDIT (stage 1a kernel, J26): the confidence floor's box (2026-11-15) left the page — nothing to type.
   const caps = page.getByTestId('agent-caps-form');
   await caps.getByTestId('agent-caps-dayCap').fill('500');
   await caps.getByTestId('agent-caps-save').click();

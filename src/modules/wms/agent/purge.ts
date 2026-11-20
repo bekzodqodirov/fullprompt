@@ -8,6 +8,8 @@ import {
   agentDrafts,
   agentOutbox,
   agentRuns,
+  agentSamples,
+  agentSignals,
   kbFacts,
   notifications,
   tgChatRules,
@@ -20,7 +22,7 @@ import { keyboardOf } from '../../platform/notifications/staff-html';
 import { h } from '../../platform/telegram/format';
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
-import { agentAutoReady, agentTablesReady } from './config';
+import { agentAutoReady, agentTablesReady, agentToliq1aReady } from './config';
 
 /**
  * Every agent row of one chat, removed (review leak-9) — called by
@@ -40,6 +42,10 @@ export const PURGED_TABLES = [
   // «O'zi yuborish» (0145): the verdicts follow their drafts by cascade and are deleted here too; the chat's «off».
   'agent_auto_verdicts',
   'agent_auto_chats',
+  // Stage 1a (0151): what the machine said ONCE about this chat (a big cargo, a loop) and his evening marks on its
+  // replies — both keyed by the chat; the marks also follow their drafts by cascade and are deleted here too.
+  'agent_signals',
+  'agent_samples',
 ] as const;
 
 /** What a purged chat's card says instead of what it quoted. */
@@ -118,7 +124,11 @@ export async function blankQuotedCopies(rows: readonly AgentCopy[]): Promise<num
  * a draft card by its draft, the stranger and echo cards by the chat's rule,
  * a calculation answer by any request of a chain this chat started (a
  * correction is a new request, and its answer is still this chat's), a notice
- * by the chat itself. The SQL is the one list — the fence reads it.
+ * by the chat itself, and a signal (stage 1a's `AgentSignal`, a big cargo) by
+ * the chat it names — with NO recipient term (J15): its copies sit on the rows
+ * of the colleagues he designated, never on the account holder's alone, so a
+ * clause modelled on the notice's would blank none of them. The SQL is the one
+ * list — the fence reads it.
  */
 function chatCardsWhere(input: {
   managerUserId: string;
@@ -137,6 +147,9 @@ function chatCardsWhere(input: {
     OR (${notifications.type} = 'AgentCalcAnswered' AND ${requests ? sql`${notifications.payload}->>'requestId' IN (${requests})` : sql`false`})
     OR (${notifications.type} = 'AgentNotice' AND ${notifications.userId} = ${input.managerUserId}
         AND ${notifications.payload}->>'peerId' = ${String(input.peerId)})
+    OR (${notifications.type} = 'AgentSignal'
+        AND ${notifications.payload}->>'managerUserId' = ${input.managerUserId}
+        AND ${notifications.payload}->>'peerId' = ${String(input.peerId)})
   )`;
 }
 
@@ -144,6 +157,9 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
   if (!(await agentTablesReady())) return { drafts: 0, cards: 0 };
   // Read BEFORE the transaction: a statement on a missing table would abort it.
   const autoReady = await agentAutoReady();
+  // 0151's two chat-keyed tables (J14): one migration behind they do not exist, and a DELETE on them would abort the
+  // whole purge — «🚫 Shaxsiy» would then purge nothing at all.
+  const toliqReady = await agentToliq1aReady();
   const out = await db.transaction(async (tx) => {
     const drafts = await tx
       .select({ id: agentDrafts.id })
@@ -211,6 +227,10 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
     if (autoReady) {
       await tx.delete(agentAutoVerdicts).where(and(eq(agentAutoVerdicts.managerUserId, managerUserId), eq(agentAutoVerdicts.peerId, peerId)));
       await tx.delete(agentAutoChats).where(and(eq(agentAutoChats.managerUserId, managerUserId), eq(agentAutoChats.peerId, peerId)));
+    }
+    if (toliqReady) {
+      await tx.delete(agentSignals).where(and(eq(agentSignals.managerUserId, managerUserId), eq(agentSignals.peerId, peerId)));
+      await tx.delete(agentSamples).where(and(eq(agentSamples.managerUserId, managerUserId), eq(agentSamples.peerId, peerId)));
     }
     if (ids.length > 0) await tx.delete(agentDrafts).where(inArray(agentDrafts.id, ids));
     await tx.delete(agentRuns).where(and(eq(agentRuns.managerUserId, managerUserId), eq(agentRuns.peerId, peerId)));
