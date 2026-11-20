@@ -13,7 +13,7 @@ import { estimatesStand } from './estimate-check';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
 import type { LessonSetMark } from './lesson-rules';
-import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson } from './types';
+import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson, NoteCode } from './types';
 
 export type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
 import type { ComposeReply } from './run';
@@ -422,6 +422,8 @@ export interface RunDraftInput {
   memory: PolicyMemory;
   actions: ComposedAction[];
   notes: string[];
+  /** What each note IS, parallel to `notes` (stage 1a, K5) — stored beside them, read by the auto layer. */
+  noteCodes: NoteCode[];
   kind?: 'reply' | 'hand_back';
   /** His ✍️ answer behind this redraft (spec §2.2) — kept on its policy for the auto layer (`owner_personal`, `answer_stale`). */
   fromAnswer?: AnswerMark | null;
@@ -478,6 +480,7 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       card: input.calcCardLine ? { ...cardMemory(ctx), calcLine: input.calcCardLine } : cardMemory(ctx),
       burstSeenAt: burstSeenAt(ctx),
       notes: input.notes,
+      noteCodes: input.noteCodes,
       // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
       ...(compose.forcedQuestion ? { forcedQuestion: compose.forcedQuestion } : {}),
       ...(input.fromAnswer ? { fromAnswer: input.fromAnswer } : {}),

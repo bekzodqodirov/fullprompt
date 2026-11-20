@@ -311,6 +311,44 @@ outbound reach from his server to each provider. He sees the result as a table; 
   the repository (`docs/ai-toliq/README.md`); K1 can commit the 303 only. The «more ordinary replies go» half of
   step 1's evidence is the reader corpus's ordinary rows plus stage 0's `verdicts`.
 
+**K5-K6, as built (2026-11-20, the building session — what the packages compile against; re-fitted to the code where
+the rows above differ).**
+- **Codes.** `types.ts` `NOTE_CODES` (the thirteen of K5, each with its writer) and `NoteCode`; `DraftPolicyJson.noteCodes?`
+  and `.system?: SystemReplyReason` (`SYSTEM_REPLY_REASONS` = voice / media / pashto — P3 writes it, the kernel only
+  reads it). The codes travel as PARALLEL arrays, every push followed by its twin's push: both run paths declare
+  `const noteCodes: NoteCode[] = []` and HAND it into `validateActions(…, noteCodes)`, which fills the codes of the notes
+  it writes and returns `{ actions, notes, noteCodes }` (a source-shape pin, `agent-china-addresses.test.ts` «both run
+  paths», holds the call's destructuring `{ actions, notes } = validateActions(c,` verbatim — taking the codes from the
+  same destructuring would have changed that expectation), `RunDraftInput.noteCodes` is REQUIRED, `draftFromRun` stores `noteCodes` beside
+  `notes`, `calcSubmitFacts` returns `cardNoteCodes`, `autoFactsFor` returns `calcNoteCodes`, and `AutoPlan` gains
+  `cardNoteCodes?` (optional like `cardNotes?` — one integration test builds an `AutoPlan` literal; a plan with lines
+  and no codes leaves the stored notes uncoded, which reads as a stop). `settleCalcPrices` now returns the one note or
+  null (it returned `[CALC_PRICE_MANY]` or `[]`), so its code can stand beside it.
+- **The reading rule** is `auto-send.ts` `noteCodesOf(policy)` (no notes → `[]`; same-length string codes → them; else
+  null) beside `warningCodesOf` (one code per stored warning, `'?'` for one that names none — the count never drops) and
+  `systemAckOf` (a reason this build knows, else false).
+- **The fence** `tests/unit/agent-note-codes.test.ts` reads every file under `agent/` with TypeScript's parser and pairs
+  every write of `notes` / `cardNotes` / `calcNotes` (a push, an object literal, an interface or type literal, a
+  `const`, a destructuring) with its twin — beside it, a parameter of the function, or for a destructuring the twin
+  handed into the call; a parameter called `notes` is never paired. Its counted list, keyed by file › kind ›
+  outermost owner (never by line): site-estimate (the website estimate's footnotes, eleven sites), card (`CardInput`),
+  card-io (`fitCard` ×3, `renderDraftCardFull` ×1), calibration (a count), auto-gate (the `notes` refusal's word), decide
+  `refreshDraftCard` and lessons `refreshCard` (parameters). `drafts` is NOT on it — its sites are paired now.
+- **The gate's shape** (`AutoGateInput`): `draft.warningCodes`, `draft.noteCodes` (null = a stop), `draft.systemAck`,
+  `loop`, `complaint`, `nightPrices` (`readAgentNightPrices()` in `settings/service.ts`, read in `autoFactsFor` on the
+  pool); `streak` and `minConfidence` stay. `autoVerdict` reads `warningCodes.length > 0` and `noteCodes === null ||
+  noteCodes.length > 0` — no verdict moved (the 303, the reader corpus and the first-reply suite unchanged).
+  `autoClassOf` and `AutoClass` exported; `EYE_ONLY_WARNINGS`, `EYE_ONLY_NOTES` exported and read by nobody yet.
+- **Refusal words — re-fitted.** `RETIRED_REFUSALS` + `RETIRED_REFUSAL_WORDS` (the three stay in `AUTO_REFUSALS`, their
+  words referenced from the retired map, one home); the four NEW codes are `COMING_REFUSALS` + `COMING_REFUSAL_WORDS`
+  (`loop`, `complaint`, `calc_claim_unbacked`, `ready_text_unapproved`) and are NOT in the `AutoRefusal` union yet:
+  `agent-auto-gate.test.ts` drives every member of `AUTO_REFUSALS` by its own fact (`ONE_CHANGE: Record<AutoRefusal, …>`,
+  `it.each(AUTO_REFUSALS)`, the words' key set), so a code with no fact cannot stand there without changing that
+  test's expectations. **Each package that gives a coming code its fact MOVES it** — out of `COMING_REFUSALS` (and its
+  word out of `COMING_REFUSAL_WORDS`) into `AUTO_REFUSALS` / `AUTO_REFUSAL_WORDS` at its place in the order, with its
+  `ONE_CHANGE` row: P1 `complaint`, P2 `loop`, P3 the other two; `agent-toliq-1a-gate-shape.test.ts` pins that a code
+  is never in both lists. `refusalWordOf(code)` (auto-gate) reads all three maps; `autoRefusalWords` (auto-card) asks it.
+
 ### 4.2 P1 «To'siq» — the gate, the hold, the press (owns `auto-gate.ts`, `auto-send.ts`, `auto-card.ts`, the auto panel of `agent-ui.tsx` / `page.tsx`, `decide.ts:1086`)
 
 A bare `:N` in the first column continues the file named in the row above it (rows 1-8 are `auto-gate.ts`, from

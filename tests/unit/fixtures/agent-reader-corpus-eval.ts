@@ -123,8 +123,9 @@ function eligibleInput(): AutoGateInput {
       ownText: false,
       blocked: false,
       needsOwner: false,
-      warnings: 0,
-      notes: 0,
+      warningCodes: [],
+      noteCodes: [],
+      systemAck: false,
       actionTypes: [],
       category: 'faq',
       language: 'uz',
@@ -149,6 +150,9 @@ function eligibleInput(): AutoGateInput {
     at: NOON,
     now: NOON,
     streak: 0,
+    loop: false,
+    complaint: false,
+    nightPrices: 'table',
     pressedToday: 0,
     budgetLeft: null,
     sendingEnabled: null,
@@ -202,7 +206,7 @@ function pressedReasons(language: AgentLocale, reply: string): string[] {
   const { mem, result } = checked(lines, language, reply);
   const input = eligibleInput();
   input.draft.blocked = !result.ok;
-  input.draft.warnings = result.warnings.length;
+  input.draft.warningCodes = result.warnings.map((w) => w.code);
   input.draft.language = language;
   input.draft.body = reply;
   input.draft.ledger = result.ledger.map((l) => ({ kind: l.kind, origin: l.origin ?? null, tool: l.tool ?? null, role: l.role ?? null }));
@@ -229,7 +233,7 @@ export function wallsOf(
   const { mem, result } = checked(lines, language, reply, outcomes);
   const input = eligibleInput();
   input.draft.blocked = !result.ok;
-  input.draft.warnings = result.warnings.length;
+  input.draft.warningCodes = result.warnings.map((w) => w.code);
   input.draft.language = language;
   input.draft.body = reply;
   input.draft.ledger = result.ledger.map((l) => ({ kind: l.kind, origin: l.origin ?? null, tool: l.tool ?? null, role: l.role ?? null }));

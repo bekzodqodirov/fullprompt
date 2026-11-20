@@ -634,6 +634,16 @@ export async function readAgentTalkHoldSec(): Promise<number> {
   return SETTING_VALIDATORS.agent_talk_hold_sec!(String(raw)) ? Number(raw) : SETTING_DEFAULTS.agent_talk_hold_sec;
 }
 
+/**
+ * Which prices go by themselves at night (stage 1a, `agent_night_prices`, his 4 a), as the gate reads it: the stored
+ * value when it is one of the three, else the default — a value typed into the table by hand is never guessed at. On
+ * the pool: the gate's facts are read before any transaction is open (#714).
+ */
+export async function readAgentNightPrices(): Promise<AgentNightPrices> {
+  const raw = await getSetting('agent_night_prices');
+  return SETTING_VALIDATORS.agent_night_prices!(String(raw)) ? (String(raw) as AgentNightPrices) : SETTING_DEFAULTS.agent_night_prices;
+}
+
 export async function getAllSettings(): Promise<Record<SettingKey, unknown>> {
   const rows = await db.select().from(settings);
   const result: Record<string, unknown> = { ...SETTING_DEFAULTS };

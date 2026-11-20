@@ -29,7 +29,7 @@ import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
-import type { ForcedQuestion } from './types';
+import type { ForcedQuestion, NoteCode } from './types';
 import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, calcActArmed, priceActArmed } from './auto-send';
 import { namesForeignPlace } from './destination';
 import {
@@ -545,27 +545,46 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       memory,
       strip: stripFor(ctx),
     });
+    // Every note goes in with its code beside it (stage 1a, K5): the auto layer reads a note by what it IS.
+    // `validateActions` fills in the codes of the notes it writes.
+    const noteCodes: NoteCode[] = [];
     // A draft the avia guard holds asks him for the address (review R2).
     const c = withAviaGuard(drafted, policy, loop, ctx);
-    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
-    notes.push(...settleCalcPrices(memory, c.replyText));
+    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t, noteCodes);
+    const many = settleCalcPrices(memory, c.replyText);
+    if (many) {
+      notes.push(many);
+      noteCodes.push('calc_price_many');
+    }
     const rail = railNote(ctx, c);
-    if (rail) notes.push(rail);
+    if (rail) {
+      notes.push(rail);
+      noteCodes.push('rail');
+    }
     const tariffMismatch = loop.outcomes.some((o) => o.tariffMismatch);
-    if (tariffMismatch) notes.push("Sayt narxi va /admin/tarif farq qiladi — yo'lkira narxi aytilmadi.");
+    if (tariffMismatch) {
+      notes.push("Sayt narxi va /admin/tarif farq qiladi — yo'lkira narxi aytilmadi.");
+      noteCodes.push('tariff_mismatch');
+    }
     // A card written long after the customer's message says so, first, with the job's reason
     // when it has one (2026-10-29: a pull-made card 23 minutes late looked like a fresh one).
     const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
-    if (late) notes.unshift(late);
+    if (late) {
+      notes.unshift(late);
+      noteCodes.unshift('late');
+    }
 
-    const input = { runId, ctx, compose: c, policy, memory, actions, notes, lessonSet: taught.mark, calcCardLine: calcCardLineOf(loop.outcomes) };
+    const input = { runId, ctx, compose: c, policy, memory, actions, notes, noteCodes, lessonSet: taught.mark, calcCardLine: calcCardLineOf(loop.outcomes) };
     // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
     // A calculation the machine will not land by itself carries what he decides his ✅ by (SPEC-P2-v2 §1.1): a
     // waited duplicate, a file the VED will not get. Only ever on a plan already refused (the facts that write them
     // refuse it), so no countdown rides a card these lines were added to.
-    if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
+    if (autoPlan?.cardNotes?.length) {
+      notes.push(...autoPlan.cardNotes);
+      noteCodes.push(...(autoPlan.cardNoteCodes ?? []));
+    }
     const written = await writeDraft({ ...input, autoPlan });
     // The customer's language, remembered for the next «ok» — only what his message SAID (fix pass 6, the hunt #3), read
     // over his whole burst as the memory reads it (fix pass 7, `localeToRemember`).
@@ -1649,14 +1668,18 @@ export function stripFor(ctx: AgentContext): string[] {
  * The actions ✅ will run, each checked by the server (fit-13, money-6): a
  * calc_submit only with a COMPLETE checklist of the same section from this
  * run and no linked request still open; a follow-up only on a real day within
- * 60 days. A dropped action is said on the card.
+ * 60 days. A dropped action is said on the card — and its note's CODE is pushed
+ * beside it (stage 1a, K5) into `noteCodes`, the run's own array when it hands
+ * one in (both run paths do: the codes of every later note follow in the same
+ * array), else a fresh one; either way it comes back beside `notes`.
  */
 export function validateActions(
   c: ComposeReply,
   ctx: AgentContext,
   outcomes: readonly ToolOutcome[],
   now: Date,
-): { actions: ComposedAction[]; notes: string[] } {
+  noteCodes: NoteCode[] = [],
+): { actions: ComposedAction[]; notes: string[]; noteCodes: NoteCode[] } {
   const actions: ComposedAction[] = [];
   const notes: string[] = [];
   const lastChecklist = [...outcomes].reverse().find((o) => o.checklist)?.checklist ?? null;
@@ -1673,14 +1696,17 @@ export function validateActions(
         notes.push(
           `Yuk avto minimumidan kam (${AGENT_LIMITS.minShipment.m3} kub / ${AGENT_LIMITS.minShipment.kg} kg) — hisoblatishga yuborilmaydi.`,
         );
+        noteCodes.push('calc_below_minimum');
         continue;
       }
       if (!cl || !cl.complete) {
         notes.push("Hisoblatish taklif qilindi, lekin ma'lumot to'liq emas — yuborilmaydi.");
+        noteCodes.push('calc_incomplete');
         continue;
       }
       if (ctx.openCalcs.some((x) => x.status === 'open')) {
         notes.push("Bu chatda ochiq hisoblatish bor — ikkinchisi yuborilmaydi.");
+        noteCodes.push('calc_open');
         continue;
       }
       const cited = a.citedMessageRefs
@@ -1703,6 +1729,7 @@ export function validateActions(
       const limit = tashkentDay(new Date(now.getTime() + 60 * 86_400_000));
       if (!day || day < today || day > limit) {
         notes.push("Qayta aloqa sanasi noto'g'ri — qo'yilmaydi.");
+        noteCodes.push('followup_bad');
         continue;
       }
       actions.push({ type: 'set_followup', date: day, note: a.note.slice(0, 300) });
@@ -1710,7 +1737,7 @@ export function validateActions(
       actions.push({ type: 'mute', reason: a.note.slice(0, 300) || 'AI taklifi' });
     }
   }
-  return { actions, notes };
+  return { actions, notes, noteCodes };
 }
 
 /** The first cap refusal of the day says so once (fit-1). */
@@ -1776,16 +1803,16 @@ export const CALC_PRICE_MANY = 'Chatda bir nechta VED narxi bor — mijozga har 
 /**
  * What a reply settles of the VED prices its run was offered (fix pass 1, findings 2 and 3) — `memory.calcPrices` keeps
  * only the ones its words STATE (calc-price `statedCalcMarks`): the draft's re-price, the card's offer and the lead's
- * «AI narx aytdi» all read that list, and a price the reply never said reached nobody. The card's notes in return: one
- * when the tool offered more than one job's price and the reply states any. A run offered none keeps its memory as it
- * was, byte for byte.
+ * «AI narx aytdi» all read that list, and a price the reply never said reached nobody. The card's note in return
+ * (`calc_price_many`, null when none): the tool offered more than one job's price and the reply states any. A run
+ * offered none keeps its memory as it was, byte for byte.
  */
-export function settleCalcPrices(memory: PolicyMemory, body: string): string[] {
+export function settleCalcPrices(memory: PolicyMemory, body: string): string | null {
   const offered = memory.calcPrices ?? [];
-  if (offered.length === 0) return [];
+  if (offered.length === 0) return null;
   const stated = statedCalcMarks(body, offered);
   memory.calcPrices = stated;
-  return new Set(offered.map((m) => m.requestId)).size > 1 && stated.length > 0 ? [CALC_PRICE_MANY] : [];
+  return new Set(offered.map((m) => m.requestId)).size > 1 && stated.length > 0 ? CALC_PRICE_MANY : null;
 }
 
 /** The card's line on a redraft his answer could not make a reply of (a forcing rule asked him again). */
@@ -1946,17 +1973,31 @@ export async function runOwnerTriggered(
     const answer = input.answer ?? null;
     const memory = memoryFor(ctx, loop, facts, canary, answer?.text ?? null);
     const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: drafted.replyText, memory, strip: stripFor(ctx) });
+    const noteCodes: NoteCode[] = [];
     const c = withAviaGuard(drafted, policy, loop, ctx);
-    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
-    notes.push(...settleCalcPrices(memory, c.replyText));
+    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t, noteCodes);
+    const many = settleCalcPrices(memory, c.replyText);
+    if (many) {
+      notes.push(many);
+      noteCodes.push('calc_price_many');
+    }
     const rail = railNote(ctx, c);
-    if (rail) notes.push(rail);
+    if (rail) {
+      notes.push(rail);
+      noteCodes.push('rail');
+    }
     // A forcing rule turned his answer's redraft back into a question (§2.2): said on the card, never a loop.
-    if (answer && c.forcedQuestion) notes.push(ANSWER_STILL_HIS);
+    if (answer && c.forcedQuestion) {
+      notes.push(ANSWER_STILL_HIS);
+      noteCodes.push('answer_still_his');
+    }
     const calcAnswer = input.calcAnswer ?? null;
     // The VED's answer, and the reply STATES no price the tool made (§2.3; fix pass 1, finding 3): no call, a refused
     // one, or a figure the words never said — his 💵, never the machine's press.
-    if (calcAnswer && (memory.calcPrices ?? []).length === 0) notes.push(CALC_PRICE_UNSAID);
+    if (calcAnswer && (memory.calcPrices ?? []).length === 0) {
+      notes.push(CALC_PRICE_UNSAID);
+      noteCodes.push('calc_price_unsaid');
+    }
     const fromAnswer = answer
       ? {
           questionDraftId: answer.questionDraftId,
@@ -1990,6 +2031,7 @@ export async function runOwnerTriggered(
       memory,
       actions,
       notes,
+      noteCodes,
       kind: input.trigger === 'hand_back' ? ('hand_back' as const) : ('reply' as const),
       fromAnswer,
       fromLesson: lesson,
@@ -2002,7 +2044,10 @@ export async function runOwnerTriggered(
     // question.
     // A lesson's rewrite never carries one, even of a VED answer's card (fix pass 4): he has just judged it wrong.
     const autoPlan = !lesson && (answer || calcAnswer) ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
-    if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
+    if (autoPlan?.cardNotes?.length) {
+      notes.push(...autoPlan.cardNotes);
+      noteCodes.push(...(autoPlan.cardNoteCodes ?? []));
+    }
     const written = await writeDraft({
       ...draftInput,
       autoPlan,

@@ -1025,6 +1025,7 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
     // An AI offer already on the card for this job (SPEC-P2-v2 §2.4) stays there — said, so «nothing is written» is
     // never read as «the card is empty».
     notes: [(await aiOfferOnRequest(requestId)) ? 'Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi; AI yozgan narx kartada qoladi.' : 'Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi.'],
+    noteCodes: ['price_only_customer'],
     priceRequestId: requestId,
   };
   const written = await createDraft({

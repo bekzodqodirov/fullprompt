@@ -19,7 +19,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { holderIsSeat } from '../../platform/settings/agent-seat';
-import { getSetting } from '../../platform/settings/service';
+import { getSetting, readAgentNightPrices } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
@@ -47,7 +47,7 @@ import { readSendCaps } from './send-caps';
 import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { CATEGORIES } from './tools';
-import type { AnswerMark, DraftPolicyJson } from './types';
+import { SYSTEM_REPLY_REASONS, type AnswerMark, type DraftPolicyJson, type NoteCode } from './types';
 import { answerStale } from './owner-answer';
 
 /**
@@ -198,6 +198,39 @@ function ledgerLinesOf(raw: unknown): AutoLedgerLine[] {
     .map((e) => ({ kind: str(e.kind) ?? '', origin: str(e.origin), tool: str(e.tool), role: str(e.role) }));
 }
 
+/**
+ * The stored warnings as the gate reads them — by CODE (stage 1a, K6), one per warning: a warning that names no code
+ * reads '?' (a code no list frees), so the count is the stored count whatever their shape.
+ */
+export function warningCodesOf(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((w: unknown) => {
+    const code = typeof w === 'object' && w !== null ? (w as { code?: unknown }).code : undefined;
+    return typeof code === 'string' && code !== '' ? code : '?';
+  });
+}
+
+/**
+ * The stored notes' codes — the ONE reading rule (stage 1a, K5): no notes → none; notes with a code array of the SAME
+ * length, every entry a string → those codes; anything else → null, which the gate refuses like any note. So a draft
+ * written before 1a with notes and no codes fails closed, and one with no notes goes on.
+ */
+export function noteCodesOf(policy: Pick<Partial<DraftPolicyJson>, 'notes'> & { noteCodes?: unknown }): string[] | null {
+  const stored = Array.isArray(policy.notes) ? policy.notes.length : 0;
+  if (stored === 0) return [];
+  const codes = policy.noteCodes;
+  if (!Array.isArray(codes) || codes.length !== stored || !codes.every((c): c is string => typeof c === 'string')) return null;
+  return [...codes];
+}
+
+/**
+ * The reply is a tayyor matn the code wrote (stage 1a P3, `policy.system`) — only for a reason this build knows: an
+ * unknown one is read as the model's words, which every rule judges as before.
+ */
+export function systemAckOf(policy: { system?: unknown }): boolean {
+  return (SYSTEM_REPLY_REASONS as readonly unknown[]).includes(policy.system);
+}
+
 function confidenceOf(raw: string | number | null): number | null {
   if (raw === null) return null;
   const n = Number(raw);
@@ -321,7 +354,7 @@ async function burstHadMedia(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' 
 export async function autoFactsFor(
   d: AutoDraftShape,
   opts: { at: Date; now: Date; tools?: readonly ToolCall[]; config?: AutoConfig | null; scheduling?: boolean },
-): Promise<AutoGateInput & { calcNotes: readonly string[] }> {
+): Promise<AutoGateInput & { calcNotes: readonly string[]; calcNoteCodes: readonly NoteCode[] }> {
   const auto = opts.config === undefined ? await readAutoConfig() : opts.config;
   const agent = await readAgentConfig();
   const policy = (d.policy ?? {}) as Partial<DraftPolicyJson>;
@@ -382,8 +415,9 @@ export async function autoFactsFor(
       ownText: d.finalBody !== null,
       blocked: d.blocked,
       needsOwner: d.needsOwner,
-      warnings: Array.isArray(policy.warnings) ? policy.warnings.length : 0,
-      notes: Array.isArray(policy.notes) ? policy.notes.length : 0,
+      warningCodes: warningCodesOf(policy.warnings),
+      noteCodes: noteCodesOf(policy),
+      systemAck: systemAckOf(policy),
       actionTypes: actions.map((a) => (typeof a?.type === 'string' ? a.type : '?')),
       category: d.category,
       language: d.language,
@@ -433,12 +467,18 @@ export async function autoFactsFor(
     at: opts.at,
     now: opts.now,
     streak: await autoStreak(d.managerUserId, d.peerId),
+    // Stage 1a's two chat facts, read by their packages (P2's loop detector, P3's complaint tripwire): none yet.
+    loop: false,
+    complaint: false,
+    // His night setting, on the pool like every fact here — never inside the transaction that records the verdict.
+    nightPrices: await readAgentNightPrices(),
     pressedToday: (await autoPressedToday(d.managerUserId, opts.now)) + queued,
     budgetLeft: sends ? sends.ceiling - sends.used - queued : null,
     sendingEnabled: opts.scheduling ? (await getSetting('tg_sending_enabled')) === true : null,
     listenerCurrent: opts.scheduling ? listenerIsCurrent(guard, opts.now) : null,
     // The card's lines a person decides by (a waited duplicate, a file the VED will not get) — the plan writes them.
     calcNotes: calcRead?.cardNotes ?? [],
+    calcNoteCodes: calcRead?.cardNoteCodes ?? [],
   };
 }
 
@@ -446,13 +486,17 @@ export async function autoFactsFor(
  * The calc facts of a draft (calc-submit `calcSubmitFacts`) — one that cannot be read refuses every one (fails
  * closed). The card lines a person decides by ride beside them, for the plan to write onto the card.
  */
-async function calcFactsOf(d: AutoDraftShape, action: CalcSubmitAction, now: Date): Promise<{ facts: CalcSubmitFacts; cardNotes: string[] } | null> {
+async function calcFactsOf(
+  d: AutoDraftShape,
+  action: CalcSubmitAction,
+  now: Date,
+): Promise<{ facts: CalcSubmitFacts; cardNotes: string[]; cardNoteCodes: NoteCode[] } | null> {
   try {
     const { calcSubmitFacts } = await import('./calc-submit');
     return await calcSubmitFacts({ managerUserId: d.managerUserId, peerId: d.peerId, action, draftId: d.id ?? null, now });
   } catch (err) {
     logger.warn({ err, peer: String(d.peerId) }, '[agent] auto: the calculation’s facts not read');
-    return { facts: CALC_FACTS_UNREAD, cardNotes: [] };
+    return { facts: CALC_FACTS_UNREAD, cardNotes: [], cardNoteCodes: [] };
   }
 }
 
@@ -536,6 +580,11 @@ export interface AutoPlan {
    * them among the draft's notes; empty for every other draft.
    */
   cardNotes?: string[];
+  /**
+   * What each card line IS, parallel to `cardNotes` (stage 1a, K5) — the run writes them beside the notes. A plan with
+   * lines and no codes leaves the stored notes uncoded, which the gate reads as a stop (`noteCodesOf`).
+   */
+  cardNoteCodes?: NoteCode[];
 }
 
 /**
@@ -589,6 +638,7 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
       dueAt: verdict.eligible ? dueAt : null,
       holdSec: config.holdSec,
       cardNotes: [...facts.calcNotes],
+      cardNoteCodes: [...facts.calcNoteCodes],
     };
   } catch (err) {
     logger.error({ err, peer: String(input.draft.peerId) }, '[agent] auto plan not computed');
