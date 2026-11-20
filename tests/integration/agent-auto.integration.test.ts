@@ -1047,8 +1047,11 @@ describe('/agent auto (bot-door `agentCommand`)', () => {
     expect(await agentCommand(ownerId, 'auto on')).toBe('Avval raqamni «Ish raqami» deb belgilang.');
     await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
     // DELIBERATE EDIT (stage 1a, J22): the bot says what the page says — talk at its own hold (this file's two minutes),
-    // a price on its card with ⏸.
-    expect(await agentCommand(ownerId, 'AUTO  ON')).toMatch(/^🤖 O‘zi yuborish yoqildi: oddiy javob 2 daqiqa kutib o‘zi ketadi — kechasi ham .*Narx kartada 2 daqiqa kutadi/u);
+    // with ⏸. DELIBERATE EDIT (review D3): no price box is ticked in this file, so no price hold and no night price is
+    // promised — only «narx … har doim sizga qoladi», never beside «narx … keyin o‘zi ketadi».
+    const armed = await agentCommand(ownerId, 'AUTO  ON');
+    expect(armed).toMatch(/^🤖 O‘zi yuborish yoqildi: oddiy javob 2 daqiqa kutib o‘zi ketadi \(⏸ bilan to‘xtatasiz\) — kechasi ham .*narx va shikoyat har doim sizga qoladi\.$/u);
+    expect(armed).not.toContain('Narx kartada');
     expect((await readAutoConfig())!.armed).toBe(true);
     // Any super_admin may switch it off.
     expect(await agentCommand(otherId, 'auto off')).toContain('o‘chirildi');
