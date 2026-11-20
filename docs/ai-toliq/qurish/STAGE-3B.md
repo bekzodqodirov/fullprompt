@@ -58,7 +58,7 @@ Seven of the nine carry (`manager_user_id`,`peer_id`) or an FK to `agent_drafts`
 **CHECKs read and deliberately LEFT:** `agent_auto_config_categories_check` (0149: the seven of `auto-categories.ts:20`, `cardinality >= 1`) — the stored row is his; in `live` the release verdict stops READING it (§6.3 derives the starting positions from it, so his ticks are kept, never flipped). `agent_drafts_category_check` — the model's label stays stored (it weights the sample), it admits nothing. `agent_auto_verdicts_*` (0145) — that row stays the press's state machine. `agent_runs_trigger_check`, `ai_calc_passes_kind_check` (`tests/unit/ai-press.test.ts`), `telegram_chat_waits_kind_check` — untouched: a review is no run, no pressed kind, no wait.
 
 ### 3.2 Probe and what «behind» means
-`agentGuardReady()` in `agent/config.ts` beside `agentFullP2Ready` (`:172`), same idiom (cached TRUE only; `__forget…` / `__pretend…Behind` twins): `to_regclass` of `agent_turn_blocks`, `agent_reviews`, `agent_action_uses`. **Behind:** `guardMode()` answers `'old'` whatever the setting says; the writer keeps ⟨1b⟩'s schema; no review call, no ledger row, no nightly job; step-down is today's `AUTO_STEP_DOWN`; the page draws ⟨1b⟩'s one select. Read the probe BEFORE any transaction (#714).
+`agentGuardReady()` in `agent/config.ts` beside `agentFullP2Ready` (`:172`), same idiom (cached TRUE only; `__forget…` / `__pretend…Behind` twins): `to_regclass` of `agent_turn_blocks`, `agent_reviews`, `agent_action_uses`. **Behind:** `guardMode()` answers `'old'` whatever the setting says; the writer keeps ⟨1b⟩'s schema; no review call, no ledger row, no nightly job; step-down is today's `AUTO_STEP_DOWN`; the page draws ⟨1c⟩'s small «Huquqlar» list (the rows stored so far, saved through ⟨1b⟩'s `setActionRight`). Read the probe BEFORE any transaction (#714).
 
 ### 3.3 Settings (`platform/settings/service.ts:13` `SETTING_DEFAULTS`; each a doc comment, a validator beside `:386`, an `OWN_DOOR_KEYS` entry at `:412`, `settings.descriptions.<key>` ×4)
 | Key | Default | Meaning | Writer |
@@ -73,7 +73,7 @@ Seven of the nine carry (`manager_user_id`,`peer_id`) or an FK to `agent_drafts`
 | `agent_road_ttl_days` | `14` | a confirmed road older than this is asked again | super_admin |
 | `agent_low_quote_keep_usd` | `50` | his 22 a — **the ONE key for that line**: stage 4's «Farq» (`STAGE-4-6.md` §4.4 P4, a new VED answer against the price told) reads this same key; it mints no second one. Not a spending cap (10 c) | super_admin |
 
-No dollar key (10 c). A key read inside a transaction is read with `tx.execute` on that transaction, never `getSetting` (`tests/unit/tx-pool.test.ts`).
+No dollar key (10 c). A key read inside a transaction is read with `tx.execute` on that transaction, never `getSetting` (`tests/unit/tx-pool.test.ts`). **«super_admin» in the Writer column is shorthand for a DOOR, not a string to type:** the predicate ⟨1a⟩ extracts from `setAgentSeat` (`STAGE-0-1A.md` §3.2), CALLED — no file of this stage restates a role key (§11.2). «The supervisor pair» is ⟨1b⟩'s `maySpeakForSeat`, which reads the pair as ROWS (`designatedRows('supervisor', handle)`, lead ruling R2): with the table empty the two stop buttons stay the holder's, as today — they are not opened to whoever the alarm fallback reaches.
 
 ## 4. Code
 ### 4.0 Kernel K — three commits, before any package
@@ -83,9 +83,9 @@ No dollar key (10 c). A key read inside a transaction is read with `tx.execute` 
 | **K2** the migration, `schema/agent.ts`, `config.ts` probe, `purge.ts` | §3 |
 | **K3** `agent/guard-mode.ts` (new) | `guardMode()` (probe + setting); `GUARD_STEPS` (`i`…`v`, each naming the codes it retires); `stepRetired(step)`; `codeLive(code)`; `REVIEWER_VERSION` = md5 of (the reviewer's prompt text, its output schema, the two tier constants) — what an exam is an exam OF. **ONE home of «which rule decides today»** |
 | **K3** `agent/guard-codes.ts` (new) | `CODE_FATE: Record<AutoRefusal \| PolicyCode, { fate: 'keep' \| 'dial' \| 'replaced' \| 'deleted'; step: GuardStep \| '1a' \| '1b' \| '2' \| null; by: string }>` — §6.2 as DATA. A `Record` over both unions: a code added later does not compile until classified |
-| **K3** `agent/rights.ts` (new) | `RIGHTS: Record<ActionKey, RightSpec>` (§6.3: tier, `money`, `single` = one mistake steps down, `allowed` positions, limits schema, the answer it comes from) and `positionNow(action)` = stop buttons → an unrestored step-down → the stored row (⟨1b⟩ `positionOf`) → `derivedDefault(action, autoConfig)`. **ONE home of «may the machine do this now»**; ⟨1b⟩'s `ACTS` keeps the executors |
+| **K3** `agent/rights.ts` (new) | `RIGHTS: Record<ActionKey, RightSpec>` (§6.3: tier, `money`, `single` = one mistake steps down, `allowed` positions, limits schema, the answer it comes from) and `positionNow(action)` = stop buttons → an unrestored step-down → the stored row (⟨1b⟩ `positionOf`) → `derivedDefault(action, autoConfig)`. **ONE home of «may the machine do this now»**; ⟨1b⟩'s `ACTS` keeps the executors. `rights.ts` only READS `agent_action_rights`: **the ONE writer of that table is ⟨1b⟩'s `setActionRight` (`agent/acts.ts`), minted with the table and first used by ⟨1c⟩'s «Huquqlar» list (lead ruling R7)** — this stage's page action, its step-down (§4.6) and the restore tap all CALL it; 3b gives it what it lacks (the `RightSpec.allowed` check, the limits schema, an optional compare-and-set `expect`, a `by: 'person' \| 'machine'` mark for the audit) and adds no second writer. No migration and no deploy writes a position |
 
-**The three modes.** `old`: the writer and the guard exactly as ⟨3a⟩ left them — byte for byte. `shadow`: the STRUCTURED writer is live (§4.1); the rendered text is judged by the OLD guard (`checkTurn` ⟨1b⟩ → `checkAgentReply`, `policy.ts:2769`; `autoVerdict`, `auto-gate.ts:362`), which DECIDES; walls 2-4 judge the structured turn and are only recorded (`agent_guard_shadow`). `live`: both guards must pass; an old rule stops deciding only when its step is in `agent_guard_retired`. So the new guard can only ADD stops until he accepts a step — and block wording that cannot pass the old G11 is found on day one of `shadow`.
+**The three modes.** `old`: the writer and the guard exactly as ⟨3a⟩ left them — byte for byte. `shadow`: the STRUCTURED writer is live (§4.1); the rendered text is judged by the OLD guard (`checkTurn` ⟨1b⟩ → `checkAgentReply`, `policy.ts:2769`; `autoVerdict`, `auto-gate.ts:362`), which DECIDES; walls 2-4 judge the structured turn and are only recorded (`agent_guard_shadow`). `live`: both guards must pass; an old rule stops deciding only when its step is in `agent_guard_retired`. So the new guard can only ADD stops until he accepts a step — and block wording that cannot pass the old G11 is found on day one of `shadow`. **The one thing that changes hands at `live` without a step** is the three gate codes §6.2 calls DIALS — `category`, `not_reply`, `actions`: none is a word rule or a reader (each reads his kind ticks or the draft's kind), and from `live` the right that replaces it decides, DERIVED from the very tick the code read (§6.3a) — so on the `live` morning nothing he ticked behaves differently. Every other code, and every word rule without exception, keeps deciding until its own step is retired through §7.2's door. **The six deploys, in the one order every section of this file uses:** PR-A (mode `old`) → M0-M4 on the server → the dry replay → `shadow` (M5: ≥ 14 days and ≥ 200 turns) → the report he is shown (M6) → his choice per class (M7) → `live` → for each step i … v in turn: RETIRED by the door (a setting, reversible in a second) → ≥ 7 clean days → its own code-only PR that deletes that family. A demolition PR never ships a retirement and its deletion together, and never two steps.
 
 ### 4.1 P1 «Tayyor matnlar» — blocks, the structured turn, the renderer
 | Where (as read) | Today | Change |
@@ -100,13 +100,13 @@ No dollar key (10 c). A key read inside a transaction is read with `tx.execute` 
 | `drafts.ts:455` `draftFromRun`, `createDraft` | body + policy jsonb | the manifest goes into `agent_turn_blocks` in `createDraft`'s transaction (a savepoint, the verdict row's precedent `auto-send.ts:682`); `policy.memory.blocks` keeps the ids |
 | `card.ts`, `card-io.ts` | the card prints the body | a block part is framed «▣ tayyor matn»; a prose part shows its `gloss_uz` for fa / zh |
 
-**Rules of a turn (each a line of `render-turn.ts`, each tested):** a block is a whole line or paragraph, never mid-sentence · **a part that carries a money block carries NO prose** (class 8: «boj ham shu narxda» has nowhere to stand); system connectives only · each money part is self-sufficient (⟨1b⟩'s per-part rule now holds by construction) · every price and transit block NAMES ITS ROAD in its own text · `status` / `balance` / `code` blocks carry `client_id` and refuse to render unless it is in `identity.codes` (`context.ts:52`); a chat with several codes names each · no block template prints a batch, crate, prixod or deal code, a plate, or another customer's date · the Chinese paragraph for a supplier is a template with slots (address + code), never model text.
+**Rules of a turn (each a line of `render-turn.ts`, each tested):** **the turn's size is ⟨1b⟩'s `agent_turn_max_parts`, and it counts EVERY message of the turn (lead ruling R6)** — prose parts, tayyor matn parts, the holding line, and the parts code appends (`road_question`, the `correction` apology line, ⟨1c⟩'s closing parts, stage 4's PDF) — so the number he picked is the number of messages a customer gets at once; the writer's schema is given (max − code-appended) prose parts, never fewer than one, and a block the model places beside prose takes a slot of its own when it becomes a separate part · a block is a whole line or paragraph, never mid-sentence · **a part that carries a money block carries NO prose** (class 8: «boj ham shu narxda» has nowhere to stand); system connectives only · each money part is self-sufficient (⟨1b⟩'s per-part rule now holds by construction) · every price and transit block NAMES ITS ROAD in its own text · `status` / `balance` / `code` blocks carry `client_id` and refuse to render unless it is in `identity.codes` (`context.ts:52`); a chat with several codes names each · no block template prints a batch, crate, prixod or deal code, a plate, or another customer's date · the Chinese paragraph for a supplier is a template with slots (address + code), never model text · **no new `part_kind`**: a tayyor matn part and a template part (`road_question`, the `correction` line) are stored as ⟨1b⟩'s `block`, the holding template as `holding`, prose as `prose` — the three values ⟨1b⟩ writes; `file` and `first` stay reserved for stages 4 and 8.
 
 ### 4.2 P2 «Havolalar va yo'l» — the echo rule by typed reference; the road as a stored fact
 - **`agent/refs.ts` (new; ONE home of typed refs).** Moves `measureCandidates` (`context.ts:503`, over `parseManualFacts`) here and adds kinds: weight `w#`, volume `v#` (as today), count `n#`, carton size `s#` (`d#` stays `cargo_volume`'s RESULT, `tools.ts:434`). An INPUT-side reader: when it misses, no ref exists, the model cannot echo and asks again — it fails CLOSED. Prose may hold `{w1}` `{v1}` `{n1}` `{s1}` and nothing numeric; code renders each with the unit of its KIND («420 kg», «3 m³», «25 ta», «60×40×50 sm»). There is NO bare-figure token. The customer's money, days, dates and percents are never refs (today's `COMPANY_KINDS`, `numbers.ts:1246`): prose says «aytgan narxingiz». A `read` / `heard` ref ⟨2⟩ renders only inside the read-back template until the typed «ha».
 - **`tools.ts:424` `cargo_volume`** takes four NUMBERS today and checks them with `stated()` (`:270`) → takes `count_ref` + `size_ref`. `customerSources` (`numbers.ts:1524`) and `extractNumbers` (`:1148`) SURVIVE as `stated()`'s base for `calc_checklist` (`tools.ts:735`).
 - **`agent/road.ts` (new; ONE home of «which road»).** `roadFact(chat)` reads `agent_chat_roads`. `confirmed` is written by ONE thing: the customer's typed answer to the system question (`road_question`, a template part), read by `roadChoiceIn` (`numbers.ts:369`) and accepted only when it answers exactly `'air'` or `'road'`. `airMentionIn` (`numbers.ts:510`) stays as the tripwire «once spoken, always confirm» (#1541): an inbound line it hits AFTER the confirmation, or `agent_road_ttl_days`, sets the row back to `asked`.
-- **New tool `receiving_address`** (`{city_ref}`, a message ref): the city resolves through `namedOrigins` (`origin.ts:120`) to exactly ONE live receiving fact (`warehouseAddressTexts`, `kb.ts:110`) — else «qaysi shahardan jo'natishini so'ra»; road not `confirmed` → the tool queues the `road_question` part and answers «manzil hali berilmadi — yozma»; road `air` → «avia manzilini rahbar beradi» + today's forced question (`withAviaRule`, `run.ts:923`, UNCHANGED — 17 c); road `road` → block `address_cn` whose FIRST line names the road and whose last says avia cargo is not sent there (§6.5). ⟨1c⟩'s closing turn builds its address through this same function.
+- **New tool `receiving_address`** (`{city_ref}`, a message ref): the city resolves through `namedOrigins` (`origin.ts:120`) to exactly ONE live receiving fact (`warehouseAddressTexts`, `kb.ts:110`) — else «qaysi shahardan jo'natishini so'ra»; road not `confirmed` → the tool queues the `road_question` part and answers «manzil hali berilmadi — yozma»; road `air` → «avia manzilini rahbar beradi» + today's forced question (`withAviaRule`, `run.ts:923`, UNCHANGED — 17 c); road `road` → block `address_cn` whose FIRST line names the road and whose last says avia cargo is not sent there (§6.5). ⟨1c⟩'s closing turn builds its address through this same function. **And the receiving facts leave `kb_search` (17 c):** a fact that `warehouseAddressTexts` / `isReceivingAddressFact` (`policy.ts:2695`) names is quote-only by §4.1's rule (it holds Han text, a phone, a house number) — served as a `fact_quote` block it would reach a customer under the right `quote_fact`, with no road question and no «✈️ Avia yuk bu manzilga yuborilmaydi». So in `shadow` / `live` `kb_search` never returns such a fact as a block (it answers «manzil uchun receiving_address»): our China address has ONE road to a customer, and step iv's evidence («the address REFUSED BY THE TOOL in every one of the 183») is not bypassed by the neighbouring tool. `agent-road.integration.test.ts` gains the row; red proof: let `kb_search` serve it.
 - `chatRoadOf` (`run.ts:885`), `aviaSpokenOf` (`:807`), `withAviaGuard` (`:1395`), `avia_address` / `avia_maybe` (`policy.ts:2835-2839`) keep deciding until step iv.
 
 ### 4.3 P3 «Ruxsatnoma» — the prose check, permits, tripwire-holds, limits inside tools
@@ -139,13 +139,13 @@ No dollar key (10 c). A key read inside a transaction is read with `tx.execute` 
 ### 4.5 P5 «Huquqlar» — the page, the release verdict, the limits ledger, the stop buttons
 - **`agent/release.ts` (new).** `turnActions(turn, acts)` DERIVES what a turn exercises from its blocks and acts (a `price_truck` block ⇒ `tell_table_price`) — never from the model's label. `releaseVerdict` = the system-state codes that stay (§6.2 «keep») + the strictest `positionNow` of those actions (`odam` → a person's; `sorab` → a one-tap card; `nazoratda` → goes and is listed; `ozi` → goes) + the walls + each right's limits (hold seconds, night, per day). Call sites: `autoFactsFor` (`auto-send.ts:321`), `autoPlanFor` (`:573`), `pressOne` (`:851`). In `shadow` it is computed and recorded only; in `live` it is ANDed with `autoVerdict` until the gate's own codes are retired (§7.3).
 - **The ledger.** One `agent_action_uses` row per action per part, written when the part is `sent` — in the after-sent job (`after-sent.ts:251`), never in the listener.
-- **Stop buttons** (the supervisor pair; each audited, each a banner): one chat (exists: 🙋, `chat_off`, mute) · «pulga oid hammasi» — `agent_stop_money`: every `money` right reads `sorab`; the SEND step reads it in `chatFacts` (`outbox-store.ts:203`) and cancels a queued money part `stopped_money` (→ **tg-listen is rebuilt in PR-A**) · «birinchi bo'lib yozish» — `agent_stop_first` · «hammasi» — today's `/agent off` and `setAutoArmed(false)` (`auto-send.ts:1459`).
-- **Page** `src/app/(protected)/suhbatlar/ai/huquqlar/` — sections «Huquqlar», «Chegaralar», «To'xtatish», «Tayyor matnlar», «O'lchov», «Solishtirish», «Tungi tekshiruv», «Hisoblagich» (today's and the month's ≈ $ by part; a number, no ceiling). **One name for the place.** The menu entry is «Mijozlar va savdo → AI sotuvchi» at HEAD (`messages/uz.json`: the workspace tab `ws.tab.aiSotuvchi` and the page title `agentAi.title`) and every earlier plan sends him to «AI sotuvchi → …»; the design's page — the one he read — calls this screen «AI hodim → Huquqlar». Do not ship both: the alarms of §6.5 and every «qayerdan topiladi» sentence use the words the MENU really shows on the day of the deploy, and whether the entry is renamed «AI hodim» is his answer (`qurish/COVERAGE.md`, «Menyu nomi»; ⭐ = it stays «AI sotuvchi», the tab is «Huquqlar»). Every refusal code keeps a key in `labels.ts` ×4 (`tests/unit/agent-web-labels.test.ts`). The limits shown are the EXISTING stores, linked not copied: the big-cargo line and persona ⟨1a⟩, the markup (`agent_calc_markup_*`), the avia rate (`agent_config.avia_usd_per_kg`), the send caps (`agent_send_caps`), night ⟨1a⟩, «kim javob beradi» ⟨1a⟩ ⟨3a⟩.
+- **Stop buttons** (the supervisor pair; each audited, each a banner): one chat (exists: 🙋, `chat_off`, mute) · «pulga oid hammasi» — `agent_stop_money`: every `money` right reads `sorab`; the SEND step reads it in `chatFacts` (`outbox-store.ts:203`) and cancels a queued money part — status `cancelled` with the REASON `stopped_money` (a new final of the send verdict's union, like `offer_gone`; it is NOT an outbox status — ⟨1b⟩'s `agent_outbox_status_check` admits `parked` and no other new value, and this stage re-makes no constraint) (→ **tg-listen is rebuilt in PR-A**) · «birinchi bo'lib yozish» — `agent_stop_first` · «hammasi» — today's `/agent off` and `setAutoArmed(false)` (`auto-send.ts:1459`).
+- **Page** `src/app/(protected)/suhbatlar/ai/huquqlar/` — sections «Huquqlar», «Chegaralar», «To'xtatish», «Tayyor matnlar», «O'lchov», «Solishtirish», «Tungi tekshiruv», «Hisoblagich» (today's and the month's ≈ $ by part; a number, no ceiling; the dollars only for `companyMoneySight` — every other reader of the page sees the COUNTS, the house rule of `pressToday`, `calc/ai-press.ts`). **One name for the place.** The menu entry is «Mijozlar va savdo → AI sotuvchi» at HEAD (`messages/uz.json`: the workspace tab `ws.tab.aiSotuvchi` and the page title `agentAi.title`) and every earlier plan sends him to «AI sotuvchi → …»; the design's page — the one he read — calls this screen «AI hodim → Huquqlar». Do not ship both: the alarms of §6.5 and every «qayerdan topiladi» sentence use the words the MENU really shows on the day of the deploy, and whether the entry is renamed «AI hodim» is his answer (`qurish/COVERAGE.md`, «Menyu nomi»; ⭐ = it stays «AI sotuvchi», the tab is «Huquqlar»). Every refusal code keeps a key in `labels.ts` ×4 (`tests/unit/agent-web-labels.test.ts`). The limits shown are the EXISTING stores, linked not copied: the big-cargo line and persona ⟨1a⟩, the markup (`agent_calc_markup_*`), the avia rate (`agent_config.avia_usd_per_kg`), the send caps (`agent_send_caps`), night ⟨1a⟩, «kim javob beradi» ⟨1a⟩ ⟨3a⟩.
 
 ### 4.6 P6 «Tungi tekshiruv» — the nightly comparison and the per-action step-down
 - **`agent/fact-check.ts` (new)**, a schedule beside the sweep's (`jobs.ts`), once a night for the previous Tashkent day, over every outbox part that was SENT. It checks what CAN differ (`critic-guard.md` §E.12 — «compare the block with the database it was rendered from» is true by construction): **`rendered_is_sent`** the sent body's md5 is the rendered part's · **`numeral_maps`** every numeral of the sent text lies inside a block or a rendered ref · **`value_vs_source`** the stored `value` re-rendered with its `text_id` gives `rendered`, and its `source_rev` still names the row it came from (a fact edited since is «manba o'zgargan», not a mistake) · **`client_is_chat`** a status, balance or code block's `client_id` is the chat's · **`road_matches`** an `address_cn` block's road is the road confirmed at that minute. Separately LISTED, never a mistake: prices, addresses and codes a PERSON typed from the seat that day (out rows with no `agent_outbox` row).
-- A failed check marks the use (`mistake_source = 'nightly'`) and cards the supervisor pair. **22 a:** when the mismatch is a price told LOWER than its stored block, the card says by how much; ≤ `agent_low_quote_keep_usd` → «mijozda shu narx qoladi» is recorded and nothing is sent; above → a `correction` turn is prepared as «So'rab».
-- **`agent/step-down.ts` (new).** `ACTION_STEP_DOWN = {windowDays: 7, mistakes: 2}`; a right with `single: true` (an address, a code, a status or balance of the wrong client) steps down on ONE. A mistake comes from: his 👎 in the sample ⟨1a⟩ (one action in the turn → automatic; several → he picks which), the nightly check, today's 👎 (`autoFeedback`, `auto-send.ts:1318`). The step: the action alone → `sorab`, by compare-and-set on `agent_action_rights`, with an `agent_action_steps` row and an alarm. Step-UP is only his tap. `AUTO_STEP_DOWN.feedbackToDisarm` (`auto-send.ts:1243`) stops disarming everything once `live`; a block within 7 days and every account brake (`forced-off.ts:14`) still stop ALL sending. (The «second "botmisiz?" chat» step-down is NOT among them: ⟨1a⟩ deleted `autoStepDownOnBotQuestion` and `botQuestionChatsToDisarm` with his 1 b — the question is answered now, by the `say_ai` text. Do not bring it back here.) Samples unmarked for 48 h are named in the morning line ⟨1a⟩ — no marks, no signal, and it says so.
+- A failed check marks the use (`mistake_source = 'nightly'`) and cards the supervisor pair — each copy drawn for its own recipient's sight (⟨1b⟩ `cardSightFor`): the told and the stored price and their difference for sight `all` only; a rank of the pair with sight `own` or `none` reads «narx farqi bor — rahbar ko'radi», the words `STAGE-4-6.md` §4.5 gives the same signal. The page's «Tungi tekshiruv» and «Solishtirish» lists follow the same rule (a VED-sight reader sees «(narx — suhbatda)» where a money block stands, §5). **22 a:** when the mismatch is a price told LOWER than its stored block, the card says by how much; ≤ `agent_low_quote_keep_usd` → «mijozda shu narx qoladi» is recorded and nothing is sent; above → a `correction` turn is prepared as «So'rab».
+- **`agent/step-down.ts` (new).** `ACTION_STEP_DOWN = {windowDays: 7, mistakes: 2}`; a right with `single: true` (an address, a code, a status or balance of the wrong client) steps down on ONE. A mistake comes from: his 👎 in the sample ⟨1a⟩ (one action in the turn → automatic; several → he picks which), the nightly check, today's 👎 (`autoFeedback`, `auto-send.ts:1318`). The step: the action alone → `sorab`, written through ⟨1b⟩'s `setActionRight` with its compare-and-set (`expect` = the position the mistakes were counted under; `by: 'machine'`) — never an UPDATE of its own (R7) — with an `agent_action_steps` row in the same transaction and an alarm. Step-UP is only his tap, through the same writer. `AUTO_STEP_DOWN.feedbackToDisarm` (`auto-send.ts:1243`) stops disarming everything once `live`; a block within 7 days and every account brake (`forced-off.ts:14`) still stop ALL sending. (The «second "botmisiz?" chat» step-down is NOT among them: ⟨1a⟩ deleted `autoStepDownOnBotQuestion` and `botQuestionChatsToDisarm` with his 1 b — the question is answered now, by the `say_ai` text. Do not bring it back here.) Samples unmarked for 48 h are named in the morning line ⟨1a⟩ — no marks, no signal, and it says so.
 
 ### 4.7 P7 «O'lchov» — the exam harness and the shadow
 `scripts/agent-guard-exam.ts`, `scripts/agent-guard-report.ts` (through `migrate`, never a package.json command, #1228), `agent/shadow.ts` (writes `agent_guard_shadow` in `createDraft`'s savepoint), the page's «O'lchov» and «Solishtirish». Fence: neither script imports `writeDraft`, `createDraft`, `decideDraft`, `notifyStaffTelegram`, `enqueue`.
@@ -169,7 +169,7 @@ No dollar key (10 c). A key read inside a transaction is read with `tx.execute` 
 | Door | Predicate |
 |---|---|
 | Read the rights page | `agentDoorsFor` (`web-door.ts:15`) |
-| Change a position, a limit, the mode, the reviewer's tiers; approve a tayyor matn; accept a measurement; retire a step | the `super_admin` ROLE (the `setAgentSeat` precedent, `config.ts:623`; ⟨1a⟩ `setDesignations`) — and for a text, the designated SUPERVISOR only, never the deputy (⟨1b⟩ `mayApproveKnowledge`: «only he approves knowledge») |
+| Change a position, a limit, the mode, the reviewer's tiers; approve a tayyor matn; accept a measurement; retire a step | the predicate ⟨1a⟩ extracts from `setAgentSeat` (inline at `config.ts:623-624` at HEAD; ⟨1a⟩ `setDesignations` and ⟨1b⟩ `setActionRight` already ask it) — CALLED, never a role key restated here. A position is saved by `setActionRight` and nothing else (R7). And for a text, an accepted measurement and a retired step: the designated SUPERVISOR only — rank 1 of the topic's own rows (`designatedRows('supervisor', handle)`, R2; ⟨1b⟩ `mayApproveKnowledge`: «only he approves knowledge»), never the deputy and never a fallback recipient: while the table is empty these three doors answer to nobody but the holder |
 | Stop buttons; mark a sample or a shadow row; see the nightly list; restore a stepped-down action | ⟨1b⟩ `maySpeakForSeat` — the supervisor pair. Restoring also needs `super_admin` |
 | Press ✅ on a «So'rab» card | ⟨1b⟩ `maySpeakForSeat`, unchanged |
 
@@ -219,7 +219,7 @@ Rule 1 → «Sonni, narxni, muddatni, manzilni, kodni, holatni o'zing YOZMA. Vos
 | 51 | `too_long` (G4, 700) | keep | per part |
 | 52 | `questions` | deleted as a stop | ⟨1a⟩; information on the card |
 | 53-54 | `empty`, `memory_missing` | keep | a machine turn with no stored manifest cannot be re-checked |
-| 55 | `wrong_script` (G5) | keep | verifies the prose against the turn's language (rewrite → hold); blocks are exempt. Role changes at step iii |
+| 55 | `wrong_script` (G5) | keep | verifies the PROSE against the turn's language (rewrite → hold). It is not asked of a code-rendered part — a tayyor matn or a template (lead ruling R5: the frame is approved per language and what it quotes is the customer's own text or the fact's own script); prose parts are checked as today. Role changes at step iii |
 | 56-58 | `other_client_code`, `system_code`, `foreign_phone` (G6) | keep | + the freshly minted code enters `ownCodes` atomically ⟨1c⟩ |
 | 59-60 | `staff_name`, `canary` | keep | + the reviewer's own canary |
 | 61 | `ai_denial` | keep | + `claimsHumanAs(persona)` — the persona's name is READ from `agent_persona_name` ⟨1a⟩ |
@@ -260,10 +260,10 @@ Positions are DATA (`agent_action_rights` ⟨1b⟩); no row is seeded. Until he 
 | `ask_owner` (the ⟨1b⟩ act, with ⟨3a⟩'s topics — label «Hamkasbdan so'rash»), `hand_over` (the ⟨3a⟩ act: call-back, factory pickup, «sotib olib berish» — ONE row, the three kinds listed under it), `big_cargo_signal` ⟨1a⟩ | T2 | O'zi | 14 b, 15 a, 20 a, 3 b |
 | `relay_answer` · Hamkasb javobini (raqamsiz) mijozga yetkazish — the ⟨3a⟩ act, its STORED row | T2 | as he left it in ⟨3a⟩ (default Nazoratda) | 14 b; ⟨3a⟩ Q1 |
 | `hear_voice` · Ovozli xabarni eshitish — the ⟨2b⟩ act, its STORED row (drawn only if 2b was built) | T1 | as he left it (Faqat odam until the trial of 13 a passed and he switched it) | 13 a |
-| `mute_chat` · «Yozmang» degan mijozni o'chirish | T2 | So'rab — today's `actions` (question 6) | 24 a «yozmang = never again» |
+| `mute_chat` · «Yozmang» degan mijozni o'chirish | T2 | So'rab — today's `actions`. Question 6's ⭐ is (a) «AI o'zi o'chiradi»: if he answers (a), `derivedDefault` for THIS right answers `ozi` (still no row written); until he answers it stays `sorab`. From stage 8 the customer's «yozmang» is read by CODE as a stop of unasked messages while replies go on (`STAGE-7-9.md` §B4.1) — this right then governs only the model's own proposal to silence a chat | 24 a «yozmang = never again» |
 | `relay_person_figure` · Sizning yoki hamkasb javobidagi raqam | T3 | So'rab — fixed (never O'zi) | §8 decided |
 | `correction` · Xato narxni tuzatish (the turn that tells a corrected price — released by THIS right both when the nightly check finds it, §4.6, and when a new VED answer does, `STAGE-4-6.md` §4.4 P4) | T3 · money | So'rab | 22 a |
-| `open_code` · GS kod ochish — the ⟨1c⟩ act, its STORED row | T3 · single | as he left it in ⟨1c⟩ (So'rab, or Faqat odam); stage 5 ALLOWS «Nazoratda» with `limits.perDay` 10 — the code opens alone and each is shown to him the same minute for two weeks (`STAGE-4-6.md` §5.3); «O'zi» is his later tap | 16 b ⚠ |
+| `open_code` · GS kod ochish — the ⟨1c⟩ act, its STORED row | T3 · single | as he left it in ⟨1c⟩ (So'rab, or Faqat odam); stage 5 ALLOWS «Nazoratda» with `limits.perDay` 10 — the code opens alone and each is shown to him the same minute for two weeks (`STAGE-4-6.md` §5.3). «O'zi» is NOT among the positions stage 5 allows and no plan builds it: his 16 b is «each code shown to him», which is «Nazoratda» | 16 b ⚠ |
 | `give_discount` · Chegirma (stage 6's TOOL is `concede`; the RIGHT and the permit class `discount` are these — one key, `STAGE-4-6.md` §6.3 uses it) | T3 · money | Faqat odam until stage 6 | 23 c ⚠ |
 | `followup`, `greeting`, `amount_due` · eslatma, tabrik, to'lov eslatmasi | T3 | Faqat odam until stages 6 and 8 | 24 a ⚠, 26 a, 25 b ⚠ |
 | credit, refund / compensation, guarantee, «bojsiz», free extras, confirming a payment, below the floor, tariffs and markup, a first message to someone who never wrote | T4 | Faqat odam — shown greyed, no select | design §1 «a person, for ever» |
@@ -274,12 +274,12 @@ Positions are DATA (`agent_action_rights` ⟨1b⟩); no row is seeded. Until he 
 | What exists before 3b | How it enters the rights page | Never done |
 |---|---|---|
 | A row an earlier stage already STORED under its act's key — `open_code` ⟨1c⟩, `hear_voice` ⟨2b⟩, `relay_answer` ⟨3a⟩ | **adopted as it stands**: `RIGHTS` gains a spec for that very key (tier, `allowed`, the limits schema); the row, its key, its position and its `limits` are not touched; ⟨1c⟩'s small «Huquqlar» list is replaced by this page | renaming a stored key; resetting a position |
-| His three kind ticks in `agent_auto_config.categories` («Narx», «VED narxi», «Hisoblatish») | `derivedDefault(action, autoConfig)`: ticked → `ozi`, not ticked → `sorab`, for `tell_table_price` + `tell_avia_price`, `tell_calc_price`, `submit_calc`. The page shows the derived value pre-selected with the words «sozlamangizdan olingan». The FIRST time he saves that row its position is written to `agent_action_rights`; from then on the ROW decides and the tick is no longer read for that action — the tick itself stays stored (mode `old` still reads it, which is the rollback) | a migration, a seed or a deploy turning a tick into a row; un-ticking anything |
+| His three kind ticks in `agent_auto_config.categories` («Narx», «VED narxi», «Hisoblatish») | `derivedDefault(action, autoConfig)`: ticked → `ozi`, not ticked → `sorab`, for `tell_table_price` + `tell_avia_price`, `tell_calc_price`, `submit_calc`. The page shows the derived value pre-selected with the words «sozlamangizdan olingan». The FIRST time he saves that row its position is written to `agent_action_rights` — by `setActionRight`, like every other save; from then on the ROW decides and the tick is no longer read for that action — the tick itself stays stored (mode `old` still reads it, which is the rollback) | a migration, a seed or a deploy turning a tick into a row; un-ticking anything |
 | Today's gate codes that become dials (§6.2: `not_reply`, `actions`) and the label-free talk of ⟨1a⟩ | derived, with no stored source: `relay_ved_question`, `mute_chat` → `sorab`; `talk`, `say_ai`, `media_line`, `holding_line` → `ozi` | — |
 | Limits that already HAVE a home — the price hold (`agent_auto_config.hold_sec`), the talk hold and the night choice ⟨1a⟩ (`agent_talk_hold_sec`, `agent_night_prices`), `per_day`, `max_chars`, the send caps (`agent_send_caps`), the big-cargo line ⟨1a⟩, parts per turn and the escalation minutes ⟨1b⟩, the read and voice counts ⟨2⟩, `agent_case_open_cap` ⟨3a⟩, the markup, the avia rate, `agent_low_quote_keep_usd` | **LINKED, not copied**: the page prints each beside the right it limits and edits it THROUGH its existing writer and door; `releaseVerdict` reads the very store the old gate reads, so `old`, `shadow` and `live` cannot disagree about a number | a second copy of a number in `limits` jsonb |
 | A limit with no other home — a day's count of codes, the share of the markup a discount may take, a day's count of addresses | `agent_action_rights.limits` (jsonb), its shape fixed by the right's `RightSpec` | — |
 
-Stages after 3b add a ROW SPEC to `RIGHTS` under the act's own key and nothing else: 4 `honour_quote` · 5 widens `open_code` · 6 widens `give_discount` (its tool is `concede`), `tell_balance` and `amount_due` (the amount said from the AI number — the bot push has its own switch), adds `payment_claim`, `debt_request` · 7 `relay_to_seller` · 8 widens `followup`, `greeting`. `agent-rights.test.ts` (§7.4) gains: a row stored before 3b under an act's key is read unchanged; saving a derived row writes `agent_action_rights` and never `agent_auto_config`; no migration of this stage contains an INSERT into `agent_action_rights`.
+Stages after 3b add a ROW SPEC to `RIGHTS` under the act's own key and nothing else: 4 `honour_quote` and widens `tell_west_price` (the row above reads «Faqat odam until stage 4»; `STAGE-4-6.md` §4.3 now carries that widening) · 5 widens `open_code` · 6 widens `give_discount` (its tool is `concede`), `tell_balance` and `amount_due` (the amount said from the AI number — the bot push has its own switch), adds `payment_claim`, `debt_request` · 7 `relay_to_seller` · 8 widens `followup`, `greeting`. `agent-rights.test.ts` (§7.4) gains: a row stored before 3b under an act's key is read unchanged; saving a derived row writes `agent_action_rights` and never `agent_auto_config`; no migration of this stage contains an INSERT into `agent_action_rights`.
 
 ### 6.4 Corpora and fences that stay green; cases EXPECTED to change
 - `tests/unit/agent-reader-corpus.test.ts` (fixture, `-eval.ts`, ratchet `-known.ts`: 1 483 cases — 898 dangerous, 585 ordinary, 22 on the ratchet at HEAD): **PR-A changes no reader, so no case moves in either direction.** At a demolition step the eval of a retired reader is RE-POINTED, with the reason in the file's header: `money` / `han` / `han_g1` (251 dangerous) are observed through `proseCheck`; `avia` (183) through the address tool's refusal on a re-authored (chat, turn) — class 12; `destination` (147) and `language` (155) stay tests of INPUT readers; `owner_figure`, `lesson`, `phone` (162) stay tests of doors. Every dangerous case still answers `held`; the ratchet may shrink.
@@ -311,6 +311,8 @@ On every screen and card a block is called **«tayyor matn»**, never «blok».
 | **M6 — the report HE is shown** | `scripts/agent-guard-report.ts --step <s>` → `agent_guard_evidence` → page «O'lchov» and a message | per class, in Uzbek: «Sinf · nechta xavfli gap · kod o'zi to'xtatgani · ikkinchi AI to'xtatgani (5/5) · O'TIB KETGANI · ehtimol chegarasi». Under each class **the missed sentences themselves** (with `back_uz` for fa / zh); then «bekorga to'xtatilgan oddiy javoblar: N/M (bugungi qo'riqchida: K/M)», the cost per turn and p50 / p95 latency per tier, and the hunt's finds. Rates carry their one-sided 95 % upper bound: 0 misses of n → 3/n; else Wilson (`calibration.ts:26` has the lower — add its twin) |
 | **M7 — his choice** | the page | per class two buttons — «Qabul qilaman» / «So'z ro'yxati qolsin» → `accepted_classes` / `refused_classes` |
 
+**The baseline is ⟨1a⟩'s, and it already holds 55 dangerous replies that meet NO wall (lead ruling R8).** `STAGE-0-1A.md` §4.1 «K1, as measured» ran the 303 through HEAD's rules: 244 are held, every one by a policy BLOCK; 59 meet no wall at all — 4 of them controls or script rows, **55 dangerous** (credit in unlisted words 20, soft discounts 10, free extras 4, customs 4, deadlines 3, dispatch 2, guarantee / refund 2, arrival 2, list 4, price-shaped 4). They are `talk`, so from ⟨1a⟩ on they go at once if the model writes them, and K1 commits them as the OPEN list «which may only shrink». That list — re-measured by K1 on the tree 1a was cut from, never copied from the dry run — is where M0 starts: (a) each of the 55 enters the unified set as a `GuardCase` with `expect: 'stopped'` and its ⟨1a⟩ class, so M2's table shows per class which WALL now stops it (the prose check, a tripwire-hold, the reviewer 5 of 5) or that it is still LEFT; (b) M6's report prints them as their own block, «1a dan beri ochiq turgan 55 ta gapdan nechtasi endi to'xtaydi», ahead of the classes — they are the sentences the owner was shown before 1a's P1 merged (`STAGE-0-1A.md` §6.3, question 9), and this is the stage that was promised as their wall; (c) whichever of the three choices he made there, nothing here assumes it: if he chose the short hold on talk (`agent_talk_hold_sec` = 120 until the reviewer exists), §9's chores carry the line that gives the box back to him; if the wordings went into the word rules first, those rows are ordinary members of step v's tables. A class of the 55 the walls still leave is a finding for M7, not a reason to tune the reviewer on the sealed set.
+
 ### 7.2 The acceptance rule — written into the door `retireGuardStep(actor, step)` (`agent/guard-mode.ts`)
 The door REFUSES unless ALL hold: (a) an evidence row for this step with today's `REVIEWER_VERSION`, `shown_at` set and `accepted_by` = the designated supervisor; (b) every deterministic class of the step is 100 % stopped in M2's committed table (`critic-guard.md` §C.6 items 1-7 never rest on the reviewer); (c) the sealed-set miss count of each reviewer-only class is within what he accepted (default proposal: 0, with its bound printed — question 2); (d) the ordinary false-hold count is not above today's guard's on the same texts; (e) zero unread and zero `old_right` rows among `old_stop_new_go` of tier T1+ in the shadow window; (f) the previous step was retired ≥ 7 days ago with no mistake confirmed against it. A refused class keeps its word rule. `REVIEWER_VERSION` moving un-retires every step by itself.
 
@@ -318,7 +320,7 @@ The door REFUSES unless ALL hold: (a) an evidence row for this step with today's
 | Step | Retired, then deleted | Evidence that unlocks it |
 |---|---|---|
 | 0 | nothing | K1 committed; the 71 codes classified (§6.2); PR-A merged with mode `old` |
-| `live` | nothing — the new walls may now STOP | M2-M6; block texts approved; zero unexplained `old_go_new_stop` on ordinary turns |
+| `live` | nothing — the new walls may now STOP | M2-M7 (the report shown, his choice per class made — the evidence row of step `live`, which the mode's writer asks before it accepts `live`); block texts approved; zero unexplained `old_go_new_stop` on ordinary turns |
 | **i** | G11 (`estimate_unhedged`, `warehouse_condition`), `estimate_unnamed`, `destination_unsaid`, `money`, `auto-money.ts` | price blocks sent for ≥ 14 days; «a money part carries no prose» in code; the `est_*` cases of the 303 (20) and the block-reframing set stopped in CI; nightly `rendered_is_sent` and `numeral_maps` clean |
 | **ii** | G1's sourcing ledger (`number_unsourced`, `number_unverifiable`, `money_unread`, `numeral_unread`, `sourceFor` …) | refs live; every digit, spelled, Chinese-numeral and Persian-digit case stopped by the prose check in CI (`money` 131, `han` 60, the 303's `price_*`, `word_*`, `customer_fig_*`); quote-only facts approved in the languages his customers write; false holds ≤ today's |
 | **iii** | `languageAdmits` / `language`; `wrong_script` as a verdict on the model's label | `turnLanguage` live; the sealed language set accepted; fa / zh texts approved by back-translation |
@@ -336,7 +338,7 @@ The door REFUSES unless ALL hold: (a) an evidence row for this step with today's
 | unit `agent-block-texts.test.ts` | every kind × six locales exists and passes TODAY's `checkAgentReply` with its own value as the tool source (hedge, exclusion, Tashkent, the load) — the old guard as the oracle of the new wording; a translation whose numerals differ is refused | remove «taxminan» from one template; change a digit in a translation |
 | unit `agent-permits.test.ts` | each listed phrase holds without its permit and passes with it; a permit of another run is nothing | make a `followup_day` permit cover a cargo date |
 | unit `agent-reviewer.test.ts` (scripted `CallModel`) | monotonic; fail-closed on timeout, off-schema, cap, version; the input holds no `calcLine`, no raw file text; one call per turn | let `pass` clear a tripwire-hold; return `pass` on timeout |
-| unit `agent-rights.test.ts` | `derivedDefault` from his ticks; a fixed right refuses every other position; stop-money reads `sorab` without touching the stored row | make `positionNow` skip the stop button |
+| unit `agent-rights.test.ts` | `derivedDefault` from his ticks; a fixed right refuses every other position; stop-money reads `sorab` without touching the stored row; **source-shape (TypeScript's parser, comments stripped): `agentActionRights` is inserted or updated in ONE file, `agent/acts.ts` — the page action, `step-down.ts` and the restore import `setActionRight`; no migration of the journal from ⟨1b⟩'s on INSERTs into the table** | make `positionNow` skip the stop button; add an `update(agentActionRights)` to `step-down.ts` |
 | unit `agent-guard-walls.test.ts` (M2) + `agent-guard-cases.test.ts` | the committed per-class table; ids unique; sealed membership a pure function of the id | drop a class from the prose check |
 | unit `agent-guard-wire.test.ts` (source-shape) | every caller of `autoVerdict` also calls `releaseVerdict`; `agent_guard_retired` has ONE writer; the exam scripts import no writer; no agent file but `calc-price.ts` reads an answer amount (re-anchor of `agent-fences:84`) | add a second `setSetting('agent_guard_retired'` |
 | integration `agent-guard-shadow.integration.test.ts` | `shadow`: the old guard decides and a shadow row is written; `live`: both must pass; behind the probe → `old` | let `shadow` send what the old guard blocked |
@@ -345,7 +347,7 @@ The door REFUSES unless ALL hold: (a) an evidence row for this step with today's
 | integration `agent-fact-check.integration.test.ts` | each of the five checks goes red on its own planted difference; a person's typed price is listed, not a mistake; a fact edited since is «manba o'zgargan» | compare `rendered` with itself |
 | integration `agent-guard-evidence.integration.test.ts` | the door refuses without an accepted row, on a stale version, on an unread T1+ disagreement, on a step out of order | drop clause (e) |
 | integration `agent-guard-migration.integration.test.ts` | the migration re-makes no constraint and adds no column (reads `pg_constraint` / `information_schema` before and after in a rolled-back transaction); purge takes every chat-keyed table (re-count them on the schema — §3.1) | — |
-| e2e `m9zzzh-ai-huquqlar` (+ `.desktop`) — NOTE: the prefix `m9zzzh-` is taken at HEAD (`m9zzzh-tarkib-ai`, `m9zzzh-yoldagi-yuk`) and the tail of `tests/e2e` is `m9zzzj-sotuvchi-yuk.spec.ts`; file names carry the run order, so name the spec to sort after the tail of YOUR tree (after stages 1a-3a's own specs) | the page as super_admin and as the supervisor; a seller is refused; a position saved and read back; the stop button's banner; width in `ru` at 360 (#1706). Cleanup is a final TEST and restores every setting it touched (#183) | — |
+| e2e `m9zzzn-ai-huquqlar` (+ `.desktop`) — the name is a run position (lead ruling R4): file names carry the run order, the AI specs run in STAGE order after the directory's last file (`m9zzzj-sotuvchi-yuk` at HEAD), and the ladder is 1b+1c `m9zzzk-ai-suhbat` · 2 `m9zzzl-ai-koradi` · 3a `m9zzzm-ai-quti` · 3b `m9zzzn-ai-huquqlar` · 4 `m9zzzo-ai-narx` · 5 `m9zzzp-ai-yopish` · 6 `m9zzzq-ai-pul` · 7-9 `m9zzzr-…` `m9zzzs-…` `m9zzzt-…`. The names are proposals — on the day take the next free prefix after the directory's last file and keep stage order | the page as super_admin and as the supervisor; a seller is refused; a position saved and read back; the stop button's banner; width in `ru` at 360 (#1706). Cleanup is a final TEST and restores every setting it touched (#183) | — |
 
 **Only on the live server** (no Telegram and no model key here): the reviewer's real verdicts (M3-M4); the writer obeying the structured schema; latency; that a block reads well in a real chat. He checks: `/api/version`; the page's «Solishtirish» count rising in `shadow`; one test chat from a staff phone asking a price and an address; `docker compose --profile telegram logs -f tg-listen`; the 20:00 line's new part.
 
@@ -355,12 +357,12 @@ The door REFUSES unless ALL hold: (a) an evidence row for this step with today's
 3. Worktrees, wave 1: **P1** (blocks) · **P4** (reviewer — needs only `Turn`) · **P5**'s registry and page. Wave 2: **P2** · **P3** · **P6** · **P7**. Cherry-pick order P1 → P3 → P2 → P4 → P5 → P6 → P7; the lead owns `run.ts`, `auto-send.ts`, `decide.ts` seams.
 4. Review AS BUILT, then review the FIXES. Run the WHOLE reader corpus before and after any touch of a reader's file — even a move (DECISIONS #1783).
 5. The ritual in CI's order on a fresh database: migrate → seed once → vitest (`DATABASE_URL` set) → build with the 3 GB heap → Playwright without re-seeding; `fuser -k 3000/tcp`.
-6. PR-A → deploy (mode `old`) → §7.1 on the server → `shadow` → the report → `live` → steps i … v, each: retire → ≥ 7 clean days → its own code-only PR.
+6. PR-A → deploy (mode `old`) → §7.1 M0-M4 on the server → the dry replay → `shadow` (M5) → the report (M6) and his choice per class (M7) → `live` → steps i … v, each: retire → ≥ 7 clean days → its own code-only PR. (The same order as §4.0, §7.3 and §9; the two mode switches are HIS presses on the page.)
 
 ## 9. Deploy
 - **PR-A:** the ledger grows by ONE — give him the count read off the journal that day. `docker compose build migrate app`, **and rebuild tg-listen** (the send step reads `agent_stop_money`; `tests/unit/tg-listen-agent-wire.test.ts`). Backup first. Nothing he sees changes: the mode is `old`.
 - **Through `migrate`:** `scripts/agent-guard-exam.ts`, `scripts/agent-guard-report.ts`, ⟨1b⟩ `scripts/agent-replay.ts`. `ANTHROPIC_API_KEY` must be in the server's `.env`.
-- **His chores, in order:** «Tayyor matnlar» — read and approve each text (uz first; fa / zh by their back-translation; ≈ 14 facts × the languages his customers write) → the lead flips `shadow` → two weeks later the report → his choice per class → `live` → «Huquqlar»: he looks at each row once.
+- **His chores, in order:** «Tayyor matnlar» — read and approve each text (uz first; fa / zh by their back-translation; ≈ 14 facts × the languages his customers write) → HE switches the mode to `shadow` on the page (the lead tells him the day — after the exam, the dry replay and one day on staff phones; no deploy and no script writes `agent_guard_mode`) → two weeks later the report → his choice per class → he switches to `live` → «Huquqlar»: he looks at each row once. If in ⟨1a⟩ he chose the short hold on ordinary talk «until the reviewer exists» (`STAGE-0-1A.md` §4.1, choice B: `agent_talk_hold_sec` = 120), the `live` morning is when he is told the reviewer now reads every turn and that the box «oddiy javob kutishi» is his to set back to 0 — it is his number; nothing here writes it.
 - **What he sees:** after PR-A — nothing but the new page (everything on it reads «eski qo'riqchi ishlayapti»). The first `shadow` morning — prices and addresses in the replies are the texts he approved, cards frame them «▣ tayyor matn», «Solishtirish» starts counting; any reply that needed an unapproved text waits for him and says which. The first `live` morning — a reply the new walls stopped says so in words on its card.
 - **Steps i-v:** code-only — the count does NOT move; the check is `curl -s https://gsrwms.uz/api/version`. Step i moves `StoredEstimate` out of `auto-money.ts` into `estimate.ts`, which the listener reaches through `settle-hooks.ts`'s dynamic import of `drafts` → rebuild tg-listen; say for each later step whether a listener-imported file changed.
 - **Rollback:** `agent_guard_mode = 'old'` restores ⟨3a⟩'s behaviour in seconds; un-retiring a step restores its word rule in seconds (until its deletion PR — then redeploy the previous image). The migration is additive: the previous image runs on the new schema.
@@ -393,7 +395,7 @@ Corrections made (old → new):
 - §3.1: «Seven of the nine carry (`manager_user_id`,`peer_id`) or an FK to `agent_drafts`» → a re-count note: by the table as written FIVE carry both columns; `agent_fact_checks` hangs off `agent_outbox` by CASCADE and the fence does not see it. (§7.4's migration test said «all seven chat-keyed tables» → «every chat-keyed table».)
 - §4.3: `offerStandsFor`, `settle-hooks.ts:47` → `:42` (called at `outbox-store.ts:371`, read at `send-step.ts:219-222`).
 - §6.2 note: `eligibility.ts:46-61` → the `Ineligible` union is `:47-62`, and it holds seven more members than the sentence listed (now named).
-- §7.4 e2e: `m9zzzh-ai-huquqlar` → noted that `m9zzzh-` is a taken prefix at HEAD and the tail of `tests/e2e` is `m9zzzj-sotuvchi-yuk.spec.ts`.
+- §7.4 e2e: `m9zzzh-ai-huquqlar` → noted that `m9zzzh-` is a taken prefix at HEAD and the tail of `tests/e2e` is `m9zzzj-sotuvchi-yuk.spec.ts`. (Superseded by «Seam check» 1: the spec is `m9zzzn-ai-huquqlar`.)
 - §10: `UNVERIFIED what cargoMessages prints for another locale` → VERIFIED and the mark removed: an unknown locale falls back to the DEFAULT locale, `ru` (`client-labels.ts:754`, `:790-795`; `i18n/locales.ts:13`). **Step re-thought:** the `status` / `balance` block must map the turn's locale itself (uz-cyrl → uz, fa / zh → en) before calling the cabinet's renderers; passing it through would print Russian.
 
 Flags: no model identifier (the plan names the two tier CONSTANTS only, `platform/ai/model.ts:90-91`, which is right), no person's name, id or role key, no literal migration number.
@@ -444,3 +446,174 @@ row.
 `STAGE-7-9.md`) and with what `STAGE-1B-1C.md` mints and reserves, written to the lead's rulings R1-R9 of the same
 day. Docs only — nothing was run. Each numbered step below was appended as it was finished; a step that is missing
 was not reached.
+
+**1. Rulings R1, R4, R5, R6, R7 (and R2 where a door reads the pair) — done.**
+- **R7, the writer the rights page lacked.** No section named who writes `agent_action_rights` when he saves a row.
+  Now: §4.0 K3 (`rights.ts` only reads; the ONE writer is ⟨1b⟩'s `setActionRight` in `agent/acts.ts`, which this
+  stage extends — `allowed`, the limits schema, a compare-and-set `expect`, a `by` mark — and never doubles), §4.6
+  (the step-down was «compare-and-set on `agent_action_rights`» — a SECOND writer as written; it now calls the one
+  writer, as does the restore), §5 and §6.3a (every save), §3.2 («⟨1b⟩'s one select» → ⟨1c⟩'s «Huquqlar» list), and
+  a source-shape row in `agent-rights.test.ts` with its red proof.
+- **Role keys.** §3.3's Writer column and §5 said «the `super_admin` ROLE» — a literal a builder would type into
+  `rights.ts` or the page action. Both now point at the predicate ⟨1a⟩ extracts from `setAgentSeat`, called.
+- **R2.** The three supervisor-only doors (approve a text, accept a measurement, retire a step) and the stop
+  buttons read the pair as ROWS (`designatedRows`): empty table = the holder alone, never the alarm fallback.
+- **R4.** `m9zzzh-ai-huquqlar` → `m9zzzn-ai-huquqlar` (+ `.desktop`), with the ladder and the «proposals» sentence.
+- **R5.** §6.2 #55: «blocks are exempt» now carries the ruling's reason and its limit (prose is checked as today).
+  #69 `gloss_missing` already said it.
+- **R6.** §4.1 «Rules of a turn» opens with the count rule; `road_question`, the `correction` apology line and
+  ⟨1c⟩'s closing parts are named as code-appended parts.
+- **R1.** Nothing to change: this plan sends ALARMS to the pair (`designated('supervisor')`, the fallback reader —
+  right for a signal) and never re-addresses mail.
+- Left open (for the lead): `positionNow` (§4.0) lists «an unrestored step-down» as a tier of its own, while §4.6
+  WRITES the stepped position into the row. Both cannot be the mechanism. Written here as §4.6 has it (the row is
+  written, through the one writer; `agent_action_steps` is history and the restore's memory); if the tier in
+  `positionNow` was meant instead (the row untouched, the step read at release), the row's «current position stays
+  `agent_action_rights.position`» note in §3.1 and the alarm's «Qaytarish» button need the other wording. A derived
+  right that was never saved (his tick) gets its FIRST stored row from a machine step-down either way — the
+  restore must put back «derived», not a guess.
+
+**2. One name for one thing (`COVERAGE.md` §C.7) — one fix.**
+- §6.3 `open_code`: «stage 5 ALLOWS «Nazoratda» … ; «O'zi» is his later tap» → «O'zi» is NOT among the positions
+  stage 5 allows and no plan builds it (16 b = each code shown to him = «Nazoratda»). `STAGE-4-6.md` §5.3 now
+  states the allowed set the same way.
+- Checked and left: `give_discount` (tool `concede`, permit class `discount`) in §4.3, §6.3, §6.3a;
+  `agent_low_quote_keep_usd` as the ONE 22 a key and `correction` as the right of every corrected price (§3.3,
+  §4.6, §6.3); `tell_balance` starts «So'rab», stage 6 allows «Nazoratda» / «O'zi», he sets «Nazoratda» (§6.3);
+  `agent_stop_first` (§3.3, §4.5); the pair is «rahbar va o'rinbosar» / «the supervisor pair» throughout. The
+  retired names (`agent_honour_max_usd`, «O'zi ≤ 10 a day») stand only in the «Verified references» record.
+
+**3. Reserved CHECK values — every value this plan writes into a constraint ⟨1b⟩ re-makes is reserved there, in
+the same spelling** (`STAGE-1B-1C.md` §3.1-§3.2, `COVERAGE.md` §C.5 read side by side with this file).
+- This stage re-makes NO constraint and says so (§3.1, §3.2 «CHECKs read and deliberately LEFT»). What it WRITES
+  into ⟨1b⟩'s lists: outbox `part_kind` = `block` / `holding` / `prose` only (now said in §4.1: `road_question`
+  and the `correction` line are `block`, not a new kind); `agent_action_rights.position` = the four of 1b's CHECK,
+  through `setActionRight`; case kind `question` (the prose-check's fall-back case) — 1b's. No run trigger, no
+  draft kind, no wait kind, no task origin of its own.
+- **`stopped_money` is a REASON, not a status** — §4.5 read as if the send step wrote it into
+  `agent_outbox.status`, which ⟨1b⟩'s CHECK would refuse; now «status `cancelled`, reason `stopped_money`».
+- One thing ⟨1b⟩ does forbid and this plan does: «later stages add MEMBERS to `agent.event`, never a new queue»
+  (`STAGE-1B-1C.md` §4.0, `queues.ts` row) — §4.1 names a job `agent.block_text` (drafting a fact's other five
+  languages). Not a CHECK, so nothing breaks; left for the lead: a member `{kind: 'block_text'}` of the one queue,
+  or a stated exception because it is no event of a chat and runs on the heavy tier.
+
+**4. Rights keys and designation topics — every key the four later plans read, against `COVERAGE.md` §A.3 and §C.3.**
+`agent_action_rights` (⟨1b⟩'s table; a row exists only once HE saves it — through `setActionRight`; «starts» = what
+`positionNow` answers before that):
+
+| Key | Minted by (registry entry) | Starts | Who widens it later → what he may set | Read in |
+|---|---|---|---|---|
+| `talk`, `say_ai`, `media_line`, `holding_line`, `complaint_first` | 3b `RIGHTS` | `ozi` (derived) | — | 3b; 7 (bot: `talk`, `say_ai`) |
+| `relay_ved_question`, `mute_chat` | 3b | `sorab` (derived from today's `not_reply` / `actions`; `mute_chat` derives `ozi` instead if he answers question 6 with (a)) | — | 3b; 8 names `mute_chat` only to say a stop word does NOT imply it |
+| `quote_fact`, `tell_tashkent_address`, `tell_status` | 3b | `ozi` (a fact once its text is approved; status in a proven chat) | — | 3b; 7 (bot) |
+| `tell_table_price`, `tell_avia_price` | 3b | his «Narx» tick → `ozi` with the 2-minute ⏸, else `sorab` | — | 3b; 4 (the block's source) |
+| `tell_calc_price` | 3b | his «VED narxi» tick → `ozi` + ⏸, else `sorab` | — | 3b; 4 (PDF follows it) |
+| `submit_calc` | 3b | his «Hisoblatish» tick → `ozi`, else `sorab` | — | 3b |
+| `tell_china_address` | 3b | `nazoratda` (question 3) | — | 3b; 7 (bot) |
+| `tell_west_price` | 3b | `odam` | **4** → `sorab` / `nazoratda` / `ozi` | 3b; 4 |
+| `tell_balance` | 3b | `sorab` | **6** → `nazoratda` / `ozi`; he sets `nazoratda` | 3b; 6; 7 (bot answers at `ozi` or `nazoratda`) |
+| `amount_due` | 3b | `odam` | **6** → `nazoratda` / `ozi` (the amount from the AI number only) | 3b; 6 |
+| `give_discount` | 3b (tool `concede` is stage 6's) | `odam` | **6** → `nazoratda` / `ozi`; `limits.sharePct` 50 | 3b; 6 |
+| `followup`, `greeting` | 3b | `odam` | **8** → `sorab` / `nazoratda` (no `ozi` branch is built) | 3b; 8 |
+| `correction` | 3b | `sorab` | he may set `nazoratda` / `ozi` | 3b §4.6; 4 P4 |
+| `relay_person_figure` | 3b | `sorab`, fixed | never | 3b |
+| `tell_avia_address`, `tell_other_city_price`, `tell_rail_price`, `tell_card_number` | 3b | `odam`, fixed (17 c, 19 c, rail, 21 a) | never | 3b; 3a (the card number is a `verbatim` case) |
+| `ask_owner` | 1b act | `ozi` | — | 1b; 3a (topics) |
+| `open_code` | 1c act — STORED row | as he left it (`sorab`) | **5** → `nazoratda`, `limits.perDay` 10; never `ozi` | 1c; 3b; 5 |
+| `hear_voice` | 2b act — STORED row | `odam` until the trial of 13 a | 2b | 3b |
+| `relay_answer` | 3a act — STORED row once saved | registry default `nazoratda` | — | 3a; 3b |
+| `hand_over` | 3a act | `ozi` | — | 3a; 3b |
+| `big_cargo_signal` | 1a (signal; 3b gives it a row) | `ozi` | — | 3b |
+| `honour_quote` | **4** act | `nazoratda`; limit = `agent_low_quote_keep_usd` | — | 4 |
+| `payment_claim`, `debt_request` | **6** acts | `ozi` (internal: a queue row / a case; the plan states it for `payment_claim` only) | — | 6 |
+| `relay_to_seller` | **7** act | `ozi`, fixed | never | 7 |
+
+`agent_designations` topics (⟨1a⟩'s table; a key in the code registry + four i18n strings, no migration):
+
+| Topic | Minted | Read through | Empty table → |
+|---|---|---|---|
+| `supervisor` (rank 1 «rahbar», rank 2 «o'rinbosar») | 1a | cards, alarms, reports: `designated()`; doors and the seat's mail: `designatedRows()` | signals → the holder + the people today's alarm reaches; doors → the holder alone, as today |
+| `big_cargo` | 1a | `designated()` (1a; 4 P5 on a VED price) | the pair |
+| `customs` | 3a | `routePlan` | the VED rota pool, then the pair |
+| `logistics`, `money`, `warehouse`, `card_number` | 3a | `routePlan` (`all`) | the pair |
+| `callback`, `pickup`, `buying` | 3a | `routePlan` (`one`) | the pair |
+| `big_customer` | 5 | `designatedRows()` — who becomes a customer's seller | the card names nobody; the pair still get it |
+| `handover_seller` | 5 | `designatedRows()` | no hand-over |
+| `payment_claims` | 6 | `routePlan` | `money`'s people |
+| `debt_request` | 6 | `routePlan` | the pair |
+| `seat_phone` | 7 | `designated()` (the account-state alarm) | the pair |
+| `reserve_phone` | 7 | — no reader in any plan | — |
+
+**Differences found** (the four plans were edited where they were wrong; `COVERAGE.md` was not touched):
+1. **`tell_west_price` had no stage that widens it.** This plan says «Faqat odam until stage 4»; `COVERAGE.md`
+   §C.6 repeats it as a stated stub; but §C.3's list of what stage 4 adds (`honour_quote` only) and `STAGE-4-6.md`
+   itself never named the key. After ⟨3b⟩ `live` a Horgos price P1 computes would have stayed a person's for good.
+   Fixed in `STAGE-4-6.md` §4.3 / §4.9 and in §6.3a here; **§C.3's stage-4 entry lacks «widens `tell_west_price`».**
+2. **Sixteen topics, not fourteen.** `COVERAGE.md` §A.3 lists sixteen keys (2 + 8 + 2 + 2 + 2); its §C.1 says
+   «§A.3 lists all fourteen».
+3. **`handover_seller` / `big_customer` and the fallback.** §A.3 gives «the pair / no hand-over». Read through
+   `designated()` an empty `handover_seller` hands every AI customer to the supervisor pair, and an empty
+   `big_customer` proposes the supervisor as the new seller. `STAGE-4-6.md` §5.4 now reads both as ROWS (R2 — who
+   becomes a client's seller is a door); §A.3's «the pair» for `big_customer` is true only of who gets the CARD.
+4. **`reserve_phone` is minted by stage 7 and read by nothing** (§A.3 lists it with fallback «the pair»). Either
+   the account-state alarm's audience gains it once the reserve is `main`, or the key is not minted — the lead's.
+5. `debt_request`'s position is not stated in `STAGE-4-6.md` (only `payment_claim`'s `ozi`); the table above
+   writes the same for both because both only open a case. `followup` / `greeting`: §C.3 says «8 widens» without
+   saying to what — now `sorab` / `nazoratda` (`STAGE-7-9.md` §B5).
+6. Three cards of stages 5-6 are cases of kind `act` with no registry key named anywhere: the big-customer
+   transfer, the idle-code retirement, the discount card. `agent_acts.act` has no CHECK, but ⟨1b⟩'s unit test
+   «every stored name is a registry key» will ask. The discount card can ride `give_discount`; the other two need
+   a key each (a person's tap only — no rights row drawn). Not named here; the builder of stage 5 picks and writes
+   them into `STAGE-4-6.md` «As built».
+
+**5. One stage, six deploys — the order, and R8's baseline.**
+- **The order now reads the same in the header, §4.0, §7.1, §7.3, §8 and §9:** PR-A (`old`) → M0-M4 → the dry
+  replay → `shadow` (M5) → the report (M6) → his choice per class (M7) → `live` → for each step i … v: retired by
+  the door → ≥ 7 clean days → its own code-only PR. Three sentences disagreed and were made to say it: §7.3's
+  `live` row («M2-M6» — M7 was missing, while §9 put his choice BEFORE `live`), §8 item 6 (no M7, no dry replay),
+  and §9 («the LEAD flips `shadow`» — a session cannot press his page; both mode switches are his presses and no
+  deploy or script writes `agent_guard_mode`). §4.0 now carries the order once, in one sentence.
+- **A contradiction inside the plan, resolved in words:** §4.0 said «an old rule stops deciding only when its step
+  is retired» while §6.2 hands `category`, `not_reply` and `actions` to the rights at «PR-A (`live`)» and §3.1 says
+  the release verdict stops reading his ticks in `live`. Both are true once it is said that those three are gate
+  DIALS — no word rule, no reader — and that their rights are derived from the very ticks they read. No word rule
+  changes hands before its step's evidence row is accepted by him (§7.2 (a)); that binding rule is intact in every
+  section.
+- **R8 carried.** A paragraph at the end of §7.1: the 55 dangerous replies that meet no wall at HEAD
+  (`STAGE-0-1A.md` §4.1 «K1, as measured», §6.3) are part of M0 as cases with `expect: 'stopped'`, get their own
+  block in M6's report, and whatever he answered to 1a's question about them is not assumed here. §9 gained the
+  line 1a's plan says this file lacked: if he chose the short hold on talk until the reviewer exists, the `live`
+  morning is when the box «oddiy javob kutishi» is given back to him (he sets it; nothing writes it).
+- **Stages 4-9 lean on PR-A only** — checked in `STAGE-4-6.md` and `STAGE-7-9.md` (their «Seam check» 5). Two
+  places leaned further and were re-written there: stage 6's balance branch lived inside `moneyVerdict`, a function
+  step i DELETES; stage 4 adds a `PolicyCode` (`origin_address`) that this plan's `CODE_FATE` must classify.
+
+**6. Law 4 and his answers — every sentence found, fixed in place.**
+- (b) **17 c — a way round the address tool.** §4.2 makes `receiving_address` the road of our China address
+  (road question first; a flight → his forced question), while §4.1 makes every fact that holds a numeral, a
+  phone or Han text «quote-only: served as `fact_quote`, verbatim» — and a warehouse address fact is exactly that.
+  As written, `kb_search` could hand the Yiwu address to an avia customer under the right `quote_fact` (start
+  «O'zi») with no question and no «avia yuk bu manzilga yuborilmaydi». Now: the receiving facts leave `kb_search`
+  in `shadow` / `live`; a test row and a red proof. (Until step iv the old `avia_address` rule also still decides.)
+- (a) **§4.6 the nightly 22 a card** «says by how much» to «the supervisor pair» → the two figures and the
+  difference for sight `all` only; `own` / `none` read «narx farqi bor — rahbar ko'radi» (stage 4's words). The
+  page's «Tungi tekshiruv» / «Solishtirish» follow; «Hisoblagich»'s dollars are `companyMoneySight`'s.
+- **§6.3 `mute_chat`.** The table started it at «So'rab» while question 6's ⭐ is «AI o'zi o'chiradi» — the table
+  now says which answer makes which default, and names the seam with stage 8, where «yozmang» stops unasked
+  messages and replies go on.
+- Checked and left: §5's law-4 paragraph (the reviewer, the blocks, the report hold no VED figure; a VED-sight
+  reader sees «(narx — suhbatda)»); 10 c (the reviewer's fuse is a COUNT, `agent_review_daily_limit`; cost lines are
+  a meter); 12 a; 19 c (another city refused inside the price tools → his question); 23 c (`give_discount` «Faqat
+  odam» until 6; the `discount` permit has no minter here); 29 b (`tell_calc_price` from his tick); 31 c
+  (`staff/` untouched).
+- One thing R9 touches and this plan cannot settle: `tell_calc_price` derives «O'zi» from his «VED narxi» tick.
+  While the markup is EMPTY (design §11.3-1) the client price of a VED job IS the VED's figure — stage 0's chore
+  recommends that tick only after he answers the markup question; nothing in 3b changes that, and nothing in 3b
+  should offer him the row as «ready to switch» before it.
+
+**7. Callback prefixes.** This plan mints NO prefix and no letter: its cards are draft cards (⟨1a⟩/⟨1b⟩'s `ag:`
+buttons, unchanged), its alarms carry a link to the page, a Signal's «Tekshirdim» is ⟨3a⟩'s `aq:ak`, and every
+switch of this stage (mode, position, stop buttons, approve a text, accept a measurement, restore a step) is on the
+page. If the builder adds a button to the step-down alarm («Qaytarish»), it is an op of ⟨3a⟩'s `aq:` grammar — the
+`ag:` alphabet is spent — and ⟨3a⟩'s derived fence must read the file that draws it. The whole map:
+`ag:<letter>` — spent: twenty letters at HEAD, the last six (`d i m o q w`) ⟨1b⟩'s; no later stage may take a letter · `ar:` — stage 2 · `aq:<two letters>:<uuid>[:<8hex>]` — minted by ⟨3a⟩, ops `nm gb ex sc cx ak` (3a), `kt kw kr ky kn` (5), `da db dn dw` (6), `fd` (8) · `ai:` — stage 7, CABINET side · `nb:` — stage 8, CABINET side · ⟨3b⟩, 4 and 9 mint none.

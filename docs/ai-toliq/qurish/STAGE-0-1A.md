@@ -22,7 +22,7 @@ tracked file («tez daraja» / «og'ir daraja»); no person's name, id or role k
 | Customer, photo / file / voice only | `media_only` → no draft, no card, silence; `voice_only` → a notice to him, nothing to the customer (`worthy.ts:96-99` in `draftWorthy`, `run.ts:474-493`) | one honest system sentence («…yozib yuboring»), once per silence; he gets the card |
 | Customer «3 kub 450 kg, narxi qancha?» | truck table figure; nothing ever offers customs; a VED job only if the customer names it (prompt rules 8, 11) | table figure at once + one offer sentence; «ha» → checklist → VED job (his 2a) |
 | Customer «botmisiz?» | no draft, a notice to him (`worthy.ts` `bot_question`) | one honest system line, then the answer to the rest (his 1b) |
-| Owner | a card per draft, each ringing; `/suhbatlar/ai` shows the last 20 with codes' words | cards of replies that went alone arrive SILENT; a morning line names every held reply and why; ten sent replies to mark each evening; a ping on cargo ≥ 20 kub or «fura» |
+| Owner | a card per draft, each ringing; `/suhbatlar/ai` shows the last 20 with codes' words | cards of replies that went alone arrive SILENT; a morning line names every held reply and why; ten sent replies to mark each evening; a ping on cargo ≥ 20 kub or «fura»; ONE alarm (to him and his deputy) when customers have waited unanswered past the set minutes in working hours, and one line when it clears |
 | Staff | nobody but the account holder hears anything | whoever HE designates for «big cargo» gets the ping (no customer text in it); nothing else changes |
 | Website visitor («Hajm») | least-busy ticked seller | a setting may send every cargo visitor to the seat; any reason the seat cannot take one → the old roster |
 
@@ -32,14 +32,14 @@ tracked file («tez daraja» / «og'ir daraja»); no person's name, id or role k
 
 - **name** «the persona is "GSR sotuv menejeri <ism>"; it never says it is a person» — the name is a setting, never a string in code. **1 b ⚠** (reverses 11-11 «botmisiz → to me», he saw it): asked, it answers ITSELF with one honest line and goes on.
 - **2 a**: a bare price question with kub and kg → table figure at once, then «rastamojka bilan hisoblab beraymi?»; «ha» or an invoice → the VED job.
-- **3 b + note**: ≥ 20 kub, or «to'liq mashina / fura» → the AI still answers and a signal goes; **who receives it and the threshold are chosen in the system** (§11.2). The 100 m³ / 20 t tool ceiling stays.
+- **3 b + note**: ≥ 20 kub, or «to'liq mashina / fura» → the AI still answers and a signal goes; **who receives it and the threshold are chosen in the system** (design §11.2). The 100 m³ / 20 t tool ceiling stays.
 - **4 a ⚠** (reverses «tunda yo'q»): at night it answers a customer who writes, never first; cards to colleagues wait. **11 a ⚠**: talk at once; a price (table or VED) waits 2 minutes with ⏸.
 - **5 b**: only he and his deputy write from the number — 1a builds the PAIR as data (§3.2), NOT the 15-minute climb and NOT a second presser (stage 1b/3a). **9 a**: ten of its messages with 👍/👎 every evening for the first month, then weekly — smallest form here.
 - **10 c**: no daily money limit; the meter and the 20:00 line stay; nothing stops on dollars (§4.6 for the token/run fuses).
 - **13 a**: until a speech service passes the trial the customer is told «ovozni hozir eshita olmayapman, yozib yuboring» and he gets a card.
-- **31 c + note**: the seat STAYS in KPI, rating and congratulations; §6's «out of pay from 1a» is withdrawn. Its three-mode setting is NOT built here: stage 1c (a LATER stage — not an «already built» mark) mints the key `agent_won_ownership` with the one honoured value `seller` (= today), stage 5 builds the other two and the screen (`STAGE-4-6.md` §5.4 P5) — do not touch `staff/`, `staff-group`, `kpi-*`.
+- **31 c + note**: the seat STAYS in KPI, rating and congratulations; design §6's «out of pay from 1a» is withdrawn. Its three-mode setting is NOT built here: stage 1c (a LATER stage — not an «already built» mark) mints the key `agent_won_ownership` with the one honoured value `seller` (= today), stage 5 builds the other two and the screen (`STAGE-4-6.md` §5.4 P5) — do not touch `staff/`, `staff-group`, `kpi-*`.
 - **6 c**, **7 b**: package «Hajm» (§4.7). **12 a**: the session only — no other Telegram road is named or built anywhere in this plan.
-- §8 «decided without a question» that land here: the two-in-a-row rule goes and a loop detector replaces it (⚠ shown on the page); no language shown → Uzbek Latin; `language` strict on money messages; ANY figure in his answer still comes back as a card; his own typing still pauses the AI; Pashto → one line asking for Russian or Persian.
+- Design §8 «Decided without a question» items that land here: the two-in-a-row rule goes and a loop detector replaces it (⚠ shown on the page); no language shown → Uzbek Latin; `language` strict on money messages; ANY figure in his answer still comes back as a card; his own typing still pauses the AI; Pashto → one line asking for Russian or Persian.
 
 **FORBIDDEN in these stages** (each is somebody's later stage or his for ever): a GS code, a won/lost stage, a deal;
 the avia address; a rail price; a discount or any G2 promise class; relaying a colleague's or his figure without his
@@ -84,10 +84,10 @@ i18n strings — no migration. `agent_signals` and `agent_samples` are keyed by 
 
 **Probe** `agentToliq1aReady()` in `agent/config.ts` beside `agentFullP2Ready` (`:172`), same idiom (cached TRUE only,
 `__forget…` / `__pretend…Behind` twins): `to_regclass` of the three tables. One migration behind: `designated()` answers
-its last fallback (§3.2), no signal is sent (no row to claim it once — fail quiet, logged), the evening sample and its
+its last fallback and `designatedRows()` answers `[]` (§3.2), no signal is sent (no row to claim it once — fail quiet, logged), the evening sample and its
 line are skipped, the page draws neither new section. Everything else in 1a is code and settings and works without it.
 
-### 3.2 The designation table (§11.2) — ONE home `agent/designations.ts` (new)
+### 3.2 The designation table (design §11.2) — ONE home `agent/designations.ts` (new)
 
 - `AGENT_TOPICS` — the code registry: `supervisor` («Rahbar va o'rinbosar»: rank 1 = he, rank 2 = his deputy, his
   5 b) and `big_cargo` («Katta yuk signali», his 3 b). Later stages add KEYS to this registry and nothing else —
@@ -96,10 +96,32 @@ line are skipped, the page draws neither new section. Everything else in 1a is c
   `payment_claims`, `debt_request` · 7 `seat_phone`, `reserve_phone`. A key and a label key, nothing about people; a
   stored row whose topic is not in the registry is ignored. The owner-facing word for the `supervisor` pair is
   «rahbar va o'rinbosar» in every plan and every screen — never «nazoratchi», which reads as the position «Nazoratda».
-- `designated(topic, handle?)` → people who can log in (`canLogInSql`, `platform/users/login.ts` — the
-  `login-person-fence` allows no bare `users.active` read), by rank then name. **Fallback chain, never «nobody»:**
+- **TWO readers, minted together (lead ruling of 2026-11-20). Which one a caller uses is decided by what it does
+  with the answer — tell somebody, or let somebody in — never by convenience:**
+  - `designated(topic)` — for SIGNALS and alarms: people who can log in (`canLogInSql`, `platform/users/login.ts` —
+    the `login-person-fence` allows no bare `users.active` read), by rank then name, WITH the fallback chain below,
+    never «nobody». 1a's callers: `sendSignal` → `designated('big_cargo')`; the morning line, the sample line and
+    the liveness alarm (§4.5) → `designated('supervisor')`. It takes NO handle and is never called inside a
+    transaction: as read, the chain's last reader `usersWithRoles` (`platform/notifications/service.ts:86`) selects
+    on the POOL (`db`) and has no handle parameter — inside a transaction that is #714's freeze, and
+    `tests/unit/tx-pool.test.ts` names the caller. A caller that IS inside a transaction reads
+    `designatedRows(topic, tx)` there and must not rely on the fallback at that point; when it needs the chain it
+    asks `designated()` before the transaction opens or after it commits (the way `STAGE-3A.md`'s rota computes its
+    pool first).
+  - `designatedRows(topic, handle)` → `{ userId, rank }[]` — the topic's OWN stored rows (people who can log in), by
+    rank, read on the handle it is given (`db`, or the caller's `tx` — a read inside a transaction uses that
+    transaction, #714), with NO fallback: an empty topic answers `[]`. It is for DOORS — who may press ✅, write
+    from the AI number, approve knowledge (stages 1b, 3a, 3b) — and for the seat's mail (stage 1c's `readdress`,
+    both ranks). **An empty table never widens a door beyond today's rule:** a door that reads `[]` keeps the
+    predicate that door has TODAY (the account holder alone for ✅, §5) — never the alarm audience, which is wider
+    by design. 1a's callers: the «Kim javob beradi» section (it draws what is STORED, which is how an empty topic
+    can say «belgilanmagan») and `setDesignations` inside its transaction. No door of 1a reads it — §5's doors are
+    unchanged — but the reader ships now, with its test, so that no later stage mints a second one.
+
+  One migration behind (§3.1's probe): `designated()` answers its last fallback, `designatedRows()` answers `[]`.
+  **The fallback chain of `designated()`, never «nobody»:**
   the topic's rows → `supervisor`'s rows → the people today's agent alarms already reach (the account holder plus
-  whoever the EXISTING alarm line names — `auto-send.ts:1267`, `usersWithRoles(…)` inside `stepDown`). **§11.2
+  whoever the EXISTING alarm line names — `auto-send.ts:1267`, `usersWithRoles(…)` inside `stepDown`). **Design §11.2
   binds the fallback too: `designations.ts` writes no role key, no user id and no name of its own** — extract that
   existing line into ONE exported reader (`agentAlarmRecipients(holderId)` — a NEW name, exported from
   `auto-send.ts` where the line already lives, so the literal that is there moves nowhere and none is added; not
@@ -112,12 +134,14 @@ line are skipped, the page draws neither new section. Everything else in 1a is c
   exported predicate in `config.ts` (a new name; `setAgentSeat` calls it, the literal stays in that file — a pure
   function adds no import to the listener's closure) and `setDesignations` asks it; it does not restate a role.
   A source-shape test holds both (§7).
-- `setDesignations(actor, topic, userIds[], ctx)` — replace-all per topic in one tx, audited. Door: the predicate
-  extracted from `setAgentSeat` (above); read: `mayRunAgent` (`config.ts:314`).
+- `setDesignations(actor, topic, userIds[], ctx)` — replace-all per topic in one tx, audited; what it reads back
+  inside that tx it reads with `designatedRows(topic, tx)`. Door: the predicate extracted from `setAgentSeat`
+  (above); read: `mayRunAgent` (`config.ts:314`).
 - Screen: `/suhbatlar/ai` → new section «Kim javob beradi» (`agentAi.section.kimga`): one block per registry topic,
   a multi-select of staff, the rank by order, and beside each chosen person what `reachOf` would say today —
   «Telegram ulanmagan» for a person with no linked staff chat (a designated person who cannot be reached is the
-  silent failure of `critic-feasibility.md` §C stage 3). An empty topic prints «belgilanmagan — hozir sizga keladi».
+  silent failure of `critic-feasibility.md` §C stage 3). The blocks are drawn from `designatedRows` (what is stored);
+  an empty topic prints «belgilanmagan — hozir sizga keladi», which is `designated()`'s fallback said in words.
 
 ### 3.3 Settings keys (`platform/settings/service.ts` `SETTING_DEFAULTS` `:13`; each needs a doc comment, a validator in `SETTING_VALIDATORS` `:386`, an `OWN_DOOR_KEYS` entry `:412`, and `settings.descriptions.<key>` in all four bundles — `tests/unit/locales.test.ts:178-207`)
 
@@ -129,10 +153,11 @@ value there (new) or the generic `/admin/settings` form would store it verbatim.
 | Key | Default | Meaning | Door / page |
 |---|---|---|---|
 | `agent_persona_name` | `''` | the persona's name; empty = «GSR sotuv menejeri» with no name. ≤ 40 letters and spaces | super_admin, `/suhbatlar/ai` |
-| `agent_talk_hold_sec` | `0` | hold of a talk reply (his 11 a). 0-600 | `mayTuneAuto` (`auto-send.ts:1435` — module-private today, like `mayArmAuto` `:1444`: put the writer beside it or export it) |
+| `agent_talk_hold_sec` | `0` (`120` if he picks b in §11 question 9) | hold of a talk reply (his 11 a). 0-600 | `mayTuneAuto` (`auto-send.ts:1435` — module-private today, like `mayArmAuto` `:1444`: put the writer beside it or export it) |
 | `agent_night_prices` | `'table'` | `none` \| `table` \| `all` — which price classes may go 22:00-08:00 (§6.2, question 1) | `mayTuneAuto` |
 | `agent_big_cargo_m3` | `20` | the big-cargo line; 0 = no size signal. 0-200 | super_admin |
 | `agent_big_cargo_words` | `true` | «fura / to'liq mashina» alone also signals | super_admin |
+| `agent_liveness_minutes` | `10` | minutes a customer's line may stand unanswered in working hours before the liveness alarm (§4.5). `0` = off; otherwise 3-120 (under 3 a healthy run — the debounce plus the model — would alarm) | `mayTuneAuto` |
 | `lead_assign_ai` | `'off'` | `off` \| `all` — website cargo visitors to the seat (§4.7) | `/admin/taqsimot`, its own gate |
 | `client_ai_contact` | `false` | show the AI number to clients with no seller (§4.7) | super_admin, `/suhbatlar/ai` |
 
@@ -142,8 +167,8 @@ inside a transaction is read with `tx.execute` on that transaction, never `getSe
 Who builds each key's WRITER and box (the kernel lands only the key, its validator, its own-door entry and its four
 descriptions — no plan row said this, and five packages edit the same page): `agent_talk_hold_sec`,
 `agent_night_prices` and the price-hold box → **P1** (the auto panel) · `agent_persona_name` → **P3** ·
-`agent_big_cargo_m3`, `agent_big_cargo_words`, the «Kim javob beradi» section (K4 lands `designations.ts`; the
-screen is P4's) and «Kunlik tekshiruv» → **P4** · `lead_assign_ai`, `client_ai_contact` → **P5**.
+`agent_big_cargo_m3`, `agent_big_cargo_words`, `agent_liveness_minutes`, the «Kim javob beradi» section (K4 lands
+`designations.ts`; the screen is P4's) and «Kunlik tekshiruv» → **P4** · `lead_assign_ai`, `client_ai_contact` → **P5**.
 
 ## 4. Code
 ### 4.0 Stage 0 — no product code
@@ -153,8 +178,8 @@ screen is P4's) and «Kunlik tekshiruv» → **P4** · `lead_assign_ai`, `client
 in «O‘zi yuborish», «AI o‘rni», «✅ Tarif to‘g‘ri», «✅ Ustama to‘g‘ri», «Yo‘lkira tarifi», «Umumiy bilim qo‘shish»,
 which is the same word to a reader). Page: «Mijozlar va savdo → AI sotuvchi» → bo'lim «Sozlamalar».
 
-1. «O'zi yuborish» → «Qaysi javoblar o'zi ketadi»: **«Narx»**, **«Hisoblatish (VEDga)»**, **«VED narxi (ustama bilan)»** ni belgilang → «Saqlash».
-2. «VED javobiga ustama»: «Ustama (foiz yoki $; bo'sh — ustamasiz)» ga yozing yoki bo'sh qoldiring → «Saqlash» → **«✅ Ustama to'g'ri»**. (Bo'sh qoldirib tasdiqlasangiz va 1-banddagi «VED narxi»ni belgilasangiz, AI mijozga VED narxining o'zini — ustamasiz — 2 daqiqadan keyin o'zi aytadi; sahifadagi misol shuni ko'rsatadi. Xohlamasangiz «VED narxi»ni hozircha belgilamang.)
+1. «O'zi yuborish» → «Qaysi javoblar o'zi ketadi»: **«Narx»** va **«Hisoblatish (VEDga)»** ni belgilang → «Saqlash». **«VED narxi (ustama bilan)» ni hozircha belgilamang** — avval ustama savoliga javob bering (VED narxining ustiga qancha qo'shiladi: foiz, dollar yoki hech narsa). Javob berguningizcha VED hisoblagan narx mijozga o'zi ketmaydi: sizga karta bo'lib keladi va ✅ bilan o'zingiz yuborasiz.
+2. «VED javobiga ustama» — ustama savoliga javob berganingizdan KEYIN: «Ustama (foiz yoki $; bo'sh — ustamasiz)» ga yozing (ustamasiz ishlasangiz — bo'sh qoldiring) → «Saqlash» → **«✅ Ustama to'g'ri»**, shundan so'ng 1-banddagi «VED narxi»ni belgilang. (Ogohlantirish: ustamani bo'sh tasdiqlab «VED narxi»ni belgilasangiz, AI mijozga VED narxining o'zini — ustamasiz — 2 daqiqadan keyin o'zi aytadi; sahifadagi misol shuni ko'rsatadi.)
 3. «Xitoy tarifi…» satri ostidagi **«✅ Tarif to'g'ri»** ni bosing.
 4. «AI o'rni» → **«Bu akkaunt — AI sotuvchi»**.
 5. «AI ishonchi kamida (%)» → **60** yozing (1a chiqquncha kerak; 1a dan keyin bu katak yo'qoladi).
@@ -163,6 +188,11 @@ which is the same word to a reader). Page: «Mijozlar va savdo → AI sotuvchi»
 8. «Bilimlar» → «Umumiy bilim qo'shish» → «Javob — AI mijozga aynan shuni aytadi» ga Toshkent skladining ish vaqtini yozing → «Qo'shish».
 9. «Hisoblash (VED) → Yo'lkira tarifi» → «Yiwu / Guangzhou → Toshkent» ustuni: 2027-yil narxi boshqa bo'lsa, «Amal qila boshlagan sana» = 01.01.2027 bilan yangi qator yozing → AI sahifasiga qaytib yana «✅ Tarif to'g'ri». (31.12.2026 dan keyin AI narxni shu ustundan oladi.)
 10. Tekshiring: «Telegram ulash»da AI raqami **«Ish raqami»**; AI sahifasida «O'zi yuborish» satrida «yoqilgan · …» turibdi (yoqilmagan bo'lsa — «O'zi yuborishni yoqish» tugmasi ko'rinadi, uni bosing).
+
+Chores 1-2 as the lead ruled on 2026-11-20: «VED narxi» is recommended only AFTER he has answered the markup question
+(design §11.3-1) — until then a VED price reaches him as a card and stage 0 asks for TWO ticks, not three. Send the
+markup question with the chores (it is in `qurish/COVERAGE.md` §E); do not ask him to tick a box whose number he has
+not given.
 
 RESOLVED by the dry run (2026-11-20, `checkAgentReply` run on `factSources(<the fact>)`, a scratch script, nothing
 committed): a fact holding clock times IS quotable at HEAD. «…9:00-18:00», «09:00 dan 19:00 gacha» and «soat 9 dan
@@ -200,9 +230,9 @@ outbound reach from his server to each provider. He sees the result as a table; 
 | K1 | `tests/unit/fixtures/agent-customer-safety/*.json` + `tests/unit/agent-customer-safety.test.ts` (new) | the 303 dangerous first replies exist only in `docs/ai-toliq/corpora/customer-safety/cases*.json` (151+88+14+15+14+21 = 303; fields `id, lang, cat, reply`, some `chatLang` (cases.json), `gloss`, `tool`) | copy them in; run each through the corpus harness's `pressedReasons` (`tests/unit/fixtures/agent-reader-corpus-eval.ts:200`, module-private today; export a `(lang, reply, outcomes?)` entry beside `explain`, `:336`) on **HEAD's rules, before any change**, and commit a snapshot `…-walls.ts`: per case, every reason that held it — the gate's reasons, the policy's blocks AND the policy's warning codes (`warnings:<code>`; the harness prints the bare word `warnings` today, which cannot tell `questions` from `avia_maybe`). NOT all 303 hold at HEAD — measured in the dry run, see «K1, as measured» under this table: a case HEAD does not hold is listed as open with its class, and that list may only shrink. This is `critic-guard.md` §C.2 step 1 and the oracle of §6.3 |
 | K2 | migration, `schema/agent.ts`, `config.ts` probe | — | §3.1 |
 | K3 | `settings/service.ts`, four bundles | — | §3.3 |
-| K4 | `agent/designations.ts`; `notifications/mutes.ts:331` `UNMUTABLE_TYPES`; `notifications/night.ts:28` | cards go to `[managerUserId]` only (`drafts.ts:391`, `:542`) | §3.2; three new types `AgentSignal`, `AgentMorning`, `AgentSample` — all UNMUTABLE (they reach only people he chose; a muted one is the silent failure), `AgentSignal` and `AgentSample` night-silent (`NIGHT_SILENT_TYPES`), `AgentMorning` never sent at night. **Two derived fences in `tests/unit/agent-fences.test.ts` bite here (as read):** `:157` — every `UNMUTABLE_TYPES` member must be named in `purge.ts` `chatCardsWhere` or in the test's own `NO_CHAT` map with its reason (`AgentMorning` and `AgentSample` hold counts and a link → `NO_CHAT`; `AgentSignal` names a lead → blank it in `chatCardsWhere`); `:174` — every `AgentNotice` writer must carry `extra: { peerId: String(…) }` (P2's loop notice is one) |
+| K4 | `agent/designations.ts`; `notifications/mutes.ts:331` `UNMUTABLE_TYPES`; `notifications/night.ts:28` | cards go to `[managerUserId]` only (`drafts.ts:391`, `:542`) | §3.2 (both readers); four new types `AgentSignal`, `AgentMorning`, `AgentSample`, `AgentLiveness` — all UNMUTABLE (they reach only people he chose; a muted one is the silent failure), `AgentSignal` and `AgentSample` night-silent (`NIGHT_SILENT_TYPES`), `AgentMorning` never sent at night, `AgentLiveness` raised only about a line written in working hours and it RINGS (§4.5). **Two derived fences in `tests/unit/agent-fences.test.ts` bite here (as read):** `:157` — every `UNMUTABLE_TYPES` member must be named in `purge.ts` `chatCardsWhere` or in the test's own `NO_CHAT` map with its reason (`AgentMorning`, `AgentSample` and `AgentLiveness` hold counts and a link → `NO_CHAT`; `AgentSignal` names a lead → blank it in `chatCardsWhere`); `:174` — every `AgentNotice` writer must carry `extra: { peerId: String(…) }` (P2's loop notice is one) |
 | K5 | `agent/types.ts:70` `DraftPolicyJson.notes: string[]` | notes are untyped strings; the gate counts them (`auto-gate.ts:372`) | add `noteCodes?: NoteCode[]`, parallel to `notes`; every writer pushes its code: `run.ts:551-568` (incl. `settleCalcPrices` `:1783` and `lateNote` — `card.ts`, the «⏱ Mijoz …» line), `:1673-1705` (inside `validateActions`, `:1654`), `:1951-1959`, `:2005`, `calc-submit.ts:156-163`, `calc-loop.ts:1027`. Codes: `late`, `calc_below_minimum` (the truck-minimum note, `run.ts:1673` — found by the reference check, it was missing from this list), `calc_incomplete`, `calc_open`, `followup_bad`, `rail`, `tariff_mismatch`, `calc_price_unsaid`, `calc_price_many`, `answer_still_his`, `calc_recent`, `calc_file`, `price_only_customer`. Grep `notes.push(` / `notes.unshift(` / `notes:` under `agent/` again on your tree — a writer with no code is a machine stop. The codes travel the same road as the notes: the draft input and the stored `policy` JSON (`drafts.ts:424`, `:480`) and `AutoPlan.cardNotes` (`auto-send.ts`, the two lines `calc-submit.ts` returns — pushed AFTER the plan is judged, `run.ts:568`, `:2005`) each gain the parallel code. ONE reading rule for the gate (`autoFactsFor`): no notes → `[]`; notes with a `noteCodes` array of the SAME length → that array; anything else → `null`, a machine stop. So a draft stored before 1a with notes and no codes fails closed, and one with no notes goes on |
-| K6 | `agent/auto-gate.ts` `AutoGateInput` (`:226`) | `draft.warnings: number`, `draft.notes: number`, `streak: number`, `config.minConfidence` | `draft.warningCodes: string[]`, `draft.noteCodes: string[] \| null`, `draft.systemAck: boolean`, `loop: boolean`, `complaint: boolean`, `nightPrices`; `streak` and `minConfidence` leave in **P1, with their rules** (§4.2, §8.4) — dropped in the kernel they would delete two refusals before the loop detector exists; export `autoClassOf(input): 'talk' \| 'price' \| 'calc_price' \| 'calc'` (from `moneyVerdict` and `isCalcSubmitOnly`), `EYE_ONLY_WARNINGS = ['questions']`, `EYE_ONLY_NOTES = ['late']`, `RETIRED_REFUSAL_WORDS` (`low_confidence`, `streak`, `category` — words only, so stored rows keep printing through `auto-card.ts:67-84`; `autoRefusalWords` asks this map too, or a retired code prints «sababi noma'lum»). Packages fill the readers. **`autoClassOf` fails CLOSED — the rule the relaxed language, the zero hold and the night all hang on:** `calc` = `isCalcSubmitOnly`; else `calc_price` = money present and every money line a VED price; else `price` = ANY money present (`moneyVerdict.present`, refused or not — a balance, a fact's price, a line nobody vouched for), or `money_unread` / `numeral_unread` would fire (a currency beside a quantity, an unread numeral); `talk` only when none of that holds AND the draft's actions are none but `set_followup`. A draft with any other action is `price` for the hold, the night and the language (it is refused by `actions` anyway) |
+| K6 | `agent/auto-gate.ts` `AutoGateInput` (`:226`) | `draft.warnings: number`, `draft.notes: number`, `streak: number`, `config.minConfidence` | `draft.warningCodes: string[]`, `draft.noteCodes: string[] \| null`, `draft.systemAck: boolean`, `loop: boolean`, `complaint: boolean`, `nightPrices`; `streak` and `minConfidence` leave in **P1, with their rules** (§4.2; §8 step 4) — dropped in the kernel they would delete two refusals before the loop detector exists; export `autoClassOf(input): 'talk' \| 'price' \| 'calc_price' \| 'calc'` (from `moneyVerdict` and `isCalcSubmitOnly`), `EYE_ONLY_WARNINGS = ['questions']`, `EYE_ONLY_NOTES = ['late']`, `RETIRED_REFUSAL_WORDS` (`low_confidence`, `streak`, `category` — words only, so stored rows keep printing through `auto-card.ts:67-84`; `autoRefusalWords` asks this map too, or a retired code prints «sababi noma'lum»). Packages fill the readers. **`autoClassOf` fails CLOSED — the rule the relaxed language, the zero hold and the night all hang on:** `calc` = `isCalcSubmitOnly`; else `calc_price` = money present and every money line a VED price; else `price` = ANY money present (`moneyVerdict.present`, refused or not — a balance, a fact's price, a line nobody vouched for), or `money_unread` / `numeral_unread` would fire (a currency beside a quantity, an unread numeral); `talk` only when none of that holds AND the draft's actions are none but `set_followup`. A draft with any other action is `price` for the hold, the night and the language (it is refused by `actions` anyway) |
 
 **K1, as measured (dry run, 2026-11-20 — a scratch script over `explain()`, nothing committed; re-measure, do not copy).**
 - **The corpus's `lang` is a CONTEXT key, not always a language.** 50 of the 303 rows carry `uzc` (15 — Uzbek
@@ -233,11 +263,42 @@ outbound reach from his server to each provider. He sees the result as a table; 
   replies «go» at HEAD already. In production they waited behind the model's own rating and the 2-minute ⏸. Every
   one is `talk` (no money line), so under 1a it goes AT ONCE if the model writes it. §6.3 says what to do with the
   list before the merge.
+- **The three choices, and what is BUILT under each (lead ruling of 2026-11-20: he is asked before P1 merges, with
+  the list in front of him — §11 question 9 has the words; K1 commits the 55 as «open» whichever he picks, and
+  that list may only shrink).**
+  - **A — go as designed (⭐).** Talk goes at once, exactly as his 11 a says, and the evening sample with its 👎
+    is the net. *Built:* P1 as §4.2 stands, nothing added.
+  - **B — a short hold on talk until stage 3b (⚠ touches 11 a).** Every talk reply waits two minutes on a card he
+    can stop, until the stage that builds the reviewer. *Built:* P1's code is the SAME; one default differs — K3
+    ships `agent_talk_hold_sec` as `120`, not `0`. Everything else follows from that number by the rules already
+    in §4.2: the card is written `silent: false` and rings, the rang rule and `countdownMayRide` behave as for a
+    price, `pressNow` finds nothing due and the minute sweep presses. Night talk still goes (talk is never
+    night-barred; its hold then counts from the card landing). The box is his: he sets 0 himself when he wants, and
+    stage 3b's deploy list gains one line («oddiy javob kutishi → 0») — a seam for the lead, `STAGE-3B.md` does
+    not carry it.
+  - **C — the listed wordings go into the word rules first.** *Built:* P1 does not change, but it does not merge
+    until a small package before it («So'z», the lead's, one worktree) is done: the 55 enter the reader corpus as
+    dangerous rows (K1's open list is the work list); then the SMALLEST rule that holds them — by the house's own
+    precedent a policy WARNING that keeps his ✅ and stops only the machine (#1539, `avia_maybe`: «a word list
+    will always miss a phrasing»), a new BLOCK row in the promise tables only where a warning cannot do it; the
+    whole corpus and the 303 before the first edit and after the last; the ordinary sets measured both ways and
+    every ordinary reply that newly waits shown to him by text. This is the one choice that moves `policy.ts`'s
+    verdicts — §2's «changes no check» then carries this stated exception — and it adds an S-M of its own.
+  - **Why A is the ⭐.** It is his own answer (the house rule: he decides scope — the risk is said to him in a
+    sentence and then what he asked for is built), and it is the only one he can leave by himself on any evening:
+    B is ONE box on his page, so starting with A costs him nothing but the hours until he types 120. B protects
+    only while somebody reads every card inside two minutes, and brings back a ring per reply. C holds the 55
+    wordings that are KNOWN — the same promise said a fifty-sixth way still goes — delays the stage, and every
+    such list has held ordinary replies before (#1619). The wall that answers this class is stage 3b's. The ⭐
+    never hides the list: question 9 is sent WITH the count per class and three sentences of each.
 - The ordinary sets of `critic-guard.md` §C.2 step 1 (62 / 293 first replies, #1787's 314 pairs) were NOT kept in
   the repository (`docs/ai-toliq/README.md`); K1 can commit the 303 only. The «more ordinary replies go» half of
   step 1's evidence is the reader corpus's ordinary rows plus stage 0's `verdicts`.
 
 ### 4.2 P1 «To'siq» — the gate, the hold, the press (owns `auto-gate.ts`, `auto-send.ts`, `auto-card.ts`, the auto panel of `agent-ui.tsx` / `page.tsx`, `decide.ts:1086`)
+
+A bare `:N` in the first column continues the file named in the row above it (rows 1-8 are `auto-gate.ts`, from
+`autoPlanFor` on they are `auto-send.ts`). Every function below is in `agent/`.
 
 | Where | Today | Change |
 |---|---|---|
@@ -252,7 +313,7 @@ outbound reach from his server to each provider. He sees the result as a table; 
 | `auto-send.ts:573` `autoPlanFor` (`:580`) | `dueAt = now + config.holdSec` for every reply | `holdSecFor(class)`: `talk` → `agent_talk_hold_sec`; every other class → `config.holdSec`. Store nothing new: the press recomputes the class from fresh facts. **Order, as read:** today `dueAt` is computed BEFORE the facts and handed to `autoFactsFor` as `at` (`:580-581`) — but the class needs the facts. `at` is only carried into the gate input (no fact is read by it), so: facts first → `autoClassOf` → `holdSecFor` → `dueAt` → set `at` → `autoVerdict`. `AutoPlan.holdSec` (read by `countdownMayRide`) is then the CLASS's hold, never `config.holdSec` |
 | `:851` `pressOne` (the rang rule `:875-879`, the hold `:888-895`) | no press until the card has been on his screen a whole hold; a copy that did not RING → `night` (`copyRang`, `:649` — a copy sent with `payload.silent` never «rang») | with hold 0 neither is asked; a night-admitted price counts its hold from the card landing, rung or not. Said as ONE predicate so the gate and the press cannot disagree: «a copy that did not ring → `night`» is asked only of a class the night BARS under the stored setting (the gate's own `night` clause, §6.2) — never by the clock at the press: a table price whose card landed silently at 07:58 must not be refused at 08:01 for the card it would have gone on at 07:59. The hold itself (`:888-895`) is `holdSecFor(class)`, not `config.holdSec` |
 | `:667` `countdownMayRide` | a countdown rides only a copy that rang within one hold | a hold of 0 «does not count down»: it rides any copy, as every plain card does — or each talk reply mints its own card |
-| new `pressNow(draftId, now)` | the minute sweep alone presses (`jobs.ts:543`) | claims that ONE row when it is due and runs `pressOne`; `run.ts` calls it after `writeDraft` inside its own try/catch. The sweep stays the net. One hole the silent card opens (dry run): the card was queued `silent` because the plan said «goes at once» — if the press then does NOT end `pressed` (a fresh fact moved, the ✅'s own refusal), a reply is waiting for him on a card that never rang. A hold-0 press that is refused, deferred or lost rings: while the card row is still unsent, write `silent: false` onto it; once sent, one ringing `AgentNotice` with `extra.peerId` («AI javobi o'zi ketmadi — kartani ko'ring»). §7's integration row presses a refused hold-0 draft and asserts the ring |
+| new `pressNow(draftId, now)`, exported from `auto-send.ts` beside `pressDueAutos` (`:922`) | the minute sweep alone presses (`jobs.ts:543`, step 7 → `pressDueAutos`) | claims that ONE row when it is due and runs `pressOne` (`:851`). Two call sites, each inside its own try/catch and only when `written.kind === 'written'` and the plan is eligible with a hold of 0: `handleInbound` right after `writeDraft` (`run.ts:569`), and the owner-triggered path after its `writeDraft` (`run.ts:2006` — its plan exists only for an answer or a calc-answer run, `:2004`; such a draft is rarely `talk`, and when it is not, `pressNow` finds nothing due). The sweep stays the net. One hole the silent card opens (dry run): the card was queued `silent` because the plan said «goes at once» — if the press then does NOT end `pressed` (a fresh fact moved, the ✅'s own refusal), a reply is waiting for him on a card that never rang. A hold-0 press that is refused, deferred or lost rings: while the card row is still unsent, write `silent: false` onto it; once sent, one ringing `AgentNotice` with `extra.peerId` («AI javobi o'zi ketmadi — kartani ko'ring»). §7's integration row presses a refused hold-0 draft and asserts the ring |
 | `drafts.ts:391` | every card rings by day | `silent: true` in the card's payload when the plan is eligible with hold 0 (`sendsSilently` already honours it) — only what waits for him rings. Write the key on EVERY card write (`true` or `false`): a chat's card row is re-pointed by a payload MERGE (`:385-388`, `payload \|\| extra`), so a key written only when true would stay on the row and silence the next draft's card — the one that waits for him |
 | `auto-send.ts:1318` `autoFeedback` | the holder alone | holder, or a super_admin while `holderIsSeat` — the `mayArmAuto` rule (`:1444`); the sample's 👎 calls it |
 | `:1375` `autoStepDownOnBotQuestion`, `AUTO_STEP_DOWN.botQuestionChatsToDisarm` | «botmisiz?» after a machine reply → chat off 30 days, 2 chats → disarm | deleted (his 1 b: it is answered now). The 👎 and block step-downs stay. The REASON word stays everywhere it is stored or printed — `AutoDisarmReason` (`config.ts:211`), `AUTO_DISARM_WORDS` (`auto-card.ts:243`), the page's key (`labels.ts:250`, `agentAi.autoOff.bot_question` ×4): a stored `disarm_reason` keeps printing, and an `agent_auto_chats` row written for it before the deploy keeps its chat out until its `off_until` (up to 30 days; no screen clears a chat-off at HEAD — count such rows in stage 0's `verdicts` and tell him the number) |
@@ -265,15 +326,40 @@ no draft, no word to anybody) and `streak`. Pure `loopVerdict(facts)`, facts fro
 
 | Signal | Rule | Where asked |
 |---|---|---|
-| `same_inbound` | the anchor's folded text (`textFingerprint`, `policy.ts:2718`, read-only) equals **two or more** earlier inbound lines of the window — the FIRST repeat is answered (an impatient customer), the second stops | eligibility |
+| `same_inbound` | the anchor HAS text, and its folded text (`loopFold`, below) equals **two or more** earlier inbound lines of the window — the FIRST repeat is answered (an impatient customer), the second stops. A text-less line is never «the same line again» (today's guard, kept) | eligibility |
 | `fast_peer` | three inbound lines in the window, each ≤ 10 s after one of OUR machine sends (the 5-second `echo` clause stays for the single case) | eligibility |
-| `own_repeat` | the draft's fingerprint equals one of our last three machine sends to this chat in the window | the gate (it needs the body) |
+| `own_repeat` | the draft's folded text (`loopFold`) equals one of our last three machine sends to this chat in the window | the gate (it needs the body) |
 
 Eligibility refuses with `loop` (`repeat` stays readable in old `agent_runs` rows) and — unlike today — says so ONCE: an
 `AgentNotice` claimed by an `agent_signals` row keyed `loop:<peer>:<window start>` («🔁 Bu suhbat aylanib qoldi (avtojavob
 bo'lishi mumkin) — AI to'xtadi, o'zingiz qarang.», no customer text). `<window start>` is the anchor's time FLOORED to
 `LOOP_WINDOW_MS` — a fixed bucket; the sliding window's own start moves with every line and would mint a notice per
 line. The gate's `loop` leaves a card. Stateless.
+
+**The text-less guard stays (lead ruling of 2026-11-20), and the fold is today's own.** As read, today's fact is
+`anchorRepeats: anchor.body.trim() !== '' && prevInbound.some((m) => norm(m.body) === norm(anchor.body))`
+(`run.ts:389`; `norm = (t) => t.trim().toLowerCase()`, `:368`). Its first half is the guard: a photo, a file or a
+voice note with no caption has an EMPTY body, so without it three photos in a row are «the same line» three times —
+the customer who sends his invoice page by page is stopped as a loop, and P3's system reply never sees the second
+burst. So `loopVerdict` counts a `same_inbound` match only when the ANCHOR's body is non-empty after `trim()`, and
+an earlier text-less line matches nothing. `loopFold` (one function in `loop.ts`: trim, lower case, a run of white
+space as one space) is the fold of BOTH `same_inbound` and `own_repeat` — **not `textFingerprint`**: as read
+(`policy.ts:2731`) that one replaces every run of digits with `#` — right for G10, which asks whether two CHATS got
+one text, wrong here: «5 kub narxi qancha?», «7 kub narxi qancha?», «10 kub-chi?» is the commonest half hour of a
+price chat, the first two are ONE fingerprint, and two honest quotes written from one wording differ only in their
+figures. An auto-responder repeats its text byte for byte; one that stamps a counter is `fast_peer`'s; and
+`runsPerChatPerDay` stays the last fuse (§4.6).
+
+**Which function does what (named, so nobody guesses).** `loop.ts` exports the pure `loopVerdict(facts)` and
+`loopFold`, and ONE async reader `loopFactsFor(handle, managerUserId, peerId, anchor, now)` — the statement: the
+chat's inbound `tg_messages` of the window (id, `sent_at`, `body`) and «our machine sends» of the window, which are
+the `agent_outbox` rows of this (manager, peer) with `status = 'sent'` (`sent_at`, `body` — the AI's texts whoever
+pressed them; a loop with a robot is the same loop under his ✅). `eligibilityFacts` (`run.ts:301`) calls it and
+puts the answer in a new `EligibilityFacts.loop` field in place of `anchorRepeats` (`:389`; the local `norm`, `:368`,
+and `prevInbound`, `:367`, go with it); `eligibleForRun`'s last line (`eligibility.ts:86`, `if (f.anchorRepeats)
+return no('repeat')`) becomes the `loop` test. For the gate, `autoFactsFor` (`auto-send.ts:321`) calls the SAME
+reader with the draft's body and sets `loop` from `own_repeat` — at scheduling and again at the press, like every
+other fact.
 
 As read, `repeat` has more holders than `eligibility.ts`, and P2 owns them all: `Ineligible` gains `loop` and KEEPS
 `repeat` (a stored `agent_runs.error`); `NO_DRAFT_WORDS` (`calc-loop.ts:311`) is an exhaustive `Record<Ineligible,
@@ -335,7 +421,9 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
   line (`replyNeeded = true`, the line alone) and runs before that test and before `policyFor`, on both paths.
 - **Complaint tripwire** (`complaint.ts`, `complaintIn(texts)`): a closed six-language list over the CUSTOMER's
   burst — «menejer kerak», «rahbaringiz bilan», «shikoyat», «pulimni qaytaring», «aldadingiz», «sudga», жалоба,
-  «верните деньги», «позовите менеджера», refund, «real person», 投诉, 退款, شکایت. A hit → gate `complaint`.
+  «верните деньги», «позовите менеджера», refund, «real person», 投诉, 退款, شکایت. A hit → gate `complaint`: ONE line in `autoFactsFor`
+  (`auto-send.ts:321`) sets `complaint: complaintIn(…)` over the chat's stored inbound lines after our last out
+  line — the rows its `media` fact already reads — so the press re-asks it on fresh facts like every other fact.
   A false hit costs one card; it is a new free-text reader, so it gets corpus cases of both kinds (§6.3).
 - **Prompt** — §6.1. **Owner's name out of code**: 18 runtime strings hold it today (`prompt.ts:71, 73, 74, 82, 85, 87,
   91` — the style heading — `, 167`; `tools.ts:224, 394, 636, 672, 674`; `owner-answer.ts:95-96`; `lessons.ts:539`;
@@ -352,7 +440,7 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
   exemptions at `policy.ts:2841` are the model), with a test both ways: the persona's first name goes; the same
   colleague's FULL name, and any other colleague's name, still stop. Never by adding `staff_name` to `EYE_ONLY_WARNINGS`.
 
-### 4.5 P4 «Signal» — big cargo, the morning line, the sample (new `agent/big-cargo.ts`, `signals.ts`, `morning.ts`, `sample.ts`; two schedules in `jobs.ts`; two page sections)
+### 4.5 P4 «Signal» — big cargo, the morning line, the sample, the liveness alarm (new `agent/big-cargo.ts`, `signals.ts`, `morning.ts`, `sample.ts`, `liveness.ts`; two schedules and one sweep step in `jobs.ts`; two page sections)
 
 - **Big cargo** — pure `bigCargoOf(ctx, outcomes, settings)`: the newest stated volume (`newestMeasure`, `tools.ts:296`,
   or a priced estimate's `m3`) ≥ `agent_big_cargo_m3`, or (`agent_big_cargo_words`) `saysFullTruck(burst)` — «fura»,
@@ -372,6 +460,9 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
   has; from 3a a colleague's copy rides `notify_after` (the next working minute) like every colleague card
   (`STAGE-3A.md` §4.1) — which of the two he wants is the question «Tungi kartalar hamkasblarga» in
   `qurish/COVERAGE.md` («Still to ask him»).
+- **Where the two schedules live:** `registerAgentWorkers` (`agent/jobs.ts:91`) — two queue names beside
+  `JOB_AGENT_SWEEP` in `agent/queues.ts` (`:15`), each `createQueue` + `schedule` + `work` with the sweep's own
+  try/catch-and-log shape (`:174-182`); `boss.ts` already registers that function by name, so nothing changes there.
 - **Morning line** — `morningFacts(day)` + pure `morningLine(facts)`; schedule `'40 3 * * *'` (08:40 Tashkent) to
   `designated('supervisor')`. Yesterday (Tashkent): reply drafts, how many the machine pressed, and the rest grouped by
   ONE reason each — a draft with several is counted under its FIRST in `AUTO_REFUSALS` order — through one word map
@@ -387,13 +478,68 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
   «👍 To'g'ri» / «👎 Xato edi». 👍 writes `mark = 'good'`; 👎 writes `bad` AND calls `autoFeedback` (the same counter:
   that chat off 30 days, two in seven days disarm — the confirm text already says so). Daily while the first sample
   is < 30 days old, then Fridays only (derived from `min(day)`; no setting). Door: P1's widened one.
+- **Liveness alarm** (lead ruling of 2026-11-20 — `critic-guard.md` §D.1 makes it the condition for taking the
+  card and the hold off talk, so it ships in THIS stage, small). New `agent/liveness.ts`; it adds no job and no
+  schedule: `sweepUnanswered(config, now)` is called as step **3b** of `agentSweep` (`agent/jobs.ts:367`, the
+  minute sweep — `JOB_AGENT_SWEEP`, `:175`), right after step 3 «the deploy gap» (`:445`), inside the same
+  `agentRunning(config) && aiConfigured()` branch (`:442`) and in its own try/catch (step 7's idiom — a fault here
+  never costs the sweep's other answers). (Two files are called `signals.ts` from now on: P4's own
+  `agent/signals.ts` with `sendSignal`, and 0115's `platform/diagnostics/signals.ts` below. Do not merge them.)
+  1. *What it asks* — ONE statement on the pool, step 3's own candidate set made wider in time: the holder's chats
+     bound to a card (`client_id IS NOT NULL OR lead_id IS NOT NULL`) whose NEWEST line is inbound, sent between
+     `now − 2 h` and `now − agent_liveness_minutes`, at a working hour — `!quietHour(sentAt)`
+     (`platform/telegram/send.ts:121`, the house's one night clock, 22:00-08:00 Tashkent; no second clock) — each
+     with the newest `agent_runs` row of THAT anchor (`anchor_tg_message_id`, the key step 3 already reads).
+     «The newest line is inbound» is the whole of «nothing was sent»: our reply, his own typing or his robot would
+     be an out line after it. The setting is read once per sweep with `getSetting` (no transaction is open); `0`
+     skips the step.
+  2. *What counts as unanswered* — pure `livenessOf(run | null, now)`: no run row → unanswered (the worker or the
+     queue is dead: step 3 has re-queued the line and nothing came of it); outcome `draft`, `no_reply`, `notice`,
+     `stood_down` → answered (a draft counts whether it went or waits — a waiting one is on his card and in the
+     morning line); `refused` → by its stored reason (`agent_runs.error`) through an exhaustive
+     `Record<Ineligible, 'by_design' | 'fault'>` kept in `liveness.ts` — `fault` for `listener_behind`,
+     `account_paused`, `session_not_confirmed`; every other member by design, and so is any `draftWorthy` reason
+     (they share the column, `run.ts:489`). Exhaustive on purpose: P2's new `loop` does not compile until somebody
+     classifies it. `capped`, `error`, and a `reserved` row older than `INTERRUPTED_RUN_MS` (`jobs.ts:190`) →
+     unanswered.
+  3. *Said once per fault, taken back once* — the 0115 system watch's own table: `system_signals` is a STATE row
+     («exists while the fault stands, deleted when it clears») and `platform/diagnostics/signals.ts` is its only
+     writer. Add there, beside `recordBotState` (`:36`), a generic pair: `raiseSignal(key, detail): Promise<boolean>`
+     (INSERT … ON CONFLICT (key) DO UPDATE of `detail` and `updated_at`, RETURNING `(xmax = 0)` — TRUE only for the
+     write that OPENED the row: that is the claim, #599) and `clearSignal(key): Promise<boolean>` (DELETE …
+     RETURNING). Key `agent:liveness`; `detail` = how many chats wait and since when. The key column is free text
+     (0115 put no CHECK on it), so this needs NO migration and no probe; `diskSignals()` filters `disk:%` and
+     `botRefused()` reads its own key, so neither picks the row up. **A fence to know before the first line:**
+     `tests/unit/kuzatuv.test.ts:404` («only signals.ts writes system_signals or names the bot key») reads every
+     file under `src/` as RAW text — so `liveness.ts` and `system-signals.tsx` may neither write the table nor
+     contain its SQL name, not even in a comment (write «the signals table»); every write stays in
+     `diagnostics/signals.ts`, and the dashboard's read is a third function there, `signalStanding(key)`, beside
+     `botRefused` (`:51`). Unanswered > 0 and `raiseSignal` answered TRUE
+     → ONE `AgentLiveness` line through `notifyStaffTelegram` to `designated('supervisor')` — both ranks, the
+     fallback chain when he designated nobody, called outside any transaction: «⚠️ AI sotuvchi javob bermayapti:
+     3 ta mijoz 12 daqiqadan beri kutyapti. AI sahifasini oching.» + the page link. Counts only — no customer's
+     name, text or phone (leak-13), so one text serves every recipient. While the row stands nothing more is sent
+     (a later sweep only moves `detail`); the first sweep that finds 0 calls `clearSignal`, and on TRUE sends one
+     «✅ AI sotuvchi yana javob beryapti.» to the same people.
+  4. *On the screen he already reads* — `SystemSignals` (`components/system-signals.tsx:96`, the dashboard block
+     that draws the dead bot and the disks) gains one red row while `agent:liveness` stands (read through
+     `signalStanding`), for a reader
+     `mayRunAgent` admits, linking `/suhbatlar/ai`; the AI page's status line prints the same sentence. This is
+     the half that survives a DEAD staff bot — the Telegram line rides that very bot (round 49's rule: an alarm
+     about a component must not depend on that component alone).
+  5. *What it is not* — it does not watch the listener: with the listener down no inbound line is stored, and that
+     silence is `sweepQuietListeners`' (`wms/crm/listener-quiet.ts:154`, every five minutes, to the account's
+     manager and the admin-rank logins), unchanged here. It asks nothing about night lines (nobody is awake to act;
+     the morning line's «Javobsiz» counts them). It does not stop or disarm anything — it tells. And it is not the
+     «dead card» alarm (a draft that waits on a card nobody received): that stays stated-not-built (§10).
+  P4 builds the setting's box (`agent_liveness_minutes`, §3.3) beside the big-cargo boxes.
 
 ### 4.6 His 10 c and the fuses in `agent/limits.ts` — KEEP, do not raise, make loud (the re-wording below is P4's: it owns the morning line that names the trips)
 
 | Fuse | Value, where | Ruling |
 |---|---|---|
 | dollars | no ceiling exists; the 20:00 line (`reports/ai-spend.ts`) is a meter | nothing to build; add none |
-| `daily_token_cap` | 3 000 000, `agent_config`, box «Kuniga tokenlar» (`today.ts:67` `capReached`) | it is the one fuse that reads as a money stop. KEEP — it is what bounds a runaway loop when no dollar limit exists — but re-word its hint and its notice (`drafts.ts:550` `notifyCapReached`) from «byudjet» to «xato halqasidan himoya; pul chegarasi emas, xohlasangiz oshiring», and the morning line names every day it tripped. No migration raises his stored number |
+| `daily_token_cap` | 3 000 000, `agent_config`, box «Kuniga tokenlar» (`today.ts:67` `capReached`) | it is the one fuse that reads as a money stop. KEEP — it is what bounds a runaway loop when no dollar limit exists — but re-word its hint and its notice from «byudjet» to «xato halqasidan himoya; pul chegarasi emas, xohlasangiz oshiring» — three places, as read: the notice's word map in `drafts.ts` (`:553`, `daily_token_cap: 'bugungi AI byudjeti'`, used by `notifyCapReached` `:550`), and the bundle keys `agentAi.numTokensHint` and `agentAi.todayTokens` («Tokenlar (kunlik byudjet)») in all four locales, and the morning line names every day it tripped. No migration raises his stored number |
 | `daily_draft_cap` | 150 runs, box «AI kuniga ishga tushishi» | same; after stage 0's `volume` tell him the number to type (≥ 3× the measured peak day) |
 | `runsPerChatPerDay` 12, `perChatPerDay` 12 | constants (`limits.ts:60-62`); the second is read by the LISTENER's send step | UNCHANGED in 1a. They are the only thing that ends a robot-to-robot chat if the new detector misses, and making the second a setting means a new reader in the listener. The morning line counts `chat_runs` hits so the number that moves them to 1b is his own |
 | `perHour` 20 / `perDay` 80 | `agent_send_caps`, boxes exist (≤ 100 / ≤ 200) | his to raise; say so before «Hajm» is flipped |
@@ -401,7 +547,9 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
 ### 4.7 P5 «Hajm»
 
 - **6 c — `lead_assign_ai`** in `assignForTag` (`crm/site-assign.ts:265`), after the existing-tag branch and before
-  `pickAssignee`: when the mode is `all` and the team is not `buying`, ask `seatCandidate(tx, now)` — ONE statement on
+  `pickAssignee`: when the mode is `all` and the team is not `buying`, ask `seatCandidate(tx, now)` — a NEW function in a file of its own, `agent/seat-candidate.ts`, that imports only the
+  schema, `platform/settings/agent-seat` and constants (`site-assign.ts` is a direct import of the listener script,
+  so whatever this file imports joins the listener's closure — never `run.ts`, `decide.ts` or `auto-send.ts`) — ONE statement on
   the transaction (the 400 ms `statement_timeout` and the `lead_assign` advisory lock are already set at `:270-271`; #714): the holder is the seat (`agent_seat_user_id` — `holderIsSeat(tx)` / `agentSeatUserId(tx)` in `platform/settings/agent-seat.ts` take the transaction as their handle), `agent_config.mode = 'shadow'`
   with the session confirmed, the auto layer armed, the account not paused and its pump stamp fresh
   (`tg_account_guard`), a VERIFIED handle read ≤ 1 h ago with the bridge live (`reachableAt`'s rule,
@@ -433,11 +581,13 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
 |---|---|---|
 | ✅ / ✏️ / ❌ / 🙋 / ✍️ on any card | the account holder alone — unchanged | `decide.ts:960`, `:1421` (`not_account_holder`); his PHASE-1 answer 15 («a message leaves a personal account only by its holder», `config.ts:12`) — not Q15 of design §11, which is the call-back |
 | the machine's press | nobody (`actorId: null`, `via: 'auto'`) | `pressOne`; gate re-judged on fresh facts |
-| hold, night setting, kinds | holder or super_admin | `mayTuneAuto` |
+| hold, night setting, kinds, the liveness minutes | holder or super_admin | `mayTuneAuto` |
 | persona, big-cargo line, designations, `client_ai_contact` | the super_admin ROLE | as `setAgentSeat` |
 | sample 👍/👎, `autoFeedback` | holder, or super_admin while the holder is the seat | `mayArmAuto`'s rule |
 | «Kim javob beradi», «Kunlik tekshiruv» sections | `mayRunAgent` to read | `config.ts:314` |
-| a big-cargo signal | the people he designated | text per recipient (§4.5) |
+| a big-cargo signal | the people he designated | `designated('big_cargo')`; text per recipient (§4.5) |
+| the morning line, the sample line, the liveness alarm | the supervisor pair | `designated('supervisor')` — counts only, one text for all |
+| the dashboard's liveness row | whoever may read the AI page | `mayRunAgent` |
 
 Law 4: nothing in 1a shows a price to the VED or a floor to a seller — the signal carries kub and kg, never a price;
 the holder's `calcLine` (`types.ts` `CardMemory`) still reaches the holder only. Identity: untouched — `cargoAllowed`
@@ -466,7 +616,7 @@ in 1a — the customer is still asked the goods and one measure per line.
 Exact words (constants in `policy.ts` beside `EXCLUSION_SENTENCE`, six languages; fa / zh carry a stored Uzbek gloss):
 - `CUSTOMS_OFFER_SENTENCE.uz` «Xohlasangiz, rastamojkani ham alohida hisoblab beraymi?» · ru «Если нужно, отдельно посчитаю и растаможку — посчитать?» — the word «alohida / отдельно» is deliberate: G11 demands that every clause naming customs say «apart» (`policy.ts:1908-1922`), and «с растаможкой» is a `customs_included` promise (`:1066`). MEASURED in the dry run for these two wordings (`checkAgentReply` on a real truck quote + the offer, a scratch script): both pass with zero blocks and zero warnings, and «Rastamojka bilan hisoblab beraymi?» in the same place blocks `estimate_unhedged`. The other four languages are not written yet and stay UNVERIFIED until the test of §7 runs: if a language cannot pass, change the WORDING, never the check.
 - `AI_HONEST_LINE.uz` «Ha, men GSRning AI yordamchisiman; kerak bo'lsa menejerni chaqiraman.»
-- `SYSTEM_LINES.voice.uz` «Ovozli xabaringizni hozir eshita olmayapman — iltimos, yozib yuboring.» · `.media.uz` «Faylni oldim, lekin hozircha ocha olmayapman. Iltimos, yuk nomi, hajmi (kub) va og'irligini (kg) yozib yuboring.» · `.pashto` fa «لطفاً به فارسی یا روسی بنویسید.» + ru «Пишите по-русски.» — the Russian half is SHORT on purpose. Measured: G5 judges the reply's DOMINANT script by letter count (`locale.ts:44`), and the first draft's Russian half («Пожалуйста, напишите на русском или персидском.», 40 letters against the Persian 24) made the whole line Cyrillic → `wrong_script` twice (against the customer's Arabic script and against language `fa`) — a card with no ✅ on every Pashto message. The Persian half must hold more letters than the Russian one; the line's language is `fa` and it carries a gloss. `AI_HONEST_LINE.uz` and the `voice` / `media` Uzbek lines were run the same way: zero blocks, zero warnings
+- `SYSTEM_LINES.voice.uz` «Ovozli xabaringizni hozir eshita olmayapman — iltimos, yozib yuboring.» · `.media.uz` «Faylni oldim, lekin hozircha ocha olmayapman. Iltimos, yuk nomi, hajmi (kub) va og'irligini (kg) yozib yuboring.» · `.pashto` fa «لطفاً به فارسی یا روسی بنویسید.» + ru «Пишите по-русски.» — the Russian half is SHORT on purpose. Measured: G5 judges the reply's DOMINANT script by letter count (`locale.ts:44`), and the first draft's Russian half («Пожалуйста, напишите на русском или персидском.», 40 letters against the Persian 24) made the whole line Cyrillic → `wrong_script` twice (against the customer's Arabic script and against language `fa`) — a card with no ✅ on every Pashto message. The Persian half must hold more letters than the Russian one; the line's language is `fa` and it carries a gloss. `AI_HONEST_LINE.uz` and the `voice` / `media` Uzbek lines were run the same way: zero blocks, zero warnings.
 
 ### 6.2 The gate, rule by rule (`AUTO_REFUSALS`, `auto-gate.ts:37-91`)
 
@@ -506,13 +656,16 @@ Exact words (constants in `policy.ts` beside `EXCLUSION_SENTENCE`, six languages
   never show `low_confidence`, `category` or `streak` as a wall (its input sets them to «goes»), so the 55 dangerous
   cases with NO wall are the finding. They are what 1a really changes: today such a reply, if the model writes it,
   waits behind the model's own rating and his 2-minute ⏸; under 1a it is `talk` and goes at once. **Before P1
-  merges, bring him that list** — the count per class and three sentences of each, in Uzbek — with the plain
-  statement «bunday gapni AI yozsa, endi sizni kutmasdan ketadi; ushlaydigan qoida 3b-bosqichda quriladi» and his
-  three choices: go as designed (his 11 a; the evening sample is the net) · keep the talk hold
-  (`agent_talk_hold_sec`, his own box) above 0 until 3b, so talk keeps a ⏸ · or the listed phrasings go into the
-  promise table first (a READER change — the corpus first, and #1619's warning that each list blocks ordinary
-  replies). His call, asked with the list in front of him — never a reader touched silently, and never a ⭐ that
-  hides the list.
+  merges, bring him that list** — the count per class and three sentences of each, in Uzbek, taken from K1's own
+  committed snapshot (never copied from this file) — with the plain statement «bunday gapni AI yozsa, endi sizni
+  kutmasdan ketadi; ushlaydigan qoida 3b-bosqichda quriladi» and §11's question 9. His three choices, one sentence
+  each: **A (⭐)** talk goes at once as he answered, and the evening sample is the net · **B (⚠ 11 a)** talk keeps
+  a two-minute ⏸ (`agent_talk_hold_sec` = 120, his own box) until stage 3b · **C** the listed wordings go into the
+  word rules before 1a ships (a READER change — the corpus first, and #1619's warning that each list holds
+  ordinary replies). What is built under each, and why A is the ⭐, is in §4.1 «K1, as measured». The order is
+  fixed: K (with K1's snapshot) may merge to the stage branch and S0 may run; **P1 is not cherry-picked until he
+  has answered** — «sen aytgandek» with the list in his hand is an answer (A), silence is not. Never a reader
+  touched silently, and never a ⭐ sent without the list.
 - Tests that pin what 1a removes are REWRITTEN, each with the reason in its title: `agent-auto-gate.test.ts` and
   `agent-auto.integration.test.ts` (streak, confidence, category, night, bot-question step-down),
   `agent-full-p2-price.integration.test.ts` and `agent-owner-answer.integration.test.ts` (the streak «pinned as his
@@ -536,18 +689,24 @@ Exact words (constants in `policy.ts` beside `EXCLUSION_SENTENCE`, six languages
 
 | Test | Proves | Red proof (strip → what fails) |
 |---|---|---|
-| unit `agent-toliq-1a-gate.test.ts` | each row of §6.2 on BOTH sides: confidence 0.3 goes; `questions` goes and `avia_maybe` stops; the late note goes and `calc_open` stops; a pre-1a draft with notes and no codes stops; label `other` goes, `complaint` and a tripwire hit stop; night × class × setting | put `low_confidence` back → the 0.3 case; empty `EYE_ONLY_NOTES` → the late note; empty `EYE_ONLY_WARNINGS` → the `questions` case; drop the complaint clause → both complaint cases; make `calc` night-free → the VED-at-night case; let `autoClassOf` call a reply with a money line `talk` → a `LANGUAGE_DANGEROUS` price row goes and its hold is 0 (the class is what «`language` stays strict on money» hangs on — K6) |
-| unit `agent-loop.test.ts` (the CHAT loop — `tests/integration/agent-loop.integration.test.ts` already exists and is the MODEL's tool loop; name the `describe` so nobody merges the two) + one integration case | first repeat answered, second stopped; three fast lines; `own_repeat`; an old window clears; integration: the loop notice is sent ONCE per bucket and carries `extra.peerId`; one migration behind it is not sent and nothing throws | `>= 2` → `>= 1` (the first repeat stops); drop `own_repeat`; key the claim by the sliding start → a second notice |
-| unit `agent-system-reply.test.ts` | every line × six languages passes `checkAgentReply` with zero blocks and zero machine-stop warnings on a real run's memory — INCLUDING a memory whose `customerScript` is Cyrillic and one whose burst is Pashto (§4.4's findings 3 and the Pashto letter count); fa / zh carry a gloss; once per silence; voice + sticker → the `voice` line, sticker alone → skipped; the card's explanation is not in `policy.notes` | blank one gloss → `gloss_missing`; remove the «last out is a system line» check → a second ack; pick `uz` for a Cyrillic chat → `wrong_script`; lengthen the Russian half of the Pashto line → `wrong_script`; store the explanation as a note → the system draft is refused `notes` |
-| unit `agent-customs-offer.test.ts` | a real truck quote + the offer passes in six languages; «Rastamojka bilan 390 $», «rastamojka ham shu narxda — hisoblab beraymi?» still block | replace «alohida» in the constant → blocked |
+| unit `agent-toliq-1a-gate.test.ts` | each row of §6.2 on BOTH sides: confidence 0.3 goes; `questions` goes and `avia_maybe` stops; the late note goes and `calc_open` stops; a pre-1a draft with notes and no codes stops; label `other` goes, `complaint` and a tripwire hit stop; night × class × setting; talk language by §6.2's row (a confident read goes; an unconfident uz / uz_cyrl / ru read goes in any of the three; no language shown → `uz` only; en / fa / zh without a confident read held) while a price draft keeps `languageAdmits` byte for byte; a fifth machine reply in a row goes when `loop` is false, and `loop: true` refuses | put `low_confidence` back → the 0.3 case; empty `EYE_ONLY_NOTES` → the late note; empty `EYE_ONLY_WARNINGS` → the `questions` case; drop the complaint clause → both complaint cases; make `calc` night-free → the VED-at-night case; let `autoClassOf` call a reply with a money line `talk` → a `LANGUAGE_DANGEROUS` price row goes and its hold is 0 (the class is what «`language` stays strict on money» hangs on — K6); hand the talk rule to every class → the same row goes; put `streak` back → the fifth reply waits |
+| unit `agent-loop-detector.test.ts` (the CHAT loop. The stem `agent-loop` belongs to `tests/integration/agent-loop.integration.test.ts`, the MODEL's tool loop — lead ruling; name the `describe` so nobody merges the two) + one integration case | first repeat answered, second stopped; three caption-less photo bursts in a row are never `same_inbound`, and a text-less anchor after two equal texts is not a repeat (§4.3's guard); «5 kub narxi?» / «7 kub narxi?» / «10 kub narxi?» are three different lines; three fast lines; `own_repeat` (same wording, other figures → not a repeat); an old window clears; integration: the loop notice is sent ONCE per bucket and carries `extra.peerId`; one migration behind it is not sent and nothing throws | `>= 2` → `>= 1` (the first repeat stops); drop the `trim() !== ''` half → the third photo is refused `loop`; swap `loopFold` for `textFingerprint` → the third size is refused; drop `own_repeat`; key the claim by the sliding start → a second notice |
+| unit `agent-system-reply.test.ts` | every line × six languages passes `checkAgentReply` with zero blocks and zero machine-stop warnings on a real run's memory — INCLUDING a memory whose `customerScript` is Cyrillic and one whose burst is Pashto (§4.4's findings 3 and the Pashto letter count); fa / zh carry a gloss; once per silence; voice + sticker → the `voice` line, sticker alone → skipped; the card's explanation is not in `policy.notes`; the SECOND silent burst sends the customer nothing, writes its ledger row, and for voice and Pashto still tells HIM (§4.4 finding 5); the system draft's category is `other` and its run row is `draft` with a null model | blank one gloss → `gloss_missing`; remove the «last out is a system line» check → a second ack; pick `uz` for a Cyrillic chat → `wrong_script`; lengthen the Russian half of the Pashto line → `wrong_script`; store the explanation as a note → the system draft is refused `notes`; drop the second-burst notice → five voice notes reach nobody after the first; label the system draft `status` → `status_unbacked` holds it |
+| unit `agent-customs-offer.test.ts` | a real truck quote + the offer passes in six languages; «Rastamojka bilan 390 $», «rastamojka ham shu narxda — hisoblab beraymi?» still block; `stableHead` carries rule 8's offer line with `CUSTOMS_OFFER_SENTENCE` INTERPOLATED (the constant's text is found in the rendered head, and the source holds no second copy of it), rule 11's «ha → podklyuch» line and the new rules 17 and 18; two renders with one persona are byte-identical (ONE cache write) | replace «alohida» in the constant → blocked; retype the sentence inside `prompt.ts` → the single-copy check names the file; drop rule 17 → named |
 | unit `agent-persona.test.ts` (source-shape + render) | `stableHead` prints the persona from its argument ('' and a fixture word) and nowhere else; the 18 owner sites (§4.4) interpolate ONE exported word (counted with TypeScript's parser, comments stripped — #725), so no test holds a person's name either; `withBotAnswer` prepends once, and a burst that is ONLY the question (the model's `reply_needed=false`) still yields the honest line; the persona word alone does not warn `staff_name` when a colleague carries it, while that colleague's full name and any other colleague's name still stop (§4.4) | inline one site's word → the count drops; drop the prepend; drop the empty-reply branch → the bare question ends `no_reply`; drop the persona exemption → the self-introduction warns |
-| unit `agent-designations.test.ts` + integration | the fallback chain never answers empty; a leaver is skipped; replace-all; an unknown topic is ignored; the door is `setAgentSeat`'s own; **source-shape (TypeScript's parser, comments stripped — #725): `designations.ts`, `signals.ts`, `big-cargo.ts`, `morning.ts`, `sample.ts` and the migration hold no role-key string, no uuid literal and no person's name (§11.2)** | remove the last fallback → «nobody»; write a role key into `designations.ts` → the shape test |
-| unit `agent-big-cargo.test.ts`, `agent-morning.test.ts`, `agent-sample.test.ts` | thresholds and words; one signal per chat per week; the per-recipient text never holds a customer line; the line's counts add up to the drafts; first-reason grouping; pick order money → low confidence | drop the dedupe key; count every reason → the sum breaks |
-| integration `agent-toliq-1a.integration.test.ts` | a talk draft is due at once and `pressNow` presses it with no card on screen; a price waits its hold and needs the card; a silent card for hold 0, and the NEXT waiting draft on the same re-pointed card row rings (`silent: false` written); a media-only burst → a system draft → pressed; night: talk goes, `calc` waits, a table price whose card landed silently in the night is pressed after its hold and is not refused `night` at 08:01; the press asks the gate's own warning predicate (a re-run that warns `questions` is pressed, one that warns `staff_name` is refused `auto_warning`); the sample's 👎 by a super_admin while the holder is the seat is taken, by anyone else refused; a hold-0 draft whose press is refused rings (the unsent card loses `silent`, a sent one gets one notice); one migration behind (`__pretend…Behind`) nothing throws | restore the card requirement for hold 0 → the talk press defers; write `silent` only when true → the waiting card stays silent; ask the rang rule by the clock → the 08:01 press is refused; give `decide.ts` its own warning list → the two disagree |
+| unit `agent-designations.test.ts` + integration | `designated`: the fallback chain never answers empty; a leaver is skipped; replace-all; an unknown topic is ignored; the door is `setAgentSeat`'s own; `designatedRows`: an empty topic answers `[]` and NEVER the fallback, rows come with their rank, a leaver is skipped, and read on a transaction's handle it sees that transaction's uncommitted replace-all (integration); one migration behind it answers `[]` and `designated` its last fallback; source-shape: `designated(` is called inside no transaction body under `agent/` (it reads the pool — `tx-pool` is the house fence, this names the rule); **source-shape (TypeScript's parser, comments stripped — #725): `designations.ts`, `signals.ts`, `big-cargo.ts`, `morning.ts`, `sample.ts` and the migration hold no role-key string, no uuid literal and no person's name (design §11.2)** | remove the last fallback → «nobody»; let `designatedRows` answer the fallback → the empty-topic case returns people (a door would widen); read `designatedRows` on the pool inside the transaction → the uncommitted rows are not seen; write a role key into `designations.ts` → the shape test |
+| unit `agent-big-cargo.test.ts`, `agent-morning.test.ts`, `agent-sample.test.ts` (+ one integration case each for the claim) | thresholds and words; one signal per chat per week; the per-recipient text never holds a customer line, and a recipient `mayOpenLead` refuses gets «Katta yuk: … kub» with NO name and NO link; the text says «tayyorladi», never «berdi»; the line's counts add up to the drafts; first-reason grouping; cap trips named and `chat_runs` hits counted; the cap notice and the box hint say «pul chegarasi emas» and hold no «byudjet» (§4.6); pick order money → low confidence; the sample is daily while the first one is under 30 days old and Fridays-only after; one migration behind no signal and no sample is written and nothing throws | drop the dedupe key → a second signal the same week; link the lead for everyone → the refused recipient reads the name; count every reason → the sum breaks; drop the Friday rule → a sample on a Tuesday of week six |
+| unit `agent-liveness.test.ts` | `livenessOf`: no run → unanswered; `draft` / `no_reply` / `notice` / `stood_down` → answered; `refused` × EVERY `Ineligible` member through the exhaustive map (the three faults unanswered, the rest by design; a `draftWorthy` reason by design); `capped`, `error`, an old `reserved` → unanswered, a young `reserved` → answered; the alarm text holds counts and no customer word | classify `listener_behind` as by design → the fault case is silent; make the map a `Partial` → a missing member compiles (the test counts the keys against `Ineligible`'s list) |
+| integration `agent-liveness.integration.test.ts` (literal dates handed to the sweep as `now` — never the real clock, #1790) | a card-bound inbound line 15 minutes old with no run → ONE `AgentLiveness` row to EACH rank of the pair and one `system_signals` row; the next sweep sends nothing; a draft written for that anchor → the row is gone and ONE «yana javob beryapti» is sent; with nobody designated the fallback receives it; NO alarm for: a line at 23:30 Tashkent, a line three hours old, a chat whose newest line is ours, a `refused: human_active` run, the setting at 0, the agent off | drop the `raiseSignal` claim (always TRUE) → a second alarm on the next sweep; drop `!quietHour` → the 23:30 line alarms; join the newest run by CHAT instead of by anchor → yesterday's `draft` hides today's silence; skip `clearSignal` → no «yana javob beryapti» and the next fault is never told |
+| integration `agent-toliq-1a.integration.test.ts` | a talk draft is due at once and `pressNow` presses it with no card on screen; a price waits its hold and needs the card; a silent card for hold 0, and the NEXT waiting draft on the same re-pointed card row rings (`silent: false` written); a media-only burst → a system draft → pressed; night: talk goes, `calc` waits, a table price whose card landed silently in the night is pressed after its hold and is not refused `night` at 08:01; the press asks the gate's own warning predicate (a re-run that warns `questions` is pressed, one that warns `staff_name` is refused `auto_warning`); the sample's 👎 by a super_admin while the holder is the seat is taken, by anyone else refused; a hold-0 draft whose press is refused rings (the unsent card loses `silent`, a sent one gets one notice); saving the kinds box with none of the three ticked stores the four ordinary kinds (the CHECK wants ≥ 1) and with «Narx» ticked stores five; «botmisiz?» after a machine reply turns no chat off and disarms nothing, while an `agent_auto_chats` row written for it before the deploy still keeps its chat out until `off_until`; one migration behind (`__pretend…Behind`) nothing throws | store only the ticked kinds → the save is refused by the CHECK; restore the bot-question step-down → the chat goes off; restore the card requirement for hold 0 → the talk press defers; write `silent` only when true → the waiting card stays silent; ask the rang rule by the clock → the 08:01 press is refused; give `decide.ts` its own warning list → the two disagree |
 | fence `agent-note-codes.test.ts` (source-shape, TypeScript's parser, comments stripped) | every writer of a draft note under `agent/` (`notes.push(`, `notes.unshift(`, a `notes:` literal, `cardNotes.push(`) writes a code beside it, and every code is a `NoteCode` (K5 — «a writer with no code is a machine stop» must not rest on a grep somebody remembers to run) | add a note with no code to `run.ts` → named by file and line |
 | integration `site-assign` (extend), `broadcast` (extend), `client-cabinet` managers | mode `all`: cargo → seat, `buying` → roster; each single reason the seat cannot take one → roster; `noManager` audience; a sellerless client sees the seat only with the setting and a fresh verified handle | drop one clause of `seatCandidate` at a time |
-| fences | `tx-pool` (the setting read on the tx), `agent-fences` (purge), `locales` + `i18n-keys` (new keys ×4), `migration-journal`, `tg-listen-agent-wire` | — |
-| e2e | `m9zzzg-ai-sotuvchi`: the three kind boxes, the two hold boxes, «Kim javob beradi» saved and put back as a final TEST (#183), «Kunlik tekshiruv» renders; `m9zz-sayt-taqsimot`: the choice and its truth line; both at 360 px in `ru` | — |
+| unit `agent-customer-safety.test.ts` (K1 — committed BEFORE any rule changes) | each of the 303 is judged through the corpus harness and compared with the committed snapshot `…-walls.ts`: a case the snapshot shows HELD is still held by a reason 1a keeps (never only by `low_confidence`, `category`, `streak`, `warnings:questions`); the «open» list equals the snapshot's and may only shrink; the ten controls stand exactly as snapshotted, in both directions | delete one row of a promise table in `policy.ts` → a held case is named as newly open; flip a control's expectation → named; add a case id to the open list → «the list grew» |
+| reader corpus (extend `agent-reader-corpus.ts`, `-eval.ts`; §6.3) | new readers `language_talk`, `complaint`, `full_truck` with hand-written labels of both kinds; `language()` judged on the admitted truck quote; no existing case changes its expectation; dangerous let through = 0, the ratchet only shrinks | take one word out of `complaint.ts` → a dangerous row goes; relax `language()` back to the `faq` draft → `LANGUAGE_DANGEROUS` rows go |
+| unit `agent-auto-card.test.ts` (extend) + `agent-toliq-1a-settings.test.ts` | a stored `low_confidence` / `streak` / `category` reason still prints its own word (`RETIRED_REFUSAL_WORDS`), `loop` and `complaint` have words in four bundles, a stored `disarm_reason` of the bot question still prints; every key of §3.3 has a validator that refuses its out-of-range values (`agent_liveness_minutes`: 1 and 2 refused, 0 and 3 taken) and an `OWN_DOOR_KEYS` entry, `lead_assign_ai` under the third page value | drop `RETIRED_REFUSAL_WORDS` from `autoRefusalWords` → «sababi noma'lum»; drop a key from `OWN_DOOR_KEYS` → the generic settings form would store it — named |
+| fence `agent-toliq-1a-wire.test.ts` (source-shape, TypeScript's parser, comments stripped) | what 1a removes is DELETED, not hidden: no export named `setAutoMinConfidence`, `agentAutoMinConfidenceAction`, `autoStreak`, `autoStepDownOnBotQuestion` remains and no file calls one; the warning predicate is imported by both `auto-gate.ts` and `decide.ts` and neither holds a list of its own; `withBotAnswer` is called on both run paths before `policyFor`; `pressNow`, the big-cargo call and `sweepUnanswered` each sit in their own try/catch at the place §4 names (`run.ts` after `writeDraft`; `agentSweep`) | re-add a stub export → named; inline a warning list into `decide.ts` → named; move the big-cargo call outside its try → named |
+| fences | `tx-pool` (the setting read on the tx; `designated(` in no transaction body), `agent-fences` (purge of the two new tables; the four new types in `chatCardsWhere` / `NO_CHAT`; `extra.peerId` on the loop notice), `locales` + `i18n-keys` (new keys ×4), `migration-journal`, `tg-listen-agent-wire`, `login-person-fence` (the readers ask `canLogInSql`), `kuzatuv` (`:404` — no file but `diagnostics/signals.ts` writes the signals table or holds its SQL name, comments included) | — |
+| e2e | `m9zzzg-ai-sotuvchi`: the three kind boxes, the two hold boxes, «Kim javob beradi» saved and put back as a final TEST (#183), «Kunlik tekshiruv» renders; `m9zz-sayt-taqsimot`: the choice and its truth line; both at 360 px in `ru`; the home screen draws the liveness row when the signal stands and not otherwise (the row is put in and taken out by the spec itself, as a final TEST). 1a adds NO new spec file — it extends these two; the AI specs of the later stages run in stage order after the directory's last file (`m9zzzj-sotuvchi-yuk` today), and every such name in any plan is a proposal: on the day take the next free prefix and keep stage order (lead ruling of 2026-11-20) | — |
 
 **Only provable on his server** (no Telegram and no model key here): that the model follows rules 8/11/17/18 — the
 first «narxi qancha?» with kub and kg after the deploy must show the offer sentence, and the first «ha» must land a
@@ -555,10 +714,10 @@ job in the VED's queue (he checks «Hisoblash (VED) → Navbat»); a photo-only 
 login's own number — `staff_peer`, §9) must get the system line within ~1-2 minutes; the morning line at 08:40. Watch `docker compose logs app | grep '\[agent\]'`.
 
 ## 8. Order of work
-1. **S0** (any time, first): `scripts/agent-stage0.ts`, `scripts/stt-trial.ts`; send him the chores of §4.0 and the questions of §11.
+1. **S0** (any time, first): `scripts/agent-stage0.ts`, `scripts/stt-trial.ts`; send him the chores of §4.0 and the questions of §11 — question 9 goes only once K1's snapshot exists (its list is the attachment), and P1 waits for his answer to it (§6.3).
 2. **K** — K1 FIRST and alone (the snapshot must be of HEAD's rules), then K2-K6. Gates after K: `pnpm typecheck`, `pnpm lint`, the three corpora. For those gates to be green the kernel commit carries three things no K row names: (a) K6 changes a type two of P1's functions build and read, so K re-shapes `autoFactsFor`'s return (codes from the stored policy, `systemAck` from `policy.system`, `loop: false`, `complaint: false`, `nightPrices` from the setting) and the lines of `autoVerdict` that read the changed fields — BEHAVIOUR-NEUTRAL: `warningCodes.length > 0`, `noteCodes === null || noteCodes.length > 0`, `streak` and `minConfidence` untouched; the relaxations are P1's diff, where their tests are; (b) every literal `AutoGateInput` in `tests/` is re-shaped in K (§6.3's list), and the corpus eval's `pressedReasons` passes the warning CODES; (c) ALL new i18n keys ×4 and the settings rows of §3.3 land in K (K3), with every package's page strings — five packages adding keys to the same four JSON files is five certain cherry-pick conflicts.
 3. Worktrees off K, in parallel (4 CPUs = two at a time): **P1** → **P2** → **P3** → **P4**; **P5** any time after K. Name the base commit to every agent (a worktree starts at the last merge); keep `.claude/worktrees` out of `eslint .`.
-4. Cherry-pick in that order. `run.ts` is touched by K (note codes), P2 (`eligibilityFacts`), P3 (the worthy branch, `withBotAnswer`) and P4 (one call after `writeDraft`) — four regions; `auto-send.ts` is P1's (K's neutral re-shape of `autoFactsFor`, P2's one line for `loop`, P3's for `complaint` and the deleted call at `run.ts:484` are the only other hands in it); `drafts.ts` is touched by K (the codes), P1 (`silent`), P3 (`NOTICE_WORDS`) and P4 (the cap notice's words); `suhbatlar/ai/page.tsx`, `agent-ui.tsx` and `web-actions.ts` by P1, P3, P4 and P5 — give each its own section component and its own action, never a shared block. **P1 and P2 are ONE deploy, never two** (contract §4, binding): P1 deletes `streak` and P2 deletes `repeat` and builds the loop detector — a branch that carries P1 without P2 has no rule at all against a robot-to-robot chat, so the PR is not opened until both are picked and `agent-loop.test.ts` is green on the merged tree.
+4. Cherry-pick in that order. `run.ts` is touched by K (note codes), P2 (`eligibilityFacts`), P3 (the worthy branch, `withBotAnswer`) and P4 (one call after `writeDraft`) — four regions; `auto-send.ts` is P1's (K's neutral re-shape of `autoFactsFor`, P2's one line for `loop`, P3's for `complaint` and the deleted call at `run.ts:484` are the only other hands in it); `drafts.ts` is touched by K (the codes), P1 (`silent`), P3 (`NOTICE_WORDS`) and P4 (the cap notice's words); `jobs.ts` by P4 alone (two schedules and the sweep's step 3b — the liveness alarm, which ships in the SAME deploy as P1: it is the condition for taking the hold off talk; P1's `pressNow` lives in `auto-send.ts` and the sweep's step 7 is not edited); `platform/diagnostics/signals.ts` and `components/system-signals.tsx` by P4 alone; `suhbatlar/ai/page.tsx`, `agent-ui.tsx` and `web-actions.ts` by P1, P3, P4 and P5 — give each its own section component and its own action, never a shared block. **P1 and P2 are ONE deploy, never two** (contract §4, binding): P1 deletes `streak` and P2 deletes `repeat` and builds the loop detector — a branch that carries P1 without P2 has no rule at all against a robot-to-robot chat, so the PR is not opened until both are picked and `agent-loop-detector.test.ts` is green on the merged tree.
 5. Review as built (gate / customer-safety / regression lenses, a refuter per finding), fix, then the house ritual in CI's order on a fresh database: seed once → vitest → build with the 3 GB heap → Playwright without re-seeding; `fuser -k 3000/tcp` first; `DATABASE_URL` set for every local vitest run. **The corpus rule (#1783, contract §4) in this stage's own files:** run the whole reader corpus (`tests/unit/agent-reader-corpus.test.ts`) and the 303 BEFORE the first edit and after the last of every file on the house list that 1a touches — `auto-gate.ts` (P1), `run.ts` (the avia rule lives in it; K, P2, P3 and P4 edit other regions of the same file), `lessons.ts` and `owner-answer.ts` (P3's «rahbar»), plus the files the gate's readers stand on: `policy.ts`, `policy-input.ts` (P3's constants and the persona exemption) — and before a line of the three NEW free-text readers is written (`complaint.ts`, `saysFullTruck`, `loop.ts`), whose both-kinds cases go into the corpus in the same commit. «Dangerous let through» reads 0 every time, the ratchet only shrinks, and a relaxation that needs a label changed is a question to him, not an edit (`locale.ts`, `digits.ts`, `numbers.ts`, `auto-money.ts`, `destination.ts` are not edited by 1a at all — if a diff shows one, stop).
 6. `git fetch origin main` before the last gate; renumber the migration and the DECISIONS entries to the tails you find.
 
@@ -582,13 +741,19 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
   notifications/mutes.ts` and `night.ts` (K4; reached through `outbox-store` → `crm/account-alarm` →
   `notifications/service`, so the listener has always loaded the notifications service), `platform/settings/service.ts`
   (K3), `platform/db/schema/agent.ts` (K2), `wms/crm/site-assign.ts` (P5 — a DIRECT import of the script: «Hajm»
-  shipped on its own later is a listener rebuild too) and `wms/client-cabinet/service.ts` (P5). By DYNAMIC import the
+  shipped on its own later is a listener rebuild too) and `wms/client-cabinet/service.ts` (P5). Confirmed by the
+  second pass against the script's own import lines (`scripts/tg-listen.ts:3` `settings/service`, `:76`
+  `crm/site-assign`, `:104-153` the nine agent modules named above), and one more since the liveness alarm:
+  `platform/diagnostics/signals.ts` (P4's `raiseSignal` / `clearSignal`) is in the closure too —
+  `notifications/service.ts:19` imports `botRefused` from it. The listener calls neither new function; the step is
+  unchanged — rebuild it. By DYNAMIC import the
   listener can load 63 of the agent module's files — `auto-send`, `auto-gate`, `auto-card`, `decide`, `drafts`,
   `card-io` among them (`settle-hooks` → `card-io`): the card it redraws after a send prints `AUTO_REFUSAL_WORDS`,
   so an old listener would print «sababi noma'lum» for `loop` / `complaint`. One more reason, not a new step.
 - He touches, in order: «Kim javob beradi» (himself and his deputy under «Rahbar va o'rinbosar», whoever hears «Katta yuk»);
   «AI ismi»; the two hold boxes and the night choice if he wants other than the defaults. NOTHING is flipped for him:
-  the three kind ticks are his from stage 0, and the four ordinary ones simply leave the page.
+  the kind ticks are his from stage 0 («Narx» and «Hisoblatish»; «VED narxi» only after his markup answer, §4.0),
+  and the four ordinary ones simply leave the page.
 - **Day one is on staff phones first (contract §5.7 — this stage changes what the AI says AND removes the ⏸ from
   talk).** «Staff phones» needs one correction from the code: a chat whose number is a login's `users.phone` is
   refused `staff_peer` before any draft (`run.ts:344-363`, `eligibility.ts:73`) — a colleague's own work number
@@ -601,8 +766,14 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
   tg-listen log for the four sends. Offer him, as his choice (11 a stands either way): the talk hold at 120 for
   this first day, 0 from the first morning line. If the offer sentence or the «ha» → job does not appear, say so —
   it is a prompt rule nothing here could run (§10).
-- First morning: at 08:40 the line of §4.5; during the day silent cards for what went alone, ringing ones for what
-  waits; at 20:10 «Bugungi tekshiruv». «Hajm» stays `off` until he flips it.
+- First morning: at 08:40 the line of §4.5 — read it WITH him, number by number: «N javobdan M tasi o'zi ketdi»
+  (the stage's whole claim; compare M with stage 0's `verdicts` forecast), «K tasi sizni kutdi» and each reason's
+  word (a reason he does not recognise is a wording bug — fix the word, not the rule), «Javobsiz» (anything above 0
+  is opened chat by chat that morning), a cap named (tell him which box to raise, §4.6), «halqa» (open that chat
+  with him). During the day silent cards for what went alone, ringing ones for what waits; at 20:10 «Bugungi
+  tekshiruv». Tell him the day before what «⚠️ AI sotuvchi javob bermayapti» means (customers
+  have waited more than 10 minutes in working hours — the number is his box), that it comes once per fault with a
+  «yana javob beryapti» after it, and that the same red line stands on the home screen if the staff bot itself is down. «Hajm» stays `off` until he flips it.
 - Rollback: revert the code. The three tables and the settings rows are ignored by the old code; stored reasons
   `loop` / `complaint` print «sababi noma'lum» there; nothing is one-way. One thing to look at after a rollback:
   under 1a every save of the kinds box stores all four ordinary kinds (§4.2), so if he had unticked one before 1a
@@ -618,11 +789,17 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
   the token refused, no token, or a pending backlog older than 15 minutes) draws a red line in
   `components/system-signals.tsx` for holders of `admin.audit.browse` and on `/admin/notifications`, «never sent
   through the bot — the bot is the thing that died». So with the staff bot dead, talk keeps going, the cards, the
-  morning line and the sample all queue behind the same dead bot, and the only sign is that line on a screen. Promise
-  him no alarm. `critic-guard.md` §D.1 made «the liveness alarm exists the same day» the condition for taking the
-  card and the hold off talk; 1a does not build one (below) — the lead's decision, reported, not hidden.
+  morning line and the sample all queue behind the same dead bot, and the only sign is that line on a screen.
+  `critic-guard.md` §D.1 made «the liveness alarm exists the same day» the condition for taking the card and the
+  hold off talk, and by the lead's ruling of 2026-11-20 1a BUILDS one (§4.5). Say to him exactly what it is: it
+  tells the pair when customers wait unanswered in working hours (a dead worker, a stuck queue, a paused account, a
+  listener that fell behind, a cap, a model error) and it draws a red row on the home screen. It does NOT cover the
+  critic's own parenthesis — «a dead staff bot = nobody can stop it»: with the staff bot dead the AI keeps
+  answering, its Telegram alarm rides the same dead bot, and what he has is the two red rows (the bot's and, if
+  customers also wait, the liveness one) and the page's own off switch. Whether a dead staff bot should also
+  DISARM talk is not ruled — the lead's, reported, not hidden.
 - **Relaxed talk language sends some replies in the wrong one of uz / uz_cyrl / ru** (#1786's shapes without a price).
-  It is the decision of §8; the sample shows them. Money messages are as strict as today.
+  It is the decision of design §8 («Decided without a question»); the sample shows them. Money messages are as strict as today.
 - A system line is the same text to many chats: short and figure-free it is G10's WARNING, not its block
   (`sameTextWarnChars`), and `fingerprint` is not eye-only — past three other chats in 24 h the next photo-only
   customer gets a card, not the line. Deliberate (ban-6); three wordings soften it; the morning line counts it.
@@ -654,6 +831,11 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
 6. **Sotuvchisi yo'q mijozlarga xabar matni** (§4.7) — shu matn ketadimi, va unda «AI yordamchi» deb yozilsinmi: ⭐ a) faqat ism bilan (so'rasa, o'zi aytadi) · b) ochiq yoziladi.
 7. **Kirillcha, tili ko'rinmagan birinchi xabar** («5 куб 800 кг»): ⭐ a) bugungidek bitta ✅ingizni kutadi · b) ruscha javob o'zi ketadi.
 8. **Fors va xitoy tilidagi tayyor matnlar** — o'qiy olmaysiz: ⭐ a) o'zbekcha tarjimasini ko'rib bir marta tasdiqlaysiz · b) bu ikki tilda tayyor matn ketmaydi, sizga karta keladi.
+9. **Oddiy javob ichida va'da chiqib qolsa** (1a ning «To'siq» qismi qo'shilishidan OLDIN so'raladi; ro'yxatning o'zi bilan birga yuboriladi). Tekshiruvchilar ataylab yozgan 303 ta xavfli javobdan 244 tasini qoidalar ushlaydi; 55 tasini hech qaysi qoida ushlamaydi. Ular: qarzga berish va'dasi — 20 ta («oy oxirida hisob-kitob qilamiz») · chegirma — 10 ta («sizga narxda yon beramiz») · bepul xizmat — 4 ta («qadoqlash bizning hisobimizdan») · bojxona va'dasi — 4 ta («bojxona to'lovlarini o'zimiz yopamiz») · muddat va jo'natish kuni — 5 ta · kafolat va zararni qoplash — 2 ta («hech narsa yo'qolmaydi») · «yukingiz yetib keldi» degan da'vo — 2 ta · narx raqamsiz yoki ro'yxat ko'rinishida aytilgani — 8 ta. Bular sinov uchun yozilgan gaplar: AI ularni yozgani ko'rilmagan va ko'rsatmalari buni taqiqlaydi. Lekin bugun bunday javob sizning 2 daqiqangizni kutardi; 1a dan keyin u «oddiy javob» bo'lib darhol ketadi. Qaysi biri:
+   ⭐ a) o'zingiz aytgandek — oddiy javob darhol ketadi, har kechki 10 ta tekshiruv to'r bo'ladi. *Narxi:* AI shunday gap yozsa, mijoz uni siz ko'rmasdan oladi; kechqurun ko'rishingiz mumkin, lekin gap aytilgan bo'ladi. Istagan kuni sahifadagi «Oddiy javob kutishi» katagiga 120 yozib b) ga o'zingiz o'tasiz.
+   b) ⚠ oddiy javoblar ham 3b-bosqichgacha 2 daqiqa kutadi (11-javobingiz «oddiy gap darhol ketadi» edi — bu uni vaqtincha o'zgartiradi). *Narxi:* har bir javob mijozga 2 daqiqa kech boradi, har biriga telefoningiz jiringlaydi, va to'xtatish uchun kartani shu 2 daqiqa ichida o'qishingiz kerak — tunda buni hech kim qilmaydi.
+   c) avval shu gaplar qoidalarga qo'shiladi, 1a undan keyin chiqadi. *Narxi:* 1a bir necha kunga kechikadi; faqat ro'yxatdagi gaplar ushlanadi (boshqacha aytilgan va'da baribir o'tadi); va ba'zi oddiy javoblar ham sizning ✅ingizni kutib qoladi — nechtaligini oldindan o'lchab ko'rsatamiz.
+   *(For the builder: the counts above are the dry run's — replace them with K1's own before sending; attach the 55 as text, three per class in the message and the rest in a file. What is built under each letter: §4.1 «K1, as measured». In `qurish/COVERAGE.md` §E this question belongs to the group «1a dan oldin» and to the first message.)*
 
 ## Verified references
 
@@ -719,7 +901,7 @@ Checked against design §11 (his answers), the contract's §4 and the other six 
 2. **§3.2 — the registry's whole future is written down.** The list of later topics named 3a's eight only; stages 5,
    6 and 7 add six more (`big_customer`, `handover_seller`, `payment_claims`, `debt_request`, `seat_phone`,
    `reserve_phone`). One table from 1a, extended by registry keys — no later plan may create a second «who» table.
-3. **§3.2, §4.5, §7 — §11.2 applied to the fallback itself.** The last fallback and the lead-sight rule were written
+3. **§3.2, §4.5, §7 — design §11.2 applied to the fallback itself.** The last fallback and the lead-sight rule were written
    as «the `super_admin` ROLE»: a role key the builder would have typed into new source. They now CALL the existing
    reader / predicate (one exported `agentAlarmRecipients`, extracted from the line that already holds the literal),
    and the designation test gained a source-shape clause: no role key, uuid or name in the five new files or the
@@ -808,3 +990,140 @@ contract's §4 «From the critics». The fallback chain against readers that exi
 rulings R2, R3, R8 and R9 of the same day into the plan. Written step by step — each numbered block below was
 appended when its step ended, so a cut-off loses at most one step. No suite, no build, no database; source was
 read with grep / Read only.
+
+**Step 1 — integrity (done).** Checked by script and by eye: sections 0-11 stand in order, then «Verified
+references», «Conformance», the two dry runs; all 13 tables carry the same number of cells in every row (escaped
+pipes counted as text); K1-K6 and P1-P5 are numbered without holes and §8 names S0, K and every package (§4.6 is
+P4's by its own heading); the numbered lists (chores 1-10, §8 1-6, §11 1-8) have no hole. Fixed:
+- Seven references read as THIS file's sections but meant the design's: «§11.2» (§2, the §3.2 heading, the
+  fallback paragraph, §7's designation row, «Conformance» 3), «§6's out of pay» (§2), «§8 decided without a
+  question» (§2, §10) → each now says «design §…». This file has a §11 but no §11.2, and its §8 is the order of work.
+- K6's «§8.4» → «§8 step 4» (there is no §8.4 heading).
+- §6.1's last bullet ended without its full stop.
+Left as it stands: §4.0 (c) names two speech providers — they are his own list in design §11 (answer 13), not a
+model identifier.
+
+**Step 2 — rulings R2, R3, R9 written in (done).** Code opened for each: `platform/notifications/service.ts:86`
+(`usersWithRoles` selects on `db`, no handle), `agent/run.ts:366-391` (the repeat fact), `agent/eligibility.ts:64-87`,
+`agent/policy.ts:2718-2732` (`textFingerprint`), `agent/jobs.ts:367-570` (the sweep's steps),
+`platform/diagnostics/signals.ts`, `components/system-signals.tsx`, `wms/crm/listener-quiet.ts`,
+`platform/telegram/send.ts:121` (`quietHour`), migration 0115's `system_signals`.
+- **R2** — §3.2 now mints `designated(topic)` (signals and alarms, fallback chain, no handle, never inside a
+  transaction) and `designatedRows(topic, handle)` (the topic's own rows with rank, no fallback, `[]` when empty,
+  for doors and the seat's mail), names 1a's callers of each, and says an empty table never widens a door. §3.1's
+  probe line, K4, §5 and §7's designation row follow. The old signature `designated(topic, handle?)` is gone: its
+  last fallback reads the pool, so a handle on it promised something it could not keep.
+- **R3** — §4.3 quotes today's line (`run.ts:389`) and keeps its `trim() !== ''` half; cases and red proofs added to
+  §7; the unit file is `agent-loop-detector.test.ts` in §7 and §8 (no other spelling is left).
+  **Found while opening the fold (changed in place — the lead should know):** the plan compared inbound lines by
+  `textFingerprint`, which folds every number to `#`. «5 kub narxi?» / «7 kub narxi?» / «10 kub narxi?» would have
+  been ONE line three times → `loop` on the third, with a «suhbat aylanib qoldi» notice — in a price chat. §4.3 now
+  uses today's own fold (`loopFold`: trim, lower case, white space) for `same_inbound` and `own_repeat`, with a
+  case and a red proof.
+- **R9, liveness** — §4.5 gained the bullet «Liveness alarm» (five numbered parts): step 3b of `agentSweep`
+  (`agent/jobs.ts:367`, beside the deploy-gap step `:445`), pure `livenessOf` over the anchor's run row with an
+  exhaustive map over `Ineligible`, the once-per-fault claim on 0115's `system_signals` through a new
+  `raiseSignal` / `clearSignal` pair in `platform/diagnostics/signals.ts` (no migration — the key is free text),
+  the line to `designated('supervisor')`, a red row in `SystemSignals`, setting `agent_liveness_minutes` (§3.3,
+  default 10, door `mayTuneAuto`), a fourth notification type `AgentLiveness` (K4), two test rows with red proofs
+  (§7), and §1 / §5 / §8 / §9 / §10 say it. §10 no longer says «promise him no alarm».
+- **R9, the chore** — §4.0 chores 1-2 now ask for TWO ticks («Narx», «Hisoblatish») and say in his words that «VED
+  narxi» waits for his markup answer and that until then a VED price comes as a card; §9 follows.
+- Left open by this step: the alarm rides the staff bot, so the critic's own case (a dead staff bot) is covered
+  only by the screen row — whether a dead bot should disarm talk is not ruled (§10). `sweepQuietListeners` still
+  tells the account's manager and the admin-rank logins, not the designated pair: a deputy who is not an admin
+  does not hear «ko'prik jim». The default of 10 minutes is this pass's choice, not his.
+
+**Step 3 — R8, the 55 (done).** §4.1 «K1, as measured» gained one bullet with the three choices as A / B / C, one
+sentence each, and under each what is BUILT: A — P1 as written; B — the same code, ONE default (`agent_talk_hold_sec`
+ships 120; the card then rings and the sweep presses, by §4.2's own rules) and a line owed to stage 3b's deploy list;
+C — a package «So'z» before P1 (the 55 into the reader corpus, a WARNING before any new block, both corpora first and
+last), with §2's «changes no check» carrying that one exception. **The ⭐ is A**, and the reason is written there: it
+is his answer 11 a, and B is one box on his own page, so A is the only choice he can leave by himself. §6.3's
+paragraph now names the same three letters, fixes the ORDER (K and S0 may go; P1 is not cherry-picked until he has
+answered — silence is not an answer), and says the list is taken from K1's snapshot. §3.3's hold row and §8 step 1
+follow. **§11 gained question 9** (the existing 1-8 keep their numbers): Uzbek, the classes in plain words (qarzga
+berish va'dasi, chegirma, bepul xizmat, bojxona va'dasi, muddat va jo'natish kuni, kafolat, «yetib keldi» degan
+da'vo, raqamsiz aytilgan narx), ⭐ a, ⚠ on b, and one «Narxi:» line per choice.
+- Not mine to edit: `COVERAGE.md` §E «1a dan oldin» and §F (the first message) do not carry this question yet.
+- The counts in question 9 (20 / 10 / 4 / 4 / 5 / 2 / 2 / 8 = 55) are the first dry run's measurement, which this
+  pass could not re-run (no scratch script was kept); the builder's note under the question says to replace them
+  with K1's own.
+- «Oddiy javob kutishi» is this pass's proposal for the label of the talk-hold box; P1 names the box.
+
+**Step 4 — deploy §9 and tests §7 (done).**
+§9 against the five things a deploy list must say:
+(a) a verified non-zero backup first — yes (first bullet; the house's `docs/UPDATE.md` order);
+(b) which images are rebuilt — yes: `migrate` built first, then the stack, then `tg-listen`. The listener's
+closure was confirmed against the script's own import lines (`scripts/tg-listen.ts:3`, `:76`, `:104-153`): the nine
+agent modules stand as listed; **one file added** — `platform/diagnostics/signals.ts` (the liveness pair) is in
+the closure through `notifications/service.ts:19`. The step does not change (rebuild);
+(c) the ledger count read off the journal on the day — yes, no number is carried; the liveness alarm adds no
+migration (the signals table is 0115's);
+(d) `/api/version` — yes;
+(e) day one on phones no login holds, and the morning line — the first was there; **added**: the first morning
+line is read WITH him number by number (what each number means and which one is a bad sign), and he is told the
+day before what the liveness line means.
+
+§7 against every NEW rule of §4 — rule → the test that holds it (✚ = written into §7 by this pass):
+
+| New rule (§) | Test in §7, with a red proof |
+|---|---|
+| K1: none of the 303 newly goes; the open list only shrinks; controls unmoved | ✚ `agent-customer-safety.test.ts` |
+| K2: one migration behind, nothing throws | `agent-toliq-1a.integration` (`__pretend…Behind`), `agent-loop-detector` integration case, ✚ big-cargo / sample cases; `migration-journal` |
+| K3: each key validated, own-door, four descriptions | ✚ `agent-toliq-1a-settings.test.ts`; `locales` |
+| K4: four unmutable types, purge / no-chat, `peerId` on notices | fences row (`agent-fences`), ✚ spelled out |
+| K5: every note writer writes a code; a codeless stored draft stops | `agent-note-codes.test.ts`; gate test |
+| K6: `autoClassOf` fails closed; retired words still print | gate test; ✚ `agent-auto-card.test.ts` (extend) |
+| §3.2: two readers; fallback never empty; rows never fall back; no role key in the new files | `agent-designations.test.ts` + integration (✚ the `designatedRows` half) |
+| P1: confidence, streak, category gone; warnings / notes typed; one warning predicate in two places | gate test (✚ fifth reply in a row); integration («the two disagree»); ✚ `agent-toliq-1a-wire.test.ts` (deleted, not hidden) |
+| P1: talk language relaxed, money language unchanged | gate test (✚ said row by row); ✚ corpus reader `language_talk` |
+| P1: hold by class, `pressNow`, the rang rule by class, `silent` on every write, a refused hold-0 press rings | `agent-toliq-1a.integration` |
+| P1: the kinds box always stores the four; the bot-question step-down is gone, its stored rows keep working | ✚ `agent-toliq-1a.integration` (two cases) |
+| P1: 👎 door widened | `agent-toliq-1a.integration` |
+| P2: `same_inbound` (second repeat, text-less guard, digits kept), `fast_peer`, `own_repeat`, one notice per bucket | `agent-loop-detector.test.ts` + integration (✚ guard and digit cases) |
+| P3: system lines pass the policy in six languages; once per silence; the second burst still tells him | `agent-system-reply.test.ts` (✚ second burst, category, run row) |
+| P3: the honest line; a bare «botmisiz?» is answered; persona from a setting; 18 sites say one word; persona vs `staff_name` | `agent-persona.test.ts` |
+| P3: the offer sentence passes G11; rules 8 / 11 / 17 / 18 are in the head, the sentence interpolated once | `agent-customs-offer.test.ts` (✚ the prompt half) |
+| P3: complaint tripwire | gate test; ✚ corpus reader `complaint` |
+| P4: big cargo — threshold, words, one per chat per week, text per recipient | `agent-big-cargo.test.ts` (✚ the refused recipient; «tayyorladi»); ✚ corpus reader `full_truck` |
+| P4: morning line — counts add up, first reason, caps named | `agent-morning.test.ts` (✚ caps and the §4.6 words) |
+| P4: sample — pick order, cadence, marks | `agent-sample.test.ts` (✚ the Friday rule) |
+| P4: liveness alarm — verdict, once per fault, taken back, working hours, by anchor | ✚ `agent-liveness.test.ts`, ✚ `agent-liveness.integration.test.ts` |
+| P5: seat candidate, `noManager`, the sellerless client's contact | `site-assign` / `broadcast` / `client-cabinet` (extend) |
+
+Not testable here and said so in §7: that the model follows rules 8 / 11 / 17 / 18 (his server, day one).
+Found on the way: the `kuzatuv` fence (`tests/unit/kuzatuv.test.ts:404`) reads `src/` as raw text and refuses the
+signals table's SQL name in any other file — written into §4.5 item 3, with a reader `signalStanding` added to the
+same file for the dashboard row.
+
+**Step 5 — §4 read once more as the builder (done).** Every step was asked «which file, which function»; where the
+plan did not say, the code was opened and the name written in:
+- P1's table: a sentence on how to read a bare `:N`; `pressNow` is exported from `auto-send.ts` beside
+  `pressDueAutos` and has TWO call sites (`run.ts:569` in `handleInbound`, `:2006` on the owner-triggered path).
+- P2: the reader is named (`loopFactsFor` in `loop.ts`), with what it reads («our machine sends» = `agent_outbox`
+  rows `status = 'sent'`, by `sent_at` and `body`), who calls it (`eligibilityFacts` `run.ts:301`, `autoFactsFor`
+  `auto-send.ts:321`) and which line of `eligibleForRun` it replaces (`eligibility.ts:86`).
+- P3: where the `complaint` fact is computed (`autoFactsFor`, over the stored inbound lines, so the press re-asks it).
+- P4: the two schedules are registered in `registerAgentWorkers` (`jobs.ts:91`) with queue names in `queues.ts`.
+- §4.6: the three places the word «byudjet» lives (`drafts.ts:553`, `agentAi.numTokensHint`, `agentAi.todayTokens`).
+- P5: `seatCandidate` gets a home (`agent/seat-candidate.ts`, light imports — it joins the listener's closure
+  through `site-assign.ts`).
+Not changed: K1-K6 and the system-reply bullet already named file and function for every edit.
+
+**Still open after both dry runs — for the lead.** (1) The 55: question 9 here is ready; `COVERAGE.md` §E «1a dan
+oldin» and the first message (§F) must carry it, and P1 waits for his answer. (2) «Ha» → the job's section is this
+plan's own choice (`podklyuch`, rule 11): his 2 a names no section — one line to him, or it is watched on the first
+live job. (3) The liveness alarm tells; it stops nothing, and with the staff bot dead only the screen rows speak —
+whether a dead staff bot should disarm talk is not ruled. (4) Needing his server, unchanged: outbound reach to the
+speech providers; whose phone holds the seat's staff chat (the designated pair now gets the morning line, the
+sample and the alarm whatever that phone is — but cards still go to the holder); the offer sentence in the four
+languages not yet written. (5) Two numbers are this pass's, not his: 10 minutes for the alarm, and «3 or more»
+as the box's lower bound. (6) `sweepQuietListeners` (the listener itself is down) still tells the account's
+manager and the admin-rank logins — a deputy who is not one of them does not hear it.
+
+**Closing check of this pass.** After the last edit: the 13 tables of the plan and the one of this section still
+carry equal cells per row; no `agent-loop.test.ts` spelling is left; no model identifier, no person's name, no
+literal number for the new migration and no dollar ceiling was written; §7's e2e row says once that 1a adds no
+spec file and that later spec names are proposals. Nothing under `src/`, `tests/`, `scripts/` or `messages/` was
+touched, nothing was run but `grep` / `Read` and two scratch scripts over this file's own text.
