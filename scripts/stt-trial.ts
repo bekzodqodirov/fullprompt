@@ -20,8 +20,8 @@ import { getStorage } from '../src/modules/platform/files/storage';
  * PRODUCTION SERVER — reachability from there (a German address) is one of the
  * things the trial tests, so a laptop in Tashkent proves nothing:
  *
- *   mkdir -p stt          # the lead's ids.json goes in here
- *   docker compose run --rm -v "$PWD/stt:/stt" migrate \
+ *   mkdir -p .data/stt    # the lead's ids.json goes in here
+ *   docker compose run --rm -v "$PWD/.data/stt:/stt" migrate \
  *     pnpm exec tsx scripts/stt-trial.ts --ids /stt/ids.json --provider elevenlabs --out /stt/elevenlabs.json
  *   …  --provider openai --out /stt/openai.json
  *   …  --provider uz     --out /stt/uz.json
@@ -30,7 +30,9 @@ import { getStorage } from '../src/modules/platform/files/storage';
  * The `-v` is not decoration: `migrate` mounts nothing and `--rm` throws the
  * container away with every file it wrote, so the ids must come in and the
  * results must go out through a folder of the host (docs/SAKKIZ-R5.md's
- * precedent). `migrate` has `.env`, the storage and `tsx`; never a
+ * precedent) — under `.data/`, which is gitignored and already holds the
+ * server's own data, so customers' transcripts never sit untracked in the
+ * checkout. `migrate` has `.env`, the storage and `tsx`; never a
  * package.json command (#1228).
  *
  * READ-ONLY. The attachment rows are read in ONE transaction opened READ ONLY
@@ -41,10 +43,12 @@ import { getStorage } from '../src/modules/platform/files/storage';
  * the mounted folder, never the database or the object store.
  *
  * WHAT LEAVES, and nothing else: an INCOMING customer voice note — a
- * `tg_message` attachment, `audio/*`, on a message whose direction is 'in' and
- * that the customer has not deleted. His permission (16.1) is for customers'
- * voice notes; a photo id pasted by mistake, a call recording or our own side's
- * note is refused by name and never sent. Every provider gets the SAME bytes,
+ * `tg_message` attachment, `audio/*`, named `voice_<msgId>.<ext>` (the name the
+ * listener gives a voice note and nothing else), on a message whose direction
+ * is 'in' and that the customer has not deleted. His permission (16.1) is for
+ * customers' voice notes; a photo id pasted by mistake, an audio FILE the
+ * customer sent (a forwarded call recording, an mp3), a call recording or our
+ * own side's note is refused by name and never sent. Every provider gets the SAME bytes,
  * untranscoded (the image has no ffmpeg, critic §2); the one change is the NAME
  * — Telegram stores `voice_<id>.oga` and OpenAI decides the format by the
  * extension and lists `.ogg`, not `.oga` [critic §2, m], so the file goes as
@@ -117,6 +121,17 @@ const MAX_IDS = 100;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
+/**
+ * A voice note's stored name, and only a voice note's: it carries no filename
+ * attribute, so `tgMediaPlan` (crm/telegram-import.ts) names it
+ * `voice_<msgId>.<ext>`, while an audio FILE keeps its sender's own name or
+ * becomes `audio_<msgId>.<ext>`. The kind is not stored, so this name is the one
+ * line between his permission (customers' voice notes) and a forwarded call
+ * recording or an mp3 under the same `audio/*` — the same thing `mediaOf`
+ * (agent/context.ts) reads it by.
+ */
+const VOICE_NOTE_NAME = /^voice_\d+\.[a-z0-9]+$/iu;
+
 type ProviderName = 'elevenlabs' | 'openai' | 'uz';
 type Lang = 'auto' | 'uz' | 'ru';
 
@@ -172,13 +187,50 @@ function redactKeys(s: string): string {
 }
 
 /**
+ * STT_UZ_URL as a secret: whole (as typed and as normalised) and by each query
+ * value — a service may take its token as `?key=…` under any name, and an error
+ * text (undici's among them) may quote the address it was given. Longest first,
+ * so the whole address goes before its pieces.
+ */
+function urlSecrets(): { whole: string[]; parts: string[] } {
+  const raw = process.env.STT_UZ_URL?.trim();
+  if (!raw) return { whole: [], parts: [] };
+  const whole = [raw];
+  const parts: string[] = [];
+  try {
+    const u = new URL(raw);
+    whole.push(u.href);
+    if (u.search.length > 1) parts.push(u.search.slice(1));
+    for (const piece of u.search.slice(1).split('&')) {
+      // No «=» → indexOf is −1 and the whole piece is the value: a bare `?<token>`.
+      const v = piece.slice(piece.indexOf('=') + 1);
+      parts.push(v);
+      try {
+        parts.push(decodeURIComponent(v.replace(/\+/gu, ' ')));
+      } catch {
+        // a malformed escape — the raw form above is the one an error would quote
+      }
+    }
+  } catch {
+    // not a URL — buildProvider refuses it before anything is read or sent
+  }
+  const byLength = (list: string[]) => [...new Set(list.filter((v) => v.length >= 6))].sort((a, b) => b.length - a.length);
+  return { whole: byLength(whole), parts: byLength(parts) };
+}
+
+/**
  * Every text this script prints or writes about a FAILURE passes here: the exact
- * keys, then the shapes a key takes in somebody else's error text. A transcript
- * gets the exact keys only — it is the thing being measured, and a pattern must
- * not rewrite what a customer said.
+ * keys and STT_UZ_URL's secrets, then the shapes a key takes in somebody else's
+ * error text. A transcript gets the exact keys only — it is the thing being
+ * measured, and neither a pattern nor a query value that happens to be a word
+ * may rewrite what a customer said.
  */
 function redact(s: string): string {
-  return redactKeys(s)
+  let out = redactKeys(s);
+  const { whole, parts } = urlSecrets();
+  for (const v of whole) out = out.split(v).join('[STT_UZ_URL]');
+  for (const v of parts) out = out.split(v).join('[…]');
+  return out
     .replace(/\bsk-[A-Za-z0-9_-]{6,}/gu, 'sk-[…]')
     .replace(/\b(Bearer|Token|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/giu, '$1 […]')
     .replace(/((?:api[_-]?key|xi-api-key|x-api-key|token|secret)["']?\s*[:=]\s*["']?)[^\s"',}]{6,}/giu, '$1[…]');
@@ -303,6 +355,14 @@ function buildProvider(name: ProviderName, model: string | null): Built {
     url = new URL(rawUrl);
   } catch {
     return { ok: false, message: 'STT_UZ_URL is not a URL (its value is not printed — it may carry a token).' };
+  }
+  // fetch refuses an address with credentials and quotes it WHOLE in its refusal — a password printed and
+  // written to --out. The secret has its own two variables; the address carries none.
+  if (url.username || url.password) {
+    return {
+      ok: false,
+      message: 'STT_UZ_URL carries a user or password — put the secret in STT_UZ_KEY (and its header in STT_UZ_HEADER); nothing was read or sent.',
+    };
   }
   const loopback = url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]';
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
@@ -478,6 +538,8 @@ interface NoteResult {
   ms: number | null;
   /** HTTP status; null = no answer (network, timeout) or never sent. */
   status: number | null;
+  /** No answer within REQUEST_MS — counted apart, so a dropped long note is not a fast one. */
+  timedOut: boolean;
   ok: boolean;
   /** «» is an answer: silence and noise SHOULD come back empty (M6). */
   text: string | null;
@@ -499,26 +561,55 @@ async function send(provider: Provider, bytes: Buffer, contentType: string, file
       headers: provider.headers,
       body: provider.form(file, fileName, lang),
       signal: controller.signal,
+      // Never followed: across origins fetch drops only Authorization, so `xi-api-key` / STT_UZ_HEADER and the
+      // note itself would be re-sent to whatever host the answer names — and an https → http hop would undo the
+      // clear-text fence above. A redirect is reported as the failure it is.
+      redirect: 'manual',
     });
     const raw = await res.text();
     const ms = Math.round(performance.now() - t0);
-    if (!res.ok) return { ms, status: res.status, heard: null, error: errorOf(raw) };
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      let where = '(no Location)';
+      if (location) {
+        try {
+          where = shownUrl(new URL(location, provider.url));
+        } catch {
+          where = '(an unreadable Location)';
+        }
+      }
+      return {
+        ms,
+        status: res.status,
+        heard: null,
+        timedOut: false,
+        error: redact(`redirected to ${where} — not followed (the key and the note would go along); if that is the service's own address, its endpoint has moved`),
+      };
+    }
+    if (!res.ok) return { ms, status: res.status, heard: null, timedOut: false, error: errorOf(raw) };
     let answer: unknown = raw;
     try {
       answer = JSON.parse(raw);
     } catch {
       // A plain-text answer is the transcript itself when the service says it is text.
       if (/^text\/plain\b/iu.test(res.headers.get('content-type') ?? '')) {
-        return { ms, status: res.status, heard: { text: redactKeys(raw.trim()), language: null }, error: null };
+        return { ms, status: res.status, heard: { text: redactKeys(raw.trim()), language: null }, timedOut: false, error: null };
       }
     }
     const heard = provider.read(answer);
     if (!heard) {
-      return { ms, status: res.status, heard: null, error: `answered, but no transcript in it: ${clip(redact(raw.trim()), 300)}` };
+      return {
+        ms,
+        status: res.status,
+        heard: null,
+        timedOut: false,
+        error: `answered, but no transcript in it: ${clip(redact(raw.trim()), 300)}`,
+      };
     }
-    return { ms, status: res.status, heard: { text: redactKeys(heard.text), language: heard.language }, error: null };
+    return { ms, status: res.status, heard: { text: redactKeys(heard.text), language: heard.language }, timedOut: false, error: null };
   } catch (err) {
-    return { ms: Math.round(performance.now() - t0), status: null, heard: null, error: netErrorOf(err, controller.signal.aborted) };
+    const timedOut = controller.signal.aborted;
+    return { ms: Math.round(performance.now() - t0), status: null, heard: null, timedOut, error: netErrorOf(err, timedOut) };
   } finally {
     clearTimeout(timer);
   }
@@ -550,17 +641,22 @@ function percentile(sorted: number[], p: number): number | null {
 function summarize(notes: NoteResult[]) {
   const sent = notes.filter((n) => n.notSent === null);
   const okMs = sent.filter((n) => n.ok && n.ms !== null).map((n) => n.ms!).sort((a, b) => a - b);
+  const timeouts = sent.filter((n) => n.timedOut).length;
   const timed = sent.filter((n) => n.durationSec !== null);
   return {
     notes: notes.length,
     sent: sent.length,
     ok: sent.filter((n) => n.ok).length,
     failed: sent.filter((n) => !n.ok).length,
+    timeouts,
     notSent: notes.length - sent.length,
     // Over the answers that came back: a timeout's 60 s is an absence, not a speed.
     medianMs: percentile(okMs, 50),
     p95Ms: percentile(okMs, 95),
     maxMs: okMs.length ? okMs[okMs.length - 1]! : null,
+    // …and the same p95 with every timeout counted as the full REQUEST_MS beside it: a provider that drops the
+    // long notes must not read faster on M8 than one that answers them slowly.
+    p95WithTimeoutsMs: timeouts ? percentile([...okMs, ...Array<number>(timeouts).fill(REQUEST_MS)].sort((a, b) => a - b), 95) : null,
     audioSecKnown: Math.round(timed.reduce((s, n) => s + n.durationSec!, 0) * 10) / 10,
     notesWithDuration: timed.length,
     bytesSent: sent.reduce((s, n) => s + (n.bytes ?? 0), 0),
@@ -677,6 +773,7 @@ async function main(): Promise<number> {
       lang: args.lang,
       ms: null,
       status: null,
+      timedOut: false,
       ok: false,
       text: null,
       detectedLanguage: null,
@@ -689,6 +786,7 @@ async function main(): Promise<number> {
     if (!row) note = refuse('no attachment with this id');
     else if (row.entityType !== 'tg_message') note = refuse(`not a Telegram message's file (it belongs to «${row.entityType}»)`);
     else if (!row.contentType.toLowerCase().startsWith('audio/')) note = refuse(`not audio (${row.contentType})`);
+    else if (!VOICE_NOTE_NAME.test(row.fileName)) note = refuse(`an audio file («${clip(row.fileName, 60)}»), not a voice note`);
     else if (row.direction === null) note = refuse('its message row is gone');
     else if (row.direction !== 'in') note = refuse("our side's note, not a customer's");
     else if (row.deletedAt !== null) note = refuse('the customer deleted this message');
@@ -714,6 +812,7 @@ async function main(): Promise<number> {
           durationSec: oggDurationSec(bytes),
           ms: r.ms,
           status: r.status,
+          timedOut: r.timedOut,
           ok: r.heard !== null,
           text: r.heard?.text ?? null,
           detectedLanguage: r.heard?.language ?? null,
@@ -730,10 +829,11 @@ async function main(): Promise<number> {
   write(new Date().toISOString());
   console.log(`\n== ${provider.name}${provider.model ? ` (${provider.model})` : ''}, language ${args.lang}`);
   console.log(`   sent ${s.sent} · ok ${s.ok} · failed ${s.failed} · not sent ${s.notSent}`);
+  const late = s.timeouts ? ` · ${s.timeouts} timeout(s); p95 counting them as ${REQUEST_MS} ms: ${s.p95WithTimeoutsMs} ms` : ' · 0 timeouts';
   console.log(
     s.medianMs === null
-      ? '   time: no answer came back'
-      : `   time over the ${s.ok} answers: median ${s.medianMs} ms · p95 ${s.p95Ms} ms · max ${s.maxMs} ms`,
+      ? `   time: no answer came back${late}`
+      : `   time over the ${s.ok} answers: median ${s.medianMs} ms · p95 ${s.p95Ms} ms · max ${s.maxMs} ms${late}`,
   );
   console.log(`   audio: ${s.audioSecKnown} s known over ${s.notesWithDuration} of ${s.sent} sent note(s); ${s.bytesSent} bytes sent`);
   if (outPath) console.log(`   written: ${outPath}`);
@@ -749,4 +849,8 @@ main()
     console.error(redact(err instanceof Error ? err.message : String(err)));
     process.exitCode = 1;
   })
-  .finally(() => void pgClient.end());
+  // An exit, not a drained event loop: a storage read past its deadline cannot be cancelled (the S3 driver's
+  // getStream takes no signal), and its pending request would hold the process — and `docker compose run` — open
+  // for ever after the summary. Everything is already out: stdout to a pipe or file is synchronous on Linux, --out
+  // is written with writeFileSync, and exit() keeps the exitCode set above.
+  .finally(() => void pgClient.end().finally(() => process.exit()));

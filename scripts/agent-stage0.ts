@@ -22,7 +22,7 @@ import { draftWorthy } from '../src/modules/wms/agent/worthy';
  * Stage 0 of the full AI seller (docs/ai-toliq/qurish/STAGE-0-1A.md §4.0 (b)) — the four numbers the
  * stage is decided by, measured on HIS server before a line of product code moves. READ-ONLY:
  *
- *   docker compose run --rm migrate pnpm exec tsx scripts/agent-stage0.ts verdicts [--day 2026-11-15] [--user <uuid>]
+ *   docker compose run --rm migrate pnpm exec tsx scripts/agent-stage0.ts verdicts [--day 2026-11-15] [--user <uuid>] [--night-prices table]
  *   docker compose run --rm migrate pnpm exec tsx scripts/agent-stage0.ts media    [--days 14] [--user <uuid>]
  *   docker compose run --rm migrate pnpm exec tsx scripts/agent-stage0.ts audience [--user <uuid>]
  *   docker compose run --rm migrate pnpm exec tsx scripts/agent-stage0.ts volume   [--days 14] [--user <uuid>]
@@ -41,6 +41,8 @@ import { draftWorthy } from '../src/modules/wms/agent/worthy';
 const USAGE =
   'usage: pnpm exec tsx scripts/agent-stage0.ts <verdicts|media|audience|volume>\n' +
   '         [--day YYYY-MM-DD]   verdicts only — a Tashkent day (default 2026-11-15)\n' +
+  '         [--night-prices none|table|all]  verdicts only — 1a\'s night rule to judge by (default: the stored\n' +
+  '                              agent_night_prices, else table, the ⭐ of question 1)\n' +
   '         [--days N]           media, volume — 1-90 Tashkent days back from today (default 14)\n' +
   '         [--user <uuid>]      the account to read (default: the AI sotuvchi holder, agent_config.owner_user_id)';
 
@@ -52,24 +54,36 @@ const DEFAULT_DAY = '2026-11-15';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
+/** `agent_night_prices` (plan §3.3) — which price classes 1a lets go 22:00-08:00. Question 1; `table` is its ⭐. */
+const NIGHT_PRICES = ['none', 'table', 'all'] as const;
+type NightPrices = (typeof NIGHT_PRICES)[number];
+const NIGHT_PRICES_STAR: NightPrices = 'table';
+const isNightPrices = (v: unknown): v is NightPrices => (NIGHT_PRICES as readonly unknown[]).includes(v);
+
 interface Args {
   cmd: Command;
   day: string;
   days: number;
   user: string | null;
+  /** Only from the flag; null = read the stored setting, else the ⭐. */
+  nightPrices: NightPrices | null;
 }
 
 /** A flag a command does not read is refused, not ignored: «--day» on `volume` would read like a filter that never ran. */
 function parseArgs(argv: string[]): Args | null {
   const cmd = argv[0];
   if (!(COMMANDS as readonly string[]).includes(cmd ?? '')) return null;
-  const args: Args = { cmd: cmd as Command, day: DEFAULT_DAY, days: 14, user: null };
+  const args: Args = { cmd: cmd as Command, day: DEFAULT_DAY, days: 14, user: null, nightPrices: null };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--day' && args.cmd === 'verdicts') {
       const d = calendarDay(argv[++i]);
       if (!d) return null;
       args.day = d;
+    } else if (a === '--night-prices' && args.cmd === 'verdicts') {
+      const v = argv[++i];
+      if (!isNightPrices(v)) return null;
+      args.nightPrices = v;
     } else if (a === '--days' && (args.cmd === 'media' || args.cmd === 'volume')) {
       const n = Number(argv[++i]);
       if (!Number.isInteger(n) || n < 1 || n > 90) return null;
@@ -205,22 +219,53 @@ function talkLanguageAdmits(language: string | null, guess: Guess): boolean {
 /** The late card's line (card.ts `lateNote`, :425) — the one note 1a lets through (K6 `EYE_ONLY_NOTES = ['late']`). */
 const LATE_NOTE = /^⏱ Mijoz/u;
 
+/** The one warning 1a lets through (K6 `EYE_ONLY_WARNINGS`), at the gate and at the press alike (§4.2 `:371`). */
+const EYE_ONLY_WARNINGS: readonly string[] = ['questions'];
+const eyeOnly = (codes: readonly string[]) => codes.length > 0 && codes.every((c) => EYE_ONLY_WARNINGS.includes(c));
+
+/**
+ * The calculation's card lines (calc-submit.ts:160 the 14-day line, calc-files.ts `missingFilesNote`): `run.ts`
+ * (:568, :2005) appends them to the stored notes AFTER the gate judged — so they were never what `notes` refused,
+ * and a late line beside them must not read as «another note». Only ever on a plan refused `calc_recent` /
+ * `calc_file_missing`, which stay.
+ */
+const CALC_CARD_NOTES = [/^🧮 14 kun ichida shu chatdan hisoblatish bor/u, /^📎 .+ dagi .+ saqlanmagan — ✅ bossangiz faylsiz yuboriladi/u];
+const gateNotesOf = (notes: readonly string[]) => notes.filter((n) => !CALC_CARD_NOTES.some((re) => re.test(n)));
+
+/** §6.2's night by class: `calc` always barred, `calc_price` unless `all`, `price` only under `none`, `talk` never. */
+function nightBars(cls: DraftClass, nightPrices: NightPrices): boolean {
+  switch (cls) {
+    case 'calc':
+      return true;
+    case 'calc_price':
+      return nightPrices !== 'all';
+    case 'price':
+      return nightPrices === 'none';
+    case 'talk':
+      return false;
+  }
+}
+
 /**
  * The reasons that would STILL hold the draft under 1a — removed: `low_confidence`, `streak` (its slot goes to the
  * loop detector, which nothing stored can judge), `category` (kept, as `complaint`, only on the complaint label),
- * `warnings` when every stored warning is `questions`, `notes` when every stored note is the late line, and for a
- * talk draft `night` and `language` by §6.2. Nothing is ADDED: 1a's new reasons (`loop`, the complaint reader, the
- * night of a priced class under a setting not stored yet) are not judged here, so the count of «o'zi ketardi» is an
- * upper bound for those and exact for the rest.
+ * `warnings` when every stored warning is `questions`, `notes` when every note the gate saw is the late line, `night`
+ * for a class the chosen setting does not bar (§6.2), and `language` for a talk draft by §6.2. A machine press that
+ * lost INSIDE its approval (`auto-send.ts` `pressOne`, :907-911) writes its code to `outcome` and leaves `reasons` as
+ * the scheduling stored them (empty — it was admitted): that code is a reason too, `press:<code>`, kept unless it is
+ * `auto_warning` over `questions` alone. Nothing new is ADDED: 1a's `loop` and complaint reader are not judged here.
  */
 function reasonsLeft(input: {
   reasons: readonly string[];
+  state: string | null;
+  outcome: string | null;
   category: string | null;
   warningCodes: readonly string[] | null;
   notes: readonly string[] | null;
   cls: DraftClass;
   language: string | null;
   guess: Guess;
+  nightPrices: NightPrices;
 }): string[] {
   const left: string[] = [];
   for (const r of input.reasons) {
@@ -229,11 +274,19 @@ function reasonsLeft(input: {
       if (input.category === 'complaint') left.push('complaint');
       continue;
     }
-    if (r === 'warnings' && input.warningCodes !== null && input.warningCodes.length > 0 && input.warningCodes.every((c) => c === 'questions')) continue;
-    if (r === 'notes' && input.notes !== null && input.notes.length > 0 && input.notes.every((n) => LATE_NOTE.test(n))) continue;
-    if (r === 'night' && input.cls === 'talk') continue;
+    if (r === 'warnings' && input.warningCodes !== null && eyeOnly(input.warningCodes)) continue;
+    if (r === 'notes' && input.notes !== null) {
+      const seen = gateNotesOf(input.notes);
+      if (seen.length > 0 && seen.every((n) => LATE_NOTE.test(n))) continue;
+    }
+    if (r === 'night' && !nightBars(input.cls, input.nightPrices)) continue;
     if (r === 'language' && input.cls === 'talk' && talkLanguageAdmits(input.language, input.guess)) continue;
     left.push(r);
+  }
+  if (input.state === 'refused' && input.reasons.length === 0 && input.outcome) {
+    // `code` or `code:detail` (sliced to 300 — a cut code list ends in a fragment that is not `questions`: kept).
+    const [code = '', detail] = input.outcome.split(/:(.*)/su);
+    if (!(code === 'auto_warning' && detail !== undefined && eyeOnly(detail.split(',')))) left.push(`press:${code}`);
   }
   return left;
 }
@@ -291,11 +344,24 @@ async function verdicts(q: Q, args: Args): Promise<number> {
        ${args.user ? q`AND v.manager_user_id = ${args.user}::uuid` : q``}
      ORDER BY v.created_at, v.draft_id`;
 
+  // 1a's night rule hangs on a setting K3 adds (§3.3): a stored row is his answer to question 1, no row reads as the
+  // default — `table`, the ⭐ — exactly as `getSetting` reads a key with no row. The flag asks «what if he answers so».
+  const [storedNight] = await q<{ v: string | null }[]>`SELECT value #>> '{}' AS v FROM settings WHERE key = 'agent_night_prices'`;
+  const nightPrices: NightPrices = args.nightPrices ?? (isNightPrices(storedNight?.v) ? storedNight.v : NIGHT_PRICES_STAR);
+  const nightFrom = args.nightPrices
+    ? '--night-prices'
+    : isNightPrices(storedNight?.v)
+      ? 'saqlangan'
+      : storedNight
+        ? `⭐ — saqlangan «${show(storedNight.v)}» o'qilmadi`
+        : "⭐ — saqlanmagan";
+
   const accounts = histogram(rows.map((r) => [r.manager]));
   console.log(
     `O'zi yuborish qarorlari — ${args.day} (Toshkent kuni): ${rows.length} ta qoralama` +
       (accounts.length > 0 ? ` · hisob: ${accounts.map(([a, n]) => `${a} (${n})`).join(', ')}` : ''),
   );
+  console.log(`1a tungi qoidasi: agent_night_prices = ${nightPrices} (${nightFrom})`);
 
   const judged = rows.map((r) => {
     const reasons = (r.reasons ?? []).filter((x): x is string => typeof x === 'string');
@@ -315,7 +381,18 @@ async function verdicts(q: Q, args: Args): Promise<number> {
       body: r.body,
     });
     const guess = guessOf(r.customer_locale);
-    const left = reasonsLeft({ reasons, category: r.category, warningCodes, notes, cls, language: r.language, guess });
+    const left = reasonsLeft({
+      reasons,
+      state: r.state,
+      outcome: r.outcome,
+      category: r.category,
+      warningCodes,
+      notes,
+      cls,
+      language: r.language,
+      guess,
+      nightPrices,
+    });
     return { r, reasons, warningCodes, cls, guess, left };
   });
 
@@ -323,8 +400,11 @@ async function verdicts(q: Q, args: Args): Promise<number> {
   const stored = histogram(judged.map((j) => j.reasons));
   if (stored.length === 0) console.log('  —');
   for (const [r, n] of stored) console.log(`  ${r.padEnd(22)} ${pad(n, 4)}`);
+  // `eligible` is the SCHEDULING's word and is never rewritten: a draft admitted then refused at its press keeps it.
   const eligibleThen = judged.filter((j) => j.r.eligible).length;
-  console.log(`  o'sha kuni o'zi ketishga ruxsat olgan: ${eligibleThen} / ${rows.length}`);
+  console.log(`  rejalashtirishda ruxsat olgan: ${eligibleThen} / ${rows.length}`);
+  const states = histogram(judged.map((j) => [j.r.state ?? 'rad (rejalashtirishda)']));
+  if (states.length > 0) console.log(`  holatlar: ${states.map(([s, n]) => `${s} ${n}`).join(' · ')}`);
 
   const goes = judged.filter((j) => j.left.length === 0).length;
   console.log(`\n1a dan keyin: o'zi ketardi ${goes} / ${rows.length} · baribir kutardi ${rows.length - goes} / ${rows.length}`);
@@ -347,9 +427,12 @@ async function verdicts(q: Q, args: Args): Promise<number> {
     console.log(`      javob: «${clip(j.r.body, 60)}»`);
   }
   console.log(
-    "\nEslatma: 1a qo'shadigan yangi sabablar (`loop`, shikoyat o'quvchisi, narxli javobning tungi qoidasi —\n" +
-      "agent_night_prices hali saqlanmagan, 1-savol) bu yerda hisoblanmadi; narxli javoblarning `night` va `language`i\n" +
-      "saqlanganicha qoldi. Shuning uchun «o'zi ketardi» — yuqori chegara.",
+    `\nEslatma: \`night\` §6.2 bo'yicha sinfga qarab, agent_night_prices = ${nightPrices} bilan olindi; narxli javobning\n` +
+      "`language`i bugungi qoida bilan saqlanganicha qoldi (1a uni o'zgartirmaydi). 1a qo'shadigan ikki yangi sabab — `loop`\n" +
+      "va shikoyat o'quvchisi — hisoblanmadi: ular faqat qo'shadi, shu tomondan «o'zi ketardi» yuqori chegara.\n" +
+      "Bosishda rad etilganlar (`press:…`) qanday yozilgan bo'lsa qoldi (faqat `auto_warning` — `questions`ning o'zi —\n" +
+      "olib tashlandi); suhbat javobi 1a da kutmaydi, shuning uchun kutish paytida yuz bergan rad (masalan `taken_over`)\n" +
+      "unga tegmasligi mumkin — bunday qatorlarda son past bo'lishi mumkin.",
   );
 
   await storedSettings(q);
