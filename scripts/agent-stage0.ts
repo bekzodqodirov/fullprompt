@@ -483,6 +483,12 @@ async function verdicts(q: Q, args: Args): Promise<number> {
     `\n1a dan keyin: o'zi ketardi ${span(goes)} / ${n} · baribir kutardi ${span(held)} / ${n}` +
       (unknown > 0 ? ` · tahrirlangan — noma'lum: ${unknown} ta (hech qaysi tomonga qo'shilmadi)` : ''),
   );
+  // A countdown whose card never reached a screen (auto-send.ts `deferForCard`: outcome 'unseen', re-deferred every
+  // minute) is the seat's staff chat not being read — the one thing 1a's price hold and his ⏸ stand on.
+  const unseen = judged.filter((j) => j.r.outcome === 'unseen').length;
+  if (unseen > 0) {
+    console.log(`  ⚠️ ${unseen} tasining kartasi hech kimning ekraniga yetmagan (unseen) — AI raqamining hodim boti ulanganini tekshiring`);
+  }
   // Talk goes at once under 1a, so today's stop during the hold does not count against it — but the stop was his
   // word on THAT reply, and the number must not hide it.
   const talkStopped = judged.filter(
