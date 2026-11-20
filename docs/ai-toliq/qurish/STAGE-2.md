@@ -385,3 +385,8 @@ and an older sentence of «Verified references» or «Conformance» disagree, th
   TOP of the sample's ten.
 - ⟨1a⟩'s `same_inbound` as written drops today's empty-text guard (`run.ts:389`) — a fix for `STAGE-0-1A.md` §4.3,
   restated here only so stage 2 does not inherit it silently.
+
+**Closed by the lead, 2026-11-20:** `wrong_script` is not asked of the read-back block — a «tayyor matn» part
+whose frame is approved per language and whose quoted names are the customer's own (R5); the read-back counts
+toward the turn's message limit like every other part (R6); `agent.read` is a listed exception to «members of
+`agent.event`» in `STAGE-1B-1C.md` §4.0, because it has its own workers and deadline.

@@ -5,7 +5,7 @@
 | What this is | The conformance pass over the seven build plans of this folder, made 2026-11-20 at HEAD `bf37150c` (docs only; no code, no suite, no build). It answers three things for the session that builds: **(A)** is every answer of design §11 built somewhere, **(B)** does any plan undo a binding correction, **(C)** do the plans fit each other — and it ends with **(E)** the one numbered list of questions for the owner |
 | Outranked by | `docs/AI-SOTUVCHI-TOLIQ.md` §11 (his answers) → `docs/AI-SOTUVCHI-TOLIQ-QURISH.md` (the contract) → the stage plan. This file changes no rule; where it and a plan disagree about a NAME, the plan was edited to match and says so under its «## Conformance» |
 | Verdicts | **built** = a named step of a named stage builds it · **partly** = built except a part that waits for his answer (the part is named) · **missing** = no plan built it · **contradicted** = a plan built the opposite. «→ fixed» means this pass edited the plan; the plan's «## Conformance» section says what and why |
-| Result | 35 rows of §11.1 (the name, 1-32, the SIM, avia): 34 built, 1 partly (avia — waits on his §11.3-2). No row was missing outright. FOUR places contradicted an answer or a binding rule and were fixed (rows 1, 16, 25 and the read-figure rule), and ONE piece was planned a stage too late (the seat's mail, row 31 / §C.6) |
+| Result | 35 rows of §11.1 (the name, 1-32, the SIM, avia): 34 built, 1 partly (avia — waits on his §11.3-2). No row was missing outright. FOUR places contradicted an answer or a binding rule and were fixed (rows 1, 16, 25 and the read-figure rule), and ONE piece was planned a stage too late (the seat's mail, row 31 / §C.6). **Second pass (2026-11-20, §G):** the lead's rulings R1-R9 carried into every plan; one measured finding for HIM before 1a's P1 merges — the 55 (§B row 1, question 82); questions now 81 open, numbered 1-82 (29 decided by his 4 a); §F is the first message |
 
 ---
 
@@ -75,7 +75,7 @@
 | the call-back; factory pickup; «sotib olib berish»; the card number | `callback`, `pickup`, `buying`, `card_number` | 3a | the pair |
 | a big customer's seller; whom AI customers are handed to | `big_customer`, `handover_seller` | 5 | read as ROWS, no fallback (who becomes a client's seller is a door): empty `big_customer` → the card names nobody (the pair still get the card); empty `handover_seller` → no hand-over |
 | cheque claims; «qarzga bering» | `payment_claims`, `debt_request` | 6 | `money`'s people / the pair |
-| who holds the SIM; the reserve phone | `seat_phone`, `reserve_phone` | 7 | the pair (`seat_phone`). `reserve_phone` is minted and read by NOTHING in any plan — for the lead (§G) |
+| who holds the SIM; the reserve phone | `seat_phone`, `reserve_phone` | 7 | the pair (both). `reserve_phone` is read by stage 7's account alarm when it offers the reserve door — the reserve SIM's holder is told (lead ruling 2026-11-20, `STAGE-7-9.md` §A3) |
 | how AI customers are counted | not a person: the setting `agent_won_ownership` + its screen | 1c key, 5 screen | `seller` (= today) |
 
 **Two readers, minted together in 1a (`STAGE-0-1A.md` §3.2) — which one a caller uses is decided by what it does with the answer:**
@@ -247,7 +247,7 @@ Send them in groups, each group before the stage that needs it — never all at 
 
 ### Ochiq qolgan uchta (§11.3)
 
-**1.** **VED narxi ustiga ustama** (VED hisoblagan narx ustiga siz qo'shadigan foyda) qancha bo'lsin? a) foizda — necha foizligini yozing · b) dollarda — har bir hisobga necha dollarligini yozing · ⭐ c) hozircha bo'sh qolsin. Bo'sh bo'lsa: AI mijozga VED narxining o'zini aytadi (ustiga hech narsa qo'shilmaydi), va AI o'zi chegirma bera olmaydi — har bir chegirma so'rovi sizga bitta tugma bo'lib keladi (23-javobingiz). Shu savolga javob berguningizcha «VED narxi» katagini yoqmaslikni maslahat beramiz: yoqilmasa, VED narxi mijozga o'zi ketmaydi, sizga karta bo'lib keladi. [4-6 · 6.11-1; 0-1A §4.0 chores 1-2 (R9)]
+**1.** **VED narxi ustiga ustama** (VED hisoblagan narx ustiga siz qo'shadigan foyda) qancha bo'lsin? a) foizda — necha foizligini yozing · b) dollarda — har bir hisobga necha dollarligini yozing · ⭐ c) hozircha bo'sh qolsin. Bo'sh bo'lsa: AI mijozga VED narxining o'zini aytadi (ustiga hech narsa qo'shilmaydi), va AI o'zi chegirma bera olmaydi — har bir chegirma so'rovi sizga bitta tugma bo'lib keladi (23-javobingiz). Shuni ham biling: ustama bo'sh bo'lsa, mijozga aytilib kartaga yoziladigan narx VED narxining o'zi bo'ladi — uni sotuvchilar ham ko'radi (bugun sotuvchi VED narxini ko'rmaydi). Shu savolga javob berguningizcha «VED narxi» katagini yoqmaslikni maslahat beramiz: yoqilmasa, VED narxi mijozga o'zi ketmaydi, sizga karta bo'lib keladi. [4-6 · 6.11-1; 0-1A §4.0 chores 1-2 (R9)]
 
 **2.** **Avia** (javobingiz: «saytda 9-17 $/kg, 3-5 kun»). Ikki qism:
 
@@ -513,7 +513,7 @@ Boshlashdan oldin 11 ta savolga javobingiz kerak: birinchi uchtasi avvalgi javob
 
 OCHIQ QOLGAN UCHTA
 
-1. VED narxi ustiga ustama (VED hisoblagan narx ustiga siz qo'shadigan foyda) qancha bo'lsin? a) foizda — necha foizligini yozing · b) dollarda — har bir hisobga necha dollarligini yozing · ⭐ c) hozircha bo'sh qolsin. Bo'sh bo'lsa: AI mijozga VED narxining o'zini aytadi (ustiga hech narsa qo'shilmaydi), va AI o'zi chegirma bera olmaydi — har bir chegirma so'rovi sizga bitta tugma bo'lib keladi (23-javobingiz). Shu savolga javob berguningizcha «VED narxi» katagini yoqmaslikni maslahat beramiz: yoqilmasa, VED narxi mijozga o'zi ketmaydi, sizga karta bo'lib keladi.
+1. VED narxi ustiga ustama (VED hisoblagan narx ustiga siz qo'shadigan foyda) qancha bo'lsin? a) foizda — necha foizligini yozing · b) dollarda — har bir hisobga necha dollarligini yozing · ⭐ c) hozircha bo'sh qolsin. Bo'sh bo'lsa: AI mijozga VED narxining o'zini aytadi (ustiga hech narsa qo'shilmaydi), va AI o'zi chegirma bera olmaydi — har bir chegirma so'rovi sizga bitta tugma bo'lib keladi (23-javobingiz). Shuni ham biling: ustama bo'sh bo'lsa, mijozga aytilib kartaga yoziladigan narx VED narxining o'zi bo'ladi — uni sotuvchilar ham ko'radi (bugun sotuvchi VED narxini ko'rmaydi). Shu savolga javob berguningizcha «VED narxi» katagini yoqmaslikni maslahat beramiz: yoqilmasa, VED narxi mijozga o'zi ketmaydi, sizga karta bo'lib keladi.
 
 2. Avia (javobingiz: «saytda 9-17 $/kg, 3-5 kun»). Ikki qism:
 
@@ -579,6 +579,28 @@ Sentences that the other plans' seam checks had made untrue, fixed:
 - §C.5 `reminder`: «no writer — he chose no reminders» was FALSE (his 24 a IS two reminders) → no writer because a reminder is a `followup` draft and stage 6's amount rides the bot's notice.
 - §A row 4: «question 29 below» → not asked, decided by 4 a (step 2).
 Left for the lead (not this file's to decide):
-- `reserve_phone` is minted by stage 7 and read by nothing (`STAGE-3B.md` «Seam check» 4, item 4): give the account alarm that audience, or do not mint it.
-- 1a's source-shape list «no role key, uuid or name» names five files; R9's new `liveness.ts` addresses the pair and is not on it (`STAGE-0-1A.md` §7, the designation row).
-- `STAGE-1B-1C.md` «Seam check» still lists as OPEN three things the rulings closed (R6 the count, R1 both ranks, R7 `mayTuneAuto`), and `STAGE-2.md` «Seam check» two (R5, R6) — as read at this minute; their plans' bodies may already carry the ruling.
+- `reserve_phone` is minted by stage 7 and read by nothing (`STAGE-3B.md` «Seam check» 4, item 4): give the account alarm that audience, or do not mint it. **→ Ruled by the lead:** stage 7's alarm tells the reserve SIM's holder when it offers the reserve door (`STAGE-7-9.md` §A3, §A7).
+- 1a's source-shape list «no role key, uuid or name» names five files; R9's new `liveness.ts` addresses the pair and is not on it (`STAGE-0-1A.md` §7, the designation row). **→ Done by the lead:** six files (`STAGE-0-1A.md` §7 and its Conformance item 3).
+- `STAGE-1B-1C.md` «Seam check» still lists as OPEN three things the rulings closed (R6 the count, R1 both ranks, R7 `mayTuneAuto`), and `STAGE-2.md` «Seam check» two (R5, R6) — as read at this minute; their plans' bodies may already carry the ruling. **→ Done by the lead:** each seam check ends with «Closed by the lead, 2026-11-20», and `STAGE-1B-1C.md` §4.0 states the queue rule (members of `agent.event` for events about a conversation; `agent.read`, `agent.block_text`, `agent.channel_inbound` the listed exceptions).
+
+### G.2-G.5 Steps 2-5 — the list, the new questions, §F, the counts (finished by the lead, 2026-11-20)
+
+This reader was stopped by a usage limit after §E and §F were written and before steps 2-5 were logged. The lead
+checked what it had written instead of re-doing it:
+- **Numbering (script, not by eye):** §E carries 1-82 with 29 unused and 16 / 41 in two parts under one number —
+  nothing else missing, nothing doubled.
+- **Every plan question reaches §E (script):** all 76 questions of the seven plans' «Questions for the owner»
+  sections (0-1A 9 · 1B-1C 7 · 2 9 · 3A 10 · 3B 8 · 4-6 26 · 7-9 19) are cited in a bracket of §E or of its
+  «So'ralmaydi» table; no bracket cites a question that does not exist.
+- **§F is §E's copy (script):** questions 1-10 and 82 in §F's text block are word for word §E's, the builder's
+  brackets left out. §F is 6.9 thousand characters, so it goes as the blocks its note 5 names.
+- **One consequence added to question 1** (in §E and §F alike): with an empty markup the price told and written on
+  the card IS the VED's figure, and sellers see it — the one place his 23 c / 29 b and law 4 meet, said to him
+  before he chooses.
+- **«Ha» to the customs offer lands as `podklyuch`** (`STAGE-0-1A.md`'s own choice): not asked — his 2 a's words
+  are «rastamojka bilan hisoblab beraymi», i.e. the road AND customs together, which is what podklyuch is. Watch
+  the first live job.
+- **Not re-measured:** the three numbers of question 82 (303 / 244 / 55) are the first dry run's; §F's note 1 and
+  `STAGE-0-1A.md` §6.3 tell the builder to replace them with K1's committed snapshot and attach the list before
+  sending.
+

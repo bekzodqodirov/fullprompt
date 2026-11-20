@@ -905,7 +905,8 @@ Checked against design §11 (his answers), the contract's §4 and the other six 
    as «the `super_admin` ROLE»: a role key the builder would have typed into new source. They now CALL the existing
    reader / predicate (one exported `agentAlarmRecipients`, extracted from the line that already holds the literal),
    and the designation test gained a source-shape clause: no role key, uuid or name in the five new files or the
-   migration.
+   migration. **Lead, 2026-11-20:** R9's `agent/liveness.ts` addresses the pair too, so the clause covers SIX files —
+   the five and `liveness.ts` (§7's designation row).
 4. **§4.5 — his 4 a stated for the signal.** «Cards to colleagues wait for the morning» was not said for the
    big-cargo signal; in 1a it is night-silent (the house's meaning of «waits»), and the stricter «deliver at the next
    working minute» is 3a's — the difference is a question in COVERAGE, not a silent choice.
@@ -1075,7 +1076,7 @@ day before what the liveness line means.
 | K4: four unmutable types, purge / no-chat, `peerId` on notices | fences row (`agent-fences`), ✚ spelled out |
 | K5: every note writer writes a code; a codeless stored draft stops | `agent-note-codes.test.ts`; gate test |
 | K6: `autoClassOf` fails closed; retired words still print | gate test; ✚ `agent-auto-card.test.ts` (extend) |
-| §3.2: two readers; fallback never empty; rows never fall back; no role key in the new files | `agent-designations.test.ts` + integration (✚ the `designatedRows` half) |
+| §3.2: two readers; fallback never empty; rows never fall back; no role key in the new files (the five of §3.2 and `agent/liveness.ts`) | `agent-designations.test.ts` + integration (✚ the `designatedRows` half) |
 | P1: confidence, streak, category gone; warnings / notes typed; one warning predicate in two places | gate test (✚ fifth reply in a row); integration («the two disagree»); ✚ `agent-toliq-1a-wire.test.ts` (deleted, not hidden) |
 | P1: talk language relaxed, money language unchanged | gate test (✚ said row by row); ✚ corpus reader `language_talk` |
 | P1: hold by class, `pressNow`, the rang rule by class, `silent` on every write, a refused hold-0 press rings | `agent-toliq-1a.integration` |

@@ -153,7 +153,7 @@ supplies; before minting a migration or a DECISIONS number, fetch main and read 
 ## 6. What is still his to do or to answer
 
 - Stage 0's chores (`qurish/STAGE-0-1A.md` §stage 0) — with him, this week.
-- The questions of `qurish/COVERAGE.md` §E — 81 of them, grouped by the stage that needs them. **Send a group
+- The questions of `qurish/COVERAGE.md` §E — 81 open, numbered 1-82 (29 is decided by his 4 a; 82 is the 55), grouped by the stage that needs them. **Send a group
   before its stage, never the whole list.** §F there is the first message, ready to send: the three of design
   §11.3 and the seven that stage 1a needs. A plan's own §11 holds the same questions with the builder's notes;
   where the two differ, §E is the wording he is sent.
