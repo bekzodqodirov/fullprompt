@@ -57,6 +57,9 @@ export const INELIGIBLE_LIVENESS: Record<Ineligible, 'by_design' | 'fault'> = {
   auto_sent: 'by_design',
   echo: 'by_design',
   repeat: 'by_design',
+  // The chat loop (P2): no draft by design — the loop notice tells him, and the half hour it promises is the AI keeping
+  // out on purpose, not a silence to alarm about.
+  loop: 'by_design',
 };
 
 export type Liveness = 'answered' | 'unanswered';

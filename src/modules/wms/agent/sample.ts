@@ -181,7 +181,7 @@ export async function markSample(
   let disarmed = false;
   if (input.mark === 'bad') {
     // The card's own 👎 — its door is asked again inside; a press it refuses writes no mark.
-    const fb = await autoFeedback(actor.id, input.draftId, now);
+    const fb = await autoFeedback(actor, input.draftId, now);
     if (!fb.ok && fb.code !== 'already') return { ok: false, code: fb.code === 'not_account_holder' ? 'forbidden' : 'not_found' };
     disarmed = fb.ok && fb.disarmed;
   }

@@ -44,6 +44,7 @@ function talk(): AutoGateInput {
       warningCodes: [],
       noteCodes: [],
       systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'faq',
       language: 'uz',

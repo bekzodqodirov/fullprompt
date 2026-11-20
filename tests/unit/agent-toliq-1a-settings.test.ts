@@ -209,7 +209,7 @@ describe('the stage’s words are in the kernel (J26, J34)', () => {
   });
 
   it('the token cap is called a loop guard, never a budget (§4.6)', () => {
-    for (const key of ['agentAi.numTokensHint', 'agentAi.todayTokens']) {
+    for (const key of ['agentAi.numTokensHint', 'agentAi.todayTokens', 'agentAi.lessonsCost']) {
       expect(at(uz, key) as string, key).not.toMatch(/byudjet/iu);
       expect(at(ru, key) as string, key).not.toMatch(/бюджет/iu);
       expect(at(en, key) as string, key).not.toMatch(/budget/iu);

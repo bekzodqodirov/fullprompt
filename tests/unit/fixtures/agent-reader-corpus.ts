@@ -2093,6 +2093,8 @@ const LOOP_ORDINARY: readonly Row[] = [
   ['lo020', '> 0 Salom\n> 4 Salom\n< 25 Assalomu alaykum! Qanday yordam bera olaman?\n> 400 Salom', 'stage1a:§4.3 answered repeats'],
   // The half hour he was told of is over: a new line is answered again.
   ['lo021', '> 0 Xabaringiz qabul qilindi.\n< 20 Yukingiz qayerdan?\n> 300 Xabaringiz qabul qilindi.\n< 320 Necha kub?\n> 600 Xabaringiz qabul qilindi.\n! 605\n> 2410 Yana savolim bor', 'stage1a:J33 the hold ends'],
+];
+
 // ── avia_days: the flight's days a reply states (stage 1a P7, J2, his 2 b «3-5 kun») ──────────────────────────
 // Through the policy and the gate, on the memory a run stores with the setting's own days (`agent_avia_days`, shipped
 // «3-5»): the company's rule vouches for the range he gave and nothing else — the old «2–5 kun», and «reys bo‘lsa 2
@@ -2115,6 +2117,8 @@ const AVIA_DAYS_ORDINARY: readonly Row[] = [
   ['ad203', 'Авиа: от 1 кг, примерно 3-5 дней.', P_AD, r('ru')],
   ['ad204', 'By air it takes about 3-5 days — an estimate, not a promise.', P_AD, r('en')],
   ['ad205', 'Авиа билан тахминан 3-5 кунда етиб боради.', P_AD, r('uz_cyrl')],
+];
+
 // ── full_truck: the big-cargo signal's words (stage 1a §4.5; his 3 b — «20 kubdan yoki fura desa») ──────────────
 // Written by hand before `saysFullTruck` existed. A customer who asks for a WHOLE truck, in any of the six languages,
 // any case ending, with or without a size: the signal must go (dangerous to miss). A machine in the goods, a
