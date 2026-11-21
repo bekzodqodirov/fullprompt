@@ -23,8 +23,9 @@ export default defineConfig({
     //
     // The AI sotuvchi's liveness alarm (stage 1a §4.5) is one state row any sweep may raise, judged on the real
     // clock's working hours and on lines a file left minutes old: off here for the same reason, on in its own tests
-    // (liveness `livenessOn`).
-    env: { GEO_NETWORK: 'off', AGENT_TARIFF_NOTICE: 'off', AGENT_LIVENESS: 'off' },
+    // (liveness `livenessOn`). The forced-off reminder (his 18 a) claims a slot of the real clock's day whenever a
+    // sweep finds the agent stopped by the machine: off here too, on in its own tests (off-reminder `offReminderOn`).
+    env: { GEO_NETWORK: 'off', AGENT_TARIFF_NOTICE: 'off', AGENT_LIVENESS: 'off', AGENT_OFF_REMINDER: 'off' },
   },
   resolve: {
     alias: {
