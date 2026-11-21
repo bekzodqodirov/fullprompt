@@ -174,8 +174,7 @@ const WARNING: readonly (readonly [string, string])[] = [
 /**
  * The safety review of the widened rule (U1). Logins first: every language's own «ignore this if you did not ask by
  * TRYING to log in» sentence — the gerund the rule must never read as a warning, in zh, zh-Hant, ar and kk exactly as
- * in en, ru and uz (main read all four as login; the first widening's whole-text list carried their «trying») — and
- * a code written in the Persian digits a Persian line may use.
+ * in en, ru and uz (main read all four as login; the first widening's whole-text list carried their «trying»).
  */
 const LOGIN_REVIEWED: readonly (readonly [string, string])[] = [
   [
@@ -196,8 +195,6 @@ const LOGIN_REVIEWED: readonly (readonly [string, string])[] = [
     'fa, the whole code text',
     'کد ورود: 52814. این کد را به هیچ‌کس ندهید، حتی اگر بگویند از طرف تلگرام هستند!\n\nاگر این کد را با تلاش برای ورود در دستگاه دیگری درخواست نکرده‌اید، این پیام را نادیده بگیرید.',
   ],
-  ['fa, the code in Persian digits', 'کد ورود: ۵۲۸۱۴. این کد را به هیچ‌کس ندهید!'],
-  ['ar, the code in Arabic-Indic digits', 'رمز تسجيل الدخول: ٥٢٨١٤. لا تعطِ هذا الرمز لأي شخص!'],
 ];
 
 /**
@@ -253,6 +250,21 @@ describe('a line from 777000: his login, or a warning about the account', () => 
 
   it.each(WARNING_REVIEWED)('notice (review) — %s', (_label, text) => {
     expect(telegramNoticeKind(text)).toBe('notice');
+  });
+
+  // Persian and Arabic-Indic digits are no code (the final check's R5): read as digits, a Persian or Arabic warning's
+  // own tracking or request number beside a code word made it his login — and no warning word the list holds said
+  // «deactivated» in those languages — so the AI talked through it. His login code in those digits is a notice too:
+  // a morning's queue, the direction a guess must take.
+  it('a number in Persian or Arabic-Indic digits is no code — a warning beside it stays a notice', () => {
+    for (const text of [
+      'حساب شما غیرفعال شد.\nکد پیگیری: ۵۲۸۱۴۰',
+      'تم تعطيل حسابك.\nرمز الطلب: ٥٢٨١٤٠',
+      'کد ورود: ۵۲۸۱۴. این کد را به هیچ‌کس ندهید!',
+      'رمز تسجيل الدخول: ٥٢٨١٤. لا تعطِ هذا الرمز لأي شخص!',
+    ]) {
+      expect(telegramNoticeKind(text), text).toBe('notice');
+    }
   });
 
   it('the code must stand in the first two lines — a number further down is a ticket, not his sign-in', () => {

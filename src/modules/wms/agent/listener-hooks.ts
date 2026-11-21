@@ -145,14 +145,15 @@ const ACCOUNT_WARNING =
   /limit(?:ed|ation)|restrict|spam|report(?:s|ed)(?!\p{L})|(?<!\p{L})bann?(?:ed)?(?!\p{L})|blocked|suspend|frozen|freez|terms\s+of\s+(?:service|use)|violat|delet|(?:tried|attempted)\s+to\s+(?:log|sign)|attempt|refused|unconfirm|not\s+confirmed|compromis|unofficial|third[-\s]party|suspicious|unauthori[sz]ed|hack|appeal|fraud|scam|abuse|ограничен|спам|жалоб|заблокир|блокир|заморож|удал[её]н|удален|удалит|нарушен|нарушил|услови[яй]\s+(?:использования|обслуживания)|пыта(?:лся|лась|лись)\s+(?:войти|зайти)|кто-то\s+пыта|попытк[аиуеой]\s+вход|подозрит|неофициальн|сторонн\p{L}*\s+(?:приложени|клиент)|взлом|скомпрометир|мошенн|апелляц|обмежен|скарг|заблоков|видален|порушен|намага(?:вся|лася|лися)|спроб[аиу]\s+вход|підозріл|cheklan|cheklov|shikoyat|bloklan|muzlat|o'chiril|o'chirish\s+so'rov|qoida\p{L}*\s+buz|qoidabuzar|buzil|foydalanish\s+shart|urin(?:di|gan)|shubhali|norasmiy|buzib\s+kir|firibgar|apellyatsiya|чеклан|чеклов|шикоят|блоклан|музлат|ўчирил|ўчириш\s+сўров|қоида\p{L}*\s+буз|бузил|фойдаланиш\s+шарт|урин(?:ди|ган)|шубҳали|норасмий|шектел|шағым|бұғатта|жойыл|жою|күдікті|тырысты|тырысқан|kısıtlan|şikayet|engellen|silin|silme|ihlal|şüpheli|dondurul|限制|垃圾|举报|舉報|违反|違反|删除|刪除|注销|註銷|封禁|冻结|凍結|可疑|非官方|محدود|اسپم|گزارش|حذف|مسدود|مشکوک|نقض|مقيد|تقييد|سبام|بلاغ|حظر|مشبوه|انتهاك|eingeschränkt|beschränkt|gesperrt|gelöscht|löschung|verstoß|verdächtig|limitad|restringid|bloquead|eliminad|eliminación|infracci|sospechos/u;
 
 /**
- * Invisible marks (zero-width spaces, direction marks) taken out, apostrophes made one, letters made small, and the
- * Arabic-Indic and Persian digits a Persian or Arabic line may write its code in («کد ورود: ۵۲۸۱۴») read as the digits
- * `CODE` counts.
+ * Invisible marks (zero-width spaces, direction marks) taken out, apostrophes made one, letters made small. The
+ * Arabic-Indic and Persian digits are deliberately NOT read as digits: a Persian or Arabic warning carries its own
+ * number beside a code word («کد پیگیری: ۵۲۸۱۴۰», a tracking code) and the warning list cannot know every way those
+ * languages say «deactivated» — folded, such a warning read as his login and the AI talked through it. A login code
+ * written in them («کد ورود: ۵۲۸۱۴») is a notice: a morning's queue, the safe direction.
  */
 function normalisedNotice(text: string): string {
   return text
     .replace(/\p{Cf}/gu, '')
-    .replace(/[\u0660-\u0669\u06f0-\u06f9]/gu, (d) => String(d.charCodeAt(0) & 0xf))
     .replace(/[ʻʼ‘’`´]/gu, "'")
     .toLowerCase();
 }
