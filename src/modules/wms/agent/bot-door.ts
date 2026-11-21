@@ -1345,7 +1345,9 @@ function nightPriceWords(price: boolean, vedPrice: boolean, night: AgentNightPri
 /**
  * A photo, a file or a voice note (the page's `agentAi.autoHint` says the same, the merged-tree seam review's finding
  * 3): the model's reply to a burst that carried one stays his (the gate's `media` — it cannot open what it answers),
- * while the code's own «write it as text» line to it goes by itself (`systemAck` is never asked `media`). Two replies
+ * while the code's own «write it as text» line to it goes by itself (`systemAck` is never asked `media`). Both halves
+ * name the voice note (the check of the F1-F3 fixes, R3): the gate's `burstMedia` counts every kept file of the burst,
+ * a voice note beside his text included, and words naming only a photo or a file promised that reply would go. Two replies
  * are not asked it as a burst's file either, and the words name them only when they may go at all (the independent
  * check of the seam fixes, F2): a calculation sent to the VED (the burst's invoice IS the job's material and goes with
  * it) and the VED's price (asked over the files newer than the job's landing — the request's own went with the job).
@@ -1354,7 +1356,7 @@ export function autoMediaWords(t: AutoTicks): string {
   const except =
     t.calc && t.ved ? 'hisoblatishga yuborish va VED narxi' : t.calc ? 'hisoblatishga yuborish' : t.ved ? 'VED narxi' : null;
   const exception = except ? ` (${except} bundan mustasno — so‘rov bilan VEDga ketgan fayl ${t.calc && t.ved ? 'ularni' : 'uni'} to‘xtatmaydi)` : '';
-  return `rasm yoki faylli xabarga AI yozgan javob sizga qoladi${exception}, rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn esa o‘zi ketadi`;
+  return `rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi${exception}, rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn esa o‘zi ketadi`;
 }
 
 /**

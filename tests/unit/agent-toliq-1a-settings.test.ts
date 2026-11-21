@@ -313,7 +313,13 @@ describe('the page’s arming words follow the boxes he ticked, and say what the
 
   it('a photo, a file or a voice note: the page and the bot say the same — the AI’s reply stays his, the tayyor matn goes', () => {
     const hint = at(uz, 'agentAi.autoHint') as string;
-    expect(hint).toContain('rasm yoki faylli xabarga AI yozgan javob sizga qoladi');
+    // DELIBERATE EDIT (the check of the F1-F3 fixes, R3): the gate keeps the AI's reply to a VOICE note beside his text
+    // his as well (`burstMedia` counts every kept file), so the AI's half names it, in all four.
+    expect(hint).toContain('rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi');
+    expect(hint).not.toContain('rasm yoki faylli xabarga AI');
+    expect(at(ru, 'agentAi.autoHint') as string).toContain('ответ ИИ на сообщение с фото, голосовым или файлом остаётся за вами');
+    expect(at(en, 'agentAi.autoHint') as string).toContain('the AI’s reply to a message with a photo, voice note or file stays with you');
+    expect(at(zh, 'agentAi.autoHint') as string).toContain('AI 对带图片、语音或文件的消息的回复由您处理');
     expect(hint).toContain('rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn o‘zi ketadi');
     // The old promise — «a reply to a photo or a file always stays yours» — is gone from all four.
     expect(hint).not.toContain('rasm yoki faylga javob');
@@ -326,7 +332,7 @@ describe('the page’s arming words follow the boxes he ticked, and say what the
     // The bot's one clause carries both halves, in the hint's own words — whatever he ticked.
     for (const w of AUTO_WAITS) {
       const words = autoMediaWords(autoTicksOfWaits(w));
-      expect(words, w).toContain('rasm yoki faylli xabarga AI yozgan javob sizga qoladi');
+      expect(words, w).toContain('rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi');
       expect(words, w).toContain('rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn esa o‘zi ketadi');
     }
   });
@@ -418,27 +424,33 @@ function readItems(locale: string, phrase: string | null): Set<Item> {
   return items;
 }
 
-/** The two halves of each sentence — what waits on its card, what always stays his — as each language writes them. */
+/**
+ * The two halves of each sentence — what waits on its card, what always stays his — as each language writes them. The
+ * waiting half's second group is the calculation's night (the check of the F1-F3 fixes, R4: the gate's `nightBars`
+ * holds a calculation for the morning under every night setting), said beside it exactly when a calculation waits.
+ */
 const HALVES: Record<string, { numbers: [RegExp, RegExp]; confirm: [RegExp, RegExp] }> = {
   uz: {
-    numbers: [/kechasi ham · (.+?) HOLDX kutadi, ⏸ bilan to‘xtatasiz · /u, /· ([^·]+) har doim sizga qoladi$/u],
-    confirm: [/\)\. (.+?) kartada kutadi — ⏸ bilan to‘xtatasiz; /u, /(?:; |\)\. )([^;)]+) har doim sizga qoladi\.$/u],
+    numbers: [/kechasi ham · (.+?) HOLDX kutadi(?: \(((?:hisoblatish )?kechasi — ertalab)\))?, ⏸ bilan to‘xtatasiz · /u, /· ([^·]+) har doim sizga qoladi$/u],
+    confirm: [/\)\. (.+?) kartada kutadi(?: \(((?:hisoblatish )?kechasi — ertalab)\))? — ⏸ bilan to‘xtatasiz; /u, /(?:; |\)\. )([^;)]+) har doim sizga qoladi\.$/u],
   },
   ru: {
-    numbers: [/и ночью тоже · (.+?) (?:ждёт|ждут) HOLDX, остановить — ⏸ · /u, /· ([^·]+) всегда остаются за вами$/u],
-    confirm: [/\)\. (.+?) (?:ждёт|ждут) на карточке — остановить можно ⏸; /u, /(?:; |\)\. )([^;)]+) всегда остаются за вами\.$/u],
+    numbers: [/и ночью тоже · (.+?) (?:ждёт|ждут) HOLDX(?: \(((?:расчёт )?ночью — до утра)\))?, остановить — ⏸ · /u, /· ([^·]+) всегда остаются за вами$/u],
+    confirm: [/\)\. (.+?) (?:ждёт|ждут) на карточке(?: \(((?:расчёт )?ночью — до утра)\))? — остановить можно ⏸; /u, /(?:; |\)\. )([^;)]+) всегда остаются за вами\.$/u],
   },
   en: {
-    numbers: [/at night too · (.+?) (?:waits|wait) HOLDX, ⏸ stops (?:it|them) · /u, /· ([^·]+) always stay with you$/u],
-    confirm: [/\)\. (.+?) (?:waits|wait) on (?:its|their) card — ⏸ stops (?:it|them); /u, /(?:; |\)\. )([^;)]+) always stay with you\.$/u],
+    numbers: [/at night too · (.+?) (?:waits|wait) HOLDX(?: \(((?:a calculation )?at night, until the morning)\))?, ⏸ stops (?:it|them) · /u, /· ([^·]+) always stay with you$/u],
+    confirm: [/\)\. (.+?) (?:waits|wait) on (?:its|their) card(?: \(((?:a calculation )?at night, until the morning)\))? — ⏸ stops (?:it|them); /u, /(?:; |\)\. )([^;)]+) always stay with you\.$/u],
   },
   'zh-CN': {
-    numbers: [/夜间也是 · (.+?)等待 HOLDX，可用 ⏸ 停止 · /u, /· ([^·]+)始终由您处理$/u],
-    confirm: [/）。(.+?)会在卡片上等待 — 可用 ⏸ 停止；/u, /(?:；|）。)([^；）]+)始终由您处理。$/u],
+    numbers: [/夜间也是 · (.+?)等待 HOLDX(?:（((?:核算请求)?夜间等到早上)）)?，可用 ⏸ 停止 · /u, /· ([^·]+)始终由您处理$/u],
+    confirm: [/）。(.+?)会在卡片上等待(?:（((?:核算请求)?夜间等到早上)）)? — 可用 ⏸ 停止；/u, /(?:；|）。)([^；）]+)始终由您处理。$/u],
   },
 };
 
 const half = (re: RegExp, text: string): string | null => re.exec(text)?.[1] ?? null;
+/** The calculation's night beside what waits — null when the sentence says none. */
+const calcNight = (re: RegExp, text: string): string | null => re.exec(text)?.[2] ?? null;
 const sorted = (s: Set<Item>) => [...s].sort();
 
 /** What his ticks make wait, and what they leave his — the gate's own classes (`holdSecFor`, the money clause's boxes). */
@@ -475,12 +487,15 @@ describe('the page and the bot agree on what waits and what stays his, for every
     for (const locale of Object.keys(BUNDLES)) {
       const r = render(locale, categories);
       const h = HALVES[locale]!;
+      const calc = autoTicksOf(categories).calc;
       for (const [name, text] of [['numbers', r.numbers], ['noCap', r.noCap]] as const) {
         expect(sorted(readItems(locale, half(h.numbers[0], text))), `${locale} ${name} waits: ${text}`).toEqual(want.waits);
         expect(sorted(readItems(locale, half(h.numbers[1], text))), `${locale} ${name} stays: ${text}`).toEqual(want.stays);
+        expect(calcNight(h.numbers[0], text) !== null, `${locale} ${name} the calculation's night: ${text}`).toBe(calc);
       }
       expect(sorted(readItems(locale, half(h.confirm[0], r.confirm))), `${locale} confirm waits: ${r.confirm}`).toEqual(want.waits);
       expect(sorted(readItems(locale, half(h.confirm[1], r.confirm))), `${locale} confirm stays: ${r.confirm}`).toEqual(want.stays);
+      expect(calcNight(h.confirm[0], r.confirm) !== null, `${locale} confirm the calculation's night: ${r.confirm}`).toBe(calc);
     }
   });
 
@@ -533,16 +548,16 @@ describe('a photo or a file: the exceptions are named, and only where they are t
 
   it('the page’s hint states it as a rule, in all four bundles', () => {
     expect(at(uz, 'agentAi.autoHint') as string).toContain(
-      'rasm yoki faylli xabarga AI yozgan javob sizga qoladi — hisoblatishga yuborish va VED narxi bundan mustasno: so‘rov bilan VEDga ketgan fayl ularni to‘xtatmaydi, ular belgilansa o‘zi ketadi',
+      'rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi — hisoblatishga yuborish va VED narxi bundan mustasno: so‘rov bilan VEDga ketgan fayl ularni to‘xtatmaydi, ular belgilansa o‘zi ketadi',
     );
     expect(at(ru, 'agentAi.autoHint') as string).toContain(
-      'ответ ИИ на сообщение с фото или файлом остаётся за вами — кроме отправки на расчёт и цены ВЭД: файл, ушедший в ВЭД вместе с запросом, их не останавливает, и если они отмечены, уходят сами',
+      'ответ ИИ на сообщение с фото, голосовым или файлом остаётся за вами — кроме отправки на расчёт и цены ВЭД: файл, ушедший в ВЭД вместе с запросом, их не останавливает, и если они отмечены, уходят сами',
     );
     expect(at(en, 'agentAi.autoHint') as string).toContain(
-      'the AI’s reply to a message with a photo or file stays with you — except a calculation sent to the customs desk and a customs desk price: a file that went to the customs desk with the request does not stop them, and when ticked they go by themselves',
+      'the AI’s reply to a message with a photo, voice note or file stays with you — except a calculation sent to the customs desk and a customs desk price: a file that went to the customs desk with the request does not stop them, and when ticked they go by themselves',
     );
     expect(at(zh, 'agentAi.autoHint') as string).toContain(
-      'AI 对带图片或文件的消息的回复由您处理 — 发送核算请求和报关部报价除外：随请求一起发给报关部的文件不会拦下它们，勾选后会自动发出',
+      'AI 对带图片、语音或文件的消息的回复由您处理 — 发送核算请求和报关部报价除外：随请求一起发给报关部的文件不会拦下它们，勾选后会自动发出',
     );
   });
 });

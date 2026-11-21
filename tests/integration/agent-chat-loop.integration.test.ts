@@ -22,8 +22,9 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { autoVerdict } from '@/modules/wms/agent/auto-gate';
-import { ORDINARY_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { autoTicksOf, ORDINARY_CATEGORIES } from '@/modules/wms/agent/auto-categories';
 import { autoFactsFor, autoPlanFor, readAutoConfig, type AutoConfig, type AutoDraftShape } from '@/modules/wms/agent/auto-send';
+import { autoMediaWords } from '@/modules/wms/agent/bot-door';
 import { systemReplyFor } from '@/modules/wms/agent/system-reply';
 import {
   __forgetAgentToliq1aReady,
@@ -792,6 +793,20 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     const again = await photo(min(6));
     expect(await handleInbound(job(again), { callModel: never() })).toEqual({ outcome: 'skipped', reason: 'media_only' });
     expect(await pendingFor(again)).toBeUndefined();
+  });
+
+  it('a voice note beside his text: the AI’s reply is the gate’s `media` — and the words name the voice note for it (R3)', async () => {
+    await line('in', 'Assalomu alaykum', min(1));
+    await machineSend('Vaalaykum assalom! Qanday yordam bera olaman?', min(2));
+    await voiceNote(min(3));
+    const text = await line('in', 'Ish vaqtingiz qanday?', min(4));
+    expect(await handleInbound(job(text), { callModel: answers('Ish vaqtimiz 9:00 dan 18:00 gacha.') })).toMatchObject({ outcome: 'draft' });
+    const d = await pendingFor(text);
+    expect((d!.policy as { system?: unknown }).system).toBeUndefined();
+    const g = await gate(d!, min(5));
+    expect(g.verdict.reasons).toContain('media');
+    // What the page and the bot tell him about that very reply: it stays his — for a voice note, not only a photo or a file.
+    expect(autoMediaWords(autoTicksOf(ARMED.categories))).toContain('rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi');
   });
 
   it('…and once the voice line was said too (lost as well), the next voice note tells HIM — never the customer again', async () => {

@@ -392,7 +392,8 @@ describe('words — every code said, never printed', () => {
     for (const categories of [FOUR, [...FOUR, 'price'], [...FOUR, 'calc'], [...FOUR, 'calc_price'], [...FOUR, 'price', 'calc_price', 'calc']]) {
       const words = autoArmedWords({ holdSec: 120, perDay: null, categories }, TALK);
       expect(words, categories.join(',')).toContain(autoMediaWords(autoTicksOf(categories)));
-      expect(words, categories.join(',')).toContain('rasm yoki faylli xabarga AI yozgan javob sizga qoladi');
+      // DELIBERATE EDIT (the check of the F1-F3 fixes, R3): the AI's reply to a voice note beside his text stays his too.
+      expect(words, categories.join(',')).toContain('rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi');
       // Never the old promise that every reply to a photo stays his.
       expect(words, categories.join(',')).not.toMatch(/rasm yoki faylga javob[^;]*har doim/u);
     }

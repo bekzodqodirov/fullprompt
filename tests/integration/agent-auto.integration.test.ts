@@ -1051,10 +1051,11 @@ describe('/agent auto (bot-door `agentCommand`)', () => {
     // with ⏸. DELIBERATE EDIT (review D3): no price box is ticked in this file, so no price hold and no night price is
     // promised — only «narx … har doim sizga qoladi», never beside «narx … keyin o‘zi ketadi». DELIBERATE EDIT (the
     // merged-tree seam review, finding 3): the bot says what the page's hint says about a photo — the AI's reply stays
-    // his, the tayyor matn to it goes — as the one clause after what stays his.
+    // his, the tayyor matn to it goes — as the one clause after what stays his. DELIBERATE EDIT (the check of the F1-F3
+    // fixes, R3): the AI's reply to a voice note stays his as well, and the clause says so.
     const armed = await agentCommand(ownerId, 'AUTO  ON');
     expect(armed).toMatch(
-      /^🤖 O‘zi yuborish yoqildi: oddiy javob 2 daqiqa kutib o‘zi ketadi \(⏸ bilan to‘xtatasiz\) — kechasi ham .*narx va shikoyat har doim sizga qoladi; rasm yoki faylli xabarga AI yozgan javob sizga qoladi, .*tayyor matn esa o‘zi ketadi\.$/u,
+      /^🤖 O‘zi yuborish yoqildi: oddiy javob 2 daqiqa kutib o‘zi ketadi \(⏸ bilan to‘xtatasiz\) — kechasi ham .*narx va shikoyat har doim sizga qoladi; rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi, .*tayyor matn esa o‘zi ketadi\.$/u,
     );
     expect(armed).not.toContain('Narx kartada');
     expect((await readAutoConfig())!.armed).toBe(true);
