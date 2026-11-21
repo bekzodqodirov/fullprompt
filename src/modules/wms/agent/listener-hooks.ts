@@ -201,8 +201,9 @@ function codeBesideWord(head: string): boolean {
  *     on), guessing wrong toward «login» would keep the machine talking through
  *     a warning.
  *
- * The text is only looked at here — never kept, never logged, never copied into
- * an alarm (it may be a login code).
+ * The text is only looked at here — never kept, never copied into an alarm, and
+ * never logged UNREDACTED (it may be a login code): the listener logs its shape
+ * through `redactNotice`, from which no code can be read back.
  */
 export function telegramNoticeKind(text: string): TelegramNoticeKind {
   const all = normalisedNotice(text);
@@ -216,6 +217,49 @@ export function telegramNoticeKind(text: string): TelegramNoticeKind {
   if (codeBesideWord(head)) return 'login';
   if ((NEW_LOGIN_TITLE.test(head) || NEW_LOGIN_SENTENCE.test(head)) && LOGIN_FIELD.test(all)) return 'login';
   return 'notice';
+}
+
+/** The most of a redacted line the log carries — a code sits in the first two lines, the shape in the first few. */
+const REDACTED_MAX = 400;
+
+/** A link with a scheme («https://t.me/login/52814», «tg://login?token=…») — its host kept, the rest cut. */
+const SCHEME_LINK = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/?#]*)(\S*)/giu;
+/** A link with none («my.telegram.org/auth?…», «t.me/login/52814»): a dotted host followed by a path or a query. */
+const BARE_LINK = /(?<![\p{L}\p{N}@.\/])((?:[a-z0-9-]+\.)+[a-z]{2,})([/?#]\S*)/giu;
+/** A query value outside a link that was cut — any `name=value`: «?code=…», «token=AQABx…». */
+const QUERY_VALUE = /(?<![\p{L}\p{N}_.-])([\p{L}\p{N}_.-]+=)[^\s&#]+/gu;
+/** A word: letters, their marks and digits, in any script. */
+const WORD = /[\p{L}\p{M}\p{N}]+/gu;
+
+/**
+ * Pure: the SHAPE of a 777000 line, for the listener's log — so the real texts Telegram sends his account can be read
+ * off his server and the rule (`telegramNoticeKind`) settled against them, though nobody here can see one. What is
+ * kept is what the rule reads: the words in their places, how many digits a number has and how they are spaced
+ * («Login code: #####.», «## ###», «##.##.####»), the line breaks as « ⏎ » (the rule looks at the first two lines).
+ *
+ * A login code cannot be read back from it: Telegram's codes are digits only and EVERY digit, in any script (Persian
+ * and Arabic-Indic too), becomes «#» — the count stays, the value never does; a word that holds a digit
+ * («GS52814») or looks like a code (six letters or more with a capital after a small letter — my.telegram.org's
+ * «aB3dE9fG2» — even with no digit) goes whole as «‹…›»; a link keeps only its host (a login link carries the code in
+ * its path, a token in its query), and a query value outside one goes too. Invisible marks are taken out FIRST, or a
+ * zero-width space would split a code into pieces too short to look like one. At most `REDACTED_MAX` characters.
+ */
+export function redactNotice(text: string): string {
+  const shape = text
+    .replace(/\p{Cf}/gu, '')
+    .replace(SCHEME_LINK, (_link, scheme: string, host: string, rest: string) => `${scheme}${host}${rest === '' ? '' : '/…'}`)
+    .replace(BARE_LINK, (_link, host: string) => `${host}/…`)
+    .replace(QUERY_VALUE, '$1‹…›')
+    .replace(WORD, (word) => {
+      const digits = /\p{N}/u.test(word);
+      if (digits && /\p{L}/u.test(word)) return '‹…›';
+      if (digits) return word.replace(/\p{N}/gu, '#');
+      if ([...word].length >= 6 && /\p{Ll}.*\p{Lu}/u.test(word)) return '‹…›';
+      return word;
+    })
+    .replace(/\r?\n|\r/gu, ' ⏎ ');
+  const chars = [...shape];
+  return chars.length <= REDACTED_MAX ? shape : `${chars.slice(0, REDACTED_MAX - 1).join('')}…`;
 }
 
 /** What the gramjs user says about itself — read off the chat a stranger's message came from. */

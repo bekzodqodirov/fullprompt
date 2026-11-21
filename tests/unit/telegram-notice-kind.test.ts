@@ -9,8 +9,8 @@ import { telegramNoticeKind } from '@/modules/wms/agent/listener-hooks';
  * as a login is the machine talking through the warning that comes before a ban.
  *
  * The texts are Telegram's own wording as its apps show it, reconstructed per language — the server never stores
- * the line (it may be a login code), so nobody can read back the shape that arrived. The digits, dates and
- * addresses are made up.
+ * the line (it may be a login code) and logs only its redacted shape (`redactNotice`, «[agent] 777000 …»), which is
+ * where the real ones are to be read. The digits, dates and addresses are made up.
  */
 
 /** His own sign-ins: the code in every phrasing Telegram uses, and the «new login» alert that follows one. */
