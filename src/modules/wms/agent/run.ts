@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import { aiConfigured, realCallModel, STAFF_MODEL, type CallModel, type ModelBlock, type ModelMessage, type ModelUsage } from '../../platform/ai/model';
 import { db } from '../../platform/db/client';
 import { agentConversations, agentRuns, clients, tgChatRules, tgMessageFlags, tgMessages, tgOutbox, users } from '../../platform/db/schema';
@@ -29,7 +29,7 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecs
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
 import { asksIfBot, draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { linesAfterOurSends, systemLocaleOf, systemReasonOf, systemReplyFor } from './system-reply';
+import { linesAfterOurSends, linesFirstJudged, systemLocaleOf, systemReasonOf, systemReplyFor } from './system-reply';
 import { customerLabel, draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
@@ -161,6 +161,33 @@ async function runLedgerRow(job: AgentInboundJob, attempt: number, outcome: 'ref
     .onConflictDoNothing()
     .returning({ id: agentRuns.id });
   return rows.length > 0;
+}
+
+/**
+ * The anchor of the newest earlier inbound run of this chat that JUDGED its burst — null when none did (system-reply
+ * `linesFirstJudged`: the lines after it are the ones this run is the first to judge). Read off the ledger rows the run
+ * writes, every one of them after `draftWorthy` and the tayyor matn's choice (`runLedgerRow`'s notice, skip, refusal and
+ * cap; `reserve`'s row of a drafting run) — less the three that judged nothing that stands: a stand-down stored at the
+ * write (`stood_down` — he was editing the card, the question was gone), eligibility's `not_newest` (a newer line came,
+ * whose run judges this one with it), and an `error` (nothing it chose reached anybody; the sweep's retry judges the line
+ * again). A run that stood down before judging — `not_newest` at the start, a duplicate, a wait for his typing — wrote
+ * no row at all. The line's own earlier attempts count: an edit or a redraft of a line already judged tells nobody twice.
+ */
+async function judgedThroughOf(managerUserId: string, peerId: bigint, anchorId: bigint): Promise<bigint | null> {
+  const [row] = await db
+    .select({ anchor: sql<string | null>`max(${agentRuns.anchorTgMessageId})::text` })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.managerUserId, managerUserId),
+        eq(agentRuns.peerId, peerId),
+        eq(agentRuns.trigger, 'inbound'),
+        lte(agentRuns.anchorTgMessageId, anchorId),
+        sql`${agentRuns.outcome} NOT IN ('stood_down', 'error')`,
+        sql`NOT (${agentRuns.outcome} = 'refused' AND ${agentRuns.error} IS NOT DISTINCT FROM 'not_newest')`,
+      ),
+    );
+  return row?.anchor == null ? null : BigInt(row.anchor);
 }
 
 function asText(v: unknown): string {
@@ -588,15 +615,19 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   // the first kind among them not yet said (the check of the F1-F3 fixes, R1): a voice note after our lost media line
   // is owed the voice line — read by the thread's burst, the photo before that line chose the media line again, told,
   // and the voice note reached nobody. Only this choice reads it: a model reply sees the thread's burst, unchanged.
+  // When every kind was said, the voice notice is owed only for a voice note no earlier run of this chat judged
+  // (`judgedThroughOf`): a voice note and a photo sent together are told of once by the run of the newest — the voice
+  // note's own job stood down — and a photo after a voice note already told of is skipped quietly (the final check,
+  // F-coalesce). Asked only of the two bursts whose choice reads lines; every other refusal is decided without it.
   const silence = worthy.worthy ? null : await silenceOf(ctx.managerUserId, ctx.peerId, ctx.messages);
+  const answered = silence === null ? [] : linesAfterOurSends(ctx.burst, silence.uncopied);
+  const firstJudged =
+    !worthy.worthy && (worthy.reason === 'voice_only' || worthy.reason === 'media_only')
+      ? linesFirstJudged(answered, await judgedThroughOf(ctx.managerUserId, ctx.peerId, anchorId))
+      : answered;
+  const asBurst = (lines: readonly ChatMessage[]) => lines.map((m) => ({ text: m.body, media: m.media }));
   const system: SystemReplyReason | null =
-    silence === null
-      ? null
-      : systemReasonOf(
-          worthy,
-          linesAfterOurSends(ctx.burst, silence.uncopied).map((m) => ({ text: m.body, media: m.media })),
-          silence.told,
-        );
+    silence === null ? null : systemReasonOf(worthy, asBurst(answered), silence.told, asBurst(firstJudged));
   if (!worthy.worthy && (system === null || silence!.told.has(system))) {
     const notice = system === 'voice' ? 'voice_only' : system === 'pashto' ? 'pashto' : null;
     if (notice !== null) {

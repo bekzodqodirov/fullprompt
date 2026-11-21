@@ -9,6 +9,7 @@ import { customerLocaleOf, glossReadable, memoryFor, type ComposeReply } from '@
 import {
   isSystemLine,
   linesAfterOurSends,
+  linesFirstJudged,
   SYSTEM_LINES,
   systemCardLine,
   systemGlossUz,
@@ -232,8 +233,8 @@ describe('which burst gets which line (§4.4 finding 1)', () => {
 
   // The check of the F1-F3 fixes, R1: the line is the first kind the burst carries that this silence has not said.
   const told = (...r: ('media' | 'voice' | 'pashto')[]) => new Set(r);
-  const reasonTold = (burst: BurstMessage[], said: ReadonlySet<'media' | 'voice' | 'pashto'>) =>
-    systemReasonOf(draftWorthy(burst, false), burst, said);
+  const reasonTold = (burst: BurstMessage[], said: ReadonlySet<'media' | 'voice' | 'pashto'>, firstJudged: BurstMessage[] = burst) =>
+    systemReasonOf(draftWorthy(burst, false), burst, said, firstJudged);
 
   it('a photo and a voice note after the media line was said: the voice line — the photo chose a told line and the voice note reached nobody', () => {
     expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('media'))).toBe('voice');
@@ -244,20 +245,35 @@ describe('which burst gets which line (§4.4 finding 1)', () => {
     expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('voice'))).toBe('media');
   });
 
-  it('every kind said: his NEWEST line names it — a voice note tells HIM, a photo is the media line, skipped', () => {
-    expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('media', 'voice'))).toBe('voice');
-    expect(reasonTold([b(null, 'photo')], told('media'))).toBe('media');
-    expect(reasonTold([b(null, 'voice')], told('voice'))).toBe('voice');
-    // The check of the R1 fix: a photo after a voice note both lines answered names the media line, so the run skips it
-    // quietly — naming the voice kind because the burst held one wrote a voice notice per later photo.
-    expect(reasonTold([b(null, 'voice'), b(null, 'photo')], told('media', 'voice'))).toBe('media');
-    expect(reasonTold([b(null, 'voice'), b(null, 'photo'), b(null, 'photo')], told('media', 'voice'))).toBe('media');
-    // A sticker after it is no line's kind: the newest line that carries one decides.
-    expect(reasonTold([b(null, 'photo'), b(null, 'voice'), b(null, 'other')], told('media', 'voice'))).toBe('voice');
-    expect(reasonTold([b(null, 'voice'), b(null, 'document'), b(null, 'other')], told('media', 'voice'))).toBe('media');
-    // …and a kind not yet said still wins over the newest line: photo, media line, photo, voice note → the voice line.
+  it('every kind said: a voice note no earlier run judged tells HIM, anything else is the told line, skipped', () => {
+    const [V, P, D, S] = [b(null, 'voice'), b(null, 'photo'), b(null, 'document'), b(null, 'other')];
+    expect(reasonTold([P, V], told('media', 'voice'))).toBe('voice');
+    expect(reasonTold([P], told('media'))).toBe('media');
+    expect(reasonTold([V], told('voice'))).toBe('voice');
+    // The final check, F-coalesce: a voice note and a photo sent together are ONE run's (the voice note's own job stood
+    // down `not_newest`) — the voice note is that run's to tell of, whatever came after it. Naming his NEWEST line's kind
+    // made the photo the media line, told, and the voice note reached nobody.
+    expect(reasonTold([V, P], told('media', 'voice'))).toBe('voice');
+    expect(reasonTold([V, P, P], told('media', 'voice'))).toBe('voice');
+    expect(reasonTold([V, P, S], told('media', 'voice'))).toBe('voice');
+    expect(reasonTold([V, D], told('media', 'voice'))).toBe('voice');
+    // …while a photo after a voice note an earlier run already told him of is a quiet skip: the burst still holds the
+    // voice note, and naming the voice kind because it did (the check of the R1 fix) wrote a notice per later photo.
+    expect(reasonTold([V, P], told('media', 'voice'), [P])).toBe('media');
+    expect(reasonTold([V, P, P], told('media', 'voice'), [P])).toBe('media');
+    // A sticker is no line's kind: after a voice note already told of it is skipped — and with nothing new, no line.
+    expect(reasonTold([V, S], told('voice'), [S])).toBeNull();
+    expect(reasonTold([V, S, S], told('voice'), [S])).toBeNull();
+    expect(reasonTold([V], told('voice'), [])).toBeNull();
+    expect(reasonTold([P, V, S], told('media', 'voice'))).toBe('voice');
+    expect(reasonTold([V, D, S], told('media', 'voice'), [D, S])).toBe('media');
+    // A new voice note after the ones told of is told of again: every voice note reaches him once.
+    expect(reasonTold([V, P, V], told('media', 'voice'), [V])).toBe('voice');
+    // …and a kind not yet said still wins over the newest line: photo, media line, photo, voice note → the voice line —
+    // owed whoever judged the lines before (a line not said is the customer's, not a notice's).
     expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('media'))).toBe('voice');
     expect(reasonTold([b(null, 'voice'), b(null, 'photo')], told('voice'))).toBe('media');
+    expect(reasonTold([P, V], told('media'), [])).toBe('voice');
     // Pashto is the Pashto line whatever was said; a text is still the model's.
     expect(reasonTold([b('ستاسو بار څه وخت راځي')], told('pashto'))).toBe('pashto');
     expect(reasonTold([b('Narxi qancha?', 'photo')], told())).toBeNull();
@@ -273,6 +289,15 @@ describe('which burst gets which line (§4.4 finding 1)', () => {
     // The newest of several decides; none lost — the burst as the thread has it.
     expect(linesAfterOurSends(burst, [{ at: at('07:02'), body: 'x' }, { at: at('06:00'), body: 'y' }]).map((m) => m.media)).toEqual(['voice']);
     expect(linesAfterOurSends(burst, [])).toEqual(burst);
+  });
+
+  it('the lines this run is the first to judge: newer, by message id, than the newest earlier run that judged', () => {
+    const lines = [{ tgMessageId: 11n }, { tgMessageId: 12n }, { tgMessageId: 14n }];
+    expect(linesFirstJudged(lines, null)).toEqual(lines);
+    expect(linesFirstJudged(lines, 12n)).toEqual([{ tgMessageId: 14n }]);
+    // The anchor itself was the earlier run's: an edit or a redraft of a judged line judges nothing new.
+    expect(linesFirstJudged(lines, 14n)).toEqual([]);
+    expect(linesFirstJudged(lines, 5n)).toEqual(lines);
   });
 
   it('a line in the SECOND our lost send left stands after it — Telegram stamps his lines in whole seconds (the check of the R1 fix)', () => {

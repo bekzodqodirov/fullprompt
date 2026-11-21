@@ -585,7 +585,7 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
    * A kept photo — or a voice note: its line and the stored file beside it, what the run reads as a photo the media line
    * answers (or a voice note the voice line does).
    */
-  async function photo(at: Date, kind: 'photo' | 'voice' = 'photo'): Promise<bigint> {
+  async function photo(at: Date, kind: 'photo' | 'voice' | 'document' = 'photo'): Promise<bigint> {
     const tgId = await line('in', '', at, true);
     const [row] = await db.select({ id: tgMessages.id }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, tgId)));
     const [file] = await db
@@ -595,8 +595,8 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
         entityId: row!.id,
         kind: kind === 'photo' ? 'photo' : 'file',
         storageKey: `agent-chat-loop-lost/${SUFFIX}/${row!.id}`,
-        fileName: kind === 'photo' ? 'invoice.jpg' : 'voice.ogg',
-        contentType: kind === 'photo' ? 'image/jpeg' : 'audio/ogg',
+        fileName: kind === 'photo' ? 'invoice.jpg' : kind === 'voice' ? 'voice.ogg' : 'invoice.pdf',
+        contentType: kind === 'photo' ? 'image/jpeg' : kind === 'voice' ? 'audio/ogg' : 'application/pdf',
         sizeBytes: 10,
         uploadedBy: ownerId,
       })
@@ -605,6 +605,11 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     return tgId;
   }
   const voiceNote = (at: Date) => photo(at, 'voice');
+  /** A sticker: Telegram gave the line media and the store kept no file for it — no line's kind. */
+  const sticker = (at: Date) => line('in', '', at, true);
+  /** His line of a kind, as the tables below spell it: P a photo, V a voice note, D a file, S a sticker. */
+  const his = (e: 'P' | 'V' | 'D' | 'S', at: Date) =>
+    e === 'V' ? voiceNote(at) : e === 'D' ? photo(at, 'document') : e === 'S' ? sticker(at) : photo(at);
 
   /**
    * One of OUR sends with NO thread copy, as the send step leaves it: 'unknown' (handed to Telegram, the answer lost —
@@ -880,7 +885,14 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     ['copied', ['V', 'P', 'P']],
     ['copied', ['V', 'P', 'P', 'P']],
     ['unknown', ['V', 'P', 'P']],
-  ] as const)('photo → media line → voice line (%s) → %j: one voice notice, the photos after it skipped', async (shape, tail) => {
+    // The final check, F-sticker: a sticker after the voice note told of named the voice kind again — a notice per
+    // sticker. Every voice note is told of once, a later one too.
+    ['copied', ['V', 'S']],
+    ['copied', ['V', 'S', 'S']],
+    ['copied', ['V', 'P', 'S']],
+    ['copied', ['V', 'S', 'P']],
+    ['copied', ['V', 'P', 'V', 'S']],
+  ] as const)('photo → media line → voice line (%s) → %j: one voice notice per voice note, the lines after it skipped', async (shape, tail) => {
     await photo(min(1));
     if (shape === 'copied') {
       await machineSend(mediaLine(), min(2));
@@ -892,15 +904,88 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     const runs = [];
     let at = 5;
     for (const e of tail) {
-      const anchor = e === 'V' ? await voiceNote(min(at++)) : await photo(min(at++));
+      const anchor = await his(e, min(at++));
       runs.push(await handleInbound(job(anchor), { callModel: never() }));
       expect(await pendingFor(anchor)).toBeUndefined();
     }
     expect(runs).toEqual(tail.map((e) => (e === 'V' ? { outcome: 'notice', reason: 'voice_only' } : { outcome: 'skipped', reason: 'media_only' })));
+    expect(await voiceNotices()).toHaveLength(tail.filter((e) => e === 'V').length);
+  });
+
+  /**
+   * The final check, F-coalesce: a voice note and a photo (or a file, a sticker) sent TOGETHER after both lines were
+   * said. Each line's job runs once his burst has landed — the debounce and his typing wait make it so — and every job
+   * but the newest's stands down `not_newest` before it judges anything. The newest line's run is the first to judge
+   * the voice note, and tells HIM of it once; naming his newest line's kind skipped the photo quietly and the voice note
+   * reached nobody. The next photo, its own run, is skipped — the voice note was told of.
+   */
+  it.each([
+    ['copied', ['V', 'P']],
+    ['copied', ['V', 'P', 'P']],
+    ['copied', ['V', 'S']],
+    ['copied', ['V', 'P', 'S']],
+    ['copied', ['P', 'V']],
+    ['copied', ['V', 'D']],
+    ['unknown', ['V', 'P']],
+  ] as const)('photo → media line → voice note → voice line (%s) → %j sent together: the newest line’s run tells HIM once', async (shape, tail) => {
+    await photo(min(1));
+    if (shape === 'copied') await machineSend(mediaLine(), min(2));
+    else await lostSend(mediaLine(), min(2), 'unknown');
+    await voiceNote(min(3));
+    if (shape === 'copied') await machineSend(voiceLine(), min(4));
+    else await lostSend(voiceLine(), min(4), 'unknown');
+    const anchors: bigint[] = [];
+    for (const [i, e] of tail.entries()) anchors.push(await his(e, sec(min(6), i * 3)));
+    const runs = [];
+    for (const anchor of anchors) runs.push(await handleInbound(job(anchor), { callModel: never() }));
+    expect(runs).toEqual(
+      anchors.map((_, i) => (i < anchors.length - 1 ? { outcome: 'stood_down', reason: 'not_newest' } : { outcome: 'notice', reason: 'voice_only' })),
+    );
+    for (const anchor of anchors) expect(await pendingFor(anchor)).toBeUndefined();
+    expect(await voiceNotices()).toHaveLength(1);
+    const next = await photo(min(9));
+    expect(await handleInbound(job(next), { callModel: never() })).toEqual({ outcome: 'skipped', reason: 'media_only' });
     expect(await voiceNotices()).toHaveLength(1);
   });
 
-  it('…while a voice note after the photos still tells HIM: his newest line names the kind', async () => {
+  /**
+   * «Judged» is read off the ledger (run `judgedThroughOf`): a row the voice note's run left that judged nothing that
+   * stands — a stand-down stored at the write, eligibility's `not_newest`, an error the sweep retries — leaves the voice
+   * note to the photo's run, which tells HIM of it. A notice row is a judgment: the photo after it is skipped. The rows
+   * are written as the run would leave them; the run of the photo is the real one.
+   */
+  it.each([
+    ['stood_down', 'editing', true],
+    ['refused', 'not_newest', true],
+    ['error', 'interrupted', true],
+    ['notice', 'voice_only', false],
+    ['refused', 'media_only', false],
+  ] as const)('the voice note’s own run left `%s %s`: the photo after it tells HIM — %s', async (outcome, error, tells) => {
+    await photo(min(1));
+    await machineSend(mediaLine(), min(2));
+    await voiceNote(min(3));
+    await machineSend(voiceLine(), min(4));
+    const voice = await voiceNote(min(6));
+    await db.insert(agentRuns).values({ managerUserId: ownerId, peerId: PEER, trigger: 'inbound', anchorTgMessageId: voice, attempt: 0, outcome, error });
+    const next = await photo(min(7));
+    expect(await handleInbound(job(next), { callModel: never() })).toEqual(
+      tells ? { outcome: 'notice', reason: 'voice_only' } : { outcome: 'skipped', reason: 'media_only' },
+    );
+    expect(await voiceNotices()).toHaveLength(tells ? 1 : 0);
+  });
+
+  it('a line judged once and run again (another attempt) tells nobody twice: its own earlier run judged it', async () => {
+    await photo(min(1));
+    await machineSend(mediaLine(), min(2));
+    await machineSend(voiceLine(), min(3));
+    const voice = await voiceNote(min(5));
+    expect(await handleInbound(job(voice), { callModel: never() })).toEqual({ outcome: 'notice', reason: 'voice_only' });
+    // A burst of voice notes alone is `voice_only` — skipped under that word, with no second notice.
+    expect(await handleInbound({ ...job(voice), attempt: 1 }, { callModel: never() })).toEqual({ outcome: 'skipped', reason: 'voice_only' });
+    expect(await voiceNotices()).toHaveLength(1);
+  });
+
+  it('…while a voice note after the photos still tells HIM: no earlier run judged it', async () => {
     await photo(min(1));
     await machineSend(mediaLine(), min(2));
     await machineSend(voiceLine(), min(3));

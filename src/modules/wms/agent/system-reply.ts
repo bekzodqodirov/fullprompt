@@ -141,16 +141,24 @@ const NOTHING_TOLD: ReadonlySet<SystemReplyReason> = new Set();
  * (`linesAfterOurSends`), oldest first — and `told` what this silence already said (`toldInSilence`). Of the kinds the
  * burst carries, the first one NOT yet said is the line (the check of the F1-F3 fixes, R1): a voice note after our media
  * line gets the voice line — read by kind of the whole burst, a photo earlier in it chose the media line, which was
- * told, and the run skipped `media_only` with nobody hearing the voice note. When every kind was said, the kind of his
- * NEWEST line is named, and the caller asks `told` and writes no second line: a voice note is told to HIM (the voice
- * notice — the run's promise that a voice note it does not answer again still reaches somebody), a photo is skipped
- * quietly. Naming the voice kind whenever the burst held one (the check of the R1 fix) made every later photo of that
- * burst write «Mijoz yana ovozli xabar yubordi» again — a notice per photo about one voice note he had already heard of.
+ * told, and the run skipped `media_only` with nobody hearing the voice note.
+ *
+ * When every kind was said, the caller asks `told` and writes no second line — and the voice note still reaches HIM (the
+ * voice notice, the run's promise that a voice note it does not answer again is heard by somebody) exactly once: the
+ * voice kind is named iff a voice note is among `firstJudged`, the lines of the burst NO earlier run of this chat judged
+ * (`linesFirstJudged`); else a photo names the media line, told, and is skipped quietly, as before 1a. The two rules
+ * before this one read the burst instead, and both were wrong the same way — the burst holds voice notes an earlier
+ * run already told him of, and none an earlier run never saw: «all said → the voice kind whenever the burst held one»
+ * wrote «Mijoz yana ovozli xabar yubordi» on every later photo (one voice note, a notice per photo), and «the kind of
+ * his newest line» told NOBODY of a voice note and a photo sent together — the voice note's own job stands down
+ * `not_newest` (the photo landed within its wait), and the photo's run named the photo (the final check, F-coalesce).
+ * `firstJudged` defaults to the whole burst: with no earlier run, every line is this run's to judge.
  */
 export function systemReasonOf(
   w: Worthiness,
   burst: readonly BurstMessage[],
   told: ReadonlySet<SystemReplyReason> = NOTHING_TOLD,
+  firstJudged: readonly BurstMessage[] = burst,
 ): SystemReplyReason | null {
   if (w.worthy) return null;
   if (w.reason === 'pashto') return 'pashto';
@@ -160,12 +168,10 @@ export function systemReasonOf(
   if (burst.some((m) => kindOfLine(m) === 'voice')) kinds.push('voice');
   const owed = kinds.find((k) => !told.has(k));
   if (owed !== undefined) return owed;
-  // Every kind said: the newest line that carries one decides (a sticker after the photo is no line's kind).
-  for (let i = burst.length - 1; i >= 0; i -= 1) {
-    const k = kindOfLine(burst[i]!);
-    if (k !== null) return k;
-  }
-  return null;
+  // Every kind said: a voice note no earlier run judged is told to him; anything else is a quiet skip (a sticker is no
+  // line's kind, and a line an earlier run judged was that run's to tell of).
+  if (firstJudged.some((m) => kindOfLine(m) === 'voice')) return 'voice';
+  return firstJudged.some((m) => kindOfLine(m) === 'media') ? 'media' : null;
 }
 
 /** The tayyor matn a line of his asks for by itself: a photo or a file → media, a voice note or audio → voice. */
@@ -330,4 +336,14 @@ export function linesAfterOurSends<T extends { sentAt: Date }>(burst: readonly T
   const newest = uncopied.reduce<UncopiedSend | null>((a, s) => (a === null || s.at.getTime() > a.at.getTime() ? s : a), null);
   if (newest === null) return [...burst];
   return burst.filter((m) => sendStandsBefore(newest, m.sentAt));
+}
+
+/**
+ * The lines this run is the FIRST to judge (`systemReasonOf`'s `firstJudged`): those newer than `judgedThrough`, the
+ * anchor of the newest earlier run of this chat that judged its burst (run `judgedThroughOf`) — every line at or before
+ * that anchor was in its burst, and what was owed for it was that run's to say. Null — no run judged yet — leaves every
+ * line. By Telegram's message id, the order the anchors are numbered in, never by a clock.
+ */
+export function linesFirstJudged<T extends { tgMessageId: bigint }>(lines: readonly T[], judgedThrough: bigint | null): T[] {
+  return judgedThrough === null ? [...lines] : lines.filter((m) => m.tgMessageId > judgedThrough);
 }
