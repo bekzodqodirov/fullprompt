@@ -25,6 +25,12 @@ interface Place {
    * is English (the review of his «T a», N4: «Are you Dan?», «Hey you dan»).
    */
   cased?: RegExp;
+  /**
+   * A spelling read only in a line with no English in it (`ENGLISH_WORD`): «salom you dan 3 kub», «YOU DAN 3 KUB» —
+   * the customer who types Yiwu as «You» types it small as often as big (the T check), and a line in English is where
+   * «you dan» is the pronoun and a name.
+   */
+  apart?: RegExp;
   /** A province, not a city: «Zhejiang» on a warehouse's address is where it stands, never where a customer's cargo starts. */
   province?: true;
 }
@@ -65,6 +71,7 @@ const PLACES: readonly Place[] = [
     // small inside a sentence («Hey you dan», «Did you shahar?») and a man's name big («Are you Dan?»). Not after the
     // words that end an English phrase in «You» («Thank You», «See You»).
     cased: /(?<![\p{L}])(?<!(?:[Tt]hank|[Tt]hanks|[Ss]ee|[Ll]ove|[Mm]iss|[Bb]less|[Ww]ith|[Ff]or|[Tt]o)\s+)You\s+(?:dan|sha[hx](?:ri|ar)(?:dan|dagi|da|ga|ning)?)(?![\p{L}])/u,
+    apart: /(?<![\p{L}])you\s+(?:dan|sha[hx](?:ri|ar)(?:dan|dagi|da|ga|ning)?)(?![\p{L}])/iu,
   },
   cn('Guangzhou', 'guangzhou|guanchjou|guanjou|гуанчжоу|广州|گوانگژو'),
   cn('Foshan', 'foshan|фошань|佛山|فوشان'),
@@ -111,16 +118,38 @@ const CHINA = /(?<!\p{L})(?:xitoy|hitoy|хитой|кита[йяеюи]|china|ch
  */
 export function originMentions(text: string | null): { place: string; index: number; match: string }[] {
   const t = text ?? '';
-  return PLACES.flatMap((p) =>
-    readersOf(p).flatMap((re) =>
+  return PLACES.flatMap((p) => {
+    const found = readersOf(p).flatMap((re) =>
       [...t.matchAll(new RegExp(re.source, `${re.flags.replace('g', '')}g`))].map((m) => ({ place: p.place, index: m.index, match: m[0] })),
-    ),
-  );
+    );
+    // «You dan» read by both the cased and the apart spelling is one mention.
+    return [...found, ...apartMentions(p, t).filter((a) => !found.some((f) => f.index === a.index))];
+  });
 }
 
 /** A place's spellings: its own, and the ones whose case is the reading. */
 function readersOf(p: Place): RegExp[] {
   return p.cased ? [p.re, p.cased] : [p.re];
+}
+
+/**
+ * The words of English a line would hold around a «you» that is the pronoun — «Are you Dan?», «Hey you dan», «Can you
+ * dan aka», «and you dan», «Did you shahar?», «Thank you Dan». No Uzbek word is one of them.
+ */
+const ENGLISH_WORD =
+  /(?<![\p{L}])(?:are|is|am|was|were|hey|hi|hello|can|could|do|does|did|will|would|shall|should|thank|thanks|see|love|miss|bless|with|for|to|and|the|of|how|what|when|where|why|who|i|me|my|your|please)(?![\p{L}])/iu;
+
+/** Where a place's `apart` spelling stands in the text — on the lines with no English in them only. */
+function apartMentions(p: Place, t: string): { place: string; index: number; match: string }[] {
+  if (!p.apart) return [];
+  const re = new RegExp(p.apart.source, `${p.apart.flags.replace('g', '')}g`);
+  const out: { place: string; index: number; match: string }[] = [];
+  let at = 0;
+  for (const line of t.split('\n')) {
+    if (!ENGLISH_WORD.test(line)) for (const m of line.matchAll(re)) out.push({ place: p.place, index: at + m.index, match: m[0] });
+    at += line.length + 1;
+  }
+  return out;
 }
 
 /**
@@ -138,7 +167,7 @@ export function chinaMentions(text: string | null): { index: number; match: stri
 /** Every named place in the text, each once, in the list's order. */
 export function namedOrigins(text: string | null): { place: string; zone: OriginZone | null }[] {
   const t = text ?? '';
-  return PLACES.filter((p) => readersOf(p).some((re) => re.test(t))).map(({ place, zone }) => ({ place, zone }));
+  return PLACES.filter((p) => readersOf(p).some((re) => re.test(t)) || apartMentions(p, t).length > 0).map(({ place, zone }) => ({ place, zone }));
 }
 
 /**

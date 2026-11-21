@@ -75,7 +75,8 @@ const STEMS: readonly string[] = [
   // «Marhamat» is «please» and «Baliqchi» a fisherman: those two only in a place's own form (`ENDED`).
   'qorasuv', 'қорасув', 'корасув', 'xonobod', 'хонобод', 'ханабад', `oltinko${A}l`, 'олтинкўл', 'олтинкул', 'алтынкул',
   `paytug${A}`, 'пайтуғ', 'пайтуг', 'izboskan', 'избоскан', `qo${A}rg${A}ontepa`, 'қўрғонтепа', 'кургантепа', 'кургонтепа',
-  'quvasoy', 'қувасой', 'кувасай',
+  // «кувасой» as a Russian keyboard types the Uzbek (the T check: «в Кувасой» read as no place at all).
+  'quvasoy', 'қувасой', 'кувасай', 'кувасой',
   'rishton', 'риштон', 'риштан',
   'kosonsoy', 'косонсой', 'касансай',
   `kattaqo${A}rg${A}on`, 'каттақўрғон', 'каттакурган',

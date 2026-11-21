@@ -19,11 +19,17 @@ export type ComposedAction =
        */
       fromOurWarehouse: boolean;
       /**
-       * The customer named no destination and the truck job took Tashkent (his «T a», 2026-11-21): the landing's note
-       * says «Manzil aytilmagan — Toshkent deb olindi» to the VED. Absent — an action stored before it, or a job whose
-       * destination was said — reads as said.
+       * No destination was read and the truck job took Tashkent (his «T a», 2026-11-21): the landing's note says
+       * «Manzil o‘qilmadi — Toshkent deb olindi, mijoz so‘zlarini tekshiring» to the VED. Absent — an action stored
+       * before it, or a job whose destination was read — reads as read.
        */
       toCityAssumed?: boolean;
+      /**
+       * The customer's words the destination was READ from, cut (calc-destination `evidenceOf`; the lead's ruling on
+       * the T check): the VED's note, his card and the VED's two screens show them beside the city, so a wrong reading
+       * is seen where the route is. Absent — taken, a rastamojka job, or an action stored before it.
+       */
+      toCitySaid?: string;
       /** tg_messages ids the model cited — the only messages that reach the lenta (leak-12). */
       citedMessageIds: string[];
     }
@@ -63,6 +69,20 @@ export function calcDestinationTaken(actions: unknown): boolean {
       (a as { type?: unknown }).type === 'calc_submit' &&
       (a as { toCityAssumed?: unknown }).toCityAssumed === true,
   );
+}
+
+/**
+ * The customer's words a job's destination was read from (`calc_submit.toCitySaid`) — or null: taken, none, or an
+ * action stored before the evidence was kept.
+ */
+export function calcDestinationSaid(actions: unknown): string | null {
+  if (!Array.isArray(actions)) return null;
+  for (const a of actions as unknown[]) {
+    if (typeof a !== 'object' || a === null || (a as { type?: unknown }).type !== 'calc_submit') continue;
+    const said = (a as { toCitySaid?: unknown }).toCitySaid;
+    if (typeof said === 'string' && said.trim() !== '') return said;
+  }
+  return null;
 }
 
 /** What the card shows of the chat — kept on the draft, so a refresh needs no re-read. */

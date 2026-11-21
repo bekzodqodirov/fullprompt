@@ -479,13 +479,16 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
     case 'calc_destination':
       // The customer's lines, oldest first — what the checklist reads (his «T a»).
       return readsPlace(calcDestination.newestDestination(c.input.split('\n')), c.context?.place);
-    case 'calc_destination_default':
+    case 'calc_destination_default': {
       // A truck job's destination with the route reader the checklist reads beside it (review R7 — a corpus with no
-      // route reader never saw «Xitoydan menga» land as «men»): `goes` = the job lands on the Tashkent table.
-      return calcDestination.truckDestination(c.input.split('\n'), (l) => parseManualFacts(l).toCity ?? null).toCity ===
-        calcDestination.ASSUMED_DESTINATION
-        ? 'goes'
-        : 'held';
+      // route reader never saw «Xitoydan menga» land as «men»): `goes` = the job lands on the Tashkent table. A case
+      // naming its city lands on THAT city, a `taken` one on Tashkent taken (the lead's ruling on the T check: the
+      // same `held` stood for «asked for ever» and «a city read», and could tell neither from the other).
+      const d = calcDestination.truckDestination(c.input.split('\n'), (l) => parseManualFacts(l).toCity ?? null);
+      if (c.context?.place !== undefined) return readsPlace(d.toCity, c.context.place);
+      if (c.context?.taken === true) return d.toCity === calcDestination.ASSUMED_DESTINATION && d.assumed ? 'goes' : 'held';
+      return d.toCity === calcDestination.ASSUMED_DESTINATION ? 'goes' : 'held';
+    }
     case 'origin':
       return readsPlace(origin.namedOrigin(c.input)?.place ?? null, c.context?.place);
   }

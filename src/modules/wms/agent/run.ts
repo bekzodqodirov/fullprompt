@@ -1961,6 +1961,8 @@ export function validateActions(
         facts: cl.facts,
         fromOurWarehouse: cl.fromOurWarehouse,
         ...(cl.toCityAssumed ? { toCityAssumed: true } : {}),
+        // The customer's words the destination was read from — the VED sees them beside the city (the T check).
+        ...(!cl.toCityAssumed && cl.toCityEvidence && cl.facts.toCity ? { toCitySaid: cl.toCityEvidence } : {}),
         citedMessageIds: [...new Set(cited)],
       });
     } else if (a.type === 'set_followup') {

@@ -106,6 +106,12 @@ export interface ChecklistState {
    * (a state built by hand) reads as said.
    */
   toCityAssumed?: boolean;
+  /**
+   * The customer's words a truck job's destination was READ from (calc-destination `evidenceOf`) — what the VED's
+   * note, his card and the VED's screens show beside the city (the lead's ruling on the T check). Absent when taken,
+   * off a truck section, or none read.
+   */
+  toCityEvidence?: string;
 }
 
 /**
@@ -734,6 +740,11 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
   };
 }
 
+/** The checklist's evidence field, present only with words to show. */
+function evidenceField(evidence: string | null): { toCityEvidence?: string } {
+  return evidence ? { toCityEvidence: evidence } : {};
+}
+
 async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<ToolOutcome> {
   const { ctx } = env;
   const section = String(input.section ?? '') as CalcSection | '';
@@ -761,6 +772,7 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // — read beside the route reader, the newest winning; none named → Tashkent, said to the VED in words. A rastamojka
   // job prices no road: its facts are today's.
   let toCityAssumed = false;
+  let toCityEvidence: string | null = null;
   if (TRUCK_SECTIONS.includes(section)) {
     // Only what was said since the chat's last landed job is THIS job's destination (review R2 — the cut calc-files
     // copies the job's files by): «Andijonga» for last month's job is no destination of today's. A chain the VED handed
@@ -774,6 +786,7 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
     );
     facts.toCity = dest.toCity;
     toCityAssumed = dest.assumed;
+    toCityEvidence = dest.evidence;
   }
   const dims = ctx.measures.filter((m) => m.ref.startsWith('d'));
   if (!(Number(facts.volumeM3) > 0) && dims.length > 0) facts.volumeM3 = dims[dims.length - 1]!.value;
@@ -790,11 +803,11 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // The company does not carry it by truck — so it is not collected for the
   // VED either: «hisoblatishga yubordim» would be accepting the cargo.
   if (TRUCK_SECTIONS.includes(section) && belowTruckMinimumFacts(facts)) {
-    return { ...belowTruckMinimum(), checklist: { section, facts, complete: false, fromOurWarehouse, toCityAssumed } };
+    return { ...belowTruckMinimum(), checklist: { section, facts, complete: false, fromOurWarehouse, toCityAssumed, ...evidenceField(toCityEvidence) } };
   }
   // …and neither does a truck job from Kashgar (J24), answered the way the minimum is: never complete, so no job lands.
   if (TRUCK_SECTIONS.includes(section) && (namesKashgar(inbound.map((m) => m.body).join('\n')) || namesKashgar(facts.fromCity))) {
-    return { ok: true, text: KASHGAR_REFUSAL, sources: [], checklist: { section, facts, complete: false, fromOurWarehouse, toCityAssumed } };
+    return { ok: true, text: KASHGAR_REFUSAL, sources: [], checklist: { section, facts, complete: false, fromOurWarehouse, toCityAssumed, ...evidenceField(toCityEvidence) } };
   }
   const goodsIn = Array.isArray(input.goods) ? (input.goods as Record<string, unknown>[]) : [];
   const goods: CalcGoodsFact[] = [];
@@ -834,7 +847,7 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
     ok: true,
     text,
     sources: [],
-    checklist: { section, facts, complete, fromOurWarehouse, toCityAssumed },
+    checklist: { section, facts, complete, fromOurWarehouse, toCityAssumed, ...evidenceField(toCityEvidence) },
   };
 }
 

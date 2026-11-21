@@ -39,8 +39,8 @@ import {
 } from '@/modules/platform/db/schema';
 import { AVIA_DAYS_DEFAULT, getSetting, setSetting } from '@/modules/platform/settings/service';
 import { readAutoConfig, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
-import { ASSUMED_DESTINATION_NOTE } from '@/modules/wms/agent/calc-destination';
-import { calcPriceGateFacts, takenDestinationRequests } from '@/modules/wms/agent/calc-price';
+import { ASSUMED_DESTINATION_NOTE, saidDestinationNote } from '@/modules/wms/agent/calc-destination';
+import { calcPriceGateFacts, destinationReadings, takenDestinationRequests } from '@/modules/wms/agent/calc-price';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { loadContext } from '@/modules/wms/agent/context';
 import { decideDraft, noteIdFor } from '@/modules/wms/agent/decide';
@@ -53,8 +53,10 @@ import { stampAgentPump } from '@/modules/wms/crm/account-guard';
  * His «T a» (2026-11-21), end to end against a real database: the whole conversation the stage never had a test for —
  * a priced reply with the customs offer, «ha», the checklist asking the goods line, the count, the checklist COMPLETE
  * with the destination nobody said taken as Tashkent, the submit composed, his ✅, and a `calc_requests` row whose
- * note tells the VED «Manzil aytilmagan — Toshkent deb olindi». Then a destination said alone in Cyrillic: read, and
- * nothing taken.
+ * note tells the VED «Manzil o‘qilmadi — Toshkent deb olindi, mijoz so‘zlarini tekshiring». Then a destination said
+ * alone in Cyrillic: read, nothing taken, and the VED shown the words it was read from. Then the lead's ruling on the T
+ * check: «taken» is the chain's NEWEST landing while its request still carries Tashkent — a VED who types the real
+ * city, or a hand-back loop's resubmission with it, ends it.
  *
  * Before his answer the checklist read the destination only through the staff intake's Latin «A → B» route reader, so
  * a truck job where the customer named no city — or named it alone, or in Cyrillic — asked «qaysi shaharga» for ever
@@ -320,7 +322,7 @@ const SUBMIT = (refs: string[], cyrillic = false) =>
   });
 
 describe('his «T a»: «ha» all the way to a landed job', () => {
-  it('no destination said: the checklist takes Tashkent and stops asking «qaysi shaharga»; his ✅ lands the job and the VED reads «Manzil aytilmagan — Toshkent deb olindi»', async () => {
+  it('no destination said: the checklist takes Tashkent and stops asking «qaysi shaharga»; his ✅ lands the job and the VED reads «Manzil o‘qilmadi — Toshkent deb olindi, …»', async () => {
     const peer = newPeer();
     const clientId = await freshClient();
 
@@ -376,10 +378,12 @@ describe('his «T a»: «ha» all the way to a landed job', () => {
     expect(reqs).toHaveLength(1);
     expect(reqs[0]).toMatchObject({ section: 'podklyuch', toCity: 'Toshkent', fromCity: 'Yiwu' });
     expect(await noteOf(noteId)).toContain(ASSUMED_DESTINATION_NOTE);
-    expect(ASSUMED_DESTINATION_NOTE).toBe('Manzil aytilmagan — Toshkent deb olindi.');
+    expect(ASSUMED_DESTINATION_NOTE).toBe('Manzil o‘qilmadi — Toshkent deb olindi, mijoz so‘zlarini tekshiring');
+    expect(await noteOf(noteId)).not.toContain('Manzil mijoz xabaridan');
+    expect((await destinationReadings([reqs[0]!.id])).get(reqs[0]!.id)).toEqual({ taken: true });
   });
 
-  it('«Тошкентга» said alone in its own message: read — nothing taken, no «Manzil aytilmagan» for the VED', async () => {
+  it('«Тошкентга» said alone in its own message: read — nothing taken; the VED is shown the words it was read from', async () => {
     const peer = newPeer();
     const clientId = await freshClient();
     const a1 = await inbound(peer, clientId, 'Иудан 3 куб 450 кг кийим бор, 200 дона', at(10));
@@ -407,7 +411,11 @@ describe('his «T a»: «ha» all the way to a landed job', () => {
     const reqs = await requestsOn(noteId);
     expect(reqs).toHaveLength(1);
     expect(reqs[0]).toMatchObject({ toCity: 'Toshkent' });
-    expect(await noteOf(noteId)).not.toContain('Manzil aytilmagan');
+    expect(await noteOf(noteId)).not.toContain(ASSUMED_DESTINATION_NOTE);
+    // The lead's ruling on the T check: a reading is VISIBLE — the note and the VED's two screens carry its evidence.
+    expect(submit).toMatchObject({ toCitySaid: 'Тошкентга' });
+    expect(await noteOf(noteId)).toContain(saidDestinationNote('Тошкентга'));
+    expect((await destinationReadings([reqs[0]!.id])).get(reqs[0]!.id)).toEqual({ taken: false, evidence: 'Тошкентга' });
   });
 
   it('a city other than Tashkent said alone in Cyrillic («Андижонга») is read — the checklist does not ask it again, and takes no Tashkent', async () => {
@@ -485,4 +493,114 @@ describe('the VED’s answer to a job whose destination was taken reaches the cu
     expect(facts.destinationTaken).toBe(false);
     expect(marked).toBe(false);
   });
+});
+
+/** Lands a podklyuch job over these lines with his ✅; the request, its note and the draft. */
+async function landedJob(peer: bigint, clientId: string, lines: string[], start: number) {
+  let anchor = 0n;
+  for (const [i, line] of lines.entries()) anchor = await inbound(peer, clientId, line, at(start + i * 0.1));
+  const ctx = await loadContext(holderId, peer, anchor);
+  const refs = ctx.messages.filter((m) => m.direction === 'in').map((m) => m.ref);
+  const d = await run(
+    peer,
+    anchor,
+    [{ name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'кийим', quantity: 200, unit: 'dona', weight_kg: null }] } }, SUBMIT(refs, true)],
+    at(start + 0.5),
+  );
+  await approvedAndSent(peer, clientId, d.id, at(start + 1));
+  const [req] = await requestsOn(noteIdFor(d.id));
+  expect(req, 'the job landed').toBeDefined();
+  return { req: req!, draft: d, submit: (d.actions as { type: string; toCityAssumed?: boolean; toCitySaid?: string; facts?: { toCity?: string } }[]).find((a) => a.type === 'calc_submit') };
+}
+
+/** `calc_price` read after the VED answered, and the gate's facts and the VED screens' reading of `requestId`. */
+async function pricedNow(peer: bigint, clientId: string, requestId: string, when: number) {
+  const asked = await inbound(peer, clientId, 'нима бўлди?', at(when));
+  const ctx = await loadContext(holderId, peer, asked);
+  const out = await runTool('calc_price', {}, { ...envOf(ctx), calcPricing: true });
+  expect(out.ok, out.text).toBe(true);
+  const facts = await calcPriceGateFacts(out.calcPrices, { managerUserId: holderId, peerId: peer }, new Date());
+  return { out, facts, reading: (await destinationReadings([requestId])).get(requestId) ?? null };
+}
+
+describe('the T check, regression 4: «taken» is the chain’s NEWEST landing, while its request still carries Tashkent', () => {
+  it('the VED types the real city on a taken job: the price no longer says «Toshkentgacha», the gate and the screens no longer call it taken', async () => {
+    const peer = newPeer();
+    const clientId = await freshClient();
+    const { req, submit } = await landedJob(peer, clientId, ['Иудан 3 куб 450 кг кийим бор, 200 дона, подключ билан канча?'], 120);
+    expect(submit?.toCityAssumed).toBe(true);
+    // The VED reads «Manzil o‘qilmadi …», asks the customer, and types the city on the workspace.
+    const { setCargoFacts } = await import('@/modules/wms/calc/workspace');
+    await setCargoFacts(req.id, { fromCity: req.fromCity, toCity: 'Andijon', weightKg: 450, volumeM3: 3 }, { actorId: holderId, ip: null, userAgent: null } as never);
+    await answered(req.id, '1000');
+    const { out, facts, reading } = await pricedNow(peer, clientId, req.id, 122);
+    expect(out.text).not.toContain(CALC_DESTINATION_TAKEN_WORDS);
+    expect(facts.destinationTaken).toBe(false);
+    // The city is the VED's own now — no mark speaks for it (neither «taxmin» nor the customer's words).
+    expect(reading).toBeNull();
+  });
+
+  it('the hand-back loop: a taken job returned «qaysi shaharga?», «Андижонга» answers it — the resubmission is said, and the price is no «Toshkentgacha»', async () => {
+    const { returnCalcRequest } = await import('@/modules/wms/calc/service');
+    const peer = newPeer();
+    const clientId = await freshClient();
+    const first = await landedJob(peer, clientId, ['Иудан 3 куб 450 кг кийим бор, 200 дона, подключ билан канча?'], 130);
+    expect(first.submit?.toCityAssumed).toBe(true);
+    await returnCalcRequest(first.req.id, 'mijoz qaysi shaharga? manzil o‘qilmadi', { actorId: holderId, ip: null, userAgent: null } as never);
+    const second = await landedJob(peer, clientId, ['Андижонга'], 140);
+    expect(second.submit).toMatchObject({ facts: { toCity: 'Андижон' }, toCitySaid: 'Андижонга' });
+    expect(second.submit?.toCityAssumed).toBeUndefined();
+    const [link] = await db.select().from(agentCalcLinks).where(eq(agentCalcLinks.requestId, second.req.id));
+    expect(link?.rootRequestId, 'the resubmission is the same chain').toBe(first.req.id);
+    await answered(second.req.id, '1200');
+    const { out, facts, reading } = await pricedNow(peer, clientId, second.req.id, 142);
+    expect(out.text).not.toContain(CALC_DESTINATION_TAKEN_WORDS);
+    expect(facts.destinationTaken).toBe(false);
+    expect(reading).toEqual({ taken: false, evidence: 'Андижонга' });
+    // The first landing's own mark is its history — it WAS taken.
+    expect(await takenDestinationRequests([first.req.id])).toEqual(new Set([first.req.id]));
+  });
+
+  it('the hand-back answered «Тошкентга»: the same city, now SAID — the newest landing decides, never the first one’s «taken»', async () => {
+    const { returnCalcRequest } = await import('@/modules/wms/calc/service');
+    const peer = newPeer();
+    const clientId = await freshClient();
+    const first = await landedJob(peer, clientId, ['Иудан 3 куб 450 кг кийим бор, 200 дона, подключ билан канча?'], 160);
+    expect(first.submit?.toCityAssumed).toBe(true);
+    await returnCalcRequest(first.req.id, 'mijoz qaysi shaharga? manzil o‘qilmadi', { actorId: holderId, ip: null, userAgent: null } as never);
+    const second = await landedJob(peer, clientId, ['Тошкентга'], 170);
+    expect(second.submit).toMatchObject({ facts: { toCity: 'Toshkent' }, toCitySaid: 'Тошкентга' });
+    expect(second.req.toCity, 'the city on the request is the taken one’s spelling — only the landing tells them apart').toBe('Toshkent');
+    await answered(second.req.id, '1100');
+    const { out, facts } = await pricedNow(peer, clientId, second.req.id, 172);
+    expect(out.text).not.toContain(CALC_DESTINATION_TAKEN_WORDS);
+    expect(facts.destinationTaken).toBe(false);
+  });
+});
+
+describe('the T check: the checklist on the checker’s ordinary lines lands every one — the city read, or Tashkent taken', () => {
+  const cases: [string[], string, boolean][] = [
+    [['Ivudan Andijonga 3 kub 450 kg kiyim, narxi qancha va qachon keladi?'], 'Andijon', false],
+    [['Из Иу в Андижан 3 куба 450 кг одежда, сколько стоит и когда будет?'], 'Андижан', false],
+    [['Пришлите цену доставки в Самарканд, из Иу 3 куба 450 кг одежда'], 'Самарканд', false],
+    [['Ivudan 3 kub 450 kg kiyim, narxi qancha?', 'Ertaga'], 'Toshkent', true],
+    [['Ivudan 3 kub 450 kg kiyim, narxi qancha?', 'Nimaga?'], 'Toshkent', true],
+    [['Ivudan 3 kub 450 kg kiyim. Qanchaga tushadi?'], 'Toshkent', true],
+    [['ivudan chinozga 3 kub 450 kg kiyim'], 'chinoz', false],
+  ];
+  for (const [ls, city, taken] of cases) {
+    it(`${ls.join(' / ')} → ${city}${taken ? ' (taken)' : ''}`, async () => {
+      const peer = newPeer();
+      const clientId = await freshClient();
+      let anchor = 0n;
+      for (const [i, line] of ls.entries()) anchor = await inbound(peer, clientId, line, at(150 + i * 0.1));
+      const ctx = await loadContext(holderId, peer, anchor);
+      const out = await runTool('calc_checklist', { section: 'yolkira', goods: [{ name: 'kiyim', quantity: null, unit: 'kg', weight_kg: 450 }] }, envOf(ctx));
+      expect(out.text).not.toContain('qaysi shaharga');
+      expect(out.checklist).toMatchObject({ toCityAssumed: taken, facts: { toCity: city } });
+      // «3 куба» is no volume to the staff intake's reader (`parseManualFacts`) — a gap of its own, not the destination's:
+      // the Russian lines are judged on the city alone, the Uzbek ones on the whole checklist.
+      if (/kub/u.test(ls.join(' '))) expect(out.checklist).toMatchObject({ complete: true });
+    });
+  }
 });

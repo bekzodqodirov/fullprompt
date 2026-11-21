@@ -10,7 +10,7 @@ import {
   type CalcQueueRow,
 } from '@/modules/wms/calc/service';
 import { calcCardHref, leadNameReadable } from '@/modules/wms/calc/card-door';
-import { takenDestinationRequests } from '@/modules/wms/agent/calc-price';
+import { destinationReadings } from '@/modules/wms/agent/calc-price';
 import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { EmptyState, PageHeader } from '@/components/ui/page';
@@ -45,8 +45,13 @@ export default async function CalcQueuePage() {
     calcSpeed(new Date(now.getTime() - 30 * 86_400_000)),
     recentlyClosed(20),
   ]);
-  // A destination the AI took as Tashkent, nobody said (his «T a», review F4): marked where the route is printed.
-  const taken = await takenDestinationRequests(rows.map((row) => row.id));
+  // How the AI read each job's destination (his «T a», review F4; the T check): taken as Tashkent, or read and from
+  // which of the customer's words — marked where the route is printed, so a wrong reading is seen there.
+  const readings = await destinationReadings(rows.map((row) => row.id));
+  const saidOf = (id: string) => {
+    const r = readings.get(id);
+    return r && !r.taken ? r.evidence : null;
+  };
   const mine = rows.filter((row) => row.assigneeId === actor.id).length;
   const names = leadNameReadable(actor);
   const cardHref = (row: CalcQueueRow) => calcCardHref(actor, { ...row, requestId: row.id });
@@ -138,9 +143,14 @@ export default async function CalcQueuePage() {
                 {row.fromCity || row.toCity
                   ? ` · ${row.fromCity ?? '—'} → ${row.toCity ?? '—'}`
                   : ''}
-                {taken.has(row.id) ? (
+                {readings.get(row.id)?.taken === true ? (
                   <span className="text-warn" data-testid="calc-destination-taken">
                     {` (${t('destinationTaken')})`}
+                  </span>
+                ) : null}
+                {saidOf(row.id) !== null ? (
+                  <span className="text-ink-500" data-testid="calc-destination-said">
+                    {` (${t('destinationSaid', { evidence: saidOf(row.id)! })})`}
                   </span>
                 ) : null}
               </div>
