@@ -1,3 +1,4 @@
+import { Api, helpers } from 'telegram';
 import { describe, expect, it } from 'vitest';
 import {
   classifyDialog,
@@ -129,6 +130,39 @@ describe('what one message becomes', () => {
     // thread somebody has to read.
     const service = toMessageRow(1n, { id: 3, date: 1, message: '   ' });
     expect(isWorthKeeping(service)).toBe(false);
+  });
+
+  it('a link preview is not media — Telegram’s own preview objects, loaded, pending or empty (the check of the R1 fix, R3)', () => {
+    // Every 1688 / taobao link comes with a `MessageMediaWebPage`; its picture is Telegram's render of the page. Built
+    // by gramjs itself, so the class name is the library's, not one typed here.
+    const link = 'https://detail.1688.com/offer/6543.html shu tovar qachon keladi?';
+    const id = helpers.returnBigInt('7');
+    const page = new Api.WebPage({ id, url: 'https://detail.1688.com/offer/6543.html', displayUrl: 'detail.1688.com', hash: 0 });
+    const previews = [
+      new Api.MessageMediaWebPage({ webpage: page }),
+      new Api.MessageMediaWebPage({ webpage: new Api.WebPagePending({ id, date: 1 }) }),
+      new Api.MessageMediaWebPage({ webpage: new Api.WebPageEmpty({ id }) }),
+    ];
+    for (const media of previews) {
+      const row = toMessageRow(1n, { id: 4, date: 1, message: link, media });
+      expect(row.hasMedia, media.webpage.className).toBe(false);
+      expect(row.body).toBe(link);
+      expect(isWorthKeeping(row)).toBe(true);
+    }
+  });
+
+  it('…while what the customer attached stays media: a photo with a caption, a document, a voice note, a sticker, a round video', () => {
+    const photo = new Api.MessageMediaPhoto({ photo: new Api.PhotoEmpty({ id: helpers.returnBigInt('1') }) });
+    expect(toMessageRow(1n, { id: 5, date: 1, message: 'Invoys shu', media: photo }).hasMedia).toBe(true);
+    const doc = (attributes: unknown[], mimeType: string) => ({ className: 'MessageMediaDocument', document: { mimeType, size: 10, attributes } });
+    for (const media of [
+      doc([{ className: 'DocumentAttributeFilename', fileName: 'invoice.pdf' }], 'application/pdf'),
+      doc([{ className: 'DocumentAttributeAudio', voice: true, duration: 3 }], 'audio/ogg'),
+      doc([{ className: 'DocumentAttributeSticker' }], 'image/webp'),
+      doc([{ className: 'DocumentAttributeVideo', roundMessage: true, duration: 3 }], 'video/mp4'),
+    ]) {
+      expect(toMessageRow(1n, { id: 6, date: 1, message: '', media }).hasMedia).toBe(true);
+    }
   });
 
   it('carries Telegram’s own ids, which is what makes a re-run free', () => {

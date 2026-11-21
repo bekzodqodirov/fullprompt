@@ -155,7 +155,7 @@ export async function cabinetPayload(auth: CabinetAuth & { ok: true }): Promise<
   const ids = auth.clients.map((c) => c.id);
   // One grouped read each for the whole chat, never one per code (#432).
   const [managers, office, readyPlaces] = await Promise.all([
-    managersFor(ids),
+    managersFor(ids, auth.chatId),
     officeContact(),
     readyPlacesFor(ids),
   ]);

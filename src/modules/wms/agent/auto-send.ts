@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import {
@@ -19,18 +19,30 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { holderIsSeat } from '../../platform/settings/agent-seat';
-import { getSetting } from '../../platform/settings/service';
+import {
+  AGENT_1A_BOUNDS,
+  AGENT_NIGHT_PRICES,
+  SETTINGS_AUDIT_ID,
+  getSetting,
+  readAgentNightPrices,
+  readAgentTalkHoldSec,
+  type AgentNightPrices,
+} from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import { AGENT_LIMITS } from './limits';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
-import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from './auto-categories';
+import { AUTO_SEND_CATEGORIES, ORDINARY_CATEGORIES, P2_CATEGORIES } from './auto-categories';
 import { estimateUnnamed, numeralUnread } from './auto-money';
 import { estimatesStand } from './estimate-check';
 import { tariffUnconfirmed } from './tariff-watch';
 import {
   CALC_FACTS_UNREAD,
+  autoClassOf,
   autoVerdict,
   isCalcSubmitOnly,
+  nightBars,
+  type AutoClass,
   type AutoGateInput,
   type AutoLedgerLine,
   type AutoRefusal,
@@ -40,14 +52,18 @@ import {
 import type { CalcSubmitAction } from './calc-submit';
 import type { CalcPriceGateFacts } from './calc-price';
 import { cardDigest, digestBody } from './card';
+import { complaintIn } from './complaint';
+import { chatMessages, toldInSilenceOf } from './context';
 import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
+import { gateLoopFor } from './loop';
 import { readSendCaps } from './send-caps';
+import { isTashkentNight } from './send-step';
 import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { CATEGORIES } from './tools';
-import type { AnswerMark, DraftPolicyJson } from './types';
+import { SYSTEM_REPLY_REASONS, type AnswerMark, type DraftPolicyJson, type NoteCode, type SystemReplyReason } from './types';
 import { answerStale } from './owner-answer';
 
 /**
@@ -198,6 +214,73 @@ function ledgerLinesOf(raw: unknown): AutoLedgerLine[] {
     .map((e) => ({ kind: str(e.kind) ?? '', origin: str(e.origin), tool: str(e.tool), role: str(e.role) }));
 }
 
+/**
+ * The stored warnings as the gate reads them — by CODE (stage 1a, K6), one per warning: a warning that names no code
+ * reads '?' (a code no list frees), so the count is the stored count whatever their shape.
+ */
+export function warningCodesOf(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((w: unknown) => {
+    const code = typeof w === 'object' && w !== null ? (w as { code?: unknown }).code : undefined;
+    return typeof code === 'string' && code !== '' ? code : '?';
+  });
+}
+
+/**
+ * The stored notes' codes — the ONE reading rule (stage 1a, K5): no notes → none; notes with a code array of the SAME
+ * length, every entry a string → those codes; anything else → null, which the gate refuses like any note. So a draft
+ * written before 1a with notes and no codes fails closed, and one with no notes goes on.
+ */
+export function noteCodesOf(policy: Pick<Partial<DraftPolicyJson>, 'notes'> & { noteCodes?: unknown }): string[] | null {
+  const stored = Array.isArray(policy.notes) ? policy.notes.length : 0;
+  if (stored === 0) return [];
+  const codes = policy.noteCodes;
+  if (!Array.isArray(codes) || codes.length !== stored || !codes.every((c): c is string => typeof c === 'string')) return null;
+  return [...codes];
+}
+
+/**
+ * The reply is a tayyor matn the code wrote (stage 1a P3, `policy.system`) — only for a reason this build knows: an
+ * unknown one is read as the model's words, which every rule judges as before.
+ */
+export function systemAckOf(policy: { system?: unknown }): boolean {
+  return systemReasonOfPolicy(policy) !== null;
+}
+
+/** Which tayyor matn the reply is — null for the model's words (and for a reason this build does not know). */
+function systemReasonOfPolicy(policy: { system?: unknown }): SystemReplyReason | null {
+  return (SYSTEM_REPLY_REASONS as readonly unknown[]).includes(policy.system) ? (policy.system as SystemReplyReason) : null;
+}
+
+/**
+ * The gate's `loop` fact (stage 1a P2), judged at `at` — when the reply would go: the half hour he was told the AI
+ * keeps out (`held`), and the reply's own repeat. For the model's words that repeat is the loop's: one of our last
+ * sends word for word. A tayyor matn's is its own rule, «once per silence, per kind» (the merged-tree seam review,
+ * finding 1): `pick` gives a chat the same wording every time ON PURPOSE (G10 counts identical texts across chats), so
+ * the loop's repeat refused a photo after an ordinary reply the very media line it got ten minutes before. So the gate
+ * asks the run's own reading (context `toldInSilenceOf`) — and it sees our sends the thread lost, which the thread
+ * alone did not (the independent check of the seam fixes, F1): an 'unknown' media line, or one sent with no message
+ * id, followed by another photo of the SAME silence was the same words pressed again by themselves. In a later
+ * silence (his text and our reply since) the line is owed and goes. A robot sending photos is still caught where a
+ * robot is: eligibility's `fast_peer`, asked before any tayyor matn is drafted.
+ */
+export async function autoLoopFact(
+  d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId' | 'policy' | 'finalBody' | 'proposedBody'>,
+  at: Date,
+): Promise<boolean> {
+  const half = await gateLoopFor({ managerUserId: d.managerUserId, peerId: d.peerId, anchorTgMessageId: d.anchorTgMessageId, body: digestBody(d) }, at);
+  if (half.held) return true;
+  const system = systemReasonOfPolicy((d.policy ?? {}) as { system?: unknown });
+  if (system === null) return half.ownRepeat;
+  const { recent } = await chatMessages(d.managerUserId, d.peerId);
+  return (await toldInSilenceOf(d.managerUserId, d.peerId, recent)).has(system);
+}
+
+/** The code put the honest line in this reply (stage 1a P3, `policy.honestLine`): `true` and nothing else. */
+export function honestLineOf(policy: { honestLine?: unknown }): boolean {
+  return policy.honestLine === true;
+}
+
 function confidenceOf(raw: string | number | null): number | null {
   if (raw === null) return null;
   const n = Number(raw);
@@ -248,40 +331,6 @@ export async function autoPressedToday(managerUserId: string, now: Date): Promis
 }
 
 /**
- * Auto replies in a row in this chat (§18.3: at most 2): the presses since the
- * last thing a PERSON did here — a draft he decided himself (his ✅, ✏️, ❌,
- * 🙋; never one the machine pressed), his ✍️ answer to the AI's question (spec
- * SPEC-P1-v2 §2.2 — the redraft's plan is judged before `createDraft` stamps
- * the question decided, so the answer itself is what counts), or a message of
- * his own (his phone, the CRM; never the AI's send and never the account's
- * Business robot, `auto_sent`).
- */
-async function autoStreak(managerUserId: string, peerId: bigint): Promise<number> {
-  const rows = await db.execute<{ n: number }>(sql`
-    WITH person AS (
-      SELECT greatest(
-        (SELECT max(d.decided_at) FROM agent_drafts d
-          WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
-            AND d.decided_by IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = d.id AND v.state = 'pressed')),
-        (SELECT max((d.policy->'ownerAnswer'->>'at')::timestamptz) FROM agent_drafts d
-          WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
-            AND d.policy ? 'ownerAnswer'),
-        (SELECT max(m.sent_at) FROM tg_messages m
-           LEFT JOIN tg_message_flags f ON f.message_id = m.id
-          WHERE m.manager_user_id = ${managerUserId}::uuid AND m.peer_id = ${String(peerId)}::bigint
-            AND m.direction = 'out' AND f.deleted_at IS NULL AND coalesce(f.auto_sent, false) = false
-            AND NOT EXISTS (SELECT 1 FROM agent_outbox o
-                             WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id))
-      ) AS at
-    )
-    SELECT count(*)::int AS n FROM agent_auto_verdicts v, person
-     WHERE v.manager_user_id = ${managerUserId}::uuid AND v.peer_id = ${String(peerId)}::bigint
-       AND v.state = 'pressed' AND (person.at IS NULL OR v.pressed_at > person.at)`);
-  return Number(rows[0]?.n ?? 0);
-}
-
-/**
  * Did the customer's burst — his lines since our last message, up to the one
  * the draft answers — carry a photo, a voice note or a file? (§18.3: a message
  * that came with one never goes by itself.) Read from the stored chat, the
@@ -306,6 +355,28 @@ async function burstHadMedia(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' 
 }
 
 /**
+ * What the customer wrote in the burst the draft answers — his lines since our last message, up to the one the draft
+ * answers: the rows `burstHadMedia` reads, their text. The complaint tripwire reads them (stage 1a P3, complaint.ts), at
+ * the scheduling and again at the press.
+ */
+async function burstTexts(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId'>): Promise<string[]> {
+  const rows = await db.execute<{ body: string | null }>(sql`
+    SELECT m.body FROM tg_messages m
+      LEFT JOIN tg_message_flags f ON f.message_id = m.id
+     WHERE m.manager_user_id = ${d.managerUserId}::uuid AND m.peer_id = ${String(d.peerId)}::bigint
+       AND m.direction = 'in' AND f.deleted_at IS NULL
+       AND m.tg_message_id <= ${String(d.anchorTgMessageId)}::bigint
+       AND m.tg_message_id > coalesce((
+         SELECT max(o.tg_message_id) FROM tg_messages o
+           LEFT JOIN tg_message_flags of2 ON of2.message_id = o.id
+          WHERE o.manager_user_id = ${d.managerUserId}::uuid AND o.peer_id = ${String(d.peerId)}::bigint
+            AND o.direction = 'out' AND of2.deleted_at IS NULL
+            AND o.tg_message_id < ${String(d.anchorTgMessageId)}::bigint), 0)
+     ORDER BY m.tg_message_id`);
+  return rows.map((r) => r.body ?? '');
+}
+
+/**
  * The gate's input, read from the database — at the scheduling (`tools` from
  * the run in hand: its ledger row is settled only after the draft is written)
  * and again at the press, where the run's stored `tool_calls` are read.
@@ -321,7 +392,7 @@ async function burstHadMedia(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' 
 export async function autoFactsFor(
   d: AutoDraftShape,
   opts: { at: Date; now: Date; tools?: readonly ToolCall[]; config?: AutoConfig | null; scheduling?: boolean },
-): Promise<AutoGateInput & { calcNotes: readonly string[] }> {
+): Promise<AutoGateInput & { calcNotes: readonly string[]; calcNoteCodes: readonly NoteCode[] }> {
   const auto = opts.config === undefined ? await readAutoConfig() : opts.config;
   const agent = await readAgentConfig();
   const policy = (d.policy ?? {}) as Partial<DraftPolicyJson>;
@@ -370,7 +441,6 @@ export async function autoFactsFor(
       armed: auto?.armed === true,
       categories: auto?.categories ?? [],
       maxChars: auto?.maxChars ?? 0,
-      minConfidence: auto?.minConfidence ?? 1,
       // NULL is «no cap» and stays NULL (0148): a fallback to a number here would refuse every reply for ever
       // while typecheck stays green. No row at all is `not_armed` above.
       perDay: auto ? auto.perDay : null,
@@ -382,8 +452,10 @@ export async function autoFactsFor(
       ownText: d.finalBody !== null,
       blocked: d.blocked,
       needsOwner: d.needsOwner,
-      warnings: Array.isArray(policy.warnings) ? policy.warnings.length : 0,
-      notes: Array.isArray(policy.notes) ? policy.notes.length : 0,
+      warningCodes: warningCodesOf(policy.warnings),
+      noteCodes: noteCodesOf(policy),
+      systemAck: systemAckOf(policy),
+      honestLine: honestLineOf(policy),
       actionTypes: actions.map((a) => (typeof a?.type === 'string' ? a.type : '?')),
       category: d.category,
       language: d.language,
@@ -432,13 +504,22 @@ export async function autoFactsFor(
     workAccount: acc?.work === true,
     at: opts.at,
     now: opts.now,
-    streak: await autoStreak(d.managerUserId, d.peerId),
+    // The chat loop (stage 1a P2), judged when the reply would go: word for word one of our last sends here — for a
+    // tayyor matn, its kind already said in this silence, our lost sends included (`autoLoopFact`) — or a chat he was
+    // told loops less than the window before (the hold, J33).
+    // The ONE fact read at `opts.at`: a caller that learns the due time only from these facts reads it again there.
+    loop: await autoLoopFact(d, opts.at),
+    // The customer complains or asks for a person in his own words (P3, complaint.ts) — the stored burst, read now.
+    complaint: complaintIn(await burstTexts(d)),
+    // His night setting, on the pool like every fact here — never inside the transaction that records the verdict.
+    nightPrices: await readAgentNightPrices(),
     pressedToday: (await autoPressedToday(d.managerUserId, opts.now)) + queued,
     budgetLeft: sends ? sends.ceiling - sends.used - queued : null,
     sendingEnabled: opts.scheduling ? (await getSetting('tg_sending_enabled')) === true : null,
     listenerCurrent: opts.scheduling ? listenerIsCurrent(guard, opts.now) : null,
     // The card's lines a person decides by (a waited duplicate, a file the VED will not get) — the plan writes them.
     calcNotes: calcRead?.cardNotes ?? [],
+    calcNoteCodes: calcRead?.cardNoteCodes ?? [],
   };
 }
 
@@ -446,13 +527,17 @@ export async function autoFactsFor(
  * The calc facts of a draft (calc-submit `calcSubmitFacts`) — one that cannot be read refuses every one (fails
  * closed). The card lines a person decides by ride beside them, for the plan to write onto the card.
  */
-async function calcFactsOf(d: AutoDraftShape, action: CalcSubmitAction, now: Date): Promise<{ facts: CalcSubmitFacts; cardNotes: string[] } | null> {
+async function calcFactsOf(
+  d: AutoDraftShape,
+  action: CalcSubmitAction,
+  now: Date,
+): Promise<{ facts: CalcSubmitFacts; cardNotes: string[]; cardNoteCodes: NoteCode[] } | null> {
   try {
     const { calcSubmitFacts } = await import('./calc-submit');
     return await calcSubmitFacts({ managerUserId: d.managerUserId, peerId: d.peerId, action, draftId: d.id ?? null, now });
   } catch (err) {
     logger.warn({ err, peer: String(d.peerId) }, '[agent] auto: the calculation’s facts not read');
-    return { facts: CALC_FACTS_UNREAD, cardNotes: [] };
+    return { facts: CALC_FACTS_UNREAD, cardNotes: [], cardNoteCodes: [] };
   }
 }
 
@@ -528,7 +613,10 @@ export interface AutoPlan {
   /** `cardDigest` of the body and actions — the press passes it, so an edited card refuses. */
   digest: string;
   dueAt: Date | null;
-  /** The hold it was scheduled with (`hold_sec`) — what `countdownMayRide` measures an old card copy by. */
+  /**
+   * The hold it was scheduled with — its CLASS's (`holdSecFor`: talk's own, 0 = at once; every price the layer's
+   * `hold_sec`): what `countdownMayRide` measures an old card copy by, and whether its card is written silent.
+   */
   holdSec: number;
   /**
    * Lines the CARD carries for a calculation the machine will not land by itself (SPEC-P2-v2 §1.1): a waited
@@ -536,6 +624,11 @@ export interface AutoPlan {
    * them among the draft's notes; empty for every other draft.
    */
   cardNotes?: string[];
+  /**
+   * What each card line IS, parallel to `cardNotes` (stage 1a, K5) — the run writes them beside the notes. A plan with
+   * lines and no codes leaves the stored notes uncoded, which the gate reads as a stop (`noteCodesOf`).
+   */
+  cardNoteCodes?: NoteCode[];
 }
 
 /**
@@ -566,6 +659,31 @@ export function autoShapeOf(n: NewDraft): AutoDraftShape {
 }
 
 /**
+ * How long a reply of this class waits on its card before the machine presses it (his 11 a ⚠, his ⭐ a of question
+ * 82): ordinary talk its own setting (`agent_talk_hold_sec`, 0 = at once), every price class — a table price, a VED
+ * price, a calculation — the layer's own `hold_sec` with ⏸. Asked at the scheduling and again at the press, of the
+ * class read on the facts of that moment: nothing about the class is stored.
+ */
+export function holdSecFor(cls: AutoClass, holds: { talk: number; price: number }): number {
+  return cls === 'talk' ? holds.talk : holds.price;
+}
+
+/**
+ * Move the facts to the moment the reply would go, once its class has told the hold: `at`, and the loop fact read
+ * there again (the only fact `autoFactsFor` reads at `at`). The class asks no loop, so it is decided first; a hold of
+ * 0 changes no moment and reads nothing twice.
+ */
+async function atDue(
+  facts: AutoGateInput,
+  d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId' | 'policy' | 'finalBody' | 'proposedBody'>,
+  dueAt: Date,
+): Promise<void> {
+  if (dueAt.getTime() === facts.at.getTime()) return;
+  facts.at = dueAt;
+  facts.loop = await autoLoopFact(d, dueAt);
+}
+
+/**
  * The plan for a reply the inbound run is about to write — or null when 0145
  * has not landed, and null (logged) when it could not be computed: a plan is
  * never a reason for the draft to fail.
@@ -577,8 +695,14 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
     // Stored as `createDraft` stores them: a category outside the seven is 'other', the confidence to cents.
     const category = input.draft.category && (CATEGORIES as readonly string[]).includes(input.draft.category) ? input.draft.category : 'other';
     const draft: AutoDraftShape = { ...input.draft, category, confidence: confidenceOf(input.draft.confidence) };
-    const dueAt = new Date(input.now.getTime() + config.holdSec * 1000);
-    const facts = await autoFactsFor(draft, { at: dueAt, now: input.now, tools: input.tools, config, scheduling: true });
+    // The facts first, then the class, then the hold its class keeps, then the due time — and only then the moment
+    // the reply would go: the night is judged at it, and so is the one fact read at `at`, the loop (`autoLoopFact`:
+    // the half hour he was told of, our last sends). Read at `now`, a price written in the hold's last two minutes was
+    // refused `loop` for a half hour that is over before it goes (the merged-tree seam review, finding 6).
+    const facts = await autoFactsFor(draft, { at: input.now, now: input.now, tools: input.tools, config, scheduling: true });
+    const holdSec = holdSecFor(autoClassOf(facts), { talk: await readAgentTalkHoldSec(), price: config.holdSec });
+    const dueAt = new Date(input.now.getTime() + holdSec * 1000);
+    await atDue(facts, draft, dueAt);
     const verdict = autoVerdict(facts);
     return {
       eligible: verdict.eligible,
@@ -587,8 +711,9 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
       confidence: confidenceOf(draft.confidence),
       digest: cardDigest(digestBody(draft), Array.isArray(draft.actions) ? draft.actions : []),
       dueAt: verdict.eligible ? dueAt : null,
-      holdSec: config.holdSec,
+      holdSec,
       cardNotes: [...facts.calcNotes],
+      cardNoteCodes: [...facts.calcNoteCodes],
     };
   } catch (err) {
     logger.error({ err, peer: String(input.draft.peerId) }, '[agent] auto plan not computed');
@@ -661,13 +786,16 @@ export function copyRang(copy: { sentAt: Date | null; payload: unknown }): boole
  * check) or one that RANG within one hold before the reply was written (`copyRang`: a copy the drain sent silently
  * at 07:59 never rang); anything else — an older copy, a silent one, a send of no known time, one that never
  * reached him — gives the reply a card of its own (`createDraft`), and the old copy is closed. A reply that does not
- * count down rides any copy, as every card always has (one card per customer, fit-9). The press asks `copyRang` of
- * the copy again (`pressOne`): a send already in flight when the reply was written is decided by the drain alone.
+ * count down rides any copy, as every card always has (one card per customer, fit-9) — and so does one whose hold is
+ * 0 (stage 1a, talk at once): it counts down nothing, needs no card on his screen, and a card of its own per reply
+ * would be a scroll of them. The press asks `copyRang` of the copy again (`pressOne`, for a class the night bars): a
+ * send already in flight when the reply was written is decided by the drain alone.
  */
 export function countdownMayRide(
   copy: { status: string; sentAt: Date | null; payload: unknown },
   plan: Pick<AutoPlan, 'dueAt' | 'holdSec'>,
 ): boolean {
+  if (plan.holdSec === 0) return true;
   if (copy.status === 'pending' || copy.status === 'sending') return true;
   if (copy.status !== 'sent' || copy.sentAt === null || plan.dueAt === null || !copyRang(copy)) return false;
   const writtenAt = plan.dueAt.getTime() - plan.holdSec * 1000;
@@ -751,8 +879,9 @@ async function approvedByAuto(draftId: string): Promise<boolean> {
  * approved by HIS press → stopped as his; still pending → waiting again (the
  * next sweep presses it, judged afresh); anything else → gone. A row a stop
  * moved meanwhile is no longer 'pressing', and nothing here revives it.
+ * True: the row is waiting again for a draft that still waits.
  */
-async function settleFromDraft(draftId: string, now: Date): Promise<void> {
+async function settleFromDraft(draftId: string, now: Date): Promise<boolean> {
   const [d] = await db
     .select({ status: agentDrafts.status, decidedBy: agentDrafts.decidedBy, decidedAt: agentDrafts.decidedAt })
     .from(agentDrafts)
@@ -763,10 +892,12 @@ async function settleFromDraft(draftId: string, now: Date): Promise<void> {
   } else if (d?.status === 'approved') {
     await db.update(agentAutoVerdicts).set({ state: 'stopped', outcome: 'owner_send', stoppedAt: d.decidedAt ?? now, stoppedBy: d.decidedBy }).where(pressing);
   } else if (d?.status === 'pending') {
-    await db.update(agentAutoVerdicts).set({ state: 'waiting', claimedAt: null }).where(pressing);
+    const back = await db.update(agentAutoVerdicts).set({ state: 'waiting', claimedAt: null }).where(pressing).returning({ id: agentAutoVerdicts.draftId });
+    return back.length > 0;
   } else {
     await db.update(agentAutoVerdicts).set({ state: 'gone', outcome: d?.status ?? 'deleted' }).where(pressing);
   }
+  return false;
 }
 
 /**
@@ -784,25 +915,35 @@ export async function cardShownAt(draftId: string, managerUserId: string): Promi
 /**
  * `cardShownAt` and whether the copy showing it RANG (`copyRang`, the second check) — the press counts down only
  * on a card that arrived with a sound. Null: the card is not on his screen yet.
+ *
+ * The NEWEST copy of this draft's card decides (stage 1a, J31): the morning re-judge pushes a fresh, ringing copy of a
+ * card that went out silently in the night, and until that copy reaches him the hold has not begun — the night copy
+ * further up his chat is not what his ⏸ window runs on. A copy the drain gave up on (failed, muted) is no copy.
  */
 export async function cardOnScreen(draftId: string, managerUserId: string): Promise<{ at: Date; rang: boolean } | null> {
   const [row] = await db
-    .select({ at: sql<string | null>`${notifications.payload}->'shown'->>'at'`, sentAt: notifications.sentAt, payload: notifications.payload })
+    .select({
+      status: notifications.status,
+      at: sql<string | null>`${notifications.payload}->'shown'->>'at'`,
+      shownDraft: sql<string | null>`${notifications.payload}->'shown'->>'draftId'`,
+      hasTg: sql<boolean>`${notifications.payload} ? 'tg'`,
+      sentAt: notifications.sentAt,
+      payload: notifications.payload,
+    })
     .from(notifications)
     .where(
       and(
         eq(notifications.type, 'AgentDraft'),
         eq(notifications.userId, managerUserId),
-        eq(notifications.status, 'sent'),
+        inArray(notifications.status, ['pending', 'sending', 'sent']),
         sql`${notifications.payload}->>'draftId' = ${draftId}`,
-        sql`${notifications.payload}->'shown'->>'draftId' = ${draftId}`,
-        sql`${notifications.payload} ? 'tg'`,
       ),
     )
     .orderBy(desc(notifications.createdAt))
     .limit(1);
-  const at = row?.at ? new Date(row.at) : null;
-  if (!row || !at || !Number.isFinite(at.getTime())) return null;
+  if (!row || row.status !== 'sent' || row.shownDraft !== draftId || !row.hasTg) return null;
+  const at = row.at ? new Date(row.at) : null;
+  if (!at || !Number.isFinite(at.getTime())) return null;
   return { at, rang: copyRang(row) };
 }
 
@@ -839,7 +980,7 @@ async function deferForCard(d: { id: string; managerUserId: string }, shownAt: D
   if (moved.length > 0) await refreshCard(d.id, now);
 }
 
-type PressOutcome = 'pressed' | 'refused' | 'gone' | 'deferred' | 'stopped';
+export type PressOutcome = 'pressed' | 'refused' | 'gone' | 'deferred' | 'stopped';
 
 /**
  * One claimed row: the row and the draft read afresh, the gate asked afresh,
@@ -847,8 +988,16 @@ type PressOutcome = 'pressed' | 'refused' | 'gone' | 'deferred' | 'stopped';
  * presses — whose approval checks the layer and the row again INSIDE its own
  * transaction (decide `auto`): a ⏸, a disarm or «Shaxsiy» that lands first
  * makes this press lose, whenever it lands.
+ *
+ * `tools`: the run's own tool calls when the run itself presses (`pressNow`, J3) — its ledger row may not hold them
+ * yet. Absent, the stored `tool_calls` are read (the sweep).
+ *
+ * Stage 1a: the hold is the class's (`holdSecFor`). A hold of 0 asks nothing of the card — talk goes at once, day and
+ * night, on a card that was written silent. A hold above 0 waits for its card as before; and a copy that did not
+ * ring refuses `night` only for a class the night BARS under his setting (`nightBars`, the gate's own clause): a table
+ * price whose card landed silently at 07:58 is not refused at 08:01 for the card it would have gone on at 07:59.
  */
-async function pressOne(row: { draftId: string; digest: string | null }, now: Date): Promise<PressOutcome> {
+async function pressOne(row: { draftId: string; digest: string | null }, now: Date, tools?: readonly ToolCall[]): Promise<PressOutcome> {
   const where = and(eq(agentAutoVerdicts.draftId, row.draftId), eq(agentAutoVerdicts.state, 'pressing'));
   // A stop that landed after the claim (⏸, a disarm): nothing to press. The approval's own check is the guard;
   // this only spares the work.
@@ -861,7 +1010,10 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
     return 'gone';
   }
   const config = await readAutoConfig();
-  const verdict = autoVerdict(await autoFactsFor(d, { at: now, now, config }));
+  const facts = await autoFactsFor(d, { at: now, now, config, ...(tools ? { tools } : {}) });
+  const verdict = autoVerdict(facts);
+  const cls = autoClassOf(facts);
+  const holdSec = holdSecFor(cls, { talk: await readAgentTalkHoldSec(), price: config?.holdSec ?? 120 });
   // A card too long to show its whole reply draws no ✅ (card-io `renderDraftCardFull`): what a person may
   // not press from it, the machine does not press either — said as «too long», the reply being the part cut.
   if (verdict.eligible) {
@@ -870,10 +1022,11 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
     verdict.eligible = verdict.reasons.length === 0;
   }
   // The card on his screen — and whether it arrived with a sound (the second check). A copy the drain sent in the
-  // quiet hour rang nothing: a countdown on it would run his ⏸ window on a message nothing announced, and nothing
-  // rings it again in the morning. So it is a night card — his to decide — whatever the clock says now.
-  const card = await cardOnScreen(d.id, d.managerUserId);
-  if (verdict.eligible && card && !card.rang) {
+  // quiet hour rang nothing: a countdown on it would run his ⏸ window on a message nothing announced. So for a class
+  // the night bars it is a night card — his to decide, until the morning re-judge rings it again (J31). A hold of 0
+  // counts nothing down: it reads no card at all.
+  const card = holdSec > 0 ? await cardOnScreen(d.id, d.managerUserId) : null;
+  if (verdict.eligible && card && !card.rang && nightBars(cls, facts.nightPrices)) {
     verdict.reasons.push('night');
     verdict.eligible = false;
   }
@@ -886,10 +1039,10 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
     return 'refused';
   }
   // The hold is his time to read the card: it runs from the card reaching his Telegram, never from the draft
-  // being written — a paused bot queue, a re-pointed card whose edit did not land, would make it zero.
+  // being written — a paused bot queue, a re-pointed card whose edit did not land, would make it zero. A night-
+  // admitted price counts it from the card landing, rung or not.
   const shownAt = card?.at ?? null;
-  const holdSec = config?.holdSec ?? 120;
-  if (!shownAt || shownAt.getTime() + holdSec * 1000 > now.getTime()) {
+  if (holdSec > 0 && (!shownAt || shownAt.getTime() + holdSec * 1000 > now.getTime())) {
     await deferForCard(d, shownAt, holdSec, now);
     return 'deferred';
   }
@@ -921,6 +1074,9 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
  */
 export async function pressDueAutos(now: Date = new Date()): Promise<number> {
   if (!(await agentAutoReady())) return 0;
+  // The night's held replies, judged again at the first working minute (J31) — before the claim, so one the morning
+  // re-judge finds due at once (a hold of 0) is pressed in this very sweep.
+  await rejudgeNightHeld(now).catch((err: unknown) => logger.error({ err }, '[agent] auto morning re-judge failed'));
   const stale = await db
     .select({ draftId: agentAutoVerdicts.draftId })
     .from(agentAutoVerdicts)
@@ -943,15 +1099,198 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
   let pressed = 0;
   for (const row of batch) {
     try {
-      if ((await pressOne({ draftId: row.draft_id, digest: row.digest }, now)) === 'pressed') pressed += 1;
+      if ((await pressAndRing({ draftId: row.draft_id, digest: row.digest }, now)) === 'pressed') pressed += 1;
     } catch (err) {
       logger.error({ err, draftId: row.draft_id }, '[agent] auto press failed');
-      await settleFromDraft(row.draft_id, now).catch(() => undefined);
+      // A press that throws never reaches `pressAndRing`'s ring: a hold-0 reply whose press keeps throwing would wait
+      // for ever on a card that was written silent (review nit 2). The sweep is the net — the run's own press
+      // (`pressNow`) throwing once is retried here within the minute, and only THIS failure rings, so a single blip
+      // never announces «o‘zi ketmadi» about a reply that goes a minute later. Rung once (`ringSilentCard`'s flag).
+      const back = await settleFromDraft(row.draft_id, now).catch(() => false);
+      if (back) await ringSilentCard(row.draft_id).catch((e: unknown) => logger.warn({ err: e, draftId: row.draft_id }, '[agent] silent card not rung'));
     }
   }
   if (batch.length > 0) logger.info({ claimed: batch.length, pressed }, '[agent] auto presses');
   return pressed;
 }
+
+/**
+ * The run's own press of a reply that goes at once (stage 1a, his 11 a, J3, J10): the run that wrote the draft claims
+ * ITS row — only while it waits and is due — and presses it on the spot with the tool calls in its hand, so a talk
+ * reply never waits for the minute sweep. The sweep stays the net: what this does not press (a row it did not claim,
+ * a process killed between the write and the press) the sweep presses. A press that throws settles its row from the
+ * draft (`settleFromDraft`, as the sweep does) — never a row left 'pressing' for five minutes — and rings nothing yet:
+ * the sweep presses it again within the minute, and its own failure is the one that rings the silent card
+ * (`pressDueAutos`). Null: nothing claimed.
+ */
+export async function pressNow(draftId: string, now: Date, tools: readonly ToolCall[]): Promise<PressOutcome | null> {
+  if (!(await agentAutoReady())) return null;
+  const [row] = await db
+    .update(agentAutoVerdicts)
+    .set({ state: 'pressing', claimedAt: now })
+    .where(and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'waiting'), lte(agentAutoVerdicts.dueAt, now)))
+    .returning({ draftId: agentAutoVerdicts.draftId, digest: agentAutoVerdicts.digest });
+  if (!row) return null;
+  try {
+    const out = await pressAndRing(row, now, tools);
+    logger.info({ draftId, out }, '[agent] auto pressed at once');
+    return out;
+  } catch (err) {
+    logger.error({ err, draftId }, '[agent] auto press at once failed');
+    await settleFromDraft(draftId, now).catch(() => undefined);
+    return null;
+  }
+}
+
+/**
+ * The press, then — when it did not go and did not leave the layer — the card that was written silent rings (stage
+ * 1a §4.2, J4): a hold-0 reply's card is queued without a sound because the plan said «goes at once»; if the press
+ * then refuses it (a fresh fact moved, the ✅'s own refusal), defers it, or loses it to a stop, a reply now waits for
+ * him on a card that never rang. Only what waits for him rings.
+ */
+async function pressAndRing(row: { draftId: string; digest: string | null }, now: Date, tools?: readonly ToolCall[]): Promise<PressOutcome> {
+  const out = await pressOne(row, now, tools);
+  if (out !== 'pressed' && out !== 'gone') {
+    await ringSilentCard(row.draftId).catch((err: unknown) => logger.warn({ err, draftId: row.draftId }, '[agent] silent card not rung'));
+  }
+  return out;
+}
+
+/** What a silent card that now waits for him says, when it is already on his screen. */
+export const AUTO_NOT_GONE_NOTICE = '⏱ AI javobi o‘zi ketmadi — kartani ko‘ring';
+
+/**
+ * A card written silent for a reply that now waits for him rings — once (J4): while its copy is still queued, it
+ * simply loses `silent` and arrives with a sound; once sent (silently), ONE ringing notice names the chat
+ * («AI javobi o‘zi ketmadi — kartani ko‘ring»). The flag's own compare-and-set is the «once»: a second refusal of
+ * the same draft finds no silent copy and says nothing.
+ */
+export async function ringSilentCard(draftId: string): Promise<'rang' | 'unsent' | 'none'> {
+  // Only a reply that still WAITS for him rings (review nit 5): a press that lost to his own ✅, ❌ or 🙋 in the same
+  // moment is decided — «o‘zi ketmadi — kartani ko‘ring» about the reply he just sent would be a false alarm.
+  const [d] = await db
+    .select({ status: agentDrafts.status, managerUserId: agentDrafts.managerUserId, peerId: agentDrafts.peerId, policy: agentDrafts.policy })
+    .from(agentDrafts)
+    .where(eq(agentDrafts.id, draftId));
+  if (!d || d.status !== 'pending') return 'none';
+  const rows = await db
+    .update(notifications)
+    .set({ payload: sql`${notifications.payload} || '{"silent": false}'::jsonb` })
+    .where(
+      and(
+        eq(notifications.type, 'AgentDraft'),
+        sql`${notifications.payload}->>'draftId' = ${draftId}`,
+        sql`${notifications.payload}->>'silent' = 'true'`,
+      ),
+    )
+    .returning({ status: notifications.status, userId: notifications.userId });
+  if (rows.length === 0) return 'none';
+  if (rows.every((r) => r.status === 'pending')) return 'unsent';
+  const label = ((d.policy ?? {}) as Partial<DraftPolicyJson>).card?.customerLabel ?? null;
+  await notifyStaffTelegram({
+    userIds: [d.managerUserId],
+    type: 'AgentNotice',
+    text: label ? `${AUTO_NOT_GONE_NOTICE}: ${label}` : `${AUTO_NOT_GONE_NOTICE}.`,
+    extra: { peerId: String(d.peerId) },
+  });
+  return 'rang';
+}
+
+/** 08:00 Tashkent of the day `now` falls in — the first working minute (send-step `isTashkentNight`'s own hours). */
+function morningOf(now: Date): Date {
+  return new Date(tashkentDayStart(tashkentDay(now)).getTime() + AGENT_LIMITS.nightToHour * 3_600_000);
+}
+
+/**
+ * The morning re-judge (J31, his «ertalabni kutadi» and «narx kabi 2 daqiqa kutadi»): a reply held for the night ALONE
+ * — a calculation, a VED price, a table price his setting kept for the morning — whose draft still waits, is judged
+ * again at the first working minute on the facts of that minute. Eligible, it counts down afresh: a fresh hold, and
+ * — the night's card having arrived without a sound — a fresh copy of its card that RINGS (the press reads the newest
+ * copy, `cardOnScreen`, so the hold runs from that one). Not eligible, its reasons are what holds it now. Each row is
+ * judged once a morning: the re-judge stamps `claimed_at`, and only rows last judged before this morning are asked.
+ * Rows of the night just past only — one held longer is long past its own clocks (the ✅ refuses a stale reply).
+ */
+export async function rejudgeNightHeld(now: Date = new Date()): Promise<number> {
+  if (!(await agentAutoReady()) || isTashkentNight(now)) return 0;
+  const morning = morningOf(now);
+  const since = new Date(morning.getTime() - 24 * 3_600_000);
+  const held = await db.execute<{ draft_id: string }>(sql`
+    SELECT v.draft_id::text FROM agent_auto_verdicts v
+      JOIN agent_drafts d ON d.id = v.draft_id
+     WHERE v.reasons = ARRAY['night']::text[]
+       AND (v.state IS NULL OR v.state = 'refused')
+       AND d.status = 'pending' AND d.final_body IS NULL AND d.kind = 'reply'
+       AND coalesce(v.claimed_at, v.created_at) < ${morning.toISOString()}::timestamptz
+       AND coalesce(v.claimed_at, v.created_at) >= ${since.toISOString()}::timestamptz
+     ORDER BY v.created_at
+     LIMIT ${AUTO_PRESS_BATCH}`);
+  if (held.length === 0) return 0;
+  const config = await readAutoConfig();
+  if (!config) return 0;
+  const talk = await readAgentTalkHoldSec();
+  let armed = 0;
+  for (const { draft_id: draftId } of held) {
+    try {
+      const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+      if (!d) continue;
+      const facts = await autoFactsFor(d, { at: now, now, config, scheduling: true });
+      const holdSec = holdSecFor(autoClassOf(facts), { talk, price: config.holdSec });
+      const dueAt = new Date(now.getTime() + holdSec * 1000);
+      // The moment it would go, and the loop read at it — `autoPlanFor`'s own order.
+      await atDue(facts, d, dueAt);
+      const verdict = autoVerdict(facts);
+      // Compare-and-set on what was read: a person's press, a disarm or another sweep that moved the row first wins.
+      const still = and(
+        eq(agentAutoVerdicts.draftId, draftId),
+        sql`${agentAutoVerdicts.reasons} = ARRAY['night']::text[]`,
+        sql`(${agentAutoVerdicts.state} IS NULL OR ${agentAutoVerdicts.state} = 'refused')`,
+      );
+      if (!verdict.eligible) {
+        await db.update(agentAutoVerdicts).set({ reasons: verdict.reasons, claimedAt: now }).where(still);
+        continue;
+      }
+      const moved = await db
+        .update(agentAutoVerdicts)
+        .set({ eligible: true, state: 'waiting', reasons: [], outcome: null, dueAt, claimedAt: now })
+        .where(still)
+        .returning({ id: agentAutoVerdicts.draftId });
+      if (moved.length === 0) continue;
+      armed += 1;
+      if (holdSec > 0) await ringCardAgain(draftId);
+      await refreshCard(draftId, now);
+    } catch (err) {
+      logger.warn({ err, draftId }, '[agent] auto morning re-judge of one reply failed');
+    }
+  }
+  if (armed > 0) logger.info({ armed }, '[agent] auto morning re-judge');
+  return armed;
+}
+
+/**
+ * A fresh copy of a draft's card, queued to ring (J31): the newest copy's payload less what belongs to the copy that
+ * was SENT — its Telegram message, the moment it showed, whether it rang, its silence. The redraw that follows
+ * (`refreshCard`) writes the current words onto both copies; the old one is edited where it stands.
+ */
+async function ringCardAgain(draftId: string): Promise<void> {
+  const [row] = await db
+    .select({ userId: notifications.userId, payload: notifications.payload })
+    .from(notifications)
+    .where(and(eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`))
+    .orderBy(desc(notifications.createdAt))
+    .limit(1);
+  if (!row) return;
+  const payload = (row.payload ?? {}) as Record<string, unknown>;
+  const extra = Object.fromEntries(Object.entries(payload).filter(([key]) => !SENT_COPY_KEYS.has(key)));
+  await notifyStaffTelegram({
+    userIds: [row.userId],
+    type: 'AgentDraft',
+    text: typeof payload.text === 'string' ? payload.text : '',
+    extra: { ...extra, silent: false },
+  });
+}
+
+/** The keys a SENT copy of a card carries about itself — never copied onto a fresh one (`ringCardAgain`). */
+const SENT_COPY_KEYS: ReadonlySet<string> = new Set(['text', 'tg', 'shown', 'rang', 'silent', 'direct']);
 
 /**
  * Why the machine's press lost INSIDE its own approval (decide `auto`, fix pass A, C2/C5): a stop, a disarm — or
@@ -1239,10 +1578,14 @@ export async function stopAutoForEdit(
 
 // ── step-downs ──────────────────────────────────────────────────────────────
 
-/** How far back a step-down looks, and how long a chat stays out of the layer. */
-export const AUTO_STEP_DOWN = { windowMs: 7 * 86_400_000, chatOffMs: 30 * 86_400_000, feedbackToDisarm: 2, botQuestionChatsToDisarm: 2 } as const;
+/**
+ * How far back a step-down looks, and how long a chat stays out of the layer. «Botmisiz?» is no step-down since stage 1a
+ * (his 1 b ⚠: the AI answers it itself with one honest line) — its stored reason still prints wherever a row named it,
+ * and a chat a row turned off for it before the deploy stays out until its own `off_until`.
+ */
+export const AUTO_STEP_DOWN = { windowMs: 7 * 86_400_000, chatOffMs: 30 * 86_400_000, feedbackToDisarm: 2 } as const;
 
-type StepDownReason = Extract<AutoDisarmReason, 'feedback' | 'blocked' | 'bot_question'>;
+type StepDownReason = Extract<AutoDisarmReason, 'feedback' | 'blocked'>;
 
 /** Pure: the alarm a step-down raises — the reason (auto-card's one map), what stays, and that re-arming is his. No customer in it. */
 export function autoDisarmAlarmText(reason: StepDownReason): string {
@@ -1251,6 +1594,19 @@ export function autoDisarmAlarmText(reason: StepDownReason): string {
     `AI qoralama yozishda davom etadi — har bir javobni siz ✅ bilan yuborasiz. ` +
     `Qayta yoqish faqat sizning bosishingiz bilan.`
   );
+}
+
+/**
+ * The people the agent's own alarms reach: its holder and every super_admin who can log in (`usersWithRoles` asks
+ * `canLogInSql`). ONE reader, extracted from `stepDown` (stage 1a §3.2): it is also the LAST fallback of
+ * `designated()` (agent/designations.ts), so «nobody was designated» means today's audience (the fallback asks the
+ * holder's `canLogIn` too, so a holder who cannot log in is left out there, where `stepDown` still names him) — and the role
+ * key it names stays here, in the one line that already held it, never in the designations' file (design §11.2).
+ * Holder first; nobody twice. Reads the pool — never inside a transaction.
+ */
+export async function agentAlarmRecipients(holderId: string | null): Promise<string[]> {
+  const supers = await usersWithRoles(['super_admin']);
+  return [...new Set([...(holderId ? [holderId] : []), ...supers])];
 }
 
 /**
@@ -1264,8 +1620,7 @@ async function stepDown(reason: StepDownReason, holderId: string): Promise<boole
   const out = await db.transaction((tx) => disarmAutoInTx(tx, reason, null, { takeBack: true }));
   for (const id of [...out.stoppedDraftIds, ...out.takenBackDraftIds]) await refreshCard(id);
   if (!out.wasArmed) return false;
-  const supers = await usersWithRoles(['super_admin']);
-  await notifyStaffTelegram({ userIds: [holderId, ...supers], type: 'AgentForcedOff', text: autoDisarmAlarmText(reason) });
+  await notifyStaffTelegram({ userIds: await agentAlarmRecipients(holderId), type: 'AgentForcedOff', text: autoDisarmAlarmText(reason) });
   logger.warn({ reason }, '[agent] auto-send disarmed itself');
   return true;
 }
@@ -1312,11 +1667,12 @@ export const AUTO_FEEDBACK_WORDS: Record<AutoFeedbackRefusal, string> = {
 };
 
 /**
- * 👎 «Xato edi» on a reply the machine sent: the holder alone, once. The chat
- * leaves the layer for 30 days; two in seven days disarm it (step-down).
+ * 👎 «Xato edi» on a reply the machine sent, once. The chat leaves the layer for 30 days; two in seven days disarm it
+ * (step-down). Whose press it is — the arming rule (`mayArmAuto`, stage 1a §4.2): the reply's holder, or a super_admin
+ * while the holder is the AI seat, which nobody signs in as — the evening sample's 👎 (his 9 a) is pressed by him.
  */
 export async function autoFeedback(
-  staffId: string,
+  actor: AutoActor,
   draftId: string,
   now: Date = new Date(),
 ): Promise<{ ok: true; disarmed: boolean } | { ok: false; code: AutoFeedbackRefusal }> {
@@ -1326,7 +1682,7 @@ export async function autoFeedback(
     .from(agentAutoVerdicts)
     .where(eq(agentAutoVerdicts.draftId, draftId));
   if (!row) return { ok: false, code: 'not_found' };
-  if (row.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
+  if (!(await mayArmAuto(actor, row.managerUserId))) return { ok: false, code: 'not_account_holder' };
   // A reply the gate refused at the scheduling (no state), or one the machine never pressed: not its own.
   if (row.state !== 'pressed') return { ok: false, code: 'not_sent' };
   const marked = await db
@@ -1367,34 +1723,6 @@ export async function autoStepDownOnBlock(managerUserId: string, peerId: bigint,
   }
 }
 
-/**
- * «Siz botmisiz?» in a chat that got an auto reply within seven days (run's
- * `bot_question` notice): that chat leaves the layer for 30 days, and a
- * SECOND such chat within seven days disarms it. Never throws.
- */
-export async function autoStepDownOnBotQuestion(managerUserId: string, peerId: bigint, now: Date = new Date()): Promise<{ chatOff: boolean; disarmed: boolean }> {
-  try {
-    if (!(await agentAutoReady())) return { chatOff: false, disarmed: false };
-    if (!(await autoPressedInChat(managerUserId, peerId, now))) return { chatOff: false, disarmed: false };
-    await chatOff(managerUserId, peerId, 'bot_question', now);
-    const [count] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(agentAutoChats)
-      .where(
-        and(
-          eq(agentAutoChats.managerUserId, managerUserId),
-          eq(agentAutoChats.reason, 'bot_question'),
-          gte(agentAutoChats.updatedAt, new Date(now.getTime() - AUTO_STEP_DOWN.windowMs)),
-        ),
-      );
-    const disarmed = Number(count?.n ?? 0) >= AUTO_STEP_DOWN.botQuestionChatsToDisarm ? await stepDown('bot_question', managerUserId) : false;
-    return { chatOff: true, disarmed };
-  } catch (err) {
-    logger.error({ err }, '[agent] auto bot-question step-down failed');
-    return { chatOff: false, disarmed: false };
-  }
-}
-
 // ── arming ──────────────────────────────────────────────────────────────────
 
 export type AutoConfigRefusal = 'not_ready' | 'forbidden' | 'not_account_holder' | 'agent_off' | 'not_work_account' | 'bad_value';
@@ -1432,7 +1760,7 @@ export async function workAccountOf(userId: string): Promise<boolean> {
  * in as, so «the holder's alone» left the boxes greyed for the one person who decides them. None of these sends a
  * message: arming does, and arming keeps its own rule (`mayArmAuto`).
  */
-function mayTuneAuto(actor: AutoActor, ownerUserId: string | null): boolean {
+export function mayTuneAuto(actor: AutoActor, ownerUserId: string | null): boolean {
   return (ownerUserId !== null && actor.id === ownerUserId) || actor.roles.includes('super_admin');
 }
 
@@ -1441,7 +1769,7 @@ function mayTuneAuto(actor: AutoActor, ownerUserId: string | null): boolean {
  * super_admin while the holder is the designated AI seat (`holderIsSeat`) — the seat is the company's machine
  * account and no person's own (2026-11-15). Read inside the arming transaction too.
  */
-async function mayArmAuto(actor: AutoActor, ownerUserId: string | null, handle: Db | Tx = db): Promise<boolean> {
+export async function mayArmAuto(actor: AutoActor, ownerUserId: string | null, handle: Db | Tx = db): Promise<boolean> {
   if (ownerUserId === null) return false;
   if (actor.id === ownerUserId) return true;
   if (!actor.roles.includes('super_admin')) return false;
@@ -1503,12 +1831,16 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
 }
 
 /**
- * Which kinds of reply may go by themselves — the holder's or a super_admin's choice (`mayTuneAuto`), at least one. Audited. The
+ * Which kinds of reply may go by themselves — the holder's or a super_admin's choice (`mayTuneAuto`). Audited. The
  * fifth, `price`, is admitted by 0148's CHECK alone: one migration behind it is refused in words, never a 23514.
+ *
+ * Stage 1a (§4.2): the four ordinary kinds are no longer read — ordinary talk goes unticked — but they are ALWAYS
+ * stored, with whatever he ticks of the three (a price, a calculation, a VED price): 0149's CHECK wants at least one
+ * kind, so none of the three ticked is a valid choice that stores the four.
  */
 export async function setAutoCategories(actor: AutoActor, categories: readonly string[], ctx: AuditContext): Promise<AutoConfig> {
-  const chosen = [...new Set(categories)];
-  if (chosen.length === 0 || chosen.some((c) => !(AUTO_SEND_CATEGORIES as readonly string[]).includes(c))) throw new AutoConfigError('bad_value');
+  const chosen = [...new Set([...ORDINARY_CATEGORIES, ...categories])];
+  if (chosen.some((c) => !(AUTO_SEND_CATEGORIES as readonly string[]).includes(c))) throw new AutoConfigError('bad_value');
   if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
   if (chosen.includes('price') && !(await agentFullP1Ready())) throw new AutoConfigError('not_ready');
   // `calc` and `calc_price` exist since 0149 (SPEC-P2-v2 §4.2): ticked one migration behind, the CHECK would refuse
@@ -1569,35 +1901,73 @@ export async function setAutoPerDay(actor: AutoActor, perDay: number | null, ctx
   });
 }
 
-/** The bounds a typed confidence floor keeps, in whole percent — 0145's CHECK is 0.50 to 1. */
-export const AUTO_CONFIDENCE_PCT = { min: 50, max: 100 } as const;
+/** The bounds the price hold keeps, in seconds — 0145's CHECK (`hold_sec` 30-600). */
+export const AUTO_PRICE_HOLD = { min: 30, max: 600 } as const;
 
-/**
- * The confidence floor a reply's own `confidence` must reach (0145 `min_confidence`, shipped 0.80 with no box to move
- * it). On his server the model rated every reply of 2026-11-15 between 0.60 and 0.75 — a greeting included — so at
- * 0.80 nothing could ever go by itself (his «80 foizni ham tushirib bolmayabti»). A whole percent, 50..100; the
- * holder's or a super_admin's (`mayTuneAuto`). Every other rule of the gate stands whatever this says. Audited.
- */
-export async function setAutoMinConfidence(actor: AutoActor, pct: number, ctx: AuditContext): Promise<AutoConfig> {
-  if (!(Number.isInteger(pct) && pct >= AUTO_CONFIDENCE_PCT.min && pct <= AUTO_CONFIDENCE_PCT.max)) throw new AutoConfigError('bad_value');
-  if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
+/** The door the three hold/night writers ask alike — and «not ready» on a server with no holder yet. */
+async function tunerCheck(actor: AutoActor): Promise<void> {
   const pre = await readAgentConfig();
   if (!pre?.ownerUserId) throw new AutoConfigError('not_ready');
   if (!mayTuneAuto(actor, pre.ownerUserId)) throw new AutoConfigError('forbidden');
-  const value = (pct / 100).toFixed(2);
+}
+
+/** A stage-1a setting of the auto layer written with its audit row — the settings' own entity, as every own-door key. */
+async function writeAutoSetting(
+  actor: AutoActor,
+  key: 'agent_talk_hold_sec' | 'agent_night_prices',
+  value: number | string,
+  ctx: AuditContext,
+): Promise<void> {
+  const before = await getSetting(key);
+  await db.transaction(async (tx) => {
+    // The settings writer takes no handle: the row is written here, on the transaction, with its audit row — one fact.
+    await tx.execute(sql`
+      INSERT INTO settings (key, value, updated_by, updated_at)
+      VALUES (${key}, ${JSON.stringify(value)}::jsonb, ${actor.id}::uuid, now())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`);
+    await writeAudit(tx, ctx, { entityType: 'settings', entityId: SETTINGS_AUDIT_ID, action: 'update', before: { [key]: before }, after: { [key]: value } });
+  });
+}
+
+/**
+ * How long ORDINARY talk waits on its card before it goes by itself (his 11 a ⚠, his ⭐ a of question 82: 0 — at once,
+ * day and night), in whole seconds 0-600: the box «Oddiy javob kutishi (soniya)». The holder's or a super_admin's
+ * (`mayTuneAuto`), as every number of the layer. Audited. A hold above 0 brings back the card's ⏸ and its ring.
+ */
+export async function setAutoTalkHold(actor: AutoActor, sec: number, ctx: AuditContext): Promise<number> {
+  if (!(Number.isInteger(sec) && sec >= 0 && sec <= AGENT_1A_BOUNDS.talkHoldMax)) throw new AutoConfigError('bad_value');
+  await tunerCheck(actor);
+  await writeAutoSetting(actor, 'agent_talk_hold_sec', sec, ctx);
+  return sec;
+}
+
+/**
+ * How long a PRICE waits on its card with ⏸ — a table price, a VED price, a calculation (his 11 a: «narx 2 daqiqa
+ * kutadi»): the layer's own `hold_sec` (0145, 30-600), which shipped with no box. Audited, as the daily count is.
+ */
+export async function setAutoPriceHold(actor: AutoActor, sec: number, ctx: AuditContext): Promise<AutoConfig> {
+  if (!(Number.isInteger(sec) && sec >= AUTO_PRICE_HOLD.min && sec <= AUTO_PRICE_HOLD.max)) throw new AutoConfigError('bad_value');
+  if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
+  await tunerCheck(actor);
   return db.transaction(async (tx) => {
     const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
     if (!before) throw new AutoConfigError('not_ready');
-    const [row] = await tx.update(agentAutoConfig).set({ minConfidence: value, updatedAt: new Date() }).where(eq(agentAutoConfig.id, 1)).returning();
-    await writeAudit(tx, ctx, {
-      entityType: 'agent_auto_config',
-      entityId: AUTO_AUDIT_ID,
-      action: 'update',
-      before: { minConfidence: Number(before.minConfidence) },
-      after: { minConfidence: Number(value) },
-    });
+    const [row] = await tx.update(agentAutoConfig).set({ holdSec: sec, updatedAt: new Date() }).where(eq(agentAutoConfig.id, 1)).returning();
+    await writeAudit(tx, ctx, { entityType: 'agent_auto_config', entityId: AUTO_AUDIT_ID, action: 'update', before: { holdSec: before.holdSec }, after: { holdSec: sec } });
     return toAutoConfig(row!);
   });
+}
+
+/**
+ * Which prices may go by themselves at night, 22:00-08:00 (his 4 a ⚠, his ⭐ a of question 1: a table price yes, a VED
+ * price in the morning): `none`, `table` or `all` — the gate's `nightBars`. Talk is never barred and a calculation
+ * always is; this moves only the two prices. The holder's or a super_admin's. Audited.
+ */
+export async function setAutoNightPrices(actor: AutoActor, value: string, ctx: AuditContext): Promise<AgentNightPrices> {
+  if (!(AGENT_NIGHT_PRICES as readonly string[]).includes(value)) throw new AutoConfigError('bad_value');
+  await tunerCheck(actor);
+  await writeAutoSetting(actor, 'agent_night_prices', value, ctx);
+  return value as AgentNightPrices;
 }
 
 /**

@@ -113,6 +113,58 @@ describe('who a broadcast reaches', () => {
   });
 });
 
+/**
+ * «Sotuvchisi yo'q mijozlar» (stage 1a «Hajm», his 7 b — the one message that names the AI's number): per CHAT, by
+ * the predicate the cabinet's «💬 Menejer» asks too (J13). A person holding a seller's code is that seller's customer
+ * whichever of their codes the list would have shown; a code whose seller has left is nobody's.
+ */
+describe('the chats no seller answers (his 7 b)', () => {
+  const people: string[] = [];
+  async function person(name: string, over: Partial<typeof users.$inferInsert> = {}) {
+    const [u] = await db
+      .insert(users)
+      .values({ phone: `+99891${S}${people.length}`, fullName: `${TAG} ${name}`, passwordHash: 'x', ...over })
+      .returning({ id: users.id });
+    people.push(u!.id);
+    return u!.id;
+  }
+
+  afterAll(async () => {
+    // Deactivated, never deleted: the clients this file leaves behind still name them (the file's own rule for clients).
+    if (people.length) await db.update(users).set({ active: false }).where(inArray(users.id, people));
+  });
+
+  it('a seller’s chat is out; a bare chat and a leaver’s are in; a chat with BOTH is out (J13)', async () => {
+    const seller = await person('Sotuvchi');
+    const leaver = await person('Ketgan', { active: false });
+    const payroll = await person('Oylik', { loginEnabled: false, passwordHash: null, phone: null });
+    await client(`NA${S}`, { salesManagerId: seller }, [chat(10)]);
+    await client(`NB${S}`, {}, [chat(11)]);
+    // One person, two codes on one chat: one is the seller's, one is bare — the seller's customer.
+    await client(`NC${S}`, { salesManagerId: seller }, [chat(12)]);
+    await client(`ND${S}`, {}, [chat(12)]);
+    await client(`NE${S}`, { salesManagerId: leaver }, [chat(13)]);
+    await client(`NF${S}`, { salesManagerId: payroll }, [chat(14)]);
+    // An INACTIVE code's seller answers nobody's chat (the predicate counts active clients only).
+    const gone = await client(`NG${S}`, { salesManagerId: seller }, [chat(15)]);
+    await db.update(clients).set({ active: false }).where(eq(clients.id, gone.id));
+    await client(`NH${S}`, {}, [chat(15)]);
+    // A REVOKED link's seller is not this chat's either.
+    const revoked = await client(`NI${S}`, { salesManagerId: seller }, []);
+    await db.insert(clientTelegramLinks).values({ clientId: revoked.id, telegramChatId: chat(16), status: 'revoked' });
+    await client(`NJ${S}`, {}, [chat(16)]);
+
+    const codes = ['NA', 'NB', 'NC', 'ND', 'NE', 'NF', 'NG', 'NH', 'NI', 'NJ'].map((c) => `${c}${S}`);
+    const all = await audienceChats({ ...base, codes });
+    expect(all.map((c) => c.chatId).sort()).toEqual([chat(10), chat(11), chat(12), chat(13), chat(14), chat(15), chat(16)]);
+
+    const bare = await audienceChats({ ...base, codes, noManager: true });
+    expect(bare.map((c) => c.chatId).sort()).toEqual([chat(11), chat(13), chat(14), chat(15), chat(16)]);
+    // Asked through the codes of the mixed chat alone — the bare code still does not reach its seller's customer.
+    expect(await audienceChats({ ...base, codes: [`ND${S}`], noManager: true })).toEqual([]);
+  });
+});
+
 describe('sending it', () => {
   it('each chat gets the words and the file once; a blocked chat fails alone', async () => {
     const id = crypto.randomUUID();

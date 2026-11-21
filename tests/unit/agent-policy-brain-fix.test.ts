@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import type { KbHit } from '@/modules/wms/agent/kb';
 import { AGENT_LOCALES } from '@/modules/wms/agent/locale';
@@ -118,7 +119,7 @@ const SEEDED: KbHit[] = SEED_FACTS.map((f, i) => ({
 
 /** The policy over a reply, on the memory a real run would store for this chat. */
 function onMemory(customer: string, reply: string): string[] {
-  const memory = memoryFor(ctxWith(customer), { compose, tools: [], outcomes: [], usage }, SEEDED, 'gsr-t');
+  const memory = memoryFor(ctxWith(customer), { compose, tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT }, SEEDED, 'gsr-t');
   return codes({ body: reply, numberSources: memory.sources, askedMode: memory.askedMode });
 }
 
@@ -276,11 +277,9 @@ describe('a day count is the time of ONE road', () => {
       [15, 'road'],
       [25, 'road'],
     ]);
-    expect(days('avia@1')).toEqual([
-      [2, 'air'],
-      [5, 'air'],
-      [2, 'air'],
-    ]);
+    // DELIBERATE EDIT (stage 1a P7, J2): avia@2 states NO day count — the flight's days are his setting
+    // (`agent_avia_days`), said by rule 9 and the avia tool and vouched for by the company rule, never by a fact.
+    expect(days('avia@2')).toEqual([]);
   });
 
   it('«Mashinada 5 kunda kelsinmi?» is never answered on the flight’s five — named or not', () => {
@@ -295,8 +294,9 @@ describe('a day count is the time of ONE road', () => {
 
   it('…while each road’s own days pass, in the reply’s words or the customer’s', () => {
     expect(onMemory('Mashinada qancha kunda keladi?', 'Odatda 15-25 kunda yetib keladi.')).toEqual([]);
-    expect(onMemory('Avia bilan qancha kunda?', 'Taxminan 2-5 kunda yetib boradi.')).toEqual([]);
-    expect(onMemory('Qancha kunda keladi?', 'Avia bilan taxminan 2-5 kunda, mashina bilan odatda 15-25 kunda yetib keladi.')).toEqual([]);
+    // DELIBERATE EDIT (stage 1a P7, J2): the flight's own days are his setting's — «3-5», shipped — not «2-5».
+    expect(onMemory('Avia bilan qancha kunda?', 'Taxminan 3-5 kunda yetib boradi.')).toEqual([]);
+    expect(onMemory('Qancha kunda keladi?', 'Avia bilan taxminan 3-5 kunda, mashina bilan odatda 15-25 kunda yetib keladi.')).toEqual([]);
   });
 
   it('the road the customer asked about is one road or none', () => {
@@ -359,6 +359,7 @@ describe('a Chinese place we have no warehouse in is priced from ours — the co
       priceArmed: false,
       calcArmed: false,
   calcPricing: false,
+      aviaDays: AVIA_DAYS_DEFAULT,
     };
     const out = await runTool('calc_checklist', { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] }, env);
     expect(out.checklist).toMatchObject({ complete: true, fromOurWarehouse: true, facts: { fromCity: 'Dongguan' } });
@@ -402,7 +403,7 @@ describe('the two warehouse sentences, said in natural words and in every langua
   });
 
   it('the model is told both sentences in all six languages in the prompt (the tool: agent-answers.integration)', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     for (const l of AGENT_LOCALES) {
       expect(head, l).toContain(WAREHOUSE_SENTENCES[l].condition);
       expect(head, l).toContain(WAREHOUSE_SENTENCES[l].factory);

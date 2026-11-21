@@ -13,7 +13,7 @@ import { estimatesStand } from './estimate-check';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
 import type { LessonSetMark } from './lesson-rules';
-import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson } from './types';
+import type { AnswerMark, CardMemory, ComposedAction, DraftPolicyJson, NoteCode, SystemReplyReason } from './types';
 
 export type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
 import type { ComposeReply } from './run';
@@ -356,20 +356,28 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     // A card too long to show what ✅ approves draws no ✅ — the text says so, and the keyboard agrees (card-io).
     const { text, tooLong } = renderDraftCardFull(row, null, [], { auto });
     const sendable = cardDrawsSend({ blocked: row.blocked || tooLong, status: row.status, ownText: false });
-    const extra = cardExtra({
-      id: row.id,
-      body: row.proposedBody ?? '',
-      actions: n.actions,
-      blocked: !sendable,
-      live: true,
-      kind: row.kind,
-      // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
-      auto: autoPayload(auto, row, sendable),
-      // A question the model raised (spec §2.2) offers «✍️ Savolga javob».
-      ask: cardAsks(row),
-      // The machine's words offer «📝 Tuzatish» (§3.1) — never a 💵 price, which is his own figure.
-      teach: cardTeaches(row),
-    });
+    const extra = {
+      ...cardExtra({
+        id: row.id,
+        body: row.proposedBody ?? '',
+        actions: n.actions,
+        blocked: !sendable,
+        live: true,
+        kind: row.kind,
+        // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
+        auto: autoPayload(auto, row, sendable),
+        // A question the model raised (spec §2.2) offers «✍️ Savolga javob».
+        ask: cardAsks(row),
+        // The machine's words offer «📝 Tuzatish» (§3.1) — never a 💵 price, which is his own figure.
+        teach: cardTeaches(row),
+      }),
+      // A reply that goes at once arrives without a sound (stage 1a §4.2) — only what waits for him rings. Asked of the
+      // verdict as RECORDED (J4): a plan whose row the savepoint refused has no press coming, and its card must ring.
+      // Written on EVERY card, true or false: a re-pointed row merges this payload into the old one (below), and a key
+      // written only when true would silence the next draft's card — the one that waits for him. A press that does not
+      // go after all takes the silence back (auto-send `ringSilentCard`).
+      silent: auto?.state === 'waiting' && n.autoPlan?.holdSec === 0,
+    };
     // His answer's redraft never rides the question's card (§2.2), nor his lesson's rewrite the card it replaces
     // (§3.4): a push of its own, the old card closed after.
     const old = live && !n.answers && !n.redrafts ? await cardRowFor(tx, live.id) : null;
@@ -401,7 +409,11 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`) — or, for
     // the question his ✍️ answer was for, «✍️ Javobingiz olindi — AI qayta yozdi» (STALE_WORDS `owner_answered`), and
     // for the reply his lesson rewrote, «📝 Saboq bo‘yicha AI qayta yozdi» (`owner_lesson`).
-    if (closeOld && superseded) {
+    // …and on the ride path too: a draft can stand on TWO copies since stage 1a (the morning re-judge rings a fresh
+    // copy of a night card, auto-send `ringCardAgain`), and the ride re-points only the newest — the older copy still
+    // names the superseded draft and would keep its countdown and its ✅ for a reply that will never go. The redraw
+    // reaches every row still naming it, and finds none on a draft that had one copy.
+    if ((closeOld || out.retargeted) && superseded) {
       const { refreshAgentCard } = await import('./card-io');
       await refreshAgentCard(superseded).catch((err: unknown) => logger.warn({ err }, '[agent] old card not closed'));
     }
@@ -422,6 +434,8 @@ export interface RunDraftInput {
   memory: PolicyMemory;
   actions: ComposedAction[];
   notes: string[];
+  /** What each note IS, parallel to `notes` (stage 1a, K5) — stored beside them, read by the auto layer. */
+  noteCodes: NoteCode[];
   kind?: 'reply' | 'hand_back';
   /** His ✍️ answer behind this redraft (spec §2.2) — kept on its policy for the auto layer (`owner_personal`, `answer_stale`). */
   fromAnswer?: AnswerMark | null;
@@ -433,6 +447,8 @@ export interface RunDraftInput {
   calcAnswer?: { requestId: string } | null;
   /** The holder's card line for the VED prices the run's `calc_price` quoted (§2.2) — `policy.card.calcLine`. */
   calcCardLine?: string | null;
+  /** The reply is the code's tayyor matn for this burst (stage 1a P3, system-reply.ts) — kept as `policy.system`. */
+  system?: SystemReplyReason | null;
 }
 
 /**
@@ -478,12 +494,16 @@ export function draftFromRun(input: RunDraftInput): NewDraft {
       card: input.calcCardLine ? { ...cardMemory(ctx), calcLine: input.calcCardLine } : cardMemory(ctx),
       burstSeenAt: burstSeenAt(ctx),
       notes: input.notes,
+      noteCodes: input.noteCodes,
       // Which forcing rule put the question to him (rail's price, the flight's address — §2.2): his ✏️ only.
       ...(compose.forcedQuestion ? { forcedQuestion: compose.forcedQuestion } : {}),
       ...(input.fromAnswer ? { fromAnswer: input.fromAnswer } : {}),
       ...(input.fromLesson ? { fromLesson: input.fromLesson } : {}),
       ...(input.lessonSet ? { lessons: input.lessonSet } : {}),
       ...(input.calcAnswer ? { calcAnswer: input.calcAnswer } : {}),
+      // A tayyor matn the code wrote (stage 1a P3): the whole reply, or the honest line in front of the model's.
+      ...(input.system ? { system: input.system } : {}),
+      ...(compose.honestLine ? { honestLine: true as const } : {}),
     },
     blocked: !policy.ok,
     needsOwner: compose.needsOwner,
@@ -523,10 +543,14 @@ export async function writeDraft(
 
 export { cardMemory };
 
+/**
+ * Since stage 1a the first voice note or Pashto message of a silence is answered with a tayyor matn and its card IS the
+ * notice (system-reply.ts); these words come only for the bursts after it, while the customer's last answer from us is
+ * still that line. «Botmisiz?» left: it is answered (run `withBotAnswer`).
+ */
 const NOTICE_WORDS: Record<string, string> = {
-  voice_only: "🎤 Mijoz ovozli xabar yubordi — AI eshitmaydi, o'zingiz javob bering.",
-  pashto: "🌐 Mijoz pushtu tilida yozdi — AI javob yozmaydi, o'zingiz javob bering.",
-  bot_question: "🤖 Mijoz «siz botmisiz?» deb so'radi — qoralama yozilmadi, o'zingiz javob bering.",
+  voice_only: "🎤 Mijoz yana ovozli xabar yubordi — AI eshitmaydi, «yozib yuboring» deb aytilgan. O'zingiz javob bering.",
+  pashto: "🌐 Mijoz yana pushtu tilida yozdi — «fors yoki rus tilida yozing» deb aytilgan. O'zingiz javob bering.",
 };
 
 /**
@@ -546,17 +570,17 @@ export async function writeNotice(ctx: AgentContext, reason: string): Promise<vo
   });
 }
 
-/** The first refusal of the day for a cap — said once (fit-1). */
+/**
+ * The first refusal of the day for a cap — said once (fit-1). In the cap's own words (today `CAP_WORDS`): the token
+ * cap is a loop guard he may raise, never «the AI budget» (stage 1a §4.6 — nothing stops on dollars, his 10 c).
+ */
 export async function notifyCapReached(ownerUserId: string, reason: string): Promise<void> {
-  const words: Record<string, string> = {
-    daily_draft_cap: 'bugungi qoralamalar soni',
-    daily_token_cap: 'bugungi AI byudjeti',
-    chat_runs: 'bitta mijoz uchun kunlik chegara',
-  };
+  // Dynamic: the cap's words live beside the caps (today.ts), a module this one has no other edge to.
+  const { capWordOf } = await import('./today');
   await notifyStaffTelegram({
     userIds: [ownerUserId],
     type: 'AgentCapReached',
-    text: `⛔ AI sotuvchi: ${words[reason] ?? reason} tugadi — qolgan xabarlarga bugun o'zingiz javob bering. Chegarani «Suhbatlar → AI sotuvchi» sahifasida o'zgartirish mumkin.`,
+    text: `⛔ AI sotuvchi: ${capWordOf(reason)} tugadi — qolgan xabarlarga bugun o'zingiz javob bering. Chegarani «Suhbatlar → AI sotuvchi» sahifasida o'zgartirish mumkin (xohlasangiz oshiring).`,
   });
 }
 

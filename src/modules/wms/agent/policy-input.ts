@@ -1,11 +1,12 @@
 import { and, eq, gte, inArray, ne } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentDrafts, agentOutbox, clients, users } from '../../platform/db/schema';
-import { getSetting } from '../../platform/settings/service';
+import { aviaDays, getSetting, readAgentPersonaName } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import type { StoredEstimate } from './auto-money';
 import type { CalcPriceMark } from './calc-price';
+import { withAviaDaysNow } from './avia-days';
 import type { AviaCargo, QuotedRoad } from './context';
 import type { AgentLocale, ScriptName } from './locale';
 import { airMentionIn, customerSources, urlsIn, type NumberSource, type TravelMode } from './numbers';
@@ -21,7 +22,8 @@ import { OUTBOX_GOING } from './today';
  * policy runs, at the draft AND again at ✅ (`decideDraft` re-runs it on the
  * stored body, leak-3). What the RUN learned (the tool figures, the facts it
  * used, the customer's script) is stored on the draft as `PolicyMemory` and
- * carried to the re-run unchanged.
+ * carried to the re-run unchanged — all but the flight's days, which are HIS
+ * SETTING and are read now too (avia-days `withAviaDaysNow`, stage 1a P7).
  */
 
 export interface PolicyMemory {
@@ -197,22 +199,28 @@ export async function policyFor(input: {
   /** Names and codes of THIS customer — stripped from the fingerprint. */
   strip: string[];
 }): Promise<PolicyResult> {
-  const [bookCodes, staffNames, counts, codePrefix, addresses] = await Promise.all([
+  const [bookCodes, staffNames, counts, codePrefix, personaName, addresses, days] = await Promise.all([
     bookCodesIn(input.body),
     staffNamesExcept(input.memory.managerName, input.managerUserId),
     sendCounts(input.managerUserId, input.peerId, input.body, input.strip),
     getSetting('client_code_prefix'),
+    // The AI's own name, read now like the colleagues it is told apart from (stage 1a P3): its introduction is no
+    // colleague named, even when the AI's seat makes the owner a colleague who shares that first name.
+    readAgentPersonaName(),
     // Read now, not remembered: the address he corrects this morning is the one an older draft's ✅ refuses.
     // …and whenever the reply itself speaks of the flight (#1540): the warning reads the reply too.
     input.memory.aviaOnly === true || input.memory.aviaMentioned === true || airMentionIn(input.body)
       ? warehouseAddressTexts()
       : Promise.resolve([]),
+    // The flight's days as he says them NOW (stage 1a P7): a draft written before he changed them — or before the
+    // deploy, on «2-5, reys bo‘lsa 2» — is judged at ✅ and at the machine's press by today's pair, not its run's.
+    aviaDays(),
   ]);
   return checkAgentReply({
     body: input.body,
     language: input.memory.language,
     customerScript: input.memory.customerScript,
-    numberSources: input.memory.sources,
+    numberSources: withAviaDaysNow(input.memory.sources, days),
     removeWhole: [],
     ownCodes: input.memory.ownCodes,
     bookCodes,
@@ -224,6 +232,7 @@ export async function policyFor(input: {
     staffNames,
     // The words of the customer's own name (the codes in `strip` carry digits): greeting him is not naming a colleague.
     customerNames: input.strip.filter((s) => /\p{L}/u.test(s) && !/\d/u.test(s)),
+    personaName,
     canary: input.memory.canary,
     ...counts,
     hasEstimate: input.memory.hasEstimate,

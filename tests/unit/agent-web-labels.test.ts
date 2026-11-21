@@ -11,6 +11,7 @@ import {
   AUTO_DISARM_KEYS,
   CATEGORY_KEYS,
   ERROR_KEYS,
+  NIGHT_PRICE_KEYS,
   PAUSE_KIND_KEYS,
   SCOPE_KEYS,
   SECTION_KEYS,
@@ -46,6 +47,8 @@ const MAPS: Record<string, Record<string, string>> = {
   CATEGORY_KEYS,
   SCOPE_KEYS,
   SOURCE_KEYS,
+  // Stage 1a: the night choice's three sentences (his 4 a).
+  NIGHT_PRICE_KEYS,
 };
 
 describe('the AI sotuvchi page’s runtime labels', () => {

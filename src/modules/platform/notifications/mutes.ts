@@ -339,6 +339,14 @@ export const UNMUTABLE_TYPES = [
   'AgentForcedOff',
   // The website table's 14-day notice (0148, spec SPEC-P1-v2 §1.6): once per table, and its «✅ Tarif to'g'ri».
   'AgentTariffNotice',
+  // Stage 1a (0151, docs/ai-toliq/qurish/STAGE-0-1A.md §4.5): the big-cargo signal, the morning line, the evening
+  // sample and the «AI is not answering» alarm. Each reaches only the people HE designated on «Kim javob beradi»
+  // (or the alarm audience while he named nobody) — a person he chose who muted it is the silent failure that table
+  // exists to end, so the way to stop one is to take the person off the list, never a /profile tick.
+  'AgentSignal',
+  'AgentMorning',
+  'AgentSample',
+  'AgentLiveness',
 ] as const;
 
 export type UnmutableType = (typeof UNMUTABLE_TYPES)[number];

@@ -10,6 +10,9 @@ import {
 import { mayReadSystemErrors, recentErrorCount } from '@/modules/platform/diagnostics/errors';
 import { diskSignals, type DiskSignal } from '@/modules/platform/diagnostics/signals';
 import { parseDiskDetail } from '@/modules/platform/backup/disk';
+import { agentRunning, mayRunAgent, readAgentConfig } from '@/modules/wms/agent/config';
+import { livenessStanding } from '@/modules/wms/agent/liveness';
+import { AGENT_PAGE } from '@/modules/wms/agent/web-door';
 
 /**
  * The system's own state on the owner's home (B9): is the bot delivering,
@@ -92,6 +95,17 @@ const DISK_WORD = {
   photos: 'diskPhotos',
 } as const;
 
+/**
+ * «AI sotuvchi javob bermayapti» standing (stage 1a §4.5 item 4): for a reader the AI page admits (`mayRunAgent`, the
+ * page it links to), and only while the agent runs. The half of the liveness alarm that survives a DEAD staff bot —
+ * its Telegram line rides that very bot.
+ */
+async function aiLivenessFor(actor: Actor): Promise<{ n: number; minutes: number } | null> {
+  const config = await readAgentConfig();
+  if (!mayRunAgent(actor, config) || !agentRunning(config)) return null;
+  return livenessStanding(new Date());
+}
+
 /** The rows for the dashboard's signals block. `Row` is the dashboard's own. */
 export async function SystemSignals({
   actor,
@@ -101,10 +115,11 @@ export async function SystemSignals({
   Row: (props: RowProps) => ReactNode;
 }) {
   const perms = actor.permissions;
-  const [bot, errors, disks] = await Promise.all([
+  const [bot, errors, disks, aiLiveness] = await Promise.all([
     perms.has('admin.audit.browse') ? telegramBotState().catch((): TelegramBotState | null => null) : null,
     mayReadSystemErrors(actor) ? recentErrorCount().catch((): number | null => null) : null,
     perms.has('admin.settings.manage') ? diskSignals().catch((): DiskSignal[] => []) : [],
+    aiLivenessFor(actor).catch(() => null),
   ]);
   const t = await getTranslations('kuzatuv');
   // The disk only speaks once a step is crossed; a quiet disk is no row.
@@ -114,6 +129,15 @@ export async function SystemSignals({
   return (
     <>
       <BotDownLine state={bot} href="/admin/notifications" />
+      {aiLiveness && (
+        <Link
+          href={AGENT_PAGE}
+          className="block rounded-lg border border-bad/40 bg-bad/10 px-2 py-1.5 text-xs font-bold text-bad hover:bg-bad/15 [overflow-wrap:anywhere]"
+          data-testid="ai-liveness"
+        >
+          🔴 {t('homeAiLiveness', { n: aiLiveness.n, minutes: aiLiveness.minutes })}
+        </Link>
+      )}
       {filling.map((disk) => (
         <Row
           key={disk.key}

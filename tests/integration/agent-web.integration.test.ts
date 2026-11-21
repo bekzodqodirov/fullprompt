@@ -2,12 +2,14 @@ import 'dotenv/config';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
-import { agentConfig, agentDrafts, agentOutbox, auditLog, clients, kbFacts, roles, userRoles, users } from '@/modules/platform/db/schema';
+import { agentConfig, agentDrafts, agentOutbox, auditLog, clients, kbFacts, roles, settings, userRoles, users } from '@/modules/platform/db/schema';
+import { AVIA_DAYS_DEFAULT, SETTINGS_AUDIT_ID, aviaDays, setSetting } from '@/modules/platform/settings/service';
 import {
   AVIA_RATE_LABEL,
   AgentConfigError,
   __restoreAgentConfig,
   readAgentConfig,
+  setAviaDays,
   setAviaRate,
   type AgentConfig,
 } from '@/modules/wms/agent/config';
@@ -43,6 +45,8 @@ let counter = 0;
 const next = () => (counter += 1);
 
 let snapshot: AgentConfig | null = null;
+/** The flight's days as the table held them (stage 1a P7) — a setting is CONFIGURATION on the shared database (#183). */
+let aviaDaysRow: { value: unknown } | null = null;
 let superAdminId = '';
 let holderId = '';
 let otherId = '';
@@ -106,6 +110,8 @@ async function waitingReply(over: { readDone?: boolean; status?: string; tgMessa
 beforeAll(async () => {
   snapshot = await readAgentConfig();
   if (!snapshot) throw new Error('0138 is not applied on this database');
+  const [days] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, 'agent_avia_days'));
+  aviaDaysRow = days ?? null;
   superAdminId = await userWithRole('super_admin');
   holderId = await userWithRole('sales_manager', [superAdminId]);
   otherId = await userWithRole('accountant', [superAdminId, holderId]);
@@ -124,6 +130,8 @@ afterAll(async () => {
   await db.delete(kbFacts).where(sql`${kbFacts.question} LIKE ${`%(${SUFFIX})`}`);
   if (madeClients.length > 0) await db.delete(clients).where(inArray(clients.id, madeClients));
   await __restoreAgentConfig(snapshot);
+  if (aviaDaysRow) await setSetting('agent_avia_days', aviaDaysRow.value, null);
+  else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
 });
 
 const ctx = (actorId: string) => ({ actorId, ip: null, userAgent: null });
@@ -236,7 +244,8 @@ describe('the avia rate on «AI qoidalari» (§17.14) — the page’s door, cen
     expect(out).toMatchObject({ aviaUsdPerKg: 18.5, aviaRateSetBy: holderId });
     expect(out.aviaRateSetAt).not.toBeNull();
     expect((await readAgentConfig())!.aviaUsdPerKg).toBe(18.5);
-    expect(agentRules((await readAgentConfig())!).avia).toMatchObject({ usdPerKg: 18.5, minKg: 1, daysMin: 2, daysMax: 5 });
+    // The flight's days are the setting's now (stage 1a P7, his 2 b «3-5 kun»), handed in by the page from its one reader.
+    expect(agentRules((await readAgentConfig())!, AVIA_DAYS_DEFAULT).avia).toMatchObject({ usdPerKg: 18.5, minKg: 1, daysMin: 3, daysMax: 5 });
     const [audit] = await db
       .select()
       .from(auditLog)
@@ -246,6 +255,47 @@ describe('the avia rate on «AI qoidalari» (§17.14) — the page’s door, cen
     expect(audit!.after).toMatchObject({ aviaUsdPerKg: 18.5 });
     const cleared = await setAviaRate({ id: superAdminId, roles: ['super_admin'] }, null, ctx(superAdminId));
     expect(cleared.aviaUsdPerKg).toBeNull();
+  });
+});
+
+describe('the flight’s days on «AI qoidalari» (stage 1a P7, his 2 b «3-5 kun») — the avia rate’s door, a range, audited', () => {
+  it('refuses a colleague who is neither the holder nor a super_admin, and writes nothing', async () => {
+    await db.update(agentConfig).set({ mode: 'off', ownerUserId: holderId }).where(eq(agentConfig.id, 1));
+    const before = await aviaDays();
+    await expect(setAviaDays({ id: otherId, roles: ['accountant'] }, '4-7', ctx(otherId))).rejects.toMatchObject({ code: 'forbidden' });
+    expect(await aviaDays()).toEqual(before);
+  });
+
+  it('refuses what is not a range of whole days — one figure, the wrong way round, past 60, zero, words — never guessed at', async () => {
+    for (const bad of ['5', '5-3', '3-3', '0-5', '3-61', '3-5-7', 'uch-besh', '3,5-5', '']) {
+      await expect(setAviaDays({ id: holderId, roles: [] }, bad, ctx(holderId)), bad).rejects.toMatchObject({ code: 'bad_value' });
+    }
+  });
+
+  it('the holder writes it — a typed dash and spaces folded — audited, and the one reader reads it back', async () => {
+    expect(await setAviaDays({ id: holderId, roles: ['sales_manager'] }, ' 4 – 7 ', ctx(holderId))).toBe('4-7');
+    expect(await aviaDays()).toEqual({ min: 4, max: 7 });
+    expect(agentRules((await readAgentConfig())!, await aviaDays()).avia).toMatchObject({ daysMin: 4, daysMax: 7 });
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'settings'), eq(auditLog.entityId, SETTINGS_AUDIT_ID), eq(auditLog.actorId, holderId)))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).toEqual({ agent_avia_days: '4-7' });
+    // A super_admin may too; the same value twice writes no second audit row.
+    expect(await setAviaDays({ id: superAdminId, roles: ['super_admin'] }, '3-5', ctx(superAdminId))).toBe('3-5');
+    const rows = async () =>
+      (await db.select({ id: auditLog.id }).from(auditLog).where(and(eq(auditLog.entityType, 'settings'), eq(auditLog.actorId, superAdminId)))).length;
+    const n = await rows();
+    await setAviaDays({ id: superAdminId, roles: ['super_admin'] }, '3-5', ctx(superAdminId));
+    expect(await rows()).toBe(n);
+  });
+
+  it('a value typed into the table by hand that is not a range reads as the shipped default, never guessed at', async () => {
+    await setSetting('agent_avia_days', '2 kun', holderId);
+    expect(await aviaDays()).toEqual(AVIA_DAYS_DEFAULT);
+    expect(AVIA_DAYS_DEFAULT).toEqual({ min: 3, max: 5 });
   });
 });
 

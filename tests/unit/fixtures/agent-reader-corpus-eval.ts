@@ -1,12 +1,16 @@
 import * as autoGate from '@/modules/wms/agent/auto-gate';
 import type { AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import * as autoMoney from '@/modules/wms/agent/auto-money';
+import { withAviaDaysNow } from '@/modules/wms/agent/avia-days';
+import * as complaint from '@/modules/wms/agent/complaint';
+import * as bigCargo from '@/modules/wms/agent/big-cargo';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import * as digits from '@/modules/wms/agent/digits';
 import * as kb from '@/modules/wms/agent/kb';
 import type { KbHit } from '@/modules/wms/agent/kb';
 import * as lessons from '@/modules/wms/agent/lessons';
 import * as locale from '@/modules/wms/agent/locale';
+import * as loop from '@/modules/wms/agent/loop';
 import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import * as numbers from '@/modules/wms/agent/numbers';
 import * as ownerAnswer from '@/modules/wms/agent/owner-answer';
@@ -15,7 +19,9 @@ import type { PolicyInput } from '@/modules/wms/agent/policy';
 import * as run from '@/modules/wms/agent/run';
 import type { ComposeReply } from '@/modules/wms/agent/run';
 import * as seed from '@/modules/wms/agent/seed-kb';
+import { SETTING_DEFAULTS, aviaDaysRange } from '@/modules/platform/settings/service';
 import type { ToolOutcome } from '@/modules/wms/agent/tools';
+import * as worthy from '@/modules/wms/agent/worthy';
 import type { ReaderCase, Observed } from './agent-reader-corpus';
 
 /**
@@ -80,6 +86,12 @@ const compose = (language: AgentLocale, replyText: string, category = 'faq'): Co
 
 const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
+/**
+ * The flight's days a run is told and vouches for (stage 1a P7, `agent_avia_days`): the setting's own default, as
+ * production ships it — every loop below carries them the way `runLoop` hands them to `memoryFor`.
+ */
+const AVIA_DAYS = aviaDaysRange(SETTING_DEFAULTS.agent_avia_days)!;
+
 /** The seeded knowledge as a run's prompt serves it (kb `hitOf`). */
 function facts(): KbHit[] {
   const served = (q: string, a: string) => (typeof kb.servedText === 'function' ? kb.servedText(q, a) : a);
@@ -115,7 +127,7 @@ const NOON = new Date('2026-11-11T07:00:00Z');
 /** Everything the gate reads, set to what goes. */
 function eligibleInput(): AutoGateInput {
   return {
-    config: { armed: true, categories: [...FIVE], maxChars: 2000, minConfidence: 0.8, perDay: 1000 },
+    config: { armed: true, categories: [...FIVE], maxChars: 2000, perDay: 1000 },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -123,8 +135,10 @@ function eligibleInput(): AutoGateInput {
       ownText: false,
       blocked: false,
       needsOwner: false,
-      warnings: 0,
-      notes: 0,
+      warningCodes: [],
+      noteCodes: [],
+      systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'faq',
       language: 'uz',
@@ -148,7 +162,9 @@ function eligibleInput(): AutoGateInput {
     workAccount: true,
     at: NOON,
     now: NOON,
-    streak: 0,
+    loop: false,
+    complaint: false,
+    nightPrices: 'table',
     pressedToday: 0,
     budgetLeft: null,
     sendingEnabled: null,
@@ -158,12 +174,13 @@ function eligibleInput(): AutoGateInput {
 
 /** The policy over a reply, on the memory a real run stores (`policyFor`'s mapping). */
 function checked(lines: readonly string[], language: AgentLocale, reply: string, outcomes: ToolOutcome[] = []) {
-  const mem = run.memoryFor(ctxOf(lines), { compose: compose(language, reply), tools: [], outcomes, usage }, facts(), 'gsr-t');
+  const mem = run.memoryFor(ctxOf(lines), { compose: compose(language, reply), tools: [], outcomes, usage, aviaDays: AVIA_DAYS }, facts(), 'gsr-t');
   const input: PolicyInput = {
     body: reply,
     language: mem.language,
     customerScript: mem.customerScript,
-    numberSources: mem.sources,
+    // …the flight's days brought to the setting as `policyFor` reads it (stage 1a P7) — the shipped pair, the run's own.
+    numberSources: withAviaDaysNow(mem.sources, AVIA_DAYS),
     removeWhole: [],
     ownCodes: mem.ownCodes ?? [],
     bookCodes: new Set(),
@@ -202,7 +219,7 @@ function pressedReasons(language: AgentLocale, reply: string): string[] {
   const { mem, result } = checked(lines, language, reply);
   const input = eligibleInput();
   input.draft.blocked = !result.ok;
-  input.draft.warnings = result.warnings.length;
+  input.draft.warningCodes = result.warnings.map((w) => w.code);
   input.draft.language = language;
   input.draft.body = reply;
   input.draft.ledger = result.ledger.map((l) => ({ kind: l.kind, origin: l.origin ?? null, tool: l.tool ?? null, role: l.role ?? null }));
@@ -229,7 +246,7 @@ export function wallsOf(
   const { mem, result } = checked(lines, language, reply, outcomes);
   const input = eligibleInput();
   input.draft.blocked = !result.ok;
-  input.draft.warnings = result.warnings.length;
+  input.draft.warningCodes = result.warnings.map((w) => w.code);
   input.draft.language = language;
   input.draft.body = reply;
   input.draft.ledger = result.ledger.map((l) => ({ kind: l.kind, origin: l.origin ?? null, tool: l.tool ?? null, role: l.role ?? null }));
@@ -268,16 +285,21 @@ function aviaAsks(reply: string, priceArmed: boolean): Observed {
   return c.needsOwner ? 'held' : 'goes';
 }
 
-/** The truck quote the money clause admits, to a customer who wrote these lines (`memoryFor`'s `foreignDestination`). */
-function destination(lines: readonly string[]): Observed {
-  const mem = run.memoryFor(ctxOf(lines), { compose: compose('uz', 'x', 'price'), tools: [], outcomes: [], usage }, [], 'gsr-t');
-  const input = eligibleInput();
+/** The truck quote the money clause admits (he ticked «Narx»): a priced yo'lkira estimate, its total the one money line. */
+function asQuote(input: AutoGateInput): AutoGateInput {
   input.draft.category = 'price';
   input.draft.body = '5 kub, 1000 kg yukingiz uchun Toshkentgacha taxminan 800 $. Boj va QQS alohida hisoblanadi.';
   input.draft.ledger = [{ kind: 'money', origin: 'tool', tool: 'yolkira_estimate', role: 'total' }];
   input.draft.hasEstimate = true;
   input.draft.estimatesStored = true;
   input.tools = [{ name: 'yolkira_estimate', ok: true, estimate: true }];
+  return input;
+}
+
+/** The truck quote the money clause admits, to a customer who wrote these lines (`memoryFor`'s `foreignDestination`). */
+function destination(lines: readonly string[]): Observed {
+  const mem = run.memoryFor(ctxOf(lines), { compose: compose('uz', 'x', 'price'), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS }, [], 'gsr-t');
+  const input = asQuote(eligibleInput());
   input.money.foreignDestination = mem.foreignDestination === true;
   return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
 }
@@ -297,7 +319,11 @@ function laterTurn(before: readonly string[], lines: readonly string[], stored: 
   return { ...ctxOf(lines, stored), messages, history: messages, anchor: now.at(-1)!, burst: now };
 }
 
-/** The language clause on the memory a real run stores (`memoryFor`'s `customerLocale`). */
+/**
+ * The language clause on the memory a real run stores (`memoryFor`'s `customerLocale`) — on a reply with no money in
+ * it (stage 1a: the class `autoClassOf` calls talk), or with `quote`, on a truck quote the money clause admits
+ * (`language_money`, J19: a price keeps today's language rule whatever the talk rule becomes).
+ */
 function language(
   lines: readonly string[],
   stored: AgentLocale | null,
@@ -305,6 +331,7 @@ function language(
   before?: string,
   remember?: boolean,
   approved?: AgentLocale,
+  quote = false,
 ): Observed {
   let ctx = ctxOf(lines, stored);
   if (before !== undefined) {
@@ -317,10 +344,10 @@ function language(
     }
     ctx = laterTurn(prior, lines, kept);
   }
-  const mem = run.memoryFor(ctx, { compose: compose(reply, 'x'), tools: [], outcomes: [], usage }, [], 'gsr-t');
-  const input = eligibleInput();
+  const mem = run.memoryFor(ctx, { compose: compose(reply, 'x'), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS }, [], 'gsr-t');
+  const input = quote ? asQuote(eligibleInput()) : eligibleInput();
   input.draft.language = reply;
-  input.draft.body = 'x';
+  if (!quote) input.draft.body = 'x';
   input.draft.customerLocale = mem.customerLocale ?? null;
   return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
 }
@@ -338,6 +365,63 @@ function hanCheck(reply: string): Observed {
   return result.blocks.some((b) => b.code === 'number_unverifiable' && b.detail === 'han_numeral') ? 'held' : 'goes';
 }
 
+/** The corpus's whole chats start here; a script's seconds are counted from it (agent-reader-corpus.ts `LOOP_DANGEROUS`). */
+const LOOP_T0 = Date.parse('2026-11-20T07:00:00Z');
+
+/**
+ * A loop case's script read into the detector's facts, exactly as `loopFactsFor` hands them over: the LAST customer
+ * line is the anchor, the ones before it his earlier lines (`>` with no words, and every `@`, came with a file), `<`
+ * our sends, the last `~` the one typing stamp kept, the last `!` the moment he was told, and `=` the reply about to
+ * go. Judged at the `=` reply's second, else the anchor's. Then the verdict — any signal, or the hold, is «held».
+ */
+function loopHeld(script: string): Observed {
+  const at = (sec: string) => new Date(LOOP_T0 + Number(sec) * 1000);
+  const lines: { at: Date; body: string; media: boolean }[] = [];
+  const sends: { at: Date; body: string }[] = [];
+  let typingAt: Date | null = null;
+  let toldAt: Date | null = null;
+  let draft: { at: Date; body: string } | null = null;
+  for (const row of script.split('\n')) {
+    const m = /^([<>~=@!]) (\d+)(?: (.*))?$/u.exec(row);
+    if (!m) throw new Error(`a loop script line the eval cannot read: «${row}»`);
+    const [, mark, sec, text = ''] = m;
+    if (mark === '>') lines.push({ at: at(sec!), body: text, media: text === '' });
+    else if (mark === '@') lines.push({ at: at(sec!), body: text, media: true });
+    else if (mark === '<') sends.push({ at: at(sec!), body: text });
+    else if (mark === '~') typingAt = at(sec!);
+    else if (mark === '!') toldAt = at(sec!);
+    else draft = { at: at(sec!), body: text };
+  }
+  const anchor = lines.at(-1) ?? null;
+  const now = draft?.at ?? anchor?.at ?? new Date(LOOP_T0);
+  const facts = { anchor, inbound: lines.slice(0, -1), sends, typingAt, toldAt, now, draft };
+  const verdict = loop.loopVerdict(facts);
+  return verdict.signals.length > 0 || verdict.held ? 'held' : 'goes';
+}
+
+/** «Botmisiz?» (stage 1a P3, J6): does any line of the customer's burst ask whether we are a bot? */
+function botQuestion(lines: readonly string[]): Observed {
+  return lines.some((l) => worthy.asksIfBot(l)) ? 'held' : 'goes';
+}
+
+/**
+ * «Hisoblatishga yubordim» with no calculation sent (J9): the reply as the gate reads it, with no `calc_submit` beside
+ * it, the customer's language confidently the reply's — held for any reason (the gate's `calc_claim_unbacked`).
+ */
+function calcClaim(language: AgentLocale, reply: string): Observed {
+  const input = eligibleInput();
+  input.draft.language = language;
+  input.draft.customerLocale = { locale: language, confident: true };
+  input.draft.body = reply;
+  return autoGate.autoVerdict(input).reasons.length > 0 ? 'held' : 'goes';
+}
+
+/** A Pashto burst (J7), as the run decides it: `draftWorthy` over the customer's lines, text only. */
+function pashto(lines: readonly string[]): Observed {
+  const w = worthy.draftWorthy(lines.map((text) => ({ text, media: null })), false);
+  return !w.worthy && w.reason === 'pashto' ? 'held' : 'goes';
+}
+
 /** What the reader under test makes of the case — throws when the reader does not exist at this commit. */
 export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observed {
   const reply = (c.context?.reply ?? 'uz') as AgentLocale;
@@ -347,6 +431,7 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
     case 'destination':
       return destination(c.input.split('\n'));
     case 'language':
+    case 'language_money':
       return language(
         c.input.split('\n'),
         (c.context?.stored ?? null) as AgentLocale | null,
@@ -354,6 +439,7 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
         c.context?.before,
         c.context?.remember,
         c.context?.approved as AgentLocale | undefined,
+        c.reader === 'language_money',
       );
     case 'owner_figure':
       return ownerFigure(c.input);
@@ -364,8 +450,23 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
       return hanCheck(c.input);
     case 'lesson':
       return lessons.lessonShapeRefusal(c.input)?.code === 'money' ? 'held' : 'goes';
+    case 'bot_question':
+      return botQuestion(c.input.split('\n'));
+    case 'pashto':
+      return pashto(c.input.split('\n'));
+    case 'complaint':
+      return complaint.complaintIn(c.input.split('\n')) ? 'held' : 'goes';
+    case 'calc_claim':
+      return calcClaim(reply, c.input);
     case 'phone':
       return ownerAnswer.answerTextRefusal(c.input)?.what === 'phone' ? 'held' : 'goes';
+    case 'loop':
+      return loopHeld(c.input);
+    case 'avia_days':
+      return pressed(reply, c.input);
+    case 'full_truck':
+      // The customer's lines, one per line of the case — the burst `bigCargoOf` reads (stage 1a §4.5).
+      return bigCargo.saysFullTruck(c.input.split('\n')) ? 'held' : 'goes';
   }
 }
 

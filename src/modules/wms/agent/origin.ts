@@ -133,6 +133,15 @@ export function namesWesternOrigin(text: string | null): boolean {
   return namedOrigins(text).some((p) => p.zone !== 'cn');
 }
 
+/**
+ * The text names Kashgar (stage 1a J24, his «HOZIRCHA qashqarda yuk qabul qilmaymiz»): cargo is not received there for
+ * now, so a truck job that names it is neither priced nor sent to the VED — whatever else the text names beside it,
+ * because a job that may start there is one the company does not take. Horgos and Urumchi stay `namesWesternOrigin`'s.
+ */
+export function namesKashgar(text: string | null): boolean {
+  return namedOrigins(text).some((p) => p.zone === 'kashgar');
+}
+
 /** The one place the text names, or null — none, or more than one. */
 export function namedOrigin(text: string | null): { place: string; zone: OriginZone | null } | null {
   const found = namedOrigins(text);

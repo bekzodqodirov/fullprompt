@@ -38,6 +38,7 @@ import { cardAsks, cardDigest, digestBody } from './card';
 import { LANDED_UNSENT, LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
 import { agentAutoReady, agentFullP1Ready, agentRunning, readAgentConfig } from './config';
 import { bindMoved, chatCalcChains, chatIdentity } from './context';
+import { stopsMachine } from './auto-gate';
 import { approvedLocale } from './locale';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
@@ -1082,9 +1083,12 @@ export async function decideDraft(
     await refreshDraftCard(draftId);
     return { ok: false, code: 'policy_block', detail: blocks.map((b) => b.code).join(',') };
   }
-  // A person presses past a warning he has read on the card; the machine never does — and writes nothing.
-  if (opts.auto && policy.warnings.length > 0) {
-    return { ok: false, code: 'auto_warning', detail: policy.warnings.map((w) => w.code).join(',') };
+  // A person presses past a warning he has read on the card; the machine never does — and writes nothing. Except a
+  // warning that only informs him (stage 1a: `questions`): the gate's own predicate decides which, so the scheduling
+  // and the press can never disagree about a reply.
+  const stopping = opts.auto ? policy.warnings.filter((w) => stopsMachine('warning', w.code)) : [];
+  if (stopping.length > 0) {
+    return { ok: false, code: 'auto_warning', detail: stopping.map((w) => w.code).join(',') };
   }
 
   const moved = await chatMoved(d);

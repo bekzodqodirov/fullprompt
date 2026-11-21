@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { autoVerdict, AUTO_REFUSALS, type AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import { cardLineOf, centsOf, markupPrice, ruleString, ruleWords, workedExample, type MarkupRule } from '@/modules/wms/agent/calc-markup';
@@ -7,7 +8,8 @@ import { CALC_PRICE_REFUSAL_WORDS, markupRuleOf, statedCalcMarks, storedMarksOf,
 import { calcAnswerSourceKey, calcAnswerWhy } from '@/modules/wms/agent/calc-loop';
 import { calcAnswerOverLive } from '@/modules/wms/agent/drafts';
 import { checkAgentReply, WAREHOUSE_SENTENCES, type PolicyInput } from '@/modules/wms/agent/policy';
-import { CALC_PRICE_RULE, chatBlock, stableHead } from '@/modules/wms/agent/prompt';
+import { CALC_PRICE_RULE, chatBlock, CUSTOMS_YES_RULE, stableHead } from '@/modules/wms/agent/prompt';
+import { OWNER_WORD } from '@/modules/wms/agent/persona';
 import { calcCardLineOf, memoryFor, type ComposeReply } from '@/modules/wms/agent/run';
 import { CALC_PRICE_TOOL, TOOL_SPECS, toolSpecsFor, type ToolOutcome } from '@/modules/wms/agent/tools';
 
@@ -159,7 +161,7 @@ describe('law 4 — what leaves calc-price is the client price (§2.2, §2.6)', 
 /** The eligible greeting, as agent-auto-gate builds it — the money clause's second branch is turned on below. */
 function eligible(): AutoGateInput {
   return {
-    config: { armed: true, categories: ['greeting', 'qualification', 'faq', 'status'], maxChars: 400, minConfidence: 0.8, perDay: null },
+    config: { armed: true, categories: ['greeting', 'qualification', 'faq', 'status'], maxChars: 400, perDay: null },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -167,8 +169,10 @@ function eligible(): AutoGateInput {
       ownText: false,
       blocked: false,
       needsOwner: false,
-      warnings: 0,
-      notes: 0,
+      warningCodes: [],
+      noteCodes: [],
+      systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'price',
       language: 'uz',
@@ -191,7 +195,9 @@ function eligible(): AutoGateInput {
     workAccount: true,
     at: new Date('2026-11-12T07:00:00Z'),
     now: new Date('2026-11-12T07:00:00Z'),
-    streak: 0,
+    loop: false,
+    complaint: false,
+    nightPrices: 'table',
     pressedToday: 0,
     budgetLeft: 10,
     sendingEnabled: true,
@@ -206,8 +212,8 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
   };
 
   it('a calc line goes only with «VED narxi» ticked — never on «Narx» alone; both ticks pass', () => {
-    // Refused money keeps the model's own label (`price`), which is no kind he ticked here either.
-    expect(autoVerdict(eligible()).reasons).toEqual(['money', 'category']);
+    // DELIBERATE EDIT (stage 1a §6.2): the ticked label is gone — the price box alone keeps an unticked VED price his.
+    expect(autoVerdict(eligible()).reasons).toEqual(['money']);
     expect(autoVerdict(ticked(eligible(), 'price')).reasons).toEqual(['money']);
     expect(autoVerdict(ticked(eligible(), 'calc_price'))).toEqual({ eligible: true, reasons: [] });
     expect(autoVerdict(ticked(eligible(), 'calc_price', 'price'))).toEqual({ eligible: true, reasons: [] });
@@ -246,7 +252,8 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     i.draft.estimatesStored = true;
     i.tools = [...i.tools, { name: 'yolkira_estimate', ok: true, estimate: true }];
     i.draft.body = 'Rastamojka 1 359 $. 5 kub, 800 kg yukingiz uchun Toshkentgacha taxminan 960 $. Boj va QQS alohida hisoblanadi.';
-    expect(autoVerdict(i).reasons).toEqual(['money', 'category']);
+    // DELIBERATE EDIT (stage 1a §6.2): no label refusal beside it — the unticked «Narx» is the money clause's own.
+    expect(autoVerdict(i).reasons).toEqual(['money']);
     i.config.categories = [...i.config.categories, 'price'];
     expect(autoVerdict(i)).toEqual({ eligible: true, reasons: [] });
   });
@@ -286,10 +293,11 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     expect(autoVerdict(i).reasons).toEqual(['media']);
   });
 
-  it('the model’s label rule stands: a «complaint» quoting the VED price stays his', () => {
+  it('the model’s label rule stands: a «complaint» quoting the VED price stays his (stage 1a: as `complaint`)', () => {
     const i = ticked(eligible(), 'calc_price');
     i.draft.category = 'complaint';
-    expect(autoVerdict(i).reasons).toEqual(['category']);
+    // DELIBERATE EDIT (stage 1a §6.2): the complaint is its own refusal now.
+    expect(autoVerdict(i).reasons).toEqual(['complaint']);
   });
 });
 
@@ -349,6 +357,7 @@ describe('the run’s memory of a VED price (§2.3) and G11 on it', () => {
     tools: outcomes.map(() => ({ name: CALC_PRICE_TOOL, ok: true, text: '', estimate: false })),
     outcomes,
     usage,
+    aviaDays: AVIA_DAYS_DEFAULT,
   });
 
   it('the prices are kept, the client total is the only money source, and no estimate flag is set', () => {
@@ -415,30 +424,38 @@ describe('the run’s memory of a VED price (§2.3) and G11 on it', () => {
 });
 
 describe('the prompt and the tools with the VED price off — byte for byte (§2.3, §4.3)', () => {
-  const head = (calcPricing: boolean) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing, lessons: [] });
+  const head = (calcPricing: boolean) => stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
 
   it('rule 11 gains ONE sentence when on; off, today’s rule 11 ends where it always did', () => {
     expect(head(false)).not.toContain(CALC_PRICE_RULE);
-    expect(head(false)).toContain("Kelib chiqish sertifikatini HECH QACHON so'rama — uni kompaniyaning o'zi oladi.\n12.");
-    expect(head(true)).toBe(head(false).replace("uni kompaniyaning o'zi oladi.\n12.", `uni kompaniyaning o'zi oladi.${CALC_PRICE_RULE}\n12.`));
+    // Stage 1a P3: rule 11 ends on its «ha → podklyuch» sentence (CUSTOMS_YES_RULE) now, and the VED one still follows it.
+    expect(head(false)).toContain(`Kelib chiqish sertifikatini HECH QACHON so'rama — uni kompaniyaning o'zi oladi.${CUSTOMS_YES_RULE}\n12.`);
+    expect(head(true)).toBe(
+      head(false).replace(`uni kompaniyaning o'zi oladi.${CUSTOMS_YES_RULE}\n12.`, `uni kompaniyaning o'zi oladi.${CUSTOMS_YES_RULE}${CALC_PRICE_RULE}\n12.`),
+    );
     expect(CALC_PRICE_RULE).not.toMatch(/\d/u);
   });
 
   it('the chat’s calc line says «calc_price beradi» only when on; off and absent are the same bytes', () => {
     const ctx = ctxWith([{ requestId: 'r1', section: 'rastamojka', createdAt: new Date(), status: 'answered' }]);
     expect(chatBlock(ctx)).toBe(chatBlock(ctx, { calcPricing: false }));
-    expect(chatBlock(ctx)).toContain('rastamojka: javob kelgan (narxni Bekzod aytadi)');
+    expect(chatBlock(ctx)).toContain(`rastamojka: javob kelgan (narxni ${OWNER_WORD} aytadi)`);
     const on = chatBlock(ctx, { calcPricing: true });
     expect(on).toContain('rastamojka: javob kelgan — narxni calc_price beradi');
-    expect(on.replace('javob kelgan — narxni calc_price beradi', 'javob kelgan (narxni Bekzod aytadi)')).toBe(chatBlock(ctx));
+    expect(on.replace('javob kelgan — narxni calc_price beradi', `javob kelgan (narxni ${OWNER_WORD} aytadi)`)).toBe(chatBlock(ctx));
   });
 
   it('the tools: off is today’s list (the same objects, the same order), on adds calc_price alone', () => {
-    const off = toolSpecsFor({ calcPricing: false });
+    // DELIBERATE EDIT (stage 1a P7): the avia tool now tells the run's OWN days (`agent_avia_days`), so `toolSpecsFor`
+    // builds that one entry per run — equal to the list's own at the shipped days; every other entry is still the
+    // list's own object, in its order.
+    const off = toolSpecsFor({ calcPricing: false, aviaDays: AVIA_DAYS_DEFAULT });
     expect(off.map((t) => t.name)).not.toContain(CALC_PRICE_TOOL);
     expect(off).toEqual(TOOL_SPECS.filter((t) => t.name !== CALC_PRICE_TOOL));
-    expect(off.every((t, i) => t === TOOL_SPECS.filter((x) => x.name !== CALC_PRICE_TOOL)[i])).toBe(true);
-    expect(toolSpecsFor({ calcPricing: true })).toBe(TOOL_SPECS);
+    expect(off.every((t, i) => t.name === 'avia_estimate' || t === TOOL_SPECS.filter((x) => x.name !== CALC_PRICE_TOOL)[i])).toBe(true);
+    const on = toolSpecsFor({ calcPricing: true, aviaDays: AVIA_DAYS_DEFAULT });
+    expect(on).toEqual(TOOL_SPECS);
+    expect(on.every((t, i) => t.name === 'avia_estimate' || t === TOOL_SPECS[i])).toBe(true);
     const spec = TOOL_SPECS.find((t) => t.name === CALC_PRICE_TOOL)!;
     expect(Object.keys((spec.input_schema as { properties: object }).properties)).toEqual([]);
   });
@@ -450,11 +467,12 @@ describe('the VED answer’s run (§2.3)', () => {
     expect(calcAnswerSourceKey({ requestId: 'r', anchor: 'answer', anchorId: 'r' })).toBe('calc:r:answer');
   });
 
-  it('every outcome that leaves no draft is said — the «too old» in the week the run kept (K2); a draft or a duplicate says nothing', () => {
+  it('every outcome that leaves no draft is said — the «too old» in the week the run kept (K2); a cap as the loop guard it is, never «byudjet» (stage 1a §4.6); a draft or a duplicate says nothing', () => {
     expect(calcAnswerWhy({ outcome: 'refused', reason: 'human_active' })).toMatch(/o'zingiz yozayapsiz/u);
     expect(calcAnswerWhy({ outcome: 'skipped', reason: 'no_fresh_inbound' })).toMatch(/7 kun/u);
     expect(calcAnswerWhy({ outcome: 'refused', reason: 'too_old' })).toMatch(/7 kun/u);
-    expect(calcAnswerWhy({ outcome: 'capped', reason: 'daily_token_cap' })).toMatch(/byudjet/u);
+    expect(calcAnswerWhy({ outcome: 'capped', reason: 'daily_token_cap' })).toMatch(/pul chegarasi emas/u);
+    expect(calcAnswerWhy({ outcome: 'capped', reason: 'daily_token_cap' })).not.toMatch(/byudjet/u);
     expect(calcAnswerWhy({ outcome: 'error', reason: 'x' })).toMatch(/xato/u);
     expect(calcAnswerWhy({ outcome: 'no_reply' })).toMatch(/javob kerak emas/u);
     expect(calcAnswerWhy({ outcome: 'stood_down', reason: 'editing' })).toMatch(/✏️/u);

@@ -24,7 +24,9 @@ import {
   JOB_AGENT_HAND_BACK,
   JOB_AGENT_HUMAN_REPLY,
   JOB_AGENT_INBOUND,
+  JOB_AGENT_MORNING,
   JOB_AGENT_OWNER_ANSWER,
+  JOB_AGENT_SAMPLE,
   JOB_AGENT_SWEEP,
   REDRAFT_ATTEMPT_BASE,
   type AgentAfterSentJob,
@@ -178,6 +180,28 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
       await agentSweep();
     } catch (err) {
       logger.error({ err }, '[agent] sweep failed');
+    }
+  });
+  // Stage 1a §4.5: the morning line (08:40 Tashkent = 03:40 UTC) and the evening sample (20:10 = 15:10 UTC) — each in
+  // its own catch, the sweep's shape: a fault is logged, never retried into a second line.
+  await boss.createQueue(JOB_AGENT_MORNING);
+  await boss.schedule(JOB_AGENT_MORNING, '40 3 * * *');
+  await boss.work(JOB_AGENT_MORNING, async () => {
+    try {
+      const { sendMorningLine } = await import('./morning');
+      await sendMorningLine();
+    } catch (err) {
+      logger.error({ err }, '[agent] morning line failed');
+    }
+  });
+  await boss.createQueue(JOB_AGENT_SAMPLE);
+  await boss.schedule(JOB_AGENT_SAMPLE, '10 15 * * *');
+  await boss.work(JOB_AGENT_SAMPLE, async () => {
+    try {
+      const { sendSample } = await import('./sample');
+      await sendSample();
+    } catch (err) {
+      logger.error({ err }, '[agent] evening sample failed');
     }
   });
 }
@@ -376,9 +400,11 @@ export async function agentSweep(
   interrupted: number;
   autoPressed: number;
   afterSent: number;
+  /** Customers waiting unanswered (step 3b, the liveness alarm) — 0 when the step is off or did not run. */
+  waiting: number;
 }> {
   if (!(await agentTablesReady())) {
-    return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0, reminded: 0, interrupted: 0, autoPressed: 0, afterSent: 0 };
+    return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0, reminded: 0, interrupted: 0, autoPressed: 0, afterSent: 0, waiting: 0 };
   }
 
   // 1. A draft lives as long as its anchor's reply window (fit-3).
@@ -439,6 +465,7 @@ export async function agentSweep(
   const config = await readAgentConfig();
   let gap = 0;
   let retried = 0;
+  let unanswered = 0;
   if (agentRunning(config) && aiConfigured()) {
     // A line whose job is still waiting is asked about by that job, not again.
     const waiting = await inboundJobsWaiting(config.ownerUserId);
@@ -480,6 +507,17 @@ export async function agentSweep(
       gap += 1;
     }
 
+    // 3b. «AI sotuvchi javob bermayapti» (stage 1a §4.5, lead ruling R9): a customer's line of the working hours
+    //     that nothing answered and nothing will — told ONCE to the «rahbar va o‘rinbosar» pair, and once when it
+    //     clears. After the deploy-gap pass, which has just re-queued what it can. Its own catch: an alarm never costs
+    //     the sweep's other answers.
+    try {
+      const { agentOnSince, sweepUnanswered } = await import('./liveness');
+      unanswered = await sweepUnanswered(config, now, await agentOnSince());
+    } catch (err) {
+      logger.error({ err }, '[agent] liveness check failed');
+    }
+
     // 4. An errored ASK gets ONE more try (fit-15) — the first look, and his
     //    press asking again (queues `isFirstAsk`: a redraft that errored was
     //    never retried while it sat on the retry slot itself) — at the attempt
@@ -519,6 +557,17 @@ export async function agentSweep(
       } satisfies AgentInboundJob, { retryLimit: 0, startAfter: INBOUND_START_AFTER_S });
       waiting.add(`${e.peerId}:${e.anchor}`);
       retried += 1;
+    }
+  } else if (!agentRunning(config)) {
+    // 3b's other half: he switched the AI off — no customer is its to answer, so an alarm raised before is taken
+    // down without a word (the P4 review's 8: left standing, it would silence the next real one for a day after he
+    // switches it back on). Not when only the key is missing: then the AI is down while it is meant to run, and the
+    // alarm is true. Its own catch.
+    try {
+      const { standDownLiveness } = await import('./liveness');
+      await standDownLiveness();
+    } catch (err) {
+      logger.error({ err }, '[agent] liveness stand-down failed');
     }
   }
 
@@ -574,7 +623,18 @@ export async function agentSweep(
   } catch (err) {
     logger.error({ err }, '[agent] tariff notice failed');
   }
-  return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length, autoPressed, afterSent };
+  return {
+    expired: expired.length,
+    retired: retired.length,
+    gap,
+    retried,
+    actions: stuck.length,
+    reminded,
+    interrupted: interrupted.length,
+    autoPressed,
+    afterSent,
+    waiting: unanswered,
+  };
 }
 
 /**

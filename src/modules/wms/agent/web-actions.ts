@@ -16,7 +16,9 @@ import {
   setAgentMode,
   setAgentNumbers,
   setAgentOwner,
+  setAgentPersonaName,
   setAgentSeat,
+  setAviaDays,
   setAviaRate,
   setCalcMarkup,
   setCalcOpenLimit,
@@ -33,13 +35,16 @@ import {
   autoFeedback,
   setAutoArmed,
   setAutoCategories,
-  setAutoMinConfidence,
+  setAutoNightPrices,
   setAutoPerDay,
+  setAutoPriceHold,
+  setAutoTalkHold,
   stopAuto,
   stopAutoForEdit,
 } from './auto-send';
 import { deleteLesson, editLesson, lessonFromPage, lessonSavedWords, openLesson, setLessonActive, type LessonResult } from './lessons';
 import { SendCapsError, setSendCaps } from './send-caps';
+import { setClientAiContact } from './seat-contact';
 import { confirmTariff, TariffConfirmError } from './tariff-watch';
 
 /**
@@ -229,6 +234,21 @@ export async function agentAviaRateAction(raw: string): Promise<AgentActionResul
   });
 }
 
+/**
+ * The flight's days (stage 1a P7, `agent_avia_days`, his 2 b «3-5 kun») — the avia rate's door (the service asks
+ * `mayRunAgent`); a value the setting's shape refuses is this box's own code, naming the bound.
+ */
+export async function agentAviaDaysAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAviaDays(actor, typeof raw === 'string' ? raw : '', ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_avia_days' };
+      throw err;
+    }
+  });
+}
+
 export async function agentRetireFactAction(factId: string): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
     await assertFactSeen(actor, factId);
@@ -269,6 +289,16 @@ export async function agentSeatAction(userId: string | null): Promise<AgentActio
 }
 
 /**
+ * «AI raqamini ko'rsatish» (stage 1a «Hajm», his 7 b) — a super_admin's tick (the service asks `mayGovernAgent`):
+ * clients with no seller of their own are shown the AI's @handle in the bot and the Mini App.
+ */
+export async function agentClientContactAction(on: boolean): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    await setClientAiContact(actor, on === true, ctx);
+  });
+}
+
+/**
  * The AI seat's open-calc cap (SPEC-P2-v2 §1.3, his §7 Q11 ⭐ a) — a super_admin's alone (the service asks); a value
  * out of 1..200 is this box's own code, never the generic «noto'g'ri qiymat».
  */
@@ -278,6 +308,21 @@ export async function agentOpenLimitAction(raw: string): Promise<AgentActionResu
       await setCalcOpenLimit(actor, typeof raw === 'string' ? raw : '', ctx);
     } catch (err) {
       if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_open_limit' };
+      throw err;
+    }
+  });
+}
+
+/**
+ * The persona's name (stage 1a P3, `agent_persona_name`) — the super_admin role's (the service asks `mayGovernAgent`); a
+ * value the setting's shape refuses is this box's own code, naming the bound.
+ */
+export async function agentPersonaAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAgentPersonaName(actor, typeof raw === 'string' ? raw : '', ctx);
+    } catch (err) {
+      if (err instanceof AgentConfigError && err.code === 'bad_value') return { ok: false, error: 'bad_persona' };
       throw err;
     }
   });
@@ -448,17 +493,39 @@ export async function agentAutoPerDayAction(raw: string): Promise<AgentActionRes
 }
 
 /**
- * The confidence floor a reply must reach to go by itself (2026-11-15), typed as a whole percent. The holder's or a
- * super_admin's — the service asks. A number out of its bounds is THIS box's own code, as the daily count's is.
+ * How long ordinary talk waits on its card (stage 1a, «Oddiy javob kutishi (soniya)», 0-600; 0 = at once) and how
+ * long a price does («Narx kutishi», 30-600). The holder's or a super_admin's — the services ask. An empty box is no
+ * number here (`capOf` null → NaN): each box has a value, and a number out of its bounds is that box's own code.
  */
-export async function agentAutoMinConfidenceAction(raw: string): Promise<AgentActionResult> {
+export async function agentAutoTalkHoldAction(raw: string): Promise<AgentActionResult> {
   return run(async ({ actor, ctx }) => {
-    const s = typeof raw === 'string' ? raw.trim().replace(/\s*%$/u, '') : '';
-    const pct = /^\d{1,3}$/u.test(s) ? Number(s) : Number.NaN;
     try {
-      await setAutoMinConfidence(actor, pct, ctx);
+      await setAutoTalkHold(actor, capOf(raw) ?? Number.NaN, ctx);
     } catch (err) {
-      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_confidence' : `auto_${err.code}` };
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_talk_hold' : `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+export async function agentAutoPriceHoldAction(raw: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoPriceHold(actor, capOf(raw) ?? Number.NaN, ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_price_hold' : `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/** Which prices go by themselves at night (stage 1a, his 4 a): `none`, `table` or `all`. The holder's or a super_admin's. */
+export async function agentAutoNightAction(value: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoNightPrices(actor, typeof value === 'string' ? value : '', ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: err.code === 'bad_value' ? 'auto_bad_night' : `auto_${err.code}` };
       throw err;
     }
   });
@@ -507,7 +574,7 @@ export async function agentAutoStopAction(draftId: string): Promise<AgentActionR
 /** 👎 «Xato edi» on a reply the machine sent — the bot's op `f`. */
 export async function agentAutoFeedbackAction(draftId: string): Promise<AgentActionResult> {
   return run(async ({ actor }) => {
-    const r = await autoFeedback(actor.id, draftId);
+    const r = await autoFeedback(actor, draftId);
     // Said by the page itself: the row reads «👎», and a step-down shows as the panel's «o‘chiq» with its reason.
     if (!r.ok) return { ok: false, error: r.code === 'not_ready' ? 'auto_not_ready' : `auto_fb_${r.code}` };
   });

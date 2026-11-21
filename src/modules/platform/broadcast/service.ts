@@ -4,6 +4,7 @@ import { db } from '../db/client';
 import { attachments, broadcastRecipients, broadcasts } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
 import { withoutLabelCount } from '../text/label-count';
+import { sellerlessChatSql } from '../clients/sellerless';
 
 /**
  * The office's message to its clients, sent through the bot (the owner's
@@ -41,6 +42,12 @@ export const audienceSchema = z.object({
    * lives. The cards' own tags are typed by hand and mostly empty today.
    */
   query: z.string().trim().max(100).optional(),
+  /**
+   * «Sotuvchisi yo'q mijozlar» (stage 1a «Hajm», his 7 b — the one message that names the AI's number): chats NO
+   * seller of ours answers, by the per-CHAT predicate the cabinet's «💬 Menejer» asks too (`sellerlessChatSql`,
+   * J13). Optional, so an audience stored before it reads as «not asked».
+   */
+  noManager: z.boolean().optional(),
 });
 export type Audience = z.infer<typeof audienceSchema>;
 
@@ -79,6 +86,9 @@ export async function audienceChats(audience: Audience): Promise<AudienceChat[]>
     where.push(sql`coalesce(c.locale, 'uz') IN (${sql.join(audience.locales.map((v) => sql`${v}`), sql`, `)})`);
   }
   if (audience.managerId) where.push(sql`c.sales_manager_id = ${audience.managerId}::uuid`);
+  // Per CHAT, never «this row's code has no seller» (J13): a chat holding a seller's code stays that seller's
+  // customer, whichever of its codes the DISTINCT ON below would have kept.
+  if (audience.noManager) where.push(sellerlessChatSql(sql`ctl.telegram_chat_id`));
   if (audience.query) {
     const needle = (text: string) => `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
     const like = needle(audience.query);

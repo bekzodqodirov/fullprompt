@@ -3,14 +3,9 @@ import { redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
-import { clientTagOptions, splitTags } from '@/modules/platform/clients/service';
-import {
-  audienceChats,
-  audienceSchema,
-  mayBroadcast,
-  recentBroadcasts,
-  type Audience,
-} from '@/modules/platform/broadcast/service';
+import { clientTagOptions } from '@/modules/platform/clients/service';
+import { audienceChats, mayBroadcast, recentBroadcasts, type Audience } from '@/modules/platform/broadcast/service';
+import { audienceFromUrl } from '@/modules/platform/broadcast/audience-url';
 import { ageOn, birthdaysOn } from '@/modules/platform/broadcast/birthdays';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { PageHeader } from '@/components/ui/page';
@@ -28,9 +23,6 @@ import { BroadcastComposer } from './composer';
  * The super admin's alone (his 6a), asked by `mayBroadcast` here and in the
  * action.
  */
-const list = (value: string | string[] | undefined) =>
-  (Array.isArray(value) ? value : value ? [value] : []).map((v) => v.trim()).filter(Boolean);
-
 export default async function BroadcastPage({
   searchParams,
 }: {
@@ -43,19 +35,9 @@ export default async function BroadcastPage({
   const format = await getFormatter();
   const params = await searchParams;
 
-  // Every value read back out of the URL is validated (#514): a garbage
-  // manager id or language is dropped, never a 500.
-  const parsed = audienceSchema.safeParse({
-    sectors: list(params.soha),
-    cargoKinds: list(params.yuk),
-    locales: list(params.til).filter((v) => ['uz', 'ru', 'en'].includes(v)),
-    managerId: typeof params.hodim === 'string' && params.hodim ? params.hodim : undefined,
-    codes: splitTags(typeof params.kod === 'string' ? params.kod : ''),
-    query: typeof params.q === 'string' && params.q.trim() ? params.q.trim().slice(0, 100) : undefined,
-  });
-  const audience: Audience = parsed.success
-    ? parsed.data
-    : { sectors: [], cargoKinds: [], locales: [], codes: [] };
+  // Every value read back out of the URL is validated (#514), and the «no
+  // seller» tick survives a URL the schema refuses (J13) — `audienceFromUrl`.
+  const audience: Audience = audienceFromUrl(params);
 
   const today = tashkentDay();
   const [chats, tags, managers, recent, birthdays] = await Promise.all([
@@ -69,7 +51,8 @@ export default async function BroadcastPage({
   const filtered =
     audience.sectors.length + audience.cargoKinds.length + audience.locales.length + audience.codes.length > 0 ||
     Boolean(audience.managerId) ||
-    Boolean(audience.query);
+    Boolean(audience.query) ||
+    audience.noManager === true;
 
   return (
     <div className="mx-auto max-w-3xl space-y-3">
@@ -174,6 +157,18 @@ export default async function BroadcastPage({
             </select>
           </label>
         </div>
+        {/* His 7 b: the chats no seller of ours answers — the one audience the AI's number is told to. Per chat: a
+            person holding a seller's code is that seller's customer and is not in it (J13). */}
+        <label className="chip chip-neutral cursor-pointer gap-1 text-sm">
+          <input
+            type="checkbox"
+            name="sotuvchisiz"
+            value="1"
+            defaultChecked={audience.noManager === true}
+            data-testid="broadcast-no-manager"
+          />
+          {t('noManager')}
+        </label>
         <div className="flex flex-wrap items-center gap-2">
           <button type="submit" className="btn-secondary">
             {t('apply')}

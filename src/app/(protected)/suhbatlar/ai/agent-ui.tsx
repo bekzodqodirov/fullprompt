@@ -8,9 +8,12 @@ import {
   agentAutoArmAction,
   agentAutoCategoriesAction,
   agentAutoFeedbackAction,
-  agentAutoMinConfidenceAction,
+  agentAutoNightAction,
   agentAutoPerDayAction,
+  agentAutoPriceHoldAction,
   agentAutoStopAction,
+  agentAutoTalkHoldAction,
+  agentAviaDaysAction,
   agentAviaRateAction,
   agentDecideAction,
   agentEditFactAction,
@@ -27,6 +30,7 @@ import {
   agentOpenLimitAction,
   agentOwnTextAction,
   agentOwnerAction,
+  agentPersonaAction,
   agentSeatAction,
   agentRememberAction,
   agentRetireFactAction,
@@ -36,8 +40,8 @@ import {
   type AgentActionResult,
 } from '@/modules/wms/agent/web-actions';
 // The kinds' one home (a pure module): never the gate, which would pull the send step into this bundle.
-import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
-// The lesson's limits — a pure module too (zero imports).
+import { AUTO_SEND_CATEGORIES, type AutoWaits } from '@/modules/wms/agent/auto-categories';
+// The lesson's limits — a pure module too (its one import, the owner's word, has none).
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { CATEGORY_KEYS, errorKey } from './labels';
 
@@ -54,7 +58,7 @@ import { CATEGORY_KEYS, errorKey } from './labels';
  * `errorValues`: what a refusal's sentence is filled with — a form whose refusal names its bounds hands them here
  * (the daily count, the account limits), so no bundle types a constant a second time. Unused by every other key.
  */
-function useAction(errorValues?: Record<string, number>) {
+export function useAction(errorValues?: Record<string, number>) {
   const t = useTranslations('agentAi');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +80,7 @@ function useAction(errorValues?: Record<string, number>) {
   return { pending, error, note, run };
 }
 
-function Feedback({ error, note }: { error: string | null; note: string | null }) {
+export function Feedback({ error, note }: { error: string | null; note: string | null }) {
   return (
     <>
       {error && (
@@ -585,6 +589,83 @@ export function MarkupConfirmButton({ rule }: { rule: string }) {
   );
 }
 
+/**
+ * The flight's days (stage 1a P7, his 2 b «3-5 kun») — the avia rate's box and door: «N-M» whole days, N below M, M up
+ * to `max`. The service folds spaces and a typed dash and refuses anything else in words (`bad_avia_days`).
+ */
+export function AviaDaysForm({ current, max }: { current: string; max: number }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ max });
+  const [value, setValue] = useState(current);
+  return (
+    <div className="space-y-1" data-testid="agent-avia-days">
+      <label className="label" htmlFor="agent-avia-days-input">
+        {t('aviaDaysLabel')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="agent-avia-days-input"
+          className="input min-w-0 flex-1"
+          inputMode="numeric"
+          value={value}
+          disabled={pending}
+          onChange={(event) => setValue(event.target.value)}
+          data-testid="agent-avia-days-input"
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || value.trim() === current}
+          data-testid="agent-avia-days-save"
+          onClick={() => run(() => agentAviaDaysAction(value))}
+        >
+          {t('save')}
+        </button>
+      </div>
+      <p className="text-xs text-ink-500">{t('aviaDaysHint', { max })}</p>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * The persona's name (stage 1a P3) — a super_admin's box: letters and single spaces up to `max`, or empty for no name.
+ * The service folds white space and refuses anything else in words (`bad_persona`).
+ */
+export function PersonaForm({ current, max }: { current: string; max: number }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction({ max });
+  const [value, setValue] = useState(current);
+  return (
+    <div className="space-y-1" data-testid="agent-persona-form">
+      <label className="label" htmlFor="agent-persona-input">
+        {t('personaTitle')}
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="agent-persona-input"
+          className="input min-w-0 flex-1"
+          maxLength={max}
+          value={value}
+          disabled={pending}
+          onChange={(event) => setValue(event.target.value)}
+          data-testid="agent-persona-input"
+        />
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || value.trim() === current}
+          data-testid="agent-persona-save"
+          onClick={() => run(() => agentPersonaAction(value))}
+        >
+          {t('save')}
+        </button>
+      </div>
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
 /** The AI seat's open-calc cap (SPEC-P2-v2 §1.3) — a super_admin's box; a whole number, refused out of bounds. */
 export function OpenLimitForm({ current }: { current: number }) {
   const t = useTranslations('agentAi');
@@ -772,12 +853,19 @@ export function AutoArmButtons({
   canArm,
   canDisarm,
   armBlocked = false,
+  waits,
 }: {
   armed: boolean;
   canArm: boolean;
   canDisarm: boolean;
   /** Arming would be refused for a reason the panel already says above the button. */
   armBlocked?: boolean;
+  /**
+   * What waits on its card by the boxes he ticked (auto-categories `autoWaitsOf`) — REQUIRED: the confirm promises a
+   * hold only beside a ticked box and names WHICH price waits and which stays his, as the bot's arming words do (the
+   * merged-tree seam review, finding 5; the independent check of the seam fixes, F3).
+   */
+  waits: AutoWaits;
 }) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
@@ -809,7 +897,7 @@ export function AutoArmButtons({
           data-testid="agent-auto-arm"
           onClick={() => {
             if (armBlocked) return;
-            if (!window.confirm(t('autoArmConfirm'))) return;
+            if (!window.confirm(t('autoArmConfirm', { waits }))) return;
             run(() => agentAutoArmAction(true));
           }}
         >
@@ -837,8 +925,11 @@ export function AutoCategoriesForm({
 }) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
-  const [chosen, setChosen] = useState<string[]>([...current]);
-  const changed = chosen.length !== current.length || chosen.some((c) => !current.includes(c));
+  // Only the boxes drawn (stage 1a: the three he still ticks) — the four ordinary kinds are stored by the writer
+  // whatever is posted, and a box nobody can see must not make a save look changed.
+  const stored = current.filter((c) => (kinds as readonly string[]).includes(c));
+  const [chosen, setChosen] = useState<string[]>(stored);
+  const changed = chosen.length !== stored.length || chosen.some((c) => !stored.includes(c));
   return (
     <div className="space-y-2" data-testid="agent-auto-categories">
       <p className="text-sm font-semibold">{t('autoCategoriesTitle')}</p>
@@ -863,7 +954,7 @@ export function AutoCategoriesForm({
         <button
           type="button"
           className="btn-secondary"
-          disabled={pending || !changed || chosen.length === 0}
+          disabled={pending || !changed}
           data-testid="agent-auto-categories-save"
           onClick={() => run(() => agentAutoCategoriesAction(chosen))}
         >
@@ -926,44 +1017,130 @@ export function AutoPerDayForm({ current, editable, max }: { current: number | n
 }
 
 /**
- * The confidence floor a reply must reach to go by itself (2026-11-15, his «80 foizni ham tushirib bolmayabti»): a
- * whole percent, `bounds.min`..`bounds.max`. The holder's or a super_admin's (`setAutoMinConfidence`). Controlled.
+ * A hold in whole seconds (stage 1a, his 11 a): the box the talk hold and the price hold share. Controlled — a refusal
+ * keeps what he typed (#463); the service says the bounds in words.
  */
-export function AutoConfidenceForm({
+function HoldBox({
+  id,
+  label,
+  hint,
   current,
   editable,
   bounds,
+  save,
 }: {
+  id: string;
+  label: string;
+  hint: string;
   current: number;
   editable: boolean;
   bounds: { min: number; max: number };
+  save: (raw: string) => Promise<AgentActionResult>;
 }) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction({ min: bounds.min, max: bounds.max });
   const [value, setValue] = useState(String(current));
-  const changed = value.trim().replace(/\s*%$/u, '') !== String(current);
+  const changed = value.trim() !== String(current);
   return (
-    <div className="space-y-1" data-testid="agent-auto-confidence">
-      <label className="label" htmlFor="agent-auto-confidence-input">
-        {t('autoConfidenceLabel')}
+    <div className="space-y-1" data-testid={id}>
+      <label className="label" htmlFor={`${id}-input`}>
+        {label}
       </label>
       <input
-        id="agent-auto-confidence-input"
+        id={`${id}-input`}
         className="input"
         inputMode="numeric"
         value={value}
         disabled={!editable || pending}
         onChange={(event) => setValue(event.target.value)}
-        data-testid="agent-auto-confidence-input"
+        data-testid={`${id}-input`}
       />
-      <p className="text-xs text-ink-500">{t('autoConfidenceHint', { min: bounds.min, max: bounds.max })}</p>
+      <p className="text-xs text-ink-500">{hint}</p>
+      {editable && (
+        <button type="button" className="btn-secondary" disabled={pending || !changed} data-testid={`${id}-save`} onClick={() => run(() => save(value))}>
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** «Oddiy javob kutishi (soniya)» (J34): 0 — ordinary talk goes at once, day and night; a number brings back ⏸. */
+export function AutoTalkHoldForm({ current, editable, max }: { current: number; editable: boolean; max: number }) {
+  const t = useTranslations('agentAi');
+  return (
+    <HoldBox
+      id="agent-auto-talk-hold"
+      label={t('autoTalkHoldLabel')}
+      hint={t('autoTalkHoldHint', { max })}
+      current={current}
+      editable={editable}
+      bounds={{ min: 0, max }}
+      save={agentAutoTalkHoldAction}
+    />
+  );
+}
+
+/** «Narx kutishi (soniya)»: the layer's own hold, which a price — table or VED — waits on its card with ⏸. */
+export function AutoPriceHoldForm({ current, editable, bounds }: { current: number; editable: boolean; bounds: { min: number; max: number } }) {
+  const t = useTranslations('agentAi');
+  return (
+    <HoldBox
+      id="agent-auto-price-hold"
+      label={t('autoPriceHoldLabel')}
+      hint={t('autoPriceHoldHint', { min: bounds.min, max: bounds.max })}
+      current={current}
+      editable={editable}
+      bounds={bounds}
+      save={agentAutoPriceHoldAction}
+    />
+  );
+}
+
+/**
+ * Which prices go by themselves at night (stage 1a, his 4 a): one choice of three, each in his words (the page hands
+ * them in, translated — the values are the setting's own). Talk is never barred at night; the hint says so.
+ */
+export function AutoNightForm({
+  current,
+  editable,
+  options,
+}: {
+  current: string;
+  editable: boolean;
+  options: readonly { value: string; label: string }[];
+}) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [value, setValue] = useState(current);
+  return (
+    <div className="space-y-1" data-testid="agent-auto-night">
+      <label className="label" htmlFor="agent-auto-night-select">
+        {t('autoNightLabel')}
+      </label>
+      <select
+        id="agent-auto-night-select"
+        className="input"
+        value={value}
+        disabled={!editable || pending}
+        onChange={(event) => setValue(event.target.value)}
+        data-testid="agent-auto-night-select"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-ink-500">{t('autoNightHint')}</p>
       {editable && (
         <button
           type="button"
           className="btn-secondary"
-          disabled={pending || !changed}
-          data-testid="agent-auto-confidence-save"
-          onClick={() => run(() => agentAutoMinConfidenceAction(value))}
+          disabled={pending || value === current}
+          data-testid="agent-auto-night-save"
+          onClick={() => run(() => agentAutoNightAction(value))}
         >
           {t('save')}
         </button>

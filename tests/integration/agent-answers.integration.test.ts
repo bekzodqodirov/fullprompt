@@ -33,6 +33,7 @@ import {
   events,
   notifications,
   roles,
+  settings,
   tasks,
   tgAccountGuard,
   tgAccounts,
@@ -50,7 +51,9 @@ import { priceReplyText } from '@/modules/wms/agent/price-reply';
 import { AGENT_LOCALES } from '@/modules/wms/agent/locale';
 import { WAREHOUSE_SENTENCES } from '@/modules/wms/agent/policy';
 import { JOB_AGENT_HAND_BACK } from '@/modules/wms/agent/queues';
+import { KASHGAR_REFUSAL } from '@/modules/wms/agent/prompt';
 import { handleInbound, runOwnerTriggered } from '@/modules/wms/agent/run';
+import { zoneForOrigin } from '@/modules/wms/agent/origin';
 import { RAIL_OWNER_QUESTION } from '@/modules/wms/agent/worthy';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
@@ -76,6 +79,8 @@ let accountId = '';
 let clientId = '';
 let snapshot: AgentConfig | null = null;
 let sendingBefore = false;
+/** The flight's days as the table held them (stage 1a P7) — a setting is CONFIGURATION too (#183). */
+let aviaDaysRow: { value: unknown } | null = null;
 let msgSeq = 5000n;
 const madeDeals: string[] = [];
 const madeRequests: string[] = [];
@@ -207,6 +212,8 @@ async function clearChat() {
 beforeAll(async () => {
   snapshot = await readAgentConfig();
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
+  const [days] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, 'agent_avia_days'));
+  aviaDaysRow = days ?? null;
   ownerId = await makeUser(`AI javoblar ${SUFFIX}`, 'super_admin', '01');
   vedId = await makeUser(`VED javoblar ${SUFFIX}`, 'ved_manager', '02');
   const [acc] = await db
@@ -283,6 +290,8 @@ afterAll(async () => {
   await db.delete(clients).where(eq(clients.id, clientId));
   await __restoreAgentConfig(snapshot);
   await setSetting('tg_sending_enabled', sendingBefore, ownerId);
+  if (aviaDaysRow) await setSetting('agent_avia_days', aviaDaysRow.value, ownerId);
+  else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, vedId]));
 });
 
@@ -348,7 +357,8 @@ describe('avia — his rate × the customer’s kilos, hedged like the truck', (
     const out = await handleInbound(job(a), {
       callModel: scripted([
         { name: 'avia_estimate', input: { weight_ref: 'w1' } },
-        compose('Avia bilan taxminan 680 $ bo‘ladi, yetib borishi 2-5 kun. Boj va QQS alohida hisoblanadi.'),
+        // The days the run was told (stage 1a P7: his 2 b «3-5 kun», the setting's shipped default) — «2-5» no longer.
+        compose('Avia bilan taxminan 680 $ bo‘ladi, yetib borishi 3-5 kun. Boj va QQS alohida hisoblanadi.'),
       ]),
     });
     expect(out).toMatchObject({ outcome: 'draft', blocked: false });
@@ -373,9 +383,11 @@ describe('rail is his question (his «Temir yo‘l mendan so‘rasin»)', () => 
   });
 });
 
-describe('an agent calculation lands like a seller’s — every action, the company’s certificate, the named zone', () => {
-  it('✅ lands the job with has_certificate, on Kashgar’s zone, and runs the follow-up and the mute too', async () => {
-    const a = await inbound('Qashqardan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
+describe('an agent calculation lands like a seller’s — every action, the company’s certificate, the named place', () => {
+  // DELIBERATE EDIT (stage 1a P3, J24): this case named Kashgar; his «HOZIRCHA qashqarda yuk qabul qilmaymiz» refuses a
+  // Kashgar job now (the next case), so the named western zone that still lands is Horgos — the same shape, its own zone.
+  it('✅ lands the job with has_certificate from Horgos, and runs the follow-up and the mute too', async () => {
+    const a = await inbound('Xorgosdan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
     const tomorrow = tashkentDay(new Date(Date.now() + 86_400_000));
     const out = await handleInbound(job(a), {
       callModel: scripted([
@@ -393,24 +405,31 @@ describe('an agent calculation lands like a seller’s — every action, the com
     });
     expect(out).toMatchObject({ outcome: 'draft', blocked: false });
     const d = await liveDraft();
-    const actions = d!.actions as { type: string; certificate?: unknown; fromOurWarehouse?: boolean }[];
+    const actions = d!.actions as { type: string; certificate?: unknown; fromOurWarehouse?: boolean; facts?: { fromCity?: string | null } }[];
     expect(actions.map((x) => x.type)).toEqual(['calc_submit', 'set_followup', 'mute']);
     // No certificate field at all (B8): the company obtains it, and nothing reads a choice.
     expect(actions[0]).not.toHaveProperty('certificate');
     // A named city with a warehouse of ours is priced as it always was (his third set «3»).
     expect(actions[0]!.fromOurWarehouse).toBe(false);
+    // The action carries the place the customer named, whose zone is Horgos's own (decide `freightZoneOf` →
+    // `zoneForOrigin`) — the zone the request keeps the day the tariff prices that column (fix review N5: the only
+    // priced western column in this database is Kashgar's, which J24 refuses — so the zone's own landing is pinned at
+    // the unit, agent-answers.test `zoneForOrigin('Xorgos')`, and here only what the queue is handed).
+    expect(zoneForOrigin(actions[0]!.facts?.fromCity ?? null)).toBe('horgos');
 
     const r = await decideDraft(actor(), d!.id, 'send', { digest: await cardDigestOf(d!.id) }, ctx());
     expect(r).toMatchObject({ ok: true, status: 'approved' });
     const [req] = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteIdFor(d!.id)));
-    expect(req).toMatchObject({ hasCertificate: true, freightZone: 'kashgar' });
+    // Horgos is named, and the action carries it — but the request keeps only a zone the tariff prices (calc service
+    // `tariffZones`), and this database's tariff has no Horgos column: the VED chooses, never a guess.
+    expect(req).toMatchObject({ hasCertificate: true, freightZone: null });
     const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
     expect(note!.note).toContain("Kelib chiqish sertifikati: kompaniya o'zi oladi");
     expect(note!.note).not.toContain('Xitoydagi omborimizdan');
     // The cited line carries its Tashkent date (#1627) — an old shipment's words read as old to the VED.
     const [cited] = await db.select({ sentAt: tgMessages.sentAt }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, a)));
     const [y, mo, dd] = tashkentDay(cited!.sentAt).split('-');
-    expect(note!.note).toContain(`${dd}.${mo}.${y}: Qashqardan Toshkentga podklyuch kerak`);
+    expect(note!.note).toContain(`${dd}.${mo}.${y}: Xorgosdan Toshkentga podklyuch kerak`);
 
     // Every action ran, and only then is it 'done' (A10).
     const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d!.id));
@@ -419,6 +438,30 @@ describe('an agent calculation lands like a seller’s — every action, the com
     expect(conv!.mutedAt).not.toBeNull();
     const [client] = await db.select({ next: clients.nextActionAt }).from(clients).where(eq(clients.id, clientId));
     expect(String(client!.next)).toBe(tomorrow);
+  });
+
+  it('a Kashgar job does not land (J24): the checklist answers his words, never complete, so no calc_submit is kept', async () => {
+    const a = await inbound('Qashqardan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona');
+    const tomorrow = tashkentDay(new Date(Date.now() + 86_400_000));
+    const out = await handleInbound(job(a), {
+      callModel: scripted([
+        { name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] } },
+        compose('Hisoblatishga yubordim, javob kelishi bilan aytaman.', {
+          category: 'qualification',
+          next_step: 'calc',
+          actions: [
+            { type: 'calc_submit', section: 'podklyuch', cited_message_refs: ['#1'], date: '', note: '' },
+            { type: 'set_followup', section: '', cited_message_refs: [], date: tomorrow, note: 'javobni aytish' },
+          ],
+        }),
+      ]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft' });
+    const d = await liveDraft();
+    expect((d!.actions as { type: string }[]).map((x) => x.type)).toEqual(['set_followup']);
+    const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.peerId, PEER));
+    const calls = run!.toolCalls as { name: string; ok: boolean; text: string }[];
+    expect(calls.find((x) => x.name === 'calc_checklist')).toMatchObject({ ok: true, text: KASHGAR_REFUSAL });
   });
 });
 
@@ -769,9 +812,85 @@ describe('a day count is the time of the road the customer asked about (fix roun
 
   it('…while the same five, asked about avia, is the flight’s and passes', async () => {
     const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+    // His 2 b days (stage 1a P7, the setting's shipped default «3-5») — the tool's own pair since the setting.
     const out = await handleInbound(job(a), {
-      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 2-5 kunda yetib boradi.')]),
+      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 3-5 kunda yetib boradi.')]),
     });
     expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+  });
+
+  it('the old «2-5» and the flight clause «reys bo‘lsa 2 kun» are no flight’s any more (stage 1a P7, J2)', async () => {
+    for (const reply of ['Odatda 2-5 kunda yetib boradi.', 'Odatda 3-5 kunda, reys bo‘lsa 2 kunda yetib boradi.']) {
+      const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+      const out = await handleInbound(job(a), { callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose(reply)]) });
+      expect(out, reply).toMatchObject({ outcome: 'draft', blocked: true });
+      const blocks = ((await liveDraft())!.policy as { blocks: { code: string; detail?: string }[] }).blocks;
+      expect(blocks, reply).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: '2' }));
+      await clearChat();
+      await stampAgentPump(accountId, true);
+    }
+  });
+
+  it('the run says HIS days — the head, the tool’s offer, its words and the memory — read once from the setting (stage 1a P7)', async () => {
+    await setSetting('agent_avia_days', '4-7', ownerId);
+    try {
+      const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+      const model = scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 4-7 kunda yetib boradi.')]);
+      const out = await handleInbound(job(a), { callModel: model });
+      expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+      // Every round of the run was told the same pair: rule 9, and the avia tool as offered.
+      expect(model.requests.length).toBe(2);
+      for (const req of model.requests) {
+        expect(req.systemCached).toContain('muddat taxminan 4-7 kun');
+        expect(req.systemCached).not.toMatch(/reys bo/u);
+        const avia = req.tools.find((t) => t.name === 'avia_estimate')!;
+        expect(avia.description).toContain('Muddat taxminan 4-7 kun');
+        expect(avia.description).not.toMatch(/reys bo/u);
+      }
+      // …and the tool's own words came back with them.
+      const toolResult = model.requests[1]!.messages.flatMap((m) => m.content).find((b) => b.type === 'tool_result');
+      expect(JSON.stringify(toolResult)).toContain('taxminan 4-7 kun');
+      // The shipped «3-5» is no flight's while he says 4-7.
+      await clearChat();
+      await stampAgentPump(accountId, true);
+      const b = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+      const old = await handleInbound(job(b), {
+        callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 3-5 kunda yetib boradi.')]),
+      });
+      expect(old).toMatchObject({ outcome: 'draft', blocked: true });
+    } finally {
+      if (aviaDaysRow) await setSetting('agent_avia_days', aviaDaysRow.value, ownerId);
+      else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
+    }
+  });
+
+  it('a draft written on the old days does not leave on them: ✅ after he changes them judges today’s pair (review N2)', async () => {
+    await clearChat();
+    await stampAgentPump(accountId, true);
+    // Written and checked on the shipped «3-5» — sendable as it stands.
+    const a = await inbound('40 kg yuk bor, avia bilan necha kunda keladi?');
+    const out = await handleInbound(job(a), {
+      callModel: scripted([{ name: 'avia_estimate', input: { weight_ref: 'w1' } }, compose('Odatda 3-5 kunda yetib boradi.')]),
+    });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+    const d = (await liveDraft())!;
+    await setSetting('agent_avia_days', '4-7', ownerId);
+    try {
+      // His ✅ (and the machine's press, the same door) after he typed «4-7»: the stored «3-5» is a day nobody vouches for.
+      const r = await decideDraft(actor(), d.id, 'send', { digest: await cardDigestOf(d.id) }, ctx());
+      expect(r).toMatchObject({ ok: false, code: 'policy_block' });
+      expect((r as { detail?: string }).detail).toContain('number_unsourced');
+      const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id));
+      expect(after).toMatchObject({ status: 'pending', blocked: true });
+      expect((after!.policy as { blocks: { code: string; detail?: string }[] }).blocks).toContainEqual(
+        expect.objectContaining({ code: 'number_unsourced', detail: '3' }),
+      );
+      expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, d.id))).toEqual([]);
+    } finally {
+      if (aviaDaysRow) await setSetting('agent_avia_days', aviaDaysRow.value, ownerId);
+      else await db.delete(settings).where(eq(settings.key, 'agent_avia_days'));
+    }
+    await clearChat();
+    await stampAgentPump(accountId, true);
   });
 });

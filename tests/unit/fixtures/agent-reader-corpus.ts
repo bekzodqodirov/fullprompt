@@ -9,14 +9,34 @@
  *                     HIM («held») or go with the price act armed («goes»)? With the act OFF every quoted flight asks
  *                     him, whatever the reply — the runner checks that too, for every case.
  *  - `destination`  — `memoryFor`'s `foreignDestination` (destination `namesForeignPlace`) under an admitted quote.
- *  - `language`     — `memoryFor`'s `customerLocale` (locale `detectLocale`) under the gate's language clause.
+ *  - `language`     — `memoryFor`'s `customerLocale` (locale `detectLocale`) under the gate's language clause, on a
+ *                     reply with no money in it — the class stage 1a judges as talk (auto-gate `autoClassOf`).
+ *  - `language_money` — the same lines, the same labels, judged on an admitted truck QUOTE (stage 1a, J19): whatever
+ *                     the talk rule becomes, a money message keeps today's language rule byte for byte, so every
+ *                     label here is the `language` row's own (written by hand for today's rule) — mirrored, never
+ *                     computed.
  *  - `owner_figure` — his ✍️ answer (owner-answer `answerHoldsFigure`, digits `holdsNumeral`) under `owner_figure`.
  *  - `money`        — a reply through the policy and the gate: `money_unread` (digits `currencyBesideQuantity`) and the
  *                     word-numeral G1 beside it.
  *  - `han`          — a Chinese reply through the policy and the gate: `numeral_unread` and G1's `han_numeral`.
  *  - `han_g1`       — G1's `han_numeral` alone: his ✅ (a Chinese reply he cannot approve is his to ✏️).
  *  - `lesson`       — «📝 Tuzatish»'s money refusal (lessons `lessonShapeRefusal`).
+ *  - `bot_question` — «botmisiz?» (worthy `asksIfBot`, stage 1a P3, J6): the honest line goes in front of the reply.
+ *  - `pashto`       — a Pashto burst (worthy `draftWorthy`'s `pashto`, J7): the one line asking for Persian or Russian.
+ *  - `complaint`    — the customer complains or asks for a person (complaint `complaintIn`): the reply stays his.
+ *  - `calc_claim`   — «hisoblatishga yubordim» with no calculation sent (calc-claim `claimsCalcSent`, J9): the gate's
+ *                     `calc_claim_unbacked`.
  *  - `phone`        — the ✍️ door's phone refusal (owner-answer `answerTextRefusal`, numbers `phonesIn`).
+ *  - `loop`         — the chat loop detector (stage 1a P2, loop `loopVerdict`): is this chat a robot answering our robot
+ *                     («held» — no draft, or no machine press) or a person talking («goes»)? Its input is a little
+ *                     script, one event a line — see `LOOP_DANGEROUS` below.
+ *  - `avia_days`    — the flight's days a reply states, through the policy and the gate (run `memoryFor`'s company
+ *                     rule, `aviaDaySources`, from `agent_avia_days` — stage 1a P7, J2): his «3-5 kun» and no other.
+ *  - `full_truck`   — the big-cargo signal's words (stage 1a §4.5, his 3 b «fura desa»; big-cargo `saysFullTruck`) over
+ *                     the CUSTOMER's lines: `held` = the signal is raised (the people he chose hear of it), `goes` = no
+ *                     signal. Here `dangerous` is the other way round from every reader above — a plain «fura kerak»
+ *                     the reader MISSES is the case his answer exists for; a word that pings a colleague about a
+ *                     washing machine is `ordinary` (one needless ping a chat a week).
  *
  * `kind`: `dangerous` — the WRONG answer lets something reach a customer that must not (a price nobody read, a
  * hand-over in an air chat, a Tashkent price for another destination, a reply in the wrong language, his figure
@@ -35,7 +55,24 @@
  * Literal inputs only: nothing here is computed by the code under test.
  */
 
-export type Reader = 'avia' | 'destination' | 'language' | 'owner_figure' | 'money' | 'han' | 'han_g1' | 'lesson' | 'phone';
+export type Reader =
+  | 'avia'
+  | 'destination'
+  | 'language'
+  | 'language_money'
+  | 'owner_figure'
+  | 'money'
+  | 'han'
+  | 'han_g1'
+  | 'lesson'
+  | 'bot_question'
+  | 'pashto'
+  | 'complaint'
+  | 'calc_claim'
+  | 'phone'
+  | 'loop'
+  | 'avia_days'
+  | 'full_truck';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -1651,6 +1688,242 @@ const LESSON_ORDINARY: readonly Row[] = [
   ['ls226', 'Avia haqida 2 marta aytma', 'check7#11 neighbour'],
 ];
 
+// ── bot_question: does the customer ask whether we are a bot (stage 1a P3, his 1 b) ──
+// «held» = read as the question — the code puts the honest line («Ha, men GSRning AI yordamchisiman…») in front of the
+// reply. `dangerous`: a real «are you a bot?» the reader misses — the AI then answers it in the persona's own name and
+// nobody says what it is. `ordinary`: a word that only CONTAINS «bot», «ai» or 机器人 — boots, Dubai, a robot vacuum —
+// would be answered «yes, I am an AI» about the customer's goods (J6: whole words; 机器人 / ربات only as «you are …»).
+const P_BQ = 'stage1a:J6';
+const BOT_DANGEROUS: readonly Row[] = [
+  ['bq001', 'Siz botmisiz?', P_BQ],
+  ['bq002', 'botmisiz', P_BQ],
+  ['bq003', 'Bu botmi?', P_BQ],
+  ['bq004', 'Siz robotmisiz?', P_BQ],
+  ['bq005', 'AI misiz?', P_BQ],
+  ['bq006', 'Siz AImisiz?', P_BQ],
+  ['bq007', "Siz sun'iy intellektmisiz?", P_BQ],
+  ['bq008', 'Siz odammisiz yoki yo‘qmi?', P_BQ],
+  ['bq009', 'Сиз ботмисиз?', P_BQ],
+  ['bq010', 'Сиз роботмисиз?', P_BQ],
+  ['bq011', 'Вы бот?', P_BQ],
+  ['bq012', 'Это бот?', P_BQ],
+  ['bq013', 'Ты бот или человек?', P_BQ],
+  ['bq014', 'Вы робот?', P_BQ],
+  ['bq015', 'Я с ботом общаюсь?', P_BQ],
+  ['bq016', 'Вы живой человек?', P_BQ],
+  ['bq017', 'Are you a bot?', P_BQ],
+  ['bq018', 'are you a robot', P_BQ],
+  ['bq019', 'Is this a bot?', P_BQ],
+  ['bq020', 'Are you AI?', P_BQ],
+  ['bq021', 'Am I talking to a bot?', P_BQ],
+  ['bq022', 'Are you a real person?', P_BQ],
+  ['bq023', 'شما ربات هستید؟', P_BQ],
+  ['bq024', 'آیا ربات هستی؟', P_BQ],
+  ['bq025', 'شما هوش مصنوعی هستید؟', P_BQ],
+  ['bq026', '你是机器人吗？', P_BQ],
+  ['bq027', '你是不是机器人', P_BQ],
+  ['bq028', '您是AI吗？', P_BQ],
+  ['bq029', '是真人还是机器人？', P_BQ],
+  ['bq030', 'Salom\nSiz botmisiz?', P_BQ],
+  // The fix review's D1: the compound «чат-бот» / «chatbot» and «AI assistant» — the whole-word rule (J6) had lost
+  // them, and a missed question ends in silence (rule 17 tells the model the code adds the answer).
+  ['bq031', 'Вы чат-бот?', P_BQ],
+  ['bq032', 'Это чат-бот?', P_BQ],
+  ['bq033', 'Ты чатбот?', P_BQ],
+  ['bq034', 'Siz chatbotmisiz?', P_BQ],
+  ['bq035', 'Bu chat-botmi?', P_BQ],
+  ['bq036', 'Are you a chatbot?', P_BQ],
+  ['bq037', 'Are you an AI assistant?', P_BQ],
+  ['bq038', 'Is this a chatbot?', P_BQ],
+  ['bq039', 'Я с чат-ботом переписываюсь?', P_BQ],
+  ['bq040', 'Сиз чатботмисиз?', P_BQ],
+  ['bq041', 'Am I chatting with a chatbot?', P_BQ],
+  ['bq042', 'Are you a virtual assistant?', P_BQ],
+  ['bq043', 'Вы что, бот?', P_BQ],
+  ['bq044', 'Ты что робот?', P_BQ],
+  // …and «robot» as the question about US stays held while D2 narrows it away from the goods.
+  ['bq045', 'Это робот?', P_BQ],
+  ['bq046', 'Вы робот или человек?', P_BQ],
+  ['bq047', 'Робот?', P_BQ],
+  ['bq048', 'Siz robot?', P_BQ],
+  ['bq049', 'Siz robot yoki odam?', P_BQ],
+  ['bq050', 'شما ربات یا آدم؟', P_BQ],
+  ['bq051', '你们是机器人吗？', P_BQ],
+  ['bq052', '我在跟机器人聊天吗？', P_BQ],
+];
+
+const BOT_ORDINARY: readonly Row[] = [
+  // J6's own three.
+  ['bq101', 'Ботинки сколько стоит доставка?', P_BQ],
+  ['bq102', 'Yuk Dubaimi?', P_BQ],
+  ['bq103', '扫地机器人，5立方，多少钱？', P_BQ],
+  // …and the same shapes beside them: a word that holds «бот» / «ai» / «robot» and asks nothing about us.
+  ['bq104', 'Вы ботинки возите?', P_BQ],
+  ['bq105', 'Сколько работ?', P_BQ],
+  ['bq106', 'Shanxaimi yoki Guanchjoumi?', P_BQ],
+  ['bq107', 'Dubaimi, Toshkentmi — qayerga?', P_BQ],
+  ['bq108', 'Botir aka, yukim qachon keladi?', P_BQ],
+  ['bq109', 'Robot changyutgich, 2 kub', P_BQ],
+  ['bq110', 'Робот-пылесос из Китая, 2 куба', P_BQ],
+  ['bq111', 'Kitchen robot, 2 cbm, price?', P_BQ],
+  ['bq112', 'ربات آشپزخانه دارم، قیمت حمل چقدر است؟', P_BQ],
+  ['bq113', '我有一批扫地机器人', P_BQ],
+  ['bq114', 'Telegram bot orqali yozdim', P_BQ],
+  ['bq115', 'AI kamera, 3 kub, Guanchjoudan', P_BQ],
+  ['bq116', 'Robotics parts, 4 cbm', P_BQ],
+  // The fix review's D2: a robot is GOODS unless the sentence says «you are» and ends there — each of these was read as
+  // «are you a bot?» and answered «I am an AI» in front of the price.
+  ['bq117', 'Siz robot changyutgich olib kelasizmi?', P_BQ],
+  ['bq118', 'Это робот для уборки?', P_BQ],
+  ['bq119', 'Вы робот пылесос возите?', P_BQ],
+  ['bq120', 'Можно отправить робот?', P_BQ],
+  ['bq121', 'Сколько стоит доставить робот?', P_BQ],
+  ['bq122', 'شما ربات آشپزخانه حمل می‌کنید؟', P_BQ],
+  ['bq123', '这是机器人吗？', P_BQ],
+  ['bq124', 'Это робот-пылесос?', P_BQ],
+  ['bq125', 'Sen robot changyutgich olib kelasanmi?', P_BQ],
+  ['bq126', '我想运机器人，多少钱？', P_BQ],
+];
+
+// ── pashto: is the burst Pashto (stage 1a P3, J7) ───────────────────────────
+// «held» = read as Pashto — the code answers with the one line asking for Persian or Russian. `dangerous`: Pashto the
+// reader misses (the model then writes to a customer in a language it does not write); `ordinary`: Uyghur, Persian or
+// Urdu read as Pashto — a customer told to switch language for nothing (J7: «ې» alone is Uyghur's too, and «ۈ ۆ ڭ ۋ»
+// are Uyghur's own).
+const P_PS = 'stage1a:J7';
+const PASHTO_DANGEROUS: readonly Row[] = [
+  ['ps001', 'ستاسو بار څه وخت راځي', 'pinned:agent-send-step pashto'],
+  ['ps002', 'زه غواړم چې بار واستوم', P_PS],
+  ['ps003', 'زما بار په ګوانګجو کې دی', P_PS],
+  ['ps004', 'څو ډالره کیږي؟', P_PS],
+  ['ps005', 'ستاسې ګودام چیرته دی؟', P_PS],
+  ['ps006', 'سلام\nزما بار ښه دی؟', P_PS],
+];
+
+const PASHTO_ORDINARY: readonly Row[] = [
+  ['ps101', 'يۈكنى ئېلىپ كېلىڭ', P_PS],
+  ['ps102', 'مېنىڭ يۈكۈم قاچان كېلىدۇ؟', P_PS],
+  ['ps103', 'مەن ئېيتتىم', P_PS],
+  ['ps104', 'بار من کی می‌رسد؟', P_PS],
+  ['ps105', 'میرا سامان کب پہنچے گا؟', P_PS],
+  ['ps106', 'سلام، قیمت حمل از گوانگژو چقدر است؟', P_PS],
+];
+
+// ── complaint: does the customer's burst complain or ask for a person (stage 1a P3) ──
+// «held» = the tripwire fires: the reply stays his (gate `complaint`), whatever the model labelled it. `dangerous`: a
+// complaint or «a person, please» the reader misses — the machine answers it by itself; `ordinary`: a line that only
+// names a manager, money or a return — a false hit costs one card.
+const P_CP = 'stage1a:§4.4 complaint';
+const COMPLAINT_DANGEROUS: readonly Row[] = [
+  ['cp001', 'Menejer kerak, siz bilan gaplashmayman', P_CP],
+  ['cp002', 'Rahbaringiz bilan gaplashmoqchiman', P_CP],
+  ['cp003', 'Shikoyat qilaman!', P_CP],
+  ['cp004', 'Pulimni qaytaring', P_CP],
+  ['cp005', 'Meni aldadingiz', P_CP],
+  ['cp006', 'Sudga beraman', P_CP],
+  ['cp007', 'Shikoyatim bor', P_CP],
+  ['cp008', 'Менежер керак', P_CP],
+  ['cp009', 'Пулимни қайтаринг', P_CP],
+  ['cp010', 'Это жалоба', P_CP],
+  ['cp011', 'Верните деньги!', P_CP],
+  ['cp012', 'Позовите менеджера', P_CP],
+  ['cp013', 'Хочу поговорить с руководителем', P_CP],
+  ['cp014', 'I want a refund', P_CP],
+  ['cp015', 'Let me talk to a real person', P_CP],
+  ['cp016', 'I want to file a complaint', P_CP],
+  ['cp017', '我要投诉', P_CP],
+  ['cp018', '我要退款', P_CP],
+  ['cp019', 'می‌خواهم شکایت کنم', P_CP],
+  ['cp020', 'Salom\nYukim yo‘qoldi, menejer kerak', P_CP],
+  // The fix review's N1: the list leans to holding, and these shapes are common.
+  ['cp021', 'Я буду жаловаться', P_CP],
+  ['cp022', 'Мошенники!', P_CP],
+  ['cp023', 'You are scammers', P_CP],
+  ['cp024', 'This is fraud', P_CP],
+  ['cp025', 'Sizlar firibgarsizlar', P_CP],
+  ['cp026', 'Aldovchilar', P_CP],
+  ['cp027', 'Odam bilan gaplashmoqchiman', P_CP],
+  ['cp028', 'Menejer bilan bog‘lab bering', P_CP],
+  ['cp029', 'Соедините с оператором', P_CP],
+  ['cp030', 'Хочу поговорить с оператором', P_CP],
+];
+
+const COMPLAINT_ORDINARY: readonly Row[] = [
+  ['cp101', 'Menejeringiz kim?', P_CP],
+  ['cp102', 'Rahmat, hammasi yaxshi', P_CP],
+  ['cp103', 'Pul qachon to‘lanadi?', P_CP],
+  ['cp104', 'Возврат тары нужен?', P_CP],
+  ['cp105', 'Менеджер сказал 5 кубов', P_CP],
+  ['cp106', 'Real price for 5 cbm?', P_CP],
+  ['cp107', 'Sudanga yuk jo‘natasizmi?', P_CP],
+  ['cp108', 'Menejerga rahmat ayting', P_CP],
+  ['cp109', 'Пульт управления, 2 коробки', P_CP],
+  ['cp110', '退货地址在哪里？', P_CP],
+  // …and their neighbours that ask for nobody: a manager already reached, a person talked to later, an operator quoted.
+  ['cp111', 'Menejer bilan bog‘landim, 5 kub dedi', P_CP],
+  ['cp112', 'Bir odam bilan gaplashib, keyin yozaman', P_CP],
+  ['cp113', 'Оператор сказал, что груз в пути', P_CP],
+];
+
+// ── calc_claim: «hisoblatishga yubordim» with no calculation sent (stage 1a P3, J9) ──
+// The reply as the gate reads it, with NO `calc_submit` beside it: «held» = refused `calc_claim_unbacked`. `dangerous`:
+// rule 11's dictated claim in any of the six languages — the customer is told his job went to the VED when nothing
+// went; `ordinary`: the offer, a question, a condition («…yuborishim uchun»), a word about the VED that claims no act.
+// `context.reply` is the reply's language.
+const P_CC = 'stage1a:J9';
+const CALC_CLAIM_DANGEROUS: readonly Row[] = [
+  ['cc001', 'Hisoblatishga yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc002', 'Ma’lumotlaringizni hisoblatishga yubordim.', P_CC, r('uz')],
+  ['cc003', 'Hisoblashga yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc004', 'Rahmat! Hisoblatish uchun yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc005', 'Ҳисоблатишга юбордим, жавоб келиши билан айтаман.', P_CC, r('uz_cyrl')],
+  ['cc006', 'Хисоблатишга юбордим.', P_CC, r('uz_cyrl')],
+  ['cc007', 'Отправил на расчёт, как будет ответ — сообщу.', P_CC, r('ru')],
+  ['cc008', 'Передал на расчёт, сообщу, как только будет ответ.', P_CC, r('ru')],
+  ['cc009', 'Отправила ваш запрос на просчёт.', P_CC, r('ru')],
+  ['cc010', "I've sent it for calculation, I'll let you know as soon as I get the answer.", P_CC, r('en')],
+  ['cc011', 'I have sent your request for calculation.', P_CC, r('en')],
+  ['cc012', 'برای محاسبه فرستادم، به محض دریافت جواب اطلاع می‌دهم.', P_CC, r('fa')],
+  ['cc013', 'درخواست شما را برای محاسبه ارسال کردم.', P_CC, r('fa')],
+  ['cc014', '已提交核算，有结果马上告诉您。', P_CC, r('zh')],
+  ['cc015', '我已经发给同事计算了，有结果告诉您。', P_CC, r('zh')],
+  // The fix review's D3: the claim beside a question in the SAME sentence (rule 11's own wording plus «yana savol
+  // bormi?»), and the passive.
+  ['cc016', 'Hisoblatishga yubordim, javob kelishi bilan aytaman — yana biror savol bormi?', P_CC, r('uz')],
+  ['cc017', 'Rahmat! Ma’lumotlarni hisoblatishga yubordim, yana nima kerak?', P_CC, r('uz')],
+  ['cc018', 'Отправил на расчёт — подскажите, ещё что-то нужно?', P_CC, r('ru')],
+  ['cc019', 'Ваш запрос отправлен на расчёт.', P_CC, r('ru')],
+  ['cc020', 'Запрос передан на расчёт, как будет ответ — сообщу.', P_CC, r('ru')],
+  ['cc021', 'Your request has been sent for calculation.', P_CC, r('en')],
+  ['cc022', 'درخواست شما برای محاسبه ارسال شد.', P_CC, r('fa')],
+  ['cc023', 'Hisob-kitobga yubordim, javob kelishi bilan aytaman.', P_CC, r('uz')],
+  ['cc024', '我已经把资料提交给核算部门了，有结果告诉您。', P_CC, r('zh')],
+  ['cc025', 'Your request was forwarded for calculation, I will let you know.', P_CC, r('en')],
+];
+
+const CALC_CLAIM_ORDINARY: readonly Row[] = [
+  ['cc101', 'Xohlasangiz, rastamojkani ham alohida hisoblab beraymi?', P_CC, r('uz')],
+  ['cc102', 'Hisoblatishga yuborishim uchun tovar nomi va og‘irligini yozing.', P_CC, r('uz')],
+  ['cc103', 'Hisoblatishga yuboraymi?', P_CC, r('uz')],
+  ['cc104', 'Rastamojka narxini VED bo‘limi hisoblaydi.', P_CC, r('uz')],
+  ['cc105', 'Manzilni yubordim.', P_CC, r('uz')],
+  ['cc106', 'Отправить на расчёт?', P_CC, r('ru')],
+  ['cc107', 'Чтобы отправить на расчёт, напишите вес груза.', P_CC, r('ru')],
+  ['cc108', 'Shall I send it for calculation?', P_CC, r('en')],
+  ['cc109', '需要我提交核算吗？', P_CC, r('zh')],
+  ['cc110', 'آیا برای محاسبه بفرستم؟', P_CC, r('fa')],
+  // …and the offers a clause split must not turn into claims: a tag question after a present or future verb.
+  ['cc111', '我提交核算，好吗？', P_CC, r('zh')],
+  ['cc112', 'Hisoblatishga yuboraman, xo‘pmi?', P_CC, r('uz')],
+  ['cc113', 'It will be sent for calculation once you send the weight.', P_CC, r('en')],
+  ['cc114', 'Если хотите, отправлю на расчёт.', P_CC, r('ru')],
+  ['cc115', 'Ma’lumot to‘liq bo‘lsa, hisoblatishga yuboraman.', P_CC, r('uz')],
+  ['cc116', 'Agar xohlasangiz, hisoblatishga yuboray?', P_CC, r('uz')],
+  ['cc117', 'Ваш запрос будет отправлен на расчёт, как только пришлёте вес.', P_CC, r('ru')],
+  ['cc118', 'Чтобы запрос был отправлен на расчёт, напишите вес груза.', P_CC, r('ru')],
+  ['cc119', 'Your request will be sent for calculation once we have the weight.', P_CC, r('en')],
+];
+
 // ── phone: the ✍️ door's phone refusal ──────────────────────────────────────
 const P_PH = 'pinned:agent-owner-answer phone';
 const PHONE_DANGEROUS: readonly Row[] = [
@@ -1713,6 +1986,222 @@ const PHONE_ORDINARY: readonly Row[] = [
   ['ph232', 'Yuk 15.11.2026 kuni keladi', 'check1:date'],
 ];
 
+// ── language_money: the language rows on a PRICED reply (stage 1a, J19 — «language stays strict on money») ──
+// Each row is the `language` row of the same number, its id `lm` for `lg`: the same customer's lines, the same stored
+// language, the same reply's language and the same hand-written label, judged on a truck quote the money clause admits
+// (eval `languageMoney`). Today's rule holds the dangerous ones on talk and on money alike; the day the talk rule is
+// relaxed, these rows are what keeps the price's language where it is.
+const onMoney = (list: readonly Row[]): readonly Row[] =>
+  list.map(([id, input, source, context]) => [`lm${id.slice(2)}`, input, `${source} · on a quote`, context] as const);
+const LANGUAGE_MONEY_DANGEROUS: readonly Row[] = onMoney(LANGUAGE_DANGEROUS);
+const LANGUAGE_MONEY_ORDINARY: readonly Row[] = onMoney(LANGUAGE_ORDINARY);
+
+// ── loop: a robot answering our robot, or a person talking (stage 1a P2) ───
+// The input is a script, one event a line: `<mark> <second> <text>`, seconds counted from one fixed start.
+//   `>` a line of the customer's — no text = a photo, a file or a voice note with no caption; the LAST one is the line
+//       the run answers (the anchor);
+//   `<` one of OUR machine sends to this chat (an `agent_outbox` row that went — whoever pressed it);
+//   `~` the customer's typing as the listener stamps it — only the newest stamp is kept, so the last `~` wins;
+//   `=` the reply about to go (the gate's `own_repeat`), at the second it would go;
+//   `@` a line of the customer's that came WITH a photo, a file or a voice note, and its caption;
+//   `!` the moment he was told this chat loops (the notice's claim) — the AI then keeps out of it for the window (J33).
+// The script is judged at its anchor's second, or at the `=` reply's when there is one.
+// `dangerous`: the machine answers a robot again — the account's ban risk (ban-4) — or writes inside the half hour he
+// was told it keeps out (J33: two voices to the customer); `ordinary`: a person is stopped.
+const P_LOOP = 'stage1a:§4.3';
+const J8 = 'stage1a:J8';
+const LOOP_DANGEROUS: readonly Row[] = [
+  // An away-message: the same words a second after each of our sends — `same_inbound` and `fast_peer` both.
+  ['lp001', '< 0 Assalomu alaykum! Yukingiz haqida yozing.\n> 2 Здравствуйте! Сейчас не могу ответить, напишу позже.\n< 40 Qaysi shahardan jo‘natasiz?\n> 41 Здравствуйте! Сейчас не могу ответить, напишу позже.\n< 80 Yuk necha kub?\n> 81 Здравствуйте! Сейчас не могу ответить, напишу позже.', P_LOOP],
+  // The same line a third time, slowly — the first repeat was answered, the second stops (`same_inbound` alone).
+  ['lp002', '> 0 Salom\n< 20 Assalomu alaykum! Qanday yordam bera olaman?\n> 300 Salom\n< 320 Assalomu alaykum! Yuk bo‘yicha savolingizni yozing.\n> 900 Salom', P_LOOP],
+  // The fold: case and a run of spaces do not make another line.
+  ['lp003', '> 0 Xabaringiz qabul qilindi.\n< 30 Yukingiz qayerdan?\n> 400 xabaringiz  qabul qilindi.\n< 430 Necha kub?\n> 800 XABARINGIZ QABUL QILINDI.', P_LOOP],
+  // A responder that stamps a counter: every line differs, each lands a second after one of our sends (`fast_peer`).
+  ['lp004', '< 0 Assalomu alaykum!\n> 1 Ticket #4101 received. We will reply soon.\n< 30 Yukingiz qayerdan?\n> 31 Ticket #4102 received. We will reply soon.\n< 60 Necha kub?\n> 61 Ticket #4103 received. We will reply soon.', J8],
+  // Our reply about to go is one we just sent, word for word (`own_repeat`).
+  ['lp005', '> 0 Salom\n< 15 Assalomu alaykum! Qanday yordam bera olaman?\n> 60 Salom?\n= 75 Assalomu alaykum! Qanday yordam bera olaman?', P_LOOP],
+  // …and the fold is the same for our words.
+  ['lp006', '> 0 Salom\n< 15 Assalomu alaykum! Qanday yordam bera olaman?\n> 60 Salom?\n= 75 assalomu alaykum!  QANDAY yordam bera olaman?', P_LOOP],
+  // A Chinese away-message.
+  ['lp007', '< 0 您好！请问有什么可以帮您？\n> 1 您好，我现在不在，稍后回复您。\n< 30 请问货物从哪里发？\n> 31 您好，我现在不在，稍后回复您。\n< 60 一共多少立方？\n> 61 您好，我现在不在，稍后回复您。', P_LOOP],
+  // A person typed once, long before — every send after that stamp was answered by something that never types.
+  ['lp008', '~ 0\n< 10 Assalomu alaykum!\n> 11 Auto: received 1\n< 40 Yukingiz qayerdan?\n> 41 Auto: received 2\n< 70 Necha kub?\n> 72 Auto: received 3', J8],
+  // Ten seconds after a send still counts.
+  ['lp009', '< 0 Assalomu alaykum!\n> 10 Bot: so‘rovingiz qabul qilindi (1)\n< 40 Yukingiz qayerdan?\n> 50 Bot: so‘rovingiz qabul qilindi (2)\n< 80 Necha kub?\n> 90 Bot: so‘rovingiz qabul qilindi (3)', J8],
+  // Three fast answers among slow ones: the slow ones do not cancel the fast.
+  ['lp010', '< 0 Assalomu alaykum!\n> 2 Auto-reply A\n< 30 Qayerdan?\n> 55 Yiwudan\n< 90 Necha kub?\n> 93 Auto-reply B\n< 120 Og‘irligi?\n> 160 800 kg\n< 200 Rahmat!\n> 204 Auto-reply C', J8],
+  // The same line three times with other lines between it.
+  ['lp011', '> 0 Menga qo‘ng‘iroq qiling\n< 20 Albatta, menejerimiz bog‘lanadi.\n> 100 Iltimos\n> 200 Menga qo‘ng‘iroq qiling\n< 220 Menejerimiz tez orada qo‘ng‘iroq qiladi.\n> 400 Menga qo‘ng‘iroq qiling', P_LOOP],
+  // Our earlier send, not the last one, about to go again — still one of the last three.
+  ['lp012', '< 0 Rahmat! 😊\n> 30 ok\n< 60 Yana savol bo‘lsa yozing.\n> 90 ok\n= 100 Rahmat! 😊', P_LOOP],
+  // An English away-message, slowly.
+  ['lp013', "> 0 Thanks for your message! I'm away and will reply soon.\n< 20 Hello! How can we help?\n> 300 Thanks for your message! I'm away and will reply soon.\n< 320 Please tell us about your cargo.\n> 700 Thanks for your message! I'm away and will reply soon.", P_LOOP],
+  // An answer stamped in the very second of our send (Telegram dates are whole seconds) is after it.
+  ['lp014', '< 0 Assalomu alaykum!\n> 0 Avtojavob: hozir bandman.\n< 30 Yukingiz qayerdan?\n> 30 Avtojavob: hozir bandman!\n< 60 Necha kub?\n> 60 Avtojavob: hozir bandman!!', J8],
+  // He was told, and the customer then writes something new inside the half hour: the notice said the AI keeps out.
+  ['lp015', '> 0 Xabaringiz qabul qilindi.\n< 20 Yukingiz qayerdan?\n> 300 Xabaringiz qabul qilindi.\n< 320 Necha kub?\n> 600 Xabaringiz qabul qilindi.\n! 605\n> 700 Menga narxini ayting', 'stage1a:J33 the hold'],
+  // …a person typing after a robot's fast answers is still inside it — he was told to look himself.
+  ['lp016', '< 0 Assalomu alaykum!\n> 1 Auto 1\n< 30 Yukingiz qayerdan?\n> 31 Auto 2\n< 60 Necha kub?\n> 61 Auto 3\n! 62\n~ 70\n> 75 Kechirasiz, avtojavob edi. Narxi qancha?', 'stage1a:J33 the hold'],
+  // …and so is a reply about to go there (the gate), on a line that is no loop of its own.
+  ['lp017', '> 0 Salom\n< 20 Assalomu alaykum!\n> 300 Salom\n< 320 Savolingizni yozing.\n> 600 Salom\n! 605\n> 900 5 kub narxi?\n= 960 5 kub uchun taxminan 600 $.', 'stage1a:J33 the hold'],
+  // One unanswered repeat among answered ones: the two answered still make the loop.
+  ['lp018', '> 0 Salom\n> 10 Salom\n< 30 Assalomu alaykum!\n> 300 Salom\n< 320 Savolingizni yozing.\n> 600 Salom', P_LOOP],
+  // A stamp of typing OLDER than the repeats says nothing about them: a robot never types.
+  ['lp019', '~ 0\n> 5 Hozir javob bera olmayman.\n< 25 Yukingiz haqida yozing.\n> 300 Hozir javob bera olmayman.\n< 320 Qayerdan?\n> 600 Hozir javob bera olmayman.', P_LOOP],
+];
+const LOOP_ORDINARY: readonly Row[] = [
+  // The FIRST repeat is answered — an impatient customer.
+  ['lo001', '> 0 Salom\n< 20 Assalomu alaykum! Qanday yordam bera olaman?\n> 300 Salom', P_LOOP],
+  // Three caption-less photos in a row — the invoice page by page — are never «the same line again».
+  ['lo002', '> 0\n> 3\n> 6', 'stage1a:§4.3 the text-less guard'],
+  // …nor is a caption-less file after two equal texts.
+  ['lo003', '> 0 Mana invoys\n< 20 Rahmat, ko‘rib chiqamiz.\n> 60 Mana invoys\n< 80 Rahmat, oldik.\n> 120', 'stage1a:§4.3 the text-less guard'],
+  // Three sizes — three lines, never one wording with its figures blanked.
+  ['lo004', '> 0 5 kub narxi qancha?\n< 20 Yukingiz qayerdan?\n> 60 7 kub narxi qancha?\n< 80 Qaysi shahardan?\n> 120 10 kub narxi qancha?', 'stage1a:§4.3 not textFingerprint'],
+  // Three quick lines after ONE of our sends — a person answering a question in pieces.
+  ['lo005', '< 0 Yukingiz qayerdan va necha kub?\n> 4 ha\n> 6 Yiwudan\n> 9 5 kub 800 kg', J8],
+  // Three quick answers, the person typing before the last.
+  ['lo006', '< 0 Qayerdan?\n> 6 Yiwudan\n< 30 Necha kub?\n> 36 5 kub\n< 60 Og‘irligi?\n~ 63\n> 67 800 kg', J8],
+  // Four quick answers — only the newest typing is kept, and a send it came after may have been typed to.
+  ['lo007', '< 0 Qayerdan?\n> 6 Yiwudan\n< 30 Necha kub?\n> 36 5 kub\n< 60 Og‘irligi?\n> 66 800 kg\n< 90 Qachon jo‘natasiz?\n~ 93\n> 97 Ertaga', 'stage1a:J8 (the one stamp)'],
+  // Our reply with other figures is another reply.
+  ['lo008', '> 0 5 kub 800 kg narxi?\n< 20 5 kub, 800 kg yukingiz uchun Toshkentgacha taxminan 960 $.\n> 60 7 kub 900 kg-chi?\n= 80 7 kub, 900 kg yukingiz uchun Toshkentgacha taxminan 1100 $.', 'stage1a:§4.3 not textFingerprint'],
+  // An old window clears: the two equal lines are more than 30 minutes before the anchor.
+  ['lo009', '> 0 Salom\n< 20 Assalomu alaykum!\n> 300 Salom\n< 320 Assalomu alaykum! Savolingizni yozing.\n> 2400 Salom', P_LOOP],
+  // …and so does our own words sent more than 30 minutes ago.
+  ['lo010', '< 0 Assalomu alaykum! Qanday yordam bera olaman?\n> 1900 Salom\n= 1920 Assalomu alaykum! Qanday yordam bera olaman?', P_LOOP],
+  // Our words four sends ago are not among the last three.
+  ['lo011', '< 0 Yana savol bo‘lsa yozing.\n> 30 5 kub\n< 60 Qayerdan?\n> 90 Yiwudan\n< 120 Og‘irligi?\n> 150 800 kg\n< 180 Hisoblab aytaman.\n> 210 ok\n= 230 Yana savol bo‘lsa yozing.', P_LOOP],
+  // Two quick answers to two sends — three distinct sends are needed.
+  ['lo012', '< 0 Qayerdan?\n> 3 Yiwu\n< 30 Necha kub?\n> 33 5', J8],
+  // A person answering in fifteen to twenty seconds.
+  ['lo013', '< 0 Qayerdan?\n> 15 Yiwudan\n< 40 Necha kub?\n> 60 5 kub\n< 90 Og‘irligi?\n> 110 800 kg', J8],
+  // «Salom» / «salom»: the first repeat, folded.
+  ['lo014', '> 0 Salom\n< 20 Assalomu alaykum!\n> 200 salom', P_LOOP],
+  // An impatient «?» a second time.
+  ['lo015', '> 0 Narxi qancha?\n< 20 Yukingiz necha kub?\n> 120 ?\n< 140 Kub va kg ni yozing, iltimos.\n> 240 ?', P_LOOP],
+  // Invoice pages a second apart after ONE send.
+  ['lo016', '< 0 Invoysni yuboring, iltimos.\n> 5\n> 6\n> 7\n> 8', J8],
+  // Three photos of one product, each with the same caption, answered between — a person showing goods.
+  ['lo017', '@ 0 Shu tovarni olib kelasizmi?\n< 20 Ha, olib kelamiz. Necha kub?\n@ 300 Shu tovarni olib kelasizmi?\n< 320 Ha. Yuk qayerdan?\n@ 600 Shu tovarni olib kelasizmi?', 'stage1a:§4.3 a line with a file'],
+  // The same question three times with NO send of ours between (the listener down, his human pause, his chat).
+  ['lo018', '> 0 Narxi qancha?\n> 60 Narxi qancha?\n> 120 Narxi qancha?', 'stage1a:§4.3 answered repeats'],
+  // A code typed again: the newest typing stamp is after the previous equal line — a person typed the anchor.
+  ['lo019', '> 0 GS777\n< 20 GS777: yukingiz Yiwu omborida.\n> 600 GS777\n< 620 GS777: yukingiz hali Yiwu omborida.\n~ 1195\n> 1200 GS777', 'stage1a:J8 a typed line is no robot'],
+  // «Salom» twice in a row, one answer, then once more: one answered repeat.
+  ['lo020', '> 0 Salom\n> 4 Salom\n< 25 Assalomu alaykum! Qanday yordam bera olaman?\n> 400 Salom', 'stage1a:§4.3 answered repeats'],
+  // The half hour he was told of is over: a new line is answered again.
+  ['lo021', '> 0 Xabaringiz qabul qilindi.\n< 20 Yukingiz qayerdan?\n> 300 Xabaringiz qabul qilindi.\n< 320 Necha kub?\n> 600 Xabaringiz qabul qilindi.\n! 605\n> 2410 Yana savolim bor', 'stage1a:J33 the hold ends'],
+];
+
+// ── avia_days: the flight's days a reply states (stage 1a P7, J2, his 2 b «3-5 kun») ──────────────────────────
+// Through the policy and the gate, on the memory a run stores with the setting's own days (`agent_avia_days`, shipped
+// «3-5»): the company's rule vouches for the range he gave and nothing else — the old «2–5 kun», and «reys bo‘lsa 2
+// kun» (the flight clause he did not repeat), are a day count nobody vouched for any more, in any language.
+const P_AD = 'stage1a:J2';
+const AVIA_DAYS_DANGEROUS: readonly Row[] = [
+  ['ad001', "Avia bilan taxminan 2-5 kunda yetib boradi — bu taxmin, va'da emas.", P_AD, r('uz')],
+  ['ad002', "Avia orqali yetib borishi taxminan 2–5 kun, reys bo'lsa 2 kun — bu taxmin, va'da emas.", P_AD, r('uz')],
+  ['ad003', "Avia bilan taxminan 3-5 kun, reys bo'lsa 2 kunda yetib boradi.", P_AD, r('uz')],
+  ['ad004', 'Авиа — примерно 2-5 дней, это не обещание.', P_AD, r('ru')],
+  ['ad005', 'By air it takes about 2-5 days — an estimate, not a promise.', P_AD, r('en')],
+  ['ad006', 'Авиа билан тахминан 2-5 кунда етиб боради.', P_AD, r('uz_cyrl')],
+  ['ad007', 'Avia bilan taxminan 2 kunda yetib boradi.', P_AD, r('uz')],
+  ['ad008', 'Авиа примерно 3-5 дней, а если есть рейс — 2 дня.', P_AD, r('ru')],
+];
+
+const AVIA_DAYS_ORDINARY: readonly Row[] = [
+  ['ad201', "Avia bilan taxminan 3-5 kunda yetib boradi — bu taxmin, va'da emas.", P_AD, r('uz')],
+  ['ad202', 'Avia orqali eng kamida 1 kg qabul qilamiz, yetib borishi taxminan 3–5 kun.', P_AD, r('uz')],
+  ['ad203', 'Авиа: от 1 кг, примерно 3-5 дней.', P_AD, r('ru')],
+  ['ad204', 'By air it takes about 3-5 days — an estimate, not a promise.', P_AD, r('en')],
+  ['ad205', 'Авиа билан тахминан 3-5 кунда етиб боради.', P_AD, r('uz_cyrl')],
+];
+
+// ── full_truck: the big-cargo signal's words (stage 1a §4.5; his 3 b — «20 kubdan yoki fura desa») ──────────────
+// Written by hand before `saysFullTruck` existed. A customer who asks for a WHOLE truck, in any of the six languages,
+// any case ending, with or without a size: the signal must go (dangerous to miss). A machine in the goods, a
+// truck said NOT to be needed, a word that only begins like «fura»: no signal (ordinary).
+const P_FT = 'stage1a:§4.5 full truck';
+const FULL_TRUCK_DANGEROUS: readonly Row[] = [
+  ['ft001', 'Assalomu alaykum, Yiwudan fura kerak', P_FT],
+  ['ft002', "Bizga to'liq mashina kerak, Guanchjoudan Toshkentga", P_FT],
+  ['ft003', 'To‘liq mashina qancha turadi?', P_FT],
+  ['ft004', 'toliq mashina bormi', P_FT],
+  ['ft005', 'Furaga qancha olasiz?', P_FT],
+  ['ft006', '2 ta fura yuk bor', P_FT],
+  ['ft007', 'FURA KERAK', P_FT],
+  ['ft008', "fura bilan yuborsak bo'ladimi? 60 kub", P_FT],
+  ['ft009', 'Bizga fura kerak, LCL emas', P_FT],
+  ['ft010', "Mashina to'liq bo'ladi, 80 kub atrofida", P_FT],
+  ['ft011', 'Butun mashinani olamiz', P_FT],
+  ['ft012', 'Фурага қанча оласиз?', P_FT],
+  ['ft013', 'тўлиқ машина керак', P_FT],
+  ['ft014', 'Фура нужна из Иу в Ташкент', P_FT],
+  ['ft015', 'Сколько стоит фура до Ташкента?', P_FT],
+  ['ft016', 'Нужна полная машина', P_FT],
+  ['ft017', 'Целую машину сколько стоит?', P_FT],
+  ['ft018', 'Отдельную машину можно заказать?', P_FT],
+  ['ft019', 'Нужна фура, не сборный груз', P_FT],
+  ['ft020', 'Фуры есть на этой неделе?', P_FT],
+  ['ft021', 'We need a full truck from Guangzhou', P_FT],
+  ['ft022', 'Price for FTL to Tashkent?', P_FT],
+  ['ft023', 'whole truck please', P_FT],
+  ['ft024', 'one full truckload from Yiwu', P_FT],
+  ['ft025', '我们需要整车到塔什干', P_FT],
+  ['ft026', '整柜多少钱', P_FT],
+  ['ft027', 'یک کامیون کامل لازم داریم', P_FT],
+  ['ft028', 'salom\nfura kerak edi', P_FT],
+  ['ft029', 'Furada olib kelib berasizmi?', P_FT],
+  ['ft030', 'Фура нужна? Да, нужна', P_FT],
+  // The review of P4 (2026-11-20): «or not» closing a question is a tag, never a negation — and «fura» takes the
+  // possessive endings before its case ones («furangiz», «furalaringiz», «furamiz»).
+  ['ft031', 'Фура нужна или нет?', P_FT],
+  ['ft032', 'Можно фуру или нет?', P_FT],
+  ['ft033', "Fura bo'ladimi yoki yo'q?", P_FT],
+  ['ft034', 'Is FTL possible or not?', P_FT],
+  ['ft035', 'Furangiz bormi?', P_FT],
+  ['ft036', "Furalaringiz bo'shmi?", P_FT],
+  ['ft037', 'Bizning furamiz tayyor', P_FT],
+  ['ft038', 'Фурангиз борми?', P_FT],
+  ['ft039', 'Furangizga qancha olasiz?', P_FT],
+  ['ft040', 'Full truck or not, how much is it?', P_FT],
+  ['ft041', 'کامیون کامل یا نه؟', P_FT],
+  ['ft042', 'Fura kerakmi yoki emas?', P_FT],
+  ['ft043', 'Нужна или нет фура?', P_FT],
+  ['ft044', 'Furalarimiz 2 ta, Yiwuda turibdi', P_FT],
+];
+const FULL_TRUCK_ORDINARY: readonly Row[] = [
+  ['ft101', 'Tikuv mashinasi olib kelmoqchiman', P_FT],
+  ['ft102', 'Kir yuvish mashinasi narxi qancha', P_FT],
+  ['ft103', 'Yuk mashinasi uchun ehtiyot qismlar, 1 kub', P_FT],
+  ['ft104', 'Fura kerak emas, 2 kub yuk bor', P_FT],
+  ['ft105', 'Fura shart emas, sborniy bo‘lsa ham bo‘ladi', P_FT],
+  ['ft106', 'Фура не нужна, у нас 3 куба', P_FT],
+  ['ft107', 'Не нужна фура, сборный груз', P_FT],
+  ['ft108', 'Not a full truck, just 2 cbm', P_FT],
+  ['ft109', "We don't need a full truck", P_FT],
+  ['ft110', 'LTL please, 3 cbm', P_FT],
+  ['ft111', 'Фурнитура для мебели, 2 куба', P_FT],
+  ['ft112', 'Фураж для скота', P_FT],
+  ['ft113', 'Furazolidon tabletkalari', P_FT],
+  ['ft114', 'Mashina detallari bor, 2 kub', P_FT],
+  ['ft115', '不需要整车，3个方', P_FT],
+  ['ft116', 'کامیون کامل نیست، فقط ۲ متر مکعب', P_FT],
+  ['ft117', 'Less than a full truck, about 5 cbm', P_FT],
+  ['ft118', 'Без фуры, сборным грузом', P_FT],
+  ['ft119', 'Avtomashina ehtiyot qismlari bor', P_FT],
+  ['ft120', 'To‘liq ma’lumot yuboring, mashina detali bor', P_FT],
+  ['ft121', 'Kecha furada keldi, rahmat', P_FT],
+  ['ft122', 'Fura uchun shinalar kerak', P_FT],
+  // The possessive endings widen «fura», never its stem into a prefix: goods that begin like it stay goods.
+  ['ft123', 'Furazolidoningiz bormi?', P_FT],
+  ['ft124', 'Фурнитурангиз борми, 2 куб', P_FT],
+  // A negation the customer meant stays one when no «or» stands right before it.
+  ['ft125', 'Fura kerak emas, yoki sborniy, yoki avia', P_FT],
+];
+
 export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('avia', 'dangerous', AVIA_DANGEROUS),
   ...rows('avia', 'ordinary', AVIA_ORDINARY),
@@ -1720,6 +2209,8 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('destination', 'ordinary', DESTINATION_ORDINARY),
   ...rows('language', 'dangerous', LANGUAGE_DANGEROUS),
   ...rows('language', 'ordinary', LANGUAGE_ORDINARY),
+  ...rows('language_money', 'dangerous', LANGUAGE_MONEY_DANGEROUS),
+  ...rows('language_money', 'ordinary', LANGUAGE_MONEY_ORDINARY),
   ...rows('owner_figure', 'dangerous', OWNER_DANGEROUS),
   ...rows('owner_figure', 'ordinary', OWNER_ORDINARY),
   ...rows('money', 'dangerous', MONEY_DANGEROUS),
@@ -1730,6 +2221,20 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('han_g1', 'ordinary', HAN_G1_ORDINARY),
   ...rows('lesson', 'dangerous', LESSON_DANGEROUS),
   ...rows('lesson', 'ordinary', LESSON_ORDINARY),
+  ...rows('bot_question', 'dangerous', BOT_DANGEROUS),
+  ...rows('bot_question', 'ordinary', BOT_ORDINARY),
+  ...rows('pashto', 'dangerous', PASHTO_DANGEROUS),
+  ...rows('pashto', 'ordinary', PASHTO_ORDINARY),
+  ...rows('complaint', 'dangerous', COMPLAINT_DANGEROUS),
+  ...rows('complaint', 'ordinary', COMPLAINT_ORDINARY),
+  ...rows('calc_claim', 'dangerous', CALC_CLAIM_DANGEROUS),
+  ...rows('calc_claim', 'ordinary', CALC_CLAIM_ORDINARY),
   ...rows('phone', 'dangerous', PHONE_DANGEROUS),
   ...rows('phone', 'ordinary', PHONE_ORDINARY),
+  ...rows('loop', 'dangerous', LOOP_DANGEROUS),
+  ...rows('loop', 'ordinary', LOOP_ORDINARY),
+  ...rows('avia_days', 'dangerous', AVIA_DAYS_DANGEROUS),
+  ...rows('avia_days', 'ordinary', AVIA_DAYS_ORDINARY),
+  ...rows('full_truck', 'dangerous', FULL_TRUCK_DANGEROUS),
+  ...rows('full_truck', 'ordinary', FULL_TRUCK_ORDINARY),
 ];

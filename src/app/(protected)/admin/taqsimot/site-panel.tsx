@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useActionState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Copyable } from '../../crm/(pages)/kelganlar/doors';
-import { saveSiteTeamsAction, type RoutingFormState } from './actions';
+import { saveSiteAiAction, saveSiteTeamsAction, type RoutingFormState } from './actions';
 
 /**
  * «Saytdan so'rovlar» (round 113): who answers which website stream, what the
@@ -39,6 +39,17 @@ export interface SiteNextView {
   name: string | null;
   units: number | null;
   widened: boolean;
+  /** The AI seat takes this team's next visitor (stage 1a «Hajm») — no load is counted for it. */
+  ai: boolean;
+}
+
+/**
+ * The website's AI choice (his 6 c) and, while it is on, the seat's own answer right now: `ok`, or the reason in his
+ * words (`SEAT_REFUSAL_WORDS`, resolved by the page). Null while it is off — no line of truth to draw.
+ */
+export interface SiteAiView {
+  mode: 'off' | 'all';
+  truth: { ok: true } | { ok: false; reason: string } | null;
 }
 
 export interface SiteOfferView {
@@ -66,18 +77,78 @@ const STATUS_TONE: Record<SiteStatus, string> = {
   stale: 'text-bad',
 };
 
+/**
+ * «Saytdan so'rovlar («Sotib olib berish»dan tashqari): sotuvchilarga / AI sotuvchiga» (J32 — the title names every
+ * team the switch moves, «Umumiy» included) and, when on, ONE line of truth: the seat takes them now, or why not and
+ * that the roster does meanwhile. Its own form and action (never the roster's save): two radios, so no box is ever
+ * disabled and nothing absent reads as a choice (#171).
+ */
+function SiteAiChoice({ ai }: { ai: SiteAiView }) {
+  const t = useTranslations('routing');
+  const tc = useTranslations('common');
+  const [state, formAction, pending] = useActionState<RoutingFormState, FormData>(saveSiteAiAction, {});
+  return (
+    <form action={formAction} className="space-y-1.5 rounded-xl border border-line p-2" data-testid="site-ai">
+      <p className="text-sm font-semibold">{t('site.aiTitle')}:</p>
+      <div className="flex flex-wrap gap-1.5">
+        {(['off', 'all'] as const).map((mode) => (
+          <label
+            key={mode}
+            className="flex min-h-11 items-center gap-2 rounded-full border border-line px-3 text-sm"
+          >
+            <input
+              type="radio"
+              name="ai"
+              value={mode}
+              defaultChecked={ai.mode === mode}
+              className="h-5 w-5 shrink-0"
+              data-testid={`site-ai-${mode}`}
+            />
+            {mode === 'all' ? t('site.aiSeat') : t('site.aiSellers')}
+          </label>
+        ))}
+      </div>
+      {ai.truth && (
+        <p
+          className={`break-words text-xs font-semibold ${ai.truth.ok ? 'text-good' : 'text-warn'}`}
+          data-testid="site-ai-truth"
+          data-ok={ai.truth.ok ? '1' : '0'}
+        >
+          {ai.truth.ok ? `✅ ${t('site.aiTakes')}` : `⚠ ${t('site.aiCannot', { reason: ai.truth.reason })}`}
+        </p>
+      )}
+      <p className="text-xs text-ink-500">{t('site.aiHint')}</p>
+      {state.error && (
+        <p role="alert" className="text-sm font-semibold text-bad">
+          {t('site.errors.forbidden')}
+        </p>
+      )}
+      <button
+        type="submit"
+        disabled={pending}
+        data-testid="site-ai-save"
+        className="btn-secondary w-full disabled:opacity-50"
+      >
+        {pending ? tc('loading') : state.ok ? `✅ ${t('site.saved')}` : tc('save')}
+      </button>
+    </form>
+  );
+}
+
 export function SitePanel({
   people,
   next,
   offers,
   contract,
   counters,
+  ai,
 }: {
   people: SitePersonView[];
   next: SiteNextView[];
   offers: SiteOfferView[];
   contract: { url: string; origins: string[]; fallback: string[] };
   counters: { answered: number; nobody: number; refused: number };
+  ai: SiteAiView;
 }) {
   const t = useTranslations('routing');
   const tc = useTranslations('common');
@@ -158,6 +229,8 @@ export function SitePanel({
       <h2 className="font-semibold">🌐 {t('site.title')}</h2>
       <p className="text-xs text-ink-500">{t('site.hint')}</p>
 
+      <SiteAiChoice ai={ai} />
+
       <div className="space-y-1">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">
           {t('site.next')}
@@ -166,7 +239,12 @@ export function SitePanel({
           {next.map((line) => (
             <li key={line.team} className="flex flex-wrap gap-x-1.5">
               <span className="font-medium">{t(`site.teams.${line.team}` as 'site.teams.cargo')} →</span>
-              {line.username ? (
+              {line.username && line.ai ? (
+                <span data-testid="site-next-ai">
+                  <span className="font-mono">@{line.username}</span>
+                  <span className="text-ink-500"> · 🤖 {line.name}</span>
+                </span>
+              ) : line.username ? (
                 <span>
                   <span className="font-mono">@{line.username}</span>
                   <span className="text-ink-500">

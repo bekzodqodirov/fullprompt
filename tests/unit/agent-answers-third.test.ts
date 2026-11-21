@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import { AGENT_LOCALES, type AgentLocale } from '@/modules/wms/agent/locale';
 import type { NumberSource } from '@/modules/wms/agent/numbers';
@@ -161,6 +162,7 @@ const env = (ctx: AgentContext): ToolEnv => ({
   priceArmed: false,
   calcArmed: false,
   calcPricing: false,
+  aviaDays: AVIA_DAYS_DEFAULT,
 });
 
 const compose = (over: Partial<ComposeReply> = {}): ComposeReply => ({
@@ -198,7 +200,7 @@ describe('the run carries it from the tool to the reply’s check and to the lan
 
   it('the memory takes the flag from a truck estimate priced from our warehouses — and drops it in a rail burst', () => {
     const tool: ToolOutcome = { ok: true, text: 'x', estimate: true, fromOurWarehouse: true, sources: [] };
-    const loop = { compose: compose(), tools: [], outcomes: [tool], usage };
+    const loop = { compose: compose(), tools: [], outcomes: [tool], usage, aviaDays: AVIA_DAYS_DEFAULT };
     expect(memoryFor(ctxWith('Xitoydan 5 kub 1000 kg'), loop, [], 'gsr-t').fromOurWarehouse).toBe(true);
     expect(memoryFor(ctxWith("Xitoydan temir yo'l bilan 5 kub"), loop, [], 'gsr-t').fromOurWarehouse).toBe(false);
     const named: ToolOutcome = { ok: true, text: 'x', estimate: true, sources: [] };
@@ -208,7 +210,7 @@ describe('the run carries it from the tool to the reply’s check and to the lan
 
 describe('written down for the model and in the knowledge', () => {
   it('the prompt says it, with the sentences the policy checks', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     expect(head).toContain(WAREHOUSE_SENTENCES.uz.condition);
     expect(head).toContain(WAREHOUSE_SENTENCES.uz.factory);
   });

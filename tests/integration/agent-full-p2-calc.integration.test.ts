@@ -111,7 +111,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
-import { getSetting, setSetting } from '@/modules/platform/settings/service';
+import { AVIA_DAYS_DEFAULT, getSetting, setSetting } from '@/modules/platform/settings/service';
 import { pressDueAutos, readAutoConfig, stopAuto, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
 import { CALC_FILES_MAX, chatFilesForJob, copyChatFilesToNote } from '@/modules/wms/agent/calc-files';
 import { calcLinkReplySent } from '@/modules/wms/agent/calc-loop';
@@ -168,6 +168,7 @@ let accountId = '';
 let agentSnapshot: AgentConfig | null = null;
 let autoSnapshot: AutoConfig | null = null;
 let sendingBefore = false;
+let talkHoldBefore: unknown = 0;
 let calcStageBefore: unknown = null;
 let msgSeq = 9000n;
 const stageIds = { start: '', calc: '', lost: '' };
@@ -368,6 +369,9 @@ beforeAll(async () => {
   autoSnapshot = await readAutoConfig();
   if (!agentSnapshot || !autoSnapshot) throw new Error('0138/0145 are not applied on this database');
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
+  // DELIBERATE EDIT (stage 1a, his 11 a): talk goes at once by default now; this file's subject is a reply that waits
+  // its card, so its talk waits the price's own hold (`agent_talk_hold_sec`, put back below — #183).
+  talkHoldBefore = await getSetting('agent_talk_hold_sec');
   calcStageBefore = await getSetting('crm_calc_stage');
   holderId = await makeUser(`P2 hisob egasi ${SUFFIX}`, 'super_admin', '01');
   colleagueId = await makeUser(`P2 hisob hamkasb ${SUFFIX}`, 'sales_manager', '02');
@@ -405,6 +409,7 @@ beforeAll(async () => {
     })
     .where(eq(agentConfig.id, 1));
   await setSetting('tg_sending_enabled', true, holderId);
+  await setSetting('agent_talk_hold_sec', HOLD_MS / 1000, holderId);
 });
 
 beforeEach(async () => {
@@ -474,6 +479,7 @@ afterAll(async () => {
     await __restoreAgentConfig(agentSnapshot);
     await __restoreAutoConfig(autoSnapshot);
     await setSetting('tg_sending_enabled', sendingBefore, null);
+    await setSetting('agent_talk_hold_sec', talkHoldBefore as number, null);
     await setSetting('crm_calc_stage', (calcStageBefore as string) ?? '', null);
     await db.update(users).set({ active: false }).where(inArray(users.id, [holderId, colleagueId, vedId]));
   }
@@ -664,13 +670,12 @@ describe('the gate’s five facts (§1.1)', () => {
     expect(((d.policy as { notes?: string[] }).notes ?? []).join(' ')).toMatch(/📎 \d\d\.\d\d dagi fayl saqlanmagan — ✅ bossangiz faylsiz yuboriladi; faylni VEDga o‘zingiz bering\./u);
   });
 
-  it('a submit the model labelled «complaint» or «other» stays his — the arming words promise it (finding 8)', async () => {
-    for (const category of ['complaint', 'other']) {
-      const peer = newPeer();
-      const clientId = await freshClient();
-      const { d } = await drafted(peer, { clientId }, { body: `Oldingi safar narxingiz juda qimmat chiqdi, norozimiz! Yangi yuk: ${PODKLYUCH_LINE}`, category });
-      expect((await verdictOf(d.id))!.reasons, category).toEqual(['category']);
-    }
+  it('a submit the model labelled «complaint» stays his — the arming words promise it (finding 8; stage 1a: as `complaint`, and «other» is free)', async () => {
+    // DELIBERATE EDIT (stage 1a §6.2): the label left the gate but a complaint; «other» is judged by what it does.
+    const peer = newPeer();
+    const clientId = await freshClient();
+    const { d } = await drafted(peer, { clientId }, { body: `Oldingi safar narxingiz juda qimmat chiqdi, norozimiz! Yangi yuk: ${PODKLYUCH_LINE}`, category: 'complaint' });
+    expect((await verdictOf(d.id))!.reasons).toEqual(['complaint']);
     expect(await pressDueAutos(DUE)).toBe(0);
   });
 
@@ -680,7 +685,8 @@ describe('the gate’s five facts (§1.1)', () => {
     const lead = await freshLead(colleagueId);
     const { d } = await drafted(peer, { leadId: lead });
     // A colleague's lead would be `calc_foreign` — unticked, nothing of the calculation is asked.
-    expect((await verdictOf(d.id))!.reasons).toEqual(['actions', 'category']);
+    // DELIBERATE EDIT (stage 1a §6.2): no label refusal beside the action.
+    expect((await verdictOf(d.id))!.reasons).toEqual(['actions']);
   });
 });
 
@@ -839,7 +845,7 @@ describe('the law’s figure is asked before the job goes, while the act is arme
     const lead = await freshLead();
     for (const body of lines) await inbound(peer, { leadId: lead }, body);
     const ctx = await loadContext(holderId, peer, null);
-    const env: ToolEnv = { ctx, day: '2026-11-14', aviaUsdPerKg: null, kb: async () => [], chinaPlaces: async () => new Set(), priceArmed: false, calcArmed, calcPricing: false };
+    const env: ToolEnv = { ctx, day: '2026-11-14', aviaUsdPerKg: null, kb: async () => [], chinaPlaces: async () => new Set(), priceArmed: false, calcArmed, calcPricing: false, aviaDays: AVIA_DAYS_DEFAULT };
     return runTool('calc_checklist', { section: 'rastamojka', goods }, env);
   }
 

@@ -5,7 +5,7 @@ import { chatCalcChains, chatIdentity, type CalcChain, type ChatIdentity } from 
 import { missingChatFiles, missingFilesNote } from './calc-files';
 import { machineMayTouch } from './machine-owner';
 import type { CalcSubmitFacts } from './auto-gate';
-import type { ComposedAction } from './types';
+import type { ComposedAction, NoteCode } from './types';
 
 /**
  * «Hisoblatishni o'zi yuboradi» — what the machine must know before it lands a calculation by itself (SPEC-P2-v2
@@ -85,7 +85,7 @@ export async function calcSubmitFacts(input: {
   /** The draft being judged — its own earlier landing never counts against it. */
   draftId: string | null;
   now: Date;
-}): Promise<{ facts: CalcSubmitFacts; cardNotes: string[] }> {
+}): Promise<{ facts: CalcSubmitFacts; cardNotes: string[]; cardNoteCodes: NoteCode[] }> {
   const holderId = input.managerUserId;
   const identity = await chatIdentity(input.managerUserId, input.peerId);
   const unproven = !(identity.cargoAllowed || (identity.clientId === null && identity.leadId !== null));
@@ -153,13 +153,19 @@ export async function calcSubmitFacts(input: {
   }
 
   const missing = await missingChatFiles(input.managerUserId, input.peerId, input.draftId);
+  // Each line with its code (stage 1a, K5): the auto layer reads a note by what it IS.
   const cardNotes: string[] = [];
+  const cardNoteCodes: NoteCode[] = [];
   if (recent) {
     // His ✅ on a waited duplicate lands as today (a coded client gets a NEW deal per request) — said, so he decides
     // knowing it (§1.1, regress 7 (b)).
     cardNotes.push(`🧮 14 kun ichida shu chatdan hisoblatish bor${recentLabel ? ` (${recentLabel})` : ''}: ✅ yangi so‘rov ochadi.`);
+    cardNoteCodes.push('calc_recent');
   }
   const filesNote = missingFilesNote(missing);
-  if (filesNote) cardNotes.push(filesNote);
-  return { facts: { unproven, foreign, refused, recent, fileMissing: missing.length > 0 }, cardNotes };
+  if (filesNote) {
+    cardNotes.push(filesNote);
+    cardNoteCodes.push('calc_file');
+  }
+  return { facts: { unproven, foreign, refused, recent, fileMissing: missing.length > 0 }, cardNotes, cardNoteCodes };
 }

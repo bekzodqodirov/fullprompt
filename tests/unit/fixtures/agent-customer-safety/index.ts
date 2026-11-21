@@ -1,4 +1,4 @@
-import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentLocale } from '@/modules/wms/agent/locale';
 import type { ToolOutcome } from '@/modules/wms/agent/tools';
 import cases1 from './cases.json';
@@ -89,8 +89,9 @@ const AVIA20: ToolOutcome = {
   sources: [
     { value: 340, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'total' },
     { value: 17, kind: 'money', label: 'avia tarifi', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'rate' },
-    { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
-    { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+    // The flight's days the tool writes are the run's own (stage 1a P7, `agent_avia_days`) — the shipped default here.
+    { value: AVIA_DAYS_DEFAULT.min, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
+    { value: AVIA_DAYS_DEFAULT.max, kind: 'duration', label: 'avia muddati', origin: 'tool', tool: 'avia_estimate', mode: 'air' },
     { value: 20, kind: 'measure', label: 'mijoz #5', origin: 'tool', tool: 'avia_estimate' },
   ],
 };

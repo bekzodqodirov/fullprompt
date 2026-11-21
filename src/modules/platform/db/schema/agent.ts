@@ -660,3 +660,78 @@ export const calcReturnTasks = pgTable(
   },
   (t) => [index('calc_return_tasks_request_idx').on(t.requestId)],
 );
+
+/**
+ * WHO the machine tells, per topic (0151, stage 1a §3.2, design §11.2 «kim — tizimda tanlanadi»): picked on
+ * /suhbatlar/ai, never written in code. `topic` is a shape, not an enum — a later stage adds a key to the code
+ * registry (`agent/designations.ts` `AGENT_TOPICS`); a stored topic the registry does not know is read by nobody.
+ * Read ONLY through `designated()` (alarms, with the fallback chain) and `designatedRows()` (doors, its own rows).
+ */
+export const agentDesignations = pgTable(
+  'agent_designations',
+  {
+    topic: text('topic').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    rank: smallint('rank').notNull().default(1),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.topic, t.userId] }),
+    check('agent_designations_topic_check', sql`${t.topic} ~ '^[a-z][a-z0-9_]{1,39}$'`),
+    check('agent_designations_rank_check', sql`${t.rank} BETWEEN 1 AND 9`),
+  ],
+);
+
+/**
+ * A signal said once (0151, stage 1a §4.5, §4.3): the row IS the claim — an INSERT that the unique `dedupeKey`
+ * turned away is a signal already sent. Keyed by the chat, so the purge takes it (`agent/purge.ts`); `leadId` /
+ * `clientId` carry no FK on purpose (#285's shape).
+ */
+export const agentSignals = pgTable(
+  'agent_signals',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    topic: text('topic').notNull(),
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    leadId: uuid('lead_id'),
+    clientId: uuid('client_id'),
+    facts: jsonb('facts').notNull().default({}),
+    dedupeKey: text('dedupe_key').notNull().unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('agent_signals_chat_idx').on(t.managerUserId, t.peerId)],
+);
+
+/**
+ * The evening sample (0151, his 9 a): at most ten of the day's replies the machine sent, each marked 👍 / 👎 by a
+ * person — a mark always with its moment. Its drafts take it with them (CASCADE), and the purge names it.
+ */
+export const agentSamples = pgTable(
+  'agent_samples',
+  {
+    day: date('day', { mode: 'string' }).notNull(),
+    draftId: uuid('draft_id')
+      .notNull()
+      .references(() => agentDrafts.id, { onDelete: 'cascade' }),
+    managerUserId: uuid('manager_user_id').notNull(),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    pos: smallint('pos').notNull(),
+    mark: text('mark'),
+    markedBy: uuid('marked_by').references(() => users.id),
+    markedAt: timestamp('marked_at', { withTimezone: true }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.day, t.draftId] }),
+    check('agent_samples_mark_check', sql`${t.mark} IS NULL OR ${t.mark} IN ('good', 'bad')`),
+    check('agent_samples_marked_check', sql`(${t.mark} IS NULL) = (${t.markedAt} IS NULL)`),
+    index('agent_samples_draft_idx').on(t.draftId),
+  ],
+);

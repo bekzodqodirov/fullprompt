@@ -69,6 +69,23 @@ export interface DraftPolicyJson {
   burstSeenAt?: string | null;
   notes: string[];
   /**
+   * What each note IS, parallel to `notes` (stage 1a, K5): the auto layer reads a note by its code, never by its words
+   * (auto-send `noteCodesOf`). Absent = a draft written before 1a — read as «notes nobody coded», a machine stop when
+   * there are any.
+   */
+  noteCodes?: NoteCode[];
+  /**
+   * The reply is a tayyor matn the CODE wrote for a burst the model cannot answer (stage 1a P3, `system-reply.ts`): a
+   * voice note, a photo or file, a Pashto message. Absent = the model's own reply.
+   */
+  system?: SystemReplyReason;
+  /**
+   * The code put the honest line in front of the model's reply, or wrote it alone (stage 1a P3, run `withBotAnswer` —
+   * the customer asked whether we are a bot). A tayyor matn like `system`: the gate holds a Persian or Chinese one for
+   * his ✅ (`ready_text_unapproved`, J27). Absent = no honest line.
+   */
+  honestLine?: true;
+  /**
    * A forcing rule put this question to him — rail's price, or the flight's address (spec SPEC-P1-v2 §2.2, run
    * `withRailRule` / `withAviaQuestion`): his answer goes verbatim through ✏️, so the card draws no «✍️ Savolga javob».
    * Absent = the model asked it itself (or no question at all).
@@ -124,6 +141,48 @@ export interface AfterSentMark {
 }
 
 export type ForcedQuestion = 'rail' | 'avia';
+
+/**
+ * Every note a reply's card may carry, by what it says (stage 1a, K5) — one code per writer, so the gate can free the
+ * one note that only informs him (`late`, auto-gate `EYE_ONLY_NOTES`) while every note that names something he must
+ * decide keeps the reply his. A writer with no code here cannot write a note: `tests/unit/agent-note-codes.test.ts`
+ * reads every writer under `agent/`.
+ */
+export const NOTE_CODES = [
+  /** card `lateNote` — the customer waited past `LATE_CARD_MS` before the card was written. */
+  'late',
+  /** run `validateActions` — a job below the truck's minimum is never landed. */
+  'calc_below_minimum',
+  /** …a job whose checklist was not complete. */
+  'calc_incomplete',
+  /** …a second job beside one still open in this chat. */
+  'calc_open',
+  /** …a follow-up date that is not a real day within 60 days. */
+  'followup_bad',
+  /** run `railNote` — rail was asked in the chat; the price is his. */
+  'rail',
+  /** the website table and /admin/tarif disagree — the truck price was not said. */
+  'tariff_mismatch',
+  /** run `CALC_PRICE_UNSAID` — the VED answered and the reply states no price the tool made. */
+  'calc_price_unsaid',
+  /** run `CALC_PRICE_MANY` — several jobs' VED prices were offered to one reply. */
+  'calc_price_many',
+  /** run `ANSWER_STILL_HIS` — a forcing rule turned his answer's redraft back into a question. */
+  'answer_still_his',
+  /** calc-submit — a calculation of this cargo within 14 days: his ✅ opens a new request. */
+  'calc_recent',
+  /** calc-submit — a file in the job's window was not kept: the VED will not get it. */
+  'calc_file',
+  /** calc-loop — his 💵 price draft: the price goes to the customer only, nothing to the deal card. */
+  'price_only_customer',
+] as const;
+
+export type NoteCode = (typeof NOTE_CODES)[number];
+
+/** The bursts a tayyor matn answers (stage 1a P3): a voice note, a kept photo or file, Pashto. */
+export const SYSTEM_REPLY_REASONS = ['voice', 'media', 'pashto'] as const;
+
+export type SystemReplyReason = (typeof SYSTEM_REPLY_REASONS)[number];
 
 export interface OwnerAnswer {
   text: string;

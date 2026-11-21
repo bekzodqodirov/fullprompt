@@ -369,6 +369,121 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## To‘liq AI sotuvchi, 1a (2026-11-21, 0151) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0151** — deploydan keyin son **152** bo‘ladi (serveringizda hozir 151). Uchta yangi jadval:
+kimga xabar boradi («Kim javob beradi»), bir marta aytiladigan signallar, kechki tekshiruv belgilari. Mavjud jadvalga
+ustun qo‘shilmaydi va hech bir cheklov qayta yozilmaydi — orqaga qaytarish oson (pastda). **tg-listen QAYTA QURILISHI
+SHART** (CRMdan yuborilgan javobni AI ko‘rishi, yangi sabab so‘zlari va sayt taqsimoti shu konteynerda). Deploydan
+keyin bilim bazasiga **bitta buyruq** yuritiladi (avia muddati).
+
+> Agar shu deployda boshqa raund ham bo‘lsa (PR #156 — uning migratsiyasi 0152 bo‘lib qayta raqamlanadi), son **153**
+> bo‘ladi. Sonni har doim repodan o‘qing (2-qadam), eslab qolganingizdan emas.
+
+1. **Zaxira (§1)** — hajmi 0 emasligini tekshiring:
+
+   ```bash
+   cd ~/gsr && docker compose exec -T backup /backup.sh
+   cd ~/gsr && docker compose run --rm -T backup sh -c 'ls -lh /backups | tail -3'
+   ```
+
+   Eng yangi `gsr-YYYYMMDD-HHMMSS.dump` bugungi va o‘lchami 0 emas bo‘lsin. Bo‘lmasa — to‘xtang, davom etmang.
+
+2. **PR merge qilinganidan KEYIN** (GitHub’da PR sahifasida binafsha «Merged»), yangi kodni oling va fayllarni sanang:
+
+   ```bash
+   cd ~/gsr && git pull
+   cd ~/gsr && ls src/modules/platform/db/migrations/*.sql | wc -l     # ==> 152
+   ```
+
+   151 chiqsa — PR hali merge qilinmagan (birinchi deploy tuzog‘i): merge qiling, keyin `git pull` ni qaytaring.
+
+3. **Yangilash** — avval `migrate`, keyin qolgani (og‘ir qurish bir marta yuradi):
+
+   ```bash
+   cd ~/gsr && docker compose build migrate
+   cd ~/gsr && docker compose --profile https up -d --build
+   ```
+
+4. **Tekshirish**:
+
+   ```bash
+   cd ~/gsr && docker compose exec -T postgres psql -U gsr -d gsr -tAc "select count(*) from drizzle.__drizzle_migrations"
+   #    ==> 152. Kam chiqsa: cd ~/gsr && docker compose run --rm migrate   (va CHIQISHINI o‘qing)
+   cd ~/gsr && docker compose ps -a                 # hammasi Up, migrate = Exited (0)
+   cd ~/gsr && docker compose logs --tail=40 app    # xatolik yo‘qligiga ishonch
+   curl -s https://gsrwms.uz/api/version; echo      # bugungi vaqt
+   ```
+
+5. **tg-listen** (u `telegram` profilida — 3-qadam unga tegmaydi):
+
+   ```bash
+   cd ~/gsr && docker compose --profile telegram up -d --build tg-listen
+   cd ~/gsr && docker compose --profile telegram logs -f tg-listen
+   ```
+
+   Bir daqiqa kuzating: «tinglayapman: … · +998902405077 · …» qatori chiqsin va xato bo‘lmasin. Keyin Ctrl+C.
+
+6. **Bilim — avia muddati** (tg-listen’dan keyin, boshqa hamma narsadan oldin). Avval faqat ko‘rish, keyin yozish:
+
+   ```bash
+   cd ~/gsr && docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts            # ro‘yxatda «+ avia@2» bo‘lishi SHART
+   cd ~/gsr && docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts --apply    # «inserted: … avia@2»
+   ```
+
+   Bu `avia@2` ni qo‘shadi (kun yozilmagan) va o‘zgartirilmagan eski `avia@1` ni («2–5 kun, reys bo‘lsa 2 kun») o‘chiradi.
+   Bu buyruqgacha eski bilim har bir chatda «2-5 kun»ni to‘g‘ri deb hisoblatadi. Keyin ikki ish (birga):
+   - «Suhbatlar → AI sotuvchi → Bilimlar»: avia haqida **o‘zingiz yozgan yoki tahrirlagan** bilimda kun soni bo‘lsa —
+     kunni olib tashlang yoki o‘chiring (buyruq unga tegmaydi, u turguncha o‘sha kunlar to‘g‘ri hisoblanadi).
+   - ✅ingizni kutib turgan, buyruqdan OLDIN yozilgan javoblarda «2-5» yoki «reys bo‘lsa 2 kun» bo‘lsa — ❌ yoki ✏️.
+
+7. **Sahifa — «Suhbatlar → AI sotuvchi»** (bir martalik sozlash):
+   - «Sozlamalar» → «O‘zi yuborish»: «Qaysi javoblar o‘zi ketadi» da **uchta** katak (Narx, Hisoblatish (VEDga), VED
+     narxi (ustama bilan)); «AI ishonchi kamida (%)» katagi **yo‘q**; yangi uchta: «Oddiy javob kutishi (soniya)» — 0,
+     «Narx kutishi (soniya)» — 120, «Kechasi (22:00–08:00) narxlar» — «jadval narxi ketadi, VED narxi ertalab».
+     **«VED narxi» ni belgilamang** (ustama savoliga javobgacha).
+   - «Kim javob beradi»: «Rahbar va o‘rinbosar» — birinchi o‘zingiz, ikkinchi o‘rinbosar → «Saqlash»; «Katta yuk
+     signali» — kimga borsin → «Saqlash». Shu bo‘limdagi «AI akkauntining Telegrami (kartalar shu yerga keladi)»
+     «ulangan» bo‘lsin.
+   - «AI sotuvchining ismi» → ism → «Saqlash».
+   - **AI raqamining (+998902405077) o‘z telefonidagi Telegramdan** hodim botiga bir marta `/hodim` yuboring — narx
+     kartalari shu chatga keladi. Ulanmasa, narxlar hech kimning ekraniga yetmay kutib qoladi.
+   - Saqlanganini tekshirish (ixtiyoriy):
+
+     ```bash
+     cd ~/gsr && docker compose exec -T postgres psql -U gsr -d gsr -c "SELECT d.topic, d.rank, u.full_name FROM agent_designations d JOIN users u ON u.id = d.user_id ORDER BY 1, 2"
+     ```
+
+8. **Birinchi kun — avval xodimlar telefonida.** Login’ga yozilmagan raqamdan (ikkinchi SIM, qarindoshning telefoni)
+   yozing — xodimning o‘z raqamiga AI ataylab javob bermaydi va u hech narsani tekshirmaydi. Bitta oynada kuzating:
+
+   ```bash
+   cd ~/gsr && docker compose logs -f app | grep -E "\[agent\]"
+   ```
+
+   To‘rtta sinov, har birining kartasini o‘qing: (1) «3 kub 450 kg, narxi qancha?» → narx va oxirida «Xohlasangiz,
+   rastamojkani ham alohida hisoblab beraymi?»; keyin «ha» → AI ma’lumot so‘raydi, ish «Hisoblash (VED) → Navbat»ga
+   tushadi; (2) faqat rasm → bir-ikki daqiqada tayyor matn; (3) faqat ovozli xabar → tayyor matn; (4) faqat «botmisiz?» →
+   «Men GSRning AI yordamchisiman; kerak bo‘lsa menejerni chaqiraman.» Keyin tg-listen logida to‘rt yuborishni ko‘ring.
+   Xohlasangiz, birinchi kun «Oddiy javob kutishi» 120, birinchi ertalabki hisobotdan keyin 0.
+
+9. **Birinchi ertalab** 08:40 — «🌅 AI sotuvchi, kecha …» xabarini birga o‘qiymiz (CHANGELOG’dagi tartibda). Ertasi kuni
+   «oldin/keyin» uchun (faqat o‘qiydi, hech narsa yozmaydi):
+
+   ```bash
+   cd ~/gsr && docker compose run --rm migrate pnpm exec tsx scripts/agent-stage0.ts volume --days 7
+   ```
+
+«Saytdan so‘rovlar → AI sotuvchiga» va «AI raqamini ko‘rsatish» **o‘chiq** qoladi — 2-bosqichdan keyin o‘zingiz yoqasiz.
+
+**Orqaga qaytarish kerak bo‘lsa** — «Agar biror narsa buzilsa» bo‘limidagidek (zaxira → eski commit → build), tg-listen’ni
+ham. Uchta jadval va yangi sozlamalar eski kodga xalaqit bermaydi; **`drizzle.__drizzle_migrations` dagi 0151 qatorini
+O‘CHIRMANG** — jadvallar baribir turadi, keyingi oldinga deployda 0151 qayta yurmaydi va shunday bo‘lishi kerak. Eski
+kodda bilib qo‘yish kerak bo‘lgan uch narsa: (1) 1a da saqlangan «loop» / «complaint» sabablari kartada «sababi
+noma’lum» bo‘lib chiqadi; (2) «Qaysi javoblar o‘zi ketadi» ni 1a da saqlagan bo‘lsangiz, eski kod to‘rtta oddiy katakni
+belgilangan deb o‘qiydi — qutini oching va tekshiring; «AI ishonchi kamida (%)» o‘z qiymati bilan qaytadi; (3) `avia@2`
+bilimi qoladi, eski kod o‘z kunlarini («2-5 kun») aytadi — zarari yo‘q.
+
 ## Sotuvchilar yukni, furalarni va skladlarni ko‘radi (2026-11-18, 0150) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0150** — deploydan keyin son **151** bo‘ladi. Yangi huquq `batches.view` qo‘shiladi va

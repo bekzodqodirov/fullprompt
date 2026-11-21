@@ -1026,6 +1026,12 @@ truck's), and **the AI may say avia arrives in 2-5 days, 2 days when a flight is
 estimate, never as a promise (`AGENT_LIMITS.avia`, the avia tool's result is the source G1 checks the days
 against).
 
+**Superseded 2026-11-20** (his 2 b of the full-seller answers, ruled J2 in `docs/ai-toliq/qurish/STAGE-0-1A.md`,
+built as stage 1a P7): the AI says **«taxminan 3-5 kun»** and nothing about a scheduled flight. The days are his
+setting `agent_avia_days` on «AI qoidalari», read by one reader (settings `aviaDays()`) for rule 9, the avia tool and
+the company rule, and again at every ✅ (`policyFor`); `AGENT_LIMITS.avia` keeps only the 1 kg minimum, and the seed
+fact `avia@2` states no day count.
+
 **Third set (2026-10-24, the same evening), his answers verbatim: «1b / 2b / 3 agar skladimizga jonatib bersangiz
 skladlarimizdan narxi shuncha deb aytsin. Va zavotidan olib skladga olib kelish alohida hisoblanadi».**
 

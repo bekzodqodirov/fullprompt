@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
 import type { KbHit } from '@/modules/wms/agent/kb';
 import { customerSources, extractNumbers, factSources, type NumberSource } from '@/modules/wms/agent/numbers';
@@ -125,7 +126,7 @@ describe('B2: each kb fact is read alone', () => {
   const address = 'Ombor manzili: Chilonzor 7, Toshkent.';
 
   it('a fact naming money leaves the other facts’ bare figures what they are', () => {
-    const memory = memoryFor(ctxWith('Ombor qayerda?'), { compose, tools: [], outcomes: [], usage }, [fact(payment), fact(address)], 'gsr-t');
+    const memory = memoryFor(ctxWith('Ombor qayerda?'), { compose, tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT }, [fact(payment), fact(address)], 'gsr-t');
     expect(memory.sources).toContainEqual({ value: 7, kind: 'plain', label: 'kompaniya bilimi', origin: 'kb' });
     expect(codes({ body: 'Ombor manzili: Chilonzor 7.', numberSources: memory.sources })).not.toContain('number_unsourced');
   });
@@ -174,6 +175,7 @@ describe('B3: a price, a day count or a day is the company’s word — never th
       priceArmed: false,
       calcArmed: false,
   calcPricing: false,
+      aviaDays: AVIA_DAYS_DEFAULT,
     };
     const outs: ToolOutcome[] = [
       await runTool('avia_estimate', { weight_ref: 'w1' }, env),
@@ -239,7 +241,7 @@ describe('B9: a colleague an approved fact names is the fact’s', () => {
 
   it('the run carries the words of the facts it read — the prompt’s and what kb_search returned', () => {
     const kbHit: ToolOutcome = { ok: true, text: 'x', sources: [], factTexts: ['Guanchjou: aloqa Dilshod'] };
-    const memory = memoryFor(ctxWith('Yuk qayerda?'), { compose, tools: [], outcomes: [kbHit], usage }, [fact(tashkent)], 'gsr-t');
+    const memory = memoryFor(ctxWith('Yuk qayerda?'), { compose, tools: [], outcomes: [kbHit], usage, aviaDays: AVIA_DAYS_DEFAULT }, [fact(tashkent)], 'gsr-t');
     expect(memory.factNameWords).toEqual(expect.arrayContaining(['umriddin', 'dilshod']));
     // Only capitalised words — a name is written so — which keeps the stored memory short.
     expect(memory.factNameWords).not.toContain('aloqa');

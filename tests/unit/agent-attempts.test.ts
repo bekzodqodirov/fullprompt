@@ -50,14 +50,17 @@ describe('one line’s attempts: no kind of asking takes another’s slot', () =
 
   it('an edit counts its own band from the same constant the press stops below', () => {
     const run = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
-    const fn = run.slice(run.indexOf('async function attemptFor('), run.indexOf('const lastOutAsked'));
+    // DELIBERATE EDIT (stage 1a P3): the slice ended at `const lastOutAsked`, which left run.ts with P3 (`ourLineAsks`) —
+    // an end that is not found slices to the file's end and the fence passes on any later line. The function's own
+    // closing brace is its end.
+    const fn = attemptForOf(run);
     expect(fn).toContain('gte(agentRuns.attempt, EDIT_ATTEMPT_BASE)');
     expect(fn).toContain('return EDIT_ATTEMPT_BASE + ');
   });
 
   it('a job that waits (typing, a bare greeting) asks again on the slot it was given — never counted afresh onto 0', () => {
     const run = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
-    const fn = run.slice(run.indexOf('async function attemptFor('), run.indexOf('const lastOutAsked'));
+    const fn = attemptForOf(run);
     expect(fn.indexOf('if (job.attempt !== undefined) return job.attempt;')).toBeGreaterThan(-1);
     expect(fn.indexOf('if (job.attempt !== undefined) return job.attempt;')).toBeLessThan(fn.indexOf("if (job.origin !== 'edit')"));
     const wait = run.slice(run.indexOf('async function reschedule('), run.indexOf('/** The ledger row for a run'));
@@ -74,3 +77,12 @@ describe('one line’s attempts: no kind of asking takes another’s slot', () =
     expect(runs).toBeGreaterThan(jobs);
   });
 });
+
+/** `attemptFor` in run.ts's source, up to its own closing brace — never past it. */
+function attemptForOf(run: string): string {
+  const start = run.indexOf('async function attemptFor(');
+  const end = run.indexOf('\n}\n', start);
+  expect(start, 're-anchor: attemptFor').toBeGreaterThan(-1);
+  expect(end, 're-anchor: the end of attemptFor').toBeGreaterThan(start);
+  return run.slice(start, end + 2);
+}

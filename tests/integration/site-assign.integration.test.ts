@@ -3,12 +3,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  auditLog,
   clients,
   crmActivities,
   leadAssignments,
   leadIntakes,
   leads,
   leadStages,
+  settings,
+  tgAccountGuard,
   tgAccounts,
   tgChatRules,
   tgMessages,
@@ -19,10 +22,15 @@ import {
   confirmSiteTagOnCard,
   landSiteTag,
   pickAssignee,
+  readLeadAssignAi,
   saveSiteTeams,
+  setLeadAssignAi,
   sitePanel,
   SiteAssignError,
 } from '@/modules/wms/crm/site-assign';
+import { AGENT_SEAT_KEY } from '@/modules/platform/settings/agent-seat';
+import { SETTINGS_AUDIT_ID } from '@/modules/platform/settings/service';
+import type { SeatRefusal } from '@/modules/wms/agent/seat-candidate';
 import { disconnectAccount, storeIncoming } from '@/modules/wms/crm/telegram-accounts';
 import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
 import { GET, HEAD } from '@/app/api/lead/assign/route';
@@ -545,5 +553,301 @@ describe('the panel', () => {
     await disconnectAccount(ids.m2!);
     const [account] = await db.select().from(tgAccounts).where(eq(tgAccounts.managerUserId, ids.m2!));
     expect(account).toMatchObject({ tgUsername: null, tgUsernameCheckedAt: null, status: 'signed_out' });
+  });
+});
+
+/**
+ * Stage 1a «Hajm» (his 6 c): with `lead_assign_ai = all` every team but «Sotib olib berish» is offered to the AI's own
+ * @handle first — only while the seat would answer by itself — and ANY reason it cannot, a failed or slow read
+ * included (J23), leaves the roster answering exactly as round 113 built it.
+ *
+ * CONFIGURATION is the next file's input (#183): the agent's singletons (`agent_config`, `agent_auto_config`,
+ * `agent_send_caps`), the three settings rows and the model key are snapshotted here and put back before the file's
+ * own cleanup deletes the seat.
+ */
+describe('the AI seat (his 6 c)', () => {
+  const SEAT_SETTINGS = [AGENT_SEAT_KEY, 'lead_assign_ai', 'tg_sending_enabled'];
+  const settingsBefore = new Map<string, unknown>();
+  let configBefore: Record<string, unknown> = {};
+  let autoBefore: Record<string, unknown> = {};
+  let capBefore: number | null = null;
+  let keyBefore: string | undefined;
+  let accountId = '';
+  const handle = `ai${STAMP}s`;
+
+  async function putSetting(key: string, value: unknown) {
+    if (value === null) await db.delete(settings).where(eq(settings.key, key));
+    else await db.insert(settings).values({ key, value }).onConflictDoUpdate({ target: settings.key, set: { value } });
+  }
+
+  /** Everything the seat needs, fresh — each test starts from a seat that takes visitors and breaks ONE thing. */
+  async function healthySeat() {
+    const now = new Date();
+    await putSetting(AGENT_SEAT_KEY, ids.s!);
+    await putSetting('lead_assign_ai', 'all');
+    await putSetting('tg_sending_enabled', true);
+    await db.execute(sql`
+      UPDATE agent_config
+         SET owner_user_id = ${ids.s!}::uuid, mode = 'shadow', session_exclusive_at = now(),
+             session_exclusive_by = ${ids.s!}::uuid, started_at = now() - interval '60 days'
+       WHERE id = 1`);
+    await db.execute(sql`
+      UPDATE agent_auto_config
+         SET armed_at = now(), armed_by = ${ids.s!}::uuid, disarmed_at = NULL, disarm_reason = NULL
+       WHERE id = 1`);
+    await db.execute(sql`UPDATE agent_send_caps SET day_cap = NULL WHERE id = 1`);
+    await db
+      .update(tgAccounts)
+      .set({ status: 'active', lastSeenAt: now, tgUsername: handle, tgUsernameCheckedAt: now, workAccount: true })
+      .where(eq(tgAccounts.id, accountId));
+    await db
+      .update(tgAccountGuard)
+      .set({ pausedAt: null, pausedKind: null, floodUntil: null, agentPumpAt: now, caughtUpAt: now })
+      .where(eq(tgAccountGuard.accountId, accountId));
+    process.env.ANTHROPIC_API_KEY = 'sinov-kaliti';
+  }
+
+  const ask = (team: 'cargo' | 'buying' | 'general', t = tag()) =>
+    assignForTag({ team, tag: t, topic: null, page: null, lang: null }).then((answer) => ({ ...answer, tag: t }));
+  const offer = async (t: string) => (await db.select().from(leadAssignments).where(eq(leadAssignments.tag, t)))[0];
+  /** The roster's person `a` as the website is told it — the handle typed for them (the panel's test retypes it). */
+  const rosterA = async () =>
+    (await db.select({ typed: users.telegramUsername }).from(users).where(eq(users.id, ids.a!)))[0]!.typed;
+
+  beforeAll(async () => {
+    for (const key of SEAT_SETTINGS) {
+      const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, key));
+      settingsBefore.set(key, row ? row.value : null);
+    }
+    configBefore = ((await db.execute(sql`
+      SELECT owner_user_id, mode, session_exclusive_at, session_exclusive_by, started_at FROM agent_config WHERE id = 1
+    `)) as unknown as Record<string, unknown>[])[0]!;
+    autoBefore = ((await db.execute(sql`
+      SELECT armed_at, armed_by, disarmed_at, disarm_reason FROM agent_auto_config WHERE id = 1
+    `)) as unknown as Record<string, unknown>[])[0]!;
+    capBefore =
+      ((await db.execute(sql`SELECT day_cap FROM agent_send_caps WHERE id = 1`)) as unknown as { day_cap: number | null }[])[0]
+        ?.day_cap ?? null;
+    keyBefore = process.env.ANTHROPIC_API_KEY;
+
+    await mint('s', null); // the AI seat: a staff row of its own, with the account the AI speaks from
+    const [acc] = await db
+      .insert(tgAccounts)
+      .values({ managerUserId: ids.s!, tgPhone: `+99878${STAMP}9`, status: 'active', workAccount: true })
+      .returning({ id: tgAccounts.id });
+    accountId = acc!.id;
+    await db.insert(tgAccountGuard).values({ accountId });
+  });
+
+  afterAll(async () => {
+    // The singletons first: they name the seat, and the file's own cleanup deletes it.
+    await db.execute(sql`
+      UPDATE agent_config
+         SET owner_user_id = ${configBefore.owner_user_id as string | null}::uuid,
+             mode = ${configBefore.mode as string},
+             session_exclusive_at = ${configBefore.session_exclusive_at === null ? null : String(configBefore.session_exclusive_at)}::timestamptz,
+             session_exclusive_by = ${configBefore.session_exclusive_by as string | null}::uuid,
+             started_at = ${configBefore.started_at === null ? null : String(configBefore.started_at)}::timestamptz
+       WHERE id = 1`);
+    await db.execute(sql`
+      UPDATE agent_auto_config
+         SET armed_at = ${autoBefore.armed_at === null ? null : String(autoBefore.armed_at)}::timestamptz,
+             armed_by = ${autoBefore.armed_by as string | null}::uuid,
+             disarmed_at = ${autoBefore.disarmed_at === null ? null : String(autoBefore.disarmed_at)}::timestamptz,
+             disarm_reason = ${autoBefore.disarm_reason as string | null}
+       WHERE id = 1`);
+    await db.execute(sql`UPDATE agent_send_caps SET day_cap = ${capBefore} WHERE id = 1`);
+    for (const [key, value] of settingsBefore) await putSetting(key, value);
+    if (keyBefore === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = keyBefore;
+  });
+
+  it('«off» answers the roster even beside a seat that could take one', async () => {
+    await healthySeat();
+    await putSetting('lead_assign_ai', 'off');
+    await tick({ a: ['cargo', 'buying', 'general'] });
+    expect((await ask('cargo')).username).toBe(await rosterA());
+    expect((await sitePanel()).ai).toEqual({ mode: 'off', seat: null });
+  });
+
+  it('«all»: cargo and «Umumiy» go to the seat, captured, and the same tag again is the seat', async () => {
+    await healthySeat();
+    await tick({ a: ['cargo', 'buying', 'general'] });
+    for (const team of ['cargo', 'general'] as const) {
+      const got = await ask(team);
+      expect(got, team).toMatchObject({ username: handle, reused: false });
+      expect(await offer(got.tag), team).toMatchObject({ userId: ids.s, username: handle, capturable: true, ranking: { ai: true } });
+      expect(await ask(team, got.tag), team).toMatchObject({ username: handle, reused: true });
+    }
+    // The panel says what the door just did: the seat, by the same verdict.
+    const panel = await sitePanel();
+    expect(panel.ai.mode).toBe('all');
+    expect(panel.ai.seat).toMatchObject({ ok: true, userId: ids.s, username: handle });
+  });
+
+  it('«Sotib olib berish» never reaches the seat', async () => {
+    await healthySeat();
+    await tick({ a: ['cargo', 'buying', 'general'] });
+    const got = await ask('buying');
+    expect(got.username).toBe(await rosterA());
+    expect((await offer(got.tag))!.ranking).not.toHaveProperty('ai');
+  });
+
+  // One clause at a time: each reason the seat cannot take a visitor leaves the roster answering, and the offer
+  // records why the AI did not — the same word the panel draws.
+  const BREAK: Record<Exclude<SeatRefusal, 'unreadable'>, () => Promise<void>> = {
+    no_ai_key: async () => {
+      delete process.env.ANTHROPIC_API_KEY;
+    },
+    no_seat: () => putSetting(AGENT_SEAT_KEY, null),
+    seat_not_holder: async () => {
+      await db.execute(sql`UPDATE agent_config SET owner_user_id = ${ids.a!}::uuid WHERE id = 1`);
+    },
+    agent_off: async () => {
+      await db.execute(sql`UPDATE agent_config SET mode = 'off' WHERE id = 1`);
+    },
+    not_armed: async () => {
+      await db.execute(sql`UPDATE agent_auto_config SET armed_at = NULL, armed_by = NULL WHERE id = 1`);
+    },
+    not_work_account: async () => {
+      await db.update(tgAccounts).set({ workAccount: false }).where(eq(tgAccounts.id, accountId));
+    },
+    sending_disabled: () => putSetting('tg_sending_enabled', false),
+    not_connected: async () => {
+      await db
+        .update(tgAccounts)
+        .set({ lastSeenAt: new Date(Date.now() - 10 * 60_000) })
+        .where(eq(tgAccounts.id, accountId));
+    },
+    no_handle: async () => {
+      await db
+        .update(tgAccounts)
+        .set({ tgUsernameCheckedAt: new Date(Date.now() - 2 * 3_600_000) })
+        .where(eq(tgAccounts.id, accountId));
+    },
+    paused: async () => {
+      await db
+        .update(tgAccountGuard)
+        .set({ pausedAt: new Date(), pausedKind: 'restricted' })
+        .where(eq(tgAccountGuard.accountId, accountId));
+    },
+    flood: async () => {
+      await db
+        .update(tgAccountGuard)
+        .set({ floodUntil: new Date(Date.now() + 3_600_000) })
+        .where(eq(tgAccountGuard.accountId, accountId));
+    },
+    listener_behind: async () => {
+      await db
+        .update(tgAccountGuard)
+        .set({ agentPumpAt: new Date(Date.now() - 10 * 60_000) })
+        .where(eq(tgAccountGuard.accountId, accountId));
+    },
+    day_cap: async () => {
+      await db.execute(sql`UPDATE agent_send_caps SET day_cap = 5 WHERE id = 1`);
+    },
+  };
+
+  it.each(Object.keys(BREAK) as (keyof typeof BREAK)[])('«%s» → the roster answers, and the offer says why', async (reason) => {
+    await healthySeat();
+    await tick({ a: ['cargo'] });
+    await BREAK[reason]();
+    const got = await ask('cargo');
+    expect(got.username).toBe(await rosterA());
+    expect(await offer(got.tag)).toMatchObject({ userId: ids.a, ranking: { ai: false, aiReason: reason } });
+    expect((await sitePanel()).ai.seat).toEqual({ ok: false, reason });
+  });
+
+  it('inside the ramp the day is his own average — an agent three days old with no sends of his own has no room', async () => {
+    await healthySeat();
+    await tick({ a: ['cargo'] });
+    await db.execute(sql`UPDATE agent_config SET started_at = now() - interval '3 days' WHERE id = 1`);
+    const got = await ask('cargo');
+    expect(await offer(got.tag)).toMatchObject({ userId: ids.a, ranking: { ai: false, aiReason: 'day_cap' } });
+  });
+
+  it('a seat read that runs out of time aborts its savepoint alone — the roster answers and writes its offer (J23)', async () => {
+    await healthySeat();
+    await tick({ a: ['cargo'] });
+    // Another session holds the seat's table: the seat's statement waits into the door's 400 ms budget and fails.
+    const held = await pgClient.reserve();
+    try {
+      await held`BEGIN`;
+      await held`LOCK TABLE agent_send_caps IN ACCESS EXCLUSIVE MODE`;
+      const got = await ask('cargo');
+      expect(got.username).toBe(await rosterA());
+      expect(await offer(got.tag)).toMatchObject({ userId: ids.a, ranking: { ai: false, aiReason: 'unreadable' } });
+    } finally {
+      await held`ROLLBACK`;
+      held.release();
+    }
+    // …and with the table back, the very next visitor is the seat's again.
+    expect((await ask('cargo')).username).toBe(handle);
+  });
+
+  it('a burst of visitors while the seat read is slow: every one gets the roster, none waits the lock out (D1)', async () => {
+    await healthySeat();
+    await tick({ a: ['cargo'] });
+    // Three at once behind a held seat table. With the seat read under the lock, the second and third spent their
+    // own 400 ms waiting for the lock and failed — «nobody» for the burst. Read before it, each read gives up side by
+    // side and the lock holds the roster's milliseconds only.
+    const held = await pgClient.reserve();
+    try {
+      await held`BEGIN`;
+      await held`LOCK TABLE agent_send_caps IN ACCESS EXCLUSIVE MODE`;
+      const got = await Promise.all([ask('cargo'), ask('cargo'), ask('cargo')]);
+      const a = await rosterA();
+      for (const one of got) {
+        expect(one.username).toBe(a);
+        expect(await offer(one.tag)).toMatchObject({ userId: ids.a, ranking: { ai: false, aiReason: 'unreadable' } });
+      }
+    } finally {
+      await held`ROLLBACK`;
+      held.release();
+    }
+  });
+
+  it('the panel reads the seat under the door\'s budget — a held table is «unreadable», never a page that hangs', async () => {
+    await healthySeat();
+    const held = await pgClient.reserve();
+    try {
+      await held`BEGIN`;
+      await held`LOCK TABLE agent_send_caps IN ACCESS EXCLUSIVE MODE`;
+      const hung = 'hung' as const;
+      const panel = await Promise.race([
+        sitePanel(),
+        new Promise<typeof hung>((resolve) => setTimeout(() => resolve(hung), 3_000)),
+      ]);
+      expect(panel).not.toBe(hung);
+      expect(panel !== hung && panel.ai).toEqual({ mode: 'all', seat: { ok: false, reason: 'unreadable' } });
+    } finally {
+      await held`ROLLBACK`;
+      held.release();
+    }
+  });
+
+  it('the choice has its own writer, audited once per change; a value the shape refuses reads as «off»', async () => {
+    await putSetting('lead_assign_ai', 'off');
+    // Anchored on the ledger's top before the write: an earlier run's row must not answer for this one (#1790).
+    const { top } = ((await db.execute(sql`SELECT coalesce(max(id), 0)::text AS top FROM audit_log`)) as unknown as {
+      top: string;
+    }[])[0]!;
+    await setLeadAssignAi('all', ctx);
+    await setLeadAssignAi('all', ctx); // the same value again writes nothing
+    expect(await readLeadAssignAi()).toBe('all');
+    const rows = await db
+      .select({ before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityType, 'settings'),
+          eq(auditLog.entityId, SETTINGS_AUDIT_ID),
+          sql`${auditLog.id} > ${top}::bigint`,
+          sql`${auditLog.after} ? 'lead_assign_ai'`,
+        ),
+      );
+    expect(rows).toEqual([{ before: { lead_assign_ai: 'off' }, after: { lead_assign_ai: 'all' } }]);
+    await putSetting('lead_assign_ai', 'ALL');
+    expect(await readLeadAssignAi()).toBe('off');
   });
 });

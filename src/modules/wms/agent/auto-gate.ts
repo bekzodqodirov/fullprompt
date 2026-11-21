@@ -1,8 +1,11 @@
-import { LABEL_CATEGORIES, type AutoCategory } from './auto-categories';
+import type { AgentNightPrices } from '../../platform/settings/service';
 import { isEstimateTool, saysTashkent } from './auto-money';
+import { claimsCalcSent } from './calc-claim';
 import { currencyBesideQuantity } from './digits';
 import type { CalcPriceGateFacts } from './calc-price';
+import type { PolicyCode } from './policy';
 import { isTashkentNight } from './send-step';
+import type { NoteCode } from './types';
 
 export { AUTO_SEND_CATEGORIES, type AutoCategory } from './auto-categories';
 
@@ -19,8 +22,9 @@ export { AUTO_SEND_CATEGORIES, type AutoCategory } from './auto-categories';
  * back, and a page that shows only the first hides the rest.
  *
  * What it does not judge, because the press itself does: the policy re-run
- * (any WARNING then refuses an auto press, `decideDraft`'s `auto_warning`),
- * the chat moved, the identity, the send window. The machine press is the
+ * (a warning that stops the machine then refuses an auto press, `decideDraft`'s
+ * `auto_warning` — `stopsMachine`, the one list both ask), the chat moved, the
+ * identity, the send window. The machine press is the
  * same ✅ (`decideDraft`), so those cannot disagree.
  *
  * Three of the ✅'s own refusals ARE judged here at the SCHEDULING (fix pass
@@ -31,6 +35,12 @@ export { AUTO_SEND_CATEGORIES, type AutoCategory } from './auto-categories';
  * and then says «o‘zi ketmadi». Refused at the scheduling, it is an ordinary
  * card from its first second. At the press they are null — not judged here:
  * the ✅ itself asks them, on its own clock.
+ *
+ * Stage 1a (docs/ai-toliq/qurish/STAGE-0-1A.md §6.2, his 11 a): what decides is what the reply DOES — its class
+ * (`autoClassOf`) — never the model's opinion of itself. The model's rating, the ticked label and the two-in-a-row
+ * rule are gone (their words stay, `RETIRED_REFUSAL_WORDS`, for the rows written before); a warning or a note stops
+ * the machine unless it is one that only informs him (`stopsMachine`); the night bars a class by his setting
+ * (`nightBars`); a complaint — the label, or the customer's own words — stays his.
  */
 
 /** Every refusal, in the order the verdict lists them. */
@@ -44,6 +54,8 @@ export const AUTO_REFUSALS = [
   'warnings',
   'notes',
   'actions',
+  // «Hisoblatishga yubordim» with no calculation sent (stage 1a, J9) — a false claim of an act, beside the acts.
+  'calc_claim_unbacked',
   // A calculation the machine lands by itself (SPEC-P2-v2 §1.1) — asked only of a draft judged as `calc`.
   'calc_identity',
   'calc_foreign',
@@ -70,12 +82,15 @@ export const AUTO_REFUSALS = [
   'owner_figure',
   'owner_personal',
   'answer_stale',
-  'category',
+  // The customer complains or asks for a person — the model's label, or the burst's own words (stage 1a, his «shikoyat
+  // har doim sizga qoladi»): it takes the slot of the ticked label it replaces.
+  'complaint',
   'status_unbacked',
   'language',
+  // A Persian or Chinese tayyor matn he has not approved (stage 1a, J27) — the language's own refusal, beside it.
+  'ready_text_unapproved',
   'media',
   'too_long',
-  'low_confidence',
   'stranger',
   'prospect',
   'chat_off',
@@ -83,7 +98,10 @@ export const AUTO_REFUSALS = [
   'chat_muted',
   'not_work_account',
   'night',
-  'streak',
+  // The chat loop (stage 1a P2, loop.ts `gateLoopFor`): the reply about to go is one of our last sends, word for word
+  // (a tayyor matn: its kind already said in this silence, our lost sends included), or the chat is inside the half
+  // hour he was told the AI keeps out (J33). In the slot the two-in-a-row rule held.
+  'loop',
   'daily_cap',
   'budget_spent',
   'sending_disabled',
@@ -91,6 +109,37 @@ export const AUTO_REFUSALS = [
 ] as const;
 
 export type AutoRefusal = (typeof AUTO_REFUSALS)[number];
+
+/**
+ * The refusals stage 1a took OUT of the gate (§6.2: the model's own rating, the label tick, two replies in a row).
+ * Their words stay for ever: a verdict row stored before the deploy still names them, and the card prints it
+ * (auto-card `autoRefusalWords`) — a code that lost its words would read «sababi noma'lum». Their word lives HERE,
+ * once; none of them is in `AUTO_REFUSALS` any more.
+ */
+export const RETIRED_REFUSALS = ['low_confidence', 'category', 'streak'] as const;
+
+export type RetiredRefusal = (typeof RETIRED_REFUSALS)[number];
+
+export const RETIRED_REFUSAL_WORDS: Record<RetiredRefusal, string> = {
+  low_confidence: 'AI o‘ziga yetarlicha ishonmaydi',
+  category: 'bu turdagi javob o‘zi ketmaydi',
+  streak: 'bu chatga ketma-ket 2 ta javob o‘zi ketdi',
+};
+
+/**
+ * The refusals stage 1a ADDS (§6.2, J9, J27, J33), named and worded in the kernel so no package words one twice. None
+ * is in `AUTO_REFUSALS` yet, because nothing emits it: the gate's own test drives every member of that list by its own
+ * fact, and a code with no fact cannot stand there. Each moves into `AUTO_REFUSALS`, with its word, in the package that
+ * gave it its fact — `complaint` P1 (the label or the burst's words, `AutoGateInput.complaint`), `loop` P2 (the
+ * detector), `calc_claim_unbacked` and `ready_text_unapproved` P3 (the reply's own words, the tayyor matn's mark). All
+ * four have moved: the list stays, empty, as the one place a later stage's coming refusal is named first.
+ */
+export const COMING_REFUSALS = [] as const;
+
+export type ComingRefusal = (typeof COMING_REFUSALS)[number];
+
+export const COMING_REFUSAL_WORDS: Record<ComingRefusal, string> = {
+};
 
 /** Each refusal in his words — the ONE map the card and the page print (never a code). */
 export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
@@ -103,6 +152,8 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   warnings: 'kartada ogohlantirish bor',
   notes: 'kartada izoh bor',
   actions: 'javob bilan birga amal bor (hisoblatish yoki AI o‘chirish)',
+  // J9: «hisoblatishga yubordim» said with no calculation sent — a false claim to the customer.
+  calc_claim_unbacked: 'javobda «hisoblatishga yubordim» deyilgan, lekin hisoblatish yuborilmagan',
   calc_identity: 'chat telefon bilan tasdiqlanmagan — hisoblatishni o‘zingiz yuboring',
   calc_foreign: 'bu boshqa sotuvchining mijozi yoki lidi',
   calc_refused: 'VED navbati bu hisoblatishni olmaydi (lid yopilgan yoki ochiq so‘rovlar to‘la)',
@@ -123,25 +174,62 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   owner_figure: 'javobda sizning raqamingiz bor — ko‘rib yuboring',
   owner_personal: 'javobingizda boshqa mijoz ma’lumoti bor — ko‘rib yuboring',
   answer_stale: 'savolingizdan keyin mijoz yana yozdi',
-  category: 'bu turdagi javob o‘zi ketmaydi',
+  // J33: the one sentence for it on the card, the page and the morning line.
+  complaint: 'mijoz shikoyat yoki menejer so‘radi — sizga qoldi',
   status_unbacked: 'yuk holati tekshirilmagan',
   language: 'mijoz tili aniq emas yoki javob boshqa tilda',
+  // J27: a Persian or Chinese tayyor matn goes by itself only once he approved it.
+  ready_text_unapproved: 'fors/xitoy tayyor matni hali tasdiqlanmagan',
   media: 'mijoz rasm, ovozli xabar yoki fayl yuborgan',
   too_long: 'javob juda uzun',
-  low_confidence: 'AI o‘ziga yetarlicha ishonmaydi',
   stranger: 'chat mijoz yoki lidga bog‘lanmagan',
   prospect: 'bu lidni mijoz topuvchi agent topgan',
   chat_off: 'bu chatda o‘zi yuborish vaqtincha o‘chirilgan',
   human_active: 'suhbatni 🙋 bilan o‘zingiz oldingiz',
   chat_muted: 'bu suhbatda AI o‘chirilgan',
   not_work_account: 'raqam «Ish raqami» deb belgilanmagan',
-  night: 'tun — ertalab o‘zingiz qaror qilasiz',
-  streak: 'bu chatga ketma-ket 2 ta javob o‘zi ketdi',
+  // J31: a reply the night alone held is judged again at the first working minute — never «yours in the morning».
+  night: 'tun — ertalab qayta tekshiriladi',
+  // J33: one word for the one loop — the notice (loop `LOOP_NOTICE`), the morning line, the 🔁 follow-up's «why no
+  // question» (calc-loop `NO_DRAFT_WORDS`) and this card say the same.
+  loop: 'suhbat aylanib qoldi',
   daily_cap: 'bugungi o‘zi yuborish chegarasi tugadi',
   budget_spent: 'bugungi AI yuborish chegarasi tugagan',
   sending_disabled: 'CRM’dan Telegramga yuborish o‘chirilgan',
   listener_behind: 'Telegram ko‘prigi (tinglovchi) yangilanmagan',
 };
+
+/**
+ * A refusal code as a stored verdict row may carry it — today's, a retired one, or one a later build of this stage
+ * wrote — in his words; null for a code nobody knows (the card says so plainly, never printing the code).
+ */
+export function refusalWordOf(code: string): string | null {
+  // Retired first: a retired code is in no other map, and asking its own map first keeps its word wherever it moves.
+  if (Object.hasOwn(RETIRED_REFUSAL_WORDS, code)) return RETIRED_REFUSAL_WORDS[code as RetiredRefusal];
+  if (Object.hasOwn(AUTO_REFUSAL_WORDS, code)) return AUTO_REFUSAL_WORDS[code as AutoRefusal];
+  if (Object.hasOwn(COMING_REFUSAL_WORDS, code)) return COMING_REFUSAL_WORDS[code as ComingRefusal];
+  return null;
+}
+
+/**
+ * The warnings that only INFORM him (stage 1a §6.2): a reply carrying one of these may still go by itself — the card
+ * shows it. Every other warning code, and every code minted after this list, keeps the reply his.
+ */
+export const EYE_ONLY_WARNINGS = ['questions'] as const satisfies readonly PolicyCode[];
+
+/** …and the one note that only informs him: the card was written late (card `lateNote`). */
+export const EYE_ONLY_NOTES = ['late'] as const satisfies readonly NoteCode[];
+
+/**
+ * Does this warning (or note) keep the reply his — the ONE question both places ask where one stops the machine: the
+ * gate (`warnings`, `notes`) and the ✅'s own machine press, on the policy it runs again (decide `auto_warning`). Two
+ * lists would let the scheduling admit what the press refuses, or the reverse. Anything not on the eye-only list stops
+ * — `avia_maybe`, a short `fingerprint`, a one-word `staff_name`, and every code minted after this was written.
+ */
+export function stopsMachine(kind: 'warning' | 'note', code: string): boolean {
+  const eyeOnly: readonly string[] = kind === 'warning' ? EYE_ONLY_WARNINGS : EYE_ONLY_NOTES;
+  return !eyeOnly.includes(code);
+}
 
 /**
  * The customer's languages a reply may go in by itself — all six the agent writes since 0148 (spec §4, his
@@ -156,6 +244,9 @@ export const AUTO_LANGUAGES = ['uz', 'uz_cyrl', 'ru', 'en', 'fa', 'zh'] as const
  * guess that differs refuses, and an unconfident one keeps today's rule.
  */
 export const AUTO_STRICT_LANGUAGES = ['en', 'fa', 'zh'] as const;
+
+/** The languages of a tayyor matn he cannot read himself (J27, his 10 ⭐ a) — each such one waits for his ✅. */
+export const READY_TEXT_UNREAD = ['fa', 'zh'] as const;
 
 /**
  * The tools whose output is a PRICE or a balance (tools.ts TOOL_SPECS). Judged by OUTCOME since 0148 (spec
@@ -220,16 +311,12 @@ export const CALC_FACTS_UNREAD: CalcSubmitFacts = { unproven: true, foreign: tru
 /** The one tool whose answer backs a «status» reply: the customer's own cargo, read. */
 export const STATUS_TOOL = 'cargo_status';
 
-/** Auto replies in a row in one chat before he must speak again (§18.3). */
-export const AUTO_STREAK_MAX = 2;
-
 export interface AutoGateInput {
   /** agent_auto_config as read. */
   config: {
     armed: boolean;
     categories: readonly string[];
     maxChars: number;
-    minConfidence: number;
     /** Auto presses a Tashkent day may hold; null = no cap (0148, his «7 chegara qoyma»). */
     perDay: number | null;
   };
@@ -242,13 +329,29 @@ export interface AutoGateInput {
     ownText: boolean;
     blocked: boolean;
     needsOwner: boolean;
-    warnings: number;
-    notes: number;
+    /**
+     * The policy's warnings by CODE (`policy.warnings[].code`; one that names none reads '?'): stage 1a frees the
+     * `EYE_ONLY_WARNINGS` and nothing else, so the gate must see WHICH warning, never only how many.
+     */
+    warningCodes: readonly string[];
+    /**
+     * The draft's notes by code (stage 1a, K5 — auto-send `noteCodesOf`): `[]` = no notes; null = notes stored
+     * without their codes (a draft written before 1a, or a writer that lost them) — refused like any note.
+     */
+    noteCodes: readonly string[] | null;
+    /** The reply is a tayyor matn the code wrote (`policy.system`, stage 1a P3) — not the model's words. */
+    systemAck: boolean;
+    /**
+     * The code put the honest line in front of the model's reply, or wrote it alone (`policy.honestLine`, run
+     * `withBotAnswer` — the customer asked whether we are a bot): a tayyor matn too, in the reply's language.
+     */
+    honestLine: boolean;
     actionTypes: readonly string[];
     category: string | null;
     language: string | null;
     /** The words that would go — trimmed. */
     body: string;
+    /** The model's own rating, as stored — read by nothing here since stage 1a (the evening sample weighs by it). */
     confidence: number | null;
     /** The policy ledger's lines (`policy.ledger`) — each with who vouched for it. */
     ledger: readonly AutoLedgerLine[];
@@ -334,8 +437,24 @@ export interface AutoGateInput {
    * night's last hold is a night reply whatever its due time (the second check). At the press it is `at` itself.
    */
   now: Date;
-  /** Auto replies already in a row in this chat since his own decision or message. */
-  streak: number;
+  /**
+   * The reply about to go is, folded, one of our last sends to this chat in the loop window (`own_repeat` — never of
+   * a tayyor matn, whose repeat rule is «once per silence», read over the thread AND our sends it lost: context
+   * `toldInSilenceOf`), or he was told this chat loops less than the window before it would go — the notice's half hour
+   * (J33). Stage 1a P2, auto-send `autoLoopFact` over loop `gateLoopFor`. The anchor's two loop signals are
+   * eligibility's: such a run drafts nothing.
+   */
+  loop: boolean;
+  /**
+   * The customer's burst asks for a person or complains (stage 1a P3 `complaint.ts`; false until it lands). The gate
+   * refuses `complaint` on this OR the model's own label `complaint`.
+   */
+  complaint: boolean;
+  /**
+   * Which prices may go by themselves at night (`agent_night_prices`, his 4 a): read on the pool before the gate is
+   * asked — the night bars a class by it (`nightBars`).
+   */
+  nightPrices: AgentNightPrices;
   /**
    * Auto presses this Tashkent day — at the scheduling, with the replies still
    * counting down (waiting or being pressed): each of those is a press the cap
@@ -359,6 +478,52 @@ export interface AutoVerdict {
   reasons: AutoRefusal[];
 }
 
+/** What a reply IS for the hold, the night and the language (stage 1a §4.1 K6) — never the model's label. */
+export type AutoClass = 'talk' | 'price' | 'calc_price' | 'calc';
+
+/**
+ * The class a draft is judged as — the rule the relaxed language, the zero hold and the night all hang on, so it fails
+ * CLOSED: anything that is not plainly talk is a price.
+ *  - `calc`: its one act is a calculation sent to the VED (`isCalcSubmitOnly`);
+ *  - `calc_price`: a VED answer's price stands behind it — whenever, even beside a table price (J5: the VED price is
+ *    the one the night bars, so the mixed reply waits for the morning like the VED price alone);
+ *  - `price`: ANY money — a ledger money line, an estimate, a money tool's call (`moneyVerdict.present`, refused or
+ *    admitted), a currency beside a quantity no reader placed, a numeral no reader reads — and any act besides a
+ *    follow-up (the gate refuses those as `actions` anyway);
+ *  - `talk`: none of that.
+ */
+export function autoClassOf(input: AutoGateInput): AutoClass {
+  const { draft } = input;
+  if (isCalcSubmitOnly(draft.actionTypes)) return 'calc';
+  const money = moneyVerdict(input);
+  if (money.calcPriced) return 'calc_price';
+  // `money_unread` / `numeral_unread` would fire: a price nobody read is a price all the same.
+  const unread = (!money.lines && currencyBesideQuantity(draft.body)) || money.unquoted || draft.unreadNumeral;
+  if (money.present || unread) return 'price';
+  if (draft.actionTypes.some((a) => a !== 'set_followup')) return 'price';
+  return 'talk';
+}
+
+/**
+ * Does the night (22:00-08:00 Tashkent) bar a reply of this class from going by itself (his 4 a ⚠ and his ⭐ a of
+ * question 1)? Talk never — the AI answers a customer who wrote, at any hour, and the pump never lets it write first
+ * (send-step `releaseAt`). A calculation always: a VED job at night rings a colleague, and cards to colleagues wait
+ * for the morning. A VED price unless he chose `all`; a table price only when he chose `none`. Asked by the gate at
+ * the scheduling and by the press of a copy that did not ring — never by the clock alone.
+ */
+export function nightBars(cls: AutoClass, nightPrices: AgentNightPrices): boolean {
+  switch (cls) {
+    case 'talk':
+      return false;
+    case 'calc':
+      return true;
+    case 'calc_price':
+      return nightPrices !== 'all';
+    case 'price':
+      return nightPrices === 'none';
+  }
+}
+
 export function autoVerdict(input: AutoGateInput): AutoVerdict {
   const { config, draft } = input;
   const hit = new Set<AutoRefusal>();
@@ -368,13 +533,18 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (draft.status !== 'pending' || draft.ownText) hit.add('not_pending');
   if (draft.blocked) hit.add('blocked');
   if (draft.needsOwner) hit.add('needs_owner');
-  if (draft.warnings > 0) hit.add('warnings');
-  if (draft.notes > 0) hit.add('notes');
+  // A warning or a note stops the machine unless it only informs him (`stopsMachine` — the press asks the same).
+  // Notes stored without their codes are a stop of their own kind (`noteCodes` null): a draft written before 1a.
+  if (draft.warningCodes.some((c) => stopsMachine('warning', c))) hit.add('warnings');
+  if (draft.noteCodes === null || draft.noteCodes.some((c) => stopsMachine('note', c))) hit.add('notes');
   // A calculation goes by itself only as its own kind (SPEC-P2-v2 §1.1): a draft whose one act is a calc submit is
   // judged as `calc` — by what it DOES, never by the model's label — and only once he ticked «Hisoblatish». Unticked,
   // it is judged exactly as before: an action, refused.
   const calc = isCalcSubmitOnly(draft.actionTypes) && config.categories.includes('calc');
   if (draft.actionTypes.some((a) => a !== 'set_followup' && !(calc && a === 'calc_submit'))) hit.add('actions');
+  // Rule 11's «hisoblatishga yubordim» with no calculation beside it (J9): the customer would be told his job went to
+  // the VED when nothing went. Asked of the words that would go — the machine's — at the scheduling and the press.
+  if (!draft.actionTypes.includes('calc_submit') && claimsCalcSent(draft.body)) hit.add('calc_claim_unbacked');
   if (calc) {
     const f = input.calc ?? CALC_FACTS_UNREAD;
     if (f.unproven) hit.add('calc_identity');
@@ -415,34 +585,38 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (draft.ledger.some((l) => l.origin === 'owner') || input.money.ownerFigure) hit.add('owner_figure');
   if (input.money.ownerPersonal) hit.add('owner_personal');
   if (input.money.answerStale) hit.add('answer_stale');
-  // Money makes it price (§18.3): a draft whose money the clause admitted is judged as `price` — which it passes
-  // only because he ticked it. But only a label that is itself one of the kinds that ever go: a quote the model
-  // labelled «complaint» or «other» stays his whatever it prices (the arming words promise it: «shikoyat va
-  // savolli javoblar har doim sizga qoladi»). Refused, the label the model gave is judged as it always was.
-  // `calc` and `calc_price` are never a model's label (SPEC-P2-v2 §1.1, auto-categories `OUTCOME_CATEGORIES`): they are
-  // decided by what the reply DOES, so a label naming one is judged as no kind at all.
+  // The label is free (stage 1a §4.2): what a reply DOES decides — its money by the clause above and his ticks, a
+  // calculation by its act and his tick — so the four ordinary kinds are no longer read. One label still decides: a
+  // complaint stays his (the arming words promise it: «shikoyat har doim sizga qoladi»), and so does a burst that
+  // complains or asks for a person in its own words (`complaint`, P3's reader), whatever the reply does.
   const label = draft.category ?? '';
-  const goes = LABEL_CATEGORIES.includes(label as AutoCategory);
-  // A reply whose only money is a VED answer's price is judged as `calc_price` (SPEC-P2-v2 §2.3) — the box of its own
-  // he ticks for it; one that also quotes the truck table is `price` (the money clause asked `calc_price` already).
-  const category = money.present && !money.refused && goes ? (money.estimateMoney ? 'price' : money.calcPriced ? 'calc_price' : 'price') : label;
-  const admitted = (LABEL_CATEGORIES as readonly string[]).includes(category) || (category === 'calc_price' && calcQuote);
-  // A calc draft is its own kind whatever kind of reply the model labelled it (§1.1) — it passes because he ticked it,
-  // never by its label. But only among the labels that ever go (fix pass 1, finding 8): a submit the model labelled
-  // «complaint» or «other» — or labelled nothing — stays his, as the arming words promise («shikoyat … har doim sizga
-  // qoladi»); the price path keeps the same rule just above.
-  if (calc ? !goes : !admitted || !config.categories.includes(category)) hit.add('category');
+  if (label === 'complaint' || input.complaint) hit.add('complaint');
   // The label must agree with the facts: «where is my cargo» answered without reading the cargo is a guess —
   // asked of the model's OWN label, so a status claim riding an admitted quote is still asked for its reading.
   if (label === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
-  if (!languageAdmits(draft.language, draft.customerLocale)) hit.add('language');
+  const cls = autoClassOf(input);
+  // Today's language rule for every MODEL reply (J19), byte for byte, whatever its class. The ONE relaxation J19 rules
+  // (a guess that names no language admits Uzbek) was measured against the reader corpus before a line of it was
+  // written: eleven of its dangerous rows would go — a Russian customer writing in Latin letters («Skolko budet za 3
+  // kuba?», «Kogda pridet gruz?») and an English one («Working hours?», «Services?») answered in Uzbek by themselves.
+  // Those rows are the MODEL's words, so the lead's ruling (the merged-tree seam review, finding 4) gives the
+  // relaxation to the tayyor matn alone (`systemAck`): a photo or a voice note shows no language at all, and «write it
+  // as text» in Uzbek is a line he wrote himself and read once. A model reply to a message showing no language waits
+  // for his ✅ as before; `language_money` and `language` in the corpus pin that side.
+  if (!languageAdmits(draft.language, draft.customerLocale, draft.systemAck)) hit.add('language');
+  // A tayyor matn in Persian or Chinese — a system line or the honest line (J27): he reads neither, and his answer 10
+  // is that he approves each once by its Uzbek gloss. Until that list exists (stage 1b) every such reply is his card.
+  if ((draft.systemAck || draft.honestLine) && (READY_TEXT_UNREAD as readonly string[]).includes(draft.language ?? '')) {
+    hit.add('ready_text_unapproved');
+  }
   // Not asked of a calculation (§1.1, judge regress 8): the burst's invoice IS the material — it goes to the VED with
   // the job (calc-files), and the reply («yubordim») claims nothing about reading it.
   // A VED answer's price asks it over the lines newer than the job's LANDING instead (§2.3): the request burst's own
   // files went to the VED with the job, so they are no file the reply ignores.
-  if ((calcQuote ? cp!.media : input.burstMedia) && !calc) hit.add('media');
+  // Never asked of a tayyor matn the code wrote (stage 1a, `systemAck`): THAT reply is the answer to the photo or the
+  // voice note — «yozib yuboring» — and it reads nothing of it.
+  if ((calcQuote ? cp!.media : input.burstMedia) && !calc && !draft.systemAck) hit.add('media');
   if (draft.body.length > config.maxChars) hit.add('too_long');
-  if (draft.confidence === null || !Number.isFinite(draft.confidence) || draft.confidence < config.minConfidence) hit.add('low_confidence');
   if (!input.chat.hasOwner) hit.add('stranger');
   if (input.chat.prospect) hit.add('prospect');
   if (input.chat.offUntil !== null && input.chat.offUntil.getTime() > input.now.getTime()) hit.add('chat_off');
@@ -450,11 +624,13 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (input.chat.humanUntil !== null && input.chat.humanUntil.getTime() > input.now.getTime()) hit.add('human_active');
   if (input.chat.muted) hit.add('chat_muted');
   if (!input.workAccount) hit.add('not_work_account');
-  // The pump's own night (send-step `isTashkentNight`, AGENT_LIMITS' hours): the card waits for the morning (his Q4 ⭐).
-  // Judged at the moment the reply would go AND at the moment its card is queued (the second check): a card queued
-  // in the night arrives without a sound, and a countdown on it would run his ⏸ window on a message nothing announced.
-  if (isTashkentNight(input.at) || isTashkentNight(input.now)) hit.add('night');
-  if (input.streak >= AUTO_STREAK_MAX) hit.add('streak');
+  // The pump's own night (send-step `isTashkentNight`, AGENT_LIMITS' hours), for the classes it bars (`nightBars`, his
+  // 4 a): such a card waits for the morning. Judged at the moment the reply would go AND at the moment its card is
+  // queued (the second check): a card queued in the night arrives without a sound, and a countdown on it would run his
+  // ⏸ window on a message nothing announced. Talk is never barred.
+  if (nightBars(cls, input.nightPrices) && (isTashkentNight(input.at) || isTashkentNight(input.now))) hit.add('night');
+  // Two replies in a row are no rule of their own any more: the loop detector (P2) takes that slot.
+  if (input.loop) hit.add('loop');
   // NULL = no daily count (his «7 chegara qoyma»); the account's own send caps still bound the day (`budget_spent`).
   if (config.perDay !== null && input.pressedToday >= config.perDay) hit.add('daily_cap');
   if (input.budgetLeft !== null && input.budgetLeft <= 0) hit.add('budget_spent');
@@ -526,13 +702,17 @@ function moneyVerdict(input: AutoGateInput): {
  * language, or an unconfident one that LEANS on it (fix pass 4: the conversation's stored language, the one language
  * the greetings said, or Uzbek's word endings — run `memoryFor`). Where the rule cannot tell the customer's language
  * it holds (fix pass 6): a guess that leans on nothing, a guess naming no language, and a guess not stored (a draft
- * written before 0148) admit no reply by itself — each was «today's rule», which let the other language go.
+ * written before 0148) admit no reply by itself — each was «today's rule», which let the other language go. Save one
+ * line (stage 1a, J19 as ruled for the merged tree): the code's own Uzbek tayyor matn on a guess naming no language.
  */
-function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale']): boolean {
+function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale'], tayyorMatn: boolean): boolean {
   const lang = language ?? '';
   if (!(AUTO_LANGUAGES as readonly string[]).includes(lang)) return false;
   // Nothing known of the customer's language — no guess stored, or one that names none — admits no reply by itself.
-  if (guess === null || guess.locale === null) return false;
+  // One exception (J19's relaxation, the tayyor matn's alone — see `autoVerdict`): a guess that names none admits the
+  // code's own Uzbek line. Never a guess not stored (a draft written before 0148 says nothing either way).
+  if (guess === null) return false;
+  if (guess.locale === null) return tayyorMatn && lang === 'uz';
   if (guess.confident) return guess.locale === lang;
   if ((AUTO_STRICT_LANGUAGES as readonly string[]).includes(lang)) return false;
   // An unconfident guess admits only the language it LEANS on — and one that leans on nothing admits none (fix pass 6,

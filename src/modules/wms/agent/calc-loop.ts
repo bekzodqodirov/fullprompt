@@ -27,6 +27,7 @@ import { calcFromOurWarehouse } from './types';
 import { anchorAgeWords, anchorMaxAgeMsForTrigger } from './anchor-clock';
 import { isTashkentNight, nextTashkentMorning } from './send-step';
 import { AGENT_LIMITS } from './limits';
+import { AUTO_REFUSAL_WORDS } from './auto-gate';
 import type { Ineligible } from './eligibility';
 import type { RunDeps, RunResult } from './run';
 
@@ -324,7 +325,10 @@ export const NO_DRAFT_WORDS: Record<Ineligible, string> = {
   too_old: tooOldWords(AGENT_LIMITS.anchorMaxAgeMs),
   auto_sent: 'mijozning avto-javobi',
   echo: 'aks-sado',
+  // A stored refusal from before stage 1a — `eligibleForRun` says `loop` now.
   repeat: 'takror xabar',
+  // J33: the one word for the one loop — the card's own (auto-gate `AUTO_REFUSAL_WORDS`).
+  loop: AUTO_REFUSAL_WORDS.loop,
 };
 
 export interface HandBackDeps extends RunDeps {
@@ -382,7 +386,8 @@ export function noQuestionWhy(out: RunResult, maxAgeMs: number = AGENT_LIMITS.an
     case 'refused':
       return out.reason === 'too_old' ? tooOldWords(maxAgeMs) : NO_DRAFT_WORDS[out.reason];
     case 'capped':
-      return 'bugungi AI byudjeti tugadi';
+      // A cap is a guard against a runaway loop, never a money stop (stage 1a §4.6, his 10 c) — not «the budget».
+      return 'bugungi AI chegarasi tugadi (xato halqasidan himoya, pul chegarasi emas)';
     case 'error':
       return 'AI xato qildi';
     case 'no_reply':
@@ -1025,6 +1030,7 @@ export async function priceDraftFromText(staffId: string, requestId: string, tex
     // An AI offer already on the card for this job (SPEC-P2-v2 §2.4) stays there — said, so «nothing is written» is
     // never read as «the card is empty».
     notes: [(await aiOfferOnRequest(requestId)) ? 'Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi; AI yozgan narx kartada qoladi.' : 'Narx faqat mijozga ketadi — bitim kartasiga hech narsa yozilmaydi.'],
+    noteCodes: ['price_only_customer'],
     priceRequestId: requestId,
   };
   const written = await createDraft({

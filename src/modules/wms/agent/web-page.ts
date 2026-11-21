@@ -17,6 +17,7 @@ import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { openRequests } from '../calc/service';
 import { openCalcCapFor } from '../../platform/settings/calc-cap';
+import type { AviaDays } from '../../platform/settings/service';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
 import { cardDigest, cardDrawsSend, cardTeaches, digestBody, lessonRewritingNow } from './card';
@@ -116,7 +117,7 @@ export function pageDrawsSend(d: Pick<WebDraft, 'blocked' | 'status' | 'ownText'
   return cardDrawsSend(d);
 }
 
-function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
+export function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   if (d.clientId) return `/suhbatlar/${d.clientId}`;
   if (d.leadId) return `/crm/leads/${d.leadId}#tg-thread`;
   return null;
@@ -183,7 +184,7 @@ export interface WebViewer {
  * draft card carries the customer's lines, the reply and our last message: a
  * previous owner's personal chats are not his to read here (K10).
  */
-function draftsSeenBy(viewer: WebViewer) {
+export function draftsSeenBy(viewer: WebViewer) {
   return seesAllTg(viewer) ? undefined : eq(agentDrafts.managerUserId, viewer.id);
 }
 
@@ -394,20 +395,21 @@ export async function agentToday(config: AgentConfig, now = new Date()): Promise
 /**
  * «AI qoidalari» on the Bilimlar tab (§17.14 e): what the agent follows that
  * is not a fact — each number read from where the agent reads it
- * (`AGENT_LIMITS`, `agent_config`), never typed twice.
+ * (`AGENT_LIMITS`, `agent_config`, the flight's days from the one reader of
+ * `agent_avia_days` — settings `aviaDays`, stage 1a P7), never typed twice.
  */
 export interface AgentRules {
   truckMin: { m3: number; kg: number };
   avia: { minKg: number; daysMin: number; daysMax: number; usdPerKg: number | null; setAt: Date | null };
 }
 
-export function agentRules(config: Pick<AgentConfig, 'aviaUsdPerKg' | 'aviaRateSetAt'>): AgentRules {
+export function agentRules(config: Pick<AgentConfig, 'aviaUsdPerKg' | 'aviaRateSetAt'>, days: AviaDays): AgentRules {
   return {
     truckMin: { m3: AGENT_LIMITS.minShipment.m3, kg: AGENT_LIMITS.minShipment.kg },
     avia: {
       minKg: AGENT_LIMITS.avia.minKg,
-      daysMin: AGENT_LIMITS.avia.daysMin,
-      daysMax: AGENT_LIMITS.avia.daysMax,
+      daysMin: days.min,
+      daysMax: days.max,
       usdPerKg: config.aviaUsdPerKg,
       setAt: config.aviaRateSetAt,
     },

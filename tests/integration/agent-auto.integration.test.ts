@@ -42,14 +42,12 @@ import {
   AUTO_RECLAIM_MS,
   autoFeedback,
   autoStepDownOnBlock,
-  autoStepDownOnBotQuestion,
   recordAutoVerdictInTx,
   stopAutoForEdit,
   pressDueAutos,
   readAutoConfig,
   setAutoArmed,
   setAutoCategories,
-  setAutoMinConfidence,
   setAutoPerDay,
   stopAuto,
   __restoreAutoConfig,
@@ -134,6 +132,11 @@ vi.mock('@/modules/wms/agent/send-window', async (importOriginal) => {
  * agent_config and agent_auto_config are singleton CONFIGURATION rows on the
  * one database every file shares (#183): snapshotted in beforeAll and put back
  * in afterAll. The fixture users are deactivated, never deleted (the audit FK).
+ *
+ * THE TALK HOLD: this file's subject is the countdown — a card, its ⏸, the press a hold after the card reached him —
+ * and its drafts are ordinary talk. Since stage 1a talk goes at once by default (`agent_talk_hold_sec` 0, his 11 a);
+ * here it waits the same `HOLD_MS` a price does (the setting his ⭐ b of question 82 would have shipped), snapshotted
+ * and put back like the rows above. Talk at once — no card, the run's own press — is agent-toliq-1a.integration's.
  */
 
 const SUFFIX = String(Date.now()).slice(-6);
@@ -150,6 +153,7 @@ let prospectLeadId = '';
 let agentSnapshot: AgentConfig | null = null;
 let autoSnapshot: AutoConfig | null = null;
 let sendingBefore = false;
+let talkHoldBefore: unknown = 0;
 let msgSeq = 5000n;
 
 /** A daytime Tashkent instant at least twenty minutes before now (see the clock above). */
@@ -356,6 +360,7 @@ beforeAll(async () => {
   agentSnapshot = await readAgentConfig();
   autoSnapshot = await readAutoConfig();
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
+  talkHoldBefore = await getSetting('agent_talk_hold_sec');
   ownerId = await makeUser(`Auto egasi ${SUFFIX}`, 'super_admin', '01');
   otherId = await makeUser(`Auto boshqa ${SUFFIX}`, 'super_admin', '02');
   const [acc] = await db
@@ -381,6 +386,7 @@ beforeAll(async () => {
     .returning({ id: leads.id });
   prospectLeadId = lead!.id;
   await setSetting('tg_sending_enabled', true, ownerId);
+  await setSetting('agent_talk_hold_sec', HOLD_MS / 1000, ownerId);
 });
 
 const savedToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -422,6 +428,7 @@ afterAll(async () => {
   await __restoreAgentConfig(agentSnapshot);
   await __restoreAutoConfig(autoSnapshot);
   await setSetting('tg_sending_enabled', sendingBefore, ownerId);
+  await setSetting('agent_talk_hold_sec', talkHoldBefore as number, ownerId);
   await db.update(users).set({ active: false }).where(inArray(users.id, [ownerId, otherId]));
 });
 
@@ -434,13 +441,14 @@ describe('the plan — written beside the draft by the inbound run', () => {
     expect(v!.digest).toBe(await cardDigestOf(d.id));
   });
 
-  it('an ineligible one is the rehearsal record: every reason, no state, no due time', async () => {
+  it('an ineligible one is the rehearsal record: every reason, no state, no due time (stage 1a: the label is no reason)', async () => {
     const d = await drafted({
       steps: [{ name: 'own_balance', input: {} }, compose('Tekshirib aytaman.', { category: 'price', language: 'en' })],
     });
     const v = await verdictOf(d.id);
     expect(v).toMatchObject({ eligible: false, state: null, dueAt: null });
-    expect(v!.reasons).toEqual(['money', 'category', 'language']);
+    // DELIBERATE EDIT (stage 1a §6.2): the ticked label left the gate — the balance and the language hold it.
+    expect(v!.reasons).toEqual(['money', 'language']);
   });
 
   it('an owner-triggered draft writes no row — the inbound run plans, and of the owner-triggered ones his ✍️ answer’s redraft alone (spec SPEC-P1-v2 §2.2)', () => {
@@ -471,14 +479,15 @@ describe('the plan — written beside the draft by the inbound run', () => {
     expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['chat_off']);
     await db.delete(agentAutoChats).where(eq(agentAutoChats.managerUserId, ownerId));
 
-    // 23:00 Tashkent the night BEFORE T0 (a run in the past, so the listener's stamp still reads fresh):
-    // the reply would go at night — the card waits for the morning.
+    // 23:00 Tashkent the night BEFORE T0 (a run in the past, so the listener's stamp still reads fresh).
+    // DELIBERATE EDIT (stage 1a, his 4 a): ordinary talk is never night-barred — it counts down at night like by day
+    // (the night of the classes it bars is pinned in agent-toliq-1a.integration).
     const night = new Date(T0);
     night.setUTCHours(18, 0, 0, 0);
     if (night.getTime() > T0.getTime()) night.setUTCDate(night.getUTCDate() - 1);
     // In the other chat: this one's lines are dated after it.
     const v = await verdictOf((await drafted({ now: night, peer: PEER2 })).id);
-    expect(v!.reasons).toEqual(['night']);
+    expect(v).toMatchObject({ eligible: true, reasons: [], state: 'waiting' });
   });
 
   it('nothing armed: every reply is the rehearsal — refused «not_armed», the card ordinary', async () => {
@@ -553,13 +562,15 @@ describe('the press — the minute sweep, through the same ✅', () => {
     expect((await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id)))[0]!.status).toBe('pending');
   });
 
-  it('the night at the press: a press the sweep reaches after 22:00 is refused «night»', async () => {
+  it('the night at the press (stage 1a: talk is never barred): a talk reply the sweep reaches after 22:00 is pressed', async () => {
+    // DELIBERATE EDIT (stage 1a, his 4 a ⚠): the AI answers a customer who wrote, at any hour — the pump's own night
+    // rule (`releaseAt`) still keeps it from writing first.
     const d = await drafted();
     const night = new Date(T0);
     night.setUTCHours(18, 30, 0, 0);
     if (night.getTime() < DUE.getTime()) night.setUTCDate(night.getUTCDate() + 1);
-    expect(await pressDueAutos(night)).toBe(0);
-    expect(await verdictOf(d.id)).toMatchObject({ state: 'refused', reasons: ['night'] });
+    expect(await pressDueAutos(night)).toBe(1);
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'pressed' });
   });
 
   it('a draft he is editing is never pressed — by the sweep, nor by the machine’s ✅ itself', async () => {
@@ -599,7 +610,9 @@ describe('the press — the minute sweep, through the same ✅', () => {
     expect(line).not.toMatch(/\/null|\/0\b/u);
   });
 
-  it('the streak: two auto replies in a row, then he must speak — his own decision resets it', async () => {
+  it('no streak since stage 1a (§6.2): two machine replies in a row do not hold the third — the loop detector takes that slot', async () => {
+    // DELIBERATE EDIT (stage 1a, P1 with P2): «2 in a row, then he must speak» is deleted with its reader; a chat that
+    // loops is the loop detector's (P2, one deploy with this).
     let at = T0;
     for (let i = 0; i < 2; i++) {
       const d = await drafted({ now: at });
@@ -608,11 +621,7 @@ describe('the press — the minute sweep, through the same ✅', () => {
       at = new Date(at.getTime() + 5 * 60_000);
     }
     const third = await drafted({ now: at });
-    expect(await verdictOf(third.id)).toMatchObject({ eligible: false, reasons: ['streak'] });
-    // He decides that one himself (❌): the next reply may go by itself again.
-    expect(await decideDraft(actorOf(ownerId), third.id, 'reject', {}, { actorId: ownerId })).toMatchObject({ ok: true });
-    const fourth = await drafted({ now: new Date(at.getTime() + 60_000) });
-    expect(await verdictOf(fourth.id)).toMatchObject({ eligible: true, state: 'waiting' });
+    expect(await verdictOf(third.id)).toMatchObject({ eligible: true, reasons: [], state: 'waiting' });
   });
 });
 
@@ -690,28 +699,33 @@ describe('arming and disarming', () => {
     expect(await refused(setAutoArmed(actorOf(ownerId), true, { actorId: ownerId }))).toBe('agent_off');
   });
 
-  it('the kinds: the holder chooses among the five, at least one, in the design’s order — «Narx» only where 0148 admits it', async () => {
+  it('the kinds: the holder chooses among the three he ticks, in the design’s order — «Narx» only where 0148 admits it (stage 1a: the four ordinary always stored)', async () => {
     const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
-    expect(await refused(setAutoCategories(actorOf(ownerId), [], { actorId: ownerId }))).toBe('bad_value');
+    // DELIBERATE EDIT (stage 1a §4.2): none ticked is a choice now — it stores the four ordinary kinds (below).
     // DELIBERATE EDIT (0148, spec §1.5): «price» is the fifth kind now; complaint and other never are.
     expect(await refused(setAutoCategories(actorOf(ownerId), ['complaint'], { actorId: ownerId }))).toBe('bad_value');
     expect(await refused(setAutoCategories(actorOf(ownerId), ['other', 'faq'], { actorId: ownerId }))).toBe('bad_value');
     // DELIBERATE EDIT (2026-11-15, his «Sahifada narxni belgilab bolmayabti»): the kinds are the holder's OR a
     // super_admin's now (`mayTuneAuto`, the send caps' rule) — a colleague without the role is still refused.
     expect(await refused(setAutoCategories(plainActor(otherId), ['faq'], { actorId: otherId }))).toBe('forbidden');
-    expect((await setAutoCategories(actorOf(otherId), ['faq'], { actorId: otherId })).categories).toEqual(['faq']);
-    expect((await setAutoCategories(actorOf(ownerId), ['price', 'faq'], { actorId: ownerId })).categories).toEqual(['faq', 'price']);
+    // DELIBERATE EDIT (stage 1a §4.2): the four ordinary kinds are stored EVERY time, whatever is posted, with the three
+    // he ticks — and none ticked is a valid choice (the CHECK still has its four).
+    const FOUR = ['greeting', 'qualification', 'faq', 'status'];
+    expect((await setAutoCategories(actorOf(otherId), ['faq'], { actorId: otherId })).categories).toEqual(FOUR);
+    expect((await setAutoCategories(actorOf(ownerId), ['price', 'faq'], { actorId: ownerId })).categories).toEqual([...FOUR, 'price']);
+    expect((await setAutoCategories(actorOf(ownerId), [], { actorId: ownerId })).categories).toEqual(FOUR);
     // One migration behind 0148 the CHECK refuses «price»: said in words, never a raw 23514 — the four still save.
     __pretendAgentFullP1Behind();
     try {
       expect(await refused(setAutoCategories(actorOf(ownerId), ['price'], { actorId: ownerId }))).toBe('not_ready');
-      expect((await setAutoCategories(actorOf(ownerId), ['faq'], { actorId: ownerId })).categories).toEqual(['faq']);
+      expect((await setAutoCategories(actorOf(ownerId), ['faq'], { actorId: ownerId })).categories).toEqual(FOUR);
     } finally {
       __forgetAgentFullP1Ready();
     }
-    expect((await setAutoCategories(actorOf(ownerId), ['status', 'greeting'], { actorId: ownerId })).categories).toEqual(['greeting', 'status']);
-    // A kind he took out is refused at the scheduling.
-    expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['category']);
+    expect(await refused(setAutoCategories(actorOf(ownerId), ['complaint'], { actorId: ownerId }))).toBe('bad_value');
+    // The ordinary kinds are no longer read: a stored row with only one of them still lets a faq reply go.
+    await db.update(agentAutoConfig).set({ categories: ['greeting'] }).where(eq(agentAutoConfig.id, 1));
+    expect(await verdictOf((await drafted()).id)).toMatchObject({ eligible: true, reasons: [] });
   });
 
   it('the daily count (0148): the holder types a number or leaves it empty — bounded, audited, said in words one migration behind', async () => {
@@ -742,26 +756,12 @@ describe('arming and disarming', () => {
     }
   });
 
-  it('the confidence floor (2026-11-15): a whole percent 50..100, the holder’s or a super_admin’s, audited — and the gate reads it', async () => {
-    const refused = async (p: Promise<unknown>) => p.then(() => 'ok', (e: unknown) => (e instanceof AutoConfigError ? e.code : String(e)));
-    for (const bad of [49, 101, 70.5, Number.NaN, 0, -60]) {
-      expect(await refused(setAutoMinConfidence(actorOf(ownerId), bad, { actorId: ownerId })), String(bad)).toBe('bad_value');
-    }
-    expect(await refused(setAutoMinConfidence(plainActor(otherId), 60, { actorId: otherId }))).toBe('forbidden');
-    // The drafts here say 0.90: a floor above it refuses every one of them by itself …
-    expect((await setAutoMinConfidence(actorOf(otherId), 95, { actorId: otherId })).minConfidence).toBe(0.95);
-    expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['low_confidence']);
-    // … and the floor he types frees them, nothing else of the gate moved.
-    expect((await setAutoMinConfidence(actorOf(ownerId), 60, { actorId: ownerId })).minConfidence).toBe(0.6);
-    expect((await readAutoConfig())!.minConfidence).toBe(0.6);
-    expect((await verdictOf((await drafted()).id))!.reasons).toEqual([]);
-    const [audit] = await db
-      .select({ before: auditLog.before, after: auditLog.after })
-      .from(auditLog)
-      .where(and(eq(auditLog.entityType, 'agent_auto_config'), eq(auditLog.actorId, ownerId)))
-      .orderBy(sql`${auditLog.id} DESC`)
-      .limit(1);
-    expect(audit).toMatchObject({ before: { minConfidence: 0.95 }, after: { minConfidence: 0.6 } });
+  it('the confidence floor is no rule since stage 1a (§6.2): a stored floor above the model’s rating holds nothing — the column stays, unread', async () => {
+    // DELIBERATE EDIT (stage 1a): the box, its writer and its action are deleted; the stored column is his and stays.
+    await db.update(agentAutoConfig).set({ minConfidence: '0.95' }).where(eq(agentAutoConfig.id, 1));
+    expect((await readAutoConfig())!.minConfidence).toBe(0.95);
+    const low = await drafted({ steps: [compose(REPLY, { confidence: 0.3 })] });
+    expect(await verdictOf(low.id)).toMatchObject({ eligible: true, reasons: [], confidence: '0.30' });
   });
 
   it('arming by a super_admin who is not the holder: refused on a person’s account, allowed while the holder is the AI seat', async () => {
@@ -818,22 +818,23 @@ describe('the step-downs', () => {
     const a = await drafted();
     const b = await drafted({ peer: PEER2 });
     expect(await pressDueAutos(DUE)).toBe(2);
-    expect(await autoFeedback(otherId, a.id)).toEqual({ ok: false, code: 'not_account_holder' });
-    expect(await autoFeedback(ownerId, a.id)).toEqual({ ok: true, disarmed: false });
-    expect(await autoFeedback(ownerId, a.id)).toEqual({ ok: false, code: 'already' });
+    // A super_admin who is not the holder, while the holder is a person's own account (no AI seat): refused.
+    expect(await autoFeedback(actorOf(otherId), a.id)).toEqual({ ok: false, code: 'not_account_holder' });
+    expect(await autoFeedback(actorOf(ownerId), a.id)).toEqual({ ok: true, disarmed: false });
+    expect(await autoFeedback(actorOf(ownerId), a.id)).toEqual({ ok: false, code: 'already' });
     const [off] = await db.select().from(agentAutoChats).where(and(eq(agentAutoChats.managerUserId, ownerId), eq(agentAutoChats.peerId, PEER)));
     expect(off).toMatchObject({ reason: 'feedback' });
     expect(off!.offUntil.getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
     expect((await readAutoConfig())!.armed).toBe(true);
     const before = await alarms();
-    expect(await autoFeedback(ownerId, b.id)).toEqual({ ok: true, disarmed: true });
+    expect(await autoFeedback(actorOf(ownerId), b.id)).toEqual({ ok: true, disarmed: true });
     expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'feedback' });
     expect(await alarms()).toBe(before + 1);
   });
 
   it('👎 is for a reply the machine SENT — not one still waiting', async () => {
     const d = await drafted();
-    expect(await autoFeedback(ownerId, d.id)).toEqual({ ok: false, code: 'not_sent' });
+    expect(await autoFeedback(actorOf(ownerId), d.id)).toEqual({ ok: false, code: 'not_sent' });
   });
 
   it('a block by a customer the machine answered this week disarms; a block elsewhere does not', async () => {
@@ -849,24 +850,24 @@ describe('the step-downs', () => {
     expect(branch).toMatch(/USER_IS_BLOCKED[\s\S]*autoStepDownOnBlock\(row\.managerUserId, row\.peerId, now\)/u);
   });
 
-  it('«botmisiz?» after an auto reply: that chat off 30 days; the second such chat in a week disarms', async () => {
+  it('«botmisiz?» after an auto reply is no step-down since stage 1a (his 1 b): no chat off, nothing disarmed', async () => {
+    // DELIBERATE EDIT (stage 1a §4.2): the AI answers the question itself (P3's honest line) — the step-down is deleted.
     await drafted();
     await drafted({ peer: PEER2 });
     expect(await pressDueAutos(DUE)).toBe(2);
     const later = new Date(DUE.getTime() + 5 * 60_000);
-    const q1 = await inbound('Siz botmisiz?', PEER, later);
-    expect(await handleInbound(job(q1, PEER), { callModel: scripted([compose()]), now: () => later })).toMatchObject({ outcome: 'notice', reason: 'bot_question' });
-    const [off] = await db.select().from(agentAutoChats).where(and(eq(agentAutoChats.managerUserId, ownerId), eq(agentAutoChats.peerId, PEER)));
-    expect(off).toMatchObject({ reason: 'bot_question' });
+    for (const peer of [PEER, PEER2]) {
+      const q = await inbound('Siz botmisiz?', peer, later);
+      await handleInbound(job(q, peer), { callModel: scripted([compose()]), now: () => later });
+    }
+    expect(await db.select().from(agentAutoChats).where(eq(agentAutoChats.managerUserId, ownerId))).toHaveLength(0);
     expect((await readAutoConfig())!.armed).toBe(true);
-    const q2 = await inbound('Siz botmisiz?', PEER2, later);
-    expect(await handleInbound(job(q2, PEER2), { callModel: scripted([compose()]), now: () => later })).toMatchObject({ outcome: 'notice' });
-    expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'bot_question' });
   });
 
   it('«botmisiz?» in a chat the machine never answered changes nothing', async () => {
     const q = await inbound('Siz botmisiz?');
-    expect(await handleInbound(job(q), { callModel: scripted([compose()]), now: () => T0 })).toMatchObject({ outcome: 'notice' });
+    // DELIBERATE EDIT (stage 1a P3): the question is answered by a run now (the honest line), never a notice.
+    expect(await handleInbound(job(q), { callModel: scripted([compose()]), now: () => T0 })).toMatchObject({ outcome: 'draft' });
     expect(await db.select().from(agentAutoChats).where(eq(agentAutoChats.managerUserId, ownerId))).toHaveLength(0);
     expect((await readAutoConfig())!.armed).toBe(true);
   });
@@ -1046,7 +1047,17 @@ describe('/agent auto (bot-door `agentCommand`)', () => {
     await db.update(tgAccounts).set({ workAccount: false }).where(eq(tgAccounts.id, accountId));
     expect(await agentCommand(ownerId, 'auto on')).toBe('Avval raqamni «Ish raqami» deb belgilang.');
     await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
-    expect(await agentCommand(ownerId, 'AUTO  ON')).toMatch(/^🤖 O‘zi yuborish yoqildi: mos javob kartasi 2 daqiqa kutadi/u);
+    // DELIBERATE EDIT (stage 1a, J22): the bot says what the page says — talk at its own hold (this file's two minutes),
+    // with ⏸. DELIBERATE EDIT (review D3): no price box is ticked in this file, so no price hold and no night price is
+    // promised — only «narx … har doim sizga qoladi», never beside «narx … keyin o‘zi ketadi». DELIBERATE EDIT (the
+    // merged-tree seam review, finding 3): the bot says what the page's hint says about a photo — the AI's reply stays
+    // his, the tayyor matn to it goes — as the one clause after what stays his. DELIBERATE EDIT (the check of the F1-F3
+    // fixes, R3): the AI's reply to a voice note stays his as well, and the clause says so.
+    const armed = await agentCommand(ownerId, 'AUTO  ON');
+    expect(armed).toMatch(
+      /^🤖 O‘zi yuborish yoqildi: oddiy javob 2 daqiqa kutib o‘zi ketadi \(⏸ bilan to‘xtatasiz\) — kechasi ham .*narx va shikoyat har doim sizga qoladi; rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi, .*tayyor matn esa o‘zi ketadi\.$/u,
+    );
+    expect(armed).not.toContain('Narx kartada');
     expect((await readAutoConfig())!.armed).toBe(true);
     // Any super_admin may switch it off.
     expect(await agentCommand(otherId, 'auto off')).toContain('o‘chirildi');
@@ -1076,7 +1087,7 @@ describe('the page’s panel (web-page `autoPanel`)', () => {
     const row = panel.sent.find((r) => r.draftId === sent.id)!;
     expect(row).toMatchObject({ managerUserId: ownerId, text: REPLY, bad: false, chatHref: `/suhbatlar/${clientId}`, delivery: 'sent' });
     expect(row.sentAt!.getTime()).toBe(at.getTime());
-    await autoFeedback(ownerId, sent.id);
+    await autoFeedback(actorOf(ownerId), sent.id);
     expect((await autoPanel(actorOf(ownerId), ownerId))!.sent.find((r) => r.draftId === sent.id)!.bad).toBe(true);
     // A reader who sees only his own account's chats is shown none of another's.
     const own = await autoPanel({ id: otherId, roles: [], permissions: new Set<string>() }, ownerId);
@@ -1619,11 +1630,13 @@ describe('fix pass B — what he sees and presses (C1 C6 C7 C9 C10)', () => {
     // DELIBERATE EDIT (2026-11-15): the hint follows who may ARM — the holder, or a super_admin on the AI seat.
     expect(page).toMatch(/\{!c\.armed && mayArm && !auto\.workAccount && \(/u);
     expect(page).toMatch(/mayArm=\{holder \|\| \(superAdmin && seat\.state === 'holds'\)\}/u);
-    // The kinds, the daily count and the confidence floor: the holder's or any super_admin's (`mayTuneAuto`).
+    // The kinds and the daily count: the holder's or any super_admin's (`mayTuneAuto`).
     expect(page).toMatch(/mayTune=\{holder \|\| superAdmin\}/u);
     expect(page).toMatch(/<AutoCategoriesForm\s+current=\{c\.categories\}\s+editable=\{mayTune\}/u);
     expect(page).toMatch(/<AutoPerDayForm current=\{c\.perDay\} editable=\{mayTune\}/u);
-    expect(page).toMatch(/<AutoConfidenceForm current=\{Math\.round\(c\.minConfidence \* 100\)\} editable=\{mayTune\}/u);
+    // DELIBERATE EDIT (stage 1a kernel, J26): the confidence floor's box left the page with its words — the gate stops
+    // reading the floor (P1 deletes the rule, its writer and its action; STAGE-0-1A.md §4.2).
+    expect(page).not.toMatch(/<AutoConfidenceForm/u);
     expect(page).toMatch(/armBlocked=\{!running \|\| !auto\.workAccount\}/u);
     const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
     const arm = ui.slice(ui.indexOf('data-testid="agent-auto-arm"') - 200, ui.indexOf('data-testid="agent-auto-arm"') + 200);
@@ -1664,7 +1677,9 @@ describe('fix pass B — what he sees and presses (C1 C6 C7 C9 C10)', () => {
 });
 
 describe('fix pass B — the tests the review found missing (TESTS-1…6)', () => {
-  describe('the streak, as production writes the chat (TESTS-1)', () => {
+  // DELIBERATE EDIT (stage 1a §6.2): the streak is deleted — two machine replies the pump SENT, a robot's line, his own
+  // line: none of them decides the third reply any more (the loop detector, P2, takes the slot).
+  describe('no streak since stage 1a, as production writes the chat (TESTS-1, re-aimed)', () => {
     const WORDS = ['birinchi', 'ikkinchi', 'uchinchi'];
     const tag = SUFFIX.split('').map((d) => 'abcdefghij'[Number(d)]).join('');
     /** Each reply its own words and each question its own line: the echo keeps every sent reply, and a repeat is refused. */
@@ -1690,14 +1705,14 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
       return at;
     }
 
-    it('two replies the pump SENT — each echoed into the chat — and the third waits for him', async () => {
+    it('two replies the pump SENT — each echoed into the chat — and the third goes by itself too', async () => {
       const at = await twoAutos();
       const echoes = await db.select().from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.direction, 'out')));
       expect(echoes).toHaveLength(2);
-      expect(await verdictOf((await drafted({ now: at, steps: say(2) })).id)).toMatchObject({ eligible: false, reasons: ['streak'] });
+      expect(await verdictOf((await drafted({ now: at, steps: say(2) })).id)).toMatchObject({ eligible: true, reasons: [], state: 'waiting' });
     });
 
-    it('the account’s Business robot is not him: an auto_sent line resets nothing', async () => {
+    it('the account’s Business robot after them changes nothing either', async () => {
       const at = await twoAutos();
       msgSeq += 1n;
       const [robot] = await db
@@ -1706,7 +1721,7 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
         .returning({ id: tgMessages.id });
       await db.execute(sql`INSERT INTO tg_message_flags (message_id, auto_sent) VALUES (${robot!.id}::uuid, true)
                              ON CONFLICT (message_id) DO UPDATE SET auto_sent = true`);
-      expect(await verdictOf((await drafted({ now: at, steps: say(2) })).id)).toMatchObject({ eligible: false, reasons: ['streak'] });
+      expect(await verdictOf((await drafted({ now: at, steps: say(2) })).id)).toMatchObject({ eligible: true, reasons: [], state: 'waiting' });
     });
 
     it('a line he wrote from his phone after them resets it', async () => {
@@ -1819,9 +1834,9 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
       const a = await drafted();
       const b = await drafted({ peer: PEER2 });
       expect(await pressDueAutos(DUE)).toBe(2);
-      expect(await autoFeedback(ownerId, a.id, DUE)).toEqual({ ok: true, disarmed: false });
+      expect(await autoFeedback(actorOf(ownerId), a.id, DUE)).toEqual({ ok: true, disarmed: false });
       await db.update(agentAutoVerdicts).set({ feedbackAt: new Date(DUE.getTime() - 8 * DAY) }).where(eq(agentAutoVerdicts.draftId, a.id));
-      expect(await autoFeedback(ownerId, b.id, DUE)).toEqual({ ok: true, disarmed: false });
+      expect(await autoFeedback(actorOf(ownerId), b.id, DUE)).toEqual({ ok: true, disarmed: false });
       expect((await readAutoConfig())!.armed).toBe(true);
     });
 
@@ -1829,9 +1844,9 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
       const a = await drafted();
       const b = await drafted({ peer: PEER2 });
       expect(await pressDueAutos(DUE)).toBe(2);
-      expect(await autoFeedback(ownerId, a.id, DUE)).toEqual({ ok: true, disarmed: false });
+      expect(await autoFeedback(actorOf(ownerId), a.id, DUE)).toEqual({ ok: true, disarmed: false });
       await db.update(agentAutoVerdicts).set({ feedbackAt: new Date(DUE.getTime() - 6 * DAY) }).where(eq(agentAutoVerdicts.draftId, a.id));
-      expect(await autoFeedback(ownerId, b.id, DUE)).toEqual({ ok: true, disarmed: true });
+      expect(await autoFeedback(actorOf(ownerId), b.id, DUE)).toEqual({ ok: true, disarmed: true });
     });
 
     it('a block eight days after the machine’s reply is not its doing; six days after, it is', async () => {
@@ -1843,21 +1858,13 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
       expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'blocked' });
     });
 
-    it('«botmisiz?»: a chat sent off eight days ago is not this week’s — six days ago it is', async () => {
-      await drafted();
-      await drafted({ peer: PEER2 });
-      expect(await pressDueAutos(DUE)).toBe(2);
-      expect(await autoStepDownOnBotQuestion(ownerId, PEER, DUE)).toEqual({ chatOff: true, disarmed: false });
-      const back = (days: number) =>
-        db
-          .update(agentAutoChats)
-          .set({ updatedAt: new Date(DUE.getTime() - days * DAY) })
-          .where(and(eq(agentAutoChats.managerUserId, ownerId), eq(agentAutoChats.peerId, PEER)));
-      await back(8);
-      expect(await autoStepDownOnBotQuestion(ownerId, PEER2, DUE)).toEqual({ chatOff: true, disarmed: false });
-      expect((await readAutoConfig())!.armed).toBe(true);
-      await back(6);
-      expect(await autoStepDownOnBotQuestion(ownerId, PEER2, DUE)).toEqual({ chatOff: true, disarmed: true });
+    it('«botmisiz?» before stage 1a: a chat a bot-question row turned off still stays out until its own `off_until`', async () => {
+      // DELIBERATE EDIT (stage 1a): the step-down is deleted, never its rows — no screen clears a chat-off, so a row
+      // written for the question before the deploy keeps its chat out of the layer for the rest of its thirty days.
+      await db.insert(agentAutoChats).values({ managerUserId: ownerId, peerId: PEER, offUntil: new Date(DUE.getTime() + 20 * DAY), reason: 'bot_question' });
+      expect((await verdictOf((await drafted()).id))!.reasons).toEqual(['chat_off']);
+      await db.update(agentAutoChats).set({ offUntil: new Date(T0.getTime() - 60_000) }).where(eq(agentAutoChats.managerUserId, ownerId));
+      expect(await verdictOf((await drafted({ now: new Date(T0.getTime() + 60_000) })).id)).toMatchObject({ eligible: true, reasons: [] });
     });
   });
 
@@ -2234,9 +2241,10 @@ describe('the final check — the chat he took, and the card that never rang', (
     // A: an ordinary card (a price question — never the machine's), sent to his Telegram five hours earlier and
     // left undecided.
     const early = new Date(T0.getTime() - 5 * 3_600_000);
-    const a = await drafted({ now: early, steps: [compose('Narxni tekshirib aytaman.', { category: 'price' })] });
+    const a = await drafted({ now: early, steps: [compose('Narxni tekshirib aytaman.', { category: 'complaint' })] });
     expect(await verdictOf(a.id)).toMatchObject({ eligible: false });
-    expect((await verdictOf(a.id))!.reasons).toContain('category');
+    // DELIBERATE EDIT (stage 1a): the label is free — a card that never counts down is a complaint now.
+    expect((await verdictOf(a.id))!.reasons).toContain('complaint');
     process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
     const calls: { method: string; body: string }[] = [];
     __setTelegramTransport(async (url, init) => {
@@ -2378,27 +2386,29 @@ describe('the second check — a card that went silently in the night is no coun
     }
   });
 
-  it('a reply written in the night’s last hold never counts down: its card goes silently, so it is refused «night» from its first second', async () => {
-    // A ten-minute hold: written 07:51, the reply would go at 08:01 — daytime — but its card goes now, in the night.
+  it('talk written in the night’s last hold counts down on its silent card and goes (stage 1a: the night bars no talk)', async () => {
+    // DELIBERATE EDIT (stage 1a, his 4 a ⚠): «a card that went silently is no countdown» is asked only of a class the
+    // night BARS — a calculation, a VED price, a price his setting keeps for the morning (pinned in
+    // agent-toliq-1a.integration). Ordinary talk answers a customer who wrote at any hour: its hold runs from the card
+    // landing, rung or not. (A ten-minute PRICE hold here: talk keeps its own, this file's two minutes.)
     await db.update(agentAutoConfig).set({ holdSec: 600 }).where(eq(agentAutoConfig.id, 1));
     vi.setSystemTime(at(7, 51));
     const c = await drafted({ now: at(7, 51), shown: null });
-    expect(await verdictOf(c.id)).toMatchObject({ eligible: false, state: null, dueAt: null, reasons: ['night'] });
+    expect(await verdictOf(c.id)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
     await drain(at(7, 51, 1));
     expect(sends()).toHaveLength(1);
     expect(sends()[0]!.body.disable_notification).toBe(true);
-    expect(String(sends()[0]!.body.text)).not.toContain('o‘zi ketadi');
     vi.setSystemTime(at(8, 1, 2));
-    expect(await pressDueAutos(at(8, 1, 2))).toBe(0);
-    expect(await outboxOf(c.id)).toBeNull();
-    expect(await draftStatus(c.id)).toBe('pending');
+    expect(await pressDueAutos(at(8, 1, 2))).toBe(1);
+    expect(await outboxOf(c.id)).toMatchObject({ status: 'agent' });
   });
 
   it('a countdown never rides a copy that went silently at 07:59: the reply gets its own card, which rings, and goes a hold after it', async () => {
     // A: a price question (never the machine's), written 07:59 — its card goes at once, silently.
     vi.setSystemTime(at(7, 59));
-    const a = await drafted({ now: at(7, 59), shown: null, steps: [compose('Narxni tekshirib aytaman.', { category: 'price' })] });
-    expect((await verdictOf(a.id))!.reasons).toContain('category');
+    const a = await drafted({ now: at(7, 59), shown: null, steps: [compose('Narxni tekshirib aytaman.', { category: 'complaint' })] });
+    // DELIBERATE EDIT (stage 1a): the label is free — a card that never counts down is a complaint now.
+    expect((await verdictOf(a.id))!.reasons).toContain('complaint');
     await drain(at(7, 59, 1));
     expect(sends()).toHaveLength(1);
     expect(sends()[0]!.body.disable_notification).toBe(true);
@@ -2422,11 +2432,13 @@ describe('the second check — a card that went silently in the night is no coun
     expect(await outboxOf(c.id)).toMatchObject({ status: 'agent' });
   });
 
-  it('the press asks whether the card rang: a copy a drain run begun at 07:59:59 sent silently after 08:00 — refused «night», nothing queued', async () => {
-    // A (a price question) is queued at 07:59:58; the drain run that claims it begins at 07:59:59 — its clock says the
-    // quiet hour — and while its send is in flight, at 08:00:02, C is written and counts down on that very copy.
+  it('the press asks whether the card rang only of a class the night bars: talk riding a copy sent silently after 08:00 still goes (stage 1a)', async () => {
+    // A (a complaint — never the machine's) is queued at 07:59:58; the drain run that claims it begins at 07:59:59 —
+    // its clock says the quiet hour — and while its send is in flight, at 08:00:02, C is written and counts down on that
+    // very copy. DELIBERATE EDIT (stage 1a §4.2): C is ordinary talk, which the night never bars, so the copy that did
+    // not ring refuses nothing — «never by the clock at the press»; a barred class is pinned in agent-toliq-1a.
     vi.setSystemTime(at(7, 59, 58));
-    const a = await drafted({ now: at(7, 59, 58), shown: null, steps: [compose('Narxni tekshirib aytaman.', { category: 'price' })] });
+    const a = await drafted({ now: at(7, 59, 58), shown: null, steps: [compose('Narxni tekshirib aytaman.', { category: 'complaint' })] });
     let c: Awaited<ReturnType<typeof drafted>> | null = null;
     duringSend = async () => {
       vi.setSystemTime(at(8, 0, 2));
@@ -2442,10 +2454,9 @@ describe('the second check — a card that went silently in the night is no coun
     const p = await payloadOf(c!.id);
     expect((p.shown as { draftId?: string }).draftId).toBe(c!.id);
     vi.setSystemTime(at(8, 2, 5));
-    expect(await pressDueAutos(at(8, 2, 5))).toBe(0);
-    expect(await verdictOf(c!.id)).toMatchObject({ state: 'refused', reasons: ['night'] });
-    expect(await outboxOf(c!.id)).toBeNull();
-    expect(await draftStatus(c!.id)).toBe('pending');
+    expect(await pressDueAutos(at(8, 2, 5))).toBe(1);
+    expect(await verdictOf(c!.id)).toMatchObject({ state: 'pressed' });
+    expect(await outboxOf(c!.id)).toMatchObject({ status: 'agent' });
   });
 });
 
@@ -3283,9 +3294,10 @@ describe('0148 fix — what goes by itself, on real runs', () => {
     beforeEach(() => tick(FIVE));
     const ANGRY = "Yiwudan Toshkentga 5 kub 1000 kg yuk bor, juda qimmat olyapsizlar, norozi man! Yo'lkira qancha?";
 
-    it.each(['complaint', 'other'])('a quote labelled «%s» is his — `category`, never pressed', async (category) => {
-      const d = await ran([ANGRY], [truck, compose(PRICED, { category })]);
-      expect((await verdictOf(d.id))!.reasons).toEqual(['category']);
+    it('a quote labelled «complaint» is his — `complaint`, never pressed (stage 1a: «other» is a free label now)', async () => {
+      // DELIBERATE EDIT (stage 1a §6.2): the ticked label left the gate; the complaint is its own refusal.
+      const d = await ran([ANGRY], [truck, compose(PRICED, { category: 'complaint' })]);
+      expect((await verdictOf(d.id))!.reasons).toEqual(['complaint']);
       await staysHis(d);
     });
 

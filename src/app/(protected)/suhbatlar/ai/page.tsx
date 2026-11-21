@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { AUTO_SEND_CATEGORIES, P2_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { P2_CATEGORIES, TICKED_CATEGORIES, autoWaitsOf } from '@/modules/wms/agent/auto-categories';
 import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
-import { AUTO_CONFIDENCE_PCT, AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
+import { AUTO_PER_DAY_MAX, AUTO_PRICE_HOLD } from '@/modules/wms/agent/auto-send';
+import { AGENT_1A_BOUNDS, AGENT_NIGHT_PRICES, aviaDays, readAgentNightPrices, readAgentPersonaName, readAgentTalkHoldSec, type AgentNightPrices, type AviaDays } from '@/modules/platform/settings/service';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { webLessons } from '@/modules/wms/agent/lessons';
@@ -42,8 +43,11 @@ import {
   AutoArmButtons,
   AutoBadButton,
   AutoCategoriesForm,
-  AutoConfidenceForm,
+  AutoNightForm,
   AutoPerDayForm,
+  AutoPriceHoldForm,
+  AutoTalkHoldForm,
+  AviaDaysForm,
   AviaRateForm,
   DraftActions,
   FactEditor,
@@ -56,6 +60,7 @@ import {
   NumbersForm,
   OpenLimitForm,
   OwnerPicker,
+  PersonaForm,
   SeatButtons,
   RememberButtons,
   RetireButton,
@@ -66,6 +71,7 @@ import {
 } from './agent-ui';
 import {
   AGENT_SECTIONS,
+  NIGHT_PRICE_KEYS,
   PAUSE_KIND_KEYS,
   autoDisarmKey,
   SCOPE_KEYS,
@@ -76,6 +82,11 @@ import {
   type AgentSection,
 } from './labels';
 import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
+import { livenessStanding } from '@/modules/wms/agent/liveness';
+import { sampleUnmarkedToday } from '@/modules/wms/agent/sample';
+import { KimgaSection, SampleSection } from './signal-sections';
+import { readClientAiContact } from '@/modules/wms/agent/seat-contact';
+import { ClientContactToggle } from './client-contact';
 
 /**
  * The AI sotuvchi's page (docs/AI-SOTUVCHI.md §17.12, review build-13): ONE
@@ -106,7 +117,8 @@ function tashkentWhen(d: Date): string {
   });
 }
 
-const STRIP = 'grid grid-cols-2 gap-1 rounded-xl bg-surface-sunken p-1 sm:grid-cols-5';
+// Seven tabs since stage 1a (§4.5's «Kunlik tekshiruv» and «Kim javob beradi»): three a row on a phone, four wider.
+const STRIP = 'grid grid-cols-3 gap-1 rounded-xl bg-surface-sunken p-1 sm:grid-cols-4';
 
 type T = Awaited<ReturnType<typeof getTranslations<'agentAi'>>>;
 
@@ -201,12 +213,21 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
   }
 
   const running = agentRunning(config);
-  const [drafts, owner] = await Promise.all([webDrafts(actor), ownerAccountState(config.ownerUserId)]);
+  const [drafts, owner, unmarked, liveness] = await Promise.all([
+    webDrafts(actor),
+    ownerAccountState(config.ownerUserId),
+    // The evening sample's replies still to mark (stage 1a §4.5) — the tab's badge.
+    sampleUnmarkedToday(actor).catch(() => 0),
+    // «AI sotuvchi javob bermayapti» standing (§4.5 item 4) — said only while the agent runs.
+    running ? livenessStanding(new Date()).catch(() => null) : Promise.resolve(null),
+  ]);
   const counts: Record<AgentSection, number> = {
     kutilmoqda: drafts.pending.length,
     savollar: drafts.questions.length + drafts.remember.length,
+    tekshiruv: unmarked,
     bilimlar: 0,
     saboqlar: 0,
+    kimga: 0,
     sozlamalar: 0,
   };
   const settingsAlarm = owner?.pausedAt != null || (running && (owner?.connected === false || owner?.listenerBehind === true));
@@ -226,6 +247,12 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
             <ClearPauseButton accountId={owner.accountId} />
           )}
         </div>
+      )}
+
+      {liveness && (
+        <p className="card border-bad/40 bg-bad/10 text-sm font-bold text-bad [overflow-wrap:anywhere]" data-testid="agent-liveness-banner">
+          {t('livenessStanding', { n: liveness.n, minutes: liveness.minutes })}
+        </p>
       )}
 
       <nav aria-label={t('title')} className={STRIP} data-testid="agent-tabs">
@@ -320,6 +347,10 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
 
       {section === 'saboqlar' && <LessonsSection t={t} />}
 
+      {section === 'tekshiruv' && <SampleSection viewer={actor} />}
+
+      {section === 'kimga' && <KimgaSection viewer={actor} config={config} />}
+
       {section === 'sozlamalar' && (
         <SettingsSection
           t={t}
@@ -336,12 +367,13 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
 /**
  * «AI qoidalari» (§17.14 e): what the agent follows that is not a fact — the
  * truck's minimum, avia's minimum, time and rate, rail, the certificate. Every
- * number is `agentRules`, i.e. the constant or the config the agent itself
- * reads; the avia rate is the one editable here (the page's own door, the
- * owner or the super_admin role, is `setAviaRate`'s too).
+ * number is `agentRules`, i.e. the constant, the config or the setting the agent
+ * itself reads; the avia rate and the flight's days (stage 1a P7, read by the one
+ * reader `aviaDays`) are the two editable here (the page's own door, the owner
+ * or the super_admin role, is `setAviaRate`'s and `setAviaDays`'s too).
  */
-function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
-  const rules = agentRules(config);
+function RulesCard({ t, config, days }: { t: T; config: AgentConfig; days: AviaDays }) {
+  const rules = agentRules(config, days);
   const { avia, truckMin } = rules;
   return (
     <section className="card space-y-2" data-testid="agent-rules">
@@ -366,6 +398,7 @@ function RulesCard({ t, config }: { t: T; config: AgentConfig }) {
         <li data-testid="agent-rule-certificate">📄 {t('ruleCertificate')}</li>
       </ul>
       <AviaRateForm current={avia.usdPerKg} />
+      <AviaDaysForm current={`${days.min}-${days.max}`} max={AGENT_1A_BOUNDS.aviaDaysMax} />
     </section>
   );
 }
@@ -416,7 +449,7 @@ async function KnowledgeSection({ t, config, viewer }: { t: T; config: AgentConf
   const { facts, retired } = await webKbFacts(viewer);
   return (
     <>
-      <RulesCard t={t} config={config} />
+      <RulesCard t={t} config={config} days={await aviaDays()} />
       <MarkupCard t={t} view={await calcMarkupView()} />
       <p className="text-sm text-ink-500">{t('knowledgeHint')}</p>
       <FactForm />
@@ -456,6 +489,25 @@ const LESSON_CHIP = {
   off: 'chip chip-neutral',
   unconfirmed: 'chip chip-warn',
 } as const;
+
+/**
+ * The persona's name (stage 1a P3, his answer 1: «GSR sotuv menejeri <ism>») — everyone who opens the page reads what
+ * the AI calls itself; a super_admin writes it (config `setAgentPersonaName`, the seat's own door). Its own section and
+ * its own read, so no other package's block carries it.
+ */
+async function PersonaSection({ t, superAdmin }: { t: T; superAdmin: boolean }) {
+  const name = await readAgentPersonaName();
+  return (
+    <section className="card space-y-2" data-testid="agent-persona">
+      <h2 className="section-title">{t('personaTitle')}</h2>
+      <p className="text-sm [overflow-wrap:anywhere]" data-testid="agent-persona-name">
+        {name || t('personaNone')}
+      </p>
+      <p className="text-xs text-ink-500">{t('personaHint', { max: AGENT_1A_BOUNDS.personaMax })}</p>
+      {superAdmin && <PersonaForm current={name} max={AGENT_1A_BOUNDS.personaMax} />}
+    </section>
+  );
+}
 
 /**
  * «Saboqlar» (0148, spec SPEC-P1-v2 §3.6): what he taught the AI with «📝 Tuzatish» — every lesson, newest first,
@@ -529,7 +581,7 @@ async function SettingsSection({
   owner: Awaited<ReturnType<typeof ownerAccountState>>;
 }) {
   const superAdmin = actor.roles.includes('super_admin');
-  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps, seat] = await Promise.all([
+  const [today, calcs, mismatch, stats, ownerName, candidates, auto, caps, seat, talkHoldSec, nightPrices] = await Promise.all([
     agentToday(config),
     openCalcsFor(config.ownerUserId),
     tariffMismatchSeen(),
@@ -542,7 +594,12 @@ async function SettingsSection({
     readSendCaps(),
     // The AI seat (SPEC-P2-v2 K4) — a settings row, so it reads on any server.
     seatPanel(),
+    // Stage 1a's talk hold and night choice — settings rows too.
+    readAgentTalkHoldSec(),
+    readAgentNightPrices(),
   ]);
+  // «AI raqamini ko'rsatish» (stage 1a «Hajm», his 7 b): a settings row, read for the one role that may tick it.
+  const clientContact = superAdmin ? await readClientAiContact() : false;
   // Asked only where 0148 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
   const tariff = caps.ready
     ? { unconfirmed: await tariffUnconfirmed(new Date()), fingerprint: await currentTariffFingerprint() }
@@ -603,9 +660,12 @@ async function SettingsSection({
           auto={auto}
           viewerId={actor.id}
           mayArm={holder || (superAdmin && seat.state === 'holds')}
+          markAnyBad={superAdmin && seat.state === 'holds'}
           mayTune={holder || superAdmin}
           mayDisarm={holder || superAdmin}
           running={running}
+          talkHoldSec={talkHoldSec}
+          nightPrices={nightPrices}
         />
       )}
 
@@ -654,8 +714,13 @@ async function SettingsSection({
             <p className="text-xs text-ink-500">{t('seatHint')}</p>
             {config.ownerUserId && <SeatButtons holderId={config.ownerUserId} holds={seat.state === 'holds'} named={seat.state !== 'none'} />}
           </div>
+          <div className="border-t border-line pt-2">
+            <ClientContactToggle current={clientContact} />
+          </div>
         </section>
       )}
+
+      <PersonaSection t={t} superAdmin={superAdmin} />
 
       <section className="card space-y-2" data-testid="agent-today">
         <h2 className="section-title">{t('todayTitle')}</h2>
@@ -808,6 +873,11 @@ function holdWords(t: T, sec: number): string {
   return sec % 60 === 0 ? t('autoHoldMin', { n: sec / 60 }) : t('autoHoldSec', { n: sec });
 }
 
+/** How ordinary talk goes (stage 1a, his 11 a): «darhol» at 0, else «2 daqiqa kutib» — never a promise the box denies. */
+function talkWords(t: T, sec: number): string {
+  return sec === 0 ? t('autoTalkAtOnce') : t('autoTalkAfter', { hold: holdWords(t, sec) });
+}
+
 /**
  * «🤖 O‘zi yuborish» (docs/AI-SOTUVCHI.md §18.3, his answer of 2026-11-11): a
  * layer over the shadow mode — whether it is armed and since when, why it was
@@ -820,22 +890,35 @@ function AutoSection({
   auto,
   viewerId,
   mayArm,
+  markAnyBad,
   mayTune,
   mayDisarm,
   running,
+  talkHoldSec,
+  nightPrices,
 }: {
   t: T;
   auto: AutoPanel;
   viewerId: string;
   /** The holder, or a super_admin while the holder is the AI seat (`setAutoArmed`'s own rule). */
   mayArm: boolean;
-  /** The holder or any super_admin — the kinds, the daily count, the confidence floor (2026-11-15). */
+  /**
+   * A super_admin while the holder is the AI seat: 👎 on any reply the machine sent — `autoFeedback`'s own door
+   * (`mayArmAuto`). On the seat nobody signs in as the holder, so «the row's own account» alone drew 👎 for nobody.
+   */
+  markAnyBad: boolean;
+  /** The holder or any super_admin — the kinds, the daily count (2026-11-15). */
   mayTune: boolean;
   mayDisarm: boolean;
   running: boolean;
+  /** How long ordinary talk waits (stage 1a, `agent_talk_hold_sec`; 0 = at once). */
+  talkHoldSec: number;
+  /** Which prices go by themselves at night (stage 1a, `agent_night_prices`). */
+  nightPrices: AgentNightPrices;
 }) {
   const c = auto.config;
   const off = autoDisarmKey(c.disarmReason);
+  const waits = autoWaitsOf(c.categories);
   return (
     <section className="card space-y-2" data-testid="agent-auto">
       <h2 className="section-title">🤖 {t('autoTitle')}</h2>
@@ -859,13 +942,17 @@ function AutoSection({
       )}
       <p className="text-xs text-ink-500" data-testid="agent-auto-numbers">
         {/* No daily count is said as such (0148, his «7 chegara qoyma») — never «at most 0 a day». */}
+        {/* Stage 1a (J22): ordinary talk and a price wait apart — the talk hold is a setting (0 = at once), the
+            price keeps the layer's own hold; the confidence floor is no longer said (the gate stops reading it).
+            The price hold is said only beside a ticked box (`waits`, the bot's own rule — seam review finding 5). */}
         {c.perDay === null
-          ? t('autoNumbersNoCap', { hold: holdWords(t, c.holdSec), maxChars: c.maxChars, confidence: Math.round(c.minConfidence * 100) })
+          ? t('autoNumbersNoCap', { talk: talkWords(t, talkHoldSec), priceHold: holdWords(t, c.holdSec), waits, maxChars: c.maxChars })
           : t('autoNumbers', {
-              hold: holdWords(t, c.holdSec),
+              talk: talkWords(t, talkHoldSec),
+              priceHold: holdWords(t, c.holdSec),
+              waits,
               perDay: c.perDay,
               maxChars: c.maxChars,
-              confidence: Math.round(c.minConfidence * 100),
             })}
       </p>
       {/* Armed on a number that is not «Ish raqami» (fix pass B, C9): the gate refuses every reply — the switch
@@ -886,16 +973,28 @@ function AutoSection({
           {t('autoNeedsWork')}
         </p>
       )}
-      <AutoArmButtons armed={c.armed} canArm={mayArm} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
+      <AutoArmButtons armed={c.armed} canArm={mayArm} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} waits={waits} />
       <div className="border-t border-line pt-2">
         {/* «Narx» is a box only where 0148's CHECK admits it, «Hisoblatish» and «VED narxi» only where 0149's does —
-            one migration behind, the boxes that server can store. */}
+            one migration behind, the boxes that server can store. Stage 1a: the four ordinary kinds are boxes no
+            more — ordinary talk goes unticked, and the writer stores them every time. */}
         <AutoCategoriesForm
           current={c.categories}
           editable={mayTune}
-          kinds={AUTO_SEND_CATEGORIES.filter(
+          kinds={TICKED_CATEGORIES.filter(
             (k) => (auto.fullReady || k !== 'price') && (auto.p2Ready || !(P2_CATEGORIES as readonly string[]).includes(k)),
           )}
+        />
+      </div>
+      {/* Stage 1a (his 11 a, 4 a; J34): how long ordinary talk waits (0 — at once), how long a price waits, and which
+          prices the night lets go — the holder's or a super_admin's, as every number of the layer. */}
+      <div className="space-y-3 border-t border-line pt-2">
+        <AutoTalkHoldForm current={talkHoldSec} editable={mayTune} max={AGENT_1A_BOUNDS.talkHoldMax} />
+        <AutoPriceHoldForm current={c.holdSec} editable={mayTune} bounds={AUTO_PRICE_HOLD} />
+        <AutoNightForm
+          current={nightPrices}
+          editable={mayTune}
+          options={AGENT_NIGHT_PRICES.map((value) => ({ value, label: t(NIGHT_PRICE_KEYS[value] as 'autoNight.none') }))}
         />
       </div>
       {auto.fullReady && (
@@ -903,9 +1002,6 @@ function AutoSection({
           <AutoPerDayForm current={c.perDay} editable={mayTune} max={AUTO_PER_DAY_MAX} />
         </div>
       )}
-      <div className="border-t border-line pt-2">
-        <AutoConfidenceForm current={Math.round(c.minConfidence * 100)} editable={mayTune} bounds={AUTO_CONFIDENCE_PCT} />
-      </div>
       <p className="border-t border-line pt-2 text-sm [overflow-wrap:anywhere]" data-testid="agent-auto-today">
         {t('autoToday', { sent: auto.today.sent, paused: auto.today.paused, left: auto.today.left })}
         {auto.today.waiting > 0 ? ` · ${t('autoTodayWaiting', { n: auto.today.waiting })}` : ''}
@@ -946,7 +1042,7 @@ function AutoSection({
                       👎 {t('autoBadGiven')}
                     </span>
                   ) : (
-                    row.managerUserId === viewerId && <AutoBadButton draftId={row.draftId} />
+                    (row.managerUserId === viewerId || markAnyBad) && <AutoBadButton draftId={row.draftId} />
                   )}
                   {row.chatHref && (
                     <Link href={row.chatHref} className="ml-auto font-semibold text-brand-700 underline">

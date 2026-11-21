@@ -70,6 +70,12 @@ export default defineConfig({
       // the agent a holder: a claim and a queued card left for every later
       // spec, by the calendar (tariff-watch `tariffNoticeOn`, #183).
       AGENT_TARIFF_NOTICE: 'off',
+      // The AI sotuvchi's liveness alarm (stage 1a §4.5) is ONE state row every
+      // sweep may raise, judged on the real clock's working hours and on lines a
+      // spec left minutes old: a red row and a queued alarm for every later spec
+      // by the hour of the run (liveness `livenessOn`, #183). The spec that
+      // draws the row puts it in and takes it out itself.
+      AGENT_LIVENESS: 'off',
       // B9's error list is proven by a page that throws on purpose; it is a
       // 404 everywhere this switch is not set (app/(protected)/sinov-xato).
       ERROR_PROBE: 'on',

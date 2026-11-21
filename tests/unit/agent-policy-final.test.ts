@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { POLICY_WORDS } from '@/modules/wms/agent/card';
 import { normalizeDigits } from '@/modules/wms/agent/digits';
 import type { AgentContext, ChatMessage, MeasureCandidate } from '@/modules/wms/agent/context';
@@ -14,6 +15,7 @@ import {
   WAREHOUSE_SENTENCES,
   type PolicyInput,
 } from '@/modules/wms/agent/policy';
+import { OWNER_WORD } from '@/modules/wms/agent/persona';
 import { sameTextWarning, stripOfDraftPolicy } from '@/modules/wms/agent/policy-input';
 import { priceReplyText } from '@/modules/wms/agent/price-reply';
 import { memoryFor, railChat, railNote, withRailRule, type ComposeReply } from '@/modules/wms/agent/run';
@@ -361,6 +363,7 @@ const envOf = (ctx: AgentContext, rate: number | null = 17): ToolEnv => ({
   priceArmed: false,
   calcArmed: false,
   calcPricing: false,
+  aviaDays: AVIA_DAYS_DEFAULT,
 });
 
 describe('K21 — the tools price the customer’s NEWEST figures', () => {
@@ -454,7 +457,7 @@ function compose(replyText: string, patch: Partial<ComposeReply> = {}): ComposeR
 }
 
 function loopOf(out: ToolOutcome, c: ComposeReply) {
-  return { compose: c, tools: [], outcomes: [out], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+  return { compose: c, tools: [], outcomes: [out], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, aviaDays: AVIA_DAYS_DEFAULT };
 }
 
 describe('K18 — rail in the reply or anywhere in the chat’s window', () => {
@@ -480,7 +483,7 @@ describe('K18 — rail in the reply or anywhere in the chat’s window', () => {
     const c = compose("Temir yo'l bilan taxminan 330 $ bo'ladi. Boj va QQS alohida hisoblanadi.");
     expect(withRailRule(c, ctx)).toMatchObject({ needsOwner: true });
     const policy = checkAgentReply({ ...base, body: c.replyText, ...quote });
-    expect(policy.blocks).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: '330 $ — temir yo‘l narxini Bekzod aytadi' }));
+    expect(policy.blocks).toContainEqual(expect.objectContaining({ code: 'number_unsourced', detail: `330 $ — temir yo‘l narxini ${OWNER_WORD} aytadi` }));
   });
 
   it('a truck chat with no rail anywhere keeps its sources', () => {

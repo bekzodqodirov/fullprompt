@@ -6,7 +6,8 @@ import { observe } from './fixtures/agent-reader-corpus-eval';
 /**
  * The free-text readers' regression corpus (tests/unit/fixtures/agent-reader-corpus.ts), run case by case against the
  * CURRENT code — the avia hand-over rule, the destination, the customer's language, his answer's figures, the money
- * and Chinese-numeral readers, the lesson's money and the ✍️ phone — through the functions a run calls
+ * and Chinese-numeral readers, the lesson's money, «botmisiz?», Pashto, a complaint, an unbacked «yubordim», the ✍️
+ * phone, the chat loop and the flight's days — through the functions a run calls
  * (`agent-reader-corpus-eval.ts`). Three fix passes each reopened what the one before had closed, because each read
  * only the cases in front of it; this file reads all of them, every time.
  *
@@ -34,7 +35,7 @@ describe('the corpus itself', () => {
   });
 
   it('every reader the round named has cases of both kinds', () => {
-    const readers: Reader[] = ['avia', 'destination', 'language', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'phone'];
+    const readers: Reader[] = ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'bot_question', 'pashto', 'complaint', 'calc_claim', 'phone', 'loop', 'avia_days', 'full_truck'];
     for (const reader of readers) {
       const of = READER_CORPUS.filter((c) => c.reader === reader);
       expect(of.some((c) => c.kind === 'dangerous'), reader).toBe(true);
@@ -43,7 +44,7 @@ describe('the corpus itself', () => {
   });
 });
 
-for (const reader of ['avia', 'destination', 'language', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'phone'] as const) {
+for (const reader of ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'bot_question', 'pashto', 'complaint', 'calc_claim', 'phone', 'loop', 'avia_days', 'full_truck'] as const) {
   describe(`reader: ${reader}`, () => {
     for (const c of READER_CORPUS.filter((x) => x.reader === reader)) {
       const known = KNOWN_HELD.get(c.id);

@@ -19,6 +19,7 @@ import {
 import { getSetting } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { reachableAt } from '../crm/site-assign-rules';
+import { seatContactFor } from '../agent/seat-contact';
 import { roundKg, roundM3, shareOf } from '../../platform/telegram/format';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
@@ -1092,6 +1093,15 @@ export async function paidHistory(clientId: string, days = HISTORY_DAYS) {
  *
  * A deactivated manager is no manager: a customer must not be sent to a
  * person who has left. One grouped query, never one per code (#432).
+ *
+ * THE AI SEAT (stage 1a «Hajm», his 7 b): with «AI raqamini ko'rsatish» on,
+ * a chat nobody of ours answers as its seller (`sellerlessChatSql` — the
+ * per-CHAT predicate the office's broadcast asks too, J13) is pointed at the
+ * AI's own @handle (`seatContactFor`) instead of the office. `chatId` is
+ * REQUIRED: the seat is a fact about the CHAT — every caller hands the codes
+ * of ONE chat, and a chat holding a seller's code is that seller's customer
+ * and never sees the seat. `null` = this caller never shows it (the forward
+ * of a customer's words chooses who RECEIVES them, which is never the seat).
  */
 export interface ManagerContact {
   name: string;
@@ -1101,6 +1111,7 @@ export interface ManagerContact {
 
 export async function managersFor(
   clientIds: string[],
+  chatId: bigint | null,
   now: Date = new Date(),
 ): Promise<Map<string, ManagerContact>> {
   const out = new Map<string, ManagerContact>();
@@ -1137,6 +1148,12 @@ export async function managersFor(
       phone,
       telegramUrl: reach.ok ? `https://t.me/${reach.username}` : phone ? telegramPhoneUrl(phone) : null,
     });
+  }
+  if (chatId !== null) {
+    // Asked of the chat whatever the rows above found: the predicate is the one judge (an inactive code's seller is
+    // drawn above as today, and is no seller of the chat's — J13 counts active codes only).
+    const seat = await seatContactFor(chatId, now);
+    if (seat) for (const id of clientIds) if (!out.has(id)) out.set(id, seat);
   }
   return out;
 }

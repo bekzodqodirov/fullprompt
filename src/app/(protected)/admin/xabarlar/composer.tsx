@@ -87,8 +87,12 @@ export function BroadcastComposer({
     if (!window.confirm(t('confirm', { n: count }))) return;
     setPending(true);
     try {
+      // Narrowed to the ticked codes, the «no seller» fence stays (J13): a code linked to two chats reaches both, and
+      // the one a seller answers must not be told the AI's number because the other was drawn.
       const target: Audience =
-        off.size === 0 ? audience : { sectors: [], cargoKinds: [], locales: [], codes: picked };
+        off.size === 0
+          ? audience
+          : { sectors: [], cargoKinds: [], locales: [], codes: picked, ...(audience.noManager ? { noManager: true } : {}) };
       const res = await sendBroadcastAction({ id, body, audience: target });
       if (res.ok) {
         setResult(t('queued', { n: res.total ?? count }));

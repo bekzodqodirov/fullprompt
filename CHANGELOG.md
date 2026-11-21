@@ -1,5 +1,190 @@
 # CHANGELOG
 
+## 2026-11-21 — To'liq AI sotuvchi, 1a: oddiy javob darhol ketadi, narx 2 daqiqa kutadi, rasm va ovozga tayyor matn, katta yuk signali, ertalabki hisobot va kunlik tekshiruv
+
+Sizning javoblaringiz: «3 HOZIRCHA qashqarda yuk qabul qilmaymiz / qolgani sen aytgandek» (1-10 va 82-savollar, 59 ta
+xavfli gap ro'yxati qo'lingizda bo'lganda) va «savolga sen aytganing bolsin» (avia muddati, o'rinbosar va ovoz sinovi).
+
+**Migratsiya bor: 0151.** Deploydan keyin son **152** bo'lishi, `/api/version` bugungi vaqtni ko'rsatishi kerak.
+**tg-listen ham qayta qurilishi shart.** Deploy paytida bilim bazasiga bitta buyruq ham yuritiladi (avia muddati).
+Qadamlar: `docs/UPDATE.md` → «To‘liq AI sotuvchi, 1a (2026-11-21, 0151)».
+
+### Mijoz uchun nima o'zgaradi
+- **Oddiy javob darhol ketadi** — salomlashish, savol, aniqlashtirish, «yukim qayerda» — kunduzi ham, kechasi ham. AI
+  mijoz yozganiga javob beradi, hech kimga birinchi yozmaydi. Sizning oldingi ⏸ (2 daqiqa) va «AI ishonchi» oddiy
+  javobni endi ushlamaydi. O'zingiz chatda yozayotgan bo'lsangiz yoki CRMdan javob yuborgan bo'lsangiz — AI jim turadi
+  (oldingidek).
+- **Narx 2 daqiqa kutadi**, ⏸ bilan to'xtatasiz: jadval narxi (yo'lkira, avia), VED narxi va «hisoblatishga yubordim»
+  (VEDga ish tushadigan javob). Bularning qaysi biri o'zi ketishini «Qaysi javoblar o‘zi ketadi» kataklari hal qiladi
+  (oldingidek).
+- **Kechasi (22:00-08:00):** oddiy javob ketadi; jadval narxi 2 daqiqadan keyin ketadi (tunda ⏸ ni hech kim bosmaydi);
+  VED narxi va hisoblatish **ertalabni kutadi**. Ertalab 08:00 da tizim ularni qayta tekshiradi: hammasi joyida bo'lsa,
+  karta **jiringlab** qayta keladi va 2 daqiqadan keyin o'zi ketadi.
+- **Mijoz faqat rasm, fayl yoki ovozli xabar yuborsa** — endi jim qolmaydi. Tizim o'zi bitta tayyor matn yuboradi
+  (AI emas, oldindan yozilgan jumla), sizga karta keladi. Bir jimlikda bir marta:
+  - ovoz: «Ovozli xabaringizni hozir eshita olmayapman — iltimos, yozib yuboring.»
+  - rasm yoki fayl: «Faylni oldim, lekin hozircha ocha olmayapman — kerakli ma’lumotni matn bilan yozib yuboring.»
+  - pushtu tilida yozsa: «لطفاً به فارسی یا روسی بنویسید. Пишите по-русски.» («Iltimos, fors yoki rus tilida yozing.»)
+  - Har birining uchta varianti bor, mijozning tiliga qarab (o'zbekcha, kirillcha, ruscha, inglizcha, forscha,
+    xitoycha) yoziladi.
+- **Havolali savol** (1688 yoki Taobao havolasi bilan «shu tovar qachon keladi?») endi oddiy savol: javob darhol
+  ketadi. Oldin havolaning ko'rinishi «fayl» deb sanalib, javob ✅ingizni kutardi.
+- **«Botmisiz?» deb so'rasa** — tizim javob boshiga shu jumlani qo'yadi va AI savolning qolganiga javob beradi:
+  «Men GSRning AI yordamchisiman; kerak bo‘lsa menejerni chaqiraman.» Endi bu savol chatni o'chirmaydi va «o'zi
+  yuborish»ni o'chirmaydi (avval 7 kunda ikki marta so'ralsa o'chardi).
+- **AI o'zini tanishtiradi:** «GSR LOGISTICS sotuv menejeri» (ism bersangiz — ism bilan), «kompaniyaning AI
+  yordamchisi». O'zini hech qachon odam demaydi.
+- **Narxdan keyin rastamojka taklifi:** mashina narxini aytgach, AI oxirida «Xohlasangiz, rastamojkani ham alohida
+  hisoblab beraymi?» deydi. Mijoz «ha» desa yoki invoys yuborsa — AI podklyuch hisoblatish uchun ma'lumot so'raydi va
+  ishni VEDga yuboradi («Hisoblatish» katagi belgilangan bo'lsa o'zi, aks holda ✅ingiz bilan).
+- **Qashqar** (sizning javobingiz): AI «Qashqarda hozircha yuk qabul qilmaymiz» deydi, Qashqardan narx aytmaydi,
+  hisoblatishga yubormaydi va bilimdagi qabul omborlarini taklif qiladi. Xorgos va Urumchi — oldingidek.
+- **Avia muddati — «taxminan 3-5 kun»** (sizning 2b). «Reys bo'lsa 2 kun» degan gap olib tashlandi. Muddatni
+  o'zgartirmoqchi bo'lsangiz: «AI qoidalari» → «Avia muddati».
+- **Shikoyat yoki menejer so'rasa** («menejer kerak», «pulimni qaytaring», «aldadingiz», «жалоба», «позовите
+  менеджера»…) — javob o'zi ketmaydi, har doim sizga qoladi.
+- AI «hisoblatishga yubordim» deb yozib, aslida ishni yubormagan bo'lsa — bu javob o'zi ketmaydi, sizga karta.
+- **Suhbat aylanib qolsa** (mijoz tomonda avtojavob robot bo'lsa, bir xil gap qayta-qayta kelsa) — AI to'xtaydi va
+  sizga bitta xabar keladi: «🔁 Bu suhbat aylanib qoldi (avtojavob bo'lishi mumkin) — AI 30 daqiqa bu chatga javob
+  yozmaydi, o'zingiz qarang.» Shu 30 daqiqada AI bu chatga o'zi yozmaydi. Avvalgi «ketma-ket 2 ta javobdan keyin
+  kutadi» qoidasi olib tashlandi.
+
+### Sizga (va siz tanlagan odamlarga)
+- AI o'zi yuborgan javobning kartasi **ovozsiz** keladi; sizni kutayotgan karta jiringlaydi. Darhol ketishi kerak
+  bo'lgan javob biror sabab bilan ketmasa: «⏱ AI javobi o‘zi ketmadi — kartani ko‘ring».
+- **Ertalab 08:40 — kechagi hisobot**, masalan: «🌅 AI sotuvchi, kecha (20.11): 14 javobdan 11 tasi o‘zi ketdi. 3 tasi
+  tasdiq kutdi: 2 — narx yoki pul, 1 — shikoyat.» Keyin javob yozilmagan xabarlar, tugagan chegaralar, «Javobsiz: N»,
+  «Belgilanmagan tekshiruv: N ta». Faqat sonlar — mijozning so'zi yo'q. Kecha hech narsa bo'lmagan bo'lsa — kelmaydi.
+- **Kechqurun 20:10 — «Bugungi tekshiruv»**: AI o'zi yuborgan 10 tagacha javob (avval narxli javoblar). Telegramga
+  bitta eslatma keladi, belgilash — sahifada: «👍 To‘g‘ri» yoki «👎 Xato edi». 👎 shu chatda AIni 30 kunga to'xtatadi,
+  7 kun ichida ikkinchi 👎 «o'zi yuborish»ni o'chiradi (bosganda so'raydi). Birinchi oy har kuni, keyin juma kunlari.
+- **Katta yuk signali**: mijoz 20 kub yoki ko'proq desa, yoki «fura», «to'liq mashina» desa — «Katta yuk signali»ga
+  tanlangan odamlarga: «🚛 Katta yuk: 24 kub · 5 200 kg · AI javob tayyorladi.» AI oddiy javob beraveradi. Bir chatdan
+  haftasiga bir marta, kechasi ovozsiz. Mijozning so'zi va telefoni yuborilmaydi; lid kartasining havolasi faqat uni
+  ocha oladigan odamga.
+- **«AI javob bermayapti» ogohlantirishi**: ish vaqtida yozgan mijoz 10 daqiqa (sozlama) javobsiz qolsa — «Rahbar va
+  o‘rinbosar»ga bitta xabar: «⚠️ AI sotuvchi javob bermayapti: 3 ta mijoz 12 daqiqadan beri kutyapti.» Bosh sahifada
+  qizil qator chiqadi. Hammasiga javob berilgach — bitta ovozsiz xabar: «✅ Javobsiz kutayotgan mijoz qolmadi — «AI
+  sotuvchi javob bermayapti» ogohlantirishi yopildi.» Kechasi yozganlar uchun ogohlantirish yo'q — ularni ertalabki
+  hisobotdagi «Javobsiz» sanaydi.
+- O'rinbosaringiz AI sahifasini ocha olmasa, ertalabki hisobot va ogohlantirish unga **havolasiz**, faqat sonlar bilan
+  boradi (sahifani unga ochmaymiz — sizning javobingiz). Kunlik tekshiruv eslatmasi 👍/👎 bosa oladigan odamga —
+  sizga keladi.
+- Xodimlarga boshqa hech narsa o'zgarmaydi.
+
+### «Suhbatlar → AI sotuvchi» sahifasida
+- **«Sozlamalar» → «O‘zi yuborish»:** «Qaysi javoblar o‘zi ketadi» da endi uchta katak qoldi — «Narx», «Hisoblatish
+  (VEDga)», «VED narxi (ustama bilan)». Salomlashish, aniqlashtirish, ma'lumot, yuk holati kataklari yo'q — oddiy suhbat
+  belgisiz o'zi ketadi. 0-bosqichda belgilaganlaringiz turibdi.
+- **«AI ishonchi kamida (%)» katagi olib tashlandi** (AI o'ziga bergan baho endi hech narsani hal qilmaydi).
+- Yangi kataklar: **«Oddiy javob kutishi (soniya)»** — 0 (darhol); **«Narx kutishi (soniya)»** — 120;
+  **«Kechasi (22:00–08:00) narxlar»** — «jadval narxi ketadi, VED narxi ertalab».
+- **«AI sotuvchining ismi»** (faqat super admin): mijozga «GSR sotuv menejeri» va shu ism bilan tanishtiradi. Bo'sh —
+  ismsiz.
+- **«AI qoidalari» → «Avia muddati (kun, masalan 3-5)».**
+- **«Kimning akkaunti»** kartasida (super admin): «AI raqamini ko‘rsatish (sotuvchisi yo‘q mijozlarga)» — o'chiq.
+- Yangi bo'lim **«Kim javob beradi»**: «Rahbar va o‘rinbosar» (birinchi — siz, ikkinchi — o'rinbosar; ertalabki
+  hisobot, kunlik tekshiruv va «AI javob bermayapti» shularga boradi) va «Katta yuk signali». Hech kim tanlanmasa —
+  sahifa kimga borishini ism bilan yozadi (AI egasi va super adminlar). Har bir odam yonida uning Telegrami ulanganmi,
+  AI sahifasini ocha oladimi yoziladi; AI akkauntining o'z Telegrami (kartalar shu yerga keladi) ham. Shu bo'limda:
+  katta yuk kubi (20), «fura» so'zi, «Mijoz javobsiz qolsa ogohlantirish (daqiqa)» (10).
+- Yangi bo'lim **«Kunlik tekshiruv»** — kechki 10 ta javob 👍/👎 bilan.
+
+### Boshqa sahifalarda
+- **«Arizalar taqsimoti»**: «Saytdan so'rovlar («Sotib olib berish»dan tashqari): sotuvchilarga / AI sotuvchiga» —
+  **sotuvchilarga** turibdi. AI tanlansa va AI o'sha paytda qabul qila olmasa (o'chiq, Telegram uzilgan, kunlik chegara
+  to'lgan…), so'rov odatdagidek sotuvchiga ketadi va sahifa sababini so'z bilan yozadi. AI sababli sayt hech qachon
+  «hech kim» degan javob olmaydi.
+- **«Xabar yuborish»**: «Sotuvchisi yo‘q mijozlar» belgisi (sotuvchisi bor kod bitta bo'lsa ham chat kirmaydi).
+
+### Deploydan keyin o'zingiz qiladiganlar
+1. **«Kim javob beradi» → «Rahbar va o‘rinbosar»**: o'zingizni, keyin o'rinbosaringizni qo'shing → «Saqlash».
+   **«Katta yuk signali»**: kimga borsin — tanlang → «Saqlash».
+2. **«AI sotuvchining ismi»** — ism yozing (masalan sizga yoqqan ayol yoki erkak ismi) → «Saqlash». Bo'sh qoldirsangiz,
+   AI «GSR sotuv menejeri» deb ismsiz tanishtiradi.
+3. Kutish kataklari va kechasi tanlovi — faqat boshqacha xohlasangiz (hozir: 0 / 120 / jadval narxi ketadi, VED
+   narxi ertalab).
+4. **AI raqamining (+998902405077) o'z telefonidagi Telegramdan** hodim botiga bir marta `/hodim` yuboring — narx
+   kartalari shu chatga keladi. «Kim javob beradi» bo'limida «AI akkauntining Telegrami (kartalar shu yerga keladi):
+   ulangan» chiqishi kerak. Ulanmagan bo'lsa, har bir narx hech kimning ekraniga yetmay kutib qoladi, oddiy javob esa
+   ketaveradi.
+5. **«VED narxi (ustama bilan)» ni hozircha belgilamang** — ustama savoliga javob berguningizcha. Belgilanmagan
+   bo'lsa, VED narxi sizga karta bo'lib keladi va ✅ bilan yuborasiz.
+6. **Bilimlar**: deploy paytida avia bilimi yangilanadi (`avia@2` — kun yozilmagan). Agar avia haqida bilimni
+   **o'zingiz** yozgan yoki tahrirlagan bo'lsangiz va unda kun soni bo'lsa («2-5 kun», «reys bo'lsa 2 kun») — uni
+   tahrirlang (kunni olib tashlang) yoki o'chiring. U turguncha AI o'sha kunlarni aytishi mumkin.
+7. ✅ingizni kutib turgan eski javoblar orasida «2-5 kun» yoki «reys bo'lsa 2 kun» deganlari bo'lsa — ❌ yoki ✏️.
+
+### Birinchi kun — avval xodimlar telefonida
+- Sinov uchun **hech bir login'ga yozilmagan raqam** kerak (ikkinchi SIM, qarindoshning telefoni). Xodimning o'z
+  raqamidan yozilgan xabarga AI ataylab javob bermaydi — u hech narsani tekshirmaydi.
+- To'rtta sinov, har birining kartasini birga o'qiymiz:
+  1. «3 kub 450 kg, narxi qancha?» → narx va rastamojka taklifi; keyin «ha» → AI ma'lumot so'raydi, ish «Hisoblash
+     (VED) → Navbat»ga tushadi.
+  2. Faqat bitta rasm → tayyor matn bir-ikki daqiqada.
+  3. Faqat ovozli xabar → tayyor matn.
+  4. Faqat «botmisiz?» → «Men GSRning AI yordamchisiman…».
+- Xohlasangiz, birinchi kun «Oddiy javob kutishi»ni 120 qilib turamiz va birinchi ertalabki hisobotdan keyin 0 ga
+  qaytaramiz. Bu — faqat sizning tanlovingiz.
+- Rastamojka taklifi yoki «ha» → hisoblatish chiqmasa, darhol aytamiz: bu AIga berilgan ko'rsatma, uni faqat jonli
+  chatda tekshirish mumkin.
+
+### Birinchi ertalab — 08:40 hisobotni birga o'qiymiz
+- «N javobdan M tasi o‘zi ketdi» — shu bosqichning butun va'dasi; 0-bosqichdagi bashorat bilan solishtiramiz.
+- «K tasi tasdiq kutdi» va har bir sabab — tushunarsiz sabab bo'lsa, bu so'zning xatosi, tuzatamiz.
+- «Javobsiz» — 0 dan ko'p bo'lsa, o'sha chatlarni o'sha ertalab birga ochamiz.
+- Chegara tugagan bo'lsa — qaysi katakni oshirish kerakligini aytamiz (token chegarasi — xato halqasidan himoya, pul
+  chegarasi emas).
+- «suhbat aylanib qoldi» bo'lsa — o'sha chatni birga ochamiz.
+
+### Hali yoqilmaydi
+- **Saytdan kelganlar AIga** («Hajm», 6c) — **o'chiq**. Tavsiya: 2-bosqichdan keyin (AI rasm va faylni o'qiy
+  boshlaganda) o'zingiz yoqasiz, «Kuniga ko‘pi bilan» sonini saytning kunlik so'rovlariga qarab oshirib.
+- **Sotuvchisi yo'q mijozlarga AI raqami** (7b) — **o'chiq**. 2-bosqichdan keyin: «AI raqamini ko‘rsatish» ni
+  yoqasiz, keyin «Xabar yuborish» da «Sotuvchisi yo‘q mijozlar» ni belgilab bitta xabar yuborasiz.
+
+### Bilib qo'ying
+- **59 ta xavfli gap** (qarz, chegirma, bepul xizmat, bojxona va'dasi…) — ro'yxati sizda. AI bunday gap yozgani
+  ko'rilmagan, lekin yozsa, endi u «oddiy javob» bo'lib siz ko'rmasdan ketadi; to'r — kechki tekshiruv. Ushlaydigan
+  yangi qo'riqchi 3b-bosqichda. Xohlagan kuni «Oddiy javob kutishi»ga 120 yozib, har bir javobni 2 daqiqa ushlab
+  turasiz.
+- **Tili bilinmaydigan birinchi xabar** («GS777», «👍», «Ok», «5 куб 800 кг»): AIning birinchi javobi bitta ✅ingizni
+  kutadi, ✅ bosgach chat tilni eslab qoladi (1b dagidek). Faqat rasm yoki ovozli xabarga ketadigan **tayyor matn**
+  esa bunday chatga o'zbekcha darhol o'zi ketadi.
+- **Forscha va xitoycha tayyor matn** (ovoz, rasm, pushtu, «Men GSRning AI yordamchisiman…») hozircha sizga karta bo'lib keladi —
+  o'zbekcha tarjimasi kartada. Bir marta tasdiqlab qo'yish (sizning 10a) keyingi bosqichda (1b).
+- Mijoz **rasm va ovozli xabarni birga** yuborsa — fayl uchun tayyor matn ketadi («…matn bilan yozib yuboring»), ovozli
+  xabarga alohida gap ketmaydi.
+- Bir jimlikda mijoz ikkala tayyor matnni olgan bo'lsa: keyingi har bir yangi ovozli xabar uchun sizga **bitta**
+  xabar keladi; yangi rasm uchun — hech narsa (oldingidek). Sahifadagi va botdagi «qaysi javob o'zi ketadi» so'zlari
+  endi har bir belgi uchun aniq aytadi: qaysi narx kutadi, qaysi biri sizga qoladi, hisoblatish kechasi ertalabgacha
+  kutadi.
+- **Invoysni yolg'iz yuborsa** — mijoz «faylni oldim, yozib yuboring» degan tayyor matnni oladi; hisoblatish matndan
+  boshlanadi. Invoysni AI o'qishi — 2-bosqich.
+- **Bir xil tayyor matn bir kunda ko'p chatga ketsa** (taxminan 5-chatdan), keyingi chatga u o'zi ketmaydi, sizga
+  karta keladi — bu Telegram bloklashidan himoya.
+- **Hodim boti ishlamay qolsa**, AI oddiy javob berishda davom etadi, ogohlantirishlar esa o'sha botdan keladi — shunda
+  faqat bosh sahifadagi qizil qatorlar ko'rinadi. AIni sahifadan o'chirish mumkin.
+- Deploydan oldin «botmisiz?» tufayli o'chirilgan chat o'z muddati tugaguncha (30 kungacha) o'chiq turadi.
+- «Fura» so'zi ba'zan ortiqcha signal berishi mumkin (masalan «fura ehtiyot qismlari») — chatdan haftasiga bir martadan
+  ko'p emas.
+- Saytdan AIga tushib, keyin mijoz bo'lgan odamning sotuvchisi AI akkaunti bo'ladi. Shunday mijoz botdagi «💬 Menejer»
+  tugmasida AI akkauntining tizimdagi ismini (masalan «BEKZOD AI sotuvchisi») va ovozli qo'ng'iroqqa hech kim javob
+  bermaydigan telefonini ko'radi («GSR sotuv menejeri <ism>» emas). Bu faqat saytdan
+  kelganlarni AIga yoqqaningizdan keyin ko'p uchraydi — o'shanda hal qilamiz.
+- Orqaga qaytarilsa hech narsa buzilmaydi; faqat «Qaysi javoblar o‘zi ketadi» qutisini 1a da saqlagan bo'lsangiz,
+  eski kodda to'rtta oddiy katak belgilangan bo'lib ko'rinadi — birga ochib tekshiramiz.
+
+### Qanday tekshirildi
+Reja koddan oldin 4 tomondan tekshirildi (44 e'tiroz, 41 tasi qabul qilinib rejaga yozildi). Yadro va 6 paket alohida
+qurildi, har biri qurilgandan keyin tekshirilib tuzatildi; keyin birlashtirildi va birlashgan kod yana tekshirildi.
+Doimiy test to'plamida xavfli javob o'tmaydi; 303 ta xavfli gap ro'yxati o'zgarmadi. To'liq sinov (CI tartibida, toza
+baza): 20 943 test va 539 brauzer testi yashil. Keyin birlashgan kod yana besh marta tekshirildi, har safar alohida
+tekshiruvchi bilan: har bir tuzatish oldingi tuzatishning yangi xatosini topdi, oxirgisida 29 980 xil suhbat holatida
+bitta ham xato chiqmadi. Qolgan ikki holat juda kam uchraydi (server aynan ikki yozuv orasida qayta ishga tushsa;
+xabar Telegramga ketgani noma'lum qolsa va siz o'sha paytda chatda yozayotgan bo'lsangiz) — yozib qo'yildi. Oxirgi
+to'liq sinov (CI tartibida, toza baza, yakuniy kodda): 21 060 test, qurish va 539 brauzer testi yashil; GitHub CI ham yashil.
+
 ## 2026-11-18 — Sotuvchilar skladdagi yuklarni, furalarni va skladlarni ko'radi
 
 Sizning so'zingiz: «sotuvchilarga ham skladdagi yuklarni korishga ruxsat ochib berish kerak furalarga va skladlarni

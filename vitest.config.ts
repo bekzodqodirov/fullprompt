@@ -20,7 +20,11 @@ export default defineConfig({
     // database every file shares, taken by any sweep from 2026-12-17 on: off
     // here, or the suite's behaviour changes by the calendar (tariff-watch
     // `tariffNoticeOn`). The notice's own tests switch it on.
-    env: { GEO_NETWORK: 'off', AGENT_TARIFF_NOTICE: 'off' },
+    //
+    // The AI sotuvchi's liveness alarm (stage 1a §4.5) is one state row any sweep may raise, judged on the real
+    // clock's working hours and on lines a file left minutes old: off here for the same reason, on in its own tests
+    // (liveness `livenessOn`).
+    env: { GEO_NETWORK: 'off', AGENT_TARIFF_NOTICE: 'off', AGENT_LIVENESS: 'off' },
   },
   resolve: {
     alias: {

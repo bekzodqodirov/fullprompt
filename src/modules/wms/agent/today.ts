@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { AGENT_LIMITS, dailySendCeiling } from './limits';
@@ -16,7 +16,13 @@ import { AGENT_LIMITS, dailySendCeiling } from './limits';
 export interface DayRunCounts {
   /** Inbound runs that reached a reservation — what `daily_draft_cap` counts. */
   runs: number;
-  /** The same, for one chat — `runsPerChatPerDay`. Zero when no chat was asked about. */
+  /**
+   * The same, for one chat — `runsPerChatPerDay`. Zero when no chat was asked about. A tayyor matn's run (stage 1a P3:
+   * no model, no token — the only inbound run with a null `model`) is not in it: the cap keeps one chatty customer from
+   * spending the day's MODEL budget (money-11), and a customer photographing an invoice page by page while the media
+   * line waits for a ✅ wrote a run per page — twelve, and his typed question was refused `chat_runs` for the day (fix
+   * review D4). Those runs still count in `runs`, the day's drafts.
+   */
   chat: number;
   /** input + output + cache-write tokens of every run — what `daily_token_cap` counts. */
   tokens: number;
@@ -40,7 +46,7 @@ export async function dayRunCounts(
   const [row] = await handle.execute<{ runs: number; chat: number; tokens: string; drafts: number; errors: number }>(sql`
     SELECT
       count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice'))::int AS runs,
-      count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice') ${chatClause})::int AS chat,
+      count(*) FILTER (WHERE trigger = 'inbound' AND outcome NOT IN ('refused', 'capped', 'notice') AND model IS NOT NULL ${chatClause})::int AS chat,
       coalesce(sum(input_tokens + output_tokens + cache_write_tokens), 0)::bigint::text AS tokens,
       count(*) FILTER (WHERE outcome = 'draft')::int AS drafts,
       count(*) FILTER (WHERE outcome = 'error')::int AS errors
@@ -56,6 +62,22 @@ export async function dayRunCounts(
 
 /** A daily cap a run meets at its reservation — the `capped` ledger row's reason (run `reserve`). */
 export type DayCap = 'daily_draft_cap' | 'chat_runs' | 'daily_token_cap';
+
+/**
+ * Each cap in his words — ONE map for the cap's notice (drafts `notifyCapReached`) and the morning line that names
+ * every cap the day tripped (stage 1a §4.5). The token cap is a guard against a runaway loop and never a money stop
+ * (his 10 c, «nothing stops on dollars»; §4.6): it is not called a budget anywhere.
+ */
+export const CAP_WORDS: Record<DayCap, string> = {
+  daily_draft_cap: 'bugungi qoralamalar soni',
+  chat_runs: 'bitta mijoz uchun kunlik chegara',
+  daily_token_cap: 'bugungi tokenlar chegarasi (xato halqasidan himoya, pul chegarasi emas)',
+};
+
+/** A stored cap reason in his words — a reason this build does not know says what it is, never a code. */
+export function capWordOf(reason: string): string {
+  return Object.hasOwn(CAP_WORDS, reason) ? CAP_WORDS[reason as DayCap] : 'bugungi AI chegarasi';
+}
 
 /**
  * Which cap a run reserved NOW would meet, in the reservation's own order, or
@@ -97,24 +119,40 @@ export async function sendsToday(
   dayCap: number,
 ): Promise<{ used: number; ceiling: number }> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
-  const [used] = await db.execute<{ n: number }>(sql`
-    SELECT count(*)::int AS n FROM agent_outbox
-     WHERE manager_user_id = ${managerUserId}
-       AND status IN (${sql.join(
-         OUTBOX_GOING.map((s) => sql`${s}`),
-         sql`, `,
-       )})
-       AND queued_at >= ${dayStart}::timestamptz`);
+  const [used] = await db.execute<{ n: number }>(sql`SELECT ${agentSendsSinceSql(sql`${managerUserId}`, dayStart)} AS n`);
   // His own average daily sends over the 30 days before the agent started (his Q11 ⭐).
   let ownAverage: number = dayCap;
   if (startedAt) {
-    const from = new Date(startedAt.getTime() - 30 * 86_400_000);
     const [own] = await db.execute<{ n: number }>(sql`
-      SELECT count(*)::int AS n FROM tg_messages m
-       WHERE m.manager_user_id = ${managerUserId} AND m.direction = 'out'
-         AND m.sent_at >= ${from.toISOString()}::timestamptz AND m.sent_at < ${startedAt.toISOString()}::timestamptz
-         AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id)`);
-    ownAverage = Number(own?.n ?? 0) / 30;
+      SELECT ${ownSendsBeforeStartSql(sql`${managerUserId}`, sql`${startedAt.toISOString()}::timestamptz`)} AS n`);
+    ownAverage = Number(own?.n ?? 0) / OWN_SENDS_DAYS;
   }
   return { used: Number(used?.n ?? 0), ceiling: dailySendCeiling({ startedAt, ownAverage, now, dayCap }) };
+}
+
+/** The days of his own sending the ramp averages over (his Q11 ⭐: the 30 days before the agent started). */
+export const OWN_SENDS_DAYS = 30;
+
+/**
+ * The two counts `sendsToday` is made of, as scalar fragments — so a reader that must ask them inside ONE statement
+ * on a transaction (the website's seat question, `seat-candidate.ts`, under the `lead_assign` lock and its 400 ms
+ * budget) counts exactly what the ✅, the gate and the page count, never a copy of the predicate (#513). `manager`
+ * and `startedAt` are SQL expressions in the caller's row: a bound value, or a column of its own.
+ */
+export function agentSendsSinceSql(manager: SQL, dayStartIso: string): SQL<number> {
+  return sql<number>`(SELECT count(*)::int FROM agent_outbox ao
+     WHERE ao.manager_user_id = ${manager}
+       AND ao.status IN (${sql.join(
+         OUTBOX_GOING.map((s) => sql`${s}`),
+         sql`, `,
+       )})
+       AND ao.queued_at >= ${dayStartIso}::timestamptz)`;
+}
+
+/** His own (human) sends from the account in the `OWN_SENDS_DAYS` before `startedAt` — the ramp's numerator. */
+export function ownSendsBeforeStartSql(manager: SQL, startedAt: SQL): SQL<number> {
+  return sql<number>`(SELECT count(*)::int FROM tg_messages m
+     WHERE m.manager_user_id = ${manager} AND m.direction = 'out'
+       AND m.sent_at >= ${startedAt} - make_interval(days => ${OWN_SENDS_DAYS}) AND m.sent_at < ${startedAt}
+       AND NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id))`;
 }

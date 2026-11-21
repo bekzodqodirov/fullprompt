@@ -622,7 +622,9 @@ export async function forwardClientMessage(input: {
   const key = await readyKey(() => onceKey.message(input.chatId, input.messageId, 'client_forward'));
   if (key && (await claimedAlready(key))) return { to: 'duplicate', locale };
   const { managersFor } = await cabinetReads();
-  const managers = await managersFor(linked.map((c) => c.id));
+  // No chat: who RECEIVES the words is a seller or the office — never the AI seat, whose number a sellerless
+  // customer may be shown (`managersFor`'s `chatId`).
+  const managers = await managersFor(linked.map((c) => c.id), null);
   // The first code whose manager the message would actually REACH:
   // `managersFor` has dropped a deactivated one, and `reachableStaff` one with
   // no linked Telegram (or who muted these) — so a customer is never told «your
@@ -830,7 +832,7 @@ async function sendHistory(chatId: number, linked: LinkedClient[], locale: strin
 async function sendManagers(chatId: number, linked: LinkedClient[], locale: string | null): Promise<void> {
   const { managersFor, officeContact } = await cabinetReads();
   const { managerCards } = await botText();
-  const [managers, office] = await Promise.all([managersFor(linked.map((c) => c.id)), officeContact()]);
+  const [managers, office] = await Promise.all([managersFor(linked.map((c) => c.id), BigInt(chatId)), officeContact()]);
   const t = clientLabels(locale);
   const cards = managerCards(
     linked.map((c) => ({ clientCode: c.clientCode, manager: managers.get(c.id) ?? null })),

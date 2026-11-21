@@ -6,6 +6,7 @@ import {
   AUTO_REFUSAL_WORDS,
   AUTO_SEND_CATEGORIES,
   MONEY_TOOLS,
+  autoClassOf,
   autoVerdict,
   type AutoGateInput,
   type AutoRefusal,
@@ -34,7 +35,7 @@ const FOUR = ['greeting', 'qualification', 'faq', 'status'];
 
 function eligible(): AutoGateInput {
   return {
-    config: { armed: true, categories: [...FOUR], maxChars: 400, minConfidence: 0.8, perDay: 30 },
+    config: { armed: true, categories: [...FOUR], maxChars: 400, perDay: 30 },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -42,8 +43,10 @@ function eligible(): AutoGateInput {
       ownText: false,
       blocked: false,
       needsOwner: false,
-      warnings: 0,
-      notes: 0,
+      warningCodes: [],
+      noteCodes: [],
+      systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'greeting',
       language: 'uz',
@@ -66,7 +69,9 @@ function eligible(): AutoGateInput {
     workAccount: true,
     at: NOON,
     now: NOON,
-    streak: 0,
+    loop: false,
+    complaint: false,
+    nightPrices: 'table',
     pressedToday: 0,
     budgetLeft: 10,
     sendingEnabled: true,
@@ -148,9 +153,12 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   not_pending: (i) => (i.draft.status = 'editing'),
   blocked: (i) => (i.draft.blocked = true),
   needs_owner: (i) => (i.draft.needsOwner = true),
-  warnings: (i) => (i.draft.warnings = 1),
-  notes: (i) => (i.draft.notes = 1),
+  // One code each that stage 1a keeps a machine stop (never the eye-only `questions` or `late`): the row means the same after P1.
+  warnings: (i) => (i.draft.warningCodes = ['avia_maybe']),
+  notes: (i) => (i.draft.noteCodes = ['calc_open']),
   actions: (i) => (i.draft.actionTypes = ['calc_submit']),
+  // Rule 11's «hisoblatishga yubordim» with no calculation sent (stage 1a J9) — the reply's own words are the fact.
+  calc_claim_unbacked: (i) => (i.draft.body = 'Hisoblatishga yubordim, javob kelishi bilan aytaman.'),
   calc_identity: (i) => (calcSubmit(i).calc!.unproven = true),
   calc_foreign: (i) => (calcSubmit(i).calc!.foreign = true),
   calc_refused: (i) => (calcSubmit(i).calc!.refused = true),
@@ -176,12 +184,18 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   owner_figure: (i) => (i.draft.ledger = [{ kind: 'duration', origin: 'owner', tool: null, role: null }]),
   owner_personal: (i) => (i.money.ownerPersonal = true),
   answer_stale: (i) => (i.money.answerStale = true),
-  category: (i) => (i.draft.category = 'complaint'),
+  // DELIBERATE EDIT (stage 1a §6.2): the ticked label is gone; a complaint — the model's own label — stays his.
+  complaint: (i) => (i.draft.category = 'complaint'),
   status_unbacked: (i) => (i.draft.category = 'status'),
   language: (i) => (i.draft.language = 'en'),
+  // A Persian tayyor matn he has not approved (stage 1a J27): the language admits it, the approval does not.
+  ready_text_unapproved: (i) => {
+    i.draft.systemAck = true;
+    i.draft.language = 'fa';
+    i.draft.customerLocale = { locale: 'fa', confident: true };
+  },
   media: (i) => (i.burstMedia = true),
   too_long: (i) => (i.draft.body = 'x'.repeat(401)),
-  low_confidence: (i) => (i.draft.confidence = 0.79),
   stranger: (i) => (i.chat.hasOwner = false),
   prospect: (i) => (i.chat.prospect = true),
   chat_off: (i) => (i.chat.offUntil = new Date(NOON.getTime() + 60_000)),
@@ -189,8 +203,13 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   human_active: (i) => (i.chat.humanUntil = new Date(NOON.getTime() + 60_000)),
   chat_muted: (i) => (i.chat.muted = true),
   not_work_account: (i) => (i.workAccount = false),
-  night: (i) => (i.at = NIGHT),
-  streak: (i) => (i.streak = 2),
+  // DELIBERATE EDIT (stage 1a §6.2, his 4 a): the night bars a CLASS by his setting — a table price under «none».
+  night: (i) => {
+    quote(i).at = NIGHT;
+    i.nightPrices = 'none';
+  },
+  // The reply about to go is word for word one of our last sends here (stage 1a P2, loop `own_repeat`).
+  loop: (i) => (i.loop = true),
   daily_cap: (i) => (i.pressedToday = 30),
   // The ✅'s own refusals that are already facts at the scheduling (fix pass A, C8).
   budget_spent: (i) => (i.budgetLeft = 0),
@@ -213,22 +232,30 @@ describe('the gate', () => {
     expect(autoVerdict(input)).toEqual({ eligible: false, reasons: [code] });
   });
 
+  /**
+   * Stage 1a P3's two (J9, J27) each need an input every other row overwrites — the reply's words, and a Persian reply
+   * the `language` row turns English — so each is asked on its own by the `%s` row above, and beside the others here.
+   */
+  const OWN_INPUT = new Set<AutoRefusal>(['calc_claim_unbacked', 'ready_text_unapproved']);
+
   it('collects EVERY reason, in the one stable order — never the first alone', () => {
     const input = eligible();
     for (const code of [...AUTO_REFUSALS].reverse()) {
       // The quote's own facts are asked of a quote the money clause admitted — the second input below;
       // status_unbacked, category and the two body-reading refusals are set by hand at the end.
-      if (QUOTE_ONLY.has(code) || CALC_ONLY.has(code) || CALC_PRICE_ONLY.has(code) || ['category', 'status_unbacked', 'money_unread', 'too_long'].includes(code)) continue;
+      // The night is set by hand too (stage 1a): its own change makes a quote, which the money refusal here would hide.
+      if (QUOTE_ONLY.has(code) || CALC_ONLY.has(code) || CALC_PRICE_ONLY.has(code) || ['complaint', 'status_unbacked', 'money_unread', 'too_long', 'night'].includes(code) || OWN_INPUT.has(code)) continue;
       ONE_CHANGE[code](input);
     }
+    // DELIBERATE EDIT (stage 1a §6.2): the complaint is the burst's own words here (P3's reader, `complaint`) — the
+    // label is the status claim; and the draft's act (a calc submit) is a class the night always bars.
     input.draft.category = 'status';
+    input.complaint = true;
+    input.at = NIGHT;
     input.draft.body = `Narxi bir necha dollar. ${'x'.repeat(400)}`;
     const out = autoVerdict(input);
     expect(out.eligible).toBe(false);
-    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => r !== 'category' && !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r)));
-    // …and a category outside the chosen set is the category's own refusal beside it.
-    input.config.categories = ['greeting'];
-    expect(autoVerdict(input).reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r)));
+    expect(out.reasons).toEqual(AUTO_REFUSALS.filter((r) => !QUOTE_ONLY.has(r) && !CALC_ONLY.has(r) && !CALC_PRICE_ONLY.has(r) && !OWN_INPUT.has(r)));
     // A calculation's own five, all at once, in the same order (SPEC-P2-v2 §1.1).
     const c = calcSubmit(eligible());
     c.calc = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
@@ -241,6 +268,11 @@ describe('the gate', () => {
     q.money.foreignDestination = true;
     q.draft.body = '5 kub, 800 kg yukingiz uchun taxminan 960 $.';
     expect(autoVerdict(q).reasons).toEqual(AUTO_REFUSALS.filter((r) => QUOTE_ONLY.has(r)));
+    // Stage 1a P3's two together, and in the order: a claim of a sent calculation in a Persian tayyor matn.
+    const p3 = eligible();
+    ONE_CHANGE.ready_text_unapproved(p3);
+    p3.draft.body = 'برای محاسبه فرستادم، به محض دریافت جواب اطلاع می‌دهم.';
+    expect(autoVerdict(p3).reasons).toEqual(['calc_claim_unbacked', 'ready_text_unapproved']);
   });
 
   it('at the press the three facts the ✅ asks itself are not the gate’s (null): the scheduling alone judges them', () => {
@@ -305,30 +337,31 @@ describe('the gate', () => {
     expect(autoVerdict(input)).toEqual({ eligible: true, reasons: [] });
   });
 
-  it('the five kinds ever, and only the ones he chose — «Narx» among them only when he ticked it', () => {
-    for (const category of ['complaint', 'other', null]) {
+  it('the label is free since stage 1a (§4.2: the ticked label goes) — only «complaint» stays his, however the reply reads', () => {
+    // DELIBERATE EDIT: before 1a a label outside the ticked kinds was `category`; what a reply DOES decides now.
+    expect(autoVerdict(Object.assign(eligible(), { draft: { ...eligible().draft, category: 'complaint' } })).reasons).toEqual(['complaint']);
+    for (const category of ['other', null, 'price', 'greeting', 'calc', 'calc_price']) {
       const input = eligible();
       input.draft.category = category;
-      input.config.categories = ['greeting', 'qualification', 'faq', 'status', 'price', 'complaint', 'other'];
-      expect(autoVerdict(input).reasons, String(category)).toEqual(['category']);
+      expect(autoVerdict(input), String(category)).toEqual({ eligible: true, reasons: [] });
     }
-    const unchosen = eligible();
-    unchosen.config.categories = ['faq'];
-    expect(autoVerdict(unchosen).reasons).toEqual(['category']);
-    // A reply the model labelled «price» with no money in it: unticked, it is his; ticked, it goes.
-    const label = eligible();
-    label.draft.category = 'price';
-    expect(autoVerdict(label).reasons).toEqual(['category']);
-    label.config.categories = [...FOUR, 'price'];
-    expect(autoVerdict(label)).toEqual({ eligible: true, reasons: [] });
+    // The four ordinary kinds are no longer read: none of them ticked, a greeting still goes.
+    const unticked = eligible();
+    unticked.config.categories = ['price'];
+    expect(autoVerdict(unticked)).toEqual({ eligible: true, reasons: [] });
+    // …and the burst's own complaint (P3's reader) stays his whatever the label says.
+    const words = eligible();
+    words.complaint = true;
+    expect(autoVerdict(words).reasons).toEqual(['complaint']);
   });
 
-  it('«calc» and «calc_price» are never a model’s label (SPEC-P2-v2 §1.1): ticked, a reply LABELLED so still refuses', () => {
+  it('a label naming «calc» or «calc_price» with nothing behind it is talk — the kinds of those two are decided by the act and the tool', () => {
     for (const category of ['calc', 'calc_price']) {
       const input = eligible();
       input.draft.category = category;
       input.config.categories = [...AUTO_SEND_CATEGORIES];
-      expect(autoVerdict(input).reasons, category).toEqual(['category']);
+      expect(autoClassOf(input), category).toBe('talk');
+      expect(autoVerdict(input).eligible, category).toBe(true);
     }
   });
 
@@ -353,20 +386,21 @@ describe('the gate', () => {
     expect(autoVerdict(input).reasons).toEqual(['actions']);
   });
 
-  it('the boundaries: 400 characters go, 0.80 goes, a missing confidence does not, a chat off until now is on again', () => {
+  it('the boundaries: 400 characters go, a chat off until now is on again, the day’s last press goes — and the model’s rating decides nothing (stage 1a)', () => {
     const at = eligible();
     at.draft.body = 'x'.repeat(400);
-    at.draft.confidence = 0.8;
     expect(autoVerdict(at).eligible).toBe(true);
-    const none = eligible();
-    none.draft.confidence = null;
-    expect(autoVerdict(none).reasons).toEqual(['low_confidence']);
+    // DELIBERATE EDIT (stage 1a §6.2): the model's own rating left the gate — a low one and a missing one go.
+    for (const confidence of [0.3, 0, null]) {
+      const low = eligible();
+      low.draft.confidence = confidence;
+      expect(autoVerdict(low), String(confidence)).toEqual({ eligible: true, reasons: [] });
+    }
     const off = eligible();
     off.chat.offUntil = NOON;
     expect(autoVerdict(off).eligible).toBe(true);
     const day = eligible();
     day.pressedToday = 29;
-    day.streak = 1;
     expect(autoVerdict(day).eligible).toBe(true);
   });
 
@@ -380,9 +414,11 @@ describe('the gate', () => {
     expect(autoVerdict(input).reasons).toEqual(['daily_cap']);
   });
 
-  it('the night is the pump’s own: 22:00-08:00 Tashkent, judged at the moment the reply would go', () => {
+  it('the night is the pump’s own: 22:00-08:00 Tashkent, judged at the moment the reply would go — of a class it bars', () => {
+    // DELIBERATE EDIT (stage 1a §6.2): asked of a price his setting bars (`none`); talk is never barred (below).
     const at = (iso: string) => {
-      const input = eligible();
+      const input = quote(eligible());
+      input.nightPrices = 'none';
       input.at = new Date(iso);
       return autoVerdict(input).reasons;
     };
@@ -394,7 +430,7 @@ describe('the gate', () => {
 
   it('…and at the moment its card is queued: a reply written in the night’s last hold would go at 08:00, but its card arrives silently — refused «night» (the second check)', () => {
     const queued = (now: string, at: string) => {
-      const input = eligible();
+      const input = calcSubmit(eligible());
       input.now = new Date(now);
       input.at = new Date(at);
       return autoVerdict(input).reasons;
@@ -468,7 +504,8 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
   });
 
   it('the price act is HIS box: unticked, a quote is money; and the label never stands in for the box', () => {
-    expect(money((i) => (i.config.categories = [...FOUR]))).toEqual(['money', 'category']);
+    // DELIBERATE EDIT (stage 1a): the label refusal is gone — the price box alone keeps an unticked quote his.
+    expect(money((i) => (i.config.categories = [...FOUR]))).toEqual(['money']);
     // Labelled «faq» by the model, the quote is still judged as price once the clause admits it.
     expect(money((i) => (i.draft.category = 'faq'))).toEqual([]);
     expect(
@@ -645,11 +682,13 @@ describe('the money clause by OUTCOME (spec SPEC-P1-v2 §1.1, §1.4)', () => {
     expect(money((i) => (i.money.ownerFigure = false))).toEqual([]);
   });
 
-  it('an admitted quote never launders the model’s label: «complaint» and «other» stay his, a status claim is still asked for its reading (0148 fix)', () => {
+  it('an admitted quote never launders a complaint: «complaint» stays his, a status claim is still asked for its reading (0148 fix)', () => {
     // Before 0148 any money refused, so these never went; with «Narx» ticked the override judged every admitted
     // quote as `price` — and «Sizlar bilan sudlashaman … yo‘lkira qancha?» answered with the estimate was pressed.
-    for (const label of ['complaint', 'other', null]) {
-      expect(money((i) => (i.draft.category = label)), String(label)).toEqual(['category']);
+    // DELIBERATE EDIT (stage 1a §6.2): the complaint is its own refusal now, and «other» / no label is free.
+    expect(money((i) => (i.draft.category = 'complaint'))).toEqual(['complaint']);
+    for (const label of ['other', null]) {
+      expect(money((i) => (i.draft.category = label)), String(label)).toEqual([]);
     }
     // The kinds that go by themselves are judged as `price` once the clause admits the money, as before.
     for (const label of ['greeting', 'qualification', 'faq', 'price']) {
@@ -808,24 +847,27 @@ describe('a calculation the machine lands by itself (SPEC-P2-v2 §1.1)', () => {
       i.draft.category = label;
       expect(autoVerdict(i), String(label)).toEqual({ eligible: true, reasons: [] });
     }
-    // …but a label that never goes stays his whatever it does (finding 8): «shikoyat va savolli javoblar har doim
-    // sizga qoladi» — the arming words promise it, and a missing label is no kind at all (fails closed).
-    for (const label of ['complaint', 'other', null, '']) {
+    // …but a complaint stays his whatever it does (finding 8 — the arming words: «shikoyat har doim sizga qoladi»).
+    // DELIBERATE EDIT (stage 1a §6.2): «other» and no label are free now — the act decides, not the label.
+    const complaint = calcSubmit(eligible());
+    complaint.draft.category = 'complaint';
+    expect(autoVerdict(complaint)).toEqual({ eligible: false, reasons: ['complaint'] });
+    for (const label of ['other', null, '']) {
       const i = calcSubmit(eligible());
       i.draft.category = label;
-      expect(autoVerdict(i), String(label)).toEqual({ eligible: false, reasons: ['category'] });
+      expect(autoVerdict(i), String(label)).toEqual({ eligible: true, reasons: [] });
     }
-    // …and with «Hisoblatish» unticked it is judged exactly as before: an action, refused, beside its label's verdict.
+    // …and with «Hisoblatish» unticked it is judged exactly as before: an action, refused.
     const off = calcSubmit(eligible());
     off.config.categories = [...FOUR];
-    expect(autoVerdict(off).reasons).toEqual(['actions', 'category']);
+    expect(autoVerdict(off).reasons).toEqual(['actions']);
     off.draft.category = 'qualification';
     expect(autoVerdict(off).reasons).toEqual(['actions']);
-    // A label never names the kind: «calc» as the model's label is no kind at all.
+    // A label never names the kind: «calc» as the model's label, with no act behind it, is ordinary talk.
     const labelled = eligible();
     labelled.config.categories = [...FOUR, 'calc'];
     labelled.draft.category = 'calc';
-    expect(autoVerdict(labelled).reasons).toEqual(['category']);
+    expect(autoVerdict(labelled)).toEqual({ eligible: true, reasons: [] });
   });
 
   it('only a draft whose ONE act is a calc submit (and a follow-up): with a mute, or two submits, it is an action', () => {

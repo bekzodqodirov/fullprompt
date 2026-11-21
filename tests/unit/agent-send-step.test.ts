@@ -663,10 +663,11 @@ describe('draftWorthy (fit-1)', () => {
     expect(draftWorthy([m('rahmat'), m('👍')], false)).toEqual({ worthy: false, reason: 'closing' });
     expect(draftWorthy([m('ok')], true)).toEqual({ worthy: true, greetingOnly: false });
   });
-  it('a notice, not a draft, for voice, Pashto and «are you a bot»', () => {
+  it('no run of the model for voice or Pashto; «are you a bot» is answered by a run since stage 1a (his 1 b)', () => {
     expect(draftWorthy([m(null, 'voice')], false)).toMatchObject({ reason: 'voice_only', notice: true });
     expect(draftWorthy([m('ستاسو بار څه وخت راځي')], false)).toMatchObject({ reason: 'pashto', notice: true });
-    expect(draftWorthy([m('Siz botmisiz?')], false)).toMatchObject({ reason: 'bot_question', notice: true });
+    // DELIBERATE EDIT (stage 1a P3): the honest line is put in front of the run's reply (run `withBotAnswer`).
+    expect(draftWorthy([m('Siz botmisiz?')], false)).toEqual({ worthy: true, greetingOnly: false });
   });
   it('a greeting-only burst is marked so the worker waits for the question', () => {
     expect(draftWorthy([m('Assalomu alaykum')], false)).toEqual({ worthy: true, greetingOnly: true });
@@ -695,7 +696,8 @@ describe('eligibleForRun (§17.4)', () => {
     anchorMaxAgeMs: AGENT_LIMITS.anchorMaxAgeMs,
     anchorAutoSent: false,
     lastOutAt: null,
-    anchorRepeats: false,
+    peerTypingAt: null,
+    loop: false,
   };
   it('passes a fresh customer question', () => expect(eligibleForRun(f)).toEqual({ ok: true }));
   it.each([
@@ -706,9 +708,20 @@ describe('eligibleForRun (§17.4)', () => {
     [{ humanActive: true }, 'human_active'],
     [{ anchorAutoSent: true }, 'auto_sent'],
     [{ lastOutAt: new Date(now.getTime() - 62_000) }, 'echo'],
-    [{ anchorRepeats: true }, 'repeat'],
+    // Stage 1a P2: the chat loop detector replaced «the same line again» (`repeat`, which stopped the FIRST «Salom?»).
+    [{ loop: true }, 'loop'],
     [{ anchorSentAt: new Date(now.getTime() - 25 * 3_600_000) }, 'too_old'],
   ] as const)('refuses %o → %s', (patch, reason) => {
     expect(eligibleForRun({ ...f, ...patch })).toEqual({ ok: false, reason });
+  });
+
+  it('a line seconds after ours is an echo — unless he was seen typing after ours (the merged-tree seam review, finding 7)', () => {
+    const ours = new Date(f.anchorSentAt.getTime() - 3_000);
+    // No typing seen, or a stamp from before our line: the 5-second echo, as before.
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: null })).toEqual({ ok: false, reason: 'echo' });
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: new Date(ours.getTime() - 1) })).toEqual({ ok: false, reason: 'echo' });
+    // Typing at or after our line: a person answered — a robot never types (J8's principle).
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: new Date(ours.getTime() + 1_000) })).toEqual({ ok: true });
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: ours })).toEqual({ ok: true });
   });
 });

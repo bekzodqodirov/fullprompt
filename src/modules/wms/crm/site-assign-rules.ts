@@ -33,6 +33,16 @@ export function readTeam(raw: string | null | undefined): LeadTeam {
 }
 
 /**
+ * Does the website's choice send this team's visitor to the AI seat (stage 1a «Hajm», his 6 c; `lead_assign_ai`)?
+ * Every team but «Sotib olib berish» — buying for a client is a person's job (his ⭐ 1: «Umumiy» goes too). ONE
+ * home: the door (`assignForTag`) and the roster page's «keyingi» line both ask it, or the page would explain a
+ * choice the door did not make (#513). Whether the seat CAN take one is `seatCandidate`'s.
+ */
+export function siteAiAsks(mode: 'off' | 'all', team: LeadTeam): boolean {
+  return mode === 'all' && team !== 'buying';
+}
+
+/**
  * The tag's one shape. `lead_assignments_tag_check` says the same thing in
  * the database and `site-assign-rules.test.ts` reads the migration to hold the
  * two together — three definitions (route, listener, CHECK) is how a four-

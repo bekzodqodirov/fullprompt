@@ -5,7 +5,7 @@ import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { CrmError } from '@/modules/wms/crm/service';
 import { deleteMapping, saveMapping } from '@/modules/wms/crm/field-map';
-import { SiteAssignError, saveSiteTeams } from '@/modules/wms/crm/site-assign';
+import { SiteAssignError, saveSiteTeams, setLeadAssignAi } from '@/modules/wms/crm/site-assign';
 import {
   RoutingError,
   createRoute,
@@ -172,6 +172,25 @@ export async function saveSiteTeamsAction(
   } catch (err) {
     if (err instanceof AuthError) return { error: 'forbidden' };
     if (err instanceof SiteAssignError) return { error: err.code };
+    throw err;
+  }
+  revalidatePath('/admin/taqsimot');
+  return { ok: true };
+}
+
+/**
+ * «Saytdan so'rovlar («Sotib olib berish»dan tashqari): sotuvchilarga / AI sotuvchiga» (stage 1a «Hajm», his 6 c) —
+ * under this page's own gate, beside the roster it bypasses. Only the radio's `all` turns it on: anything else posted
+ * is `off`, the value it ships with, so a forged or garbled post can only ever narrow it.
+ */
+export async function saveSiteAiAction(
+  _prev: RoutingFormState,
+  form: FormData,
+): Promise<RoutingFormState> {
+  try {
+    await setLeadAssignAi(form.get('ai') === 'all' ? 'all' : 'off', await ctx());
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
     throw err;
   }
   revalidatePath('/admin/taqsimot');

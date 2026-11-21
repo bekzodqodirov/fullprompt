@@ -10,6 +10,7 @@ import type { CancelRefusal } from '@/modules/wms/agent/web-thread';
 import type { RetireRefusal } from '@/modules/wms/agent/web-kb';
 import type { TariffConfirmRefusal } from '@/modules/wms/agent/tariff-watch';
 import type { ClearRefusal } from '@/modules/wms/crm/account-guard';
+import type { AgentNightPrices } from '@/modules/platform/settings/service';
 import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
 
 /**
@@ -21,7 +22,7 @@ import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
  * bundles under `agentAi`.
  */
 
-export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'bilimlar', 'saboqlar', 'sozlamalar'] as const;
+export const AGENT_SECTIONS = ['kutilmoqda', 'savollar', 'tekshiruv', 'bilimlar', 'saboqlar', 'kimga', 'sozlamalar'] as const;
 export type AgentSection = (typeof AGENT_SECTIONS)[number];
 
 export const SECTION_KEYS: Record<AgentSection, string> = {
@@ -30,6 +31,9 @@ export const SECTION_KEYS: Record<AgentSection, string> = {
   bilimlar: 'section.bilimlar',
   // «📝 Tuzatish» — what he taught the AI (0148, spec SPEC-P1-v2 §3.6).
   saboqlar: 'section.saboqlar',
+  // Stage 1a (§4.5): the evening sample to mark, and who the machine tells.
+  tekshiruv: 'section.tekshiruv',
+  kimga: 'section.kimga',
   sozlamalar: 'section.sozlamalar',
 };
 
@@ -39,6 +43,15 @@ export function sectionOf(raw: string | undefined): AgentSection {
 
 /** Every refusal code an action on the page can return. */
 export type AgentErrorCode =
+  // Stage 1a's «Kim javob beradi» and «Kunlik tekshiruv» (signal-actions.ts) — their own codes, each its words.
+  | 'designation_unknown_topic'
+  | 'designation_too_many'
+  | 'designation_not_staff'
+  | 'bad_big_cargo'
+  | 'bad_liveness'
+  | 'sample_not_found'
+  | 'sample_already'
+  | 'sample_forbidden'
   | DecideRefusal
   | AgentConfigRefusal
   | KbRefusal
@@ -59,14 +72,21 @@ export type AgentErrorCode =
   // words like `not_found` with the draft decisions and a switch is not a draft.
   | `auto_${AutoConfigRefusal}`
   // A number out of bounds in the daily-count box and in the account-limit boxes (web-actions): each its own
-  // sentence, naming its bounds — `auto_bad_value` is the kinds form's «tick at least one».
+  // sentence, naming its bounds — `auto_bad_value` is the kinds form's own. Stage 1a's two holds and the night choice
+  // (web-actions `agentAutoTalkHoldAction`, `…PriceHoldAction`, `…NightAction`) likewise.
   | 'auto_bad_per_day'
-  | 'auto_bad_confidence'
   | 'auto_bad_caps'
+  | 'auto_bad_talk_hold'
+  | 'auto_bad_price_hold'
+  | 'auto_bad_night'
   // The AI seat's open-calc cap (SPEC-P2-v2 §1.3, web-actions `agentOpenLimitAction`): a whole number 1..200.
   | 'bad_open_limit'
   // His markup on the VED's answer (SPEC-P2-v2 §2.1, web-actions `agentMarkupAction`): a rule out of its bounds.
   | 'bad_markup'
+  // The persona's name (stage 1a P3, web-actions `agentPersonaAction`): not letters and single spaces, or too long.
+  | 'bad_persona'
+  // The flight's days (stage 1a P7, web-actions `agentAviaDaysAction`): not «N-M» whole days, N below M, M up to 60.
+  | 'bad_avia_days'
   | `auto_stop_${Exclude<StopAutoRefusal, 'not_ready'>}`
   | `auto_fb_${Exclude<AutoFeedbackRefusal, 'not_ready'>}`
   // «📝 Tuzatish» (web-actions `agentLesson…`, lessons.ts): their own codes too — «empty» and «too long» there
@@ -75,6 +95,15 @@ export type AgentErrorCode =
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
+  // stage 1a (signal-actions.ts)
+  designation_unknown_topic: 'errors.designation_unknown_topic',
+  designation_too_many: 'errors.designation_too_many',
+  designation_not_staff: 'errors.designation_not_staff',
+  bad_big_cargo: 'errors.bad_big_cargo',
+  bad_liveness: 'errors.bad_liveness',
+  sample_not_found: 'errors.sample_not_found',
+  sample_already: 'errors.sample_already',
+  sample_forbidden: 'errors.sample_forbidden',
   // decideDraft / submitOwnText
   not_found: 'errors.not_found',
   not_account_holder: 'errors.not_account_holder',
@@ -123,6 +152,8 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   seat_not_holder: 'errors.seat_not_holder',
   bad_open_limit: 'errors.bad_open_limit',
   bad_markup: 'errors.bad_markup',
+  bad_persona: 'errors.bad_persona',
+  bad_avia_days: 'errors.bad_avia_days',
   markup_changed: 'errors.markup_changed',
   // «✅ Tarif to'g'ri»: the column changed since the page was drawn (tariff-watch `confirmTariff`).
   tariff_changed: 'errors.tariff_changed',
@@ -153,8 +184,10 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_not_work_account: 'errors.auto_not_work_account',
   auto_bad_value: 'errors.auto_bad_value',
   auto_bad_per_day: 'errors.auto_bad_per_day',
-  auto_bad_confidence: 'errors.auto_bad_confidence',
   auto_bad_caps: 'errors.auto_bad_caps',
+  auto_bad_talk_hold: 'errors.auto_bad_talk_hold',
+  auto_bad_price_hold: 'errors.auto_bad_price_hold',
+  auto_bad_night: 'errors.auto_bad_night',
   auto_stop_not_found: 'errors.auto_stop_not_found',
   auto_stop_not_account_holder: 'errors.auto_stop_not_account_holder',
   auto_stop_pressed: 'errors.auto_stop_pressed',
@@ -261,3 +294,10 @@ export function autoDisarmKey(reason: string | null): string | null {
   if (reason.startsWith('forced:')) return AUTO_DISARM_KEYS[forcedKindOf(reason)];
   return (AUTO_DISARM_KEYS as Record<string, string>)[reason] ?? 'autoOff.unknown';
 }
+
+/** Which prices go by themselves at night (stage 1a, `agent_night_prices`) — each choice in his words. */
+export const NIGHT_PRICE_KEYS: Record<AgentNightPrices, string> = {
+  none: 'autoNight.none',
+  table: 'autoNight.table',
+  all: 'autoNight.all',
+};

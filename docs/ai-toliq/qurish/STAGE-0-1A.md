@@ -311,6 +311,44 @@ outbound reach from his server to each provider. He sees the result as a table; 
   the repository (`docs/ai-toliq/README.md`); K1 can commit the 303 only. The «more ordinary replies go» half of
   step 1's evidence is the reader corpus's ordinary rows plus stage 0's `verdicts`.
 
+**K5-K6, as built (2026-11-20, the building session — what the packages compile against; re-fitted to the code where
+the rows above differ).**
+- **Codes.** `types.ts` `NOTE_CODES` (the thirteen of K5, each with its writer) and `NoteCode`; `DraftPolicyJson.noteCodes?`
+  and `.system?: SystemReplyReason` (`SYSTEM_REPLY_REASONS` = voice / media / pashto — P3 writes it, the kernel only
+  reads it). The codes travel as PARALLEL arrays, every push followed by its twin's push: both run paths declare
+  `const noteCodes: NoteCode[] = []` and HAND it into `validateActions(…, noteCodes)`, which fills the codes of the notes
+  it writes and returns `{ actions, notes, noteCodes }` (a source-shape pin, `agent-china-addresses.test.ts` «both run
+  paths», holds the call's destructuring `{ actions, notes } = validateActions(c,` verbatim — taking the codes from the
+  same destructuring would have changed that expectation), `RunDraftInput.noteCodes` is REQUIRED, `draftFromRun` stores `noteCodes` beside
+  `notes`, `calcSubmitFacts` returns `cardNoteCodes`, `autoFactsFor` returns `calcNoteCodes`, and `AutoPlan` gains
+  `cardNoteCodes?` (optional like `cardNotes?` — one integration test builds an `AutoPlan` literal; a plan with lines
+  and no codes leaves the stored notes uncoded, which reads as a stop). `settleCalcPrices` now returns the one note or
+  null (it returned `[CALC_PRICE_MANY]` or `[]`), so its code can stand beside it.
+- **The reading rule** is `auto-send.ts` `noteCodesOf(policy)` (no notes → `[]`; same-length string codes → them; else
+  null) beside `warningCodesOf` (one code per stored warning, `'?'` for one that names none — the count never drops) and
+  `systemAckOf` (a reason this build knows, else false).
+- **The fence** `tests/unit/agent-note-codes.test.ts` reads every file under `agent/` with TypeScript's parser and pairs
+  every write of `notes` / `cardNotes` / `calcNotes` (a push, an object literal, an interface or type literal, a
+  `const`, a destructuring) with its twin — beside it, a parameter of the function, or for a destructuring the twin
+  handed into the call; a parameter called `notes` is never paired. Its counted list, keyed by file › kind ›
+  outermost owner (never by line): site-estimate (the website estimate's footnotes, eleven sites), card (`CardInput`),
+  card-io (`fitCard` ×3, `renderDraftCardFull` ×1), calibration (a count), auto-gate (the `notes` refusal's word), decide
+  `refreshDraftCard` and lessons `refreshCard` (parameters). `drafts` is NOT on it — its sites are paired now.
+- **The gate's shape** (`AutoGateInput`): `draft.warningCodes`, `draft.noteCodes` (null = a stop), `draft.systemAck`,
+  `loop`, `complaint`, `nightPrices` (`readAgentNightPrices()` in `settings/service.ts`, read in `autoFactsFor` on the
+  pool); `streak` and `minConfidence` stay. `autoVerdict` reads `warningCodes.length > 0` and `noteCodes === null ||
+  noteCodes.length > 0` — no verdict moved (the 303, the reader corpus and the first-reply suite unchanged).
+  `autoClassOf` and `AutoClass` exported; `EYE_ONLY_WARNINGS`, `EYE_ONLY_NOTES` exported and read by nobody yet.
+- **Refusal words — re-fitted.** `RETIRED_REFUSALS` + `RETIRED_REFUSAL_WORDS` (the three stay in `AUTO_REFUSALS`, their
+  words referenced from the retired map, one home); the four NEW codes are `COMING_REFUSALS` + `COMING_REFUSAL_WORDS`
+  (`loop`, `complaint`, `calc_claim_unbacked`, `ready_text_unapproved`) and are NOT in the `AutoRefusal` union yet:
+  `agent-auto-gate.test.ts` drives every member of `AUTO_REFUSALS` by its own fact (`ONE_CHANGE: Record<AutoRefusal, …>`,
+  `it.each(AUTO_REFUSALS)`, the words' key set), so a code with no fact cannot stand there without changing that
+  test's expectations. **Each package that gives a coming code its fact MOVES it** — out of `COMING_REFUSALS` (and its
+  word out of `COMING_REFUSAL_WORDS`) into `AUTO_REFUSALS` / `AUTO_REFUSAL_WORDS` at its place in the order, with its
+  `ONE_CHANGE` row: P1 `complaint`, P2 `loop`, P3 the other two; `agent-toliq-1a-gate-shape.test.ts` pins that a code
+  is never in both lists. `refusalWordOf(code)` (auto-gate) reads all three maps; `autoRefusalWords` (auto-card) asks it.
+
 ### 4.2 P1 «To'siq» — the gate, the hold, the press (owns `auto-gate.ts`, `auto-send.ts`, `auto-card.ts`, the auto panel of `agent-ui.tsx` / `page.tsx`, `decide.ts:1086`)
 
 A bare `:N` in the first column continues the file named in the row above it (rows 1-8 are `auto-gate.ts`, from
@@ -384,6 +422,60 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
 «none») and three literal fixtures (`tests/unit/agent-full-p2-kernel.test.ts:277`, `agent-send-step.test.ts:698`,
 `:709` — the last pins `repeat` and is rewritten). P2 also wires the gate's `loop` fact: one line in `autoFactsFor`
 (`auto-send.ts`, P1's file — the kernel leaves `loop: false` there for P2 to replace).
+
+**P2, as built (2026-11-20, the building session — re-fitted to the code where the text above differs).**
+- **One home.** `agent/loop.ts`: pure `loopFold`, `loopVerdict(facts) → { signals }` (`same_inbound`, `fast_peer`,
+  `own_repeat`, one stable order); ONE reader `loopFactsFor(handle, managerUserId, peerId, anchorTgMessageId, now,
+  draftBody)` — one statement: the anchor row read by its id, his live earlier lines (each with `has_media`), our
+  `agent_outbox` rows handed to Telegram ('sent' and 'unknown' — perhaps delivered — timed by the thread's copy, else
+  `sent_at`, else the claim before the send), the one typing stamp, and under the 0151 probe (asked on the caller's
+  handle before the statement) the newest loop claim of the window; `gateLoopFor` (the gate); `loopBucketStart`,
+  `loopSignalKey` (`loop:<account>:<peer>:<bucket>` — the account in it, or a new holder's notice inside a bucket is
+  swallowed by the old one's claim), `LOOP_NOTICE`, `loopNoticeOnce`. Constants `AGENT_LIMITS.loop` (`windowMs` 30 min, `sameInbound` 2, `fastMs` 10 s,
+  `fastSends` 3, `ownSends` 3, `clockSlackMs` 2 s).
+- **J8 with the one stamp the listener keeps.** A send owns the lines from its moment to the next send's and only the
+  first is its answer; three DISTINCT sends. `agent_conversations.peer_typing_at` is the NEWEST stamp only, so a pair
+  counts only when that stamp is OLDER than its send — for a send after it nothing was typed, for a send before it
+  nobody can tell, and the doubt goes to the person (the literal «typing between the send and the line» would count
+  the first three of four typed quick answers: corpus `lo007`). The clock slack: our send is stamped on our clock
+  after Telegram took it, an answer by Telegram's whole second — without it an away-message answering in the same
+  second is before its send (and the anchor's own send after the anchor).
+- **The 5-second `echo` stays and wins**: an answer inside 5 s of our newest out line is refused `echo` (silently) before
+  the loop is asked, so `fast_peer` meets the robots that answer in 5-10 s, and the ones before the anchor.
+- **`same_inbound`, narrowed (review of the build, 2026-11-20).** An earlier equal line counts only when one of OUR
+  sends lies after it and no later than the next equal line (the anchor for the last; the clock slack again): a repeat
+  nobody of ours answered — the listener down, his human pause, his own chat — is no robot answering our robot. A line
+  that came with a file is never «the same line»: a caption is the customer's words about THAT file, so three photos of
+  one product under one question go (corpus `lo017`); an anchor with a file counts nothing either. And J8's own rule:
+  a typing stamp at or after the previous equal line means a person typed the anchor (`lo019`). `repeat` stopped
+  all of these one line earlier; the narrowing is what makes the hold below affordable.
+- **The hold (J33 binds over §4.3's «Stateless»; review of the build, 2026-11-20).** The notice says «AI 30 daqiqa bu
+  chatga javob yozmaydi», so the claim IS read back: `loopVerdict` answers `held` when the newest loop claim is less
+  than the window before `now` — eligibility refuses `loop` whatever the line says (no model call), and the gate's
+  `loop` (`gateLoopFor`: `own_repeat` OR held, judged at `at`, when the reply would go) leaves a card for his ✅ — a
+  price waiting its hold, his ✍️, a VED answer. Built, a stateless rule let the AI answer the chat he had just been sent
+  to take himself: two voices. A held line is NOT told again (else a held line in the next bucket would mint a second
+  notice and stretch the hold); the next trip after the half hour is told afresh. The hold is counted from the run's
+  clock (the claim's `created_at` = the run's `now`). A notice queued to nobody (the holder cannot log in; an
+  AgentNotice cannot be muted) is rolled back, claim and all — 'unheard', no promise, no hold, the looping lines still
+  refused by their own signals. One migration behind there is no claim and no hold. Corpus marks `@` (a line with a
+  file and its caption) and `!` (the moment he was told); `lp015`-`lp017` (the hold), `lo021` (it ends).
+- **Eligibility.** `EligibilityFacts.loop: boolean` (was `anchorRepeats`); `eligibilityFacts(…, loopRead: 'anchor' |
+  'none')` REQUIRED — the owner-triggered run passes `'none'` and runs no statement. `Ineligible` keeps `repeat` for
+  stored rows; `NO_DRAFT_WORDS.loop` is `AUTO_REFUSAL_WORDS.loop`. A `loop` refusal is `agent_runs.outcome = 'refused',
+  error = 'loop'` (P4's liveness alarm classes it), and `handleInbound` then calls `sayLoop` → `loopNoticeOnce`: the
+  probe BEFORE the transaction, then claim (`agent_signals`, topic `loop`, `facts.signals` and `facts.fastDelaysMs` —
+  each counted fast answer's delay, which J8's first-week measurement reads beside the stored chats) and the
+  AgentNotice (to the holder, `extra.peerId`, the chat's code and name, no customer text) in ONE transaction; a failure
+  is logged and the refusal stands. `eligibilityFacts` hands the whole verdict on (`loopVerdict`); `sayLoop` runs only
+  when the chat is not already held.
+- **The gate.** `loop` stands in `AUTO_REFUSALS` right after `streak` (P1 deletes `streak`; the cherry-pick meets one
+  adjacent-line conflict there, in `autoVerdict`, in `AUTO_REFUSAL_WORDS` and in `agent-auto-gate.test.ts` ONE_CHANGE);
+  its fact is `gateLoopFor` — `own_repeat` and the hold, never the anchor's two signals, which are eligibility's and an
+  owner-triggered draft never asked.
+- **Tests.** Reader corpus reader `loop` (19 dangerous `lp…`, 21 ordinary `lo…`, a script per case), unit
+  `agent-loop-detector.test.ts` (describe «the CHAT loop detector … never the model's tool loop»), integration
+  `agent-chat-loop.integration.test.ts` (the stem `agent-loop` stays the tool loop's).
 
 ### 4.4 P3 «Ovoz» — persona, the Q2 rule, system replies (owns `prompt.ts`, `tools.ts` texts, `worthy.ts`, new `agent/system-reply.ts`, `agent/complaint.ts`, the worthy branch of `run.ts:475-493`)
 
@@ -550,6 +642,95 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
      «dead card» alarm (a draft that waits on a card nobody received): that stays stated-not-built (§10).
   P4 builds the setting's box (`agent_liveness_minutes`, §3.3) beside the big-cargo boxes.
 
+**P4, as built (2026-11-20, branch `toliq-1a-p4` off `59f17415` — re-fitted to the code where the bullets above
+differ; what the next package must know is last).**
+- **Big cargo** (`agent/big-cargo.ts`): `saysFullTruck` is the free-text reader, with its corpus reader `full_truck`
+  (30 dangerous = a whole truck asked for and missed, 22 ordinary = no signal; two ordinary on the ratchet, ft121 /
+  ft122 — a past delivery and goods FOR trucks, one ping a week). A negation reaches only its own clause.
+  **Re-fit:** the volume must be stated in THIS burst (or priced by this run) — `newestMeasure` over the whole window
+  re-signalled last week's «25 kub» every Monday on a «salom». **Re-fit:** the claim key names the account too,
+  `big_cargo:<manager>:<peer>:<Monday>` (one chat = one account and one peer). `sendSignal` (`agent/signals.ts`)
+  computes the recipients and each text BEFORE its transaction (`designated()` reads the pool), then claims and
+  queues the copies in ONE transaction (`queueStaffTelegram(tx, …)`), the drain kicked after. The lead's card is
+  `/crm/leads/<id>` (links.ts), the client's `/admin/clients/<id>` only for `mayOpenClientCard` AND (`seesAllClients`
+  or the client's own seller). Called from `handleInbound` after the locale write, by dynamic import, only for a
+  WRITTEN draft, in its own try/catch.
+- **Morning line** (`agent/morning.ts`): scoped to the HOLDER's drafts, runs and samples (the account the AI speaks
+  from). One reason per held reply = its first code in `[...AUTO_REFUSALS, ...COMING_REFUSALS, ...RETIRED_REFUSALS]`
+  (deduped, so P1/P2/P3 moving codes keeps it right); words: a short morning noun where one reads better
+  (`MORNING_WORDS`), else `refusalWordOf` — so the loop is «suhbat aylanib qoldi» (J33) through the gate's own map.
+  A reply the machine pressed counts as «o'zi ketdi» only when its outbox row is `sent` (#1106); the morning's own
+  states for a ⏸, a person's decision, a disarm, a moved chat, no verdict. «Javobsiz» = `unansweredLines` from
+  yesterday's start to 10 minutes ago, any hour, judged by `livenessOf` (a waiting draft is not «javobsiz»). An empty
+  day sends nothing; at night nothing. The cap's words have ONE home now, `today.ts` `CAP_WORDS` / `capWordOf`
+  (the notice and the morning line).
+- **§4.6 words:** «byudjet» left the cap notice (`drafts.ts`, via `capWordOf`), `calc-loop.ts` and
+  `owner-answer-job.ts` («bugungi AI chegarasi tugadi (xato halqasidan himoya, pul chegarasi emas)»), and a sixth
+  place no list named — `agentAi.lessonsCost` in all four bundles (moved to K after the review — J26, below). A unit
+  fence reads every string under `agent/`.
+- **Sample** (`agent/sample.ts`): drawn under a per-day advisory lock and refused when the day has one; the weekly
+  sample (after 30 days, Fridays) reaches back six days and never re-draws a sampled reply. The line goes to the
+  pair members the arming rule admits, else rank 1 (J17); 👍/👎 asks `mayArmAuto` of the reply's own holder.
+  **`mayArmAuto` and `mayTuneAuto` are now EXPORTED from `auto-send.ts`** (one word each — no second copy of the
+  rule). **`draftsSeenBy` and `chatHrefOf` are exported from `web-page.ts`** (the page's own sight for the rows).
+- **Liveness** (`agent/liveness.ts`): `raiseSignal` / `clearSignal` / `signalStanding` in
+  `platform/diagnostics/signals.ts` as written above. **Re-fit (honesty, #1106):** the clearing line is «✅ Javobsiz
+  kutayotgan mijoz qolmadi — «AI sotuvchi javob bermayapti» ogohlantirishi yopildi.», never «AI yana javob
+  beryapti» — the same zero comes when HE answered them while the AI is still down. **Re-fit:** while the row
+  stands the window is the anchor's day (24 h), not two hours — a line the alarm was raised for keeps it standing
+  until somebody answers it, never until it ages out. **Re-fit:** a suites' switch `AGENT_LIVENESS=off` in
+  vitest.config AND the Playwright server env (the `AGENT_TARIFF_NOTICE` precedent): the alarm is one state row any
+  sweep raises by the real clock's hour; the alarm's own tests switch it on. The e2e spec that draws the home's red
+  row must insert and remove the row itself (the server's sweep no longer touches it). The page's banner and the
+  home's row (`components/system-signals.tsx`, `data-testid="ai-liveness"`) are drawn only while the agent runs.
+- **Page** (`suhbatlar/ai`): two TABS, `tekshiruv` (badge = the newest sample's unmarked rows the reader may see) and
+  `kimga`, in `signal-sections.tsx` (server) and `signal-ui.tsx` (client), their actions in
+  `agent/signal-actions.ts` (own gate — `web-actions.ts`'s `run()` cannot be exported from a 'use server' file),
+  writers in `agent/signal-settings.ts`, the panel's reads in `agent/signal-page.ts`. `useAction` and `Feedback` are
+  exported from `agent-ui.tsx`. The strip is `grid-cols-3 sm:grid-cols-4` (seven tabs).
+- **For the next package / the merge:** (1) P1 changed `autoFeedback(staffId, …)` to `autoFeedback(actor, …)` —
+  after P1 is picked, `sample.ts` `markSample` must call `autoFeedback(actor, input.draftId, now)`; until then a
+  super_admin on the seat is admitted by the sample's door and refused by the card's (`forbidden`). (2) P2's new
+  `Ineligible` member `loop` does not compile in `liveness.ts` `INELIGIBLE_LIVENESS` until it is classified —
+  `loop: 'by_design'` (the loop notice tells him; a loop is not a dead machine). (3) The reader corpus's `Reader`
+  union and the runner's two lists gain `full_truck` here and `language_money` in P1 — a mechanical merge.
+  (4) E2E owed: `m9zzzg` — «Kim javob beradi» saved and put back as a final TEST, «Kunlik tekshiruv» renders; the
+  home's liveness row put in and taken out by the spec (`AGENT_LIVENESS` is off on the server).
+
+**P4, after its review (2026-11-20, the fix pass on `toliq-1a-p4`).** Ten findings, eight fixed, each red-proven by a
+paired string edit:
+- **Liveness reads LIVE lines only** — `unansweredLines`' newest-line CTE skips a line the customer deleted
+  (`tg_message_flags.deleted_at`), as `chatMessages` does: a deleted newest line's run stands down `not_newest` with no
+  ledger row, so it raised an alarm nothing could answer, standing a day and silencing the real ones (and the
+  morning's «Javobsiz» counted it).
+- **«Since the AI was switched on»** — `agentOnSince()` (liveness.ts) = the newest audit row on the agent's config that
+  switched `mode` INTO 'shadow' (`before` not 'shadow'); null = none recorded. `sweepUnanswered(config, now, onSince)`
+  takes it as a REQUIRED third argument (the sweep reads it; the tests pass literals — a real-time audit row of another
+  file must not move a literal-clock test), and never reads a line written before it. While the agent is NOT running
+  the sweep calls `standDownLiveness()` — the row is taken down without a word (not when only the key is missing: then
+  the alarm is true).
+- **The morning while the AI is off** — `morningFacts(day, holder, now, waiting)`, `waiting: { since } | null`
+  REQUIRED; `sendMorningLine` passes null when `!agentRunning(config)`: «Javobsiz» is not counted (`unanswered: null`,
+  the line leaves it out), and an off day with nothing DONE sends nothing — a waiting customer or an undone mark no
+  longer greets him every morning.
+- **The night** — an alarm opened in the quiet hours goes `silent` (a 21:5x line past its minutes); the «qolmadi» line
+  is silent at any hour (`payload.silent`, the drain's queue-time half of the night rule).
+- **The sample's span is draw to draw** — `sampleSpan(day)` = [20:10 the day before, 20:10 that day) (weekly: seven
+  days), `SAMPLE_DRAW_MINUTES` pinned to the job's `'10 15 * * *'` by a unit test: a calendar day drawn at 20:10 left
+  20:10-24:00 out of every sample.
+- **The card's 👎 is a mark** — `SAMPLE_UNMARKED` (sample.ts) = no mark AND no card 👎 on the reply's verdict: the
+  badge, the page's older count and the morning's count read it; the view draws such a row «xato»; a 👍 on it is
+  refused `already` in the UPDATE itself. The sample's 👎 asks `agentAi.autoBadConfirm` first, as the card's does.
+- **`saysFullTruck`** — «… или нет», «yoki yo‘q», «or not», «یا نه»: a negation right after an «or» word is a question
+  tag (`OR_WORD`), both sides of the hit; «fura» takes the possessive endings before the case ones («furangiz»,
+  «furalaringizga», «furamiz»; Uzbek Cyrillic too). Corpus `full_truck`: 44 dangerous / 25 ordinary, ratchet unchanged.
+- **Moved out, owed to K (J26)** — the `agentAi.lessonsCost` rewording is reverted here (the bundles equal the base);
+  its four strings are in `e84ed45d`'s diff of `messages/*.json`, to land in K with `agentAi.lessonsCost` added to the
+  key list of `agent-toliq-1a-settings.test.ts`'s «the token cap is called a loop guard» test.
+- **Not here** — the e2e (finding 6) stays owed to the merged tree: `m9zzzg` is P1's and P4's together and the
+  strip's tabs come from P1, P3 and P5; measured there at 360 px in `ru`. Step 3 (the deploy gap) also re-queues a
+  deleted newest line every sweep for 30 minutes (each run stands down with no row) — not P4's file; stated.
+
 ### 4.6 His 10 c and the fuses in `agent/limits.ts` — KEEP, do not raise, make loud (the re-wording below is P4's: it owns the morning line that names the trips)
 
 | Fuse | Value, where | Ruling |
@@ -590,6 +771,56 @@ string>` and needs the new word; `EligibilityFacts.anchorRepeats` has a SECOND b
   `sales_manager_id` is NULL (or names a person who can no longer log in) gets the seat: name «GSR sotuv menejeri
   <ism>», no phone, `https://t.me/<verified fresh handle>`; no verified fresh handle → the office contact as today.
   A client WITH a seller never sees it (his «sotuvchilarning o'z mijozlariga aytilmaydi»).
+
+**P5, as built (2026-11-20, the building session — re-fitted to the code where the bullets above differ).**
+- **The seat question** is `agent/seat-candidate.ts`: `SEAT_REFUSALS` (14, a closed union, in the order the verdict
+  asks) with `SEAT_REFUSAL_WORDS` (Uzbek, in code — J26 put every bundle word in K, and the K line `routing.site.aiCannot`
+  takes `{reason}`), `seatVerdictOf` (pure, every clause), `readSeatFacts` (ONE statement on the handle it is given) and
+  `seatCandidate(handle, now)` — the facts read in `handle.transaction(sp => …)`, a SAVEPOINT on the door's transaction
+  (J23: a 57014 timeout or any error aborts the savepoint alone and is `unreadable`; measured in the integration test by
+  a second session holding `agent_send_caps` ACCESS EXCLUSIVE). Beyond §4.7's list, the verdict also asks what the gate
+  refuses account-wide at scheduling — «Ish raqami», the CRM's send switch, a flood wait, the listener CURRENT (pump AND
+  catch-up, `listenerIsCurrent`, the ✅'s rule, not the pump alone) — and that the seat is a colleague (`canLogIn`: the
+  door's reused-tag branch answers only for one). The day: `dailySendCeiling` over the stored `day_cap` (the ramp
+  included), `SEAT_HEADROOM` = 10. NOT asked: the auto layer's own `per_day` (NULL by his «chegara qoyma»; its count
+  lives in `auto-send.ts`, which this file may not import) and the run fuses (`daily_draft_cap`, tokens) — the liveness
+  alarm is the net for both.
+- **`today.ts`** now exports the two counts `sendsToday` is made of as fragments (`agentSendsSinceSql`,
+  `ownSendsBeforeStartSql`, `OWN_SENDS_DAYS`) so the seat's one statement counts exactly what the ✅ counts (#513);
+  `sendsToday` itself is behaviour-neutral.
+- **The door** (`assignForTag`, third parameter `now`): the choice is read on the POOL before the transaction
+  (`readLeadAssignAi` — a refused shape and a failed read are `off`); inside, `siteAiAsks(mode, team)` (site-assign-rules,
+  every team but `buying`) → `seatCandidate(tx, now)` → the seat's offer (`capturable: true`, `ranking: {ai: true}`) or
+  the roster with `ranking.ai = false, aiReason` (why the AI did not, for «nega Aliga?»). The seat is read under the
+  400 ms budget but BEFORE the `lead_assign` lock (§4.7 put it after; the review's D1, reproduced: under the lock a slow
+  seat read made every visitor queued behind it time out on the lock itself, three at once → two «nobody»); the
+  verdict reads no «fewest», so it needs no serialising. The writer is
+  `setLeadAssignAi` (audited, a same value writes nothing) under the taqsimot page's own gate (`admin.settings.manage`
+  — the roster it bypasses is written there too, and the K description names no other door); the radio posts only
+  `off` / `all` and anything else is `off`.
+- **The panel**: `sitePanel().ai = {mode, seat}` (the door's own `seatCandidate`, asked only while `all`, on the pool
+  with the door's 400 ms budget set in its own transaction — a held table is «o'qib bo'lmadi», never a hung page); the choice is
+  its own form and action (`SiteAiChoice`, `saveSiteAiAction`), the truth line draws `SEAT_REFUSAL_WORDS`, and the
+  «keyingi» line of a covered team names the seat when it takes one.
+- **«Sotuvchisi yo'q» (J13)** is ONE fragment in platform, `platform/clients/sellerless.ts` `sellerlessChatSql(chat)`:
+  no `linked` code of the chat on an ACTIVE client has a seller `canLogInSql` admits. The broadcast's `noManager`
+  (optional in the schema, so a stored audience reads «not asked») is a GET tick on the audience form
+  (`?sotuvchisiz=1`, beside every other audience filter — the plan put it on the composer, which only sends), and the
+  composer keeps it when the office un-ticks codes (a code linked to two chats). The page reads its URL through
+  `platform/broadcast/audience-url.ts` `audienceFromUrl`: a URL the schema refuses still falls back to every linked chat,
+  as before — except that the tick survives it (the review's N2: a code too long in «kod» had dropped the fence). `managersFor(clientIds, chatId,
+  now)` — `chatId` REQUIRED (`null` = never the seat: the forward of a customer's words passes it, because who RECEIVES
+  them is a seller or the office); the seat comes from `agent/seat-contact.ts` `seatContactFor` (one statement: the
+  switch, the persona, seat = holder, the predicate, `reachableAt` with no typed fallback) and fills only codes that
+  drew no live seller. A chat holding a seller's code is never shown it; an INACTIVE code's seller is still drawn for
+  that code, as before (the predicate counts active codes — J13's own words).
+- **`client_ai_contact`**: `setClientAiContact` (`mayGovernAgent`, audited) behind `agentClientContactAction`
+  (web-actions, its own function), drawn by `suhbatlar/ai/client-contact.tsx` inside the super_admin «AI egasi» card.
+  The seat's name on a customer's card is `seatDisplayName(persona)` = `SEAT_TITLE` («GSR sotuv menejeri») + the
+  setting — P3 owns the persona's reader; if it mints one, `seat-contact.ts` should read it there.
+- **Not built here**: the e2e lines of §7 (`m9zz-sayt-taqsimot` at 360 px in `ru`) — the lead's, with the stage's
+  Playwright run. Listener closure grew by four light files (`clients/sellerless`, `agent/seat-candidate`,
+  `agent/seat-contact`, `agent/today`) — tg-listen is rebuilt anyway.
 
 ## 5. Doors and sight
 
@@ -648,6 +879,62 @@ Exact words (constants in `policy.ts` beside `EXCLUSION_SENTENCE`, six languages
 | `not_armed`, `agent_off`, `not_pending`, `blocked`, `actions`, `not_reply`, `owner_figure`, `owner_personal`, `answer_stale`, `needs_owner`, `status_unbacked`, every money and calc code (`money`, `money_unread`, `numeral_unread`, `estimate_unnamed`, `estimate_moved`, `tariff_unconfirmed`, `foreign_destination`, `destination_unsaid`, `markup_unconfirmed`, `calc_price_moved`, `calc_owner_priced`, `calc_person_offer`, `calc_identity`, `calc_foreign`, `calc_refused`, `calc_recent`, `calc_file_missing`), `too_long`, `stranger`, `prospect`, `chat_off`, `human_active`, `chat_muted`, `not_work_account`, `daily_cap`, `budget_spent`, `sending_disabled`, `listener_behind` | STAY, untouched | `critic-guard.md` §D.1; his Q2 a ⭐ of SPEC-P1; «o'zim yozgan chatda AI jim» |
 
 `policy.ts`: no check changes. `eligibility.ts`: `repeat` → `loop`; `human_active` untouched.
+
+**P1, as built (merged-tree seam fix, 2026-11-21 — the lead's ruling on J19; this overrides the `language` row
+above).**
+- **Held for the model's replies, byte for byte.** P1 built talk on today's `languageAdmits` and held J19's one
+  relaxation («a guess whose locale is null admits `uz`») because, measured against the reader corpus before a line
+  of it was written, eleven dangerous `language` rows would have gone by themselves: `lg048` «Zdravstvuyte, skolko
+  stoit dostavka iz Kitaya?», `lg111` «Kogda pridet gruz?», `lg112` «Dostavka doroga?», `lg113` «Skolko budet za 3
+  kuba?», `lg145` «Tarif?», `lg147` «Tarif kakoy?», `lg148` «Kakie usloviya?», `lg149` «Dollari?», `lg150` «Skolko
+  dollari?», `lg153` «Working hours?», `lg154` «Services?» — a Russian customer writing in Latin letters and an
+  English one, answered in Uzbek. Those rows are MODEL replies, so for every model reply the rule stays exactly
+  today's: a guess naming no language, an unconfident guess that leans on nothing, and a guess not stored admit
+  nothing; the corpus and the 303 judge model replies and nothing in either moved.
+- **Relaxed for the tayyor matn alone.** `auto-gate.ts` `languageAdmits(language, guess, tayyorMatn)`, called with
+  `draft.systemAck`: a tayyor matn (`policy.system` — the voice, media or Pashto line) in `uz` is admitted when the
+  stored guess names no language (`locale === null`). Nothing else moves: a tayyor matn in `ru` / `uz_cyrl` on such a
+  guess is held, a guess not stored at all (a draft written before 0148) is held, a guess that names a language keeps
+  today's rule, and the honest line is not a `systemAck` (it rides the model's reply). Pinned both ways in
+  `tests/unit/agent-toliq-1a-gate.test.ts` («a guess naming no language admits the tayyor matn in Uzbek — and nothing
+  else»); red proofs by paired string edit: the branch made `false` (the tayyor matn held) and made `lang === 'uz'`
+  (a model reply let through) — each red, each restored from the text read.
+- **The consequence, said to him.** A first-contact photo or voice burst — it shows no language at all — gets the
+  Uzbek «yozib yuboring» line by itself, at once (`systemLocaleOf`: no language said and a Latin or empty chat →
+  Uzbek). So does a later photo in a chat whose language the guess cannot name, the Latin-letter Russian customer of
+  the rows above included: he is told in Uzbek to write it as text, and his next TEXT is the model's, held as today.
+  A Cyrillic chat that named no language gets the Russian line, which still waits for his ✅ (as before). A model
+  reply to a message showing no language waits for his ✅ exactly as today.
+- **Corpus and 303, before the first edit and after the last:** dangerous let through 0, the 303's walls snapshot
+  unchanged (`tests/unit/agent-reader-corpus.test.ts`, `tests/unit/agent-customer-safety.test.ts`).
+
+**Checks 2-5 of the merged tree, as built (2026-11-21 — DECISIONS #1846-#1847; these override §4.3-§4.4 and the
+block above where they differ).** Each seam fix was reproduced by an independent checker who hunted for what the fix
+broke, four more times, until what was left was RARE (#1619's stopping rule). What a later builder must know:
+- **«Told in this silence» is ONE reading for the run's choice and the gate** (`context.ts` `silenceOf` /
+  `toldInSilenceOf`): the thread's copies PLUS our sends with no thread copy (`uncopiedSendsFor` — outbox `unknown`, or
+  `sent` with no Telegram id, or a copy that never landed), placed by their moment; an in-flight row does not count. A
+  lost send is compared at the thread's own granularity — floored to the whole second, and a line in that same second
+  stands AFTER it (`sendStandsBefore`, both readers).
+- **The tayyor matn's choice** reads the customer's lines AFTER our newest send, lost sends included
+  (`linesAfterOurSends`); the first kind not yet told wins (a photo with nothing told still wins, §4.4 item 1 — a voice
+  note beside it gets no line of its own, stated); when every kind is told, the voice notice goes iff a voice note is
+  among the lines THIS run is the first to judge (`linesFirstJudged` over `judgedThroughOf`: the newest anchor among the
+  chat's `agent_runs` rows at or below this one, stand-downs — `stood_down`, `error`, `refused`+`not_newest` — excluded).
+  «The newest line decides» and «all told → voice» were each built once and each wrong (a voice note told of by nobody;
+  a false voice notice on every photo). `ctx.burst` and everything a MODEL reply sees are unchanged.
+- **The stored tayyor matns are compared under the same NFKC fold as the line read** (`chatForm` turns «，» into «,»):
+  all 39 lines pinned raw and folded.
+- **The arming words come from ONE key** — `autoWaitsOf` → `AUTO_WAITS` (none · table · ved · prices · calc · table_calc ·
+  ved_calc · all): the page's ICU selects, the bot's `WAITS_WORDS` / `STAYS_WORDS` and `autoMediaWords(ticks)` (the calc
+  / VED exception named only when ticked); the AI-reply half says «rasm, ovoz yoki fayl»; a ticked calculation says its
+  night. Fence: `tests/unit/agent-auto-words-gate.test.ts` (every bundle × 8 tick sets × 3 night settings, by day and
+  night, expected values from `autoVerdict` / `autoClassOf` / `nightBars` / `holdSecFor` / `mediaOf` only).
+- **A link preview is not media** (`crm/telegram-import.ts` `carriesMedia`, the one birth of `has_media`; #1847).
+- **Stated, RARE, not built:** a restart between `run.ts`'s notice ledger row and its notification; our voice line in
+  flight when his next voice note's run is refused `human_active` and the send's answer is lost; two of our own sends
+  in one second; the copied machine send's thread copy in server milliseconds against the customer's whole seconds; an
+  empty-text web-page message (API only) is not kept.
 
 ### 6.3 Corpora and fences that stay green, and what is EXPECTED to change
 
@@ -766,6 +1053,23 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
   listener can load 63 of the agent module's files — `auto-send`, `auto-gate`, `auto-card`, `decide`, `drafts`,
   `card-io` among them (`settle-hooks` → `card-io`): the card it redraws after a send prints `AUTO_REFUSAL_WORDS`,
   so an old listener would print «sababi noma'lum» for `loop` / `complaint`. One more reason, not a new step.
+- **The knowledge, right after the listener and before anything else (P7, J2).** Until it runs his live seed fact
+  `avia@1` («taxminan 2–5 kun, reys boʻlsa 2 kun») is a general fact in every prompt, beside rule 9's «3-5 … avia uchun
+  boshqa muddat aytma», and the policy counts its figures as the company's (run `memoryFor`) — so a reply saying «2-5»
+  is still vouched. The seed's versioning inserts `avia@2` (no day count) and retires an untouched `@1`; the first
+  command only lists, the second writes:
+
+  ```bash
+  cd ~/gsr && docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts          # the list must name «+ avia@2»
+  cd ~/gsr && docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts --apply  # «inserted: … avia@2»
+  ```
+
+  Then two chores, read with him: (1) on «Suhbatlar → AI sotuvchi → Bilimlar», any live avia fact he wrote or edited
+  himself (source `owner` — the seed never touches it) that still states a day count: edit it to say no days, or
+  retire it — while it stands, its days are vouched in every chat whatever the setting says; (2) any reply still
+  waiting for his ✅ that was written before the seed ran and states «2-5» or «reys bo'lsa 2 kun»: ❌ or ✏️ it. A
+  reply's own run's company rule and avia tool are judged again by today's pair at every press (policy-input
+  `policyFor`, avia-days `withAviaDaysNow`), but the old fact's figures are in its stored memory and still vouch for it.
 - He touches, in order: «Kim javob beradi» (himself and his deputy under «Rahbar va o'rinbosar», whoever hears «Katta yuk»);
   «AI ismi»; the two hold boxes and the night choice if he wants other than the defaults. NOTHING is flipped for him:
   the kind ticks are his from stage 0 («Narx» and «Hisoblatish»; «VED narxi» only after his markup answer, §4.0),
@@ -783,13 +1087,18 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
   this first day, 0 from the first morning line. If the offer sentence or the «ha» → job does not appear, say so —
   it is a prompt rule nothing here could run (§10).
 - First morning: at 08:40 the line of §4.5 — read it WITH him, number by number: «N javobdan M tasi o'zi ketdi»
-  (the stage's whole claim; compare M with stage 0's `verdicts` forecast), «K tasi sizni kutdi» and each reason's
+  (the stage's whole claim; compare M with stage 0's `verdicts` forecast), «K tasi tasdiq kutdi» (J17 — the code's word; «sizni» was the deputy's lie) and each reason's
   word (a reason he does not recognise is a wording bug — fix the word, not the rule), «Javobsiz» (anything above 0
   is opened chat by chat that morning), a cap named (tell him which box to raise, §4.6), «halqa» (open that chat
   with him). During the day silent cards for what went alone, ringing ones for what waits; at 20:10 «Bugungi
   tekshiruv». Tell him the day before what «⚠️ AI sotuvchi javob bermayapti» means (customers
   have waited more than 10 minutes in working hours — the number is his box), that it comes once per fault with a
-  «yana javob beryapti» after it, and that the same red line stands on the home screen if the staff bot itself is down. «Hajm» stays `off` until he flips it.
+  one SILENT clearing line after it — as built «✅ Javobsiz kutayotgan mijoz qolmadi — «AI sotuvchi javob bermayapti»
+  ogohlantirishi yopildi.» (the code's words; §4.5 item 3's «yana javob beryapti» was the design's) — and that the same red
+  line stands on the home screen if the staff bot itself is down. «Hajm» stays `off` until he flips it.
+- **7 b's switch-on moment (J35):** after stage 2 (as the website, «Hajm»), he ticks «AI raqamini ko‘rsatish» on the
+  «Kimning akkaunti» card, then sends the one message on «Mijozlar va savdo → Xabar yuborish» with «Sotuvchisi yo‘q
+  mijozlar» ticked. Told to him in the deploy message and in the CHANGELOG; nothing in 1a flips it.
 - Rollback: revert the code. The three tables and the settings rows are ignored by the old code; stored reasons
   `loop` / `complaint` print «sababi noma'lum» there; nothing is one-way. One thing to look at after a rollback:
   under 1a every save of the kinds box stores all four ordinary kinds (§4.2), so if he had unticked one before 1a
@@ -834,7 +1143,11 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
 - **Stated, not built here:** the 15-minute climb to the deputy and a second presser (1b/3a); several messages and
   the holding line (1b); the Q31 setting; per-chat caps as settings; `hand_back` and `price` kinds going alone;
   a dead-card alarm; reading any file; the seller's price outranking the table (8 b); the balance going alone (25 b);
-  «3-5 kun» for avia (§11.3 of the design, open); the offer sentence is not enforced by code.
+  the offer sentence is not enforced by code. **Avia's days are built (P7, his 2 b, J2): «taxminan 3-5 kun», the
+  setting `agent_avia_days`; what stays stated:** J2's drop of the flight clause is in what the AI is TOLD (rule 9, the
+  avia tool, the seed), not a check — a reply that says it on a day inside his range («reys bo'lsa 3 kun») is vouched
+  like the range itself, in every language (a check would be a new reader: corpus rows of both kinds first); and an
+  avia fact he wrote himself vouches for its own days (§9's chore), the setting does not overrule his words.
 
 ## 11. Questions the builder must still ask him (Uzbek, numbered; ⭐ = what is built meanwhile)
 
@@ -880,7 +1193,7 @@ builds it, and its test is a red proof like §7's. The whole record (finding, co
 | J16 | speech trial: notes from any account → a seller hears colleagues' customers | DONE in stage 0: `--accounts` required, other accounts refused by name; asked of him (⭐ his own and the seat's) | S0 |
 | J17 | the deputy gets links to a page he cannot open, a 👍/👎 he cannot press, «sizni kutdi» that is not his (defect ×2) | texts are PER RECIPIENT: the page link and «AI sahifasini oching» only for a recipient `mayRunAgent` admits; the sample line only to recipients the `mayArmAuto` rule admits (none → rank 1); the morning line says «… tasdiq kutdi»; «Kim javob beradi» prints «AI sahifasini ocholmaydi» beside such a person. Widening the page to the deputy is HIS decision — asked (⭐ no) | P4 |
 | J18 | «belgilanmagan — hozir sizga keladi» names the wrong audience | the screen prints the names `designated(topic)` returns at render and the fallback's source | P4 |
-| J19 | the talk language rule as written admits a Russian reply to «5 куб 800 кг» at once — against his 9 a; the eval oracle would be moved to hide it (blocker) | **talk = today's `languageAdmits` byte for byte, plus ONE relaxation: a guess whose locale is null admits `uz` only.** An unconfident uz / uz_cyrl / ru guess admits only what it leans on, as today. The eval's `language()` stays on the talk draft and a `language_money` reader is ADDED; no label edited; a `LANGUAGE_DANGEROUS` row that flips under null→uz goes to him by text before P1 merges | K6 / P1 |
+| J19 | the talk language rule as written admits a Russian reply to «5 куб 800 кг» at once — against his 9 a; the eval oracle would be moved to hide it (blocker) | **talk = today's `languageAdmits` byte for byte, plus ONE relaxation: a guess whose locale is null admits `uz` only.** An unconfident uz / uz_cyrl / ru guess admits only what it leans on, as today. The eval's `language()` stays on the talk draft and a `language_money` reader is ADDED; no label edited; a `LANGUAGE_DANGEROUS` row that flips under null→uz goes to him by text before P1 merges. **As built (merged-tree seam fix, the lead's ruling — §6.2 «P1, as built»):** held for MODEL replies (the eleven rows `lg048`, `lg111`-`lg113`, `lg145`, `lg147`-`lg150`, `lg153`, `lg154` would have gone), relaxed for tayyor matns only (`draft.systemAck`, `uz`, `locale === null`): a first-contact photo or voice burst gets the Uzbek line by itself; a model reply to a message showing no language waits for his ✅ as today | K6 / P1 |
 | J20 | `agent-full-p2-kernel.test.ts:131-157` pins the own-door keys and pages; the page's refusal words for the new keys are named nowhere | K3 adds a `BAD_VALUE_TEXT` entry and words ×4 per new own-door key, widens `OWN_DOOR_PAGES` / the `satisfies` union with `taqsimot` → `/admin/taqsimot`; that test is an expected rewrite | K3 |
 | J21 | about a dozen red tests missing from §6.3's rewrite list; «byudjet» in five places, not three | §6.3 gains: `agent-card-flow.integration:1633`, `agent-full-p2-calc.integration:666-683`, `agent-full-p2-price.test:210/249/292/457`, `agent-send-step.test:669`, `m9zzzg :144 :275`, the language pins `agent-auto-gate.test:722-728` and `agent-auto.integration:3132-3160` (they STAY — J19); §4.6's word list adds `calc-loop.ts:385`, `owner-answer-job.ts:53` | all |
 | J22 | the arming words (bot `/agent auto on`, the page's confirm, `autoNumbers`) would tell him every reply waits and nothing goes at night | P1 rewrites `autoArmedWords`, `agentAi.autoArmConfirm`, `autoNumbers` / `autoNumbersNoCap` ×4: talk goes at once day and night; a price waits {priceHold} with ⏸ (night per the setting); a complaint stays his | P1 |

@@ -8,6 +8,15 @@ import {
   users,
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { logger } from '../../platform/logger';
+import {
+  getSetting,
+  LEAD_ASSIGN_AI_MODES,
+  SETTING_DEFAULTS,
+  SETTING_VALIDATORS,
+  SETTINGS_AUDIT_ID,
+  setSetting,
+} from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { tashkentDay, tashkentDayStart } from '@/modules/platform/time/tashkent';
 import { landInboundLead, type InboundOutcome } from './inbound';
@@ -18,6 +27,7 @@ import {
   PENDING_OFFER_MS,
   rankByLoad,
   reachableAt,
+  siteAiAsks,
   TAG_VALID_MS,
   type Ineligible,
   type LeadTeam,
@@ -25,6 +35,7 @@ import {
   type Reachable,
 } from './site-assign-rules';
 import { LIVE_WINDOW_S, type BridgeState } from './telegram-live';
+import { seatCandidate, type SeatRefusal, type SeatVerdict } from '../agent/seat-candidate';
 
 /**
  * Saytdan so'rov → eng bo'sh menejer (round 113): the database half.
@@ -236,6 +247,42 @@ function rankingRecord(pick: Pick) {
   };
 }
 
+export type LeadAssignAi = (typeof LEAD_ASSIGN_AI_MODES)[number];
+
+/**
+ * The website's choice (his 6 c, `lead_assign_ai`): `off` — the roster, as round 113 built it; `all` — the AI seat
+ * first, whenever it can take one. Read on the POOL and never inside the door's transaction (#714); a stored value
+ * the shape refuses, and a read that fails, are `off` — the roster answers as it always has.
+ */
+export async function readLeadAssignAi(): Promise<LeadAssignAi> {
+  try {
+    const raw = String(await getSetting('lead_assign_ai'));
+    return SETTING_VALIDATORS.lead_assign_ai!(raw) ? (raw as LeadAssignAi) : SETTING_DEFAULTS.lead_assign_ai;
+  } catch (err) {
+    logger.warn({ err }, '[lead-assign] the AI choice could not be read — the roster answers');
+    return SETTING_DEFAULTS.lead_assign_ai;
+  }
+}
+
+/**
+ * The choice's own writer (an OWN-DOOR key: the generic settings form never stores it, `OWN_DOOR_KEYS`). Asked by the
+ * roster page's action under that page's gate — the roster this choice bypasses is written there too. Audited under
+ * the settings' entity id; the same value again writes nothing.
+ */
+export async function setLeadAssignAi(mode: LeadAssignAi, ctx: AuditContext): Promise<void> {
+  if (!SETTING_VALIDATORS.lead_assign_ai!(mode)) throw new Error(`lead_assign_ai: not a mode (${String(mode)})`);
+  const before = await readLeadAssignAi();
+  if (before === mode) return;
+  await setSetting('lead_assign_ai', mode, ctx.actorId ?? null);
+  await writeAudit(db, ctx, {
+    entityType: 'settings',
+    entityId: SETTINGS_AUDIT_ID,
+    action: 'update',
+    before: { lead_assign_ai: before },
+    after: { lead_assign_ai: mode },
+  });
+}
+
 export interface AssignInput {
   team: LeadTeam;
   tag: string;
@@ -261,13 +308,29 @@ export interface AssignInput {
  * `stillWanted` is asked just before the INSERT: once the site has given up
  * (1.5 s) nobody is waiting for this answer, and an offer written anyway
  * would count as a visitor for a manager the visitor never reached.
+ *
+ * THE AI SEAT (stage 1a «Hajm», his 6 c): with `lead_assign_ai = all`, every
+ * team but «Sotib olib berish» (`siteAiAsks`) is offered to the AI's own
+ * @handle first — when `seatCandidate` says it can take one. Its read runs in
+ * a SAVEPOINT of this transaction (J23): a failure or the 400 ms budget there
+ * aborts the savepoint alone, and the roster below answers exactly as before.
+ * It is asked BEFORE the lock, never under it: the verdict reads no «fewest»,
+ * so it needs no serialising, and a slow seat statement held under the lock
+ * would make every visitor queued behind it spend its own 400 ms waiting for
+ * the lock and fail — «nobody» for a whole advert burst because of the AI.
+ * The site is never told «nobody» because of the AI.
  */
 export async function assignForTag(
   input: AssignInput,
   stillWanted: () => boolean = () => true,
+  now: Date = new Date(),
 ): Promise<{ username: string | null; reused: boolean }> {
+  const mode = await readLeadAssignAi();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL statement_timeout = '400ms'`);
+    // Under the budget and outside the lock: concurrent visitors read the seat side by side, and the section the
+    // lock serialises stays the roster's milliseconds (the paragraph above).
+    const seat: SeatVerdict | null = siteAiAsks(mode, input.team) ? await seatCandidate(tx, now) : null;
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('lead_assign'))`);
     const [existing] = await tx
       .select({
@@ -290,7 +353,31 @@ export async function assignForTag(
       return { username: live ? existing.username : null, reused: true };
     }
 
-    const pick = await pickAssignee(input.team, tx);
+    let seatRefused: SeatRefusal | null = null;
+    if (seat) {
+      if (seat.ok) {
+        if (!stillWanted()) return { username: null, reused: false };
+        await tx
+          .insert(leadAssignments)
+          .values({
+            tag: input.tag,
+            team: input.team,
+            topic: input.topic,
+            page: input.page,
+            lang: input.lang,
+            userId: seat.userId,
+            username: seat.username,
+            // The seat's bridge is live by the verdict's own clause: the visitor's first words are captured.
+            capturable: true,
+            ranking: { ai: true },
+          })
+          .onConflictDoNothing();
+        return { username: seat.username, reused: false };
+      }
+      seatRefused = seat.reason;
+    }
+
+    const pick = await pickAssignee(input.team, tx, now);
     if (!pick.chosen || !stillWanted()) return { username: null, reused: false };
     await tx
       .insert(leadAssignments)
@@ -303,7 +390,8 @@ export async function assignForTag(
         userId: pick.chosen.userId,
         username: pick.chosen.username,
         capturable: pick.chosen.capturable,
-        ranking: rankingRecord(pick),
+        // «nega Aliga?» while the AI was asked: why the seat did not take it, beside the roster's own reasons.
+        ranking: seatRefused ? { ...rankingRecord(pick), ai: false, aiReason: seatRefused } : rankingRecord(pick),
       })
       .onConflictDoNothing();
     return { username: pick.chosen.username, reused: false };
@@ -669,9 +757,16 @@ export interface PanelData {
   people: PanelPerson[];
   /** Per team: who the NEXT visitor goes to, or why nobody — the route's own pick. */
   next: Record<LeadTeam, Pick>;
+  /**
+   * The website's AI choice and, while it is `all`, the seat's own answer right now — the door's `seatCandidate`,
+   * so the line of truth is the answer the next visitor gets (`siteAiAsks` decides which teams it covers).
+   */
+  ai: { mode: LeadAssignAi; seat: SeatVerdict | null };
 }
 
 export async function sitePanel(): Promise<PanelData> {
+  const mode = await readLeadAssignAi();
+  const seat = mode === 'all' ? await seatCandidate(db) : null;
   const rows = await roster();
   const people: PanelPerson[] = rows.map((row) => ({
     userId: row.userId,
@@ -698,7 +793,7 @@ export async function sitePanel(): Promise<PanelData> {
 
   const next = {} as Record<LeadTeam, Pick>;
   for (const team of LEAD_TEAMS) next[team] = pickFromRoster(rows, team);
-  return { people, next };
+  return { people, next, ai: { mode, seat } };
 }
 
 /** The newest offers, with what became of each. */

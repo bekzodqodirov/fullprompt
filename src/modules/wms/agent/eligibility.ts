@@ -40,8 +40,18 @@ export interface EligibilityFacts {
   anchorAutoSent: boolean;
   /** Our newest out message's time, for the echo window. */
   lastOutAt: Date | null;
-  /** The anchor repeats one of the peer's previous three messages word for word. */
-  anchorRepeats: boolean;
+  /**
+   * The newest moment the listener saw the customer typing (`agent_conversations.peer_typing_at`) — REQUIRED, like
+   * every fact a refusal is lifted by: a stamp at or after our last line means a PERSON typed after it, and a line of
+   * his seconds later is his answer, never our own message echoed back (J8's principle — a robot never types).
+   */
+  peerTypingAt: Date | null;
+  /**
+   * The chat is a robot answering our robot (stage 1a P2, loop.ts): the anchor's words a third time in the window, or
+   * fast answers to three of our sends — the facts of `loopVerdict`, asked of the line this run answers. It replaced
+   * `repeat` (the anchor equal to one of the previous three lines), which stopped a customer's FIRST «Salom?».
+   */
+  loop: boolean;
 }
 
 export type Ineligible =
@@ -59,7 +69,10 @@ export type Ineligible =
   | 'too_old'
   | 'auto_sent'
   | 'echo'
-  | 'repeat';
+  // No longer said by `eligibleForRun` (stage 1a P2): `loop` took its place. Kept so a stored `agent_runs.error` of
+  // 'repeat' still reads in his words (calc-loop `NO_DRAFT_WORDS`).
+  | 'repeat'
+  | 'loop';
 
 export function eligibleForRun(f: EligibilityFacts): { ok: true } | { ok: false; reason: Ineligible } {
   const no = (reason: Ineligible) => ({ ok: false as const, reason });
@@ -76,10 +89,13 @@ export function eligibleForRun(f: EligibilityFacts): { ok: true } | { ok: false;
   if (!f.anchorIsNewest) return no('not_newest');
   if (f.now.getTime() - f.anchorSentAt.getTime() > f.anchorMaxAgeMs) return no('too_old');
   if (f.anchorAutoSent) return no('auto_sent');
+  // A line within seconds of ours is our own echo or a robot's — unless he was seen typing after ours (the merged-tree
+  // seam review, finding 7): a quick «ha» or «5 kub» to our question is the commonest answer there is.
+  const typedSince = f.lastOutAt !== null && f.peerTypingAt !== null && f.peerTypingAt.getTime() >= f.lastOutAt.getTime();
   if (f.lastOutAt && f.anchorSentAt.getTime() - f.lastOutAt.getTime() < AGENT_LIMITS.echoWindowMs &&
-      f.anchorSentAt.getTime() >= f.lastOutAt.getTime()) {
+      f.anchorSentAt.getTime() >= f.lastOutAt.getTime() && !typedSince) {
     return no('echo');
   }
-  if (f.anchorRepeats) return no('repeat');
+  if (f.loop) return no('loop');
   return { ok: true };
 }

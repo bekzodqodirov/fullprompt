@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import type { AgentContext, ChatMessage, MeasureCandidate } from '@/modules/wms/agent/context';
 import { customerSources, extractNumbers, factSources, numberLedger, type NumberSource } from '@/modules/wms/agent/numbers';
 import {
@@ -422,6 +423,7 @@ const envOf = (ctx: AgentContext, rate: number | null = 17): ToolEnv => ({
   priceArmed: false,
   calcArmed: false,
   calcPricing: false,
+  aviaDays: AVIA_DAYS_DEFAULT,
 });
 
 function compose(replyText: string, patch: Partial<ComposeReply> = {}): ComposeReply {
@@ -443,7 +445,7 @@ function compose(replyText: string, patch: Partial<ComposeReply> = {}): ComposeR
 }
 
 function loopOf(out: ToolOutcome, c: ComposeReply) {
-  return { compose: c, tools: [], outcomes: [out], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+  return { compose: c, tools: [], outcomes: [out], usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }, aviaDays: AVIA_DAYS_DEFAULT };
 }
 
 describe('a flight whose start nobody said: no warehouse condition — the address is his (his fourth set «2», K32 withdrawn)', () => {

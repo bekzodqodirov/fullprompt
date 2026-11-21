@@ -26,6 +26,7 @@ import {
   type NumberSource,
   type TravelMode,
 } from './numbers';
+import { OWNER_WORD, personaWordsOf } from './persona';
 import { mentionsRail } from './worthy';
 
 /**
@@ -2087,6 +2088,45 @@ export function exclusionSentencesText(): string {
 }
 
 /**
+ * The customs offer after a truck price (stage 1a §6.1 rule 8, his 2 a: «rastamojka bilan hisoblab beraymi?»). The word
+ * «alohida / отдельно / separately / جداگانه / 单独» is deliberate: G11 asks every clause naming customs to say it is
+ * apart (`saysExclusion`), and «с растаможкой» is a `customs_included` promise — measured: «Rastamojka bilan hisoblab
+ * beraymi?» beside a truck quote blocks `estimate_unhedged`, these pass. The LAST sentence of the reply (J1): «ha» after
+ * it is an answer, and the run that reads it (`ourLineAsks`) finds the sentence in our last line. If a language cannot
+ * pass the policy, the WORDING changes here — never the check.
+ */
+export const CUSTOMS_OFFER_SENTENCE: Record<AgentLocale, string> = {
+  uz: 'Xohlasangiz, rastamojkani ham alohida hisoblab beraymi?',
+  uz_cyrl: 'Хоҳласангиз, растаможкани ҳам алоҳида ҳисоблаб берайми?',
+  ru: 'Если нужно, отдельно посчитаю и растаможку — посчитать?',
+  en: 'If you like, I can also calculate customs clearance separately — shall I?',
+  fa: 'اگر بخواهید، ترخیص گمرکی را هم جداگانه حساب کنم؟',
+  zh: '如果需要，我可以单独为您计算清关费用，要算吗？',
+};
+
+/** The customs offer in every language, as the prompt dictates it. */
+export function customsOfferSentencesText(): string {
+  return AGENT_LOCALES.map((l) => `${l} «${CUSTOMS_OFFER_SENTENCE[l]}»`).join('; ');
+}
+
+/**
+ * «Botmisiz?» answered by CODE (his 1 b ⚠, stage 1a §4.4 `withBotAnswer`): one honest line in front of the reply, so
+ * it is said whatever the model wrote — never left to the model (rule 17 tells it the line is added). It states what
+ * the AI is without a «ha / yo'q»: the same line answers «are you a bot?» and «are you a person?». Its one promise —
+ * «kerak bo‘lsa menejerni chaqiraman», his own words (his 1 b) — is kept today by the card that reaches him and his 🙋;
+ * it names no time and no act a later stage builds, and `ai_denial` still reads the whole reply. Persian and Chinese carry
+ * their Uzbek gloss (he cannot read them — and a tayyor matn in them is his card until he approved it, J27).
+ */
+export const AI_HONEST_LINE: Record<AgentLocale, { text: string; glossUz: string }> = {
+  uz: { text: 'Men GSRning AI yordamchisiman; kerak bo‘lsa menejerni chaqiraman.', glossUz: '' },
+  uz_cyrl: { text: 'Мен GSRнинг AI ёрдамчисиман; керак бўлса менежерни чақираман.', glossUz: '' },
+  ru: { text: 'Я AI-помощник GSR; если нужно, позову менеджера.', glossUz: '' },
+  en: { text: 'I am GSR’s AI assistant; I can call a manager if needed.', glossUz: 'Men GSRning AI yordamchisiman; kerak bo‘lsa menejerni chaqiraman.' },
+  fa: { text: 'من دستیار هوش مصنوعی GSR هستم؛ در صورت نیاز مدیر را صدا می‌کنم.', glossUz: 'Men GSRning AI yordamchisiman; kerak bo‘lsa menejerni chaqiraman.' },
+  zh: { text: '我是GSR的AI助手；如有需要，我可以请经理来。', glossUz: 'Men GSRning AI yordamchisiman; kerak bo‘lsa menejerni chaqiraman.' },
+};
+
+/**
  * What each of the two sentences must hold, per language.
  *
  * The CONDITION: every word of its list inside ONE sentence that does not
@@ -2218,6 +2258,12 @@ export interface PolicyInput {
   staffNames: readonly string[];
   /** The customer's own name — a colleague's namesake is not a colleague (G6, P3). Absent = nobody's name is exempt. */
   customerNames?: readonly string[];
+  /**
+   * The AI's own name (`agent_persona_name`, stage 1a P3): «men … <ism>man» is its introduction, never a colleague named
+   * — so one WORD of it warns nobody, even where a colleague carries it. A colleague's FULL name still blocks, and any
+   * other colleague's word still warns. Absent or empty = no exemption.
+   */
+  personaName?: string;
   /** A random token inside the system prompt; seeing it in a reply is a prompt leak. */
   canary: string;
   /** Distinct OTHER peers that got this reply's fingerprint in the last 24 h. */
@@ -2451,6 +2497,7 @@ function staffNameHits(
   staffNames: readonly string[],
   customerNames: readonly string[],
   factWords: readonly string[],
+  personaWords: readonly string[],
   blocks: PolicyHit[],
   warnings: PolicyHit[],
 ): void {
@@ -2459,6 +2506,9 @@ function staffNameHits(
   // A name the run's approved facts carry is the owner's own words (B9): the seeded «aloqa: Umriddin»
   // must not block the fact he seeded. A colleague the facts do not name still blocks.
   const fact = new Set(factWords.map((w) => w.toLowerCase()));
+  // The AI's own name (stage 1a P3): its self-introduction is no colleague named — for ONE word at a time only, so a
+  // colleague's whole name still blocks below and another colleague's word still warns.
+  const persona = new Set(personaWords.map((w) => nameShadow(w).toLowerCase()));
   for (const name of staffNames) {
     const words = name.trim().split(/\s+/u).filter(Boolean);
     const shadowWords = words.map((w) => nameShadow(w));
@@ -2473,7 +2523,7 @@ function staffNameHits(
     }
     shadowWords.forEach((w, i) => {
       const low = w.toLowerCase();
-      if (customer.has(low) || fact.has(low) || NAME_FILLER.has(low) || [...w].length < 3) return;
+      if (customer.has(low) || fact.has(low) || persona.has(low) || NAME_FILLER.has(low) || [...w].length < 3) return;
       if (seen.some((s) => wordIn(s, w, [...w].length >= 4 ? 5 : 0))) {
         warnings.push({ rule: 'G6', code: 'staff_name', detail: words[i]! });
       }
@@ -2815,7 +2865,7 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   const ledger: LedgerEntry[] = placed.map(ledgerLine);
   for (const e of placed) {
     if (e.source !== null) continue;
-    const detail = rail && e.kind === 'money' ? `${e.raw} — temir yo‘l narxini Bekzod aytadi` : e.raw;
+    const detail = rail && e.kind === 'money' ? `${e.raw} — temir yo‘l narxini ${OWNER_WORD} aytadi` : e.raw;
     blocks.push({ rule: 'G1', code: 'number_unsourced', detail });
   }
 
@@ -2838,7 +2888,7 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
   else if ((input.aviaMentioned === true || airMentionIn(text)) && statesChinaAddress(text, anchors)) {
     warnings.push({ rule: 'G6', code: 'avia_maybe' });
   }
-  staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], blocks, warnings);
+  staffNameHits(text, input.staffNames, input.customerNames ?? [], input.factNameWords ?? [], personaWordsOf(input.personaName ?? ''), blocks, warnings);
   if (input.canary && text.includes(input.canary)) blocks.push({ rule: 'G6', code: 'canary' });
   if (AI_DENIAL.some((re) => re.test(text))) blocks.push({ rule: 'G6', code: 'ai_denial' });
   if (MENTION.test(text)) blocks.push({ rule: 'G6', code: 'mention' });

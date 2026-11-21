@@ -1,22 +1,25 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, notInArray, sql } from 'drizzle-orm';
 import { aiConfigured, realCallModel, STAFF_MODEL, type CallModel, type ModelBlock, type ModelMessage, type ModelUsage } from '../../platform/ai/model';
 import { db } from '../../platform/db/client';
 import { agentConversations, agentRuns, clients, tgChatRules, tgMessageFlags, tgMessages, tgOutbox, users } from '../../platform/db/schema';
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import { aviaDays, readAgentPersonaName, type AviaDays } from '../../platform/settings/service';
 import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { lateNote } from './card';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
-import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
-import { eligibleForRun, type Ineligible } from './eligibility';
+import { chatForm, loadContext, silenceOf, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
+import { eligibleForRun, type EligibilityFacts, type Ineligible } from './eligibility';
 import { anchorMaxAgeMsForTrigger, type OwnerTrigger } from './anchor-clock';
+import { aviaDaySources, COMPANY_RULE } from './avia-days';
 import { generalFacts, kbSearch, type KbHit } from './kb';
 import type { PromptLesson } from './lesson-rules';
 import { promptLessons } from './lessons';
 import { AGENT_LIMITS } from './limits';
+import { loopFactsFor, loopNoticeOnce, loopVerdict, type LoopVerdict } from './loop';
 import { detectLocale, dominantScript, greetingLean, uzbekEndingLean, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
@@ -25,12 +28,13 @@ import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecsFor, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
-import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction } from './drafts';
+import { asksIfBot, draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
+import { linesAfterOurSends, linesFirstJudged, systemLocaleOf, systemReasonOf, systemReplyFor } from './system-reply';
+import { customerLabel, draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
-import type { ForcedQuestion } from './types';
-import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, calcActArmed, priceActArmed } from './auto-send';
+import type { ForcedQuestion, NoteCode, SystemReplyReason } from './types';
+import { autoPlanFor, autoShapeOf, calcActArmed, pressNow, priceActArmed } from './auto-send';
 import { namesForeignPlace } from './destination';
 import {
   airMentionIn,
@@ -47,7 +51,7 @@ import {
   type NumberSource,
   type TravelMode,
 } from './numbers';
-import { hanOnly, nameWordsOf, type PolicyResult } from './policy';
+import { AI_HONEST_LINE, CUSTOMS_OFFER_SENTENCE, hanOnly, nameWordsOf, type PolicyResult } from './policy';
 import { AGENT_LOCALES } from './locale';
 
 /**
@@ -103,6 +107,11 @@ export interface ComposeReply {
    * through ✏️, so its card offers no «✍️ Savolga javob». Kept on the draft's policy (drafts `draftFromRun`).
    */
   forcedQuestion?: ForcedQuestion;
+  /**
+   * The code put the honest line in front of this reply, or wrote it alone (`withBotAnswer` — the customer asked whether
+   * we are a bot, his 1 b): kept on the draft's policy as `honestLine`, which the gate reads as a tayyor matn (J27).
+   */
+  honestLine?: true;
 }
 
 interface LoopResult {
@@ -110,6 +119,12 @@ interface LoopResult {
   tools: { name: string; ok: boolean; text: string; estimate: boolean }[];
   outcomes: ToolOutcome[];
   usage: ModelUsage;
+  /**
+   * The flight's days this run TOLD the model — rule 9 and the avia tool (stage 1a P7, `agent_avia_days`) — and so the
+   * days the company rule vouches for in its memory (`memoryFor`). Null for a run that told the model nothing: a tayyor
+   * matn (`systemLoop`) states no day, and nothing then vouches for one. REQUIRED, so no loop forgets which days it was.
+   */
+  aviaDays: AviaDays | null;
 }
 
 const CAP_LOCK = 'agent_run_cap';
@@ -146,6 +161,33 @@ async function runLedgerRow(job: AgentInboundJob, attempt: number, outcome: 'ref
     .onConflictDoNothing()
     .returning({ id: agentRuns.id });
   return rows.length > 0;
+}
+
+/**
+ * The anchor of the newest earlier inbound run of this chat that JUDGED its burst — null when none did (system-reply
+ * `linesFirstJudged`: the lines after it are the ones this run is the first to judge). Read off the ledger rows the run
+ * writes, every one of them after `draftWorthy` and the tayyor matn's choice (`runLedgerRow`'s notice, skip, refusal and
+ * cap; `reserve`'s row of a drafting run) — less the three that judged nothing that stands: a stand-down stored at the
+ * write (`stood_down` — he was editing the card, the question was gone), eligibility's `not_newest` (a newer line came,
+ * whose run judges this one with it), and an `error` (nothing it chose reached anybody; the sweep's retry judges the line
+ * again). A run that stood down before judging — `not_newest` at the start, a duplicate, a wait for his typing — wrote
+ * no row at all. The line's own earlier attempts count: an edit or a redraft of a line already judged tells nobody twice.
+ */
+async function judgedThroughOf(managerUserId: string, peerId: bigint, anchorId: bigint): Promise<bigint | null> {
+  const [row] = await db
+    .select({ anchor: sql<string | null>`max(${agentRuns.anchorTgMessageId})::text` })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.managerUserId, managerUserId),
+        eq(agentRuns.peerId, peerId),
+        eq(agentRuns.trigger, 'inbound'),
+        lte(agentRuns.anchorTgMessageId, anchorId),
+        sql`${agentRuns.outcome} NOT IN ('stood_down', 'error')`,
+        sql`NOT (${agentRuns.outcome} = 'refused' AND ${agentRuns.error} IS NOT DISTINCT FROM 'not_newest')`,
+      ),
+    );
+  return row?.anchor == null ? null : BigInt(row.anchor);
 }
 
 function asText(v: unknown): string {
@@ -222,6 +264,13 @@ export async function runLoop(input: {
    * head is then the same bytes — an edit on the page mid-run cannot move the cache between two rounds.
    */
   lessons: readonly PromptLesson[];
+  /** The persona's name (`agent_persona_name`, stage 1a P3), read ONCE for the run like the lessons: '' = no name. */
+  persona: string;
+  /**
+   * The flight's days (`agent_avia_days`, stage 1a P7), read ONCE for the run like the persona: rule 9, the avia tool's
+   * offer, its words and its day sources say this pair in every round, and the loop hands it on to `memoryFor`.
+   */
+  aviaDays: AviaDays;
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
@@ -249,6 +298,7 @@ export async function runLoop(input: {
     calcArmed: input.calcArmed,
     calcPricing: input.calcPricing,
     calcRequestId: input.calcRequestId,
+    aviaDays: input.aviaDays,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
@@ -260,10 +310,12 @@ export async function runLoop(input: {
         priceArmed: input.priceArmed,
         calcPricing: input.calcPricing,
         lessons: input.lessons,
+        persona: input.persona,
+        aviaDays: input.aviaDays,
       }),
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
-      tools: toolSpecsFor({ calcPricing: input.calcPricing }),
+      tools: toolSpecsFor({ calcPricing: input.calcPricing, aviaDays: input.aviaDays }),
       maxTokens: 1_500,
     });
     if (res.usage) {
@@ -275,7 +327,7 @@ export async function runLoop(input: {
     messages.push({ role: 'assistant', content: res.content });
     const uses = res.content.filter((b): b is Extract<ModelBlock, { type: 'tool_use' }> => b.type === 'tool_use');
     const compose = uses.find((u) => u.name === 'compose_reply');
-    if (compose) return { compose: parseCompose(compose.input), tools, outcomes, usage };
+    if (compose) return { compose: parseCompose(compose.input), tools, outcomes, usage, aviaDays: input.aviaDays };
     if (uses.length === 0) throw new Error(res.stopReason === 'max_tokens' ? 'max_tokens' : 'no_compose');
     const results: ModelBlock[] = [];
     for (const u of uses) {
@@ -297,12 +349,22 @@ export async function runLoop(input: {
   throw new Error('too_many_rounds');
 }
 
-/** Facts about this chat for `eligibleForRun`, read now. */
-async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Date) {
+/**
+ * Facts about this chat for `eligibleForRun`, read now — and the chat-loop verdict itself (`loopVerdict`: which
+ * signals tripped and whether he was already told, for the notice). `loopRead` is REQUIRED: an inbound run asks the
+ * loop of its anchor; an owner-triggered run answers no inbound burst and reads none, so the statement is never run
+ * for a fact it throws away (the gate still asks such a draft about the hold).
+ */
+async function eligibilityFacts(
+  ctx: AgentContext,
+  config: AgentConfig,
+  now: Date,
+  loopRead: 'anchor' | 'none',
+): Promise<EligibilityFacts & { loopVerdict: LoopVerdict }> {
   const [acc] = await db.execute<{ id: string }>(sql`SELECT id FROM tg_accounts WHERE manager_user_id = ${ctx.managerUserId}`);
   const guard = acc ? await readGuard(acc.id) : null;
   const [conv] = await db
-    .select({ humanUntil: agentConversations.humanUntil, mutedAt: agentConversations.mutedAt })
+    .select({ humanUntil: agentConversations.humanUntil, mutedAt: agentConversations.mutedAt, typingAt: agentConversations.peerTypingAt })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, ctx.managerUserId), eq(agentConversations.peerId, ctx.peerId)));
 
@@ -364,8 +426,12 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
   }
 
   const anchor = ctx.anchor!;
-  const prevInbound = ctx.messages.filter((m) => m.direction === 'in' && m.id !== anchor.id).slice(-3);
-  const norm = (t: string) => t.trim().toLowerCase();
+  // The chat loop (stage 1a P2, loop.ts): the anchor's words a third time, or fast answers to three of our sends.
+  // …or he was told so less than the window ago, and the notice promised the AI keeps out (J33).
+  const loopRan: LoopVerdict =
+    loopRead === 'anchor'
+      ? loopVerdict(await loopFactsFor(db, ctx.managerUserId, ctx.peerId, anchor.tgMessageId, now, null))
+      : { signals: [], held: false, fastDelaysMs: [] };
   return {
     now,
     agentOn: agentRunning(config),
@@ -386,7 +452,9 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     anchorMaxAgeMs: anchorMaxAgeMsForTrigger('inbound'),
     anchorAutoSent: anchor.autoSent,
     lastOutAt: ctx.lastOut?.sentAt ?? null,
-    anchorRepeats: anchor.body.trim() !== '' && prevInbound.some((m) => norm(m.body) === norm(anchor.body)),
+    peerTypingAt: conv?.typingAt ?? null,
+    loop: loopRan.signals.length > 0 || loopRan.held,
+    loopVerdict: loopRan,
   };
 }
 
@@ -396,7 +464,7 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
  * today's tokens ≤ daily_token_cap. The lock is its own statement inside the
  * transaction, the INSERT carries the counts in its WHERE (#707's shape).
  */
-async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfig, now: Date): Promise<'ok' | 'duplicate' | 'capped' | string> {
+async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfig, now: Date, model: string | null): Promise<'ok' | 'duplicate' | 'capped' | string> {
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${CAP_LOCK}))`);
@@ -410,7 +478,7 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
         trigger: 'inbound',
         anchorTgMessageId: BigInt(job.anchorTgMessageId),
         attempt,
-        model: STAFF_MODEL,
+        model,
       })
       .onConflictDoNothing()
       .returning({ id: agentRuns.id });
@@ -442,7 +510,71 @@ async function attemptFor(job: AgentInboundJob): Promise<number> {
   return EDIT_ATTEMPT_BASE + Number(row?.n ?? 0);
 }
 
-const lastOutAsked = (ctx: AgentContext) => /[?؟？]\s*$/u.test(ctx.lastOut?.body ?? '');
+/** Our own words in a line, folded the one way both sides of a comparison are: case, apostrophes, white space. */
+const ourFold = (t: string) =>
+  t
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/['‘’ʻʼ`]/gu, "'")
+    .replace(/\s+/gu, ' ')
+    .trim();
+
+/** What a line may end with after its last word: white space, emoji and their joiners. */
+const TRAILING_DECOR = /[\s\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}]+$/u;
+
+/** The customs offer in every language, folded once (J1). */
+const OFFERS = Object.values(CUSTOMS_OFFER_SENTENCE).map(ourFold);
+
+/**
+ * Did our last line ASK the customer something? — then his «ok» or «ha» is an answer and deserves a reply
+ * (`draftWorthy`'s `lastOutAsked`). It ends in a question mark, whatever emoji or space follows it; or it carries rule
+ * 8's customs offer in any language, wherever in the line (J1): a reply that put a sentence after the offer made the
+ * customer's «ha» to it a closing, dropped — and his 2 a's job never reached the VED.
+ */
+export function ourLineAsks(body: string | null | undefined): boolean {
+  const text = (body ?? '').replace(TRAILING_DECOR, '');
+  if (/[?؟？]$/u.test(text)) return true;
+  const folded = ourFold(text);
+  return OFFERS.some((o) => folded.includes(o));
+}
+
+/**
+ * The run's tool calls and its tokens, written onto its ledger row the moment the model loop returns — before the
+ * draft (stage 1a, J3). A reply that goes at once is pressed seconds later, by this run or by the minute sweep, and
+ * either reads what the run CALLED: a cargo-status reply judged on a row whose calls were still unwritten (the run's
+ * `finally` writes them last) is refused `status_unbacked`. The `finally` writes them again, with the outcome; a
+ * failure here only logs — the press of this very run holds the calls in its hand anyway.
+ */
+async function settleToolCalls(runId: string, settle: Partial<typeof agentRuns.$inferInsert>): Promise<void> {
+  const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, toolCalls } = settle;
+  await db
+    .update(agentRuns)
+    .set({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, toolCalls })
+    .where(eq(agentRuns.id, runId))
+    .catch((err: unknown) => logger.warn({ err, runId }, '[agent] run tool calls not written early'));
+}
+
+/**
+ * The ONE site a reply reaches his card and — when its plan goes at once (a hold of 0: ordinary talk, his 11 a) — is
+ * pressed on the spot, with the tool calls this run made (J3, J10). Both run paths write through it, and so does a
+ * tayyor matn the code writes (stage 1a P3): one door, so no reply that goes at once is written past its press. The
+ * press is never a reason for the run to fail: it logs, and the minute sweep is the net (auto-send `pressNow`).
+ */
+async function writeReply(
+  draft: Parameters<typeof writeDraft>[0],
+  tools: readonly { name: string; ok: boolean; estimate: boolean }[],
+  now: () => Date,
+): Promise<WriteDraftResult> {
+  const written = await writeDraft(draft);
+  if (written.kind === 'written' && draft.autoPlan?.eligible === true && draft.autoPlan.holdSec === 0) {
+    try {
+      await pressNow(written.draftId, now(), tools);
+    } catch (err) {
+      logger.error({ err, draftId: written.draftId }, '[agent] reply not pressed at once — the sweep will');
+    }
+  }
+  return written;
+}
 
 export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): Promise<RunResult> {
   const now = deps.now ?? (() => new Date());
@@ -471,36 +603,58 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     return { outcome: 'rescheduled', reason: 'peer_typing' };
   }
 
-  const worthy = draftWorthy(
-    ctx.burst.map((m) => ({ text: m.body, media: m.media })),
-    lastOutAsked(ctx),
-  );
-  if (!worthy.worthy) {
-    if ('notice' in worthy) {
-      if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) {
-        await writeNotice(ctx, worthy.reason);
-        // «Botmisiz?» after an AUTO reply (§18.3 step-down): that chat leaves «o'zi yuborish» for 30 days,
-        // and a second such chat in a week disarms it. Once per anchor — the ledger row's own claim.
-        if (worthy.reason === 'bot_question') await autoStepDownOnBotQuestion(ctx.managerUserId, ctx.peerId, t);
-      }
-      return { outcome: 'notice', reason: worthy.reason };
+  const burst = ctx.burst.map((m) => ({ text: m.body, media: m.media }));
+  const worthy = draftWorthy(burst, ourLineAsks(ctx.lastOut?.body));
+  // A burst the model cannot answer — a voice note, a photo or a file, Pashto — gets the code's tayyor matn (stage 1a
+  // P3, system-reply.ts) through the same run as any reply: eligibility, the caps, the policy, the gate, one draft writer.
+  // Once per silence, per kind: when our lines since the silence began already said THIS line, the customer was told —
+  // and the voice or the Pashto still reaches HIM, as before, so a customer sending five voice notes is never answered by
+  // nobody. A voice note beside a sticker is a voice note here too (worthy calls that burst `media_only`). «Our lines»
+  // include our sends the thread lost (context `silenceOf` — an 'unknown' line, one sent with no id): the gate asks the
+  // same reading before it presses one. The line answers his lines after our NEWEST send, a lost one included, and is
+  // the first kind among them not yet said (the check of the F1-F3 fixes, R1): a voice note after our lost media line
+  // is owed the voice line — read by the thread's burst, the photo before that line chose the media line again, told,
+  // and the voice note reached nobody. Only this choice reads it: a model reply sees the thread's burst, unchanged.
+  // When every kind was said, the voice notice is owed only for a voice note no earlier run of this chat judged
+  // (`judgedThroughOf`): a voice note and a photo sent together are told of once by the run of the newest — the voice
+  // note's own job stood down — and a photo after a voice note already told of is skipped quietly (the final check,
+  // F-coalesce). Asked only of the two bursts whose choice reads lines; every other refusal is decided without it.
+  const silence = worthy.worthy ? null : await silenceOf(ctx.managerUserId, ctx.peerId, ctx.messages);
+  const answered = silence === null ? [] : linesAfterOurSends(ctx.burst, silence.uncopied);
+  const firstJudged =
+    !worthy.worthy && (worthy.reason === 'voice_only' || worthy.reason === 'media_only')
+      ? linesFirstJudged(answered, await judgedThroughOf(ctx.managerUserId, ctx.peerId, anchorId))
+      : answered;
+  const asBurst = (lines: readonly ChatMessage[]) => lines.map((m) => ({ text: m.body, media: m.media }));
+  const system: SystemReplyReason | null =
+    silence === null ? null : systemReasonOf(worthy, asBurst(answered), silence.told, asBurst(firstJudged));
+  if (!worthy.worthy && (system === null || silence!.told.has(system))) {
+    const notice = system === 'voice' ? 'voice_only' : system === 'pashto' ? 'pashto' : null;
+    if (notice !== null) {
+      if (await runLedgerRow(job, attempt, 'notice', notice)) await writeNotice(ctx, notice);
+      return { outcome: 'notice', reason: notice };
     }
     // A ledger row, so the sweep's deploy-gap pass does not ask again every minute.
     await runLedgerRow(job, attempt, 'refused', worthy.reason);
     return { outcome: 'skipped', reason: worthy.reason };
   }
-  if (worthy.greetingOnly && ageMs < AGENT_LIMITS.greetingWaitMs) {
+  if (worthy.worthy && worthy.greetingOnly && ageMs < AGENT_LIMITS.greetingWaitMs) {
     await reschedule(job, attempt, (AGENT_LIMITS.greetingWaitMs - ageMs) / 1000, deps, 'greeting');
     return { outcome: 'rescheduled', reason: 'greeting_only' };
   }
 
-  const elig = eligibleForRun(await eligibilityFacts(ctx, config, t));
+  const eligFacts = await eligibilityFacts(ctx, config, t, 'anchor');
+  const elig = eligibleForRun(eligFacts);
   if (!elig.ok) {
     await runLedgerRow(job, attempt, 'refused', elig.reason);
+    // The one refusal here he is told of (J33): a loop is his to look at — said once, never throwing. A line refused
+    // because he WAS told (the hold) is not said again: the notice already promised the half hour.
+    if (elig.reason === 'loop' && !eligFacts.loopVerdict.held) await sayLoop(ctx, eligFacts.loopVerdict, t);
     return { outcome: 'refused', reason: elig.reason };
   }
 
-  const reserved = await reserve(job, attempt, config, t);
+  // A tayyor matn calls no model: its run row names none, and its tokens are zero — counted by the caps like any run.
+  const reserved = await reserve(job, attempt, config, t, system ? null : STAFF_MODEL);
   if (reserved === 'duplicate') return { outcome: 'stood_down', reason: 'duplicate' };
   if (reserved.startsWith('capped:')) {
     const fresh = await runLedgerRow(job, attempt, 'capped', reserved.slice(7));
@@ -523,7 +677,27 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const calcArmed = await calcActArmed();
     // …and whether it quotes the VED's answers with his markup (SPEC-P2-v2 §2.3): a chat with an answered linked job.
     const calcPricing = await calcPricingFor(ctx);
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed, calcArmed, calcPricing, calcRequestId: null, lessons: taught.lessons });
+    // A tayyor matn calls no model (stage 1a P3): its reply is the code's, its tokens zero, and every step below is the
+    // one any reply takes. The model's run reads the persona's name once, like the lessons — and the flight's days
+    // (stage 1a P7), which the head, the avia tool and the memory then all say alike.
+    const loop = system
+      ? systemLoop(ctx, system)
+      : await runLoop({
+          ctx,
+          config,
+          facts,
+          day,
+          canary,
+          callModel,
+          now,
+          priceArmed: act.priceArmed,
+          calcArmed,
+          calcPricing,
+          calcRequestId: null,
+          lessons: taught.lessons,
+          persona: await readAgentPersonaName(),
+          aviaDays: await aviaDays(),
+        });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -531,7 +705,11 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
+    await settleToolCalls(runId, settle);
+    // «Botmisiz?» answered by code before anything judges the reply (his 1 b): the honest line in front of it — or, when
+    // the model wrote nothing (the burst asked only that), as the reply itself. A tayyor matn is the code's whole reply:
+    // no road rule reads it («send it as text» is no hand-over in a flight's chat).
+    const drafted = system ? loop.compose : withBotAnswer(withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act), ctx);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
@@ -545,28 +723,53 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       memory,
       strip: stripFor(ctx),
     });
+    // Every note goes in with its code beside it (stage 1a, K5): the auto layer reads a note by what it IS.
+    // `validateActions` fills in the codes of the notes it writes.
+    const noteCodes: NoteCode[] = [];
     // A draft the avia guard holds asks him for the address (review R2).
     const c = withAviaGuard(drafted, policy, loop, ctx);
-    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
-    notes.push(...settleCalcPrices(memory, c.replyText));
-    const rail = railNote(ctx, c);
-    if (rail) notes.push(rail);
+    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t, noteCodes);
+    const many = settleCalcPrices(memory, c.replyText);
+    if (many) {
+      notes.push(many);
+      noteCodes.push('calc_price_many');
+    }
+    // A note that names a road's price is no note a «write it as text» line can be about (§4.4 finding 2: a tayyor
+    // matn's card carries no note but the late one).
+    const rail = system ? null : railNote(ctx, c);
+    if (rail) {
+      notes.push(rail);
+      noteCodes.push('rail');
+    }
     const tariffMismatch = loop.outcomes.some((o) => o.tariffMismatch);
-    if (tariffMismatch) notes.push("Sayt narxi va /admin/tarif farq qiladi — yo'lkira narxi aytilmadi.");
+    if (tariffMismatch) {
+      notes.push("Sayt narxi va /admin/tarif farq qiladi — yo'lkira narxi aytilmadi.");
+      noteCodes.push('tariff_mismatch');
+    }
     // A card written long after the customer's message says so, first, with the job's reason
     // when it has one (2026-10-29: a pull-made card 23 minutes late looked like a fresh one).
     const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
-    if (late) notes.unshift(late);
+    if (late) {
+      notes.unshift(late);
+      noteCodes.unshift('late');
+    }
 
-    const input = { runId, ctx, compose: c, policy, memory, actions, notes, lessonSet: taught.mark, calcCardLine: calcCardLineOf(loop.outcomes) };
+    // A tayyor matn read none of his lessons: its draft says so (§3.7 counts a lesson's rate by the drafts that read it).
+    const lessonSet = system ? null : taught.mark;
+    const input = { runId, ctx, compose: c, policy, memory, actions, notes, noteCodes, lessonSet, calcCardLine: calcCardLineOf(loop.outcomes), system };
     // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
     // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
     const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
     // A calculation the machine will not land by itself carries what he decides his ✅ by (SPEC-P2-v2 §1.1): a
     // waited duplicate, a file the VED will not get. Only ever on a plan already refused (the facts that write them
     // refuse it), so no countdown rides a card these lines were added to.
-    if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
-    const written = await writeDraft({ ...input, autoPlan });
+    if (autoPlan?.cardNotes?.length) {
+      notes.push(...autoPlan.cardNotes);
+      noteCodes.push(...(autoPlan.cardNoteCodes ?? []));
+    }
+    // The ONE site a reply of this run is written — the model's and the code's tayyor matn alike (J10): whatever
+    // follows a write (P1's press of a reply that goes at once) follows every reply.
+    const written = await writeReply({ ...input, autoPlan }, loop.tools, now);
     // The customer's language, remembered for the next «ok» — only what his message SAID (fix pass 6, the hunt #3), read
     // over his whole burst as the memory reads it (fix pass 7, `localeToRemember`).
     const locale = localeToRemember(ctx);
@@ -577,6 +780,17 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
         target: [agentConversations.managerUserId, agentConversations.peerId],
         set: { locale, updatedAt: new Date() },
       });
+    // A big load tells the people he chose (stage 1a §4.5, his 3 b) — once the draft is written, «AI javob
+    // tayyorladi», and never at the draft's cost: its own catch. Dynamic, like the sweep's steps: the signal's
+    // modules are the job's, not every run's import.
+    if (written.kind === 'written') {
+      try {
+        const { signalBigCargo } = await import('./big-cargo');
+        await signalBigCargo(ctx, loop.outcomes, now());
+      } catch (err) {
+        logger.warn({ err, runId }, '[agent] big-cargo signal failed');
+      }
+    }
     // `question_gone` is an answer's redraft's alone (`answers`), never this run's — stood down all the same if it came.
     const stood = written.kind === 'written' ? null : written.kind;
     settle = { ...settle, outcome: stood ? 'stood_down' : 'draft', error: stood };
@@ -597,8 +811,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
 /**
  * The figures the PROMPT dictates (incident 2026-10-29): rule 8 tells the
  * model the truck takes «eng kamida 1 kub yoki 100 kg», rule 9 the flight
- * «eng kamida 1 kg … taxminan 2-5 kun» — from `AGENT_LIMITS`, the numbers the
- * tools obey. Their only source in the policy was the seeded knowledge, which
+ * «eng kamida 1 kg … taxminan 3-5 kun» — from `AGENT_LIMITS`, the numbers the
+ * tools obey, and the flight's days from his setting (avia-days
+ * `aviaDaySources`, stage 1a P7 — and his setting again at every press,
+ * `withAviaDaysNow`). Their only source in the policy was the seeded knowledge, which
  * he may retire or re-word: then the reply said the minimum it was told to
  * say and lost its ✅ for it. The company's rule is a source of its own,
  * whatever the knowledge holds — said as the kinds it is (a measure, the
@@ -610,13 +826,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
  * «Avia orqali eng kamida 100 kg» (the flight takes 1 kg), and shapeless, for
  * «Sizning 100 kg yukingiz Toshkentga yetib keldi» — a weight nobody stated.
  */
-const COMPANY_RULE = 'kompaniya qoidasi';
 const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
   { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'm3', said: 'minimum' },
   { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'kg', said: 'minimum' },
   { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'kg', said: 'minimum' },
-  { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
-  { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
 ];
 
 /**
@@ -694,7 +907,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // payment fact names money, and joined to the rest it made every street
   // number and hour of every other fact a price nobody may repeat.
   for (const f of facts) sources.push(...factSources(f.answer, 'kompaniya bilimi'));
-  sources.push(...COMPANY_RULE_SOURCES);
+  sources.push(...COMPANY_RULE_SOURCES, ...aviaDaySources(loop.aviaDays));
   // His answer's figures — but never money in a rail chat (his price, his ✏️; rail is a forced question anyway).
   if (ownerAnswer !== null) sources.push(...ownerAnswerSources(ownerAnswer).filter((s) => !rail || s.kind !== 'money'));
   const urls = [...facts.flatMap((f) => f.urls), ...loop.outcomes.flatMap((o) => o.allowedUrls ?? [])];
@@ -1559,6 +1772,51 @@ export function aviaOwnerQuestion(air: AviaCargo): string {
 }
 
 /**
+ * A run of the CODE for a burst the model cannot answer (stage 1a P3, system-reply.ts): the tayyor matn as the loop's
+ * reply, in the language the chat leans on — what he said or the chat remembers, else its script (§4.4 finding 3: an
+ * Uzbek Latin line to a Cyrillic chat is `wrong_script`) — with no tool and no token.
+ */
+function systemLoop(ctx: AgentContext, reason: SystemReplyReason): LoopResult {
+  const locale = systemLocaleOf(customerLocaleOf(ctx).locale, ctx.customerScript);
+  return {
+    compose: systemReplyFor({ reason, locale, peerId: ctx.peerId }),
+    tools: [],
+    outcomes: [],
+    usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    aviaDays: null,
+  };
+}
+
+/**
+ * «Botmisiz?» answered by CODE (his 1 b ⚠, stage 1a §4.4): when the customer's burst asks whether we are a bot
+ * (worthy `asksIfBot`), the honest line goes in FRONT of the reply, in the reply's language — said whatever the model
+ * wrote, so it is said (rule 17 tells the model the line is added; `ai_denial` still reads the whole text). Once: a
+ * reply that already carries the line gets no second one. A burst that is ONLY the question leaves the model nothing
+ * to answer — rule 15 lets it say `reply_needed=false`, and the run would end `no_reply` where he used to get a notice —
+ * so an empty reply BECOMES the line, in the language the chat leans on (system-reply `systemLocaleOf`). Runs on both
+ * run paths, before the empty-reply test and before the policy. The mark (`honestLine`) makes the gate read the reply
+ * as a tayyor matn: a Persian or Chinese one is his card until he approved it (J27).
+ */
+export function withBotAnswer(
+  c: ComposeReply,
+  ctx: Pick<AgentContext, 'burst' | 'anchor' | 'messages' | 'storedLocale' | 'customerScript'>,
+): ComposeReply {
+  if (!ctx.burst.some((m) => asksIfBot(m.body))) return c;
+  const empty = !c.replyNeeded || c.replyText.trim() === '';
+  if (empty) {
+    const language = systemLocaleOf(customerLocaleOf(ctx).locale, ctx.customerScript);
+    const line = AI_HONEST_LINE[language];
+    return { ...c, replyNeeded: true, replyText: line.text, language, glossUz: line.glossUz, honestLine: true };
+  }
+  const line = AI_HONEST_LINE[c.language];
+  if (c.replyText.includes(line.text)) return { ...c, honestLine: true };
+  // The translation he reads covers the line too — only where the model wrote one (a Persian reply with none stays
+  // `gloss_missing`: its own part is still unread).
+  const glossUz = c.glossUz && line.glossUz ? `${line.glossUz}\n${c.glossUz}` : c.glossUz;
+  return { ...c, replyText: `${line.text}\n${c.replyText}`, glossUz, honestLine: true };
+}
+
+/**
  * His «Temir yo'l mendan so'rasin» (2026-10-24): a burst that asks about rail
  * is HIS question whatever the model composed — the draft is forced
  * `needs_owner` and carries the question for him when the model asked none.
@@ -1649,14 +1907,18 @@ export function stripFor(ctx: AgentContext): string[] {
  * The actions ✅ will run, each checked by the server (fit-13, money-6): a
  * calc_submit only with a COMPLETE checklist of the same section from this
  * run and no linked request still open; a follow-up only on a real day within
- * 60 days. A dropped action is said on the card.
+ * 60 days. A dropped action is said on the card — and its note's CODE is pushed
+ * beside it (stage 1a, K5) into `noteCodes`, the run's own array when it hands
+ * one in (both run paths do: the codes of every later note follow in the same
+ * array), else a fresh one; either way it comes back beside `notes`.
  */
 export function validateActions(
   c: ComposeReply,
   ctx: AgentContext,
   outcomes: readonly ToolOutcome[],
   now: Date,
-): { actions: ComposedAction[]; notes: string[] } {
+  noteCodes: NoteCode[] = [],
+): { actions: ComposedAction[]; notes: string[]; noteCodes: NoteCode[] } {
   const actions: ComposedAction[] = [];
   const notes: string[] = [];
   const lastChecklist = [...outcomes].reverse().find((o) => o.checklist)?.checklist ?? null;
@@ -1673,14 +1935,17 @@ export function validateActions(
         notes.push(
           `Yuk avto minimumidan kam (${AGENT_LIMITS.minShipment.m3} kub / ${AGENT_LIMITS.minShipment.kg} kg) — hisoblatishga yuborilmaydi.`,
         );
+        noteCodes.push('calc_below_minimum');
         continue;
       }
       if (!cl || !cl.complete) {
         notes.push("Hisoblatish taklif qilindi, lekin ma'lumot to'liq emas — yuborilmaydi.");
+        noteCodes.push('calc_incomplete');
         continue;
       }
       if (ctx.openCalcs.some((x) => x.status === 'open')) {
         notes.push("Bu chatda ochiq hisoblatish bor — ikkinchisi yuborilmaydi.");
+        noteCodes.push('calc_open');
         continue;
       }
       const cited = a.citedMessageRefs
@@ -1703,6 +1968,7 @@ export function validateActions(
       const limit = tashkentDay(new Date(now.getTime() + 60 * 86_400_000));
       if (!day || day < today || day > limit) {
         notes.push("Qayta aloqa sanasi noto'g'ri — qo'yilmaydi.");
+        noteCodes.push('followup_bad');
         continue;
       }
       actions.push({ type: 'set_followup', date: day, note: a.note.slice(0, 300) });
@@ -1710,7 +1976,33 @@ export function validateActions(
       actions.push({ type: 'mute', reason: a.note.slice(0, 300) || 'AI taklifi' });
     }
   }
-  return { actions, notes };
+  return { actions, notes, noteCodes };
+}
+
+/**
+ * A run refused as a chat loop tells him once (J33, loop `loopNoticeOnce`): the chat by its code and name, never the
+ * customer's words — and from that moment (`at`, the run's clock) the AI keeps out of the chat for the window. A
+ * notice that cannot be written, or that reaches nobody, is logged and the refusal stands: the looping line is held
+ * either way, and only a notice somebody was queued starts the hold.
+ */
+async function sayLoop(ctx: AgentContext, verdict: LoopVerdict, at: Date): Promise<void> {
+  try {
+    const said = await loopNoticeOnce({
+      managerUserId: ctx.managerUserId,
+      peerId: ctx.peerId,
+      clientId: ctx.identity.clientId,
+      leadId: ctx.identity.leadId,
+      anchorAt: ctx.anchor!.sentAt,
+      anchorTgMessageId: ctx.anchor!.tgMessageId,
+      at,
+      signals: verdict.signals,
+      fastDelaysMs: verdict.fastDelaysMs,
+      label: customerLabel(ctx),
+    });
+    if (said === 'unheard') logger.info({ peer: String(ctx.peerId) }, '[agent] loop not told: the holder gets no notice');
+  } catch (err) {
+    logger.warn({ err, peer: String(ctx.peerId) }, '[agent] loop notice not written');
+  }
 }
 
 /** The first cap refusal of the day says so once (fit-1). */
@@ -1776,16 +2068,16 @@ export const CALC_PRICE_MANY = 'Chatda bir nechta VED narxi bor — mijozga har 
 /**
  * What a reply settles of the VED prices its run was offered (fix pass 1, findings 2 and 3) — `memory.calcPrices` keeps
  * only the ones its words STATE (calc-price `statedCalcMarks`): the draft's re-price, the card's offer and the lead's
- * «AI narx aytdi» all read that list, and a price the reply never said reached nobody. The card's notes in return: one
- * when the tool offered more than one job's price and the reply states any. A run offered none keeps its memory as it
- * was, byte for byte.
+ * «AI narx aytdi» all read that list, and a price the reply never said reached nobody. The card's note in return
+ * (`calc_price_many`, null when none): the tool offered more than one job's price and the reply states any. A run
+ * offered none keeps its memory as it was, byte for byte.
  */
-export function settleCalcPrices(memory: PolicyMemory, body: string): string[] {
+export function settleCalcPrices(memory: PolicyMemory, body: string): string | null {
   const offered = memory.calcPrices ?? [];
-  if (offered.length === 0) return [];
+  if (offered.length === 0) return null;
   const stated = statedCalcMarks(body, offered);
   memory.calcPrices = stated;
-  return new Set(offered.map((m) => m.requestId)).size > 1 && stated.length > 0 ? [CALC_PRICE_MANY] : [];
+  return new Set(offered.map((m) => m.requestId)).size > 1 && stated.length > 0 ? CALC_PRICE_MANY : null;
 }
 
 /** The card's line on a redraft his answer could not make a reply of (a forcing rule asked him again). */
@@ -1858,14 +2150,14 @@ export async function runOwnerTriggered(
   // with 🙋, a colleague's phone, a muted chat, a paused account get no
   // hand-back draft either. Minus the clauses about the ANCHOR — this run was
   // started by the VED, not by the customer's newest message, so «is it still
-  // the newest», «an auto-reply», «an echo of ours», «a repeat» do not apply.
+  // the newest», «an auto-reply», «an echo of ours», «a loop» do not apply.
   const elig = eligibleForRun({
-    ...(await eligibilityFacts(ctx, config, t)),
+    ...(await eligibilityFacts(ctx, config, t, 'none')),
     anchorMaxAgeMs: maxAgeMs,
     anchorIsNewest: true,
     anchorAutoSent: false,
     lastOutAt: null,
-    anchorRepeats: false,
+    loop: false,
   });
   if (!elig.ok) {
     // A refusal that passes by itself (a tg-listen rebuild) is recorded
@@ -1916,6 +2208,7 @@ export async function runOwnerTriggered(
     const taught = await promptLessons();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
     const act = { priceArmed: await priceActArmed() };
+    const persona = await readAgentPersonaName();
     const loop = await runLoop({
       ctx,
       config,
@@ -1930,6 +2223,8 @@ export async function runOwnerTriggered(
       calcPricing: await calcPricingFor(ctx),
       calcRequestId: input.calcAnswer?.requestId ?? null,
       lessons: taught.lessons,
+      persona,
+      aviaDays: await aviaDays(),
     });
     settle = {
       inputTokens: loop.usage.inputTokens,
@@ -1938,7 +2233,9 @@ export async function runOwnerTriggered(
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
+    await settleToolCalls(runId, settle);
+    // «Botmisiz?» answered by code on this path too (his 1 b) — before the empty-reply test and the policy.
+    const drafted = withBotAnswer(withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act), ctx);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
@@ -1946,17 +2243,31 @@ export async function runOwnerTriggered(
     const answer = input.answer ?? null;
     const memory = memoryFor(ctx, loop, facts, canary, answer?.text ?? null);
     const policy = await policyFor({ managerUserId: ctx.managerUserId, peerId: ctx.peerId, body: drafted.replyText, memory, strip: stripFor(ctx) });
+    const noteCodes: NoteCode[] = [];
     const c = withAviaGuard(drafted, policy, loop, ctx);
-    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t);
-    notes.push(...settleCalcPrices(memory, c.replyText));
+    const { actions, notes } = validateActions(c, ctx, loop.outcomes, t, noteCodes);
+    const many = settleCalcPrices(memory, c.replyText);
+    if (many) {
+      notes.push(many);
+      noteCodes.push('calc_price_many');
+    }
     const rail = railNote(ctx, c);
-    if (rail) notes.push(rail);
+    if (rail) {
+      notes.push(rail);
+      noteCodes.push('rail');
+    }
     // A forcing rule turned his answer's redraft back into a question (§2.2): said on the card, never a loop.
-    if (answer && c.forcedQuestion) notes.push(ANSWER_STILL_HIS);
+    if (answer && c.forcedQuestion) {
+      notes.push(ANSWER_STILL_HIS);
+      noteCodes.push('answer_still_his');
+    }
     const calcAnswer = input.calcAnswer ?? null;
     // The VED's answer, and the reply STATES no price the tool made (§2.3; fix pass 1, finding 3): no call, a refused
     // one, or a figure the words never said — his 💵, never the machine's press.
-    if (calcAnswer && (memory.calcPrices ?? []).length === 0) notes.push(CALC_PRICE_UNSAID);
+    if (calcAnswer && (memory.calcPrices ?? []).length === 0) {
+      notes.push(CALC_PRICE_UNSAID);
+      noteCodes.push('calc_price_unsaid');
+    }
     const fromAnswer = answer
       ? {
           questionDraftId: answer.questionDraftId,
@@ -1990,6 +2301,7 @@ export async function runOwnerTriggered(
       memory,
       actions,
       notes,
+      noteCodes,
       kind: input.trigger === 'hand_back' ? ('hand_back' as const) : ('reply' as const),
       fromAnswer,
       fromLesson: lesson,
@@ -2002,14 +2314,21 @@ export async function runOwnerTriggered(
     // question.
     // A lesson's rewrite never carries one, even of a VED answer's card (fix pass 4): he has just judged it wrong.
     const autoPlan = !lesson && (answer || calcAnswer) ? await autoPlanFor({ draft: autoShapeOf(draftFromRun(draftInput)), tools: loop.tools, now: now() }) : null;
-    if (autoPlan?.cardNotes?.length) notes.push(...autoPlan.cardNotes);
-    const written = await writeDraft({
-      ...draftInput,
-      autoPlan,
-      answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
-      redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
-      calcChain: input.calcChain ?? null,
-    });
+    if (autoPlan?.cardNotes?.length) {
+      notes.push(...autoPlan.cardNotes);
+      noteCodes.push(...(autoPlan.cardNoteCodes ?? []));
+    }
+    const written = await writeReply(
+      {
+        ...draftInput,
+        autoPlan,
+        answers: answer ? { draftId: answer.questionDraftId, messageId: answer.messageId, decidedBy: input.managerUserId } : null,
+        redrafts: lesson ? { draftId: lesson.draftId, lessonId: lesson.lessonId, decidedBy: input.managerUserId } : null,
+        calcChain: input.calcChain ?? null,
+      },
+      loop.tools,
+      now,
+    );
     const stood = written.kind === 'written' ? null : written.kind;
     // A VED answer's price held behind another live reply gives its source key back (fix pass 5): the price is re-queued
     // until that reply is decided, under the same key — still one draft per standing anchor. The bill stays on the row.

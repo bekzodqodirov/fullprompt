@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { autoVerdict, type AutoGateInput } from '@/modules/wms/agent/auto-gate';
 import { numeralUnread } from '@/modules/wms/agent/auto-money';
 import { hitWords } from '@/modules/wms/agent/card';
@@ -94,7 +95,7 @@ function verdict(
   facts: KbHit[] = FACTS,
   patch: Partial<PolicyInput> = {},
 ): PolicyResult {
-  const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, reply), tools: [], outcomes: [], usage }, facts, 'gsr-t');
+  const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, reply), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT }, facts, 'gsr-t');
   return checkAgentReply({
     body: reply,
     language: mem.language,
@@ -178,11 +179,11 @@ describe('P1: a list’s own numbers are no figures', () => {
   });
 
   it('the prompt asks for «•» bullets, and the checklist hands the model the same shape', async () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     expect(head).not.toMatch(/raqamlangan ro'yxat/u);
     expect(head).toMatch(/har bir bandi "•" belgisi bilan/u);
     const ctx = ctxOf(['Rastamojka kerak, kurtka'], 'latin');
-    const env: ToolEnv = { ctx, day: '2026-10-29', aviaUsdPerKg: 17, kb: async () => [], chinaPlaces: async () => new Set(['Yiwu']), priceArmed: false, calcArmed: false, calcPricing: false };
+    const env: ToolEnv = { ctx, day: '2026-10-29', aviaUsdPerKg: 17, kb: async () => [], chinaPlaces: async () => new Set(['Yiwu']), priceArmed: false, calcArmed: false, calcPricing: false, aviaDays: AVIA_DAYS_DEFAULT };
     const out = await runTool('calc_checklist', { section: 'rastamojka', goods: [] }, env);
     const lines = out.text.split('\n').slice(1);
     expect(lines.length).toBeGreaterThan(0);
@@ -290,21 +291,23 @@ describe('P6: the seed’s own apostrophe (U+02BC) reads as «\'» — both ways
 
 describe('P7: the figures the prompt dictates are a source whatever the knowledge holds', () => {
   it('memoryFor carries the truck and avia minimums and the flight’s days as the company’s rule — never money', () => {
-    const mem = memoryFor(ctxOf(UZ, 'latin'), { compose: compose('uz', 'x'), tools: [], outcomes: [], usage }, [], 'gsr-t');
+    const mem = memoryFor(ctxOf(UZ, 'latin'), { compose: compose('uz', 'x'), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT }, [], 'gsr-t');
     const rule = mem.sources.filter((s) => s.label === 'kompaniya qoidasi');
     expect(rule).toEqual([
       { value: 1, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb', mode: 'road', unit: 'm3', said: 'minimum' },
       { value: 100, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb', mode: 'road', unit: 'kg', said: 'minimum' },
       { value: 1, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'kg', said: 'minimum' },
-      { value: 2, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'day' },
-      { value: 5, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'day' },
+      // DELIBERATE EDIT (stage 1a P7, J2): the flight's days are the run's setting — his «3-5», shipped — not «2-5».
+      { value: AVIA_DAYS_DEFAULT.min, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'day' },
+      { value: AVIA_DAYS_DEFAULT.max, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'day' },
     ]);
   });
 
   it('with NO knowledge at all, the minimum and the flight’s window pass; the truck may not borrow the flight’s days', () => {
     const none: KbHit[] = [];
     expect(verdict(UZ, 'latin', 'uz', 'Assalomu alaykum! Mashina bilan eng kamida 1 kub yoki 100 kg yuk olamiz. Yukingiz necha kub?', none).ok).toBe(true);
-    expect(verdict(UZ, 'latin', 'uz', 'Avia orqali eng kamida 1 kg qabul qilamiz, yetib borishi taxminan 2–5 kun. Yukingiz necha kg?', none).ok).toBe(true);
+    // His 2 b days (stage 1a P7) — the window rule 9 now tells the model.
+    expect(verdict(UZ, 'latin', 'uz', 'Avia orqali eng kamida 1 kg qabul qilamiz, yetib borishi taxminan 3–5 kun. Yukingiz necha kg?', none).ok).toBe(true);
     expect(blockCodes(verdict(UZ, 'latin', 'uz', 'Mashina bilan taxminan 5 kunda yetib keladi.', none))).toContain('number_unsourced:5');
     expect(blockCodes(verdict(UZ, 'latin', 'uz', 'Narxi 100 $.', none))).toContain('number_unsourced:100 $');
   });
@@ -370,7 +373,7 @@ describe('P9: the CALCULATION being free is no free extra', () => {
   });
 
   it('the prompt names the everyday phrasings that are blocked, and the true one to use', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     for (const phrase of ['"qulay narx"', '"yaxshi narx"', '"hech qanday muammo bo\'lmaydi"', '"без проблем"', '"выгодные цены"', '"hisoblash uchun pul olinmaydi"']) {
       expect(head).toContain(phrase);
     }
@@ -638,8 +641,10 @@ describe('review — P7: a rule’s figure vouches only in its own unit and on i
   const none: KbHit[] = [];
   it.each([
     ['Yukingiz taxminan 5 kunda yetib keladi.', '5'],
-    ['Yukingiz taxminan 2 kunda yetib keladi.', '2'],
-    ['Yukingiz taxminan 2-5 kunda yetib keladi.', '2'],
+    // DELIBERATE EDIT (stage 1a P7): the flight's days are 3-5 now — the old «2» would be unsourced by having NO source
+    // at all, which proves nothing about the road; the flight's own figures keep the case honest.
+    ['Yukingiz taxminan 3 kunda yetib keladi.', '3'],
+    ['Yukingiz taxminan 3-5 kunda yetib keladi.', '3'],
     ['Mashina uchun eng kamida 1 kg kerak.', '1'],
     ['100 kub yukni olamiz.', '100'],
     ['Narxni 2 soatda hisoblab beraman.', '2'],
@@ -658,19 +663,19 @@ describe('review — P7: a rule’s figure vouches only in its own unit and on i
   });
 
   it('…nor in Russian', () => {
-    expect(blockCodes(verdict(RU, 'cyrillic', 'ru', 'Ваш груз придёт примерно за 2-5 дней.', none))).toContain('number_unsourced:2');
+    expect(blockCodes(verdict(RU, 'cyrillic', 'ru', 'Ваш груз придёт примерно за 3-5 дней.', none))).toContain('number_unsourced:3');
   });
 
   it.each([
     ['Mashina uchun eng kamida 1 kub yoki 100 kg kerak.'],
-    ['Avia bilan eng kamida 1 kg, taxminan 2-5 kunda yetib boradi.'],
+    ['Avia bilan eng kamida 1 kg, taxminan 3-5 kunda yetib boradi.'],
   ])('«%s» says the rule as the prompt tells it', (reply) => {
     expect(verdict(UZ, 'latin', 'uz', reply, none).ok).toBe(true);
   });
 
   it('…and so in Russian', () => {
     expect(verdict(RU, 'cyrillic', 'ru', 'Минимум для машины — 1 куб или 100 кг.', none).ok).toBe(true);
-    expect(verdict(RU, 'cyrillic', 'ru', 'Авиа: от 1 кг, примерно 2-5 дней.', none).ok).toBe(true);
+    expect(verdict(RU, 'cyrillic', 'ru', 'Авиа: от 1 кг, примерно 3-5 дней.', none).ok).toBe(true);
   });
 
   it('a day count naming no road is the truck’s: the transit fact still vouches for it', () => {
@@ -751,7 +756,7 @@ describe('review — G2 reads the vague count in its genitive', () => {
 
 describe('review — the prompt says what the check now does', () => {
   it('rule 3’s single question is a preference the card warns about, and the header says warnings do not stop a draft', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     expect(head).not.toMatch(/ko'pi bilan BITTA/u);
     expect(head).toMatch(/Imkon qadar savol belgisi bitta bo'lsin — bir nechtasi ogohlantirish/u);
     expect(head).toMatch(/"ogohlantirish" deyilgani to'xtatmaydi/u);
@@ -985,7 +990,8 @@ describe('second review — the company’s minimum vouches for a minimum, on it
 
   it('the seed’s own sentences, and the customer’s own weight said back, still pass', () => {
     const none2: KbHit[] = [];
-    expect(verdict(UZ, 'latin', 'uz', 'Avia orqali 1 kg dan qabul qilamiz, yetib borishi taxminan 2–5 kun.', none2).ok).toBe(true);
+    // The seed's avia@2 states no day count (stage 1a P7): the days rule 9 tells, his 2 b «3-5».
+    expect(verdict(UZ, 'latin', 'uz', 'Avia orqali 1 kg dan qabul qilamiz, yetib borishi taxminan 3–5 kun.', none2).ok).toBe(true);
     expect(verdict(UZ, 'latin', 'uz', 'Avto orqali eng kamida 1 kub yoki 100 kg dan yuk qabul qilamiz.', none2).ok).toBe(true);
     expect(verdict(UZ, 'latin', 'uz', 'Avto orqali eng kamida 1 kub yoki 100 kg dan yuk qabul qilamiz.').ok).toBe(true);
     const his = ['Assalomu alaykum', '100 kg yuk bor', 'Xitoydan'];
@@ -1491,7 +1497,7 @@ describe('fourth check — a small count the reply enumerates right after it is 
   });
 
   it('the prompt asks for figures in digits and for counts of warehouses, roads and questions in words', () => {
-    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false, calcPricing: false, lessons: [], persona: '', aviaDays: AVIA_DAYS_DEFAULT });
     expect(head).toContain('Narx, kub, kg, kun, sana va foizni raqam bilan yoz');
     expect(head).toContain('nechta ombor, yo\'l, variant yoki savol borligini esa so\'z bilan yoz');
     expect(head).not.toContain('Sonni raqam bilan yoz.');
@@ -1501,10 +1507,11 @@ describe('fourth check — a small count the reply enumerates right after it is 
 describe('fourth check — the kb’s days in Uzbek Cyrillic, a hedge said after the verb, the minimum in other words', () => {
   it.each([
     [['неча кунда келади'], 'cyrillic', 'uz_cyrl', 'Авто карго одатда 15 дан 25 кунгача келади — бу тахмин, ваъда эмас.'],
-    [['авиа неча кунда'], 'cyrillic', 'uz_cyrl', 'Авиа орқали тахминан 2 дан 5 кунгача.'],
+    // His 2 b days (stage 1a P7): «3 дан 5», never the old «2 дан 5».
+    [['авиа неча кунда'], 'cyrillic', 'uz_cyrl', 'Авиа орқали тахминан 3 дан 5 кунгача.'],
     [['qancha kunda keladi'], 'latin', 'uz', 'Yuk 15–25 kunda yetib keladi, bu taxmin.'],
     [['qancha kunda keladi'], 'latin', 'uz', 'Avto kargo 15–25 kunda keladi (taxminan).'],
-    [['avia qancha kunda'], 'latin', 'uz', 'Avia 2-5 kunda keladi (taxminan).'],
+    [['avia qancha kunda'], 'latin', 'uz', 'Avia 3-5 kunda keladi (taxminan).'],
     [['qancha kunda keladi'], 'latin', 'uz', 'Yuk Toshkentga 15–25 kunda yetib keladi — bu taxminiy muddat.'],
     [['неча кунда келади'], 'cyrillic', 'uz_cyrl', 'Юк 15–25 кунда етиб келади, бу тахмин.'],
     [['how many days'], 'latin', 'en', 'Cargo arrives in 15–25 days, this is an estimate.'],
@@ -1974,9 +1981,9 @@ describe('0148 — spelled-out prices and day counts in Persian, Chinese and Eng
 describe('0148 — the language a reply goes in by itself is the customer’s, read off his message', () => {
   /** The gate's language clause on the memory a real run stores (`memoryFor`'s `customerLocale`). */
   const goes = (lines: readonly string[], script: ScriptName, language: AgentLocale) => {
-    const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, 'x'), tools: [], outcomes: [], usage }, FACTS, 'gsr-t');
+    const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, 'x'), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT }, FACTS, 'gsr-t');
     return autoVerdict({
-      config: { armed: true, categories: ['faq'], maxChars: 400, minConfidence: 0.8, perDay: null },
+      config: { armed: true, categories: ['faq'], maxChars: 400, perDay: null },
       agentOn: true,
       draft: {
         kind: 'reply',
@@ -1984,8 +1991,10 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
         ownText: false,
         blocked: false,
         needsOwner: false,
-        warnings: 0,
-        notes: 0,
+        warningCodes: [],
+        noteCodes: [],
+        systemAck: false,
+        honestLine: false,
         actionTypes: [],
         category: 'faq',
         language,
@@ -2008,7 +2017,9 @@ describe('0148 — the language a reply goes in by itself is the customer’s, r
       workAccount: true,
       at: new Date('2026-11-11T07:00:00Z'),
       now: new Date('2026-11-11T07:00:00Z'),
-      streak: 0,
+      loop: false,
+      complaint: false,
+      nightPrices: 'table',
       pressedToday: 0,
       budgetLeft: null,
       sendingEnabled: null,
@@ -2069,10 +2080,10 @@ function gate(
   reply: string,
   patch: (i: AutoGateInput) => void = () => undefined,
 ): string[] {
-  const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, reply), tools: [], outcomes: [], usage }, FACTS, 'gsr-t');
+  const mem = memoryFor(ctxOf(lines, script), { compose: compose(language, reply), tools: [], outcomes: [], usage, aviaDays: AVIA_DAYS_DEFAULT }, FACTS, 'gsr-t');
   const r = verdict(lines, script, language, reply, FACTS, { hasGloss: true });
   const input: AutoGateInput = {
-    config: { armed: true, categories: FIVE, maxChars: 400, minConfidence: 0.8, perDay: null },
+    config: { armed: true, categories: FIVE, maxChars: 400, perDay: null },
     agentOn: true,
     draft: {
       kind: 'reply',
@@ -2080,8 +2091,10 @@ function gate(
       ownText: false,
       blocked: !r.ok,
       needsOwner: false,
-      warnings: r.warnings.length,
-      notes: 0,
+      warningCodes: r.warnings.map((w) => w.code),
+      noteCodes: [],
+      systemAck: false,
+      honestLine: false,
       actionTypes: [],
       category: 'faq',
       language,
@@ -2105,7 +2118,9 @@ function gate(
     workAccount: true,
     at: new Date('2026-11-11T07:00:00Z'),
     now: new Date('2026-11-11T07:00:00Z'),
-    streak: 0,
+    loop: false,
+    complaint: false,
+    nightPrices: 'table',
     pressedToday: 0,
     budgetLeft: null,
     sendingEnabled: null,

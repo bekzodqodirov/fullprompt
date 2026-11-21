@@ -1,4 +1,4 @@
-import { AUTO_REFUSAL_WORDS, type AutoRefusal } from './auto-gate';
+import { refusalWordOf } from './auto-gate';
 import type { AutoCardState } from './auto-send';
 import { POLICY_WORDS, type CardAutoPayload } from './card';
 import type { AutoDisarmReason } from './config';
@@ -64,7 +64,11 @@ export const AUTO_PRESS_WORDS: Record<DecideRefusal, string> = {
   empty: 'javob bo‘sh',
 };
 
-const isAutoRefusal = (code: string): code is AutoRefusal => Object.hasOwn(AUTO_REFUSAL_WORDS, code);
+/**
+ * A gate code a stored row may carry — today's, one stage 1a retired (its row was written before the deploy), or one a
+ * later package of the stage gave a rule (auto-gate `refusalWordOf`): each has its words.
+ */
+const isGateCode = (code: string): boolean => refusalWordOf(code) !== null;
 const isDecideRefusal = (code: string): code is DecideRefusal => Object.hasOwn(AUTO_PRESS_WORDS, code);
 
 /**
@@ -75,13 +79,13 @@ const isDecideRefusal = (code: string): code is DecideRefusal => Object.hasOwn(A
  * nothing here knows is said plainly, never printed.
  */
 export function autoRefusalWords(state: Pick<AutoCardState, 'outcome' | 'reasons'>): string {
-  const gate = state.reasons.filter(isAutoRefusal);
-  if (gate.length > 0) return gate.map((r) => AUTO_REFUSAL_WORDS[r]).join('; ');
+  const gate = state.reasons.filter(isGateCode);
+  if (gate.length > 0) return gate.map((r) => refusalWordOf(r)!).join('; ');
   const outcome = state.outcome ?? '';
   const at = outcome.indexOf(':');
   const code = at < 0 ? outcome : outcome.slice(0, at);
   const detail = at < 0 ? '' : outcome.slice(at + 1);
-  if (code.split(',').every(isAutoRefusal) && code !== '') return code.split(',').map((r) => AUTO_REFUSAL_WORDS[r as AutoRefusal]).join('; ');
+  if (code.split(',').every(isGateCode) && code !== '') return code.split(',').map((r) => refusalWordOf(r)!).join('; ');
   if (!isDecideRefusal(code)) return 'sababi noma’lum';
   const words = AUTO_PRESS_WORDS[code];
   if (code === 'auto_warning' && detail) {
