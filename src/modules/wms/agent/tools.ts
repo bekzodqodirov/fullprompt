@@ -107,9 +107,9 @@ export interface ChecklistState {
    */
   toCityAssumed?: boolean;
   /**
-   * The customer's own words the destination was read from (the model's `to_city_words`, found in his line —
-   * calc-destination `checkDestination`) — what the VED's note, his card and the VED's screens show beside the city.
-   * Absent when taken or none read.
+   * The customer's line the destination was read from, cut around the city (the model's `to_city_words` found in it —
+   * calc-destination `checkDestination`; never the model's quote alone, the final check F2) — what the VED's note, his
+   * card and the VED's screens show beside the city. Absent when taken or none read.
    */
   toCityEvidence?: string;
 }
@@ -249,9 +249,11 @@ export const TOOL_SPECS: ModelToolSpec[] = [
     description:
       "Rastamojka yoki podklyuch (yoki yo'lkira) hisoblatish uchun nima yetishmasligini aytadi. Bo'lim mijoz aytmagan bo'lsa — section bo'sh qoldiriladi va bo'limni so'raysan, o'zing tanlamaysan. Tovar qatorlaridagi har bir son mijozning \"Suhbat\" qismidagi xabarida bo'lishi shart; tovar nomi va bo'lim ham hozirgi so'rovdan (\"Suhbat\"), oldingi yukdan emas. Kelib chiqish sertifikatini kompaniya o'zi oladi — so'rama. " +
       // The destination is the MODEL's to read (the lead's ruling, 2026-11-21): a word rule cannot read Uzbek, Russian
-      // and mixed chat. The code checks the words are the customer's and the city is in them (calc-destination).
-      "to_city — mijoz SHU yuk boradi deb aytgan shahar (O'zbekistondan tashqarida bo'lsa ham), u qanday yozgan bo'lsa o'sha yozuvda (lotin yoki kirill), qo'shimchasiz: «Andijonga» → «Andijon», «в Андижан» → «Андижан». Aytmagan bo'lsa — bo'sh. Oldingi yukning manzili, mijoz yashaydigan joy (o'sha yerda olaman demasa) va bizning «Toshkentgacha» — to_city emas. " +
-      "to_city_words — mijozning shu shaharni aytgan so'zlari, uning \"Suhbat\"dagi xabaridan so'zma-so'z ko'chirilgan (masalan «Andijonga 3 kub»). Mashina hisobida (yo'lkira, podklyuch) manzil o'qilmasa Toshkent deb olinadi — bu vosita so'ramasa, «qaysi shaharga» deb so'rama.",
+      // and mixed chat. The code checks the words are the customer's and the city is in them (calc-destination). The
+      // two examples stand with no quote marks round them (the final check, F5): a model copies the marks its example
+      // wears, and his words have none — the check reads a mark as no word, but the copy should not need it to.
+      "to_city — mijoz SHU yuk boradi deb aytgan shahar (O'zbekistondan tashqarida bo'lsa ham), u qanday yozgan bo'lsa o'sha yozuvda (lotin yoki kirill), qo'shimchasiz va old so'zsiz: Andijonga → Andijon, в Андижан → Андижан. Aytmagan bo'lsa — bo'sh. Oldingi yukning manzili, mijoz yashaydigan joy (o'sha yerda olaman demasa) va bizning «Toshkentgacha» — to_city emas. " +
+      "to_city_words — mijozning shu shaharni aytgan so'zlari, uning \"Suhbat\"dagi xabaridan so'zma-so'z, qo'shtirnoqsiz ko'chirilgan, masalan: Andijonga 3 kub. Mashina hisobida (yo'lkira, podklyuch) manzil o'qilmasa Toshkent deb olinadi — bu vosita so'ramasa, «qaysi shaharga» deb so'rama.",
     input_schema: obj({
       section: { type: 'string', enum: ['', ...SECTIONS] },
       to_city: { type: 'string' },

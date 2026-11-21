@@ -25,9 +25,10 @@ export type ComposedAction =
        */
       toCityAssumed?: boolean;
       /**
-       * The customer's words the destination was READ from, cut (calc-destination `evidenceOf`; the lead's ruling on
-       * the T check): the VED's note, his card and the VED's two screens show them beside the city, so a wrong reading
-       * is seen where the route is. Absent — taken, a rastamojka job, or an action stored before it.
+       * The customer's line the destination was READ from, cut around the city (calc-destination `evidenceOf`; the
+       * lead's ruling on the T check, the final check F2): the VED's note, his card and the VED's two screens show it
+       * beside the city, so a wrong reading is seen where the route is. Absent — taken, a rastamojka job, or an action
+       * stored before it.
        */
       toCitySaid?: string;
       /** tg_messages ids the model cited — the only messages that reach the lenta (leak-12). */

@@ -353,18 +353,20 @@ async function landWith(lines: string[], claim: Claim, start: number) {
 }
 
 describe('the lead’s ruling: the model names the destination, the code verifies it is the customer’s', () => {
-  it('(a) «Andijonga 3 kub qachon keladi» quoted from his line: the job lands on Andijon, and the VED reads his words', async () => {
+  it('(a) «Andijonga 3 kub qachon keladi» quoted from his line: the job lands on Andijon, and the VED reads his LINE (the final check, F2)', async () => {
     const words = 'Andijonga 3 kub qachon keladi';
-    const { req, note, submit, seen } = await landWith(['Ivudan Andijonga 3 kub qachon keladi? 450 kg kiyim bor, 200 dona'], { to_city: 'Andijon', to_city_words: words }, 0);
+    // His line around the city, never the model's quote alone: what the VED reads beside the route.
+    const line = 'Ivudan Andijonga 3 kub qachon keladi? 450 kg kiyim bor, 200 dona';
+    const { req, note, submit, seen } = await landWith([line], { to_city: 'Andijon', to_city_words: words }, 0);
     const done = seen.find((t) => t.startsWith("To'liq."));
     expect(done, seen.join('\n---\n')).toContain('"toCity":"Andijon"');
     expect(done).not.toContain('Toshkent deb olindi');
-    expect(submit).toMatchObject({ facts: { toCity: 'Andijon' }, toCitySaid: words });
+    expect(submit).toMatchObject({ facts: { toCity: 'Andijon' }, toCitySaid: line });
     expect(submit.toCityAssumed).toBeUndefined();
     expect(req).toMatchObject({ section: 'podklyuch', toCity: 'Andijon' });
-    expect(note).toContain(saidDestinationNote(words));
+    expect(note).toContain(saidDestinationNote(line));
     expect(note).not.toContain(ASSUMED_DESTINATION_NOTE);
-    expect((await destinationReadings([req.id])).get(req.id)).toEqual({ taken: false, evidence: words });
+    expect((await destinationReadings([req.id])).get(req.id)).toEqual({ taken: false, evidence: line });
   });
 
   it('(b) no destination said: the checklist takes Tashkent and stops asking «qaysi shaharga»; his ✅ lands the job and the VED reads «Manzil o‘qilmadi — Toshkent deb olindi, …»', async () => {
@@ -500,7 +502,7 @@ describe('the lead’s ruling: the model names the destination, the code verifie
       envOf(ctx),
     );
     expect(out.text).not.toContain('qaysi shaharga');
-    expect(out.checklist).toMatchObject({ complete: true, toCityAssumed: false, toCityEvidence: 'в Андижан', facts: { toCity: 'Андижан', volumeM3: 3, weightKg: 450 } });
+    expect(out.checklist).toMatchObject({ complete: true, toCityAssumed: false, toCityEvidence: 'Из Иу в Андижан 3 куба, 450 кг одежда', facts: { toCity: 'Андижан', volumeM3: 3, weightKg: 450 } });
   });
 
   it('a city said alone in Cyrillic («Тошкентга») and quoted so: said, nothing taken — the city as the model wrote it', async () => {

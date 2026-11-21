@@ -503,10 +503,15 @@ function destinationChecked(c: ReaderCase): Observed {
     calcDestination.thisJobLines(messages, openCalcs),
     true,
   );
-  if (c.context?.place !== undefined) return d.toCity === c.context.place && !d.assumed ? 'goes' : 'held';
+  // The VED's evidence shows what the case names (the final check, F2): his line around the city, never the bare quote.
+  const shows = c.context?.shows;
+  const shown = shows !== undefined && (d.evidence ?? '').includes(shows);
+  if (c.context?.place !== undefined) return d.toCity === c.context.place && !d.assumed && (shows === undefined || shown) ? 'goes' : 'held';
   if (c.context?.taken === true) return d.toCity === calcDestination.ASSUMED_DESTINATION && d.assumed ? 'goes' : 'held';
-  // Dangerous: the model's city never lands as the customer's — and a place outside Uzbekistan lands nothing at all.
+  // Dangerous: the model's city never lands as the customer's — and a place outside Uzbekistan lands nothing at all —
+  // or a misread city lands only beside the customer's words that undo it.
   if (c.context?.asks === true) return d.toCity === null ? 'held' : 'goes';
+  if (shows !== undefined) return d.toCity === null || d.assumed || shown ? 'held' : 'goes';
   return d.toCity === null || d.assumed ? 'held' : 'goes';
 }
 

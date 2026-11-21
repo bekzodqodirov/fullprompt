@@ -20,22 +20,25 @@ import { ASSUMED_DESTINATION_TOOL_WORDS, CALC_DESTINATION_TAKEN_WORDS, CALC_PRIC
 /**
  * The destination the MODEL names and the code verifies (the lead's ruling, 2026-11-21, after three checks of a
  * word-rule reader): the model's `to_city` lands only when its `to_city_words` are found in the customer's own line —
- * case, the typed apostrophe, spaces and NFKC aside, never a transliteration — and the city is in those words by its
- * stem; a place outside Uzbekistan never lands; anything else is Tashkent TAKEN on a truck job. The verifier's corpus
- * is `calc_destination_check` (tests/unit/fixtures/agent-reader-corpus.ts).
+ * case, the typed apostrophe, spaces, punctuation and NFKC aside, never a transliteration — and the city is in those
+ * words by its stem, at the start of a word of his line; a place outside Uzbekistan never lands; anything else is
+ * Tashkent TAKEN on a truck job. The verifier's corpus is `calc_destination_check`
+ * (tests/unit/fixtures/agent-reader-corpus.ts).
  */
 
 describe('checkDestination: the words are the customer’s, the city is in them', () => {
   it('the ruling’s four: a dative with a question, a label, Russian with a comma, a region', () => {
-    expect(checkDestination({ toCity: 'Andijon', words: 'Andijonga' }, ['Andijonga 3 kub qachon keladi'])).toEqual({ kind: 'said', toCity: 'Andijon', evidence: 'Andijonga' });
+    expect(checkDestination({ toCity: 'Andijon', words: 'Andijonga' }, ['Andijonga 3 kub qachon keladi'])).toEqual({ kind: 'said', toCity: 'Andijon', evidence: 'Andijonga 3 kub qachon keladi' });
     expect(checkDestination({ toCity: 'Andijon', words: 'manzil Andijon' }, ['Ivudan 3 kub kiyim', 'manzil Andijon'])).toEqual({ kind: 'said', toCity: 'Andijon', evidence: 'manzil Andijon' });
-    expect(checkDestination({ toCity: 'Андижан', words: 'Андижан' }, ['Андижан, 3 куба'])).toEqual({ kind: 'said', toCity: 'Андижан', evidence: 'Андижан' });
+    expect(checkDestination({ toCity: 'Андижан', words: 'Андижан' }, ['Андижан, 3 куба'])).toEqual({ kind: 'said', toCity: 'Андижан', evidence: 'Андижан, 3 куба' });
     expect(checkDestination({ toCity: 'Andijon', words: 'Andijon viloyati' }, ['Andijon viloyati'])).toMatchObject({ kind: 'said', toCity: 'Andijon' });
   });
 
-  it('the evidence is the CUSTOMER’s text, cut out of his line — never the model’s copy of it', () => {
+  it('the evidence is the CUSTOMER’s LINE around the place, cut out of his text — never the model’s copy, never its bare quote (F2)', () => {
     expect(checkDestination({ toCity: 'Andijon', words: 'andijonga 3 kub' }, ['ANDIJONGA   3 KUB'])).toEqual({ kind: 'said', toCity: 'Andijon', evidence: 'ANDIJONGA 3 KUB' });
-    expect(checkDestination({ toCity: "Qo'qon", words: "Qo'qonga" }, ['Qo‘qonga 2 kub'])).toEqual({ kind: 'said', toCity: "Qo'qon", evidence: 'Qo‘qonga' });
+    expect(checkDestination({ toCity: "Qo'qon", words: "Qo'qonga" }, ['Qo‘qonga 2 kub'])).toEqual({ kind: 'said', toCity: "Qo'qon", evidence: 'Qo‘qonga 2 kub' });
+    // The bare quote hides the word that undoes it: the VED reads «emas» beside the city.
+    expect(checkDestination({ toCity: 'Toshkent', words: 'Toshkentga' }, ['Toshkentga emas, Andijonga 3 kub'])).toEqual({ kind: 'said', toCity: 'Toshkent', evidence: 'Toshkentga emas, Andijonga 3 kub' });
     const long = 'Assalomu alaykum hurmatli kompaniya, bizda Ivudan 3 kub kiyim bor, 450 kg, iltimos narxini ayting, yuk Andijonga ketadi, rahmat oldindan';
     const ev = checkDestination({ toCity: 'Andijon', words: long }, [long]);
     expect(ev.kind).toBe('said');
@@ -50,6 +53,28 @@ describe('checkDestination: the words are the customer’s, the city is in them'
     expect(checkDestination({ toCity: 'Андижан', words: 'Андижонга' }, ['Андижонга юк бор'])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
     expect(checkDestination({ toCity: 'Ош', words: 'Ошга' }, ['Ошга 2 куб'])).toMatchObject({ kind: 'foreign', toCity: 'Ош' });
     expect(checkDestination({ toCity: '安集延', words: '到安集延' }, ['从义乌到安集延3方'])).toMatchObject({ kind: 'said', toCity: '安集延' });
+  });
+
+  it('a city of six letters or more by its first five, and only at the start of a word of HIS line (F4)', () => {
+    expect(checkDestination({ toCity: 'Toshloq', words: 'Toshkentga' }, ['Toshkentga 3 kub'])).toEqual({ kind: 'unread', why: 'not_in_words' });
+    expect(checkDestination({ toCity: 'Янгиер', words: 'Янгийўлга' }, ['Янгийўлга 2 куб'])).toEqual({ kind: 'unread', why: 'not_in_words' });
+    expect(checkDestination({ toCity: 'Toshloq', words: 'Toshloqqa' }, ['Toshloqqa 2 kub'])).toMatchObject({ kind: 'said', toCity: 'Toshloq' });
+    // «osh» copied out of «Toshkentga» stands inside his word: no Osh anywhere he wrote.
+    expect(checkDestination({ toCity: 'Osh', words: 'osh' }, ['Ivudan Toshkentga 3 kub'])).toEqual({ kind: 'unread', why: 'not_in_lines' });
+    // A shorter city keeps four letters — the case ending still differs.
+    expect(checkDestination({ toCity: 'Nukus', words: 'Nukusgacha' }, ['Nukusgacha qancha?'])).toMatchObject({ kind: 'said', toCity: 'Nukus' });
+  });
+
+  it('quote marks, punctuation and a dropped comma are no word; a preposition or «г.» before the city does not land with it (F5)', () => {
+    const line = 'Ivudan Andijonga 3 kub kiyim, qachon keladi?';
+    for (const words of ['«Andijonga 3 kub»', '"Andijonga 3 kub"', "'Andijonga 3 kub'", '‘Andijonga 3 kub’', '(Andijonga 3 kub)', 'Andijonga 3 kub…', 'Andijonga 3 kub kiyim qachon keladi']) {
+      expect(checkDestination({ toCity: 'Andijon', words }, [line]), words).toEqual({ kind: 'said', toCity: 'Andijon', evidence: line });
+    }
+    expect(checkDestination({ toCity: '«Andijon»', words: 'Andijonga' }, [line])).toMatchObject({ kind: 'said', toCity: 'Andijon' });
+    expect(checkDestination({ toCity: 'в Андижан', words: 'в Андижан' }, ['Из Иу в Андижан 3 куба'])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
+    expect(checkDestination({ toCity: 'г. Андижан', words: 'в г. Андижан' }, ['Доставка в г. Андижан, 3 куба'])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
+    // …and the city stripped of its «в» is still read with it in HIS line: Osh is still asked.
+    expect(checkDestination({ toCity: 'в Ош', words: '«в Ош»' }, ['в Ош 2 куба'])).toEqual({ kind: 'foreign', toCity: 'Ош' });
   });
 
   it('refused: words in no line, the city not in the words, a transliteration, the country itself, one letter', () => {
@@ -69,6 +94,16 @@ describe('checkDestination: the words are the customer’s, the city is in them'
       ['Bishkek', 'Bishkekka', 'Bishkekka yuk bor'],
       ['Xitoy', 'Xitoyga', 'Toshkentdan Xitoyga 3 kub'],
       ['阿拉木图', '运到阿拉木图', '运到阿拉木图3方'],
+      // The bare city quoted out of its grammar is read in HIS line (F1): the preposition, his whole word, «shahri».
+      ['Osh', 'Osh', 'Osh shahriga 3 kub'],
+      ['Ош', 'Ош', 'В Ош доставляете? 3 куба'],
+      ['Osh', 'Osh', 'Oshga 3 kub'],
+      ['Ош', 'Ош', 'Ош шаҳрига 3 куб'],
+      ['Osh', 'Osh', 'Manzil: Osh, 2 kub'],
+      // Norin and Karasu are Uzbekistan's — unless his line speaks of Kyrgyzstan (F3); Kara-Suu spelt so is Kyrgyz.
+      ['Norin', 'Noringa', "Qirg'izistonga, Noringa 2 kub"],
+      ['Нарын', 'в Нарын', 'Кыргызстан, в Нарын 2 куба'],
+      ['Кара-Суу', 'Кара-Суу', 'в Кара-Суу 2 куба'],
     ] as const) {
       expect(checkDestination({ toCity: city, words }, [line]), city).toEqual({ kind: 'foreign', toCity: city });
     }
@@ -79,6 +114,14 @@ describe('checkDestination: the words are the customer’s, the city is in them'
       ['Chinoz', 'chinozga', 'ivudan chinozga 3 kub'],
       // A foreign place in the quote is where the cargo comes FROM — only the words before the city are asked.
       ['Chinoz', 'Olmaotadan chinozga', 'Olmaotadan chinozga 3 kub'],
+      // His line's grammar around an Uzbek place keeps it Uzbek; the word after it is read only as a town word.
+      ['Qarshi', 'Qarshi', 'Qarshi shahriga 2 kub'],
+      ['Андижан', 'Андижан', 'В Андижан доставляете? 3 куба'],
+      ['Toshkent', 'Toshkentga', 'Toshkentga, Andijonga emas'],
+      ['Norin', 'Noringa', 'Noringa 2 kub'],
+      ['Норин', 'Норин туманига', 'Норин туманига 2 куб'],
+      ['Нарын', 'в Нарын', 'в Нарын (Наманганская обл.) 2 куба'],
+      ['Карасу', 'в Карасу', 'в Карасу 2 куба'],
     ] as const) {
       expect(checkDestination({ toCity: city, words }, [line]), city).toMatchObject({ kind: 'said', toCity: city });
     }
@@ -201,7 +244,7 @@ describe('the checklist lands the model’s city only on THIS job’s words (rev
   it('«Andijonga» for the job that landed an hour ago is no destination of today’s: Tashkent taken, and the model told why', async () => {
     const fresh = await runTool('calc_checklist', { section: 'podklyuch', goods, ...andijon }, env(chat(lines)));
     // Control — no job landed: the line is this job's.
-    expect(fresh.checklist).toMatchObject({ complete: true, toCityAssumed: false, toCityEvidence: 'Andijonga 3 kub', facts: { toCity: 'Andijon' } });
+    expect(fresh.checklist).toMatchObject({ complete: true, toCityAssumed: false, toCityEvidence: 'Andijonga 3 kub kiyim', facts: { toCity: 'Andijon' } });
     const after = await runTool('calc_checklist', { section: 'podklyuch', goods, ...andijon }, env(chat(lines, [landed(60, 'answered')])));
     expect(after.checklist).toMatchObject({ complete: true, toCityAssumed: true, facts: { toCity: ASSUMED_DESTINATION } });
     expect(after.text).toContain("to_city_words mijozning xabarlarida so'zma-so'z topilmadi");
@@ -229,7 +272,7 @@ describe('the checklist lands the model’s city only on THIS job’s words (rev
     const none = await runTool('calc_checklist', { section: 'rastamojka', goods }, env(chat([['Ivudan 3 kub 450 kg kiyim, 200 dona', 5]])));
     expect(none.checklist).toMatchObject({ toCityAssumed: false, facts: { toCity: null } });
     const said = await runTool('calc_checklist', { section: 'rastamojka', goods, to_city: 'Andijon', to_city_words: 'Andijonga' }, env(chat([['Andijonga, 3 kub 450 kg kiyim, 200 dona', 5]])));
-    expect(said.checklist).toMatchObject({ toCityAssumed: false, toCityEvidence: 'Andijonga', facts: { toCity: 'Andijon' } });
+    expect(said.checklist).toMatchObject({ toCityAssumed: false, toCityEvidence: 'Andijonga, 3 kub 450 kg kiyim, 200 dona', facts: { toCity: 'Andijon' } });
   });
 });
 
@@ -251,6 +294,10 @@ describe('the model is told one thing about a taken destination (review F5, the 
     expect(Object.keys(props)).toEqual(expect.arrayContaining(['to_city', 'to_city_words']));
     expect(spec.description).toContain('to_city_words');
     expect(spec.description).toContain("so'zma-so'z");
+    // Its examples wear no quote marks (F5): a model copies the marks its example stands in.
+    expect(spec.description).toContain('masalan: Andijonga 3 kub.');
+    expect(spec.description).toContain('Andijonga → Andijon, в Андижан → Андижан');
+    expect(spec.description).not.toMatch(/«Andijon/u);
     // «Mijoz manzilni aytmagan» is never told as a fact (the ruling) — «aytmagan bo'lsa» is an instruction.
     expect(spec.description).not.toMatch(/manzilni aytmagan/u);
   });

@@ -12,14 +12,20 @@
  * exactly) — and the code checks only what a model could get wrong in a way nobody would see:
  *  - the words are the CUSTOMER's: found inside one of his inbound lines since the chat's last landed job (never our
  *    own «Toshkentgacha», never a line of an earlier job, never invented) — normalised for case, the apostrophe as
- *    people type it, whitespace and NFKC, and nothing else: no transliteration, so «Андижан» is found in «Андижан» and
- *    never in «Andijon»;
- *  - the city is IN those words, by its stem — the first four letters, or the whole word when shorter, at the start of
- *    one word of the quote, so the Russian or Uzbek case ending may differ («Andijon» in «Andijonga», «Андижан» in
- *    «Андижана»); a script with no spaces (Chinese) by its first letters anywhere in the quote;
+ *    people type it, whitespace, punctuation and NFKC, and nothing else: no transliteration, so «Андижан» is found in
+ *    «Андижан» and never in «Andijon». Punctuation is no word (the final check, F5): the tool's own example once stood
+ *    in guillemets and a model copies them, and a model drops a comma as easily — «"Andijonga 3 kub"» and «Andijonga 3
+ *    kub kiyim qachon keladi» are still his words;
+ *  - the city is IN those words, by its stem — the first five letters of a city of six or more (the final check, F4:
+ *    four letters made «Toshloq» the customer's «Toshkentga»), else the first four or the whole word when shorter — at
+ *    the start of a WORD of his line (never inside one: «osh» in «Toshkentga» is no Osh), so the Russian or Uzbek case
+ *    ending may differ («Andijon» in «Andijonga», «Андижан» in «Андижана»); a script with no spaces (Chinese) by its
+ *    first letters anywhere in the quote;
  *  - the city is no place outside Uzbekistan: there the truck table is not the price, so the job does not land and the
  *    checklist asks, as the gate's `foreign_destination` already holds a price there.
- * Accepted, the city lands as the model wrote it, with the quote as the VED's evidence («Manzil mijoz xabaridan: «…»»).
+ * Accepted, the city lands as the model wrote it (a preposition or «г.» before it, and quote marks, aside), with the
+ * customer's LINE around it as the VED's evidence («Manzil mijoz xabaridan: «…»») — never the model's quote alone: a
+ * bare «Toshkentga» copied out of «Toshkentga emas, Andijonga» hides the very word that undoes it (the final check, F2).
  * Anything else — no city, words not found, a city not in them — lands Tashkent, TAKEN, with «Manzil o‘qilmadi — Toshkent
  * deb olindi, mijoz so‘zlarini tekshiring»: a job that never lands is the defect he reported, and `to_city` drives no
  * price (the prefill and the freight zone read the origin), so a wrong destination is a route line the VED reads
@@ -79,9 +85,11 @@ export function evidenceOf(line: string, at: number): string {
 const APOSTROPHE = /['‘’ʻʼ`´]/u;
 
 /**
- * The text as the check compares it — NFKC, lower case, one apostrophe, whitespace runs folded to one space, trimmed —
- * with, for each character of the result, where it came from in the NFKC'd source (`from`/`to`), so a quote found in
- * the folded line is cut out of the customer's own text and never shown in the model's copy of it.
+ * The text as the check compares it — NFKC, lower case, one apostrophe, every other punctuation mark read as a space
+ * (a comma the model dropped, a guillemet it added), whitespace runs folded to one space, trimmed, and a pair of
+ * apostrophes wrapping the whole of it dropped (the one quote mark the fold keeps, since it is a letter's part in
+ * Uzbek) — with, for each character of the result, where it came from in the NFKC'd source (`from`/`to`), so a quote
+ * found in the folded line is cut out of the customer's own text and never shown in the model's copy of it.
  */
 function fold(text: string): { text: string; source: string; from: number[]; to: number[] } {
   const source = text.normalize('NFKC');
@@ -92,7 +100,7 @@ function fold(text: string): { text: string; source: string; from: number[]; to:
   for (const ch of source) {
     const at = i;
     i += ch.length;
-    if (/\s/u.test(ch)) {
+    if (/\s/u.test(ch) || (!APOSTROPHE.test(ch) && /\p{P}/u.test(ch))) {
       if (out.length > 0 && !out.endsWith(' ')) {
         out += ' ';
         from.push(at);
@@ -112,7 +120,37 @@ function fold(text: string): { text: string; source: string; from: number[]; to:
     from.pop();
     to.pop();
   }
+  // «'Andijonga 3 kub'»: wrapping apostrophes are a quote, never a word's — a word of his line neither starts nor
+  // ends with one. The space they leave inside is trimmed with them.
+  while (out.length > 2 && out.startsWith("'") && out.endsWith("'")) {
+    let s = 1;
+    let e = out.length - 1;
+    while (s < e && out[s] === ' ') s++;
+    while (e > s && out[e - 1] === ' ') e--;
+    out = out.slice(s, e);
+    from.splice(0, s);
+    to.splice(0, s);
+    from.length = e - s;
+    to.length = e - s;
+  }
   return { text: out, source, from, to };
+}
+
+/**
+ * The city as it lands — quote marks and punctuation around it, and a preposition or the town's abbreviation before
+ * it («в Андижан», «г. Андижан», «sh. Andijon»), aside: the model names the city, and a model copying the customer's
+ * grammar with it is still naming Andijan. Never «из»: a city written «from» is the origin, and stripping it would land
+ * the place the cargo leaves as the place it goes.
+ */
+function plainCity(raw: string): string {
+  let city = raw.replace(/\s+/gu, ' ').trim();
+  for (let before = ''; before !== city; ) {
+    before = city;
+    city = city
+      .replace(/^[\s«»"“”„‘’'`´()[\].…,;:!?]+|[\s«»"“”„‘’'`´()[\].…,;:!?]+$/gu, '')
+      .replace(/^(?:(?:г|ш|sh)\.\s*|(?:в|во|на|до|для|to|in|for|г|город|sh)\s+)/iu, '');
+  }
+  return city;
 }
 
 /** A word of folded text — letters and the apostrophe — and the letters alone, which is what a stem is made of. */
@@ -120,10 +158,14 @@ const WORD = /[\p{L}']+/gu;
 const letters = (word: string) => word.replace(/'/gu, '');
 const HAN = /\p{Script=Han}/u;
 
-/** The city's stem: its first word's first four letters, or the whole word when shorter. */
+/**
+ * The city's stem: its first word's first five letters when the word has six or more — four let a town's neighbour
+ * through («Toshloq» for «Toshkentga», «Янгиер» for «Янгийўлга»: the final check, F4) — else its first four, or the
+ * whole word when shorter («Ош», «Pop»; «Nukus» by «nuku»), which leaves room for the case ending either way.
+ */
 function stemOf(city: string): string {
   const first = letters(fold(city).text.match(WORD)?.[0] ?? '');
-  return first.slice(0, 4);
+  return first.slice(0, first.length >= 6 ? 5 : 4);
 }
 
 /** Where in the folded quote the city stands: a word that starts with its stem — in Chinese, the stem anywhere. */
@@ -132,6 +174,9 @@ function cityAt(quote: string, stem: string): number {
   for (const m of quote.matchAll(WORD)) if (letters(m[0]).startsWith(stem)) return m.index;
   return -1;
 }
+
+/** Does a word of the folded `line` start at `at` — nothing of a word before it? */
+const wordStartsAt = (line: string, at: number) => at === 0 || !/[\p{L}']/u.test(line[at - 1]!);
 
 /** «O'zbekiston», «Узбекистан» — the table's own country: no city of it, so the table's city is taken with its note. */
 const COUNTRY = /^(?:ozbe|uzbe|ўзбе|узбе)/u;
@@ -204,26 +249,55 @@ const UZBEKISTAN = new RegExp(
 );
 
 /**
- * Is the place outside Uzbekistan — China, or a place the gate's list holds that is none of Uzbekistan's? The city is
- * asked with its preposition (`prep`): the list counts a two-faced name only in its grammar («в Ош», «в г. Ош», «to
- * Osh»), and the city alone («Ош») is not. Never the rest of the quote: «Olmaotadan chinozga» names the place the cargo
- * comes FROM.
+ * Names Uzbekistan's that are a neighbour's too, Uzbekistan's here unless the customer's line speaks of Kyrgyzstan (the
+ * final check, F3): Norin is a district of Namangan («Norin tumani», «Нарынский район» — «Нарын» in Russian) as Naryn is
+ * a Kyrgyz town, and «Карасу» is Qorasuv of Andijan as Kara-Suu is Kyrgyz. The Kyrgyz town in its own spelling —
+ * «Naryn», «Кара-Суу», «Карасуу» — stays the gate list's foreign place.
  */
-function outsideUzbekistan(city: string, word: string, prep: string): boolean {
+const UZBEK_TWO_FACED = /(?<![\p{L}])(?:norin|норин|нарын|карасу(?!у))/u;
+const KYRGYZ = /qirg'?iz|қирғиз|кыргыз|киргиз|kyrgyz|kirgiz|bishkek|бишкек|облус|oblus|(?:нарынск\p{L}*|norin|норин|нарын)\s+(?:обл|oblast|region|viloyat|вилоят)/u;
+
+/**
+ * Is the place outside Uzbekistan — China, or a place the gate's list holds that is none of Uzbekistan's? The list
+ * counts a two-faced name only in its grammar — «Oshga», «Osh shahriga», «в Ош», «в г. Ош», «to Osh», «Manzil: Osh» —
+ * and the bare city («Osh», «Ош») is not, so the place is asked as it stands in the CUSTOMER's line (`phrase`: the
+ * preposition or label before it, his whole word, a «shahri»/«tumani»/«viloyati» after it — the final check, F1: the
+ * model's quote of the bare «Ош» out of «В Ош доставляете?» had landed Osh as said). Never the rest of the line:
+ * «Olmaotadan chinozga» names the place the cargo comes FROM, «Toshkentga, Andijonga emas» another place altogether.
+ */
+function outsideUzbekistan(city: string, word: string, phrase: string, line: string): boolean {
   if (chinaMentions(city).length > 0 || chinaMentions(word).length > 0) return true;
-  if (!namesForeignPlace([city, word, `${prep} ${word}`.trim()])) return false;
-  return !UZBEKISTAN.test(fold(city).text) && !UZBEKISTAN.test(fold(word).text);
+  if (!namesForeignPlace([city, word, phrase])) return false;
+  const c = fold(city).text;
+  const w = fold(word).text;
+  if (UZBEKISTAN.test(c) || UZBEKISTAN.test(w)) return false;
+  return !((UZBEK_TWO_FACED.test(c) || UZBEK_TWO_FACED.test(w)) && !KYRGYZ.test(line));
 }
 
-/** A preposition, or the town's abbreviation after one, as written before a city: «в», «до», «в г.», «to». */
-const PREP = /^(?:в|во|на|до|из|для|to|in|for|г\.?|город\p{L}*)$/u;
+/**
+ * What may stand right before a city and belongs to it as the gate's list reads a place: a preposition, the town's
+ * abbreviation after one («в г.»), or an address label («Manzil:», «Адрес:») — folded, so with no period or colon.
+ */
+const PREP = /^(?:в|во|на|до|из|для|to|in|for|г|город\p{L}*|manzil\p{L}*|манзил\p{L}*|адрес\p{L}*|address|city|shahar|shahri|шаҳар|шахар)$/u;
+/** A town word after the city — «Osh shahriga», «Ош шаҳрига», «Norin tumaniga» — the place's own form in the list. */
+const TOWN_AFTER = /^(?:sha[hx](?:ri|ar)|tuman|viloyat|ша[ҳх](?:ри|ар)|туман|вилоят)\p{L}*$/u;
 
-/** The prepositions right before position `at` of the folded quote — «в г.» before «ош» — or ''. */
-function prepositionBefore(quote: string, at: number): string {
-  const tokens = quote.slice(0, at).trim().split(' ');
-  const taken: string[] = [];
-  while (tokens.length > 0 && taken.length < 2 && PREP.test(tokens.at(-1)!)) taken.unshift(tokens.pop()!);
-  return taken.join(' ');
+/**
+ * The city as it stands in the folded line `f` at `at` (its word `length` long): the customer's own text from the
+ * preposition or label before it (at most two), through an ending he glued on with a hyphen («Osh-ga»), to the town
+ * word after it — cut out of his NFKC'd line (`source`, by `from`/`to`), so the list reads the period of «г.» and the
+ * colon of «Manzil:» as he wrote them.
+ */
+function placePhrase(f: ReturnType<typeof fold>, at: number, length: number): string {
+  const tokens = [...f.text.matchAll(/\S+/gu)].map((m) => ({ s: m.index, e: m.index + m[0].length, t: m[0] }));
+  const self = tokens.findIndex((t) => t.s <= at && at < t.e);
+  let first = at;
+  for (let k = self - 1, n = 0; k >= 0 && n < 2 && PREP.test(tokens[k]!.t); k--, n++) first = tokens[k]!.s;
+  let end = f.to[at + length - 1]!;
+  end += /^[-‐‑–]\p{L}+/u.exec(f.source.slice(end))?.[0].length ?? 0;
+  const next = tokens.find((t) => f.from[t.s]! >= end);
+  if (next && TOWN_AFTER.test(next.t) && /^\s+$/u.test(f.source.slice(end, f.from[next.s]))) end = f.to[next.e - 1]!;
+  return f.source.slice(f.from[first]!, end);
 }
 
 /**
@@ -263,7 +337,7 @@ export type DestinationCheck =
  * chat's last landed job, never ours).
  */
 export function checkDestination(claim: DestinationClaim, lines: readonly string[]): DestinationCheck {
-  const toCity = claim.toCity.replace(/\s+/gu, ' ').trim();
+  const toCity = plainCity(claim.toCity);
   const quote = fold(claim.words).text;
   if (toCity === '' || quote === '') return { kind: 'unread', why: 'none' };
   const stem = stemOf(toCity);
@@ -273,16 +347,19 @@ export function checkDestination(claim: DestinationClaim, lines: readonly string
   if (COUNTRY.test(stem)) return { kind: 'unread', why: 'country' };
   const at = cityAt(quote, stem);
   if (at < 0) return { kind: 'unread', why: 'not_in_words' };
+  const han = HAN.test(stem);
   for (const line of lines) {
     const f = fold(line);
-    const found = f.text.indexOf(quote);
-    if (found < 0) continue;
-    // The customer's own text, cut out of his line: what the VED reads is never the model's copy.
-    const own = f.source.slice(f.from[found]!, f.to[found + quote.length - 1]!);
-    const ownAt = f.from[found + at]! - f.from[found]!;
-    const word = quote.slice(at).match(WORD)?.[0] ?? '';
-    if (outsideUzbekistan(toCity, word, prepositionBefore(quote, at))) return { kind: 'foreign', toCity };
-    return { kind: 'said', toCity, evidence: evidenceOf(own, ownAt) };
+    for (let found = f.text.indexOf(quote); found >= 0; found = f.text.indexOf(quote, found + 1)) {
+      const p = found + at;
+      // The city starts a word of HIS line — the quote may begin inside one («osh» copied out of «Toshkentga»).
+      if (!han && !wordStartsAt(f.text, p)) continue;
+      // His whole word there, which the quote may stop inside («Osh» out of «Oshga»); Chinese has no words to cut.
+      const word = han ? (quote.slice(at).match(WORD)?.[0] ?? '') : (/^[\p{L}']+/u.exec(f.text.slice(p))?.[0] ?? '');
+      if (outsideUzbekistan(toCity, word, placePhrase(f, p, word.length), f.text)) return { kind: 'foreign', toCity };
+      // His LINE around the place, cut out of his own text: what the VED reads is never the model's copy.
+      return { kind: 'said', toCity, evidence: evidenceOf(f.source, f.from[p]!) };
+    }
   }
   return { kind: 'unread', why: 'not_in_lines' };
 }
@@ -292,7 +369,7 @@ export interface JobDestination {
   toCity: string | null;
   /** Tashkent TAKEN, not read: the VED's note says «Manzil o‘qilmadi …» (`ASSUMED_DESTINATION_NOTE`). */
   assumed: boolean;
-  /** The customer's words the city was read from — null when taken or none. */
+  /** The customer's line the city was read from, cut around it (`evidenceOf`) — null when taken or none. */
   evidence: string | null;
   /** A place outside Uzbekistan the model named: not landed, the field stays missing (the checklist asks). */
   foreign: string | null;
