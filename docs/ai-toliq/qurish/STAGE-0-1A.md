@@ -880,6 +880,34 @@ Exact words (constants in `policy.ts` beside `EXCLUSION_SENTENCE`, six languages
 
 `policy.ts`: no check changes. `eligibility.ts`: `repeat` → `loop`; `human_active` untouched.
 
+**P1, as built (merged-tree seam fix, 2026-11-21 — the lead's ruling on J19; this overrides the `language` row
+above).**
+- **Held for the model's replies, byte for byte.** P1 built talk on today's `languageAdmits` and held J19's one
+  relaxation («a guess whose locale is null admits `uz`») because, measured against the reader corpus before a line
+  of it was written, eleven dangerous `language` rows would have gone by themselves: `lg048` «Zdravstvuyte, skolko
+  stoit dostavka iz Kitaya?», `lg111` «Kogda pridet gruz?», `lg112` «Dostavka doroga?», `lg113` «Skolko budet za 3
+  kuba?», `lg145` «Tarif?», `lg147` «Tarif kakoy?», `lg148` «Kakie usloviya?», `lg149` «Dollari?», `lg150` «Skolko
+  dollari?», `lg153` «Working hours?», `lg154` «Services?» — a Russian customer writing in Latin letters and an
+  English one, answered in Uzbek. Those rows are MODEL replies, so for every model reply the rule stays exactly
+  today's: a guess naming no language, an unconfident guess that leans on nothing, and a guess not stored admit
+  nothing; the corpus and the 303 judge model replies and nothing in either moved.
+- **Relaxed for the tayyor matn alone.** `auto-gate.ts` `languageAdmits(language, guess, tayyorMatn)`, called with
+  `draft.systemAck`: a tayyor matn (`policy.system` — the voice, media or Pashto line) in `uz` is admitted when the
+  stored guess names no language (`locale === null`). Nothing else moves: a tayyor matn in `ru` / `uz_cyrl` on such a
+  guess is held, a guess not stored at all (a draft written before 0148) is held, a guess that names a language keeps
+  today's rule, and the honest line is not a `systemAck` (it rides the model's reply). Pinned both ways in
+  `tests/unit/agent-toliq-1a-gate.test.ts` («a guess naming no language admits the tayyor matn in Uzbek — and nothing
+  else»); red proofs by paired string edit: the branch made `false` (the tayyor matn held) and made `lang === 'uz'`
+  (a model reply let through) — each red, each restored from the text read.
+- **The consequence, said to him.** A first-contact photo or voice burst — it shows no language at all — gets the
+  Uzbek «yozib yuboring» line by itself, at once (`systemLocaleOf`: no language said and a Latin or empty chat →
+  Uzbek). So does a later photo in a chat whose language the guess cannot name, the Latin-letter Russian customer of
+  the rows above included: he is told in Uzbek to write it as text, and his next TEXT is the model's, held as today.
+  A Cyrillic chat that named no language gets the Russian line, which still waits for his ✅ (as before). A model
+  reply to a message showing no language waits for his ✅ exactly as today.
+- **Corpus and 303, before the first edit and after the last:** dangerous let through 0, the 303's walls snapshot
+  unchanged (`tests/unit/agent-reader-corpus.test.ts`, `tests/unit/agent-customer-safety.test.ts`).
+
 ### 6.3 Corpora and fences that stay green, and what is EXPECTED to change
 
 - `tests/unit/agent-reader-corpus.test.ts` (fixtures `agent-reader-corpus.ts` — 1,483 cases at this HEAD, readers
@@ -1132,7 +1160,7 @@ builds it, and its test is a red proof like §7's. The whole record (finding, co
 | J16 | speech trial: notes from any account → a seller hears colleagues' customers | DONE in stage 0: `--accounts` required, other accounts refused by name; asked of him (⭐ his own and the seat's) | S0 |
 | J17 | the deputy gets links to a page he cannot open, a 👍/👎 he cannot press, «sizni kutdi» that is not his (defect ×2) | texts are PER RECIPIENT: the page link and «AI sahifasini oching» only for a recipient `mayRunAgent` admits; the sample line only to recipients the `mayArmAuto` rule admits (none → rank 1); the morning line says «… tasdiq kutdi»; «Kim javob beradi» prints «AI sahifasini ocholmaydi» beside such a person. Widening the page to the deputy is HIS decision — asked (⭐ no) | P4 |
 | J18 | «belgilanmagan — hozir sizga keladi» names the wrong audience | the screen prints the names `designated(topic)` returns at render and the fallback's source | P4 |
-| J19 | the talk language rule as written admits a Russian reply to «5 куб 800 кг» at once — against his 9 a; the eval oracle would be moved to hide it (blocker) | **talk = today's `languageAdmits` byte for byte, plus ONE relaxation: a guess whose locale is null admits `uz` only.** An unconfident uz / uz_cyrl / ru guess admits only what it leans on, as today. The eval's `language()` stays on the talk draft and a `language_money` reader is ADDED; no label edited; a `LANGUAGE_DANGEROUS` row that flips under null→uz goes to him by text before P1 merges | K6 / P1 |
+| J19 | the talk language rule as written admits a Russian reply to «5 куб 800 кг» at once — against his 9 a; the eval oracle would be moved to hide it (blocker) | **talk = today's `languageAdmits` byte for byte, plus ONE relaxation: a guess whose locale is null admits `uz` only.** An unconfident uz / uz_cyrl / ru guess admits only what it leans on, as today. The eval's `language()` stays on the talk draft and a `language_money` reader is ADDED; no label edited; a `LANGUAGE_DANGEROUS` row that flips under null→uz goes to him by text before P1 merges. **As built (merged-tree seam fix, the lead's ruling — §6.2 «P1, as built»):** held for MODEL replies (the eleven rows `lg048`, `lg111`-`lg113`, `lg145`, `lg147`-`lg150`, `lg153`, `lg154` would have gone), relaxed for tayyor matns only (`draft.systemAck`, `uz`, `locale === null`): a first-contact photo or voice burst gets the Uzbek line by itself; a model reply to a message showing no language waits for his ✅ as today | K6 / P1 |
 | J20 | `agent-full-p2-kernel.test.ts:131-157` pins the own-door keys and pages; the page's refusal words for the new keys are named nowhere | K3 adds a `BAD_VALUE_TEXT` entry and words ×4 per new own-door key, widens `OWN_DOOR_PAGES` / the `satisfies` union with `taqsimot` → `/admin/taqsimot`; that test is an expected rewrite | K3 |
 | J21 | about a dozen red tests missing from §6.3's rewrite list; «byudjet» in five places, not three | §6.3 gains: `agent-card-flow.integration:1633`, `agent-full-p2-calc.integration:666-683`, `agent-full-p2-price.test:210/249/292/457`, `agent-send-step.test:669`, `m9zzzg :144 :275`, the language pins `agent-auto-gate.test:722-728` and `agent-auto.integration:3132-3160` (they STAY — J19); §4.6's word list adds `calc-loop.ts:385`, `owner-answer-job.ts:53` | all |
 | J22 | the arming words (bot `/agent auto on`, the page's confirm, `autoNumbers`) would tell him every reply waits and nothing goes at night | P1 rewrites `autoArmedWords`, `agentAi.autoArmConfirm`, `autoNumbers` / `autoNumbersNoCap` ×4: talk goes at once day and night; a price waits {priceHold} with ⏸ (night per the setting); a complaint stays his | P1 |
