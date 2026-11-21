@@ -212,17 +212,48 @@ export function isSystemLine(body: string | null | undefined): boolean {
 }
 
 /**
+ * One of OUR sends Telegram took whose thread copy is not stored — 'unknown' (handed over, the answer lost: perhaps
+ * delivered, and NEVER sent again, outbox-store), or 'sent' with no message id (a RANDOM_ID_DUPLICATE: it went, its
+ * echo cannot be written) or with a copy that failed to land. The customer may well have read it, and the thread does
+ * not show it: its words and the moment it left (else its claim before the send), the clock the loop reads it by.
+ */
+export interface UncopiedSend {
+  at: Date;
+  body: string;
+}
+
+/**
  * The tayyor matns already said in this SILENCE (§4.4 «once per silence»): our own lines read back from the newest, up
  * to the first that is not one — a reply of ours is where the silence began. The burst after them gets no second line
  * OF THE SAME KIND: the customer was told, and a line per photo of a ten-page invoice is a robot talking to itself. A
  * line of another kind is still owed: a Pashto message after our «can't open the file» has never been asked to write in
  * Persian or Russian (fix review N2 — «any line said» told him the Pashto line went when it never had), and a photo
  * after the media line and a voice line is still told (the walk does not stop at the newest line).
+ *
+ * Our sends with no thread copy (`uncopied`) are lines of ours too (the independent check of the seam fixes, F1): read
+ * from the thread alone, an 'unknown' media line was never said, so the next photo of the SAME silence got the very
+ * line again — and pressed by itself, since the gate asks a tayyor matn this sentence and not the loop's own repeat.
+ * Each is placed by its own moment among the chat's lines — after every line stamped at or before it, the way a copied
+ * send stands after the lines before it in the thread — and counts as what it is: a tayyor matn says it was told, any
+ * other reply begins the silence anew (its words reached the customer as surely as the line did). The chat's lines keep
+ * the order they come in; only the uncopied sends are slotted in.
  */
-export function toldInSilence(messages: readonly { direction: 'in' | 'out'; body: string | null }[]): ReadonlySet<SystemReplyReason> {
+export function toldInSilence(
+  messages: readonly { direction: 'in' | 'out'; body: string | null; sentAt: Date }[],
+  uncopied: readonly UncopiedSend[] = [],
+): ReadonlySet<SystemReplyReason> {
+  const lines: { direction: 'in' | 'out'; body: string | null }[] = [];
+  const sends = [...uncopied].sort((a, b) => a.at.getTime() - b.at.getTime());
+  let next = 0;
+  for (const m of messages) {
+    // Every uncopied send that left BEFORE this line stands before it.
+    while (next < sends.length && sends[next]!.at.getTime() < m.sentAt.getTime()) lines.push({ direction: 'out', body: sends[next++]!.body });
+    lines.push(m);
+  }
+  while (next < sends.length) lines.push({ direction: 'out', body: sends[next++]!.body });
   const told = new Set<SystemReplyReason>();
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i]!;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const m = lines[i]!;
     if (m.direction !== 'out') continue;
     const reason = systemReasonOfLine(m.body);
     if (reason === null) break;

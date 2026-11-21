@@ -19,6 +19,8 @@ import { phoneFingerprint } from '../crm/peer-index';
 import { normalizeDigits } from './digits';
 import { AGENT_LIMITS } from './limits';
 import { dominantScript, type AgentLocale, type ScriptName } from './locale';
+import { toldInSilence, type UncopiedSend } from './system-reply';
+import type { SystemReplyReason } from './types';
 
 /**
  * What one run may know (spec §17.5, review leak-1): THIS chat and nothing
@@ -497,6 +499,42 @@ export async function chatMessages(managerUserId: string, peerId: bigint): Promi
       };
     }),
   );
+}
+
+/**
+ * Our sends Telegram took whose thread copy is not stored (system-reply `UncopiedSend`): 'sent' or 'unknown' — handed
+ * over, the loop's «our sends» (loop `loopFactsFor`) — with no `tg_messages` row of their own, each at the moment it
+ * left, else its claim before the send (the loop's clock), else when it was queued. From `since` on (the recent window's oldest line: a send
+ * older than every line the rules count is outside the window too), newest first, at most a window's worth. An approved
+ * reply still in flight is not one: the send step cancels it once the customer writes again (`anchor_superseded`), so
+ * counting it would leave his next photo with no line at all.
+ */
+export async function uncopiedSendsFor(managerUserId: string, peerId: bigint, since: Date | null): Promise<UncopiedSend[]> {
+  const from = since === null ? sql`` : sql`AND coalesce(o.sent_at, o.step_claimed_at, o.queued_at) >= ${since.toISOString()}::timestamptz`;
+  const rows = await db.execute<{ ms: string | number; body: string }>(sql`
+    SELECT (extract(epoch FROM coalesce(o.sent_at, o.step_claimed_at, o.queued_at)) * 1000)::float8 AS ms, o.body
+      FROM agent_outbox o
+      LEFT JOIN tg_messages t
+        ON t.manager_user_id = o.manager_user_id AND t.peer_id = o.peer_id AND t.tg_message_id = o.tg_message_id
+     WHERE o.manager_user_id = ${managerUserId}::uuid AND o.peer_id = ${String(peerId)}::bigint
+       AND o.status IN ('sent', 'unknown') AND t.id IS NULL ${from}
+     ORDER BY coalesce(o.sent_at, o.step_claimed_at, o.queued_at) DESC
+     LIMIT ${AGENT_LIMITS.contextMessages}`);
+  return [...rows].map((r) => ({ at: new Date(Number(r.ms)), body: r.body }));
+}
+
+/**
+ * The tayyor matns said in this silence — the ONE reading both the run's choice (`handleInbound`: a burst gets no
+ * second line of a kind already said) and the gate (auto-send `autoLoopFact`: the machine never presses one) ask, over
+ * the same lines: the recent window the rules count, and our sends the thread lost (the independent check of the seam
+ * fixes, F1 — an 'unknown' media line read as never said, and the next photo of the same silence got it again).
+ */
+export async function toldInSilenceOf(
+  managerUserId: string,
+  peerId: bigint,
+  messages: readonly ChatMessage[],
+): Promise<ReadonlySet<SystemReplyReason>> {
+  return toldInSilence(messages, await uncopiedSendsFor(managerUserId, peerId, messages[0]?.sentAt ?? null));
 }
 
 /** The figures a customer stated, each as a REFERENCE the yo'lkira tool can take (money-2). */

@@ -259,6 +259,24 @@ describe('once per silence', () => {
     expect(toldInSilence([msg(media, 'out'), msg('3 kub', 'in'), msg('Qayerdan?', 'out'), msg('', 'in', 'photo')]).size).toBe(0);
     expect(toldInSilence([msg('', 'in', 'photo')]).size).toBe(0);
   });
+
+  it('our sends the thread lost count by their own moment among the lines (the independent check of the seam fixes, F1)', () => {
+    const media = SYSTEM_LINES.media.uz[0]!.text;
+    const at = (hhmm: string) => new Date(`2026-11-20T${hhmm}:00Z`);
+    const timed = (body: string, direction: 'in' | 'out', hhmm: string, media: ChatMessage['media'] = null) => ({ ...msg(body, direction, media), sentAt: at(hhmm) });
+    // His text, our reply, a photo, a second photo — and between the photos, the media line Telegram took and the
+    // thread never got (an 'unknown' send, or one sent with no id).
+    const chat = [timed('3 kub', 'in', '07:00'), timed('Qayerdan?', 'out', '07:01'), timed('', 'in', '07:02', 'photo'), timed('', 'in', '07:05', 'photo')];
+    expect([...toldInSilence(chat, [{ at: at('07:03'), body: media }])]).toEqual(['media']);
+    // Read from the thread alone it was never said — the defect: the same line again in the same silence.
+    expect(toldInSilence(chat).size).toBe(0);
+    // A lost line BEFORE our reply belongs to an earlier silence: the reply began this one.
+    expect(toldInSilence(chat, [{ at: at('06:59'), body: media }]).size).toBe(0);
+    // …and a lost REPLY after a copied media line begins a silence anew: the photo after it is owed its line.
+    const told = [timed('', 'in', '07:00', 'photo'), timed(media, 'out', '07:01'), timed('', 'in', '07:05', 'photo')];
+    expect([...toldInSilence(told)]).toEqual(['media']);
+    expect(toldInSilence(told, [{ at: at('07:03'), body: 'Rastamojka taxminan 1 200 $ bo‘ladi.' }]).size).toBe(0);
+  });
 });
 
 describe('the card says what the customer sent and that the code answered (J33) — in Uzbek, «ketdi» only once it went', () => {

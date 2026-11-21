@@ -255,8 +255,8 @@ export async function loopFactsFor(
  * word (`ownRepeat`), and he was told this chat loops less than the window before (`held`, J33 — a reply written
  * before the notice, or his ✍️ or a VED answer meanwhile, waits for his ✅). Not the anchor's two signals: those are
  * eligibility's, which an owner-triggered draft never asked and must not meet here. Two halves and not one answer
- * because a tayyor matn's own repeat is not the loop's to judge (its rule is «once per silence», system-reply
- * `toldInSilence`): the same line for a chat is the point of `pick`, and «the same words again» would refuse it.
+ * because a tayyor matn's own repeat is not the loop's to judge (its rule is «once per silence», context
+ * `toldInSilenceOf`): the same line for a chat is the point of `pick`, and «the same words again» would refuse it.
  */
 export async function gateLoopFor(
   d: { managerUserId: string; peerId: bigint; anchorTgMessageId: bigint; body: string },

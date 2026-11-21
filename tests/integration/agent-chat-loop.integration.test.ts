@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { dropDrainKicksSince } from './drain-kicks';
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
@@ -32,7 +32,7 @@ import {
   readAgentConfig,
   type AgentConfig,
 } from '@/modules/wms/agent/config';
-import { LOOP_NOTICE, loopBucketStart, loopNoticeOnce, loopSignalKey } from '@/modules/wms/agent/loop';
+import { LOOP_NOTICE, gateLoopFor, loopBucketStart, loopNoticeOnce, loopSignalKey } from '@/modules/wms/agent/loop';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
@@ -555,6 +555,180 @@ describe('a tayyor matn and the loop (the merged-tree seam review, finding 1)', 
       actions: [],
     };
     expect((await autoFactsFor(tayyor, { at, now: at, config: null })).loop).toBe(true);
+  });
+});
+
+describe('a tayyor matn and our sends the thread lost (the independent check of the seam fixes, F1)', () => {
+  /** The layer armed with nothing ticked but talk — what a stage-1a owner arms on day one. */
+  const ARMED: AutoConfig = {
+    armed: true,
+    armedAt: new Date(),
+    armedBy: null,
+    holdSec: 120,
+    perDay: null,
+    maxChars: 400,
+    minConfidence: 0.8,
+    categories: [...ORDINARY_CATEGORIES],
+    disarmedAt: null,
+    disarmReason: null,
+  };
+  const files: string[] = [];
+  afterEach(async () => {
+    if (files.length) await db.delete(attachments).where(inArray(attachments.id, files.splice(0)));
+  });
+
+  /** A kept photo: its line and the stored file beside it — what the run reads as a photo the media line answers. */
+  async function photo(at: Date): Promise<bigint> {
+    const tgId = await line('in', '', at, true);
+    const [row] = await db.select({ id: tgMessages.id }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, tgId)));
+    const [file] = await db
+      .insert(attachments)
+      .values({
+        entityType: 'tg_message',
+        entityId: row!.id,
+        kind: 'photo',
+        storageKey: `agent-chat-loop-lost/${SUFFIX}/${row!.id}`,
+        fileName: 'invoice.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 10,
+        uploadedBy: ownerId,
+      })
+      .returning({ id: attachments.id });
+    files.push(file!.id);
+    return tgId;
+  }
+
+  /**
+   * One of OUR sends with NO thread copy, as the send step leaves it: 'unknown' (handed to Telegram, the answer lost —
+   * no `sent_at`, only the claim), 'sent' with no message id (a RANDOM_ID_DUPLICATE), or still 'sending' (in flight —
+   * no line of ours yet). Returns the outbox row, so a test can settle an in-flight one later.
+   */
+  async function lostSend(body: string, at: Date, shape: 'unknown' | 'no_id' | 'sending'): Promise<string> {
+    msgSeq += 1n;
+    const [draft] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: ownerId, peerId: PEER, clientId, anchorTgMessageId: msgSeq - 1n, status: 'approved', proposedBody: body, decidedAt: at, decidedBy: ownerId })
+      .returning({ id: agentDrafts.id });
+    const [row] = await db
+      .insert(agentOutbox)
+      .values({
+        draftId: draft!.id,
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId,
+        body,
+        randomId: BigInt(`7${SUFFIX}${msgSeq}`),
+        answersTgMessageId: msgSeq - 1n,
+        queuedBy: ownerId,
+        status: shape === 'no_id' ? 'sent' : shape,
+        stepClaimedAt: at,
+        tgMessageId: null,
+        sentAt: shape === 'no_id' ? at : null,
+      })
+      .returning({ id: agentOutbox.id });
+    return row!.id;
+  }
+
+  /** Settle an in-flight row as the send step does: 'unknown', or 'sent' with no message id. */
+  const settle = (id: string, shape: 'unknown' | 'no_id', at: Date) =>
+    db
+      .update(agentOutbox)
+      .set(shape === 'unknown' ? { status: 'unknown' } : { status: 'sent', sentAt: at })
+      .where(eq(agentOutbox.id, id));
+
+  const mediaLine = () => systemReplyFor({ reason: 'media', locale: 'uz', peerId: PEER }).replyText;
+  const pendingFor = async (anchor: bigint) =>
+    (
+      await db
+        .select()
+        .from(agentDrafts)
+        .where(and(eq(agentDrafts.peerId, PEER), eq(agentDrafts.status, 'pending'), eq(agentDrafts.anchorTgMessageId, anchor)))
+    )[0];
+
+  async function gate(d: AutoDraftShape, at: Date) {
+    await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
+    try {
+      const facts = await autoFactsFor(d, { at, now: at, config: ARMED });
+      return { loop: facts.loop, verdict: autoVerdict(facts) };
+    } finally {
+      await db.update(tgAccounts).set({ workAccount: false }).where(eq(tgAccounts.id, accountId));
+    }
+  }
+
+  it.each(['unknown', 'no_id'] as const)(
+    'photo → media line %s (no thread copy) → photo again in the SAME silence: the run writes no second line',
+    async (shape) => {
+      await line('in', 'Yuk 3 kub, 450 kg, Guanchjoudan', min(1));
+      await machineSend('Rahmat, qachon jo‘natmoqchisiz?', min(2));
+      await photo(min(3));
+      await lostSend(mediaLine(), min(4), shape);
+      const again = await photo(min(6));
+      expect(await handleInbound(job(again), { callModel: never() })).toEqual({ outcome: 'skipped', reason: 'media_only' });
+      expect(await pendingFor(again)).toBeUndefined();
+    },
+  );
+
+  it.each(['unknown', 'no_id'] as const)(
+    '…and the gate never presses one written while that line was still in flight, once it settled %s: held `loop`',
+    async (shape) => {
+      await line('in', 'Yuk 3 kub, 450 kg, Guanchjoudan', min(1));
+      await machineSend('Rahmat, qachon jo‘natmoqchisiz?', min(2));
+      await photo(min(3));
+      // In flight when the next photo came: no line of ours yet, so the run owes the photo its line…
+      const flying = await lostSend(mediaLine(), min(4), 'sending');
+      const again = await photo(min(6));
+      expect(await handleInbound(job(again), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+      const d = await pendingFor(again);
+      expect(d!.proposedBody).toBe(mediaLine());
+      expect((d!.policy as { system?: unknown }).system).toBe('media');
+      // …then Telegram took the first one and the thread never got its copy: the same words must not go again.
+      await settle(flying, shape, min(4));
+      const g = await gate(d!, min(7));
+      expect(g.loop).toBe(true);
+      expect(g.verdict.reasons).toContain('loop');
+      // The loop's own repeat is not what refused it — the tayyor matn's «once per silence» is.
+      const half = await gateLoopFor({ managerUserId: ownerId, peerId: PEER, anchorTgMessageId: again, body: mediaLine() }, min(7));
+      expect(half.held).toBe(false);
+    },
+  );
+
+  it('…while the same line in a LATER silence goes: his text and our reply since begin it anew (the seam fix’s point)', async () => {
+    await photo(min(1));
+    await lostSend(mediaLine(), min(2), 'unknown');
+    await line('in', 'Yuk 3 kub, 450 kg, Guanchjoudan', min(3));
+    await machineSend('Rahmat, qachon jo‘natmoqchisiz?', min(4));
+    const later = await photo(min(10));
+    expect(await handleInbound(job(later), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+    const d = await pendingFor(later);
+    expect(d!.proposedBody).toBe(mediaLine());
+    const g = await gate(d!, min(11));
+    expect(g.loop).toBe(false);
+    expect(g.verdict).toEqual({ eligible: true, reasons: [] });
+  });
+
+  it('…and so does a reply of ours the thread lost: it reached the customer as surely as the line did, and began a silence', async () => {
+    await line('in', 'Rastamojka qancha bo‘ladi?', min(1));
+    await machineSend('Hisoblatishga yubordim, javob kelishi bilan aytaman.', min(2));
+    await photo(min(3));
+    await machineSend(mediaLine(), min(4));
+    // Our next reply (the VED's answer told, say): handed to Telegram, its answer lost — the thread's last line of ours
+    // is still the media line, and read from the thread alone the photo below was «already told».
+    await lostSend('Rastamojka taxminan 1 200 $ bo‘ladi.', min(6), 'unknown');
+    const later = await photo(min(10));
+    expect(await handleInbound(job(later), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+    const d = await pendingFor(later);
+    expect(d!.proposedBody).toBe(mediaLine());
+    expect((await gate(d!, min(11))).verdict).toEqual({ eligible: true, reasons: [] });
+  });
+
+  it('a reply still in flight is no line said: the send step cancels it once he writes again, so the next photo is owed its line', async () => {
+    await line('in', 'Yuk 3 kub, 450 kg, Guanchjoudan', min(1));
+    await machineSend('Rahmat, qachon jo‘natmoqchisiz?', min(2));
+    await photo(min(3));
+    await lostSend(mediaLine(), min(4), 'sending');
+    const again = await photo(min(6));
+    expect(await handleInbound(job(again), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+    expect((await gate((await pendingFor(again))!, min(7))).loop).toBe(false);
   });
 });
 

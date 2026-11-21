@@ -53,6 +53,7 @@ import type { CalcSubmitAction } from './calc-submit';
 import type { CalcPriceGateFacts } from './calc-price';
 import { cardDigest, digestBody } from './card';
 import { complaintIn } from './complaint';
+import { chatMessages, toldInSilenceOf } from './context';
 import { agentAutoReady, agentFullP1Ready, agentFullP2Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
@@ -62,7 +63,7 @@ import { isTashkentNight } from './send-step';
 import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { CATEGORIES } from './tools';
-import { SYSTEM_REPLY_REASONS, type AnswerMark, type DraftPolicyJson, type NoteCode } from './types';
+import { SYSTEM_REPLY_REASONS, type AnswerMark, type DraftPolicyJson, type NoteCode, type SystemReplyReason } from './types';
 import { answerStale } from './owner-answer';
 
 /**
@@ -243,24 +244,36 @@ export function noteCodesOf(policy: Pick<Partial<DraftPolicyJson>, 'notes'> & { 
  * unknown one is read as the model's words, which every rule judges as before.
  */
 export function systemAckOf(policy: { system?: unknown }): boolean {
-  return (SYSTEM_REPLY_REASONS as readonly unknown[]).includes(policy.system);
+  return systemReasonOfPolicy(policy) !== null;
+}
+
+/** Which tayyor matn the reply is — null for the model's words (and for a reason this build does not know). */
+function systemReasonOfPolicy(policy: { system?: unknown }): SystemReplyReason | null {
+  return (SYSTEM_REPLY_REASONS as readonly unknown[]).includes(policy.system) ? (policy.system as SystemReplyReason) : null;
 }
 
 /**
  * The gate's `loop` fact (stage 1a P2), judged at `at` — when the reply would go: the half hour he was told the AI
- * keeps out (`held`), and — for the model's words only — the reply being one of our last sends word for word. A
- * tayyor matn takes the `held` half alone (the merged-tree seam review, finding 1): `pick` gives a chat the same
- * wording every time ON PURPOSE (G10 counts identical texts across chats), so a photo after an ordinary reply got
- * the very media line it got ten minutes before and was refused `loop` — while its own repeat rule, «once per
- * silence, per kind» (system-reply `toldInSilence`), had already said it is owed. A robot sending photos is still
- * caught where a robot is: eligibility's `fast_peer`, asked before any tayyor matn is drafted.
+ * keeps out (`held`), and the reply's own repeat. For the model's words that repeat is the loop's: one of our last
+ * sends word for word. A tayyor matn's is its own rule, «once per silence, per kind» (the merged-tree seam review,
+ * finding 1): `pick` gives a chat the same wording every time ON PURPOSE (G10 counts identical texts across chats), so
+ * the loop's repeat refused a photo after an ordinary reply the very media line it got ten minutes before. So the gate
+ * asks the run's own reading (context `toldInSilenceOf`) — and it sees our sends the thread lost, which the thread
+ * alone did not (the independent check of the seam fixes, F1): an 'unknown' media line, or one sent with no message
+ * id, followed by another photo of the SAME silence was the same words pressed again by themselves. In a later
+ * silence (his text and our reply since) the line is owed and goes. A robot sending photos is still caught where a
+ * robot is: eligibility's `fast_peer`, asked before any tayyor matn is drafted.
  */
 export async function autoLoopFact(
   d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId' | 'policy' | 'finalBody' | 'proposedBody'>,
   at: Date,
 ): Promise<boolean> {
   const half = await gateLoopFor({ managerUserId: d.managerUserId, peerId: d.peerId, anchorTgMessageId: d.anchorTgMessageId, body: digestBody(d) }, at);
-  return half.held || (!systemAckOf((d.policy ?? {}) as { system?: unknown }) && half.ownRepeat);
+  if (half.held) return true;
+  const system = systemReasonOfPolicy((d.policy ?? {}) as { system?: unknown });
+  if (system === null) return half.ownRepeat;
+  const { recent } = await chatMessages(d.managerUserId, d.peerId);
+  return (await toldInSilenceOf(d.managerUserId, d.peerId, recent)).has(system);
 }
 
 /** The code put the honest line in this reply (stage 1a P3, `policy.honestLine`): `true` and nothing else. */
@@ -491,8 +504,9 @@ export async function autoFactsFor(
     workAccount: acc?.work === true,
     at: opts.at,
     now: opts.now,
-    // The chat loop (stage 1a P2), judged when the reply would go: word for word one of our last sends here (never
-    // asked of a tayyor matn — `autoLoopFact`), or a chat he was told loops less than the window before (the hold, J33).
+    // The chat loop (stage 1a P2), judged when the reply would go: word for word one of our last sends here — for a
+    // tayyor matn, its kind already said in this silence, our lost sends included (`autoLoopFact`) — or a chat he was
+    // told loops less than the window before (the hold, J33).
     // The ONE fact read at `opts.at`: a caller that learns the due time only from these facts reads it again there.
     loop: await autoLoopFact(d, opts.at),
     // The customer complains or asks for a person in his own words (P3, complaint.ts) — the stored burst, read now.
