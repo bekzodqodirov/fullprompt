@@ -151,6 +151,9 @@ afterAll(async () => {
   await db.delete(tgMessages).where(eq(tgMessages.managerUserId, ids.holder));
   await db.delete(notifications).where(inArray(notifications.userId, fixture));
   await db.delete(userRoles).where(and(eq(userRoles.roleId, superRoleId), inArray(userRoles.userId, fixture)));
+  // The clients these users own leave the live book with them: an active client whose seller cannot log in is a row
+  // the owner picker cannot show (client-owner.integration's «every assigned owner renderable»).
+  await db.update(clients).set({ active: false }).where(inArray(clients.salesManagerId, fixture));
   await db.update(users).set({ active: false }).where(inArray(users.id, fixture));
 });
 
