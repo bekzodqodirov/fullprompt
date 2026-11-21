@@ -32,7 +32,7 @@ const LOGIN: readonly (readonly [string, string])[] = [
   ['en, a space inside the code', 'Login code: 52 814. Do not give this code to anyone, even if they say they are from Telegram!'],
   ['en, a dash inside a six-digit code', 'Login code: 528-140. Do not give this code to anyone, even if they say they are from Telegram!'],
   ['en, six digits', 'Login code: 528140. Do not give this code to anyone, even if they say they are from Telegram!'],
-  ['en, a greeting first', 'Dear Bekzod,\n\nYour login code: 52814\n\nDo not give this code to anyone.'],
+  ['en, a greeting first', 'Dear Aziz,\n\nYour login code: 52814\n\nDo not give this code to anyone.'],
   ['en, the code on its own line', 'Login code:\n52814\n\nDo not give this code to anyone, even if they say they are from Telegram!'],
   ['en, «Login code for …» (Telegram Desktop)', 'Login code for Telegram Desktop: 52814. Do not give this code to anyone!'],
   ['en, the Telegram Web code', 'Login code for Telegram Web: 52 814.\n\nDo not give this code to anyone, even if they say they are from Telegram!'],
@@ -47,7 +47,7 @@ const LOGIN: readonly (readonly [string, string])[] = [
   ['ru, no colon', 'Код для входа в Telegram 52814. Не давайте код никому, даже если его требуют от имени Telegram!'],
   ['ru, a space inside the code', 'Ваш код для входа: 52 814'],
   ['ru, the code first', '52814 — код для входа в Telegram. Не сообщайте его никому.'],
-  ['ru, a greeting first', 'Здравствуйте, Bekzod!\nВаш код подтверждения: 52814'],
+  ['ru, a greeting first', 'Здравствуйте, Aziz!\nВаш код подтверждения: 52814'],
   ['uk', 'Код для входу в Telegram: 52814. Нікому не повідомляйте цей код, навіть якщо його вимагають від імені Telegram!'],
   [
     'uz (Latin), the code',
@@ -74,7 +74,7 @@ const LOGIN: readonly (readonly [string, string])[] = [
   ],
   [
     'en, the new-login alert WITHOUT an IP (current Telegram)',
-    'New login. Dear Bekzod, we detected a login into your account from a new device on 19/11/2026 at 07:16:02 UTC.\n\n' +
+    'New login. Dear Aziz, we detected a login into your account from a new device on 19/11/2026 at 07:16:02 UTC.\n\n' +
       'Device: Telegram Desktop, 5.8.1, Windows 11\nLocation: Tashkent, Uzbekistan\n\n' +
       "If this wasn't you, you can terminate that session in Settings > Devices (or Privacy & Security > Active Sessions).\n\n" +
       'If you think that somebody logged in to your account against your will, you can enable Two-Step Verification in ' +
@@ -87,42 +87,42 @@ const LOGIN: readonly (readonly [string, string])[] = [
   ],
   [
     'en, a QR login’s alert',
-    'New login. Dear Bekzod, we detected a login into your account from a new device on 19/11/2026 at 07:16:02 UTC.\n\n' +
+    'New login. Dear Aziz, we detected a login into your account from a new device on 19/11/2026 at 07:16:02 UTC.\n\n' +
       'Device: Telegram Web A 10.9, Chrome, Windows (QR code)\nLocation: Tashkent, Uzbekistan',
   ],
   [
     'en, the older alert with a compact IP',
-    'Bekzod, we detected a login into your account from a new device on 19/11/2026 at 07:16:02 UTC.\n\n' +
+    'Aziz, we detected a login into your account from a new device on 19/11/2026 at 07:16:02 UTC.\n\n' +
       'Device: Telegram Desktop\nLocation: Tashkent, Uzbekistan (IP=213.230.80.11)',
   ],
   [
     'ru, the alert without an IP',
-    'Новый вход в аккаунт. Bekzod, мы обнаружили вход в Ваш аккаунт с нового устройства 19/11/2026 в 07:16:02 UTC.\n\n' +
+    'Новый вход в аккаунт. Aziz, мы обнаружили вход в Ваш аккаунт с нового устройства 19/11/2026 в 07:16:02 UTC.\n\n' +
       'Устройство: Telegram Desktop, 5.8.1, Windows 11\nМестоположение: Ташкент, Узбекистан\n\n' +
       'Если это были не Вы, Вы можете завершить этот сеанс в разделе «Настройки» > «Устройства».',
   ],
   [
     'ru, the older alert',
-    'Bekzod, мы зарегистрировали вход в Ваш аккаунт с нового устройства 19/11/2026 в 07:16:02 UTC.\n\n' +
+    'Aziz, мы зарегистрировали вход в Ваш аккаунт с нового устройства 19/11/2026 в 07:16:02 UTC.\n\n' +
       'Устройство: Telegram Web\nМестоположение: Ташкент, Узбекистан',
   ],
   [
     'uz (Latin), the alert',
-    'Yangi kirish. Hurmatli Bekzod, hisobingizga yangi qurilmadan kirilganini aniqladik: 19/11/2026, 07:16:02 UTC.\n\n' +
+    'Yangi kirish. Hurmatli Aziz, hisobingizga yangi qurilmadan kirilganini aniqladik: 19/11/2026, 07:16:02 UTC.\n\n' +
       'Qurilma: Telegram Desktop, Windows 11\nJoylashuv: Toshkent, O‘zbekiston\n\n' +
       'Agar bu siz bo‘lmasangiz, Sozlamalar > Qurilmalar bo‘limida bu seansni tugatishingiz mumkin.',
   ],
   [
     'uz (Cyrillic), the alert',
-    'Янги кириш. Ҳурматли Bekzod, ҳисобингизга янги қурилмадан кирилганини аниқладик.\n\nҚурилма: Telegram Desktop\nЖойлашув: Тошкент, Ўзбекистон',
+    'Янги кириш. Ҳурматли Aziz, ҳисобингизга янги қурилмадан кирилганини аниқладик.\n\nҚурилма: Telegram Desktop\nЖойлашув: Тошкент, Ўзбекистон',
   ],
   [
     'tr, the alert',
-    'Yeni giriş. Sayın Bekzod, hesabınıza yeni bir cihazdan giriş yapıldığını tespit ettik.\n\nCihaz: Telegram Desktop\nKonum: Taşkent, Özbekistan',
+    'Yeni giriş. Sayın Aziz, hesabınıza yeni bir cihazdan giriş yapıldığını tespit ettik.\n\nCihaz: Telegram Desktop\nKonum: Taşkent, Özbekistan',
   ],
   [
     'kk, the alert',
-    'Жаңа кіру. Құрметті Bekzod, аккаунтыңызға жаңа құрылғыдан кіру анықталды.\n\nҚұрылғы: Telegram Desktop\nОрналасқан жері: Ташкент, Өзбекстан',
+    'Жаңа кіру. Құрметті Aziz, аккаунтыңызға жаңа құрылғыдан кіру анықталды.\n\nҚұрылғы: Telegram Desktop\nОрналасқан жері: Ташкент, Өзбекстан',
   ],
 ];
 
@@ -151,7 +151,7 @@ const WARNING: readonly (readonly [string, string])[] = [
   ['en, Telegram’s IP shape on a warning', 'Your account was limited after unusual activity (IP = 213.230.80.11).'],
   [
     'en, the my.telegram.org code — a code that can delete the account',
-    'Web login code. Dear Bekzod, we received a request from your account to log in on my.telegram.org. This is your login code:\n' +
+    'Web login code. Dear Aziz, we received a request from your account to log in on my.telegram.org. This is your login code:\n' +
       'AbCdEfGh123\n\nDo not give this code to anyone, even if they say they’re from Telegram! This code can be used to delete ' +
       'your Telegram account. We never ask to send it anywhere.',
   ],
@@ -206,7 +206,7 @@ describe('a line from 777000: his login, or a warning about the account', () => 
   });
 
   it('the new-login header alone, with no device or location field, is a notice', () => {
-    expect(telegramNoticeKind('New login. Dear Bekzod, we detected a login into your account.')).toBe('notice');
+    expect(telegramNoticeKind('New login. Dear Aziz, we detected a login into your account.')).toBe('notice');
   });
 
   it('a device field with no new-login header is a notice', () => {
