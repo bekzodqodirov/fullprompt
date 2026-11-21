@@ -136,11 +136,11 @@ const LOOP_WALL_MS = 90_000;
  * `max_tokens`. At 1 500 the ceiling was spent on thinking before `compose_reply` was written — on his server 4 of 10
  * runs of 2026-11-18 ended `max_tokens` and the customer got nothing. Billing is per token GENERATED, so a ceiling
  * costs nothing unused; the call stays non-streaming (with the client's own deadline set the SDK asks no
- * streaming-size question, and 16 000 is under its ten-minute estimate besides). The outer bound is the run's wall:
- * each round is asked with what is left of `LOOP_WALL_MS` as its whole budget, at most the seam's one-call 60
- * seconds and never retried inside it (`budgetMs`) — so a round that would generate for longer than that ends as a
- * timeout, which the sweep retries once, not as `max_tokens`. Every agent model call passes THIS (a fence reads the
- * sources).
+ * streaming-size question, and 16 000 is under its ten-minute estimate besides). `LOOP_WALL_MS` is a check at the
+ * START of a round, as it always was: one round may still take the seam's 60-second deadline twice (the client's one
+ * retry), so a run can outlive its wall. A per-round budget that cut this was taken back — it also cut the retry that
+ * carries a transient 429/529, and made a second round finishing at 95 s a billed timeout. Every agent model call
+ * passes THIS (a fence reads the sources).
  */
 export const AGENT_MAX_TOKENS = 16_000;
 
@@ -315,8 +315,7 @@ export async function runLoop(input: {
     aviaDays: input.aviaDays,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
-    const elapsed = input.now().getTime() - started;
-    if (elapsed > LOOP_WALL_MS) throw new Error('wall_clock');
+    if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
     const res = await input.callModel({
       model: STAFF_MODEL,
       systemCached: stableHead({
@@ -332,9 +331,6 @@ export async function runLoop(input: {
       messages,
       tools: toolSpecsFor({ calcPricing: input.calcPricing, aviaDays: input.aviaDays }),
       maxTokens: AGENT_MAX_TOKENS,
-      // The round gets what is left of the run's wall and no more (model.ts `budgetMs`): the inbound queue has one
-      // worker, and a run past its wall holds every other customer's line behind it.
-      budgetMs: Math.max(1, LOOP_WALL_MS - elapsed),
     });
     if (res.usage) {
       usage.inputTokens += res.usage.inputTokens;
