@@ -862,7 +862,8 @@ export function AutoArmButtons({
   armBlocked?: boolean;
   /**
    * What waits on its card by the boxes he ticked (auto-categories `autoWaitsOf`) — REQUIRED: the confirm promises a
-   * price hold only beside a ticked price, as the bot's arming words do (the merged-tree seam review, finding 5).
+   * hold only beside a ticked box and names WHICH price waits and which stays his, as the bot's arming words do (the
+   * merged-tree seam review, finding 5; the independent check of the seam fixes, F3).
    */
   waits: AutoWaits;
 }) {

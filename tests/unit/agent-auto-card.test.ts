@@ -22,10 +22,11 @@ import {
   autoRefusalWords,
   withAutoLine,
 } from '@/modules/wms/agent/auto-card';
+import { autoTicksOf } from '@/modules/wms/agent/auto-categories';
 import { AUTO_REFUSAL_WORDS } from '@/modules/wms/agent/auto-gate';
 import { FORCED_OFF_REASONS } from '@/modules/wms/agent/forced-off';
 import { AUTO_CONFIG_WORDS, AUTO_FEEDBACK_WORDS, STOP_AUTO_WORDS, copyRang, countdownMayRide, type AutoCardState } from '@/modules/wms/agent/auto-send';
-import { AUTO_MEDIA_WORDS, autoArmedWords, autoTodayWords } from '@/modules/wms/agent/bot-door';
+import { autoArmedWords, autoMediaWords, autoTodayWords } from '@/modules/wms/agent/bot-door';
 import { cardExtra, POLICY_WORDS } from '@/modules/wms/agent/card';
 import { renderDraftCardFull, type DraftRow } from '@/modules/wms/agent/card-io';
 
@@ -386,9 +387,12 @@ describe('words — every code said, never printed', () => {
   });
 
   it('a reply to a photo or a file stays his, the tayyor matn to it goes — said whatever he ticked (the merged-tree seam review, finding 3)', () => {
-    for (const categories of [FOUR, [...FOUR, 'price'], [...FOUR, 'calc'], [...FOUR, 'price', 'calc_price', 'calc']]) {
+    // DELIBERATE EDIT (the independent check of the seam fixes, F2): the clause names the calculation and the VED price
+    // as the exceptions they are when he ticked them — so it is the clause for HIS ticks, never one fixed sentence.
+    for (const categories of [FOUR, [...FOUR, 'price'], [...FOUR, 'calc'], [...FOUR, 'calc_price'], [...FOUR, 'price', 'calc_price', 'calc']]) {
       const words = autoArmedWords({ holdSec: 120, perDay: null, categories }, TALK);
-      expect(words, categories.join(',')).toContain(AUTO_MEDIA_WORDS);
+      expect(words, categories.join(',')).toContain(autoMediaWords(autoTicksOf(categories)));
+      expect(words, categories.join(',')).toContain('rasm yoki faylli xabarga AI yozgan javob sizga qoladi');
       // Never the old promise that every reply to a photo stays his.
       expect(words, categories.join(',')).not.toMatch(/rasm yoki faylga javob[^;]*har doim/u);
     }
@@ -403,9 +407,10 @@ describe('words — every code said, never printed', () => {
     expect(autoArmedWords({ holdSec: 120, perDay: null, categories: FOUR }, { talkHoldSec: 90, nightPrices: 'table' })).toContain(
       'oddiy javob 90 soniya kutib o‘zi ketadi (⏸ bilan to‘xtatasiz)',
     );
-    // «Narx» alone: its own night half, never the VED price it does not send.
+    // «Narx» alone: its own night half, never the VED price it does not send. DELIBERATE EDIT (the independent check of
+    // the seam fixes, F3): what waits is named by WHICH price — the page's `{waits}` select says the same words.
     const table = autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price'] }, TALK);
-    expect(table).toContain('Narx kartada 2 daqiqa kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing; kechasi jadval narxi ham ketadi.');
+    expect(table).toContain('Yo‘lkira va avia narxi kartada 2 daqiqa kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing; kechasi jadval narxi ham ketadi.');
     expect(table).not.toMatch(/VED narxi (?:ertalab|ham ketadi|o‘zi ketmaydi)/u);
     expect(autoArmedWords({ holdSec: 120, perDay: null, categories: [...FOUR, 'price'] }, { talkHoldSec: 0, nightPrices: 'none' })).toContain(
       'kechasi jadval narxi o‘zi ketmaydi — ertalab',

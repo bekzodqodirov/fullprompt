@@ -25,7 +25,7 @@ import {
   type AutoConfig,
 } from './auto-send';
 import { autoDisarmWords } from './auto-card';
-import { autoWaitsOf, type AutoWaits } from './auto-categories';
+import { autoTicksOfWaits, autoWaitsOf, type AutoTicks, type AutoWaits } from './auto-categories';
 import { chatProof } from './context';
 import { answerQuestion, decideDraft, releaseAnswering, storeOwnerAnswer, submitOwnText, type AnswerRefusal, type DecideRefusal, type SupersededDetail } from './decide';
 import { ANSWER_CONTACT_WORDS, answerContactWords } from './owner-answer';
@@ -1345,46 +1345,79 @@ function nightPriceWords(price: boolean, vedPrice: boolean, night: AgentNightPri
 /**
  * A photo, a file or a voice note (the page's `agentAi.autoHint` says the same, the merged-tree seam review's finding
  * 3): the model's reply to a burst that carried one stays his (the gate's `media` — it cannot open what it answers),
- * while the code's own «write it as text» line to it goes by itself (`systemAck` is never asked `media`).
+ * while the code's own «write it as text» line to it goes by itself (`systemAck` is never asked `media`). Two replies
+ * are not asked it as a burst's file either, and the words name them only when they may go at all (the independent
+ * check of the seam fixes, F2): a calculation sent to the VED (the burst's invoice IS the job's material and goes with
+ * it) and the VED's price (asked over the files newer than the job's landing — the request's own went with the job).
  */
-export const AUTO_MEDIA_WORDS =
-  'rasm yoki faylli xabarga AI yozgan javob sizga qoladi, rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn esa o‘zi ketadi';
+export function autoMediaWords(t: AutoTicks): string {
+  const except =
+    t.calc && t.ved ? 'hisoblatishga yuborish va VED narxi' : t.calc ? 'hisoblatishga yuborish' : t.ved ? 'VED narxi' : null;
+  const exception = except ? ` (${except} bundan mustasno — so‘rov bilan VEDga ketgan fayl ${t.calc && t.ved ? 'ularni' : 'uni'} to‘xtatmaydi)` : '';
+  return `rasm yoki faylli xabarga AI yozgan javob sizga qoladi${exception}, rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn esa o‘zi ketadi`;
+}
 
-/** What waits on its card, by the boxes he ticked (`autoWaitsOf` — the page's `{waits}` select says the same). */
-const WAITS_WORDS: Record<AutoWaits, string> = { none: '', price: 'narx', calc: 'hisoblatish', both: 'narx va hisoblatish' };
+/**
+ * What waits on its card, by the boxes he ticked — keyed by the page's own `{waits}` select (`autoWaitsOf`, the one
+ * words source), so the two name the same replies: each ticked box, a price by WHICH price («yo‘lkira va avia narxi»,
+ * «VED narxi», «narx» for both).
+ */
+const WAITS_WORDS: Record<AutoWaits, string> = {
+  none: '',
+  table: 'yo‘lkira va avia narxi',
+  ved: 'VED narxi',
+  prices: 'narx',
+  calc: 'hisoblatish',
+  table_calc: 'yo‘lkira va avia narxi hamda hisoblatish',
+  ved_calc: 'VED narxi va hisoblatish',
+  all: 'narx va hisoblatish',
+};
+
+/**
+ * What always stays his, by the same key (SPEC-P2-v2 §4.4): a complaint, and each price whose box he did NOT tick — the
+ * truck/avia estimate and the VED's answer with his markup are two boxes; «narx» is said to stay only while neither is.
+ */
+const STAYS_WORDS: Record<AutoWaits, string> = {
+  none: 'narx va shikoyat',
+  calc: 'narx va shikoyat',
+  table: 'VED narxi va shikoyat',
+  table_calc: 'VED narxi va shikoyat',
+  ved: 'yo‘lkira va avia narxi va shikoyat',
+  ved_calc: 'yo‘lkira va avia narxi va shikoyat',
+  prices: 'shikoyat',
+  all: 'shikoyat',
+};
 
 /**
  * What arming promises — the page's own sentence (`agentAi.autoArmConfirm`, `autoNumbers`), so the bot and the page
  * never tell him two things (stage 1a, J22): ordinary talk goes by itself at once — or after the hold he set — day and
- * night, and the AI never writes first; a price waits on its card with ⏸, at night as his setting says; a complaint
- * stays his; a reply to a photo or a file stays his while the tayyor matn to it goes. What may go and what stays is
- * built from the STORED kinds, never a promise the next reply breaks.
+ * night, and the AI never writes first; a ticked price or calculation waits on its card with ⏸, at night as his setting
+ * says; a complaint and every unticked price stay his; a reply to a photo or a file stays his while the tayyor matn to
+ * it goes. What may go and what stays is built from the STORED kinds, through the one key the page selects on
+ * (`autoWaitsOf`) — never a promise the next reply breaks.
  */
 export function autoArmedWords(
   c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categories'>,
   talk: { talkHoldSec: number; nightPrices: AgentNightPrices },
 ): string {
   const day = c.perDay === null ? 'Kunlik chegara yo‘q' : `Kuniga ko‘pi bilan ${c.perDay} ta`;
-  const price = c.categories.includes('price');
-  const vedPrice = c.categories.includes('calc_price');
-  // What stays his and what may go, from the stored kinds (SPEC-P2-v2 §4.4): «narx» is said to stay only while
-  // neither price box is ticked — the truck/avia estimate and the VED's answer with his markup are two boxes.
-  const stays = price && vedPrice ? 'shikoyat' : price ? 'VED narxi va shikoyat' : vedPrice ? 'yo‘lkira va avia narxi va shikoyat' : 'narx va shikoyat';
+  const key = autoWaitsOf(c.categories);
+  const ticks = autoTicksOfWaits(key);
   const goes = [
-    ...(price ? ['taxminiy yo‘lkira va avia narxi qoidalar ruxsat bersa o‘zi ketadi'] : []),
+    ...(ticks.table ? ['taxminiy yo‘lkira va avia narxi qoidalar ruxsat bersa o‘zi ketadi'] : []),
     // Whatever the markup — an empty one quotes the VED's own figure (his §00 A1, fix pass 4).
-    ...(vedPrice ? ['VED javobidagi narx (sozlamadagi ustama bilan, bo‘sh bo‘lsa ustamasiz) qoidalar ruxsat bersa o‘zi ketadi'] : []),
-    ...(c.categories.includes('calc') ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi (kechasi — ertalab)'] : []),
+    ...(ticks.ved ? ['VED javobidagi narx (sozlamadagi ustama bilan, bo‘sh bo‘lsa ustamasiz) qoidalar ruxsat bersa o‘zi ketadi'] : []),
+    ...(ticks.calc ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi (kechasi — ertalab)'] : []),
   ];
-  const kept = [`${stays} har doim sizga qoladi`, AUTO_MEDIA_WORDS, ...goes].join('; ');
+  const kept = [`${STAYS_WORDS[key]} har doim sizga qoladi`, autoMediaWords(ticks), ...goes].join('; ');
   // A talk hold above 0 waits on its card like a price does: ⏸ is said with it, or a text with no price box ticked
   // would never name the button that stops a reply.
   const talkGoes = talk.talkHoldSec === 0 ? 'darhol o‘zi ketadi' : `${holdWords(talk.talkHoldSec)} kutib o‘zi ketadi (⏸ bilan to‘xtatasiz)`;
   // The price hold is said only for what may go by itself under it — a ticked price box, a ticked calculation (the
   // gate's `holdSecFor`: every class but talk waits the price hold) — and the night only for the ticked prices: with
   // nothing ticked, «narx … o‘zi ketadi» beside «narx … har doim sizga qoladi» told him two opposite things (review D3).
-  const waits = WAITS_WORDS[autoWaitsOf(c.categories)];
-  const night = nightPriceWords(price, vedPrice, talk.nightPrices);
+  const waits = WAITS_WORDS[key];
+  const night = nightPriceWords(ticks.table, ticks.ved, talk.nightPrices);
   const held = waits
     ? `${waits.charAt(0).toUpperCase()}${waits.slice(1)} kartada ${holdWords(c.holdSec)} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing${night ? `; kechasi ${night}` : ''}. `
     : '';
