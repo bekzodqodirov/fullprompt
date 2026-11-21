@@ -98,8 +98,9 @@ export const AUTO_REFUSALS = [
   'chat_muted',
   'not_work_account',
   'night',
-  // The chat loop (stage 1a P2, loop.ts `gateLoopFor`): the reply about to go is one of our last sends, word for word,
-  // or the chat is inside the half hour he was told the AI keeps out (J33). In the slot the two-in-a-row rule held.
+  // The chat loop (stage 1a P2, loop.ts `gateLoopFor`): the reply about to go is one of our last sends, word for word
+  // (a tayyor matn: its kind already said in this silence, our lost sends included), or the chat is inside the half
+  // hour he was told the AI keeps out (J33). In the slot the two-in-a-row rule held.
   'loop',
   'daily_cap',
   'budget_spent',
@@ -438,9 +439,10 @@ export interface AutoGateInput {
   now: Date;
   /**
    * The reply about to go is, folded, one of our last sends to this chat in the loop window (`own_repeat` — never of
-   * a tayyor matn, whose repeat rule is «once per silence»), or he was told this chat loops less than the window before
-   * it would go — the notice's half hour (J33). Stage 1a P2, auto-send `autoLoopFact` over loop `gateLoopFor`. The
-   * anchor's two loop signals are eligibility's: such a run drafts nothing.
+   * a tayyor matn, whose repeat rule is «once per silence», read over the thread AND our sends it lost: context
+   * `toldInSilenceOf`), or he was told this chat loops less than the window before it would go — the notice's half hour
+   * (J33). Stage 1a P2, auto-send `autoLoopFact` over loop `gateLoopFor`. The anchor's two loop signals are
+   * eligibility's: such a run drafts nothing.
    */
   loop: boolean;
   /**
