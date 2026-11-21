@@ -139,7 +139,7 @@ const NOTHING_TOLD: ReadonlySet<SystemReplyReason> = new Set();
  *
  * `burst` is the customer's lines this line would answer — after our newest send, the ones the thread lost included
  * (`linesAfterOurSends`) — and `told` what this silence already said (`toldInSilence`). Of the kinds the burst carries,
- * the first one NOT yet said is the line (the independent check of 6d505267, R1): a voice note after our media line
+ * the first one NOT yet said is the line (the check of the F1-F3 fixes, R1): a voice note after our media line
  * gets the voice line — read by kind of the whole burst, a photo earlier in it chose the media line, which was told, and
  * the run skipped `media_only` with nobody hearing the voice note. When every kind was said, the voice one is named
  * (the run tells HIM of a voice note it does not answer again — the same promise), else the first; the caller asks
@@ -215,8 +215,8 @@ export function systemReplyFor(input: { reason: SystemReplyReason; locale: Agent
  * Both sides through ONE fold, the one the chat is read in (context `chatForm` → `normalizeDigits`, NFKC): an
  * uncopied send comes back as its outbox body, raw, and a copied one as the thread's copy, folded — and NFKC makes the
  * Chinese lines' full-width «，» a «,», so a table of raw texts never knew the thread's copy of a zh line (the check of
- * 6d505267, R2: a copied zh media line, and the next photo of the same silence got it again). Folding the table and the
- * line alike reads both forms as one.
+ * the F1-F3 fixes, R2: a copied zh media line, and the next photo of the same silence got it again). Folding the table
+ * and the line alike reads both forms as one.
  */
 const fold = (t: string) => normalizeDigits(t).toLowerCase().replace(/\s+/gu, ' ').trim();
 const LINE_REASON = new Map<string, SystemReplyReason>([
@@ -287,9 +287,9 @@ export function toldInSilence(
 }
 
 /**
- * The customer's lines a tayyor matn answers (the check of the F1-F3 fixes, R1): the burst — his lines after our newest copied
- * send — less those that stood before our newest send the thread LOST, placed by its moment exactly as `toldInSilence`
- * places it (a line stamped at or before it stands before it). Our lost media line told him about the photo before it;
+ * The customer's lines a tayyor matn answers (the check of the F1-F3 fixes, R1): the burst — his lines after our
+ * newest copied send — less those that stood before our newest send the thread LOST, placed by its moment exactly as
+ * `toldInSilence` places it (a line stamped at or before it stands before it). Our lost media line told him about the photo before it;
  * the voice note after it is what is owed. Only the tayyor matn's choice reads this — the burst a model reply sees is
  * the thread's, unchanged.
  */
