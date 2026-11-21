@@ -110,10 +110,16 @@ export interface ChecklistState {
 
 /**
  * What the model is told when the destination was taken, not said: the VED reads «Toshkent deb olindi»; the customer
- * is neither told a city he did not name nor asked one the job no longer needs.
+ * is neither asked a city the job no longer needs nor told one as if he had said it — but a price is still
+ * «Toshkentgacha», as the truck estimate's own words and prompt rule 8 demand (review F5: «don't name a city» beside
+ * «say Toshkentgacha» made a model obeying the first drop the second, and the gate hold the reply).
  */
+/** What `calc_price` adds when a priced job's destination was taken, not said (review F2). */
+export const CALC_DESTINATION_TAKEN_WORDS =
+  "Mijoz manzilni aytmagan, VED narxi Toshkentgacha: narxni aytganda «Toshkentgacha» deb ayt.";
+
 export const ASSUMED_DESTINATION_TOOL_WORDS =
-  "Mijoz manzilni aytmagan — VEDga «Toshkent deb olindi» deb yoziladi. Mijozga shahar nomini o'zingdan aytma va manzilni so'rama.";
+  "Mijoz manzilni aytmagan — VEDga «Toshkent deb olindi» deb yoziladi. Manzilni so'rama va mijoz aytmagan shaharni uning so'zi qilib aytma («Toshkentga dedingiz» kabi); narx aytsang — «Toshkentgacha» de.";
 
 export interface ToolOutcome {
   ok: boolean;
@@ -512,7 +518,10 @@ async function calcPrice(env: ToolEnv): Promise<ToolOutcome> {
       // Neutral (fix pass 4): «ustama bilan» was false with the markup empty, and the markup is no word for the customer.
       `VED javobi asosida — ${lines.join('; ')}. Mijozga shu narxni ayt (umumiy narx), boshqa raqam qo'shma.` +
       (r.prices.length > 1 ? " Har bir narx qaysi yuk uchunligini aniq ayt — bir yukning narxini boshqasiga aytma." : '') +
-      (r.fromOurWarehouse ? ` Narx Xitoydagi omborimizdan: ikkala jumla ham bo'lsin — ${warehouseSentencesText()}.` : ''),
+      (r.fromOurWarehouse ? ` Narx Xitoydagi omborimizdan: ikkala jumla ham bo'lsin — ${warehouseSentencesText()}.` : '') +
+      // A job whose destination was taken, not said (his «T a»): the VED priced it to Tashkent, and the customer is told
+      // so — never the Tashkent figure as his own city's (review F2; the gate's `destination_unsaid` holds a reply without).
+      (r.destinationTaken ? ` ${CALC_DESTINATION_TAKEN_WORDS}` : ''),
     // His card's numbers line names the rule the figure was made on (his §00 words): «ustamasiz» when nothing was added.
     sources: r.prices.map((p) => ({
       value: p.total,
@@ -753,9 +762,15 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // job prices no road: its facts are today's.
   let toCityAssumed = false;
   if (TRUCK_SECTIONS.includes(section)) {
+    // Only what was said since the chat's last landed job is THIS job's destination (review R2 — the cut calc-files
+    // copies the job's files by): «Andijonga» for last month's job is no destination of today's. A chain the VED handed
+    // back is no cut: the hand-back loop's resubmission is that same job, its destination said before it landed.
+    const landed = ctx.openCalcs.filter((c) => c.status !== 'returned').map((c) => c.createdAt.getTime());
+    const cut = landed.length > 0 ? Math.max(...landed) : null;
     const dest = truckDestination(
-      inbound.map((m) => m.body),
+      inbound.filter((m) => cut === null || m.sentAt.getTime() > cut).map((m) => m.body),
       (line) => routeTo.get(line) ?? null,
+      inbound.filter((m) => cut !== null && m.sentAt.getTime() <= cut).map((m) => m.body),
     );
     facts.toCity = dest.toCity;
     toCityAssumed = dest.assumed;

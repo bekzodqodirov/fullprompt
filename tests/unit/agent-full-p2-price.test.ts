@@ -278,10 +278,15 @@ describe('the money clause’s second branch — a VED answer’s price (§2.3)'
     expect(one({ ownerPriced: true })).toEqual(['calc_owner_priced']);
     // A person's offer became the card's newest word (fix pass 3) — its own words, never «VED javobi yoki ustama o‘zgardi».
     expect(one({ personOffer: true })).toEqual(['calc_person_offer']);
+    // DELIBERATE EDIT (the review of his «T a», F2): a seventh — a job whose destination was taken, quoted with no
+    // «Toshkentgacha» — refuses alone too, and an unread set refuses it with the six (fails closed).
+    expect(one({ destinationTaken: true })).toEqual(['destination_unsaid']);
     const unread = ticked(eligible(), 'calc_price');
     unread.calcPrice = null;
     expect(autoVerdict(unread).reasons).toEqual(
-      AUTO_REFUSALS.filter((r) => ['calc_foreign', 'markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'calc_person_offer', 'media'].includes(r)),
+      AUTO_REFUSALS.filter((r) =>
+        ['calc_foreign', 'markup_unconfirmed', 'calc_price_moved', 'calc_owner_priced', 'calc_person_offer', 'media', 'destination_unsaid'].includes(r),
+      ),
     );
   });
 

@@ -43,9 +43,11 @@
  *                     Ordinary = a destination said («Toshkentga», «в Ташкент», «до Андижана») and missed — the job
  *                     asks «qaysi shaharga» again; dangerous = a line that is NO destination read as one («Toshkentdan»,
  *                     «Toshkentda», a sender's address, «Xitoyga») — a city nobody named on the VED's job.
- *  - `calc_destination_default` — the Tashkent default itself (calc-destination `truckDestination`): `goes` = the job
- *                     takes Tashkent «aytilmagan», `held` = it does not. Ordinary = nothing said, the job lands;
- *                     dangerous = a place other than Tashkent named anywhere, defaulted to the Tashkent table anyway.
+ *  - `calc_destination_default` — the Tashkent default itself (calc-destination `truckDestination`, beside the route
+ *                     reader the checklist reads with it — `parseManualFacts`): `goes` = the job lands on the Tashkent
+ *                     table, taken «aytilmagan» or said, `held` = it does not. Ordinary = nothing said (or Tashkent
+ *                     said), the job lands; dangerous = a place other than Tashkent named, or Tashkent refused, and
+ *                     the job on the Tashkent table anyway — taken, or «said» only by our own «Toshkentgacha» echoed.
  *  - `origin`       — the place the cargo STARTS (origin `namedOrigin`), for the «You» spelling of Yiwu (the
  *                     2026-11-15 live chat): `goes` = it reads `context.place` (or any place), `held` = none.
  *                     Dangerous = English «you» read as Yiwu — a price quoted from a warehouse nobody named.
@@ -2245,6 +2247,22 @@ const CALC_DESTINATION_ORDINARY: readonly Row[] = [
   ['cd020', 'Andijonga\nYo‘q, Toshkentga', P_TA, TO('Toshkent')],
   ['cd021', 'Olmaotaga', P_TA, TO('Olmaota')],
   ['cd022', 'Toshkent ga', P_TA, TO('Toshkent')],
+  // The review of T (2026-11-21, reader R3): Uzbek Cyrillic as a Russian keyboard types it, and the Latin spellings
+  // with «x» for «zz»/«h» and «k» for «q» — a destination the customer did say, now on the gate's own list.
+  ['cd023', 'Фаргонага', P_TA, TO('Фаргона')],
+  ['cd024', 'Маргилонга', P_TA, TO('Маргилон')],
+  ['cd025', 'Коконга', P_TA, TO('Кокон')],
+  ['cd026', 'Хужандга', P_TA, TO('Хужанд')],
+  ['cd027', 'Гиждувонга', P_TA, TO('Гиждувон')],
+  ['cd028', 'Каттакургонга', P_TA, TO('Каттакургон')],
+  ['cd029', 'Jizaxga', P_TA, TO('Jizax')],
+  ['cd030', 'Shaxrisabzga', P_TA, TO('Shaxrisabz')],
+  ['cd031', 'Olmalikka', P_TA, TO('Olmalik')],
+  // …a chained route ends where it ends (N2), and «не» before a preposition negates the place AFTER it.
+  ['cd032', 'Yiwu - Toshkent - Andijon', P_TA, TO('Andijon')],
+  ['cd033', 'Yiwu-Andijon-Toshkent', P_TA, TO('Toshkent')],
+  ['cd034', 'Toshkentga, Andijonga emas', P_TA, TO('Toshkent')],
+  ['cd035', 'В Ташкент, не в Алматы', P_TA, TO('Toshkent')],
 ];
 const CALC_DESTINATION_DANGEROUS: readonly Row[] = [
   ['cd101', "Toshkentdan jo'natamiz", P_TA],
@@ -2264,6 +2282,37 @@ const CALC_DESTINATION_DANGEROUS: readonly Row[] = [
   // «в … -е» is where somebody IS: the Tashkent cases above are refused by the stem alone, so these name another city.
   ['cd115', 'в Андижане живу', P_TA],
   ['cd116', 'Склад у меня в Самарканде', P_TA],
+  // The review of T (2026-11-21). R1b — a refusal carried by a verb one word on is still a refusal.
+  ['cd117', 'Toshkentga kerak emas, boshqa shaharga', P_TA],
+  ['cd118', 'Toshkentga kerakmas', P_TA],
+  ['cd119', 'В Ташкент не надо', P_TA],
+  // R2 / F6 / N1 — a status question, an earlier shipment, the customer's own trip: no destination of THIS cargo.
+  ['cd120', 'Andijonga qachon keladi?\nYangi yuk ham bor: Ivudan 3 kub kiyim', P_TA],
+  ['cd121', "O'tgan safar Samarqandga yuborgan edik\nEndi Ivudan 3 kub kiyim", P_TA],
+  ['cd122', 'Прошлый раз отправляли в Самарканд\nСейчас из Иу 3 куба', P_TA],
+  ['cd123', 'Mening oldingi yukim Namanganga yetib keldimi?\nIvudan 2 kub', P_TA],
+  ['cd124', 'Andijonga ketyapman, keyin gaplashamiz\nIvudan 2 kub', P_TA],
+  ['cd125', 'Andijonga borib keldim, endi yuk kerak', P_TA],
+  ['cd126', 'Toshkentga qachon keladi?', P_TA],
+  // R4 — two destinations in one line: a guess either way; and the newest line's doubt stands over an older answer.
+  ['cd127', 'Toshkentga yoki Samarqandga, qaysi biri arzon?', P_TA],
+  ['cd128', 'Mening yukim Toshkentga, akamniki Samarqandga', P_TA],
+  ['cd129', "Toshkentga, keyin o'zim Andijonga olib ketaman", P_TA],
+  ['cd130', 'Samarqandga ham yetkazasizmi yoki faqat Toshkentgacha?', P_TA],
+  ['cd131', 'Andijonga\nToshkentga yoki Samarqandga?', P_TA],
+  // R5 — a lone word that is an origin, a location or a demonym; a Chinese sentence is one «word» with no spaces.
+  ['cd132', 'Andijondan', P_TA],
+  ['cd133', 'Андижондан', P_TA],
+  ['cd134', 'Samarqanddanman', P_TA],
+  ['cd135', 'Andijonlikman', P_TA],
+  ['cd136', 'Москвада', P_TA],
+  ['cd137', '从安集延发货', P_TA],
+  ['cd138', '我在安集延', P_TA],
+  ['cd139', '我们公司在阿拉木图', P_TA],
+  // R6 — «на/в» + an adjective is no town.
+  ['cd140', 'Торгую на Андижанском базаре, нужно 3 куба из Иу', P_TA],
+  // N2 — Tashkent's REGION is not Tashkent.
+  ['cd141', 'Toshkent viloyatiga', P_TA],
 ];
 
 // ── calc_destination_default: the Tashkent default (his «T a» (2)) ──────────────────────────────────────────────
@@ -2272,6 +2321,29 @@ const CALC_DEFAULT_ORDINARY: readonly Row[] = [
   ['cdd002', 'Xitoydan 5 kub 800 kg yuk bor', P_TA],
   ['cdd003', 'Toshkentda turaman, Yiwudan yuk bor', P_TA],
   ['cdd004', 'Guanchjoudan 2 kub', P_TA],
+  // The review of T (2026-11-21, reader R7): the route reader's far end that is no place — «menga», «bizga», «sotuvga» —
+  // is no destination, so nothing is said and the job takes Tashkent with its note.
+  ['cdd005', 'Xitoydan menga 3 kub yuk kelyapti', P_TA],
+  ['cdd006', 'Ivudan bizga 5 kub', P_TA],
+  ['cdd007', 'Guanchjoudan sotuvga 2 kub', P_TA],
+  ['cdd008', 'Xitoydan magazinga', P_TA],
+  ['cdd009', 'Ivudan skladga', P_TA],
+  ['cdd010', 'Xitoydan firmamizga', P_TA],
+  ['cdd011', 'Toshkentdagi skladingizga', P_TA],
+  ['cdd012', 'Toshkentgacha qancha?', P_TA],
+  ['cdd013', 'Toshkentdan emas, Xitoydan 3 kub', P_TA],
+  ['cdd014', 'В Ташкент, не в Алматы', P_TA],
+  // …and the unread-destination check (R3's fix) never reads a messenger or a holiday after a Russian preposition.
+  ['cdd015', 'Напишите мне в Telegram, из Иу 3 куба', P_TA],
+  ['cdd016', 'До Нового года нужно, из Иу 2 куба', P_TA],
+  ['cdd017', 'Yiwudan 3 kub, Jumagacha kerak', P_TA],
+  // …nor a messenger, nor the home country: «O'zbekistonga» names no city, and the table's city is taken with its note.
+  ['cdd018', 'Invoysni WeChatga tashladim, Ivudan 3 kub', P_TA],
+  ['cdd019', 'Привет, нужна доставка из Китая в Узбекистан, 3 куба', P_TA],
+  ['cdd020', 'Напишите в Телеграм, из Иу 2 куба', P_TA],
+  ['cdd021', "Xitoydan O'zbekistonga 3 kub", P_TA],
+  // A Latin word after a Russian preposition is a program, a brand, a file — never a Cyrillic writer's town.
+  ['cdd022', 'Счёт скину в Excel, из Иу 3 куба', P_TA],
 ];
 const CALC_DEFAULT_DANGEROUS: readonly Row[] = [
   ['cdd101', 'Olmaotaga 5 kub', P_TA],
@@ -2280,6 +2352,28 @@ const CALC_DEFAULT_DANGEROUS: readonly Row[] = [
   ['cdd104', 'Доставка в Алматы, 3 куба', P_TA],
   ['cdd105', 'Andijonda olaman', P_TA],
   ['cdd106', 'Ivudan Oshga 2 kub', P_TA],
+  // The review of T (2026-11-21). R1 — Tashkent refused, in every way a customer refuses it.
+  ['cdd107', 'Toshkentga emas', P_TA],
+  ['cdd108', 'Тошкентга эмас', P_TA],
+  ['cdd109', 'Не в Ташкент', P_TA],
+  ['cdd110', 'Toshkent emas', P_TA],
+  ['cdd111', 'Ivudan 3 kub, Toshkent emas', P_TA],
+  ['cdd112', 'Toshkentga kerak emas, boshqa shaharga', P_TA],
+  ['cdd113', 'Toshkentga kerakmas', P_TA],
+  ['cdd114', 'В Ташкент не надо', P_TA],
+  // R3 — a destination said in a destination's grammar on a town the list does not hold: never taken as Tashkent.
+  ['cdd115', 'В Новосибирск, из Иу 3 куба', P_TA],
+  ['cdd116', 'До Екатеринбурга', P_TA],
+  ['cdd117', 'в Алмате живу\nИудан 3 куб', P_TA],
+  ['cdd118', 'Ivudan 3 kub\nKitob shahriga', P_TA],
+  ['cdd119', 'Yuk Novosibirskka ketadi', P_TA],
+  // F1 — our own «Toshkentgacha» echoed in a question beside the customer's own city.
+  ['cdd120', 'Bu Toshkentgacha narxmi? Men Andijondaman', P_TA],
+  ['cdd121', 'Это до Ташкента цена? Я в Андижане', P_TA],
+  // F3 — the route reader's far end is China: the road the table prices is not this one.
+  ['cdd122', 'Toshkentdan Xitoyga 3 kub', P_TA],
+  // N2 — Tashkent's region is not the table's Tashkent.
+  ['cdd123', 'Toshkent viloyatiga 3 kub', P_TA],
 ];
 
 // ── origin: the «You» spelling of Yiwu (the 2026-11-15 live chat) ──────────────────────────────────────────────
@@ -2292,6 +2386,7 @@ const ORIGIN_ORDINARY: readonly Row[] = [
   ['or004', 'You shahridan yuk bor', P_YOU, YIWU],
   ['or005', 'Ivudan 3 kub', P_YOU, YIWU],
   ['or006', 'Иудан 3 куб', P_YOU, YIWU],
+  ['or007', 'Salom, You dan 2 kub', P_YOU, YIWU],
 ];
 const ORIGIN_DANGEROUS: readonly Row[] = [
   ['or101', 'Thank you', P_YOU],
@@ -2302,6 +2397,12 @@ const ORIGIN_DANGEROUS: readonly Row[] = [
   ['or106', 'Are you Shahrizoda?', P_YOU],
   ['or107', 'Did you dance?', P_YOU],
   ['or108', 'How much do you charge?', P_YOU],
+  // The review of T (2026-11-21, N4): «you» written small is English whatever word comes before it.
+  ['or109', 'Are you Dan?', P_YOU],
+  ['or110', 'Hey you dan', P_YOU],
+  ['or111', 'Can you dan aka', P_YOU],
+  ['or112', 'and you dan', P_YOU],
+  ['or113', 'Did you shahar?', P_YOU],
 ];
 
 export const READER_CORPUS: readonly ReaderCase[] = [

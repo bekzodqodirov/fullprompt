@@ -49,6 +49,22 @@ export function calcFromOurWarehouse(actions: unknown): boolean {
   );
 }
 
+/**
+ * The job was submitted with a destination TAKEN, not said (his «T a», `calc_submit.toCityAssumed`): the VED priced it
+ * to Tashkent, and every price that relays the VED's answer must say «Toshkentgacha» (review F2). `=== true`: an action
+ * stored before the flag carries none, and none is no.
+ */
+export function calcDestinationTaken(actions: unknown): boolean {
+  if (!Array.isArray(actions)) return false;
+  return actions.some(
+    (a: unknown) =>
+      typeof a === 'object' &&
+      a !== null &&
+      (a as { type?: unknown }).type === 'calc_submit' &&
+      (a as { toCityAssumed?: unknown }).toCityAssumed === true,
+  );
+}
+
 /** What the card shows of the chat — kept on the draft, so a refresh needs no re-read. */
 export interface CardMemory {
   customerLabel: string;

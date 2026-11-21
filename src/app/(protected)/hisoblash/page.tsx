@@ -10,6 +10,7 @@ import {
   type CalcQueueRow,
 } from '@/modules/wms/calc/service';
 import { calcCardHref, leadNameReadable } from '@/modules/wms/calc/card-door';
+import { takenDestinationRequests } from '@/modules/wms/agent/calc-price';
 import { FIELD_LABELS, SECTION_LABELS } from '@/modules/wms/calc/labels';
 import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { EmptyState, PageHeader } from '@/components/ui/page';
@@ -44,6 +45,8 @@ export default async function CalcQueuePage() {
     calcSpeed(new Date(now.getTime() - 30 * 86_400_000)),
     recentlyClosed(20),
   ]);
+  // A destination the AI took as Tashkent, nobody said (his «T a», review F4): marked where the route is printed.
+  const taken = await takenDestinationRequests(rows.map((row) => row.id));
   const mine = rows.filter((row) => row.assigneeId === actor.id).length;
   const names = leadNameReadable(actor);
   const cardHref = (row: CalcQueueRow) => calcCardHref(actor, { ...row, requestId: row.id });
@@ -135,6 +138,11 @@ export default async function CalcQueuePage() {
                 {row.fromCity || row.toCity
                   ? ` · ${row.fromCity ?? '—'} → ${row.toCity ?? '—'}`
                   : ''}
+                {taken.has(row.id) ? (
+                  <span className="text-warn" data-testid="calc-destination-taken">
+                    {` (${t('destinationTaken')})`}
+                  </span>
+                ) : null}
               </div>
 
               <div className="mt-1 flex flex-wrap items-center gap-2 text-2xs text-ink-500">

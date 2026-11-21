@@ -20,6 +20,11 @@ interface Place {
   place: string;
   zone: OriginZone | null;
   re: RegExp;
+  /**
+   * Spellings whose CASE is the reading — matched without the `i` flag, beside `re`: «You dan» is Yiwu, «you dan»
+   * is English (the review of his «T a», N4: «Are you Dan?», «Hey you dan»).
+   */
+  cased?: RegExp;
   /** A province, not a city: «Zhejiang» on a warehouse's address is where it stands, never where a customer's cargo starts. */
   province?: true;
 }
@@ -53,9 +58,13 @@ const PLACES: readonly Place[] = [
     zone: 'cn',
     // «ایوو» as well as «ییوو» (fix pass 6): the Persian customers write both, and the avia rule read only one.
     // «You» is how some customers spell Yiwu (the 2026-11-15 live chat: «"You" shahrini aniqlab bera olmadim») — and
-    // the commonest word of English, so ONLY in a place's own form: glued to its ending («Youdan», «Youdagi»), with
-    // «dan» written apart where no English phrase ends in «you» («Thank you Dan» is a person), or with «shahri».
-    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L})|you(?:dan|dagi)(?!\p{L})|(?<!(?:thank|thanks|see|love|miss|bless|with|for|to)\s+)you\s+(?:dan|sha[hx](?:ri|ar)(?:dan|dagi|da|ga|ning)?)(?!\p{L}))|义乌|ییوو|ایوو/iu,
+    // the commonest word of English, so ONLY in a place's own form: glued to its ending («Youdan», «Youdagi») — no
+    // English glues one — or written apart with its capital as a name has it (`cased`).
+    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L})|you(?:dan|dagi)(?!\p{L}))|义乌|ییوو|ایوو/iu,
+    // «You dan», «You shahri»: the capital «You» and the Uzbek ending written small — English writes the pronoun
+    // small inside a sentence («Hey you dan», «Did you shahar?») and a man's name big («Are you Dan?»). Not after the
+    // words that end an English phrase in «You» («Thank You», «See You»).
+    cased: /(?<![\p{L}])(?<!(?:[Tt]hank|[Tt]hanks|[Ss]ee|[Ll]ove|[Mm]iss|[Bb]less|[Ww]ith|[Ff]or|[Tt]o)\s+)You\s+(?:dan|sha[hx](?:ri|ar)(?:dan|dagi|da|ga|ning)?)(?![\p{L}])/u,
   },
   cn('Guangzhou', 'guangzhou|guanchjou|guanjou|гуанчжоу|广州|گوانگژو'),
   cn('Foshan', 'foshan|фошань|佛山|فوشان'),
@@ -103,8 +112,15 @@ const CHINA = /(?<!\p{L})(?:xitoy|hitoy|хитой|кита[йяеюи]|china|ch
 export function originMentions(text: string | null): { place: string; index: number; match: string }[] {
   const t = text ?? '';
   return PLACES.flatMap((p) =>
-    [...t.matchAll(new RegExp(p.re.source, `${p.re.flags.replace('g', '')}g`))].map((m) => ({ place: p.place, index: m.index, match: m[0] })),
+    readersOf(p).flatMap((re) =>
+      [...t.matchAll(new RegExp(re.source, `${re.flags.replace('g', '')}g`))].map((m) => ({ place: p.place, index: m.index, match: m[0] })),
+    ),
   );
+}
+
+/** A place's spellings: its own, and the ones whose case is the reading. */
+function readersOf(p: Place): RegExp[] {
+  return p.cased ? [p.re, p.cased] : [p.re];
 }
 
 /**
@@ -122,7 +138,7 @@ export function chinaMentions(text: string | null): { index: number; match: stri
 /** Every named place in the text, each once, in the list's order. */
 export function namedOrigins(text: string | null): { place: string; zone: OriginZone | null }[] {
   const t = text ?? '';
-  return PLACES.filter((p) => p.re.test(t)).map(({ place, zone }) => ({ place, zone }));
+  return PLACES.filter((p) => readersOf(p).some((re) => re.test(t))).map(({ place, zone }) => ({ place, zone }));
 }
 
 /**

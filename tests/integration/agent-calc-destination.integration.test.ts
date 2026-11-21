@@ -40,12 +40,13 @@ import {
 import { AVIA_DAYS_DEFAULT, getSetting, setSetting } from '@/modules/platform/settings/service';
 import { readAutoConfig, __restoreAutoConfig, type AutoConfig } from '@/modules/wms/agent/auto-send';
 import { ASSUMED_DESTINATION_NOTE } from '@/modules/wms/agent/calc-destination';
+import { calcPriceGateFacts, takenDestinationRequests } from '@/modules/wms/agent/calc-price';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { loadContext } from '@/modules/wms/agent/context';
 import { decideDraft, noteIdFor } from '@/modules/wms/agent/decide';
 import { CUSTOMS_OFFER_SENTENCE } from '@/modules/wms/agent/policy';
 import { handleInbound } from '@/modules/wms/agent/run';
-import { ourChinaPlaces, runTool, type ToolEnv } from '@/modules/wms/agent/tools';
+import { CALC_DESTINATION_TAKEN_WORDS, ourChinaPlaces, runTool, type ToolEnv } from '@/modules/wms/agent/tools';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
 /**
@@ -429,5 +430,59 @@ describe('his «T a»: «ha» all the way to a landed job', () => {
     const out = await runTool('calc_checklist', { section: 'podklyuch', goods: [{ name: 'кийим', quantity: 200, unit: 'dona', weight_kg: null }] }, envOf(ctx));
     expect(out.text).toContain('qaysi shaharga');
     expect(out.checklist).toMatchObject({ complete: false, toCityAssumed: false, facts: { toCity: null } });
+  });
+});
+
+/** The VED's «Готово» answer on a request, as the p2 price test writes it. */
+async function answered(requestId: string, amount: string) {
+  await db
+    .update(calcRequests)
+    .set({ completedAt: new Date(Date.now() - 30 * 60_000), completedVia: 'task', answerAmount: amount, answerCurrency: 'USD', status: 'completed' } as never)
+    .where(eq(calcRequests.id, requestId));
+}
+
+describe('the VED’s answer to a job whose destination was taken reaches the customer as «Toshkentgacha» (review F2)', () => {
+  /** A podklyuch job landed by his ✅ over these lines, then answered «1000 $» by the VED; `calc_price`'s result. */
+  async function pricedJob(lines: string[], start: number) {
+    const peer = newPeer();
+    const clientId = await freshClient();
+    let anchor = 0n;
+    for (const [i, line] of lines.entries()) anchor = await inbound(peer, clientId, line, at(start + i * 0.1));
+    const ctx1 = await loadContext(holderId, peer, anchor);
+    const refs = ctx1.messages.filter((m) => m.direction === 'in').map((m) => m.ref);
+    const d = await run(
+      peer,
+      anchor,
+      [{ name: 'calc_checklist', input: { section: 'podklyuch', goods: [{ name: 'кийим', quantity: 200, unit: 'dona', weight_kg: null }] } }, SUBMIT(refs, true)],
+      at(start + 0.5),
+    );
+    await approvedAndSent(peer, clientId, d.id, at(start + 1));
+    const [req] = await requestsOn(noteIdFor(d.id));
+    expect(req, 'the job landed').toBeDefined();
+    await answered(req!.id, '1000');
+    const asked = await inbound(peer, clientId, 'нима бўлди?', at(start + 2));
+    const ctx = await loadContext(holderId, peer, asked);
+    const out = await runTool('calc_price', {}, { ...envOf(ctx), calcPricing: true });
+    expect(out.ok, out.text).toBe(true);
+    const facts = await calcPriceGateFacts(out.calcPrices, { managerUserId: holderId, peerId: peer }, new Date());
+    const marked = await takenDestinationRequests([req!.id]);
+    return { submit: (d.actions as { type: string; toCityAssumed?: boolean }[]).find((a) => a.type === 'calc_submit'), out, facts, marked: marked.has(req!.id) };
+  }
+
+  it('taken: the tool says «Toshkentgacha» and the gate’s facts carry it — the machine never relays the Tashkent figure as his city’s', async () => {
+    const { submit, out, facts, marked } = await pricedJob(['Иудан 3 куб 450 кг кийим бор, 200 дона, подключ билан канча?'], 50);
+    expect(submit?.toCityAssumed).toBe(true);
+    expect(out.text).toContain(CALC_DESTINATION_TAKEN_WORDS);
+    expect(facts.destinationTaken).toBe(true);
+    // …and the VED's queue and workspace mark the route as taken (review F4), not only the note that folds shut.
+    expect(marked).toBe(true);
+  });
+
+  it('said: neither — «Тошкентга» was his own word', async () => {
+    const { submit, out, facts, marked } = await pricedJob(['Иудан 3 куб 450 кг кийим бор, 200 дона, подключ билан канча?', 'Тошкентга'], 60);
+    expect(submit?.toCityAssumed).toBeUndefined();
+    expect(out.text).not.toContain(CALC_DESTINATION_TAKEN_WORDS);
+    expect(facts.destinationTaken).toBe(false);
+    expect(marked).toBe(false);
   });
 });

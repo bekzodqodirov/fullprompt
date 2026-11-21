@@ -9,7 +9,7 @@ import { cardLineOf, centsOf, markupPrice, ruleString, ruleWords, workedExample,
 import { chatCalcChains, chatIdentity, type CalcChain } from './context';
 import { machineMayTouch } from './machine-owner';
 import { extractNumbers } from './numbers';
-import { calcFromOurWarehouse } from './types';
+import { calcDestinationTaken, calcFromOurWarehouse } from './types';
 
 /**
  * «VED javobi → ustama qo'shib narx aytadi» (SPEC-P2-v2 §2.2) — the ONE agent file that reads a calculation's
@@ -92,6 +92,8 @@ export type CalcPriceResult =
       cardLine: string;
       /** A priced job was submitted as priced from our China warehouses (his third set «3») — the reply says both sentences. */
       fromOurWarehouse: boolean;
+      /** A priced job's destination was taken, not said (his «T a»): the VED priced it to Tashkent — the reply says so. */
+      destinationTaken: boolean;
       /**
        * Each price's job named by its goods (the request's first lines, beside `prices`, '' when none were listed) — so
        * the model and his card can tell which cargo a figure is for when a chat holds two jobs. Never an amount.
@@ -413,6 +415,42 @@ async function chainFromOurWarehouse(chain: CalcChain): Promise<boolean> {
 }
 
 /**
+ * Was the chain's job submitted with its destination taken, not said (his «T a», the link draft's own action)? The VED
+ * priced it to Tashkent; a price relayed to the customer must say so (review F2).
+ */
+async function chainDestinationTaken(chain: Pick<CalcChain, 'memberIds'>): Promise<boolean> {
+  if (chain.memberIds.length === 0) return false;
+  const rows = await db
+    .select({ actions: agentDrafts.actions })
+    .from(agentCalcLinks)
+    .innerJoin(agentDrafts, eq(agentDrafts.id, agentCalcLinks.draftId))
+    .where(inArray(agentCalcLinks.requestId, chain.memberIds));
+  return rows.some((r) => calcDestinationTaken(r.actions));
+}
+
+/**
+ * Which of these requests were submitted with their destination TAKEN, not said (his «T a») — for the VED's queue and
+ * workspace, which print the route bare (review F4): «Yiwu → Toshkent» read the same whether the customer said it or
+ * nobody did, and the note that says so folds shut once the job is sealed. The link draft's own action, as
+ * `chainDestinationTaken` reads it. Never throws: a read that fails marks nothing — the note on the job still says it.
+ */
+export async function takenDestinationRequests(requestIds: readonly string[]): Promise<Set<string>> {
+  const ids = [...new Set(requestIds)];
+  if (ids.length === 0) return new Set();
+  try {
+    const rows = await db
+      .select({ requestId: agentCalcLinks.requestId, actions: agentDrafts.actions })
+      .from(agentCalcLinks)
+      .innerJoin(agentDrafts, eq(agentDrafts.id, agentCalcLinks.draftId))
+      .where(inArray(agentCalcLinks.requestId, ids));
+    return new Set(rows.filter((r) => calcDestinationTaken(r.actions)).map((r) => r.requestId));
+  } catch (err) {
+    logger.warn({ err }, '[agent] taken destinations not read');
+    return new Set();
+  }
+}
+
+/**
  * The client price(s) for this chat's answered VED jobs (§2.2). `requestId`: the one chain holding that request (the
  * announcement, the re-price at every send step); absent: every answered chain of the chat (the `calc_price` tool).
  */
@@ -430,6 +468,7 @@ export async function calcPriceFor(input: { managerUserId: string; peerId: bigin
   const goods: string[] = [];
   let firstRefusal: CalcPriceRefusal | null = null;
   let ours = false;
+  let taken = false;
   for (const chain of asked) {
     const priced = await priceChain(input, chain, rule, identity, now, validDays);
     if (!priced.ok) {
@@ -440,9 +479,10 @@ export async function calcPriceFor(input: { managerUserId: string; peerId: bigin
     lines.push(cardLineOf(priced.baseCents, rule, SECTION_WORDS[priced.mark.section] ?? priced.mark.section));
     goods.push(await chainGoods(chain.memberIds));
     if (await chainFromOurWarehouse(chain)) ours = true;
+    if (await chainDestinationTaken(chain)) taken = true;
   }
   if (prices.length === 0) return { ok: false, reason: firstRefusal ?? 'not_standing' };
-  return { ok: true, prices, cardLine: lines.join('\n'), fromOurWarehouse: ours, goods };
+  return { ok: true, prices, cardLine: lines.join('\n'), fromOurWarehouse: ours, destinationTaken: taken, goods };
 }
 
 /**
@@ -531,6 +571,11 @@ export interface CalcPriceGateFacts {
   foreign: boolean;
   /** `media`: the customer sent a file after the job landed (the request burst's own files went to the VED). */
   media: boolean;
+  /**
+   * `destination_unsaid` unless the reply says «Toshkentgacha»: a quoted job's destination was taken, not said (his
+   * «T a», review F2) — the VED priced it to Tashkent. Optional: a set of facts built before it reads as said.
+   */
+  destinationTaken?: boolean;
 }
 
 /** Every fact refusing — what a calc-price draft whose facts could not be read is judged on (fails closed). */
@@ -541,6 +586,7 @@ export const CALC_PRICE_FACTS_UNREAD: CalcPriceGateFacts = {
   personOffer: true,
   foreign: true,
   media: true,
+  destinationTaken: true,
 };
 
 /** The six facts, read now — at the scheduling and again at the press. Never throws (a read that fails refuses all). */
@@ -577,7 +623,10 @@ export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: st
     const chains = (await chatCalcChains(chat.managerUserId, chat.peerId)).filter((c) => c.memberIds.some((id) => ids.includes(id)));
     const since = chains.length === 0 ? null : new Date(Math.min(...chains.map((c) => c.linkedAt.getTime())));
     const media = since === null ? true : await mediaSince(chat, since);
-    return { unconfirmed, moved, ownerPriced, personOffer, foreign, media };
+    // No chain read is a destination not known to be said (fails closed, as `media`).
+    let destinationTaken = chains.length === 0;
+    for (const c of chains) if (await chainDestinationTaken(c)) destinationTaken = true;
+    return { unconfirmed, moved, ownerPriced, personOffer, foreign, media, destinationTaken };
   } catch (err) {
     logger.warn({ err, peer: String(chat.peerId) }, '[agent] auto: the calc price’s facts not read');
     return CALC_PRICE_FACTS_UNREAD;

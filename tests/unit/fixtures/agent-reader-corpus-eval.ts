@@ -14,6 +14,7 @@ import * as loop from '@/modules/wms/agent/loop';
 import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import * as numbers from '@/modules/wms/agent/numbers';
 import * as calcDestination from '@/modules/wms/agent/calc-destination';
+import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import * as origin from '@/modules/wms/agent/origin';
 import * as ownerAnswer from '@/modules/wms/agent/owner-answer';
 import * as policy from '@/modules/wms/agent/policy';
@@ -479,8 +480,12 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
       // The customer's lines, oldest first — what the checklist reads (his «T a»).
       return readsPlace(calcDestination.newestDestination(c.input.split('\n')), c.context?.place);
     case 'calc_destination_default':
-      // A truck job's destination with no route reader beside it: `goes` = Tashkent taken, not said.
-      return calcDestination.truckDestination(c.input.split('\n'), () => null).assumed ? 'goes' : 'held';
+      // A truck job's destination with the route reader the checklist reads beside it (review R7 — a corpus with no
+      // route reader never saw «Xitoydan menga» land as «men»): `goes` = the job lands on the Tashkent table.
+      return calcDestination.truckDestination(c.input.split('\n'), (l) => parseManualFacts(l).toCity ?? null).toCity ===
+        calcDestination.ASSUMED_DESTINATION
+        ? 'goes'
+        : 'held';
     case 'origin':
       return readsPlace(origin.namedOrigin(c.input)?.place ?? null, c.context?.place);
   }

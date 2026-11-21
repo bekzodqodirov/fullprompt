@@ -3732,6 +3732,7 @@
     "missingLabel": "Не хватает",
     "unassigned": "Никто не взял",
     "takenBy": "Взял",
+    "destinationTaken": "адрес не назван — принят Ташкент",
     "requester": "Просит",
     "goods": "Товары",
     "route": "Маршрут",

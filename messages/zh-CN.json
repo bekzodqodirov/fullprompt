@@ -3732,6 +3732,7 @@
     "missingLabel": "缺少",
     "unassigned": "无人认领",
     "takenBy": "认领人",
+    "destinationTaken": "客户未说明目的地——按塔什干计",
     "requester": "申请人",
     "goods": "货物",
     "route": "路线",

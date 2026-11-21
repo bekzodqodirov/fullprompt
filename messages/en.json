@@ -3732,6 +3732,7 @@
     "missingLabel": "Missing",
     "unassigned": "Nobody has taken it",
     "takenBy": "Taken by",
+    "destinationTaken": "destination not stated — Tashkent assumed",
     "requester": "Asked by",
     "goods": "Goods",
     "route": "Route",
