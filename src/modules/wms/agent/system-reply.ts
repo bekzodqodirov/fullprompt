@@ -1,3 +1,4 @@
+import { normalizeDigits } from './digits';
 import type { AgentLocale, ScriptName } from './locale';
 import type { ComposeReply } from './run';
 import type { SystemReplyReason } from './types';
@@ -128,19 +129,34 @@ export function systemGlossUz(reason: SystemReplyReason): string {
   return reason === 'voice' ? G_VOICE : reason === 'media' ? G_MEDIA : G_PASHTO;
 }
 
+const NOTHING_TOLD: ReadonlySet<SystemReplyReason> = new Set();
+
 /**
  * Which tayyor matn a burst the model cannot answer gets (§4.4 and its finding 1) — null when it gets none. Pashto: the
  * Pashto line. A burst with no text: any kept photo or file → the media line; else any voice note or audio → the voice
  * line (a voice note beside a sticker is still a voice note — `draftWorthy` calls that burst `media_only`); a burst of
  * stickers, round videos or files storage refused (`other`) alone gets nothing, as today.
+ *
+ * `burst` is the customer's lines this line would answer — after our newest send, the ones the thread lost included
+ * (`linesAfterOurSends`) — and `told` what this silence already said (`toldInSilence`). Of the kinds the burst carries,
+ * the first one NOT yet said is the line (the independent check of 6d505267, R1): a voice note after our media line
+ * gets the voice line — read by kind of the whole burst, a photo earlier in it chose the media line, which was told, and
+ * the run skipped `media_only` with nobody hearing the voice note. When every kind was said, the voice one is named
+ * (the run tells HIM of a voice note it does not answer again — the same promise), else the first; the caller asks
+ * `told` and writes no second line.
  */
-export function systemReasonOf(w: Worthiness, burst: readonly BurstMessage[]): SystemReplyReason | null {
+export function systemReasonOf(
+  w: Worthiness,
+  burst: readonly BurstMessage[],
+  told: ReadonlySet<SystemReplyReason> = NOTHING_TOLD,
+): SystemReplyReason | null {
   if (w.worthy) return null;
   if (w.reason === 'pashto') return 'pashto';
   if (w.reason !== 'voice_only' && w.reason !== 'media_only') return null;
-  if (burst.some((m) => m.media === 'photo' || m.media === 'document')) return 'media';
-  if (burst.some((m) => m.media === 'voice' || m.media === 'audio')) return 'voice';
-  return null;
+  const kinds: SystemReplyReason[] = [];
+  if (burst.some((m) => m.media === 'photo' || m.media === 'document')) kinds.push('media');
+  if (burst.some((m) => m.media === 'voice' || m.media === 'audio')) kinds.push('voice');
+  return kinds.find((k) => !told.has(k)) ?? (kinds.includes('voice') ? 'voice' : (kinds[0] ?? null));
 }
 
 /**
@@ -193,8 +209,16 @@ export function systemReplyFor(input: { reason: SystemReplyReason; locale: Agent
   };
 }
 
-/** Every tayyor matn's text, folded, with the reason it answers — what «our line was one, and which» is read against. */
-const fold = (t: string) => t.normalize('NFC').toLowerCase().replace(/\s+/gu, ' ').trim();
+/**
+ * Every tayyor matn's text, folded, with the reason it answers — what «our line was one, and which» is read against.
+ *
+ * Both sides through ONE fold, the one the chat is read in (context `chatForm` → `normalizeDigits`, NFKC): an
+ * uncopied send comes back as its outbox body, raw, and a copied one as the thread's copy, folded — and NFKC makes the
+ * Chinese lines' full-width «，» a «,», so a table of raw texts never knew the thread's copy of a zh line (the check of
+ * 6d505267, R2: a copied zh media line, and the next photo of the same silence got it again). Folding the table and the
+ * line alike reads both forms as one.
+ */
+const fold = (t: string) => normalizeDigits(t).toLowerCase().replace(/\s+/gu, ' ').trim();
 const LINE_REASON = new Map<string, SystemReplyReason>([
   ...Object.values(SYSTEM_LINES.voice).flat().map((l) => [fold(l.text), 'voice'] as const),
   ...Object.values(SYSTEM_LINES.media).flat().map((l) => [fold(l.text), 'media'] as const),
@@ -260,4 +284,17 @@ export function toldInSilence(
     told.add(reason);
   }
   return told;
+}
+
+/**
+ * The customer's lines a tayyor matn answers (the check of the F1-F3 fixes, R1): the burst — his lines after our newest copied
+ * send — less those that stood before our newest send the thread LOST, placed by its moment exactly as `toldInSilence`
+ * places it (a line stamped at or before it stands before it). Our lost media line told him about the photo before it;
+ * the voice note after it is what is owed. Only the tayyor matn's choice reads this — the burst a model reply sees is
+ * the thread's, unchanged.
+ */
+export function linesAfterOurSends<T extends { sentAt: Date }>(burst: readonly T[], uncopied: readonly UncopiedSend[]): T[] {
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const s of uncopied) newest = Math.max(newest, s.at.getTime());
+  return burst.filter((m) => m.sentAt.getTime() > newest);
 }

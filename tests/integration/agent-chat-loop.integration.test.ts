@@ -577,8 +577,11 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     if (files.length) await db.delete(attachments).where(inArray(attachments.id, files.splice(0)));
   });
 
-  /** A kept photo: its line and the stored file beside it — what the run reads as a photo the media line answers. */
-  async function photo(at: Date): Promise<bigint> {
+  /**
+   * A kept photo — or a voice note: its line and the stored file beside it, what the run reads as a photo the media line
+   * answers (or a voice note the voice line does).
+   */
+  async function photo(at: Date, kind: 'photo' | 'voice' = 'photo'): Promise<bigint> {
     const tgId = await line('in', '', at, true);
     const [row] = await db.select({ id: tgMessages.id }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, tgId)));
     const [file] = await db
@@ -586,10 +589,10 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
       .values({
         entityType: 'tg_message',
         entityId: row!.id,
-        kind: 'photo',
+        kind: kind === 'photo' ? 'photo' : 'file',
         storageKey: `agent-chat-loop-lost/${SUFFIX}/${row!.id}`,
-        fileName: 'invoice.jpg',
-        contentType: 'image/jpeg',
+        fileName: kind === 'photo' ? 'invoice.jpg' : 'voice.ogg',
+        contentType: kind === 'photo' ? 'image/jpeg' : 'audio/ogg',
         sizeBytes: 10,
         uploadedBy: ownerId,
       })
@@ -597,6 +600,7 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     files.push(file!.id);
     return tgId;
   }
+  const voiceNote = (at: Date) => photo(at, 'voice');
 
   /**
    * One of OUR sends with NO thread copy, as the send step leaves it: 'unknown' (handed to Telegram, the answer lost —
@@ -729,6 +733,81 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     const again = await photo(min(6));
     expect(await handleInbound(job(again), { callModel: never() })).toMatchObject({ outcome: 'draft' });
     expect((await gate((await pendingFor(again))!, min(7))).loop).toBe(false);
+  });
+
+  /**
+   * The check of the F1-F3 fixes, R1: the thread's burst still holds the photo our LOST media line answered, so the line
+   * was chosen by that photo — media, told — and the run skipped `media_only` with nobody hearing the voice note after
+   * it. The line answers his lines after our newest send, and the first kind among them not yet said: the voice line,
+   * whatever shape the media line's send was left in (the copied control is what the run owes).
+   */
+  const voiceLine = () => systemReplyFor({ reason: 'voice', locale: 'uz', peerId: PEER }).replyText;
+  it.each(['copied', 'unknown', 'no_id'] as const)(
+    'photo → media line (%s) → voice note: the voice line is drafted — and the gate does not hold it `loop`',
+    async (shape) => {
+      await line('in', 'Yuk 3 kub, 450 kg, Guanchjoudan', min(1));
+      await machineSend('Rahmat, qachon jo‘natmoqchisiz?', min(2));
+      await photo(min(3));
+      if (shape === 'copied') await machineSend(mediaLine(), min(4));
+      else await lostSend(mediaLine(), min(4), shape);
+      const voice = await voiceNote(min(6));
+      expect(await handleInbound(job(voice), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+      const d = await pendingFor(voice);
+      expect(d!.proposedBody).toBe(voiceLine());
+      expect((d!.policy as { system?: unknown }).system).toBe('voice');
+      expect((await gate(d!, min(7))).loop).toBe(false);
+    },
+  );
+
+  it.each(['copied', 'unknown', 'no_id'] as const)(
+    'photo → voice line (%s) → voice note: our line answered the photo before it — the voice note tells HIM, as a copied line does',
+    async (shape) => {
+      await photo(min(1));
+      if (shape === 'copied') await machineSend(voiceLine(), min(2));
+      else await lostSend(voiceLine(), min(2), shape);
+      const voice = await voiceNote(min(4));
+      expect(await handleInbound(job(voice), { callModel: never() })).toEqual({ outcome: 'notice', reason: 'voice_only' });
+      expect(await pendingFor(voice)).toBeUndefined();
+    },
+  );
+
+  it('photo → media line (unknown) → photo → voice note: the voice note is still owed its line, the photo is not', async () => {
+    await photo(min(1));
+    await lostSend(mediaLine(), min(2), 'unknown');
+    await photo(min(4));
+    const voice = await voiceNote(min(5));
+    expect(await handleInbound(job(voice), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+    const d = await pendingFor(voice);
+    expect(d!.proposedBody).toBe(voiceLine());
+    expect((d!.policy as { system?: unknown }).system).toBe('voice');
+  });
+
+  it('a Chinese chat: our copied zh media line, read back from the thread (NFKC folds its «，»), was said — no second line (R2)', async () => {
+    await line('in', '你好，我有3立方的货，从广州发', min(1));
+    await machineSend('好的，什么时候发货？', min(2));
+    await photo(min(3));
+    const zh = systemReplyFor({ reason: 'media', locale: 'zh', peerId: PEER }).replyText;
+    expect(zh).toContain('，');
+    await machineSend(zh, min(4));
+    const again = await photo(min(6));
+    expect(await handleInbound(job(again), { callModel: never() })).toEqual({ outcome: 'skipped', reason: 'media_only' });
+    expect(await pendingFor(again)).toBeUndefined();
+  });
+
+  it('…and once the voice line was said too (lost as well), the next voice note tells HIM — never the customer again', async () => {
+    await photo(min(1));
+    await lostSend(mediaLine(), min(2), 'unknown');
+    await voiceNote(min(4));
+    await lostSend(voiceLine(), min(5), 'no_id');
+    await photo(min(7));
+    const voice = await voiceNote(min(8));
+    expect(await handleInbound(job(voice), { callModel: never() })).toEqual({ outcome: 'notice', reason: 'voice_only' });
+    expect(await pendingFor(voice)).toBeUndefined();
+    const told = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentNotice'), sql`${notifications.payload}->>'text' LIKE ${'%ovozli xabar%'}`));
+    expect(told).toHaveLength(1);
   });
 });
 

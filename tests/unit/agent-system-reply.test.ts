@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { EYE_ONLY_WARNINGS } from '@/modules/wms/agent/auto-gate';
-import { customerScriptOf, type AgentContext, type ChatMessage } from '@/modules/wms/agent/context';
+import { chatForm, customerScriptOf, type AgentContext, type ChatMessage } from '@/modules/wms/agent/context';
 import { AGENT_LOCALES, type AgentLocale } from '@/modules/wms/agent/locale';
-import { checkAgentReply, type PolicyInput } from '@/modules/wms/agent/policy';
+import { AI_HONEST_LINE, checkAgentReply, type PolicyInput } from '@/modules/wms/agent/policy';
 import { customerLocaleOf, glossReadable, memoryFor, type ComposeReply } from '@/modules/wms/agent/run';
 import {
   isSystemLine,
+  linesAfterOurSends,
   SYSTEM_LINES,
   systemCardLine,
   systemGlossUz,
@@ -228,6 +229,41 @@ describe('which burst gets which line (§4.4 finding 1)', () => {
     expect(reason([b('Narxi qancha?', 'photo')])).toBeNull();
     expect(reason([b('rahmat')])).toBeNull();
   });
+
+  // The check of the F1-F3 fixes, R1: the line is the first kind the burst carries that this silence has not said.
+  const told = (...r: ('media' | 'voice' | 'pashto')[]) => new Set(r);
+  const reasonTold = (burst: BurstMessage[], said: ReadonlySet<'media' | 'voice' | 'pashto'>) =>
+    systemReasonOf(draftWorthy(burst, false), burst, said);
+
+  it('a photo and a voice note after the media line was said: the voice line — the photo chose a told line and the voice note reached nobody', () => {
+    expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('media'))).toBe('voice');
+    expect(reasonTold([b(null, 'voice'), b(null, 'photo')], told('media'))).toBe('voice');
+    // Nothing said yet: a photo beside a voice note is still a photo (the media line asks him to type it all).
+    expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told())).toBe('media');
+    // The voice line said, the photo not: the media line.
+    expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('voice'))).toBe('media');
+  });
+
+  it('every kind said: the voice one is named, so the run tells HIM of the voice note; a told photo alone is the media line, skipped', () => {
+    expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('media', 'voice'))).toBe('voice');
+    expect(reasonTold([b(null, 'photo')], told('media'))).toBe('media');
+    expect(reasonTold([b(null, 'voice')], told('voice'))).toBe('voice');
+    // Pashto is the Pashto line whatever was said; a text is still the model's.
+    expect(reasonTold([b('ستاسو بار څه وخت راځي')], told('pashto'))).toBe('pashto');
+    expect(reasonTold([b('Narxi qancha?', 'photo')], told())).toBeNull();
+  });
+
+  it('the line answers his lines after our NEWEST send — a lost one placed by its moment as `toldInSilence` places it', () => {
+    const at = (hhmm: string) => new Date(`2026-11-20T${hhmm}:00Z`);
+    const burst = [{ sentAt: at('07:00'), media: 'photo' }, { sentAt: at('07:03'), media: 'voice' }];
+    // Our media line Telegram took and the thread never got, between the photo and the voice note.
+    expect(linesAfterOurSends(burst, [{ at: at('07:01'), body: 'x' }]).map((m) => m.media)).toEqual(['voice']);
+    // A line stamped at our send's very moment stands before it, as in the thread's walk.
+    expect(linesAfterOurSends(burst, [{ at: at('07:03'), body: 'x' }])).toEqual([]);
+    // The newest of several decides; none lost — the burst as the thread has it.
+    expect(linesAfterOurSends(burst, [{ at: at('07:02'), body: 'x' }, { at: at('06:00'), body: 'y' }]).map((m) => m.media)).toEqual(['voice']);
+    expect(linesAfterOurSends(burst, [])).toEqual(burst);
+  });
 });
 
 describe('once per silence', () => {
@@ -239,6 +275,30 @@ describe('once per silence', () => {
     expect(isSystemLine('Assalomu alaykum! Qanday yordam bera olaman?')).toBe(false);
     expect(isSystemLine(`${SYSTEM_LINES.voice.uz[0]!.text} Narxi 800 $.`)).toBe(false);
     expect(isSystemLine(null)).toBe(false);
+  });
+
+  it('every tayyor matn is known raw (an uncopied outbox body) AND as the thread copy reads it (`chatForm`) — the check of the F1-F3 fixes, R2', () => {
+    const all: [string, string][] = [
+      ...Object.values(SYSTEM_LINES.voice).flat().map((l) => ['voice', l.text] as [string, string]),
+      ...Object.values(SYSTEM_LINES.media).flat().map((l) => ['media', l.text] as [string, string]),
+      ...SYSTEM_LINES.pashto.map((l) => ['pashto', l.text] as [string, string]),
+    ];
+    // Six languages × three wordings × voice and media, and the three Pashto lines.
+    expect(all).toHaveLength(39);
+    const missed = all.filter(([r, text]) => systemReasonOfLine(text) !== r || systemReasonOfLine(chatForm(text)) !== r);
+    expect(missed).toEqual([]);
+    // The Chinese lines are the ones the chat's fold rewrites (NFKC: «，» → «,»): the table must not lean on the raw form.
+    expect(SYSTEM_LINES.media.zh.some((l) => chatForm(l.text) !== l.text)).toBe(true);
+    // The honest line is no tayyor matn of «once per silence» (a reply of ours begins a silence) — in neither form.
+    for (const l of Object.values(AI_HONEST_LINE)) {
+      expect(systemReasonOfLine(l.text), l.text).toBeNull();
+      expect(systemReasonOfLine(chatForm(l.text)), l.text).toBeNull();
+    }
+  });
+
+  it('a copied Chinese media line, read back from the thread, was said — the next photo of the silence gets no second one', () => {
+    const zh = SYSTEM_LINES.media.zh[2]!.text;
+    expect([...toldInSilence([msg('', 'in', 'photo'), msg(chatForm(zh), 'out'), msg('', 'in', 'photo')])]).toEqual(['media']);
   });
 
   it('which line was said, per kind, since the silence began — read back to our first line that is not one (fix review N2)', () => {

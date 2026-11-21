@@ -534,7 +534,21 @@ export async function toldInSilenceOf(
   peerId: bigint,
   messages: readonly ChatMessage[],
 ): Promise<ReadonlySet<SystemReplyReason>> {
-  return toldInSilence(messages, await uncopiedSendsFor(managerUserId, peerId, messages[0]?.sentAt ?? null));
+  return (await silenceOf(managerUserId, peerId, messages)).told;
+}
+
+/**
+ * `toldInSilenceOf`'s reading with the lost sends it read beside it — what the run's choice of a tayyor matn needs both
+ * of (run `handleInbound`: which lines the line answers, system-reply `linesAfterOurSends`, and what was told), from
+ * one read of the outbox.
+ */
+export async function silenceOf(
+  managerUserId: string,
+  peerId: bigint,
+  messages: readonly ChatMessage[],
+): Promise<{ told: ReadonlySet<SystemReplyReason>; uncopied: readonly UncopiedSend[] }> {
+  const uncopied = await uncopiedSendsFor(managerUserId, peerId, messages[0]?.sentAt ?? null);
+  return { told: toldInSilence(messages, uncopied), uncopied };
 }
 
 /** The figures a customer stated, each as a REFERENCE the yo'lkira tool can take (money-2). */

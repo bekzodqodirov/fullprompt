@@ -11,7 +11,7 @@ import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
 import { lateNote } from './card';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
-import { chatForm, loadContext, toldInSilenceOf, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
+import { chatForm, loadContext, silenceOf, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type EligibilityFacts, type Ineligible } from './eligibility';
 import { anchorMaxAgeMsForTrigger, type OwnerTrigger } from './anchor-clock';
 import { aviaDaySources, COMPANY_RULE } from './avia-days';
@@ -29,7 +29,7 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, toolSpecs
 import { calcPricingFor, statedCalcMarks } from './calc-price';
 import { chinaMentions, namedOrigins, originMentions } from './origin';
 import { asksIfBot, draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { systemLocaleOf, systemReasonOf, systemReplyFor } from './system-reply';
+import { linesAfterOurSends, systemLocaleOf, systemReasonOf, systemReplyFor } from './system-reply';
 import { customerLabel, draftFromRun, writeDraft, writeNotice, type CalcChainOver, type ComposedAction, type WriteDraftResult } from './drafts';
 import { knownNamesFor } from './chat-names';
 import { answerHoldsFigure, ownerPersonalOf } from './owner-answer';
@@ -583,10 +583,21 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   // Once per silence, per kind: when our lines since the silence began already said THIS line, the customer was told —
   // and the voice or the Pashto still reaches HIM, as before, so a customer sending five voice notes is never answered by
   // nobody. A voice note beside a sticker is a voice note here too (worthy calls that burst `media_only`). «Our lines»
-  // include our sends the thread lost (context `toldInSilenceOf` — an 'unknown' line, one sent with no id): the gate asks
-  // the same reading before it presses one.
-  const system: SystemReplyReason | null = systemReasonOf(worthy, burst);
-  if (!worthy.worthy && (system === null || (await toldInSilenceOf(ctx.managerUserId, ctx.peerId, ctx.messages)).has(system))) {
+  // include our sends the thread lost (context `silenceOf` — an 'unknown' line, one sent with no id): the gate asks the
+  // same reading before it presses one. The line answers his lines after our NEWEST send, a lost one included, and is
+  // the first kind among them not yet said (the check of the F1-F3 fixes, R1): a voice note after our lost media line
+  // is owed the voice line — read by the thread's burst, the photo before that line chose the media line again, told,
+  // and the voice note reached nobody. Only this choice reads it: a model reply sees the thread's burst, unchanged.
+  const silence = worthy.worthy ? null : await silenceOf(ctx.managerUserId, ctx.peerId, ctx.messages);
+  const system: SystemReplyReason | null =
+    silence === null
+      ? null
+      : systemReasonOf(
+          worthy,
+          linesAfterOurSends(ctx.burst, silence.uncopied).map((m) => ({ text: m.body, media: m.media })),
+          silence.told,
+        );
+  if (!worthy.worthy && (system === null || silence!.told.has(system))) {
     const notice = system === 'voice' ? 'voice_only' : system === 'pashto' ? 'pashto' : null;
     if (notice !== null) {
       if (await runLedgerRow(job, attempt, 'notice', notice)) await writeNotice(ctx, notice);
