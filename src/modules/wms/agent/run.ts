@@ -131,6 +131,17 @@ const CAP_LOCK = 'agent_run_cap';
 const LOOP_WALL_MS = 90_000;
 
 /**
+ * One model round's output ceiling — what the model may WRITE before the API cuts it off, thinking included. The
+ * call sends no thinking parameter, and the model then thinks adaptively by default: those tokens count inside
+ * `max_tokens`. At 1 500 the ceiling was spent on thinking before `compose_reply` was written — on his server 4 of 10
+ * runs of 2026-11-18 ended `max_tokens` and the customer got nothing. Billing is per token GENERATED, so a ceiling
+ * costs nothing unused; the call stays non-streaming (with the client's own deadline set the SDK asks no
+ * streaming-size question, and 16 000 is under its ten-minute estimate besides), and the round's 60-second deadline
+ * and `LOOP_WALL_MS` stay the outer bounds. Every agent model call passes THIS (a fence reads the sources).
+ */
+export const AGENT_MAX_TOKENS = 16_000;
+
+/**
  * Look again shortly — as the SAME ask: the attempt this job runs as is fixed
  * now and carried (an edit's 100 + n is counted from the ledger, and the next
  * look would count again and land on 0 or on the draft's own slot), and the
@@ -316,7 +327,7 @@ export async function runLoop(input: {
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
       tools: toolSpecsFor({ calcPricing: input.calcPricing, aviaDays: input.aviaDays }),
-      maxTokens: 1_500,
+      maxTokens: AGENT_MAX_TOKENS,
     });
     if (res.usage) {
       usage.inputTokens += res.usage.inputTokens;
