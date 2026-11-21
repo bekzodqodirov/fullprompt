@@ -59,6 +59,13 @@ export interface ModelRequest {
   messages: ModelMessage[];
   tools: ModelToolSpec[];
   maxTokens: number;
+  /**
+   * The most this call may take IN ALL, retries included: the client's deadline is the smaller of this and the
+   * seam's own one-call ceiling, and nothing is retried inside it. A caller with a wall of its own (the AI
+   * sotuvchi's run) passes what is left of it — two attempts of a full minute each outlived the 90-second wall of the
+   * run that asked. Absent: one call's ceiling and the client's one retry, as the staff assistant always had.
+   */
+  budgetMs?: number;
 }
 
 /** What one call cost, in the API's own four numbers. */
@@ -158,13 +165,17 @@ export function microUsdToUsd(micro: number): number {
  * One model call's ceiling. The SDK's own default is ~10 minutes, which is
  * far too long for a question a person is waiting on — and round 97's lesson
  * is that an un-deadlined network call is the failure that looks like a hang
- * rather than an error. Sized so the loop's whole wall clock (120 s) is still
- * the outer bound.
+ * rather than an error. With the client's one retry a call may take twice
+ * this; a caller whose own wall is shorter says so (`budgetMs`).
  */
 const CALL_TIMEOUT_MS = 60_000;
 
 export const realCallModel: CallModel = async (req) => {
   const client = new Anthropic({ timeout: CALL_TIMEOUT_MS, maxRetries: 1 });
+  // A timeout is a request the provider may already have worked on: retried inside a budget it is a second bill and
+  // a second minute for one answer, so a budgeted call is asked once.
+  const options =
+    req.budgetMs === undefined ? undefined : { timeout: Math.max(1, Math.min(CALL_TIMEOUT_MS, req.budgetMs)), maxRetries: 0 };
   const response = await client.messages.create({
     model: req.model,
     max_tokens: req.maxTokens,
@@ -202,7 +213,7 @@ export const realCallModel: CallModel = async (req) => {
         };
       }),
     })),
-  });
+  }, options);
   return {
     stopReason: response.stop_reason,
     content: response.content.flatMap((block): ModelBlock[] => {
