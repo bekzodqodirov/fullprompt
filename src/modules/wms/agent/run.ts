@@ -337,7 +337,7 @@ async function eligibilityFacts(
   const [acc] = await db.execute<{ id: string }>(sql`SELECT id FROM tg_accounts WHERE manager_user_id = ${ctx.managerUserId}`);
   const guard = acc ? await readGuard(acc.id) : null;
   const [conv] = await db
-    .select({ humanUntil: agentConversations.humanUntil, mutedAt: agentConversations.mutedAt })
+    .select({ humanUntil: agentConversations.humanUntil, mutedAt: agentConversations.mutedAt, typingAt: agentConversations.peerTypingAt })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, ctx.managerUserId), eq(agentConversations.peerId, ctx.peerId)));
 
@@ -425,6 +425,7 @@ async function eligibilityFacts(
     anchorMaxAgeMs: anchorMaxAgeMsForTrigger('inbound'),
     anchorAutoSent: anchor.autoSent,
     lastOutAt: ctx.lastOut?.sentAt ?? null,
+    peerTypingAt: conv?.typingAt ?? null,
     loop: loopRan.signals.length > 0 || loopRan.held,
     loopVerdict: loopRan,
   };

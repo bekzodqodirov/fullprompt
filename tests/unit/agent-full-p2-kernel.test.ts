@@ -305,6 +305,7 @@ describe('ONE anchor clock (K2)', () => {
       anchorMaxAgeMs,
       anchorAutoSent: false,
       lastOutAt: null,
+      peerTypingAt: null,
       loop: false,
     });
     expect(eligibleForRun(facts(7 * DAY - HOUR, 7 * DAY))).toEqual({ ok: true });

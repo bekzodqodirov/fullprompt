@@ -25,7 +25,7 @@ import {
 import { AUTO_REFUSAL_WORDS } from '@/modules/wms/agent/auto-gate';
 import { FORCED_OFF_REASONS } from '@/modules/wms/agent/forced-off';
 import { AUTO_CONFIG_WORDS, AUTO_FEEDBACK_WORDS, STOP_AUTO_WORDS, copyRang, countdownMayRide, type AutoCardState } from '@/modules/wms/agent/auto-send';
-import { autoArmedWords, autoTodayWords } from '@/modules/wms/agent/bot-door';
+import { AUTO_MEDIA_WORDS, autoArmedWords, autoTodayWords } from '@/modules/wms/agent/bot-door';
 import { cardExtra, POLICY_WORDS } from '@/modules/wms/agent/card';
 import { renderDraftCardFull, type DraftRow } from '@/modules/wms/agent/card-io';
 
@@ -383,6 +383,15 @@ describe('words — every code said, never printed', () => {
     expect(held).toContain('oddiy javob 90 soniya kutib o‘zi ketadi');
     expect(held).toContain('kechasi hech qaysi narx o‘zi ketmaydi — ertalab');
     expect(autoArmedWords({ holdSec: 120, perDay: null, categories: BOTH }, { talkHoldSec: 0, nightPrices: 'all' })).toContain('kechasi jadval va VED narxi ketadi');
+  });
+
+  it('a reply to a photo or a file stays his, the tayyor matn to it goes — said whatever he ticked (the merged-tree seam review, finding 3)', () => {
+    for (const categories of [FOUR, [...FOUR, 'price'], [...FOUR, 'calc'], [...FOUR, 'price', 'calc_price', 'calc']]) {
+      const words = autoArmedWords({ holdSec: 120, perDay: null, categories }, TALK);
+      expect(words, categories.join(',')).toContain(AUTO_MEDIA_WORDS);
+      // Never the old promise that every reply to a photo stays his.
+      expect(words, categories.join(',')).not.toMatch(/rasm yoki faylga javob[^;]*har doim/u);
+    }
   });
 
   it('…and never two opposite things (review D3): nothing ticked says no price goes; one box ticked names only its own night', () => {

@@ -250,18 +250,20 @@ export async function loopFactsFor(
 }
 
 /**
- * The gate's `loop` fact (`auto-send autoFactsFor`), judged at `at` — when the reply would go — at the scheduling and
- * again at the press, like every other fact: the reply is one of our last sends, word for word (`own_repeat`), or he
- * was told this chat loops less than the window before (the hold, J33 — a reply written before the notice, or his ✍️
- * or a VED answer meanwhile, waits for his ✅). Not the anchor's two signals: those are eligibility's, which an
- * owner-triggered draft never asked and must not meet here.
+ * The gate's two loop halves (`auto-send autoLoopFact` decides which count), judged at `at` — when the reply would
+ * go — at the scheduling and again at the press, like every other fact: the reply is one of our last sends, word for
+ * word (`ownRepeat`), and he was told this chat loops less than the window before (`held`, J33 — a reply written
+ * before the notice, or his ✍️ or a VED answer meanwhile, waits for his ✅). Not the anchor's two signals: those are
+ * eligibility's, which an owner-triggered draft never asked and must not meet here. Two halves and not one answer
+ * because a tayyor matn's own repeat is not the loop's to judge (its rule is «once per silence», system-reply
+ * `toldInSilence`): the same line for a chat is the point of `pick`, and «the same words again» would refuse it.
  */
 export async function gateLoopFor(
   d: { managerUserId: string; peerId: bigint; anchorTgMessageId: bigint; body: string },
   at: Date,
-): Promise<boolean> {
+): Promise<{ held: boolean; ownRepeat: boolean }> {
   const verdict = loopVerdict(await loopFactsFor(db, d.managerUserId, d.peerId, d.anchorTgMessageId, at, d.body));
-  return verdict.held || verdict.signals.includes('own_repeat');
+  return { held: verdict.held, ownRepeat: verdict.signals.includes('own_repeat') };
 }
 
 /**

@@ -23,7 +23,8 @@ import { AGENT_NIGHT_PRICES } from '@/modules/platform/settings/service';
  *  - a complaint — the model's label or the burst's own words — stays his;
  *  - the night bars a CLASS by his setting (`nightBars`);
  *  - a photo is not asked of the code's own tayyor matn;
- *  - the language rule is today's for every class (J19: the talk relaxation is held — see below);
+ *  - the language rule is today's for every MODEL reply, whatever its class; J19's one relaxation (a guess naming no
+ *    language admits Uzbek) is the tayyor matn's alone (the merged-tree seam review, finding 4 — see below);
  *  - the hold is the class's (`holdSecFor`): talk its own setting (0 = at once), a price the layer's.
  */
 
@@ -254,12 +255,13 @@ describe('a photo is not asked of the code’s own tayyor matn', () => {
   });
 });
 
-describe('the language — today’s rule for every class (J19)', () => {
+describe('the language — today’s rule for every model reply (J19)', () => {
   /**
    * J19 ruled one relaxation for talk: a guess that names no language admits Uzbek. Measured against the reader corpus
    * BEFORE a line of it was written, it lets eleven dangerous rows go (a Russian customer writing in Latin letters,
-   * an English one) — so it is HELD for his answer with the list (the contract's zero), and talk keeps today's rule. A
-   * price keeps it whatever the talk rule becomes (`language_money` in the corpus pins that side).
+   * an English one) — so for the MODEL's replies it is held (the contract's zero) and talk keeps today's rule. A price
+   * keeps it whatever the talk rule becomes (`language_money` in the corpus pins that side). The tayyor matn has it
+   * (the last case below).
    */
   const lang = (i: AutoGateInput, language: string, guess: AutoGateInput['draft']['customerLocale']) => {
     i.draft.language = language;
@@ -282,6 +284,36 @@ describe('the language — today’s rule for every class (J19)', () => {
       expect(lang(talk(), language, guess), `talk ${language} ${JSON.stringify(guess)}`).toEqual(want);
       expect(lang(quote(), language, guess), `price ${language} ${JSON.stringify(guess)}`).toEqual(want);
     }
+  });
+
+  /**
+   * The lead's ruling on the merged tree (finding 4): the eleven corpus rows that held the relaxation back are MODEL
+   * replies, so it is given to the code's own Uzbek line alone — a first photo or voice note shows no language at all,
+   * and its «write it as text» goes by itself. The model's reply to the same chat keeps today's rule byte for byte.
+   */
+  it('a guess naming no language admits the tayyor matn in Uzbek — and nothing else', () => {
+    const tayyor = (language: string, guess: AutoGateInput['draft']['customerLocale']) => {
+      const i = talk();
+      i.draft.systemAck = true;
+      i.draft.category = 'other';
+      i.draft.body = 'Faylni oldim, lekin hozircha ocha olmayapman — kerakli ma’lumotni matn bilan yozib yuboring.';
+      i.draft.confidence = null;
+      return lang(i, language, guess);
+    };
+    const none = { locale: null, confident: false };
+    expect(tayyor('uz', none)).toEqual([]);
+    // The model's reply to the same silence: held, as today.
+    expect(lang(talk(), 'uz', none)).toEqual(['language']);
+    // A tayyor matn in another language on that guess: held — the relaxation names Uzbek alone.
+    expect(tayyor('ru', none)).toEqual(['language']);
+    expect(tayyor('uz_cyrl', none)).toEqual(['language']);
+    // No guess stored at all (a draft written before 0148) says nothing either way: held.
+    expect(tayyor('uz', null)).toEqual(['language']);
+    // A guess that names a language keeps today's rule for the tayyor matn too.
+    expect(tayyor('uz', { locale: 'ru', confident: true })).toEqual(['language']);
+    expect(tayyor('ru', { locale: 'ru', confident: true })).toEqual([]);
+    // …and the model's priced reply neither: the mark decides, never the class.
+    expect(lang(quote(), 'uz', none)).toEqual(['language']);
   });
 });
 

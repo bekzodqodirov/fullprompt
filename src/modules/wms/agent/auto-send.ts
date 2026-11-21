@@ -246,6 +246,23 @@ export function systemAckOf(policy: { system?: unknown }): boolean {
   return (SYSTEM_REPLY_REASONS as readonly unknown[]).includes(policy.system);
 }
 
+/**
+ * The gate's `loop` fact (stage 1a P2), judged at `at` — when the reply would go: the half hour he was told the AI
+ * keeps out (`held`), and — for the model's words only — the reply being one of our last sends word for word. A
+ * tayyor matn takes the `held` half alone (the merged-tree seam review, finding 1): `pick` gives a chat the same
+ * wording every time ON PURPOSE (G10 counts identical texts across chats), so a photo after an ordinary reply got
+ * the very media line it got ten minutes before and was refused `loop` — while its own repeat rule, «once per
+ * silence, per kind» (system-reply `toldInSilence`), had already said it is owed. A robot sending photos is still
+ * caught where a robot is: eligibility's `fast_peer`, asked before any tayyor matn is drafted.
+ */
+export async function autoLoopFact(
+  d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId' | 'policy' | 'finalBody' | 'proposedBody'>,
+  at: Date,
+): Promise<boolean> {
+  const half = await gateLoopFor({ managerUserId: d.managerUserId, peerId: d.peerId, anchorTgMessageId: d.anchorTgMessageId, body: digestBody(d) }, at);
+  return half.held || (!systemAckOf((d.policy ?? {}) as { system?: unknown }) && half.ownRepeat);
+}
+
 /** The code put the honest line in this reply (stage 1a P3, `policy.honestLine`): `true` and nothing else. */
 export function honestLineOf(policy: { honestLine?: unknown }): boolean {
   return policy.honestLine === true;
@@ -474,9 +491,10 @@ export async function autoFactsFor(
     workAccount: acc?.work === true,
     at: opts.at,
     now: opts.now,
-    // The chat loop (stage 1a P2), judged when the reply would go: word for word one of our last sends here, or a
-    // chat he was told loops less than the window before (the hold, J33).
-    loop: await gateLoopFor({ managerUserId: d.managerUserId, peerId: d.peerId, anchorTgMessageId: d.anchorTgMessageId, body: digestBody(d) }, opts.at),
+    // The chat loop (stage 1a P2), judged when the reply would go: word for word one of our last sends here (never
+    // asked of a tayyor matn — `autoLoopFact`), or a chat he was told loops less than the window before (the hold, J33).
+    // The ONE fact read at `opts.at`: a caller that learns the due time only from these facts reads it again there.
+    loop: await autoLoopFact(d, opts.at),
     // The customer complains or asks for a person in his own words (P3, complaint.ts) — the stored burst, read now.
     complaint: complaintIn(await burstTexts(d)),
     // His night setting, on the pool like every fact here — never inside the transaction that records the verdict.
@@ -637,6 +655,21 @@ export function holdSecFor(cls: AutoClass, holds: { talk: number; price: number 
 }
 
 /**
+ * Move the facts to the moment the reply would go, once its class has told the hold: `at`, and the loop fact read
+ * there again (the only fact `autoFactsFor` reads at `at`). The class asks no loop, so it is decided first; a hold of
+ * 0 changes no moment and reads nothing twice.
+ */
+async function atDue(
+  facts: AutoGateInput,
+  d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId' | 'policy' | 'finalBody' | 'proposedBody'>,
+  dueAt: Date,
+): Promise<void> {
+  if (dueAt.getTime() === facts.at.getTime()) return;
+  facts.at = dueAt;
+  facts.loop = await autoLoopFact(d, dueAt);
+}
+
+/**
  * The plan for a reply the inbound run is about to write — or null when 0145
  * has not landed, and null (logged) when it could not be computed: a plan is
  * never a reason for the draft to fail.
@@ -648,12 +681,14 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
     // Stored as `createDraft` stores them: a category outside the seven is 'other', the confidence to cents.
     const category = input.draft.category && (CATEGORIES as readonly string[]).includes(input.draft.category) ? input.draft.category : 'other';
     const draft: AutoDraftShape = { ...input.draft, category, confidence: confidenceOf(input.draft.confidence) };
-    // The facts first, then the class, then the hold its class keeps, then the due time — `at` is only carried into
-    // the gate (no fact is read by it), so it is set once the hold is known, and the night is judged at that moment.
+    // The facts first, then the class, then the hold its class keeps, then the due time — and only then the moment
+    // the reply would go: the night is judged at it, and so is the one fact read at `at`, the loop (`autoLoopFact`:
+    // the half hour he was told of, our last sends). Read at `now`, a price written in the hold's last two minutes was
+    // refused `loop` for a half hour that is over before it goes (the merged-tree seam review, finding 6).
     const facts = await autoFactsFor(draft, { at: input.now, now: input.now, tools: input.tools, config, scheduling: true });
     const holdSec = holdSecFor(autoClassOf(facts), { talk: await readAgentTalkHoldSec(), price: config.holdSec });
     const dueAt = new Date(input.now.getTime() + holdSec * 1000);
-    facts.at = dueAt;
+    await atDue(facts, draft, dueAt);
     const verdict = autoVerdict(facts);
     return {
       eligible: verdict.eligible,
@@ -1187,7 +1222,8 @@ export async function rejudgeNightHeld(now: Date = new Date()): Promise<number> 
       const facts = await autoFactsFor(d, { at: now, now, config, scheduling: true });
       const holdSec = holdSecFor(autoClassOf(facts), { talk, price: config.holdSec });
       const dueAt = new Date(now.getTime() + holdSec * 1000);
-      facts.at = dueAt;
+      // The moment it would go, and the loop read at it — `autoPlanFor`'s own order.
+      await atDue(facts, d, dueAt);
       const verdict = autoVerdict(facts);
       // Compare-and-set on what was read: a person's press, a disarm or another sweep that moved the row first wins.
       const still = and(

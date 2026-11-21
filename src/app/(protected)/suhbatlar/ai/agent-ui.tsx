@@ -40,7 +40,7 @@ import {
   type AgentActionResult,
 } from '@/modules/wms/agent/web-actions';
 // The kinds' one home (a pure module): never the gate, which would pull the send step into this bundle.
-import { AUTO_SEND_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { AUTO_SEND_CATEGORIES, type AutoWaits } from '@/modules/wms/agent/auto-categories';
 // The lesson's limits — a pure module too (its one import, the owner's word, has none).
 import { LESSON_LIMITS } from '@/modules/wms/agent/lesson-rules';
 import { CATEGORY_KEYS, errorKey } from './labels';
@@ -853,12 +853,18 @@ export function AutoArmButtons({
   canArm,
   canDisarm,
   armBlocked = false,
+  waits,
 }: {
   armed: boolean;
   canArm: boolean;
   canDisarm: boolean;
   /** Arming would be refused for a reason the panel already says above the button. */
   armBlocked?: boolean;
+  /**
+   * What waits on its card by the boxes he ticked (auto-categories `autoWaitsOf`) — REQUIRED: the confirm promises a
+   * price hold only beside a ticked price, as the bot's arming words do (the merged-tree seam review, finding 5).
+   */
+  waits: AutoWaits;
 }) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
@@ -890,7 +896,7 @@ export function AutoArmButtons({
           data-testid="agent-auto-arm"
           onClick={() => {
             if (armBlocked) return;
-            if (!window.confirm(t('autoArmConfirm'))) return;
+            if (!window.confirm(t('autoArmConfirm', { waits }))) return;
             run(() => agentAutoArmAction(true));
           }}
         >

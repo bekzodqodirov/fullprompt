@@ -237,6 +237,7 @@ describe('the CHAT loop detector (stage 1a P2 «Halqa») — the customer’s ch
       anchorMaxAgeMs: AGENT_LIMITS.anchorMaxAgeMs,
       anchorAutoSent: false,
       lastOutAt: null,
+      peerTypingAt: null,
       loop: false,
     };
 

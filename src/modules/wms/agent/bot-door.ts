@@ -25,6 +25,7 @@ import {
   type AutoConfig,
 } from './auto-send';
 import { autoDisarmWords } from './auto-card';
+import { autoWaitsOf, type AutoWaits } from './auto-categories';
 import { chatProof } from './context';
 import { answerQuestion, decideDraft, releaseAnswering, storeOwnerAnswer, submitOwnText, type AnswerRefusal, type DecideRefusal, type SupersededDetail } from './decide';
 import { ANSWER_CONTACT_WORDS, answerContactWords } from './owner-answer';
@@ -1342,10 +1343,22 @@ function nightPriceWords(price: boolean, vedPrice: boolean, night: AgentNightPri
 }
 
 /**
+ * A photo, a file or a voice note (the page's `agentAi.autoHint` says the same, the merged-tree seam review's finding
+ * 3): the model's reply to a burst that carried one stays his (the gate's `media` — it cannot open what it answers),
+ * while the code's own «write it as text» line to it goes by itself (`systemAck` is never asked `media`).
+ */
+export const AUTO_MEDIA_WORDS =
+  'rasm yoki faylli xabarga AI yozgan javob sizga qoladi, rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn esa o‘zi ketadi';
+
+/** What waits on its card, by the boxes he ticked (`autoWaitsOf` — the page's `{waits}` select says the same). */
+const WAITS_WORDS: Record<AutoWaits, string> = { none: '', price: 'narx', calc: 'hisoblatish', both: 'narx va hisoblatish' };
+
+/**
  * What arming promises — the page's own sentence (`agentAi.autoArmConfirm`, `autoNumbers`), so the bot and the page
  * never tell him two things (stage 1a, J22): ordinary talk goes by itself at once — or after the hold he set — day and
  * night, and the AI never writes first; a price waits on its card with ⏸, at night as his setting says; a complaint
- * stays his. What may go and what stays is built from the STORED kinds, never a promise the next reply breaks.
+ * stays his; a reply to a photo or a file stays his while the tayyor matn to it goes. What may go and what stays is
+ * built from the STORED kinds, never a promise the next reply breaks.
  */
 export function autoArmedWords(
   c: Pick<AutoConfig, 'holdSec' | 'perDay' | 'categories'>,
@@ -1363,14 +1376,14 @@ export function autoArmedWords(
     ...(vedPrice ? ['VED javobidagi narx (sozlamadagi ustama bilan, bo‘sh bo‘lsa ustamasiz) qoidalar ruxsat bersa o‘zi ketadi'] : []),
     ...(c.categories.includes('calc') ? ['hisoblatish so‘rovi qoidalar ruxsat bersa VEDga o‘zi ketadi (kechasi — ertalab)'] : []),
   ];
-  const kept = [`${stays} har doim sizga qoladi`, ...goes].join('; ');
+  const kept = [`${stays} har doim sizga qoladi`, AUTO_MEDIA_WORDS, ...goes].join('; ');
   // A talk hold above 0 waits on its card like a price does: ⏸ is said with it, or a text with no price box ticked
   // would never name the button that stops a reply.
   const talkGoes = talk.talkHoldSec === 0 ? 'darhol o‘zi ketadi' : `${holdWords(talk.talkHoldSec)} kutib o‘zi ketadi (⏸ bilan to‘xtatasiz)`;
   // The price hold is said only for what may go by itself under it — a ticked price box, a ticked calculation (the
   // gate's `holdSecFor`: every class but talk waits the price hold) — and the night only for the ticked prices: with
   // nothing ticked, «narx … o‘zi ketadi» beside «narx … har doim sizga qoladi» told him two opposite things (review D3).
-  const waits = [...(price || vedPrice ? ['narx'] : []), ...(c.categories.includes('calc') ? ['hisoblatish'] : [])].join(' va ');
+  const waits = WAITS_WORDS[autoWaitsOf(c.categories)];
   const night = nightPriceWords(price, vedPrice, talk.nightPrices);
   const held = waits
     ? `${waits.charAt(0).toUpperCase()}${waits.slice(1)} kartada ${holdWords(c.holdSec)} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing${night ? `; kechasi ${night}` : ''}. `

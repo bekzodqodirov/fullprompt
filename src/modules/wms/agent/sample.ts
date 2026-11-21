@@ -78,11 +78,20 @@ const MONEY_REPLY = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(
   WHERE e->>'kind' = 'money')`;
 
 /**
+ * A tayyor matn the code wrote (`policy.system`, stage 1a P3) — never the model's words. The sample leaves it out: it
+ * has no model rating at all (stored NULL), so «an unknown confidence first» put every «write it as text» line of the
+ * day ahead of the replies the net is for (the merged-tree seam review, finding 2), and its words are his own, read
+ * once in the deploy message. Any `system` key at all — the draw asks the same «not a model reply» whatever reason a
+ * later build gives it.
+ */
+const TAYYOR_MATN = sql`(${agentDrafts}.policy->>'system') IS NOT NULL`;
+
+/**
  * Draw the sample of `day`, once: under one lock per day, nothing is drawn when the day already has one (a second
  * run of the job draws no second ten). The replies: pressed by the machine (`agent_auto_verdicts.state = 'pressed'`),
- * whose outbox row is `sent` — a reply the customer GOT — in the span, never one drawn before; money first, then the
- * lowest stored confidence (an unknown one first), then a hash of (day, id): fair, and the same on a re-read.
- * Returns how many it drew. One migration behind 0151: none.
+ * whose outbox row is `sent` — a reply the customer GOT — in the span, never one drawn before, never a tayyor matn;
+ * money first, then the lowest stored confidence (an unknown one first), then a hash of (day, id): fair, and the same
+ * on a re-read. Returns how many it drew. One migration behind 0151: none.
  */
 export async function drawSample(day: string, cadence: SampleCadence): Promise<number> {
   if (!(await agentToliq1aReady())) return 0;
@@ -99,6 +108,7 @@ export async function drawSample(day: string, cadence: SampleCadence): Promise<n
        WHERE v.state = 'pressed' AND o.status = 'sent'
          AND v.pressed_at >= ${from.toISOString()}::timestamptz AND v.pressed_at < ${to.toISOString()}::timestamptz
          AND NOT EXISTS (SELECT 1 FROM agent_samples s WHERE s.draft_id = v.draft_id)
+         AND NOT ${TAYYOR_MATN}
        ORDER BY ${MONEY_REPLY} DESC, ${agentDrafts}.confidence ASC NULLS FIRST, md5(${day} || ${agentDrafts}.id::text)
        LIMIT ${SAMPLE_SIZE}`);
     const rows = [...picked];

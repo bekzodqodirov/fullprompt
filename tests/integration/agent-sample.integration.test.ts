@@ -58,7 +58,16 @@ async function minted(label: string, n: number): Promise<string> {
  * One reply as the machine left it: its anchor (the customer's line), the draft, the verdict and the outbox row.
  * `money` puts a money line in the stored ledger; `state`/`outbox` say how it ended.
  */
-async function reply(opts: { money?: boolean; confidence?: string | null; state?: 'pressed' | 'stopped'; outbox?: 'sent' | 'cancelled'; at?: Date; body?: string }): Promise<string> {
+async function reply(opts: {
+  money?: boolean;
+  confidence?: string | null;
+  state?: 'pressed' | 'stopped';
+  outbox?: 'sent' | 'cancelled';
+  at?: Date;
+  body?: string;
+  /** A tayyor matn the code wrote (`policy.system`): no model rating, as the run stores it. */
+  system?: 'voice' | 'media' | 'pashto';
+}): Promise<string> {
   anchorSeq += 1n;
   randomSeq += 1n;
   await db.insert(tgMessages).values({
@@ -80,7 +89,7 @@ async function reply(opts: { money?: boolean; confidence?: string | null; state?
       proposedBody: opts.body ?? `javob ${anchorSeq}`,
       status: 'approved',
       confidence: opts.confidence === undefined ? '0.90' : opts.confidence,
-      policy: { ledger: opts.money ? [{ raw: '800 $', kind: 'money', source: 'tool' }] : [] },
+      policy: { ledger: opts.money ? [{ raw: '800 $', kind: 'money', source: 'tool' }] : [], ...(opts.system ? { system: opts.system } : {}) },
     })
     .returning({ id: agentDrafts.id });
   const at = opts.at ?? PRESSED_AT;
@@ -201,6 +210,18 @@ describe('the draw — what the customer got from the machine, at most ten, once
     // A second run of the job the same day draws nothing — never a second ten.
     expect(await drawSample(DAY, 'daily')).toBe(0);
     expect(await sampled()).toHaveLength(10);
+  });
+
+  it('a tayyor matn is never drawn (the merged-tree seam review, finding 2): its stored NULL rating no longer crowds the model’s replies out', async () => {
+    // A busy day of photos and voice notes: eleven «write it as text» lines, each with no rating (the run stores none).
+    const canned = [] as string[];
+    for (let i = 0; i < 11; i += 1) canned.push(await reply({ confidence: null, system: i % 2 === 0 ? 'media' : 'voice' }));
+    const model = await reply({ confidence: '0.90' });
+    const modelUnrated = await reply({ confidence: null });
+    expect(await drawSample(DAY, 'daily')).toBe(2);
+    const rows = await sampled();
+    expect(rows.map((r) => r.draftId)).toEqual([modelUnrated, model]);
+    for (const id of canned) expect(rows.map((r) => r.draftId)).not.toContain(id);
   });
 
   it('a weekly sample reaches back six days and never draws a reply sampled before', async () => {

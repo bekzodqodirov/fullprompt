@@ -696,6 +696,7 @@ describe('eligibleForRun (§17.4)', () => {
     anchorMaxAgeMs: AGENT_LIMITS.anchorMaxAgeMs,
     anchorAutoSent: false,
     lastOutAt: null,
+    peerTypingAt: null,
     loop: false,
   };
   it('passes a fresh customer question', () => expect(eligibleForRun(f)).toEqual({ ok: true }));
@@ -712,5 +713,15 @@ describe('eligibleForRun (§17.4)', () => {
     [{ anchorSentAt: new Date(now.getTime() - 25 * 3_600_000) }, 'too_old'],
   ] as const)('refuses %o → %s', (patch, reason) => {
     expect(eligibleForRun({ ...f, ...patch })).toEqual({ ok: false, reason });
+  });
+
+  it('a line seconds after ours is an echo — unless he was seen typing after ours (the merged-tree seam review, finding 7)', () => {
+    const ours = new Date(f.anchorSentAt.getTime() - 3_000);
+    // No typing seen, or a stamp from before our line: the 5-second echo, as before.
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: null })).toEqual({ ok: false, reason: 'echo' });
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: new Date(ours.getTime() - 1) })).toEqual({ ok: false, reason: 'echo' });
+    // Typing at or after our line: a person answered — a robot never types (J8's principle).
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: new Date(ours.getTime() + 1_000) })).toEqual({ ok: true });
+    expect(eligibleForRun({ ...f, lastOutAt: ours, peerTypingAt: ours })).toEqual({ ok: true });
   });
 });

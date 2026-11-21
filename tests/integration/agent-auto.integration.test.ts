@@ -1049,9 +1049,13 @@ describe('/agent auto (bot-door `agentCommand`)', () => {
     await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
     // DELIBERATE EDIT (stage 1a, J22): the bot says what the page says — talk at its own hold (this file's two minutes),
     // with ⏸. DELIBERATE EDIT (review D3): no price box is ticked in this file, so no price hold and no night price is
-    // promised — only «narx … har doim sizga qoladi», never beside «narx … keyin o‘zi ketadi».
+    // promised — only «narx … har doim sizga qoladi», never beside «narx … keyin o‘zi ketadi». DELIBERATE EDIT (the
+    // merged-tree seam review, finding 3): the bot says what the page's hint says about a photo — the AI's reply stays
+    // his, the tayyor matn to it goes — as the one clause after what stays his.
     const armed = await agentCommand(ownerId, 'AUTO  ON');
-    expect(armed).toMatch(/^🤖 O‘zi yuborish yoqildi: oddiy javob 2 daqiqa kutib o‘zi ketadi \(⏸ bilan to‘xtatasiz\) — kechasi ham .*narx va shikoyat har doim sizga qoladi\.$/u);
+    expect(armed).toMatch(
+      /^🤖 O‘zi yuborish yoqildi: oddiy javob 2 daqiqa kutib o‘zi ketadi \(⏸ bilan to‘xtatasiz\) — kechasi ham .*narx va shikoyat har doim sizga qoladi; rasm yoki faylli xabarga AI yozgan javob sizga qoladi, .*tayyor matn esa o‘zi ketadi\.$/u,
+    );
     expect(armed).not.toContain('Narx kartada');
     expect((await readAutoConfig())!.armed).toBe(true);
     // Any super_admin may switch it off.

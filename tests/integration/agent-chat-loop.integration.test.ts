@@ -11,6 +11,7 @@ import {
   agentOutbox,
   agentRuns,
   agentSignals,
+  attachments,
   clients,
   notifications,
   roles,
@@ -21,7 +22,9 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { autoVerdict } from '@/modules/wms/agent/auto-gate';
-import { autoFactsFor, type AutoDraftShape } from '@/modules/wms/agent/auto-send';
+import { ORDINARY_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { autoFactsFor, autoPlanFor, readAutoConfig, type AutoConfig, type AutoDraftShape } from '@/modules/wms/agent/auto-send';
+import { systemReplyFor } from '@/modules/wms/agent/system-reply';
 import {
   __forgetAgentToliq1aReady,
   __pretendAgentToliq1aBehind,
@@ -450,5 +453,177 @@ describe('the gate’s `loop` — own_repeat, read off the stored sends (stage 1
     // One migration behind the claim is never read.
     __pretendAgentToliq1aBehind();
     expect((await autoFactsFor(shape(anchor, reply), { at: now, now, config: null })).loop).toBe(false);
+  });
+});
+
+describe('a tayyor matn and the loop (the merged-tree seam review, finding 1)', () => {
+  /** The layer armed with nothing ticked but talk — what a stage-1a owner arms on day one. */
+  const ARMED: AutoConfig = {
+    armed: true,
+    armedAt: new Date(),
+    armedBy: null,
+    holdSec: 120,
+    perDay: null,
+    maxChars: 400,
+    minConfidence: 0.8,
+    categories: [...ORDINARY_CATEGORIES],
+    disarmedAt: null,
+    disarmReason: null,
+  };
+
+  it('photo → media line → text → reply → photo again (9 min): the second media line goes — `pick` gives the chat its one wording, never a loop', async () => {
+    // The line `pick` gives this chat, every time — G10 counts identical texts across chats, so a chat keeps one.
+    const mediaLine = systemReplyFor({ reason: 'media', locale: 'uz', peerId: PEER }).replyText;
+    await line('in', '', min(1), true);
+    await machineSend(mediaLine, min(2));
+    await line('in', 'Yuk 3 kub, 450 kg, Guanchjoudan', min(3));
+    await machineSend('Rahmat, qachon jo‘natmoqchisiz?', min(4));
+    // Our last line is the reply, so the silence began after it: the photo is owed its line again (`toldInSilence`).
+    // A kept photo is a stored file beside its line — what the run reads as a photo, and the media line answers.
+    const photo = await line('in', '', min(10), true);
+    const [row] = await db.select({ id: tgMessages.id }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, photo)));
+    const [file] = await db
+      .insert(attachments)
+      .values({
+        entityType: 'tg_message',
+        entityId: row!.id,
+        kind: 'photo',
+        storageKey: `agent-chat-loop-test/${SUFFIX}/${row!.id}`,
+        fileName: 'invoice.jpg',
+        contentType: 'image/jpeg',
+        sizeBytes: 10,
+        uploadedBy: ownerId,
+      })
+      .returning({ id: attachments.id });
+    try {
+      expect(await handleInbound(job(photo), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+    } finally {
+      await db.delete(attachments).where(eq(attachments.id, file!.id));
+    }
+    const [d] = await db
+      .select()
+      .from(agentDrafts)
+      .where(and(eq(agentDrafts.peerId, PEER), eq(agentDrafts.status, 'pending'), eq(agentDrafts.anchorTgMessageId, photo)));
+    expect(d!.proposedBody).toBe(mediaLine);
+    expect((d!.policy as { system?: unknown }).system).toBe('media');
+
+    await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
+    try {
+      const at = min(11);
+      const facts = await autoFactsFor(d!, { at, now: at, config: ARMED });
+      expect(facts.loop).toBe(false);
+      expect(autoVerdict(facts)).toEqual({ eligible: true, reasons: [] });
+      // The same words as the MODEL's reply are its own repeat: the rule stands for every reply but the tayyor matn.
+      const asModel = await autoFactsFor({ ...d!, policy: { ...(d!.policy as object), system: undefined } }, { at, now: at, config: ARMED });
+      expect(asModel.loop).toBe(true);
+      expect(autoVerdict(asModel).reasons).toContain('loop');
+    } finally {
+      await db.update(tgAccounts).set({ workAccount: false }).where(eq(tgAccounts.id, accountId));
+    }
+  });
+
+  it('…while the half hour he was told of still holds the tayyor matn too (J33): its `held` half is asked of every reply', async () => {
+    const anchor = await line('in', '', min(9), true);
+    const at = new Date();
+    await db.insert(agentSignals).values({
+      topic: 'loop',
+      managerUserId: ownerId,
+      peerId: PEER,
+      clientId,
+      facts: { signals: ['same_inbound'] },
+      dedupeKey: loopSignalKey(ownerId, PEER, min(8)),
+      createdAt: new Date(at.getTime() - 5 * 60_000),
+    });
+    const mediaLine = systemReplyFor({ reason: 'media', locale: 'uz', peerId: PEER }).replyText;
+    const tayyor: AutoDraftShape = {
+      managerUserId: ownerId,
+      peerId: PEER,
+      runId: null,
+      clientId,
+      leadId: null,
+      anchorTgMessageId: anchor,
+      kind: 'reply',
+      status: 'pending',
+      finalBody: null,
+      proposedBody: mediaLine,
+      blocked: false,
+      needsOwner: false,
+      category: 'other',
+      language: 'uz',
+      confidence: null,
+      policy: { warnings: [], notes: [], noteCodes: [], system: 'media' },
+      actions: [],
+    };
+    expect((await autoFactsFor(tayyor, { at, now: at, config: null })).loop).toBe(true);
+  });
+});
+
+describe('the loop at the moment a price would go (the merged-tree seam review, finding 6)', () => {
+  it('a price written in the hold’s last two minutes is not refused `loop` at planning — its due time falls after the half hour', async () => {
+    const anchor = await line('in', '5 kub 800 kg Yiwudan narxi?', min(9));
+    const now = new Date();
+    // The price's hold is the layer's (`holdSecFor`), read as stored; he was told so long ago that the half hour ends
+    // halfway through it — still holding now, over by the time the price would go.
+    const hold = (await readAutoConfig())!.holdSec * 1000;
+    expect(hold).toBeGreaterThan(0);
+    await db.insert(agentSignals).values({
+      topic: 'loop',
+      managerUserId: ownerId,
+      peerId: PEER,
+      clientId,
+      facts: { signals: ['same_inbound'] },
+      dedupeKey: loopSignalKey(ownerId, PEER, min(8)),
+      createdAt: new Date(now.getTime() - 30 * 60_000 + hold / 2),
+    });
+    const price: AutoDraftShape = {
+      managerUserId: ownerId,
+      peerId: PEER,
+      runId: null,
+      clientId,
+      leadId: null,
+      anchorTgMessageId: anchor,
+      kind: 'reply',
+      status: 'pending',
+      finalBody: null,
+      proposedBody: '5 kub, 800 kg yukingiz uchun Toshkentgacha taxminan 960 $. Boj va QQS alohida hisoblanadi.',
+      blocked: false,
+      needsOwner: false,
+      category: 'price',
+      language: 'uz',
+      confidence: '0.90',
+      policy: {
+        warnings: [],
+        notes: [],
+        noteCodes: [],
+        ledger: [{ raw: '960 $', kind: 'money', source: 'tool', origin: 'tool', tool: 'yolkira_estimate', role: 'total' }],
+        memory: { hasEstimate: true },
+      },
+      actions: [],
+    };
+    const tools = [{ name: 'yolkira_estimate', ok: true, text: '', estimate: true }];
+    // The fact at `now` still holds (the half hour is not over)…
+    expect((await autoFactsFor(price, { at: now, now, tools, config: null })).loop).toBe(true);
+    // …and the plan reads it where the price would go: one hold on, half a hold past the half hour.
+    const plan = await autoPlanFor({ draft: price, tools, now });
+    expect(plan).not.toBeNull();
+    expect(plan!.holdSec * 1000).toBe(hold);
+    expect(plan!.reasons).not.toContain('loop');
+  });
+});
+
+describe('the echo window and his typing (the merged-tree seam review, finding 7)', () => {
+  it('«ha» three seconds after our question is an echo — unless the listener saw him typing after it: then it is answered', async () => {
+    await line('in', 'Yuk Yiwudan, 3 kub', min(1));
+    await machineSend('Rastamojkani ham alohida hisoblab beraymi?', min(2));
+    const yes = await line('in', 'ha', sec(min(2), 3));
+    expect(await handleInbound(job(yes), { callModel: never() })).toEqual({ outcome: 'refused', reason: 'echo' });
+
+    await clearChat();
+    await line('in', 'Yuk Yiwudan, 3 kub', min(1));
+    await machineSend('Rastamojkani ham alohida hisoblab beraymi?', min(2));
+    const typed = await line('in', 'ha', sec(min(2), 3));
+    // The listener's one stamp: he typed a second after our line went.
+    await db.insert(agentConversations).values({ managerUserId: ownerId, peerId: PEER, peerTypingAt: sec(min(2), 1) });
+    expect(await handleInbound(job(typed), { callModel: answers('Yaxshi, tovar nomi va og‘irligini yozing.') })).toMatchObject({ outcome: 'draft' });
   });
 });

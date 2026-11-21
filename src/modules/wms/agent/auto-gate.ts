@@ -437,9 +437,10 @@ export interface AutoGateInput {
    */
   now: Date;
   /**
-   * The reply about to go is, folded, one of our last sends to this chat in the loop window (`own_repeat`), or he was
-   * told this chat loops less than the window before it would go — the notice's half hour (J33). Stage 1a P2, loop
-   * `gateLoopFor`. The anchor's two loop signals are eligibility's: such a run drafts nothing.
+   * The reply about to go is, folded, one of our last sends to this chat in the loop window (`own_repeat` — never of
+   * a tayyor matn, whose repeat rule is «once per silence»), or he was told this chat loops less than the window before
+   * it would go — the notice's half hour (J33). Stage 1a P2, auto-send `autoLoopFact` over loop `gateLoopFor`. The
+   * anchor's two loop signals are eligibility's: such a run drafts nothing.
    */
   loop: boolean;
   /**
@@ -592,13 +593,15 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // asked of the model's OWN label, so a status claim riding an admitted quote is still asked for its reading.
   if (label === 'status' && !input.tools.some((t) => t.name === STATUS_TOOL && t.ok)) hit.add('status_unbacked');
   const cls = autoClassOf(input);
-  // Today's language rule for EVERY class (J19): a price keeps it byte for byte, and so — for now — does talk. The
-  // ONE relaxation J19 rules for talk (a guess that names no language admits Uzbek) was measured against the reader
-  // corpus before a line of it was written: eleven of its dangerous rows would go — a Russian customer writing in
-  // Latin letters («Skolko budet za 3 kuba?», «Kogda pridet gruz?») and an English one («Working hours?», «Services?»)
-  // answered in Uzbek by themselves. Zero dangerous let through is the contract's (§4), so the relaxation waits for
-  // his answer with that list in his hand; the class split stands (`language_money` holds a price where it is).
-  if (!languageAdmits(draft.language, draft.customerLocale)) hit.add('language');
+  // Today's language rule for every MODEL reply (J19), byte for byte, whatever its class. The ONE relaxation J19 rules
+  // (a guess that names no language admits Uzbek) was measured against the reader corpus before a line of it was
+  // written: eleven of its dangerous rows would go — a Russian customer writing in Latin letters («Skolko budet za 3
+  // kuba?», «Kogda pridet gruz?») and an English one («Working hours?», «Services?») answered in Uzbek by themselves.
+  // Those rows are the MODEL's words, so the lead's ruling (the merged-tree seam review, finding 4) gives the
+  // relaxation to the tayyor matn alone (`systemAck`): a photo or a voice note shows no language at all, and «write it
+  // as text» in Uzbek is a line he wrote himself and read once. A model reply to a message showing no language waits
+  // for his ✅ as before; `language_money` and `language` in the corpus pin that side.
+  if (!languageAdmits(draft.language, draft.customerLocale, draft.systemAck)) hit.add('language');
   // A tayyor matn in Persian or Chinese — a system line or the honest line (J27): he reads neither, and his answer 10
   // is that he approves each once by its Uzbek gloss. Until that list exists (stage 1b) every such reply is his card.
   if ((draft.systemAck || draft.honestLine) && (READY_TEXT_UNREAD as readonly string[]).includes(draft.language ?? '')) {
@@ -697,13 +700,17 @@ function moneyVerdict(input: AutoGateInput): {
  * language, or an unconfident one that LEANS on it (fix pass 4: the conversation's stored language, the one language
  * the greetings said, or Uzbek's word endings — run `memoryFor`). Where the rule cannot tell the customer's language
  * it holds (fix pass 6): a guess that leans on nothing, a guess naming no language, and a guess not stored (a draft
- * written before 0148) admit no reply by itself — each was «today's rule», which let the other language go.
+ * written before 0148) admit no reply by itself — each was «today's rule», which let the other language go. Save one
+ * line (stage 1a, J19 as ruled for the merged tree): the code's own Uzbek tayyor matn on a guess naming no language.
  */
-function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale']): boolean {
+function languageAdmits(language: string | null, guess: AutoGateInput['draft']['customerLocale'], tayyorMatn: boolean): boolean {
   const lang = language ?? '';
   if (!(AUTO_LANGUAGES as readonly string[]).includes(lang)) return false;
   // Nothing known of the customer's language — no guess stored, or one that names none — admits no reply by itself.
-  if (guess === null || guess.locale === null) return false;
+  // One exception (J19's relaxation, the tayyor matn's alone — see `autoVerdict`): a guess that names none admits the
+  // code's own Uzbek line. Never a guess not stored (a draft written before 0148 says nothing either way).
+  if (guess === null) return false;
+  if (guess.locale === null) return tayyorMatn && lang === 'uz';
   if (guess.confident) return guess.locale === lang;
   if ((AUTO_STRICT_LANGUAGES as readonly string[]).includes(lang)) return false;
   // An unconfident guess admits only the language it LEANS on — and one that leans on nothing admits none (fix pass 6,

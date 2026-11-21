@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { P2_CATEGORIES, TICKED_CATEGORIES } from '@/modules/wms/agent/auto-categories';
+import { P2_CATEGORIES, TICKED_CATEGORIES, autoWaitsOf } from '@/modules/wms/agent/auto-categories';
 import { OPEN_CALC_CAP_SEAT_DEFAULT, OPEN_CALC_LIMIT_BOUNDS } from '@/modules/platform/settings/calc-cap';
 import { AUTO_PER_DAY_MAX, AUTO_PRICE_HOLD } from '@/modules/wms/agent/auto-send';
 import { AGENT_1A_BOUNDS, AGENT_NIGHT_PRICES, aviaDays, readAgentNightPrices, readAgentPersonaName, readAgentTalkHoldSec, type AgentNightPrices, type AviaDays } from '@/modules/platform/settings/service';
@@ -918,6 +918,7 @@ function AutoSection({
 }) {
   const c = auto.config;
   const off = autoDisarmKey(c.disarmReason);
+  const waits = autoWaitsOf(c.categories);
   return (
     <section className="card space-y-2" data-testid="agent-auto">
       <h2 className="section-title">🤖 {t('autoTitle')}</h2>
@@ -942,12 +943,14 @@ function AutoSection({
       <p className="text-xs text-ink-500" data-testid="agent-auto-numbers">
         {/* No daily count is said as such (0148, his «7 chegara qoyma») — never «at most 0 a day». */}
         {/* Stage 1a (J22): ordinary talk and a price wait apart — the talk hold is a setting (0 = at once), the
-            price keeps the layer's own hold; the confidence floor is no longer said (the gate stops reading it). */}
+            price keeps the layer's own hold; the confidence floor is no longer said (the gate stops reading it).
+            The price hold is said only beside a ticked box (`waits`, the bot's own rule — seam review finding 5). */}
         {c.perDay === null
-          ? t('autoNumbersNoCap', { talk: talkWords(t, talkHoldSec), priceHold: holdWords(t, c.holdSec), maxChars: c.maxChars })
+          ? t('autoNumbersNoCap', { talk: talkWords(t, talkHoldSec), priceHold: holdWords(t, c.holdSec), waits, maxChars: c.maxChars })
           : t('autoNumbers', {
               talk: talkWords(t, talkHoldSec),
               priceHold: holdWords(t, c.holdSec),
+              waits,
               perDay: c.perDay,
               maxChars: c.maxChars,
             })}
@@ -970,7 +973,7 @@ function AutoSection({
           {t('autoNeedsWork')}
         </p>
       )}
-      <AutoArmButtons armed={c.armed} canArm={mayArm} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
+      <AutoArmButtons armed={c.armed} canArm={mayArm} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} waits={waits} />
       <div className="border-t border-line pt-2">
         {/* «Narx» is a box only where 0148's CHECK admits it, «Hisoblatish» and «VED narxi» only where 0149's does —
             one migration behind, the boxes that server can store. Stage 1a: the four ordinary kinds are boxes no

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createTranslator } from 'next-intl';
 import { describe, expect, it } from 'vitest';
 import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';
@@ -15,6 +16,8 @@ import {
   SETTING_VALIDATORS,
   type SettingKey,
 } from '@/modules/platform/settings/service';
+import { AUTO_SEND_CATEGORIES, autoWaitsOf, type AutoWaits } from '@/modules/wms/agent/auto-categories';
+import { AUTO_MEDIA_WORDS } from '@/modules/wms/agent/bot-door';
 
 /**
  * Stage 1a's settings (docs/ai-toliq/qurish/STAGE-0-1A.md §3.3, J2, J20): each key has today's default — HIS answers,
@@ -216,5 +219,95 @@ describe('the stage’s words are in the kernel (J26, J34)', () => {
       expect(at(zh, key) as string, key).not.toMatch(/预算/u);
       expect(at(uz, key) as string, key).toContain('pul chegarasi emas');
     }
+  });
+});
+
+/**
+ * The merged-tree seam review, findings 3 and 5: the page told him two things the code does not do — that a reply to a
+ * photo or a file ALWAYS stays his (the tayyor matn to it goes by itself), and that a price waits on its card when no
+ * price box is ticked (no price goes by itself at all then). Each page sentence is rendered here, in all four bundles,
+ * from the ticked kinds the page passes — what the bot's own words (`autoArmedWords`) say.
+ */
+describe('the page’s arming words follow the boxes he ticked, and say what the tayyor matn does (findings 3, 5)', () => {
+  const WAITS: readonly AutoWaits[] = ['none', 'price', 'calc', 'both'];
+  /** Tokens no bundle could carry by itself — so a rendered hold is ours, never a word of the sentence. */
+  const TALK = 'TALKX';
+  const HOLD = 'HOLDX';
+  const render = (locale: string, waits: AutoWaits) => {
+    const t = createTranslator({ locale, messages: BUNDLES[locale] as never, namespace: 'agentAi' as never }) as unknown as (
+      key: string,
+      values?: Record<string, unknown>,
+    ) => string;
+    return {
+      numbers: t('autoNumbers', { talk: TALK, priceHold: HOLD, waits, perDay: 30, maxChars: 400 }),
+      noCap: t('autoNumbersNoCap', { talk: TALK, priceHold: HOLD, waits, maxChars: 400 }),
+      confirm: t('autoArmConfirm', { waits }),
+    };
+  };
+
+  it('one rule for what waits: a price box (either), a calculation, both, or nothing', () => {
+    expect(autoWaitsOf(['greeting', 'faq'])).toBe('none');
+    expect(autoWaitsOf(['price'])).toBe('price');
+    expect(autoWaitsOf(['calc_price'])).toBe('price');
+    expect(autoWaitsOf(['calc'])).toBe('calc');
+    expect(autoWaitsOf(['price', 'calc'])).toBe('both');
+    expect(autoWaitsOf([...AUTO_SEND_CATEGORIES])).toBe('both');
+  });
+
+  it('the price hold and ⏸ are said only beside a ticked box — in every bundle', () => {
+    for (const locale of Object.keys(BUNDLES)) {
+      for (const waits of WAITS) {
+        const r = render(locale, waits);
+        const held = waits !== 'none';
+        for (const [name, text] of Object.entries({ numbers: r.numbers, noCap: r.noCap })) {
+          expect(text, `${locale} ${name} ${waits}`).toContain(TALK);
+          expect(text.includes(HOLD), `${locale} ${name} ${waits}`).toBe(held);
+          expect(text.includes('⏸'), `${locale} ${name} ${waits}`).toBe(held);
+          expect(text, `${locale} ${name} ${waits}`).not.toMatch(/[{}]/u);
+        }
+        expect(r.confirm.includes('⏸'), `${locale} confirm ${waits}`).toBe(held);
+        expect(r.confirm, `${locale} confirm ${waits}`).not.toMatch(/[{}]/u);
+      }
+    }
+  });
+
+  it('…and in his own words: nothing ticked, the price stays his; a ticked price waits', () => {
+    expect(render('uz', 'none').numbers).toContain('narx va shikoyat har doim sizga qoladi');
+    expect(render('uz', 'none').numbers).not.toMatch(/narx \S+ kutadi/u);
+    expect(render('uz', 'price').numbers).toContain(`narx ${HOLD} kutadi, ⏸ bilan to‘xtatasiz`);
+    expect(render('uz', 'price').numbers).not.toContain('narx va shikoyat');
+    expect(render('uz', 'calc').numbers).toContain(`hisoblatish ${HOLD} kutadi`);
+    expect(render('uz', 'calc').numbers).toContain('narx va shikoyat har doim sizga qoladi');
+    expect(render('uz', 'both').numbers).toContain(`narx va hisoblatish ${HOLD} kutadi`);
+    expect(render('uz', 'none').confirm).toContain('Narx va shikoyat har doim sizga qoladi.');
+    expect(render('uz', 'none').confirm).not.toContain('Narx kartada kutadi');
+    expect(render('uz', 'price').confirm).toContain('Narx kartada kutadi — ⏸ bilan to‘xtatasiz; shikoyat har doim sizga qoladi.');
+  });
+
+  it('the page passes the ticked kinds to all three — never a sentence rendered without them', () => {
+    const page = readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8');
+    expect(page).toMatch(/const waits = autoWaitsOf\(c\.categories\);/u);
+    expect(page).toMatch(/t\('autoNumbersNoCap', \{[^}]*\bwaits\b[^}]*\}\)/u);
+    expect(page).toMatch(/t\('autoNumbers', \{[^}]*\bwaits,[^}]*\}\)/u);
+    expect(page).toMatch(/<AutoArmButtons [^>]*waits=\{waits\}/u);
+    const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
+    expect(ui).toContain("window.confirm(t('autoArmConfirm', { waits }))");
+  });
+
+  it('a photo, a file or a voice note: the page and the bot say the same — the AI’s reply stays his, the tayyor matn goes', () => {
+    const hint = at(uz, 'agentAi.autoHint') as string;
+    expect(hint).toContain('rasm yoki faylli xabarga AI yozgan javob sizga qoladi');
+    expect(hint).toContain('rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn o‘zi ketadi');
+    // The old promise — «a reply to a photo or a file always stays yours» — is gone from all four.
+    expect(hint).not.toContain('rasm yoki faylga javob');
+    expect(at(ru, 'agentAi.autoHint') as string).not.toContain('ответы на фото или файл');
+    expect(at(en, 'agentAi.autoHint') as string).not.toContain('replies to a photo or file');
+    expect(at(zh, 'agentAi.autoHint') as string).not.toContain('对图片或文件的回复、');
+    expect(at(ru, 'agentAi.autoHint') as string).toContain('готовый текст «напишите текстом» на фото, голосовое или файл уходит сам');
+    expect(at(en, 'agentAi.autoHint') as string).toContain('the ready-made «please type it» line to a photo, voice note or file goes by itself');
+    expect(at(zh, 'agentAi.autoHint') as string).toContain('对图片、语音或文件回复的「请用文字发送」固定话术会自动发出');
+    // The bot's one clause carries both halves, in the hint's own words.
+    expect(AUTO_MEDIA_WORDS).toContain('rasm yoki faylli xabarga AI yozgan javob sizga qoladi');
+    expect(AUTO_MEDIA_WORDS).toContain('rasm, ovoz yoki faylga «yozib yuboring» degan tayyor matn esa o‘zi ketadi');
   });
 });

@@ -41,6 +41,12 @@ export interface EligibilityFacts {
   /** Our newest out message's time, for the echo window. */
   lastOutAt: Date | null;
   /**
+   * The newest moment the listener saw the customer typing (`agent_conversations.peer_typing_at`) — REQUIRED, like
+   * every fact a refusal is lifted by: a stamp at or after our last line means a PERSON typed after it, and a line of
+   * his seconds later is his answer, never our own message echoed back (J8's principle — a robot never types).
+   */
+  peerTypingAt: Date | null;
+  /**
    * The chat is a robot answering our robot (stage 1a P2, loop.ts): the anchor's words a third time in the window, or
    * fast answers to three of our sends — the facts of `loopVerdict`, asked of the line this run answers. It replaced
    * `repeat` (the anchor equal to one of the previous three lines), which stopped a customer's FIRST «Salom?».
@@ -83,8 +89,11 @@ export function eligibleForRun(f: EligibilityFacts): { ok: true } | { ok: false;
   if (!f.anchorIsNewest) return no('not_newest');
   if (f.now.getTime() - f.anchorSentAt.getTime() > f.anchorMaxAgeMs) return no('too_old');
   if (f.anchorAutoSent) return no('auto_sent');
+  // A line within seconds of ours is our own echo or a robot's — unless he was seen typing after ours (the merged-tree
+  // seam review, finding 7): a quick «ha» or «5 kub» to our question is the commonest answer there is.
+  const typedSince = f.lastOutAt !== null && f.peerTypingAt !== null && f.peerTypingAt.getTime() >= f.lastOutAt.getTime();
   if (f.lastOutAt && f.anchorSentAt.getTime() - f.lastOutAt.getTime() < AGENT_LIMITS.echoWindowMs &&
-      f.anchorSentAt.getTime() >= f.lastOutAt.getTime()) {
+      f.anchorSentAt.getTime() >= f.lastOutAt.getTime() && !typedSince) {
     return no('echo');
   }
   if (f.loop) return no('loop');

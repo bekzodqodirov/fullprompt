@@ -47,3 +47,19 @@ export const ORDINARY_CATEGORIES = ['greeting', 'qualification', 'faq', 'status'
 export const TICKED_CATEGORIES: readonly AutoCategory[] = AUTO_SEND_CATEGORIES.filter(
   (c) => !(ORDINARY_CATEGORIES as readonly string[]).includes(c),
 );
+
+/**
+ * What waits on its card before it goes, by the boxes he TICKED — the one answer the bot's arming words
+ * (bot-door `autoArmedWords`) and the page's numbers line and arming confirm (`agentAi.autoNumbers`,
+ * `autoArmConfirm`, an ICU `select` over these four) both say. A price — a table price or a VED price — and a
+ * calculation each wait the layer's hold with ⏸ (the gate's `holdSecFor`: every class but talk); with no price box
+ * ticked no price goes by itself at all, so the price hold is not said — «narx kutadi» beside «narx sizga qoladi»
+ * told him two opposite things (review D3 on the bot, the merged-tree seam review's finding 5 on the page).
+ */
+export type AutoWaits = 'none' | 'price' | 'calc' | 'both';
+
+export function autoWaitsOf(categories: readonly string[]): AutoWaits {
+  const price = categories.includes('price') || categories.includes('calc_price');
+  const calc = categories.includes('calc');
+  return price && calc ? 'both' : price ? 'price' : calc ? 'calc' : 'none';
+}
