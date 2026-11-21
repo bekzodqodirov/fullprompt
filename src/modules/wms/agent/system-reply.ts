@@ -138,12 +138,14 @@ const NOTHING_TOLD: ReadonlySet<SystemReplyReason> = new Set();
  * stickers, round videos or files storage refused (`other`) alone gets nothing, as today.
  *
  * `burst` is the customer's lines this line would answer — after our newest send, the ones the thread lost included
- * (`linesAfterOurSends`) — and `told` what this silence already said (`toldInSilence`). Of the kinds the burst carries,
- * the first one NOT yet said is the line (the check of the F1-F3 fixes, R1): a voice note after our media line
- * gets the voice line — read by kind of the whole burst, a photo earlier in it chose the media line, which was told, and
- * the run skipped `media_only` with nobody hearing the voice note. When every kind was said, the voice one is named
- * (the run tells HIM of a voice note it does not answer again — the same promise), else the first; the caller asks
- * `told` and writes no second line.
+ * (`linesAfterOurSends`), oldest first — and `told` what this silence already said (`toldInSilence`). Of the kinds the
+ * burst carries, the first one NOT yet said is the line (the check of the F1-F3 fixes, R1): a voice note after our media
+ * line gets the voice line — read by kind of the whole burst, a photo earlier in it chose the media line, which was
+ * told, and the run skipped `media_only` with nobody hearing the voice note. When every kind was said, the kind of his
+ * NEWEST line is named, and the caller asks `told` and writes no second line: a voice note is told to HIM (the voice
+ * notice — the run's promise that a voice note it does not answer again still reaches somebody), a photo is skipped
+ * quietly. Naming the voice kind whenever the burst held one (the check of the R1 fix) made every later photo of that
+ * burst write «Mijoz yana ovozli xabar yubordi» again — a notice per photo about one voice note he had already heard of.
  */
 export function systemReasonOf(
   w: Worthiness,
@@ -154,9 +156,23 @@ export function systemReasonOf(
   if (w.reason === 'pashto') return 'pashto';
   if (w.reason !== 'voice_only' && w.reason !== 'media_only') return null;
   const kinds: SystemReplyReason[] = [];
-  if (burst.some((m) => m.media === 'photo' || m.media === 'document')) kinds.push('media');
-  if (burst.some((m) => m.media === 'voice' || m.media === 'audio')) kinds.push('voice');
-  return kinds.find((k) => !told.has(k)) ?? (kinds.includes('voice') ? 'voice' : (kinds[0] ?? null));
+  if (burst.some((m) => kindOfLine(m) === 'media')) kinds.push('media');
+  if (burst.some((m) => kindOfLine(m) === 'voice')) kinds.push('voice');
+  const owed = kinds.find((k) => !told.has(k));
+  if (owed !== undefined) return owed;
+  // Every kind said: the newest line that carries one decides (a sticker after the photo is no line's kind).
+  for (let i = burst.length - 1; i >= 0; i -= 1) {
+    const k = kindOfLine(burst[i]!);
+    if (k !== null) return k;
+  }
+  return null;
+}
+
+/** The tayyor matn a line of his asks for by itself: a photo or a file → media, a voice note or audio → voice. */
+function kindOfLine(m: BurstMessage): 'media' | 'voice' | null {
+  if (m.media === 'photo' || m.media === 'document') return 'media';
+  if (m.media === 'voice' || m.media === 'audio') return 'voice';
+  return null;
 }
 
 /**
@@ -247,6 +263,22 @@ export interface UncopiedSend {
 }
 
 /**
+ * Does our lost send stand before a chat line stamped `lineAt`? The ONE placement both readers use — `toldInSilence`
+ * (what the gate and the run read as said) and `linesAfterOurSends` (which lines the run's line answers) — so the two
+ * cannot place a send differently.
+ *
+ * At the thread's own granularity (the check of the R1 fix): Telegram stamps his lines in WHOLE seconds
+ * (`msg.date * 1000`) and a lost send's moment is the server's, to the millisecond. Compared as they are, a photo he
+ * sent right after our 12:00:05.700 send, stamped 12:00:05, sorted before it — and the line it was owed was dropped,
+ * nobody answering. So the send's moment is floored to its second and a line in that SAME second stands after it: a tie
+ * is answered, never dropped. A send answers lines many seconds older (the run waits out his typing before it writes),
+ * so the line in its second is the one that came after it.
+ */
+function sendStandsBefore(send: UncopiedSend, lineAt: Date): boolean {
+  return Math.floor(send.at.getTime() / 1000) * 1000 <= lineAt.getTime();
+}
+
+/**
  * The tayyor matns already said in this SILENCE (§4.4 «once per silence»): our own lines read back from the newest, up
  * to the first that is not one — a reply of ours is where the silence began. The burst after them gets no second line
  * OF THE SAME KIND: the customer was told, and a line per photo of a ten-page invoice is a robot talking to itself. A
@@ -257,10 +289,11 @@ export interface UncopiedSend {
  * Our sends with no thread copy (`uncopied`) are lines of ours too (the independent check of the seam fixes, F1): read
  * from the thread alone, an 'unknown' media line was never said, so the next photo of the SAME silence got the very
  * line again — and pressed by itself, since the gate asks a tayyor matn this sentence and not the loop's own repeat.
- * Each is placed by its own moment among the chat's lines — after every line stamped at or before it, the way a copied
- * send stands after the lines before it in the thread — and counts as what it is: a tayyor matn says it was told, any
- * other reply begins the silence anew (its words reached the customer as surely as the line did). The chat's lines keep
- * the order they come in; only the uncopied sends are slotted in.
+ * Each is placed by its own moment among the chat's lines (`sendStandsBefore`: after every line stamped in an earlier
+ * second, before every line of its own second or later — the way a copied send stands after the lines before it in the
+ * thread) — and counts as what it is: a tayyor matn says it was told, any other reply begins the silence anew (its
+ * words reached the customer as surely as the line did). The chat's lines keep the order they come in; only the
+ * uncopied sends are slotted in.
  */
 export function toldInSilence(
   messages: readonly { direction: 'in' | 'out'; body: string | null; sentAt: Date }[],
@@ -270,8 +303,8 @@ export function toldInSilence(
   const sends = [...uncopied].sort((a, b) => a.at.getTime() - b.at.getTime());
   let next = 0;
   for (const m of messages) {
-    // Every uncopied send that left BEFORE this line stands before it.
-    while (next < sends.length && sends[next]!.at.getTime() < m.sentAt.getTime()) lines.push({ direction: 'out', body: sends[next++]!.body });
+    // Every uncopied send that stands before this line goes in before it.
+    while (next < sends.length && sendStandsBefore(sends[next]!, m.sentAt)) lines.push({ direction: 'out', body: sends[next++]!.body });
     lines.push(m);
   }
   while (next < sends.length) lines.push({ direction: 'out', body: sends[next++]!.body });
@@ -288,13 +321,13 @@ export function toldInSilence(
 
 /**
  * The customer's lines a tayyor matn answers (the check of the F1-F3 fixes, R1): the burst — his lines after our
- * newest copied send — less those that stood before our newest send the thread LOST, placed by its moment exactly as
- * `toldInSilence` places it (a line stamped at or before it stands before it). Our lost media line told him about the photo before it;
- * the voice note after it is what is owed. Only the tayyor matn's choice reads this — the burst a model reply sees is
- * the thread's, unchanged.
+ * newest copied send — less those that stood before our newest send the thread LOST, placed exactly as `toldInSilence`
+ * places it (`sendStandsBefore`: a line of an earlier second stands before it, a line of its own second after it). Our
+ * lost media line told him about the photo before it; the voice note after it is what is owed. Only the tayyor matn's
+ * choice reads this — the burst a model reply sees is the thread's, unchanged.
  */
 export function linesAfterOurSends<T extends { sentAt: Date }>(burst: readonly T[], uncopied: readonly UncopiedSend[]): T[] {
-  let newest = Number.NEGATIVE_INFINITY;
-  for (const s of uncopied) newest = Math.max(newest, s.at.getTime());
-  return burst.filter((m) => m.sentAt.getTime() > newest);
+  const newest = uncopied.reduce<UncopiedSend | null>((a, s) => (a === null || s.at.getTime() > a.at.getTime() ? s : a), null);
+  if (newest === null) return [...burst];
+  return burst.filter((m) => sendStandsBefore(newest, m.sentAt));
 }

@@ -824,6 +824,94 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
       .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentNotice'), sql`${notifications.payload}->>'text' LIKE ${'%ovozli xabar%'}`));
     expect(told).toHaveLength(1);
   });
+
+  const voiceNotices = () =>
+    db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentNotice'), sql`${notifications.payload}->>'text' LIKE ${'%ovozli xabar%'}`));
+
+  /**
+   * The check of the R1 fix: photo, the media line, the voice line — both said in this silence — then a voice note and
+   * photos, each its own run. The voice note tells HIM once; every photo after it is skipped quietly. Naming the voice
+   * kind whenever his lines held one wrote «Mijoz yana ovozli xabar yubordi» once per later photo (1 → 2 → 3 → 4).
+   */
+  it.each([
+    ['copied', ['V', 'P']],
+    ['copied', ['V', 'P', 'P']],
+    ['copied', ['V', 'P', 'P', 'P']],
+    ['unknown', ['V', 'P', 'P']],
+  ] as const)('photo → media line → voice line (%s) → %j: one voice notice, the photos after it skipped', async (shape, tail) => {
+    await photo(min(1));
+    if (shape === 'copied') {
+      await machineSend(mediaLine(), min(2));
+      await machineSend(voiceLine(), min(3));
+    } else {
+      await lostSend(mediaLine(), min(2), 'unknown');
+      await lostSend(voiceLine(), min(3), 'unknown');
+    }
+    const runs = [];
+    let at = 5;
+    for (const e of tail) {
+      const anchor = e === 'V' ? await voiceNote(min(at++)) : await photo(min(at++));
+      runs.push(await handleInbound(job(anchor), { callModel: never() }));
+      expect(await pendingFor(anchor)).toBeUndefined();
+    }
+    expect(runs).toEqual(tail.map((e) => (e === 'V' ? { outcome: 'notice', reason: 'voice_only' } : { outcome: 'skipped', reason: 'media_only' })));
+    expect(await voiceNotices()).toHaveLength(1);
+  });
+
+  it('…while a voice note after the photos still tells HIM: his newest line names the kind', async () => {
+    await photo(min(1));
+    await machineSend(mediaLine(), min(2));
+    await machineSend(voiceLine(), min(3));
+    await voiceNote(min(5));
+    await photo(min(6));
+    const voice = await voiceNote(min(7));
+    expect(await handleInbound(job(voice), { callModel: never() })).toEqual({ outcome: 'notice', reason: 'voice_only' });
+  });
+
+  /**
+   * The check of the R1 fix: Telegram stamps his lines in whole seconds and a lost send's moment is the server's, to the
+   * millisecond — so a line sent in the same second as our lost send, after it, sorted at or before it, and the line it
+   * was owed was dropped (`skipped media_only`, nobody answered). Read at the thread's own granularity, a line in that
+   * second stands after our send: drafted, and the gate — which reads the same placement — does not hold it `loop`.
+   */
+  it.each([
+    ['voice note → voice line (unknown) → photo: the media line', 'voice', 'unknown', 'photo', 'media'],
+    ['voice note → voice line (no_id) → photo: the media line', 'voice', 'no_id', 'photo', 'media'],
+    ['photo → our reply (unknown) → photo: the media line', 'reply', 'unknown', 'photo', 'media'],
+    ['photo → media line (unknown) → voice note: the voice line', 'media', 'unknown', 'voice', 'voice'],
+  ] as const)('%s, his line in the second our send left', async (_, ours, shape, his, want) => {
+    const base = min(1);
+    if (ours === 'voice') await voiceNote(base);
+    else await photo(base);
+    const body = ours === 'voice' ? voiceLine() : ours === 'media' ? mediaLine() : 'Rahmat, qachon jo‘natmoqchisiz?';
+    await lostSend(body, sec(base, 65.7), shape);
+    const anchor = his === 'photo' ? await photo(sec(base, 65)) : await voiceNote(sec(base, 65));
+    expect(await handleInbound(job(anchor), { callModel: never() })).toMatchObject({ outcome: 'draft' });
+    const d = await pendingFor(anchor);
+    expect((d!.policy as { system?: unknown }).system).toBe(want);
+    expect((await gate(d!, min(3))).loop).toBe(false);
+  });
+
+  it('…and a photo in that second after our lost media line is the same silence: no second line', async () => {
+    const base = min(1);
+    await photo(base);
+    await lostSend(mediaLine(), sec(base, 65.7), 'unknown');
+    const again = await photo(sec(base, 65));
+    expect(await handleInbound(job(again), { callModel: never() })).toEqual({ outcome: 'skipped', reason: 'media_only' });
+    expect(await pendingFor(again)).toBeUndefined();
+  });
+
+  it('…while a line a whole second before our lost send stands before it: our line answered it', async () => {
+    const base = min(1);
+    await voiceNote(base);
+    await lostSend(voiceLine(), sec(base, 65.7), 'unknown');
+    const before = await photo(sec(base, 64));
+    // His photo came before the voice line, which answered his lines up to it: nothing after our newest send.
+    expect(await handleInbound(job(before), { callModel: never() })).toEqual({ outcome: 'skipped', reason: 'media_only' });
+  });
 });
 
 describe('the loop at the moment a price would go (the merged-tree seam review, finding 6)', () => {

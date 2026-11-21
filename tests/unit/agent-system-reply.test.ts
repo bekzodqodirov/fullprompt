@@ -244,10 +244,20 @@ describe('which burst gets which line (§4.4 finding 1)', () => {
     expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('voice'))).toBe('media');
   });
 
-  it('every kind said: the voice one is named, so the run tells HIM of the voice note; a told photo alone is the media line, skipped', () => {
+  it('every kind said: his NEWEST line names it — a voice note tells HIM, a photo is the media line, skipped', () => {
     expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('media', 'voice'))).toBe('voice');
     expect(reasonTold([b(null, 'photo')], told('media'))).toBe('media');
     expect(reasonTold([b(null, 'voice')], told('voice'))).toBe('voice');
+    // The check of the R1 fix: a photo after a voice note both lines answered names the media line, so the run skips it
+    // quietly — naming the voice kind because the burst held one wrote a voice notice per later photo.
+    expect(reasonTold([b(null, 'voice'), b(null, 'photo')], told('media', 'voice'))).toBe('media');
+    expect(reasonTold([b(null, 'voice'), b(null, 'photo'), b(null, 'photo')], told('media', 'voice'))).toBe('media');
+    // A sticker after it is no line's kind: the newest line that carries one decides.
+    expect(reasonTold([b(null, 'photo'), b(null, 'voice'), b(null, 'other')], told('media', 'voice'))).toBe('voice');
+    expect(reasonTold([b(null, 'voice'), b(null, 'document'), b(null, 'other')], told('media', 'voice'))).toBe('media');
+    // …and a kind not yet said still wins over the newest line: photo, media line, photo, voice note → the voice line.
+    expect(reasonTold([b(null, 'photo'), b(null, 'voice')], told('media'))).toBe('voice');
+    expect(reasonTold([b(null, 'voice'), b(null, 'photo')], told('voice'))).toBe('media');
     // Pashto is the Pashto line whatever was said; a text is still the model's.
     expect(reasonTold([b('ستاسو بار څه وخت راځي')], told('pashto'))).toBe('pashto');
     expect(reasonTold([b('Narxi qancha?', 'photo')], told())).toBeNull();
@@ -258,11 +268,22 @@ describe('which burst gets which line (§4.4 finding 1)', () => {
     const burst = [{ sentAt: at('07:00'), media: 'photo' }, { sentAt: at('07:03'), media: 'voice' }];
     // Our media line Telegram took and the thread never got, between the photo and the voice note.
     expect(linesAfterOurSends(burst, [{ at: at('07:01'), body: 'x' }]).map((m) => m.media)).toEqual(['voice']);
-    // A line stamped at our send's very moment stands before it, as in the thread's walk.
-    expect(linesAfterOurSends(burst, [{ at: at('07:03'), body: 'x' }])).toEqual([]);
+    // A line of an earlier second stands before our send…
+    expect(linesAfterOurSends(burst, [{ at: new Date(at('07:03').getTime() + 1_200), body: 'x' }])).toEqual([]);
     // The newest of several decides; none lost — the burst as the thread has it.
     expect(linesAfterOurSends(burst, [{ at: at('07:02'), body: 'x' }, { at: at('06:00'), body: 'y' }]).map((m) => m.media)).toEqual(['voice']);
     expect(linesAfterOurSends(burst, [])).toEqual(burst);
+  });
+
+  it('a line in the SECOND our lost send left stands after it — Telegram stamps his lines in whole seconds (the check of the R1 fix)', () => {
+    const at = (hhmm: string, ms = 0) => new Date(new Date(`2026-11-20T${hhmm}:00Z`).getTime() + ms);
+    // Our lost voice line left at 07:03:00.700; his photo, sent after it, Telegram stamped 07:03:00.
+    const burst = [{ sentAt: at('07:00'), media: 'voice' }, { sentAt: at('07:03'), media: 'photo' }];
+    expect(linesAfterOurSends(burst, [{ at: at('07:03', 700), body: 'x' }]).map((m) => m.media)).toEqual(['photo']);
+    // …a line stamped at the send's very moment too: a tie is answered, never dropped.
+    expect(linesAfterOurSends(burst, [{ at: at('07:03'), body: 'x' }]).map((m) => m.media)).toEqual(['photo']);
+    // …and one a whole second before our send stood before it: our line answered it.
+    expect(linesAfterOurSends(burst, [{ at: at('07:03', 1_700), body: 'x' }])).toEqual([]);
   });
 });
 
@@ -336,6 +357,22 @@ describe('once per silence', () => {
     const told = [timed('', 'in', '07:00', 'photo'), timed(media, 'out', '07:01'), timed('', 'in', '07:05', 'photo')];
     expect([...toldInSilence(told)]).toEqual(['media']);
     expect(toldInSilence(told, [{ at: at('07:03'), body: 'Rastamojka taxminan 1 200 $ bo‘ladi.' }]).size).toBe(0);
+  });
+
+  it('a lost send is placed at the thread’s granularity: a line in the same second stands after it (the check of the R1 fix)', () => {
+    const media = SYSTEM_LINES.media.uz[0]!.text;
+    const ms = (hhmm: string, plus = 0) => new Date(new Date(`2026-11-20T${hhmm}:00Z`).getTime() + plus);
+    const timed = (body: string, direction: 'in' | 'out', when: Date, m: ChatMessage['media'] = null) => ({ ...msg(body, direction, m), sentAt: when });
+    // His photo; our media line, lost, left at 07:03:00.700; then a line of ours Telegram stamped 07:03:00 (typed on his
+    // phone right after it) and a second photo. The typed line began this silence: the photo is owed its line. Compared to
+    // the millisecond, the lost media line sorted after the typed one and read as said in this silence.
+    const chat = [timed('', 'in', ms('07:00'), 'photo'), timed('Hozir qarab beraman', 'out', ms('07:03')), timed('', 'in', ms('07:05'), 'photo')];
+    expect(toldInSilence(chat, [{ at: ms('07:03', 700), body: media }]).size).toBe(0);
+    // A whole second after the typed line, the lost media line stands after it: said in this silence.
+    expect([...toldInSilence(chat, [{ at: ms('07:03', 1_700), body: media }])]).toEqual(['media']);
+    // His own lines are never what the walk reads — a photo in that second leaves the line said.
+    const photos = [timed('', 'in', ms('07:00'), 'photo'), timed('', 'in', ms('07:03'), 'photo')];
+    expect([...toldInSilence(photos, [{ at: ms('07:03', 700), body: media }])]).toEqual(['media']);
   });
 });
 
