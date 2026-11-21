@@ -9,6 +9,7 @@ import { agentOffWords } from '../crm/account-alarm';
 import { AGENT_CONFIG_AUDIT_ID, agentToliq1aReady, type AgentConfig } from './config';
 import { designated } from './designations';
 import { isForcedOffReason, type ForcedOffReason } from './forced-off';
+import { AGENT_LIMITS } from './limits';
 import { unansweredLines } from './liveness';
 import { agentPageReaders, agentPageUrl } from './signals';
 
@@ -28,7 +29,8 @@ import { agentPageReaders, agentPageUrl } from './signals';
  * a setting stage 1B builds; the day it exists, this grid asks it.
  *
  * A slot is said once (the claim is an `agent_signals` row, unique `dedupe_key` — the stage's «said once» table,
- * 0151), and only a slot that BEGAN after the off: the alarm itself has just said it. The claim and the copies are
+ * 0151), and only a slot that began at least half an hour after the off (`OFF_REMINDER_AFTER_ALARM_MS`): the alarm
+ * itself has just said it, and an off at 10:39 must not be said twice inside a minute. The claim and the copies are
  * written in ONE transaction (`sendSignal`'s shape: no claim without its copies, no copy without its claim); the
  * Telegram send is the drain's, after the commit, never inside it.
  */
@@ -37,6 +39,9 @@ import { agentPageReaders, agentPageUrl } from './signals';
 export const OFF_REMINDER_FIRST_MINUTE = 8 * 60 + 40;
 /** «har 2 soatda». */
 export const OFF_REMINDER_STEP_MINUTES = 120;
+
+/** How long after the off a slot must begin to be said: before it the alarm's own line is still the news. */
+export const OFF_REMINDER_AFTER_ALARM_MS = 30 * 60_000;
 
 /** The claim's topic in `agent_signals` — not a chat's: the row names no chat (peer 0, which no chat is). */
 export const OFF_REMINDER_TOPIC = 'forced_off';
@@ -99,16 +104,21 @@ function sinceText(at: Date): string {
 }
 
 /**
- * Pure: the reminder as one recipient reads it — counts only, never a customer (leak-13). «Qayta yoqish» and the
- * page's link only for a recipient the page admits (J17: a line that sends somebody to a door goes only to those it
- * opens for).
+ * Which door a recipient's copy names (J17: a line that sends somebody to a door goes only to those it opens for):
+ * `switch` — «Qayta yoqish», for the account holder, the one person `setAgentMode` lets switch it on; `page` — the
+ * page, for another reader it admits (`mayRunAgent`); null — neither.
  */
-export function offReminderText(input: { reason: ForcedOffReason; at: Date; waiting: number }, withPage: boolean): string {
+export type OffReminderDoor = 'switch' | 'page' | null;
+
+/** Pure: the reminder as one recipient reads it — counts only, never a customer (leak-13). */
+export function offReminderText(input: { reason: ForcedOffReason; at: Date; waiting: number }, door: OffReminderDoor): string {
   const lines = [
     `⚠️ AI sotuvchi o‘chiq turibdi — sabab: ${agentOffWords(input.reason)}, ${sinceText(input.at)} dan beri.`,
     `Javobsiz mijozlar: ${input.waiting}.`,
   ];
-  if (withPage) lines.push('Qayta yoqish: «Suhbatlar → AI sotuvchi».', agentPageUrl());
+  // The page line is the liveness alarm's own (`livenessAlarmText`).
+  if (door === 'switch') lines.push('Qayta yoqish: «Suhbatlar → AI sotuvchi».', agentPageUrl());
+  if (door === 'page') lines.push('AI sahifasini oching.', agentPageUrl());
   return lines.join('\n');
 }
 
@@ -127,12 +137,16 @@ export type OffReminderOutcome = 'said' | 'already' | 'not_due' | 'unheard' | 'b
 /**
  * The sweep's step while the agent does NOT run (`agentSweep`). `off` is REQUIRED — the caller reads it
  * (`agentForcedOff`), null = not the machine's off. Nothing unless the config says «off», an account holder is
- * set, and the current slot began after the off. Who is told: the «rahbar va o‘rinbosar» pair through
- * `designated('supervisor')` and its fallback chain (never «nobody»), read before the transaction (#714). «Javobsiz
- * mijozlar» is the liveness reader's own notion of waiting (`unansweredLines`: a card-bound chat whose newest live
- * line is the customer's and that nothing answered and nothing will) over the lines written since the off — the AI
- * writes no run while off, so each such line counts. A copy that reaches nobody rolls the claim back ('unheard'):
- * the next minute of the same slot tries again. One migration behind 0151 there is no claim table: 'behind'.
+ * set, and the current slot began half an hour or more after the off. A slot already claimed is answered 'already'
+ * before anything is read — the sweep asks every minute of the slot. Who is told: the «rahbar va o‘rinbosar» pair
+ * through `designated('supervisor')` and its fallback chain (never «nobody»), read before the transaction (#714).
+ * «Javobsiz mijozlar» is the liveness reader's own notion of waiting (`unansweredLines`: a card-bound chat whose
+ * newest live line is the customer's and that nothing answered and nothing will) over the lines the AI would still
+ * have answered at the off (`anchorMaxAgeMs` before it) and every line since — a draft written before the off
+ * answered nothing (the off expired it or cancelled its ✅), and the AI writes no run while off, so each such line
+ * counts. The claim INSERT stays the arbiter: two sweeps past the pre-check, one says it. A copy that reaches nobody
+ * rolls the claim back ('unheard'): the next minute of the same slot tries again. One migration behind 0151 there is
+ * no claim table: 'behind'.
  */
 export async function sweepOffReminder(
   config: Pick<AgentConfig, 'mode' | 'ownerUserId'> | null,
@@ -141,15 +155,19 @@ export async function sweepOffReminder(
 ): Promise<OffReminderOutcome> {
   if (!offReminderOn() || !config || config.mode !== 'off' || !config.ownerUserId || !off) return 'not_due';
   const slot = offReminderSlot(now);
-  if (!slot || slot.startsAt.getTime() <= off.at.getTime()) return 'not_due';
+  if (!slot || slot.startsAt.getTime() - off.at.getTime() < OFF_REMINDER_AFTER_ALARM_MS) return 'not_due';
   if (!(await agentToliq1aReady())) return 'behind';
+  const said = await db.execute(sql`SELECT 1 FROM agent_signals WHERE dedupe_key = ${slot.key} LIMIT 1`);
+  if (said.length > 0) return 'already';
   const holderId = config.ownerUserId;
-  const waiting = (await unansweredLines(holderId, { from: off.at, to: now, workingHours: false }, now)).length;
+  const from = new Date(off.at.getTime() - AGENT_LIMITS.anchorMaxAgeMs);
+  const waiting = (await unansweredLines(holderId, { from, to: now, workingHours: false, retiredDraftsBefore: off.at }, now)).length;
   const recipients = await designated('supervisor');
   const readers = await agentPageReaders(recipients, config);
+  const doorOf = (userId: string): OffReminderDoor => (userId === holderId ? 'switch' : readers.has(userId) ? 'page' : null);
   const copies = recipients.map((userId) => ({
     userId,
-    text: offReminderText({ reason: off.reason, at: off.at, waiting }, readers.has(userId)),
+    text: offReminderText({ reason: off.reason, at: off.at, waiting }, doorOf(userId)),
   }));
   class Unheard extends Error {}
   let outcome: OffReminderOutcome;

@@ -1,12 +1,19 @@
 import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/modules/platform/db/client';
 import { agentDesignations, agentRuns, agentSignals, clients, notifications, roles, tgMessages, userRoles, users } from '@/modules/platform/db/schema';
 import { AGENT_CONFIG_AUDIT_ID } from '@/modules/wms/agent/config';
 import { agentForcedOff, OFF_REMINDER_TOPIC, sweepOffReminder, type ForcedOff } from '@/modules/wms/agent/off-reminder';
+import { unansweredLines } from '@/modules/wms/agent/liveness';
 import { dropDrainKicksSince } from './drain-kicks';
+
+// The liveness reader as it is, counted: a slot already said must not read the customers again (the U review's 4).
+vi.mock('@/modules/wms/agent/liveness', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('@/modules/wms/agent/liveness')>();
+  return { ...orig, unansweredLines: vi.fn(orig.unansweredLines) };
+});
 
 /**
  * His 18 a against a real database: «AI o'zi o'chib qolsa va siz qayta yoqmasangiz: har kuni 08:40 da va ish vaqtida
@@ -17,7 +24,8 @@ import { dropDrainKicksSince } from './drain-kicks';
  *    of the pair — the page and «Qayta yoqish» only to the one the page admits; the same slot again, or two sweeps
  *    at once, say nothing more; 12:40 says it again; the night says nothing; 08:40 the next morning says it;
  *  - nothing once it is switched on, nothing when HE switched it off;
- *  - «Javobsiz mijozlar» counts the card-bound chats whose newest line, written since the off, is the customer's.
+ *  - «Javobsiz mijozlar» counts the card-bound chats whose newest line is the customer's: written since the off, or
+ *    in the day before it and left with nothing — no run, or a draft the off itself expired.
  *
  * The suites run the step OFF (vitest.config `AGENT_OFF_REMINDER`): this file is the one it is on for. The claims,
  * agent_designations and the switch are CONFIGURATION (#183) — put back in afterAll; fixture users are deactivated,
@@ -49,7 +57,7 @@ async function minted(label: string, n: number): Promise<string> {
   return u!.id;
 }
 
-async function line(peer: bigint, direction: 'in' | 'out', at: Date): Promise<void> {
+async function line(peer: bigint, direction: 'in' | 'out', at: Date): Promise<bigint> {
   msgSeq += 1n;
   await db.insert(tgMessages).values({
     clientId: ids.client,
@@ -60,6 +68,12 @@ async function line(peer: bigint, direction: 'in' | 'out', at: Date): Promise<vo
     body: direction === 'in' ? 'narxi qancha?' : 'javob',
     sentAt: at,
   });
+  return msgSeq;
+}
+
+/** The AI's run for that line, as the inbound worker writes it. */
+async function ran(peer: bigint, anchor: bigint, outcome: 'draft' | 'no_reply', at: Date): Promise<void> {
+  await db.insert(agentRuns).values({ managerUserId: ids.holder, peerId: peer, trigger: 'inbound', anchorTgMessageId: anchor, outcome, createdAt: at });
 }
 
 const nextPeer = () => (peerSeq += 1n);
@@ -125,8 +139,10 @@ describe('the agent the machine switched off, reminded until somebody switches i
     const deputy = await copies(ids.deputy);
     expect(boss).toHaveLength(1);
     expect(deputy).toHaveLength(1);
+    // The boss reads the page and cannot switch it on (`setAgentMode`: the account holder alone): the page, never
+    // «Qayta yoqish» (J17).
     expect(boss[0]).toMatch(
-      /^⚠️ AI sotuvchi o‘chiq turibdi — sabab: Telegramning o‘z xizmat akkaunti \(777000\) bu akkauntga xabar yubordi — uni Telegram ilovasida o‘qing, 17\.11 10:00 dan beri\.\nJavobsiz mijozlar: 0\.\nQayta yoqish: «Suhbatlar → AI sotuvchi»\.\nhttps?:\/\/\S+\/suhbatlar\/ai$/u,
+      /^⚠️ AI sotuvchi o‘chiq turibdi — sabab: Telegramning o‘z xizmat akkaunti \(777000\) bu akkauntga xabar yubordi — uni Telegram ilovasida o‘qing, 17\.11 10:00 dan beri\.\nJavobsiz mijozlar: 0\.\nAI sahifasini oching\.\nhttps?:\/\/\S+\/suhbatlar\/ai$/u,
     );
     // The deputy reads the counts and is never sent to a door that bounces (J17).
     expect(deputy[0]).toBe(
@@ -186,6 +202,36 @@ describe('the agent the machine switched off, reminded until somebody switches i
     expect(await db.select().from(agentSignals).where(eq(agentSignals.topic, OFF_REMINDER_TOPIC))).toEqual([]);
   });
 
+  it('«Qayta yoqish» only for the account holder — the one person `setAgentMode` lets switch it on', async () => {
+    await db.delete(agentDesignations).where(eq(agentDesignations.topic, 'supervisor'));
+    await db.insert(agentDesignations).values([
+      { topic: 'supervisor', userId: ids.holder, rank: 1 },
+      { topic: 'supervisor', userId: ids.boss, rank: 2 },
+    ]);
+    expect(await sweepOffReminder(offConfig(), T(D1, '10:40'), OFF)).toBe('said');
+    const [holder] = await copies(ids.holder);
+    const [boss] = await copies(ids.boss);
+    expect(holder!.split('\n').slice(2, 3)).toEqual(['Qayta yoqish: «Suhbatlar → AI sotuvchi».']);
+    expect(holder).toMatch(/\/suhbatlar\/ai$/u);
+    expect(boss).not.toContain('Qayta yoqish');
+    expect(boss!.split('\n').slice(2, 3)).toEqual(['AI sahifasini oching.']);
+  });
+
+  it('an off just before a slot leaves that slot to the alarm: the reminder comes a slot later', async () => {
+    const late: ForcedOff = { reason: 'telegram_notice', at: new Date(T(D1, '10:39').getTime() + 30_000) };
+    expect(await sweepOffReminder(offConfig(), T(D1, '10:40'), late)).toBe('not_due');
+    expect(await sweepOffReminder(offConfig(), T(D1, '12:40'), late)).toBe('said');
+    // Half an hour before the slot is enough.
+    expect(await sweepOffReminder(offConfig(), T(D1, '14:40'), { reason: 'telegram_notice', at: T(D1, '14:10') })).toBe('said');
+  });
+
+  it('a slot already said is not read again: the claim is asked before the customers are counted', async () => {
+    expect(await sweepOffReminder(offConfig(), T(D1, '10:40'), OFF)).toBe('said');
+    vi.mocked(unansweredLines).mockClear();
+    expect(await sweepOffReminder(offConfig(), T(D1, '10:41'), OFF)).toBe('already');
+    expect(vi.mocked(unansweredLines)).not.toHaveBeenCalled();
+  });
+
   it('«Javobsiz mijozlar» counts the chats whose newest line since the off is the customer’s', async () => {
     const waitingA = nextPeer();
     await line(waitingA, 'out', T(D1, '09:00'));
@@ -197,13 +243,23 @@ describe('the agent the machine switched off, reminded until somebody switches i
     const answered = nextPeer();
     await line(answered, 'in', T(D1, '10:10'));
     await line(answered, 'out', T(D1, '10:15'));
-    // Before the off: its run (if any) was the AI's to answer; the reminder counts what the off left unanswered.
+    // Before the off and answered by design (the AI decided no reply was owed): not waiting.
     const before = nextPeer();
-    await line(before, 'in', T(D1, '09:50'));
+    await ran(before, await line(before, 'in', T(D1, '09:50')), 'no_reply', T(D1, '09:51'));
+    // Before the off, its draft written — and the off expired it (or cancelled its ✅): nothing went, the customer
+    // waits (the U review's 1: the reminder read 0 on exactly the customers the off stranded).
+    const stranded = nextPeer();
+    await ran(stranded, await line(stranded, 'in', T(D1, '09:58')), 'draft', T(D1, '09:59'));
+    // Before the off, never run at all (the queue had not reached it): waiting too.
+    const queued = nextPeer();
+    await line(queued, 'in', T(D1, '09:55'));
+    // Older than any line the AI still answers (a day before the off): not the off's doing.
+    const stale = nextPeer();
+    await line(stale, 'in', T('2026-11-16', '09:00'));
     expect(await sweepOffReminder(offConfig(), T(D1, '10:40'), OFF)).toBe('said');
-    expect((await copies(ids.boss))[0]).toContain('\nJavobsiz mijozlar: 2.\n');
+    expect((await copies(ids.boss))[0]).toContain('\nJavobsiz mijozlar: 4.\n');
     const [claim] = await db.select().from(agentSignals).where(eq(agentSignals.topic, OFF_REMINDER_TOPIC));
-    expect(claim!.facts).toMatchObject({ reason: 'telegram_notice', waiting: 2, offAt: OFF.at.toISOString() });
+    expect(claim!.facts).toMatchObject({ reason: 'telegram_notice', waiting: 4, offAt: OFF.at.toISOString() });
   });
 
   it('each forced reason in its own words', async () => {

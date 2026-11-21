@@ -3,8 +3,8 @@ import { FORCED_OFF_REASONS } from '@/modules/wms/agent/forced-off';
 import { offReminderSlot, offReminderText } from '@/modules/wms/agent/off-reminder';
 
 /**
- * His 18 a's grid, pure: 08:40 Tashkent (the morning line's minute) and every two hours after it while the office day
- * lasts (`isOfficeTime` — the house's one clock for a push a person acts on), never at night. Literal clocks only.
+ * His 18 a's grid, pure: 08:40 Tashkent (the morning line's minute) and every two hours after it until the house's one
+ * night clock begins (`quietHour`, 22:00), never at night. Literal clocks only.
  */
 
 const T = (day: string, hm: string) => new Date(`${day}T${hm}:00+05:00`);
@@ -43,21 +43,26 @@ describe('the reminder’s words', () => {
   const at = T('2026-11-19', '12:16');
 
   it('his sentence, the reason in the alarm’s own words, since when, and the count', () => {
-    expect(offReminderText({ reason: 'telegram_notice', at, waiting: 3 }, false)).toBe(
+    expect(offReminderText({ reason: 'telegram_notice', at, waiting: 3 }, null)).toBe(
       '⚠️ AI sotuvchi o‘chiq turibdi — sabab: Telegramning o‘z xizmat akkaunti (777000) bu akkauntga xabar yubordi — uni Telegram ilovasida o‘qing, 19.11 12:16 dan beri.\nJavobsiz mijozlar: 3.',
     );
   });
 
-  it('«Qayta yoqish» and the page only for a reader the page admits', () => {
-    const lines = offReminderText({ reason: 'flood_repeat', at, waiting: 0 }, true).split('\n');
-    expect(lines).toHaveLength(4);
-    expect(lines[2]).toBe('Qayta yoqish: «Suhbatlar → AI sotuvchi».');
-    expect(lines[3]).toMatch(/\/suhbatlar\/ai$/u);
+  it('«Qayta yoqish» for the one who may switch it on, the page for a reader it admits, nothing for anyone else', () => {
+    const holder = offReminderText({ reason: 'flood_repeat', at, waiting: 0 }, 'switch').split('\n');
+    expect(holder).toHaveLength(4);
+    expect(holder[2]).toBe('Qayta yoqish: «Suhbatlar → AI sotuvchi».');
+    expect(holder[3]).toMatch(/\/suhbatlar\/ai$/u);
+    const reader = offReminderText({ reason: 'flood_repeat', at, waiting: 0 }, 'page').split('\n');
+    expect(reader).toHaveLength(4);
+    expect(reader[2]).toBe('AI sahifasini oching.');
+    expect(reader[3]).toMatch(/\/suhbatlar\/ai$/u);
+    expect(offReminderText({ reason: 'flood_repeat', at, waiting: 0 }, null).split('\n')).toHaveLength(2);
   });
 
   it('every forced reason is worded — never a code', () => {
     for (const reason of FORCED_OFF_REASONS) {
-      const text = offReminderText({ reason, at, waiting: 0 }, false);
+      const text = offReminderText({ reason, at, waiting: 0 }, null);
       expect(text, reason).not.toContain(reason);
       expect(text, reason).toMatch(/sabab: \S.{10,}, 19\.11 12:16 dan beri\./u);
     }
