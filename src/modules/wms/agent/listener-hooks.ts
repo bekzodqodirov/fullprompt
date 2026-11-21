@@ -228,8 +228,105 @@ const SCHEME_LINK = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/?#]*)(\S*)/giu;
 const BARE_LINK = /(?<![\p{L}\p{N}@.\/])((?:[a-z0-9-]+\.)+[a-z]{2,})([/?#]\S*)/giu;
 /** A query value outside a link that was cut — any `name=value`: «?code=…», «token=AQABx…». */
 const QUERY_VALUE = /(?<![\p{L}\p{N}_.-])([\p{L}\p{N}_.-]+=)[^\s&#]+/gu;
-/** A word: letters, their marks and digits, in any script. */
-const WORD = /[\p{L}\p{M}\p{N}]+/gu;
+/**
+ * A word as the redaction judges it: letters, their marks and digits in any script, and the «-» and «_» between them.
+ * my.telegram.org's code is eleven characters of [A-Za-z0-9_-]; cut at «-» and «_» («fFyIb-grNZv», «Zx_Qw-Er_Ty») it
+ * fell into pieces each too short or too plain to look like one, and the pieces read back as the code.
+ */
+const WORD = /[\p{L}\p{M}\p{N}_-]+/gu;
+
+/**
+ * A hyphenated word that reads as an ordinary one: no capital, or one capital opening it («third-party», «Third-party»,
+ * «Telegram-аккаунт», «кто-то», «из-за», «e-mail»), and no part empty. `ACCOUNT_WARNING` reads «third-party» and
+ * «кто-то пыта…», and the log exists to settle that rule against the real texts — so such a word keeps its letters,
+ * while a capital anywhere else («fFyIb-grNZv», «aBcDe-FgHiJ», «xu-Ijpkbgub») takes the whole word with it.
+ */
+const PLAIN_HYPHENATED = /^[\p{Lu}\p{Lt}]?[^\p{Lu}\p{Lt}-]+(?:-[^\p{Lu}\p{Lt}-]+)+$/u;
+
+/**
+ * A greeting's name: «Dear Aziz,» (the web login code and the new-login alert open with it) and its Russian and Uzbek
+ * forms — his name has no business in a docker log. Up to four words, and only when the comma closes it on that line.
+ */
+const GREETING_NAME = /(?<!\p{L})(dear|уважаем\p{L}*|hurmatli|ҳурматли)([ \t\u00a0]+)([\p{L}\p{M}'’ʻ.-]+(?:[ \t\u00a0]+[\p{L}\p{M}'’ʻ.-]+){0,3})(?=[ \t\u00a0]*,)/giu;
+
+/**
+ * The new-login alert's «Location: …» — where he signed in, city and country, is his and not the shape. The field's
+ * name stays (`LOGIN_FIELD` reads it); its value — on that line, or on the next when the name ends its own — goes to
+ * the line's end, or to the next field when the alert writes them inline («Location: Tashkent, Uzbekistan. Device: …»
+ * keeps «Device:») — never to a mere full stop, or «St. Petersburg» would leave the city behind.
+ */
+const LOCATION_VALUE =
+  /((?<!\p{L})(?:location|местоположение|местонахождение|місцезнаходження|розташування|joylashuv|жойлашув|орналасқан\s+жері|konum|مکان|موقعیت|الموقع|standort|ubicación|emplacement)|位置|地点|地點)([ \t\u00a0]*[:：][ \t\u00a0]*(?:\r?\n[ \t\u00a0]*)?)([^\r\n]+?)(?=[.,;]?[ \t\u00a0]+\p{L}[\p{L}\p{M}]*(?:[ \t\u00a0]+\p{L}[\p{L}\p{M}]*)?[ \t\u00a0]*[:：]|[\r\n]|$)/gimu;
+
+/** The «code» word ending a stretch of text — `CODE_WORD`, the one list of how a login line says «code». */
+const CODE_WORD_AT_END = new RegExp(`(?:${CODE_WORD.source})\\s+$`, 'u');
+
+/**
+ * A token: what stands between spaces — a no-break space (U+00A0, U+2007, U+202F) glues and does not part, or a code
+ * written «aBcDe FgHiJ» with one inside would leave its second half behind.
+ */
+const TOKEN = String.raw`\S+(?:[\u00a0\u2007\u202f]+\S+)*`;
+/** The colon of «Login code: …», «Your code: …», «登录代码：…» — and the token after it, on that line or the next. */
+const COLON_TOKEN = new RegExp(String.raw`([:：])(\s*?)(${TOKEN})`, 'gu');
+/** «Your login code is …» — the English «is» and the token after it. */
+const IS_TOKEN = new RegExp(String.raw`(?<![\p{L}\p{N}])(is)(\s+?)(${TOKEN})`, 'giu');
+/** A line that is one token and nothing else. */
+const LONE_TOKEN = new RegExp(`^${TOKEN}$`, 'u');
+
+/**
+ * The token a code word announces — after «code:» (the code word on the colon's own line, at most `BEFORE_CODE`
+ * characters before it, as `telegramNoticeKind` reads it) or after «code is» — goes whole as «‹…›», whatever its
+ * shape: an all-capital or all-small code (my.telegram.org's «WYBJEPLZXVE», «yfssilqzwzk») looks like no code to the
+ * word rule and is one here. A token with no letter keeps its «#» shape — its digits say nothing, and their count is
+ * what the rule reads.
+ */
+function redactAnnounced(text: string): string {
+  const announced = (token: string): string => (/\p{L}/u.test(token) ? '‹…›' : token);
+  return text
+    .replace(COLON_TOKEN, (whole, colon: string, space: string, token: string, at: number, all: string) => {
+      const lineStart = all.lastIndexOf('\n', at - 1) + 1;
+      const before = all.slice(Math.max(lineStart, at - BEFORE_CODE), at).toLowerCase();
+      return CODE_WORD.test(before) ? `${colon}${space}${announced(token)}` : whole;
+    })
+    .replace(IS_TOKEN, (whole, is: string, space: string, token: string, at: number, all: string) => {
+      const before = all.slice(Math.max(0, at - BEFORE_CODE), at).toLowerCase();
+      return CODE_WORD_AT_END.test(before) ? `${is}${space}${announced(token)}` : whole;
+    });
+}
+
+/** A script written without spaces: a whole Chinese or Japanese sentence is one token, and is no code. */
+const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/u;
+
+/**
+ * A line that is one token holding a letter goes whole: that is where my.telegram.org puts its code («This is your
+ * login code:» ⏎ «aB3dE9fG2»), and a code of letters alone in one case reads as a word to every other rule. Kept: a
+ * line holding «/» (a link, already cut to its host), one ending in a colon (a field's name, its value below), and
+ * one in a script written without spaces («新登录。» is a sentence) — a code there is the colon's (`redactAnnounced`).
+ */
+function redactLoneTokens(text: string): string {
+  return text
+    .split(/(\r?\n|\r)/u)
+    .map((line) => {
+      const token = line.trim();
+      if (token === '' || !LONE_TOKEN.test(token) || !/\p{L}/u.test(token)) return line;
+      if (token.includes('/') || /[:：]$/u.test(token) || UNSPACED_SCRIPT.test(token)) return line;
+      return line.replace(token, '‹…›');
+    })
+    .join('');
+}
+
+/** One word, judged: a code's shape goes whole, a number keeps its count of «#», an ordinary word stays. */
+function redactWord(word: string): string {
+  const letters = /\p{L}/u.test(word);
+  const digits = /\p{N}/u.test(word);
+  if (digits && letters) return '‹…›';
+  if (digits) return word.replace(/\p{N}/gu, '#');
+  if (!letters) return word;
+  if (word.includes('_')) return '‹…›';
+  if (word.includes('-')) return PLAIN_HYPHENATED.test(word) ? word : '‹…›';
+  if ([...word].length >= 6 && /\p{Ll}.*\p{Lu}/u.test(word)) return '‹…›';
+  return word;
+}
 
 /**
  * Pure: the SHAPE of a 777000 line, for the listener's log — so the real texts Telegram sends his account can be read
@@ -238,25 +335,29 @@ const WORD = /[\p{L}\p{M}\p{N}]+/gu;
  * («Login code: #####.», «## ###», «##.##.####»), the line breaks as « ⏎ » (the rule looks at the first two lines).
  *
  * A login code cannot be read back from it: Telegram's codes are digits only and EVERY digit, in any script (Persian
- * and Arabic-Indic too), becomes «#» — the count stays, the value never does; a word that holds a digit
- * («GS52814») or looks like a code (six letters or more with a capital after a small letter — my.telegram.org's
- * «aB3dE9fG2» — even with no digit) goes whole as «‹…›»; a link keeps only its host (a login link carries the code in
- * its path, a token in its query), and a query value outside one goes too. Invisible marks are taken out FIRST, or a
- * zero-width space would split a code into pieces too short to look like one. At most `REDACTED_MAX` characters.
+ * and Arabic-Indic too), becomes «#» — the count stays, the value never does. my.telegram.org's code is letters,
+ * digits, «-» and «_», and it goes whole as «‹…›» three ways, any one of them enough: a word holding a digit and a
+ * letter, a «_», a «-» in a word with a capital past its first letter, or six letters with a capital after a small one
+ * (`redactWord`, on the word WITH its «-» and «_»); a line that is one token (`redactLoneTokens`); the token after
+ * «code:» or «code is» (`redactAnnounced`). A link keeps only its host (a login link carries the code in its path, a
+ * token in its query), and a query value outside one goes too. The greeting's name and the alert's «Location:» value
+ * go — they are his, not the shape. Invisible marks are taken out FIRST, or a zero-width space would split a code into
+ * pieces too short to look like one. At most `REDACTED_MAX` characters.
+ *
+ * Not caught, and stated: a code of letters alone in one case (or capitals then small ones, or small ones joined by
+ * «-») standing in the middle of a sentence with no code word before it — no rule tells it from a word without a
+ * dictionary; my.telegram.org puts its code on its own line after «login code:», where two of the three rules take it.
  */
 export function redactNotice(text: string): string {
-  const shape = text
+  const cut = text
     .replace(/\p{Cf}/gu, '')
     .replace(SCHEME_LINK, (_link, scheme: string, host: string, rest: string) => `${scheme}${host}${rest === '' ? '' : '/…'}`)
     .replace(BARE_LINK, (_link, host: string) => `${host}/…`)
     .replace(QUERY_VALUE, '$1‹…›')
-    .replace(WORD, (word) => {
-      const digits = /\p{N}/u.test(word);
-      if (digits && /\p{L}/u.test(word)) return '‹…›';
-      if (digits) return word.replace(/\p{N}/gu, '#');
-      if ([...word].length >= 6 && /\p{Ll}.*\p{Lu}/u.test(word)) return '‹…›';
-      return word;
-    })
+    .replace(GREETING_NAME, '$1$2‹…›')
+    .replace(LOCATION_VALUE, '$1$2‹…›');
+  const shape = redactLoneTokens(redactAnnounced(cut))
+    .replace(WORD, redactWord)
     .replace(/\r?\n|\r/gu, ' ⏎ ');
   const chars = [...shape];
   return chars.length <= REDACTED_MAX ? shape : `${chars.slice(0, REDACTED_MAX - 1).join('')}…`;
