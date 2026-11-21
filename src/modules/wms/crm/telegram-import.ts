@@ -444,10 +444,11 @@ export function fwdFromName(msg: {
  * Should this message's media be downloaded, and how big is it?
  *
  * PHOTOS ONLY, and only when Telegram states the size up front. `hasMedia`
- * is true for link previews, stickers, voice notes and arbitrary documents —
- * a naive "download when media" pulls all of it onto an account the business
- * depends on. The size is read from the message object BEFORE any network
- * I/O (Photo.sizes carries it), so an oversized photo is never
+ * is true for stickers, voice notes and arbitrary documents (not for a link
+ * preview, `carriesMedia`) — a naive "download when media" pulls all of it
+ * onto an account the business depends on. The size is read from the
+ * message object BEFORE any network I/O (Photo.sizes carries it), so an
+ * oversized photo is never
  * download-then-refused; unknown size refuses too — pulling blind is how a
  * 2 GB "photo sent as file" ends up in the pipe. Pure and unit-tested;
  * structural rather than instanceof so the test needs no gramjs objects.
@@ -577,8 +578,9 @@ const EXT_FOR_AUDIO: Record<string, string> = {
  * a clip of the pallet is the conversation, and «📎» in its place is the same
  * hole the voice notes left. What still stays a paperclip is deliberate —
  * stickers (a wall of them is not a record), round video notes (nothing here
- * plays one), link previews, and anything past the cap or of a type storage
- * would refuse, which is asked of STORAGE rather than restated here.
+ * plays one), and anything past the cap or of a type storage would refuse,
+ * which is asked of STORAGE rather than restated here. A link preview is
+ * fetched neither, and is no medium at all (`carriesMedia`).
  */
 export function tgMediaPlan(
   media: unknown,
@@ -687,6 +689,24 @@ export function tgMediaPlan(
   };
 }
 
+/**
+ * Did the message carry media of its own — the ONE place `has_media` is born (live listener, catch-up and the history
+ * importer all build their rows here)?
+ *
+ * A link PREVIEW is not media: Telegram hangs a `MessageMediaWebPage` on every text that holds a link — a 1688 or
+ * taobao offer, a map link — whether the page is loaded, pending or empty, and its picture is Telegram's render of the
+ * page, not something the customer sent. Read as media it made every link question a message with a file: the AI
+ * gate held the model's reply to it for him (`media` — «a message that came with a file never goes by itself») and the
+ * model read the line marked «[media]», while the question was in the text it reads. Nothing is fetched for one either
+ * (`tgMediaPlan` answers NONE). Everything else Telegram attaches stays media — photos, documents, voice notes,
+ * stickers, round videos, and what this file does not know (structural, so the tests need no gramjs objects). Rows
+ * already stored keep the value they were written with.
+ */
+export function carriesMedia(media: unknown): boolean {
+  if (media == null) return false;
+  return (media as { className?: unknown }).className !== 'MessageMediaWebPage';
+}
+
 export function toMessageRow(peerId: bigint, msg: RawMessage): MessageRow {
   const body = (msg.message ?? '').trim();
   // Through the string, like every other Telegram number here: the id arrives
@@ -704,7 +724,7 @@ export function toMessageRow(peerId: bigint, msg: RawMessage): MessageRow {
     tgMessageId: BigInt(msg.id),
     direction: msg.out ? 'out' : 'in',
     body: body.length > 0 ? body : null,
-    hasMedia: msg.media != null,
+    hasMedia: carriesMedia(msg.media),
     sentAt: new Date(msg.date * 1000),
     replyToTgMessageId: replied && replied > 0n ? replied : null,
     fwdFrom: fwdFromName(msg),

@@ -116,11 +116,11 @@ export const AFTER_AUTO = 'after_auto';
  * A file this system KEPT from the message — the stored record's «it carries a
  * medium» for `asksAnew` (review S4), asked by the send's stored check and by
  * the ✅'s own re-check (`chatMoved`). Not `has_media`: that is true of a
- * sticker and of a link's preview too, neither of which the live head counts
- * as media — and a stored check wider than the head would cancel what the
- * head lets through. A photo whose bytes are still downloading reads as none
- * for a moment; the live head, read again before the read and before the
- * send, sees it.
+ * sticker, and of a link's preview in rows stored before `carriesMedia`
+ * (telegram-import) — neither of which the live head counts as media — and a
+ * stored check wider than the head would cancel what the head lets through. A
+ * photo whose bytes are still downloading reads as none for a moment; the live
+ * head, read again before the read and before the send, sees it.
  */
 export function keptFileSql(messageId: SQL): SQL<boolean> {
   return sql<boolean>`EXISTS (

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { Api, helpers } from 'telegram';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { dropDrainKicksSince } from './drain-kicks';
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
@@ -36,6 +37,8 @@ import {
 import { LOOP_NOTICE, gateLoopFor, loopBucketStart, loopNoticeOnce, loopSignalKey } from '@/modules/wms/agent/loop';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
+import { storeIncoming } from '@/modules/wms/crm/telegram-accounts';
+import { toMessageRow, type RawMessage } from '@/modules/wms/crm/telegram-import';
 
 /**
  * The CHAT loop detector against a real database (stage 1a P2 «Halqa», §4.3, J8, J33) — not the model's tool loop of
@@ -807,6 +810,42 @@ describe('a tayyor matn and our sends the thread lost (the independent check of 
     expect(g.verdict.reasons).toContain('media');
     // What the page and the bot tell him about that very reply: it stays his — for a voice note, not only a photo or a file.
     expect(autoMediaWords(autoTicksOf(ARMED.categories))).toContain('rasm, ovoz yoki fayl kelgan xabarga AI yozgan javob sizga qoladi');
+  });
+
+  /**
+   * The check of the R1 fix, R3: a text with a link — every 1688 / taobao question — comes with Telegram's preview, and
+   * `has_media` called it a file, so the gate held the model's reply to it `media` and every link question waited for
+   * him. Born as the listener births it — gramjs's own preview object through `toMessageRow`, written by
+   * `storeIncoming` — it is a text; a photo with a caption, born the same way, is still media.
+   */
+  async function born(raw: Omit<RawMessage, 'id' | 'date'>, at: Date): Promise<bigint> {
+    msgSeq += 1n;
+    const row = toMessageRow(PEER, { ...raw, id: Number(msgSeq), date: Math.floor(at.getTime() / 1000) });
+    expect(await storeIncoming({ clientId, managerUserId: ownerId, row })).not.toBeNull();
+    return msgSeq;
+  }
+  const preview = () =>
+    new Api.MessageMediaWebPage({ webpage: new Api.WebPagePending({ id: helpers.returnBigInt('5'), date: 1 }) });
+
+  it('a link question, Telegram’s preview beside it, is a text: the model’s reply to it is not held `media`', async () => {
+    await line('in', 'Assalomu alaykum', min(1));
+    await machineSend('Vaalaykum assalom! Qanday yordam bera olaman?', min(2));
+    const t = await born({ message: 'https://detail.1688.com/offer/6543.html shu tovar qachon keladi?', media: preview() }, min(3));
+    const [stored] = await db.select({ hasMedia: tgMessages.hasMedia }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, t)));
+    expect(stored!.hasMedia).toBe(false);
+    expect(await handleInbound(job(t), { callModel: answers('Tovar omborga kelgach, sizga darhol xabar beramiz.') })).toMatchObject({ outcome: 'draft' });
+    const d = await pendingFor(t);
+    expect((d!.policy as { system?: unknown }).system).toBeUndefined();
+    expect((await gate(d!, min(4))).verdict).toEqual({ eligible: true, reasons: [] });
+  });
+
+  it('…while a photo with a caption is media: the model answers the caption, and the gate keeps that reply his', async () => {
+    await line('in', 'Assalomu alaykum', min(1));
+    await machineSend('Vaalaykum assalom! Qanday yordam bera olaman?', min(2));
+    const photo = new Api.MessageMediaPhoto({ photo: new Api.PhotoEmpty({ id: helpers.returnBigInt('6') }) });
+    const t = await born({ message: 'Shu tovar qachon keladi?', media: photo }, min(3));
+    expect(await handleInbound(job(t), { callModel: answers('Tovar omborga kelgach, sizga darhol xabar beramiz.') })).toMatchObject({ outcome: 'draft' });
+    expect((await gate((await pendingFor(t))!, min(4))).verdict.reasons).toContain('media');
   });
 
   it('…and once the voice line was said too (lost as well), the next voice note tells HIM — never the customer again', async () => {
