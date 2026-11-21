@@ -259,7 +259,10 @@ export function parseManualFacts(
       ? readNumber(text, KG, (a, b) => notTotal(a) || !nettoLabelled(text, a, b))
       : { value: null, ambiguous: null };
   const weight = netto.value !== null || netto.ambiguous ? netto : plain;
-  const volume = readNumber(text, ['kub', 'куб', 'm3', 'м3', 'м³', 'm³'], (a) => notTotal(a));
+  // «3 куба», «5 кубов», «2 кубометра» — Russian puts its case ending on the unit after a number, and the AI's checklist
+  // reads the customer's own lines through here: «Из Иу в Андижан 3 куба» had no volume and asked one he had given
+  // (the lead's ruling, 2026-11-21). One spelling-set, so «3 куб» and «3 куба» in one text are one statement.
+  const volume = readNumber(text, ['kub', 'куб(?:а|ов|ометр(?:а|ов|ы)?)?', 'm3', 'м3', 'м³', 'm³'], (a) => notTotal(a));
   const ambiguous: AmbiguousTotal[] = [];
   if (weight.ambiguous) ambiguous.push({ field: 'weightKg', ...weight.ambiguous });
   if (volume.ambiguous) ambiguous.push({ field: 'volumeM3', ...volume.ambiguous });

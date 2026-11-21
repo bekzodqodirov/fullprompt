@@ -2,138 +2,108 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AVIA_DAYS_DEFAULT } from '@/modules/platform/settings/service';
 import { autoVerdict, type AutoGateInput } from '@/modules/wms/agent/auto-gate';
-import { ASSUMED_DESTINATION, ASSUMED_DESTINATION_NOTE, destinationNote, evidenceOf, saidDestinationNote, truckDestination } from '@/modules/wms/agent/calc-destination';
+import {
+  ASSUMED_DESTINATION,
+  ASSUMED_DESTINATION_NOTE,
+  checkDestination,
+  DESTINATION_EVIDENCE_CHARS,
+  destinationNote,
+  evidenceOf,
+  jobDestination,
+  saidDestinationNote,
+  thisJobLines,
+} from '@/modules/wms/agent/calc-destination';
 import { actionLines } from '@/modules/wms/agent/card-io';
 import type { AgentContext, ChatMessage } from '@/modules/wms/agent/context';
-import { ASSUMED_DESTINATION_TOOL_WORDS, CALC_PRICE_TOOL, runTool, type ToolEnv } from '@/modules/wms/agent/tools';
-import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
+import { ASSUMED_DESTINATION_TOOL_WORDS, CALC_DESTINATION_TAKEN_WORDS, CALC_PRICE_TOOL, runTool, TOOL_SPECS, type ToolEnv } from '@/modules/wms/agent/tools';
 
 /**
- * The truck job's destination beside the route reader the checklist always read (his «T a», 2026-11-21): the
- * destination reader first, the route reader's `toCity` for a line it reads nothing in, the newest line winning — and a
- * China place the route reader hands over is never where the cargo goes. The reader's own words are the corpus's
- * (`calc_destination`, `calc_destination_default` in tests/unit/fixtures/agent-reader-corpus.ts).
+ * The destination the MODEL names and the code verifies (the lead's ruling, 2026-11-21, after three checks of a
+ * word-rule reader): the model's `to_city` lands only when its `to_city_words` are found in the customer's own line —
+ * case, the typed apostrophe, spaces and NFKC aside, never a transliteration — and the city is in those words by its
+ * stem; a place outside Uzbekistan never lands; anything else is Tashkent TAKEN on a truck job. The verifier's corpus
+ * is `calc_destination_check` (tests/unit/fixtures/agent-reader-corpus.ts).
  */
 
-const route = (line: string) => parseManualFacts(line).toCity ?? null;
-
-describe('truckDestination beside the route reader', () => {
-  it('the route reader still answers a Latin «Adan Bga» the destination reader also reads — one city', () => {
-    expect(truckDestination(['Yiwudan Samarqandga 3 kub'], route)).toEqual({ toCity: 'Samarqand', assumed: false, evidence: 'Yiwudan Samarqandga 3 kub' });
+describe('checkDestination: the words are the customer’s, the city is in them', () => {
+  it('the ruling’s four: a dative with a question, a label, Russian with a comma, a region', () => {
+    expect(checkDestination({ toCity: 'Andijon', words: 'Andijonga' }, ['Andijonga 3 kub qachon keladi'])).toEqual({ kind: 'said', toCity: 'Andijon', evidence: 'Andijonga' });
+    expect(checkDestination({ toCity: 'Andijon', words: 'manzil Andijon' }, ['Ivudan 3 kub kiyim', 'manzil Andijon'])).toEqual({ kind: 'said', toCity: 'Andijon', evidence: 'manzil Andijon' });
+    expect(checkDestination({ toCity: 'Андижан', words: 'Андижан' }, ['Андижан, 3 куба'])).toEqual({ kind: 'said', toCity: 'Андижан', evidence: 'Андижан' });
+    expect(checkDestination({ toCity: 'Andijon', words: 'Andijon viloyati' }, ['Andijon viloyati'])).toMatchObject({ kind: 'said', toCity: 'Andijon' });
   });
 
-  it('a city only the route reader knows is still read, as it always was («Kitob» is a word too, so the place list leaves it out)', () => {
-    expect(truckDestination(['Guanchjoudan Kitobga 3 kub'], route)).toEqual({ toCity: 'Kitob', assumed: false, evidence: 'Guanchjoudan Kitobga 3 kub' });
+  it('the evidence is the CUSTOMER’s text, cut out of his line — never the model’s copy of it', () => {
+    expect(checkDestination({ toCity: 'Andijon', words: 'andijonga 3 kub' }, ['ANDIJONGA   3 KUB'])).toEqual({ kind: 'said', toCity: 'Andijon', evidence: 'ANDIJONGA 3 KUB' });
+    expect(checkDestination({ toCity: "Qo'qon", words: "Qo'qonga" }, ['Qo‘qonga 2 kub'])).toEqual({ kind: 'said', toCity: "Qo'qon", evidence: 'Qo‘qonga' });
+    const long = 'Assalomu alaykum hurmatli kompaniya, bizda Ivudan 3 kub kiyim bor, 450 kg, iltimos narxini ayting, yuk Andijonga ketadi, rahmat oldindan';
+    const ev = checkDestination({ toCity: 'Andijon', words: long }, [long]);
+    expect(ev.kind).toBe('said');
+    const evidence = (ev as { evidence: string }).evidence;
+    expect(evidence).toContain('Andijonga');
+    expect(evidence.length).toBeLessThanOrEqual(DESTINATION_EVIDENCE_CHARS);
+    expect(evidenceOf('Ivudan 3 kub,\n  Toshkentga', 20)).toBe('Ivudan 3 kub, Toshkentga');
   });
 
-  it('the newest line wins, whichever reader read it', () => {
-    expect(truckDestination(['Andijonga', 'Yiwu → Toshkent'], route)).toMatchObject({ toCity: 'Toshkent', assumed: false, evidence: 'Yiwu → Toshkent' });
-    expect(truckDestination(['Yiwu → Toshkent', 'Андижонга'], route)).toMatchObject({ toCity: 'Андижон', assumed: false, evidence: 'Андижонга' });
+  it('the city by its stem — the case ending may differ, a Chinese name anywhere in the quote', () => {
+    expect(checkDestination({ toCity: 'Андижан', words: 'до Андижана' }, ['Доставка до Андижана, 3 куба'])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
+    expect(checkDestination({ toCity: 'Андижан', words: 'Андижонга' }, ['Андижонга юк бор'])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
+    expect(checkDestination({ toCity: 'Ош', words: 'Ошга' }, ['Ошга 2 куб'])).toMatchObject({ kind: 'foreign', toCity: 'Ош' });
+    expect(checkDestination({ toCity: '安集延', words: '到安集延' }, ['从义乌到安集延3方'])).toMatchObject({ kind: 'said', toCity: '安集延' });
   });
 
-  // DELIBERATE EDIT (the review of T, F3): this pinned «Toshkent → Toshkent» with «Manzil aytilmagan» — a destination
-  // the customer SAID, written to the VED as not said. A road whose far end is China is not the table's: asked.
-  it('a China place the route reader reads as the far end («Toshkentdan Xitoyga» → «Xitoy») is no destination — and no Tashkent is taken: the city is asked', () => {
-    expect(route('Toshkentdan Xitoyga 3 kub')).toBe('Xitoy');
-    expect(truckDestination(['Toshkentdan Xitoyga 3 kub'], route)).toEqual({ toCity: null, assumed: false, evidence: null });
+  it('refused: words in no line, the city not in the words, a transliteration, the country itself, one letter', () => {
+    expect(checkDestination({ toCity: 'Andijon', words: 'Andijonga' }, ['Ivudan 3 kub kiyim'])).toEqual({ kind: 'unread', why: 'not_in_lines' });
+    expect(checkDestination({ toCity: 'Andijon', words: 'Ivudan' }, ['Ivudan 3 kub kiyim'])).toEqual({ kind: 'unread', why: 'not_in_words' });
+    expect(checkDestination({ toCity: 'Andijon', words: 'Andijonga' }, ['Андижонга юк бор'])).toEqual({ kind: 'unread', why: 'not_in_lines' });
+    expect(checkDestination({ toCity: "O'zbekiston", words: "O'zbekistonga" }, ["Xitoydan O'zbekistonga 3 kub"])).toEqual({ kind: 'unread', why: 'country' });
+    expect(checkDestination({ toCity: 'A', words: 'Andijonga' }, ['Andijonga 3 kub'])).toEqual({ kind: 'unread', why: 'none' });
+    expect(checkDestination({ toCity: '', words: '' }, ['Andijonga 3 kub'])).toEqual({ kind: 'unread', why: 'none' });
   });
 
-  it('the route reader’s far end that is no place («menga», «skladga») is no destination — Tashkent is taken (review R7)', () => {
-    expect(route('Xitoydan menga 3 kub yuk kelyapti')).toBe('men');
-    expect(truckDestination(['Xitoydan menga 3 kub yuk kelyapti'], route)).toEqual({ toCity: ASSUMED_DESTINATION, assumed: true, evidence: null });
-    expect(route('Ivudan skladga 2 kub')).toBe('sklad');
-    expect(truckDestination(['Ivudan skladga 2 kub'], route)).toEqual({ toCity: ASSUMED_DESTINATION, assumed: true, evidence: null });
-  });
-
-  it('lines before the last landed job are never this job’s destination, yet a place in them keeps the default off (review R2)', () => {
-    expect(truckDestination(['Ivudan 2 kub kiyim'], route, ['Andijonga 3 kub'])).toMatchObject({ toCity: null, assumed: false });
-    expect(truckDestination(['Ivudan 2 kub kiyim'], route, ['Toshkentga 3 kub'])).toMatchObject({ toCity: ASSUMED_DESTINATION, assumed: true });
-    expect(truckDestination(['Ivudan 2 kub kiyim', 'Samarqandga'], route, ['Andijonga 3 kub'])).toMatchObject({ toCity: 'Samarqand', assumed: false });
-  });
-
-  it('nothing said and no other place named: Tashkent, taken', () => {
-    expect(truckDestination(['Ivudan 3 kub 450 kg kiyim', 'ha', '200 dona'], route)).toEqual({ toCity: 'Toshkent', assumed: true, evidence: null });
+  it('outside Uzbekistan is foreign — China and the neighbours; Uzbekistan’s own places the gate lists are not', () => {
+    for (const [city, words, line] of [
+      ['Almaty', 'Almatiga', 'Almatiga 3 kub'],
+      ['Ош', 'в Ош', 'в Ош 2 куба'],
+      ['Ош', 'Доставка в г. Ош', 'Доставка в г. Ош, 2 куба'],
+      ['Bishkek', 'Bishkekka', 'Bishkekka yuk bor'],
+      ['Xitoy', 'Xitoyga', 'Toshkentdan Xitoyga 3 kub'],
+      ['阿拉木图', '运到阿拉木图', '运到阿拉木图3方'],
+    ] as const) {
+      expect(checkDestination({ toCity: city, words }, [line]), city).toEqual({ kind: 'foreign', toCity: city });
+    }
+    for (const [city, words, line] of [
+      ['Chirchiq', 'Chirchiqqa', 'Chirchiqqa 3 kub'],
+      ['Qarshi', 'Qarshiga', 'Qarshiga 3 kub'],
+      ['Samarqand', 'Samarqandga', 'Ivudan Samarqandga 5 kub'],
+      ['Chinoz', 'chinozga', 'ivudan chinozga 3 kub'],
+      // A foreign place in the quote is where the cargo comes FROM — only the words before the city are asked.
+      ['Chinoz', 'Olmaotadan chinozga', 'Olmaotadan chinozga 3 kub'],
+    ] as const) {
+      expect(checkDestination({ toCity: city, words }, [line]), city).toMatchObject({ kind: 'said', toCity: city });
+    }
   });
 });
 
-// The lead's ruling on the T check (2026-11-21): a job that never lands is the defect he reported, a wrong destination
-// is a route line the VED reads beside the customer's own words — so a reading lands with its evidence.
-describe('the T check: a reading lands, with the words it was read from', () => {
-  it('regression 1 — a story in ANOTHER clause never drops the destination said beside it', () => {
-    for (const [line, city] of [
-      ['Ivudan Andijonga 3 kub kiyim, qachon keladi?', 'Andijon'],
-      ['Yiwudan Samarqandga 5 kub, qancha turadi va qachon yetib keladi?', 'Samarqand'],
-      ['Сколько стоит доставка в Самарканд и когда придёт?', 'Самарканд'],
-      ['Yuk zavodga keldi, Andijonga kerak', 'Andijon'],
-      ['Я отправил инвойс, доставка в Андижан', 'Андижан'],
-      ['Нужно в Андижан, чем раньше тем лучше', 'Андижан'],
-      ['Yiwu to Almaty 3 cbm, when will it arrive?', 'Almaty'],
-    ] as const) {
-      expect(truckDestination([line], route), line).toMatchObject({ toCity: city, assumed: false });
-    }
-    // …and in the story's own clause it is still no destination of THIS cargo (review R2).
-    expect(truckDestination(['Andijonga qachon keladi?'], route).toCity).toBeNull();
+describe('jobDestination: what the checklist lands', () => {
+  it('a truck job with nothing verified takes Tashkent; a customs-only job takes nothing; a foreign city lands neither', () => {
+    const lines = ['Ivudan 3 kub kiyim'];
+    expect(jobDestination({ toCity: '', words: '' }, lines, true)).toEqual({ toCity: ASSUMED_DESTINATION, assumed: true, evidence: null, foreign: null, refused: null });
+    expect(jobDestination({ toCity: 'Andijon', words: 'Andijonga' }, lines, true)).toEqual({ toCity: ASSUMED_DESTINATION, assumed: true, evidence: null, foreign: null, refused: 'not_in_lines' });
+    expect(jobDestination({ toCity: '', words: '' }, lines, false)).toEqual({ toCity: null, assumed: false, evidence: null, foreign: null, refused: null });
+    expect(jobDestination({ toCity: 'Almaty', words: 'Almatiga' }, ['Almatiga 3 kub'], true)).toEqual({ toCity: null, assumed: false, evidence: null, foreign: 'Almaty', refused: null });
   });
 
-  it('regression 1 — a request or a promise is no story: «Пришлите», «пришлю» keep the place said', () => {
-    expect(truckDestination(['Пришлите цену до Ташкента, из Иу 3 куба'], route)).toMatchObject({ toCity: 'Toshkent', assumed: false });
-    expect(truckDestination(['Пришлите цену доставки в Самарканд'], route)).toMatchObject({ toCity: 'Самарканд', assumed: false });
-    expect(truckDestination(['Я пришлю инвойс, из Иу 3 куба'], route)).toMatchObject({ toCity: 'Toshkent', assumed: true });
-  });
-
-  it('regression 1 — the route reader’s explicit «Adan Bga» is never skipped for a story beside it', () => {
-    expect(truckDestination(["O'tgan safar ham Ivudan Samarqandga yuborganmiz"], route)).toMatchObject({ toCity: 'Samarqand', assumed: false });
-  });
-
-  it('regression 2 — no Uzbek dative switches the default off: «Qanchaga», «Kubiga», «Ertaga», «Nimaga?» land on Tashkent', () => {
-    for (const second of ['Qanchaga?', 'qanchaga', 'Kubiga?', 'Ertaga', 'ertaga', 'Nimaga?', 'Kilosiga qancha?', 'Chilonzorga']) {
-      expect(truckDestination(['Ivudan 3 kub kiyim', second], route), second).toEqual({ toCity: ASSUMED_DESTINATION, assumed: true, evidence: null });
-    }
-    for (const line of ['Assalomu alaykum. Kompaniyamizga Ivudan 3 kub yuk kerak', 'Ivudan 3 kub, narxni Akmalga yuboring', 'Ivudan 3 kub kiyim, Kuniga nechta mashina?']) {
-      expect(truckDestination([line], route), line).toMatchObject({ toCity: ASSUMED_DESTINATION, assumed: true });
-    }
-  });
-
-  it('regression 2 — the Russian and English prepositions still hold an unlisted town, never a stoplisted word', () => {
-    for (const line of ['Из Иу 3 куба, на Узум продаю', 'Из Иу 3 куба, отправьте на Почту', 'Из Иу 3 куба, в Мешках', 'Из Иу 3 куба. До Свидания', 'Из Иу 3 куба, в Чиланзар', '3 cbm from Yiwu. To Be honest']) {
-      expect(truckDestination([line], route), line).toMatchObject({ toCity: ASSUMED_DESTINATION, assumed: true });
-    }
-    expect(truckDestination(['В Кызылорду, из Иу 3 куба'], route)).toEqual({ toCity: null, assumed: false, evidence: null });
-  });
-
-  it('regression 3 — the route reader’s far end lands unless it is plainly no place', () => {
-    expect(truckDestination(['ivudan chinozga 3 kub'], route)).toMatchObject({ toCity: 'chinoz', assumed: false });
-    expect(truckDestination(['yiwudan isfaraga'], route)).toMatchObject({ toCity: 'isfara', assumed: false });
-    for (const line of ['Ivudan skladga', 'Xitoydan firmamizga', 'Ivudan bizga 5 kub', "Xitoydan O'zbekistonga 3 kub"]) {
-      expect(truckDestination([line], route), line).toMatchObject({ toCity: ASSUMED_DESTINATION, assumed: true });
-    }
-  });
-
-  it('a town by its own shape or by «X shahri» is read, never asked: «Novosibirskka», «В Новосибирск», «Kitob shahriga»', () => {
-    expect(truckDestination(['Yuk Novosibirskka ketadi'], route)).toMatchObject({ toCity: 'Novosibirsk', assumed: false });
-    expect(truckDestination(['В Новосибирск, из Иу 3 куба'], route)).toMatchObject({ toCity: 'Новосибирск', assumed: false });
-    expect(truckDestination(['Ivudan 3 kub', 'Kitob shahriga'], route)).toMatchObject({ toCity: 'Kitob', assumed: false, evidence: 'Kitob shahriga' });
-    // «boshqa shaharga» — «to another city» — names none.
-    expect(truckDestination(['Toshkentga kerak emas, boshqa shaharga'], route).toCity).toBeNull();
-  });
-
-  it('rare 5-8, one narrow rule each: «не» refuses only «не в X» / «X не надо»; «в Косонсой» is a town; a locative is no refusal', () => {
-    expect(truckDestination(['В Андижан не позже пятницы, из Иу 3 куба'], route)).toMatchObject({ toCity: 'Андижан' });
-    expect(truckDestination(['Доставка в Ташкент не дорого? из Иу 3 куба'], route)).toMatchObject({ toCity: 'Toshkent', assumed: false });
-    expect(truckDestination(['В Самарканд нужно, не в Ташкент'], route)).toMatchObject({ toCity: 'Самарканд' });
-    expect(truckDestination(['в Косонсой, из Иу 3 куба'], route)).toMatchObject({ toCity: 'Косонсой' });
-    expect(truckDestination(['В Ташкенте нет склада? Из Иу 3 куба'], route)).toMatchObject({ toCity: ASSUMED_DESTINATION, assumed: true });
-    expect(truckDestination(['В Ташкент не надо'], route).toCity).toBeNull();
-  });
-
-  it('the evidence is the customer’s line, cut at words around the place — never a head of greetings alone', () => {
-    const long =
-      'Assalomu alaykum hurmatli kompaniya, bizda Ivudan 3 kub kiyim bor, 450 kg, iltimos narxini ayting, yuk Andijonga ketadi, rahmat oldindan';
-    const ev = truckDestination([long], route).evidence!;
-    expect(ev).toContain('Andijonga');
-    expect(ev.length).toBeLessThanOrEqual(80);
-    expect(ev.startsWith('…')).toBe(true);
-    expect(evidenceOf('Ivudan 3 kub,\n  Toshkentga', 20)).toBe('Ivudan 3 kub, Toshkentga');
+  it('the lines: his inbound ones since the last landed job — ours never, a handed-back chain no cut', () => {
+    const at = (n: number) => new Date(Date.UTC(2026, 10, 21, 8, n));
+    const messages = [
+      { direction: 'in', body: 'Andijonga 3 kub', sentAt: at(0) },
+      { direction: 'out', body: "Toshkentgacha 300 $ bo'ladi", sentAt: at(5) },
+      { direction: 'in', body: 'Ivudan 2 kub', sentAt: at(20) },
+    ];
+    expect(thisJobLines(messages, [])).toEqual(['Andijonga 3 kub', 'Ivudan 2 kub']);
+    expect(thisJobLines(messages, [{ status: 'answered', createdAt: at(10) }])).toEqual(['Ivudan 2 kub']);
+    expect(thisJobLines(messages, [{ status: 'returned', createdAt: at(10) }])).toEqual(['Andijonga 3 kub', 'Ivudan 2 kub']);
   });
 });
 
@@ -215,44 +185,74 @@ const env = (ctx: AgentContext): ToolEnv => ({
 
 const goods = [{ name: 'kiyim', quantity: 200, unit: 'dona', weight_kg: null }];
 
-describe('the checklist reads THIS job’s destination since the chat’s last landed job (review R2)', () => {
+describe('the checklist lands the model’s city only on THIS job’s words (review R2, the lead’s ruling)', () => {
   const landed = (minutesAgo: number, status: string) => ({
     requestId: 'r',
     section: 'podklyuch',
     createdAt: new Date(Date.now() - minutesAgo * 60_000),
     status,
   });
+  const andijon = { to_city: 'Andijon', to_city_words: 'Andijonga 3 kub' };
+  const lines: [string, number][] = [
+    ['Andijonga 3 kub kiyim', 120],
+    ['Ivudan 3 kub 450 kg kiyim, 200 dona', 5],
+  ];
 
-  it('«Andijonga» for the job that landed an hour ago is no destination of today’s — and is not swapped for Tashkent either: asked', async () => {
-    const lines: [string, number][] = [
-      ['Andijonga 3 kub kiyim', 120],
-      ['Ivudan 3 kub 450 kg kiyim, 200 dona', 5],
-    ];
-    const fresh = await runTool('calc_checklist', { section: 'podklyuch', goods }, env(chat(lines)));
-    // Control — no job landed: the line is this job's, as it always was.
-    expect(fresh.checklist).toMatchObject({ toCityAssumed: false, facts: { toCity: 'Andijon' } });
-    const after = await runTool('calc_checklist', { section: 'podklyuch', goods }, env(chat(lines, [landed(60, 'answered')])));
-    expect(after.checklist).toMatchObject({ complete: false, toCityAssumed: false, facts: { toCity: null } });
-    expect(after.text).toContain('qaysi shaharga');
+  it('«Andijonga» for the job that landed an hour ago is no destination of today’s: Tashkent taken, and the model told why', async () => {
+    const fresh = await runTool('calc_checklist', { section: 'podklyuch', goods, ...andijon }, env(chat(lines)));
+    // Control — no job landed: the line is this job's.
+    expect(fresh.checklist).toMatchObject({ complete: true, toCityAssumed: false, toCityEvidence: 'Andijonga 3 kub', facts: { toCity: 'Andijon' } });
+    const after = await runTool('calc_checklist', { section: 'podklyuch', goods, ...andijon }, env(chat(lines, [landed(60, 'answered')])));
+    expect(after.checklist).toMatchObject({ complete: true, toCityAssumed: true, facts: { toCity: ASSUMED_DESTINATION } });
+    expect(after.text).toContain("to_city_words mijozning xabarlarida so'zma-so'z topilmadi");
+    expect(after.text).not.toContain('qaysi shaharga');
   });
 
   it('a chain the VED handed back is no cut: the hand-back loop’s resubmission is the same job, its destination said before it landed', async () => {
-    const lines: [string, number][] = [
-      ['Andijonga 3 kub kiyim', 120],
-      ['Ivudan 3 kub 450 kg kiyim, 200 dona', 5],
-    ];
-    const out = await runTool('calc_checklist', { section: 'podklyuch', goods }, env(chat(lines, [landed(60, 'returned')])));
+    const out = await runTool('calc_checklist', { section: 'podklyuch', goods, ...andijon }, env(chat(lines, [landed(60, 'returned')])));
     expect(out.checklist).toMatchObject({ toCityAssumed: false, facts: { toCity: 'Andijon' } });
+  });
+
+  it('the staff intake’s route reader no longer names the destination: «Ivudan Andijonga kelishi» with nothing from the model is TAKEN', async () => {
+    const out = await runTool('calc_checklist', { section: 'yolkira', goods, to_city: '', to_city_words: '' }, env(chat([['Ivudan Andijonga kelishi qancha, 3 kub 450 kg kiyim, 200 dona', 5]])));
+    expect(out.checklist).toMatchObject({ toCityAssumed: true, facts: { toCity: ASSUMED_DESTINATION } });
+  });
+
+  it('a city outside Uzbekistan is asked, never taken for Tashkent', async () => {
+    const out = await runTool('calc_checklist', { section: 'podklyuch', goods, to_city: 'Almaty', to_city_words: 'Almatiga' }, env(chat([['Ivudan 3 kub 450 kg kiyim, 200 dona, Almatiga', 5]])));
+    expect(out.checklist).toMatchObject({ complete: false, toCityAssumed: false, facts: { toCity: null } });
+    expect(out.text).toContain('qaysi shaharga');
+    expect(out.text).toContain("«Almaty» O'zbekistondan tashqarida");
+  });
+
+  it('a customs-only job takes no Tashkent: its destination is the verified one or none', async () => {
+    const none = await runTool('calc_checklist', { section: 'rastamojka', goods }, env(chat([['Ivudan 3 kub 450 kg kiyim, 200 dona', 5]])));
+    expect(none.checklist).toMatchObject({ toCityAssumed: false, facts: { toCity: null } });
+    const said = await runTool('calc_checklist', { section: 'rastamojka', goods, to_city: 'Andijon', to_city_words: 'Andijonga' }, env(chat([['Andijonga, 3 kub 450 kg kiyim, 200 dona', 5]])));
+    expect(said.checklist).toMatchObject({ toCityAssumed: false, toCityEvidence: 'Andijonga', facts: { toCity: 'Andijon' } });
   });
 });
 
-describe('the model is told one thing about a taken destination (review F5)', () => {
-  it('«don’t ask, don’t say it as his» — and «Toshkentgacha» in a price, as the truck estimate demands', async () => {
+describe('the model is told one thing about a taken destination (review F5, the lead’s ruling)', () => {
+  it('«don’t ask, don’t say it as his» — «o‘qilmadi», never «mijoz aytmagan» — and «Toshkentgacha» in a price', async () => {
     expect(ASSUMED_DESTINATION_TOOL_WORDS).toContain('«Toshkentgacha»');
-    expect(ASSUMED_DESTINATION_TOOL_WORDS).not.toMatch(/shahar nomini o'zingdan aytma/u);
+    expect(ASSUMED_DESTINATION_TOOL_WORDS).toContain('Manzil o‘qilmadi');
+    expect(ASSUMED_DESTINATION_TOOL_WORDS).not.toMatch(/manzilni aytmagan/u);
+    expect(CALC_DESTINATION_TAKEN_WORDS).toContain('Manzil o‘qilmadi, Toshkent deb olindi');
+    expect(CALC_DESTINATION_TAKEN_WORDS).not.toMatch(/manzilni aytmagan/u);
     const out = await runTool('calc_checklist', { section: 'podklyuch', goods }, env(chat([['Ivudan 3 kub 450 kg kiyim, 200 dona', 5]])));
     expect(out.checklist).toMatchObject({ complete: true, toCityAssumed: true });
     expect(out.text).toContain(ASSUMED_DESTINATION_TOOL_WORDS);
+  });
+
+  it('the tool asks the model for the city and the customer’s words, and never «qaysi shaharga» for a truck job', () => {
+    const spec = TOOL_SPECS.find((t) => t.name === 'calc_checklist')!;
+    const props = (spec.input_schema as { properties: Record<string, unknown>; required: string[] }).properties;
+    expect(Object.keys(props)).toEqual(expect.arrayContaining(['to_city', 'to_city_words']));
+    expect(spec.description).toContain('to_city_words');
+    expect(spec.description).toContain("so'zma-so'z");
+    // «Mijoz manzilni aytmagan» is never told as a fact (the ruling) — «aytmagan bo'lsa» is an instruction.
+    expect(spec.description).not.toMatch(/manzilni aytmagan/u);
   });
 });
 

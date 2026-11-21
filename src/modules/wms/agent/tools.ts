@@ -18,7 +18,7 @@ import { AVIA_RATE_LABEL } from './config';
 import { aviaEstimate, TRUCK_ZONE, truckEstimate, YOLKIRA_GUARDS } from './estimate';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
-import { truckDestination } from './calc-destination';
+import { jobDestination, thisJobLines } from './calc-destination';
 import { namedOrigin, namesKashgar, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
 import { OWNER_WORD } from './persona';
 import { KASHGAR_REFUSAL } from './prompt';
@@ -101,31 +101,42 @@ export interface ChecklistState {
   /** A truck job from China or a place we have no warehouse in: priced from our warehouses, the factory leg extra (his third set «3»). */
   fromOurWarehouse: boolean;
   /**
-   * A truck job whose customer named no destination: `facts.toCity` is Tashkent, TAKEN, not said (his «T a»,
-   * calc-destination `truckDestination`) — the landing tells the VED so in words. False off a truck section; absent
+   * A truck job whose destination was not read: `facts.toCity` is Tashkent, TAKEN, not said (his «T a»,
+   * calc-destination `jobDestination`) — the landing tells the VED so in words. False off a truck section; absent
    * (a state built by hand) reads as said.
    */
   toCityAssumed?: boolean;
   /**
-   * The customer's words a truck job's destination was READ from (calc-destination `evidenceOf`) — what the VED's
-   * note, his card and the VED's screens show beside the city (the lead's ruling on the T check). Absent when taken,
-   * off a truck section, or none read.
+   * The customer's own words the destination was read from (the model's `to_city_words`, found in his line —
+   * calc-destination `checkDestination`) — what the VED's note, his card and the VED's screens show beside the city.
+   * Absent when taken or none read.
    */
   toCityEvidence?: string;
 }
 
 /**
- * What the model is told when the destination was taken, not said: the VED reads «Toshkent deb olindi»; the customer
+ * What `calc_price` adds when a priced job's destination was taken, not said (review F2). «o‘qilmadi», never «mijoz
+ * aytmagan» (the lead's ruling): the machine knows only that it read none — the customer may have said one it could not
+ * verify — so the model is never handed «he did not say» as a fact to repeat to him.
+ */
+export const CALC_DESTINATION_TAKEN_WORDS =
+  "Manzil o‘qilmadi, Toshkent deb olindi — VED narxi Toshkentgacha: narxni aytganda «Toshkentgacha» deb ayt.";
+
+/**
+ * What the model is told when the destination was taken, not read: the VED reads «Toshkent deb olindi»; the customer
  * is neither asked a city the job no longer needs nor told one as if he had said it — but a price is still
  * «Toshkentgacha», as the truck estimate's own words and prompt rule 8 demand (review F5: «don't name a city» beside
  * «say Toshkentgacha» made a model obeying the first drop the second, and the gate hold the reply).
  */
-/** What `calc_price` adds when a priced job's destination was taken, not said (review F2). */
-export const CALC_DESTINATION_TAKEN_WORDS =
-  "Mijoz manzilni aytmagan, VED narxi Toshkentgacha: narxni aytganda «Toshkentgacha» deb ayt.";
-
 export const ASSUMED_DESTINATION_TOOL_WORDS =
-  "Mijoz manzilni aytmagan — VEDga «Toshkent deb olindi» deb yoziladi. Manzilni so'rama va mijoz aytmagan shaharni uning so'zi qilib aytma («Toshkentga dedingiz» kabi); narx aytsang — «Toshkentgacha» de.";
+  "Manzil o‘qilmadi — VEDga «Manzil o‘qilmadi, Toshkent deb olindi» deb yoziladi. «Qaysi shaharga» deb so'rama va Toshkentni mijozning so'zi qilib aytma («Toshkentga dedingiz» kabi); narx aytsang — «Toshkentgacha» de.";
+
+/** Why the model's `to_city` was not taken — said back to the model, so a city it misquoted can be quoted again. */
+const DESTINATION_REFUSED_WORDS: Record<'not_in_lines' | 'not_in_words' | 'country', string> = {
+  not_in_lines: "to_city_words mijozning xabarlarida so'zma-so'z topilmadi",
+  not_in_words: "to_city to_city_words ichida yo'q",
+  country: "to_city shahar emas, davlat",
+};
 
 export interface ToolOutcome {
   ok: boolean;
@@ -236,9 +247,15 @@ export const TOOL_SPECS: ModelToolSpec[] = [
   {
     name: 'calc_checklist',
     description:
-      "Rastamojka yoki podklyuch (yoki yo'lkira) hisoblatish uchun nima yetishmasligini aytadi. Bo'lim mijoz aytmagan bo'lsa — section bo'sh qoldiriladi va bo'limni so'raysan, o'zing tanlamaysan. Tovar qatorlaridagi har bir son mijozning \"Suhbat\" qismidagi xabarida bo'lishi shart; tovar nomi va bo'lim ham hozirgi so'rovdan (\"Suhbat\"), oldingi yukdan emas. Kelib chiqish sertifikatini kompaniya o'zi oladi — so'rama.",
+      "Rastamojka yoki podklyuch (yoki yo'lkira) hisoblatish uchun nima yetishmasligini aytadi. Bo'lim mijoz aytmagan bo'lsa — section bo'sh qoldiriladi va bo'limni so'raysan, o'zing tanlamaysan. Tovar qatorlaridagi har bir son mijozning \"Suhbat\" qismidagi xabarida bo'lishi shart; tovar nomi va bo'lim ham hozirgi so'rovdan (\"Suhbat\"), oldingi yukdan emas. Kelib chiqish sertifikatini kompaniya o'zi oladi — so'rama. " +
+      // The destination is the MODEL's to read (the lead's ruling, 2026-11-21): a word rule cannot read Uzbek, Russian
+      // and mixed chat. The code checks the words are the customer's and the city is in them (calc-destination).
+      "to_city — mijoz SHU yuk boradi deb aytgan shahar (O'zbekistondan tashqarida bo'lsa ham), u qanday yozgan bo'lsa o'sha yozuvda (lotin yoki kirill), qo'shimchasiz: «Andijonga» → «Andijon», «в Андижан» → «Андижан». Aytmagan bo'lsa — bo'sh. Oldingi yukning manzili, mijoz yashaydigan joy (o'sha yerda olaman demasa) va bizning «Toshkentgacha» — to_city emas. " +
+      "to_city_words — mijozning shu shaharni aytgan so'zlari, uning \"Suhbat\"dagi xabaridan so'zma-so'z ko'chirilgan (masalan «Andijonga 3 kub»). Mashina hisobida (yo'lkira, podklyuch) manzil o'qilmasa Toshkent deb olinadi — bu vosita so'ramasa, «qaysi shaharga» deb so'rama.",
     input_schema: obj({
       section: { type: 'string', enum: ['', ...SECTIONS] },
+      to_city: { type: 'string' },
+      to_city_words: { type: 'string' },
       goods: {
         type: 'array',
         items: obj({
@@ -759,35 +776,31 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // The newest statement of each total wins: a customer who corrects «5 kub»
   // to «6 kub» means six.
   const facts: CalcFacts = { fromCity: null, toCity: null, weightKg: null, volumeM3: null, goods: [] };
-  const routeTo = new Map<string, string | null>();
   for (const m of inbound) {
     const f = parseManualFacts(m.body);
-    routeTo.set(m.body, f.toCity ?? null);
     if (f.fromCity) facts.fromCity = f.fromCity;
-    if (f.toCity) facts.toCity = f.toCity;
     if (Number(f.weightKg) > 0) facts.weightKg = Number(f.weightKg);
     if (Number(f.volumeM3) > 0) facts.volumeM3 = Number(f.volumeM3);
   }
-  // Where a truck job goes (his «T a», 2026-11-21): the destination the customer named — alone, in Cyrillic, in Russian
-  // — read beside the route reader, the newest winning; none named → Tashkent, said to the VED in words. A rastamojka
-  // job prices no road: its facts are today's.
-  let toCityAssumed = false;
-  let toCityEvidence: string | null = null;
-  if (TRUCK_SECTIONS.includes(section)) {
-    // Only what was said since the chat's last landed job is THIS job's destination (review R2 — the cut calc-files
-    // copies the job's files by): «Andijonga» for last month's job is no destination of today's. A chain the VED handed
-    // back is no cut: the hand-back loop's resubmission is that same job, its destination said before it landed.
-    const landed = ctx.openCalcs.filter((c) => c.status !== 'returned').map((c) => c.createdAt.getTime());
-    const cut = landed.length > 0 ? Math.max(...landed) : null;
-    const dest = truckDestination(
-      inbound.filter((m) => cut === null || m.sentAt.getTime() > cut).map((m) => m.body),
-      (line) => routeTo.get(line) ?? null,
-      inbound.filter((m) => cut !== null && m.sentAt.getTime() <= cut).map((m) => m.body),
-    );
-    facts.toCity = dest.toCity;
-    toCityAssumed = dest.assumed;
-    toCityEvidence = dest.evidence;
-  }
+  // Where the job goes (his «T a»; the lead's ruling on the three checks): the city the MODEL names, taken only when
+  // the words it quotes are the customer's — in THIS job's lines (`thisJobLines`) — and hold the city
+  // (calc-destination `jobDestination`); never the staff intake's route reader, whose far end landed «kelishi»,
+  // «jo'natish», «yuborish». A truck job with none verified takes Tashkent, said to the VED in words; a customs-only
+  // job prices no road and takes nothing.
+  const truck = TRUCK_SECTIONS.includes(section);
+  const dest = jobDestination(
+    { toCity: typeof input.to_city === 'string' ? input.to_city : '', words: typeof input.to_city_words === 'string' ? input.to_city_words : '' },
+    thisJobLines(ctx.messages, ctx.openCalcs),
+    truck,
+  );
+  facts.toCity = dest.toCity;
+  const toCityAssumed = dest.assumed;
+  const toCityEvidence = dest.evidence;
+  // Said back to the model: a city it misquoted it may quote again; a place outside Uzbekistan is asked, never taken
+  // for Tashkent (the gate's `foreign_destination` holds a price there already).
+  const destinationWords =
+    (dest.refused ? ` (to_city olinmadi: ${DESTINATION_REFUSED_WORDS[dest.refused]} — mijoz aytgan bo'lsa, uning so'zlarini xabaridan so'zma-so'z ko'chirib qayta chaqir; aytmagan bo'lsa bo'sh qoldir.)` : '') +
+    (dest.foreign && truck ? ` Mijoz aytgan «${dest.foreign}» O'zbekistondan tashqarida — hisoblatish Toshkent deb olinmaydi: manzilni mijozdan aniqlab so'ra.` : '');
   const dims = ctx.measures.filter((m) => m.ref.startsWith('d'));
   if (!(Number(facts.volumeM3) > 0) && dims.length > 0) facts.volumeM3 = dims[dims.length - 1]!.value;
   // The place the customer NAMED, when the route parser found none — so the
@@ -840,9 +853,11 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   const text = complete
     ? `To'liq. ${section}: ${JSON.stringify(shown)}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.` +
       (fromOurWarehouse ? " Yuk omborimiz yo'q joydan: narx Xitoydagi omborimizdan hisoblanadi, zavoddan omborgacha olib kelish alohida — VEDga shunday yoziladi." : '') +
-      assumedWords
+      assumedWords +
+      destinationWords
     : `Yetishmaydi (hammasini BITTA xabarda, "•" bilan ro'yxat qilib so'ra — raqamlama; savol belgisi faqat oxirida):\n${missing.map((m) => `• ${m}`).join('\n')}` +
-      (assumedWords ? `\n${assumedWords.trim()}` : '');
+      (assumedWords ? `\n${assumedWords.trim()}` : '') +
+      (destinationWords ? `\n${destinationWords.trim()}` : '');
   return {
     ok: true,
     text,

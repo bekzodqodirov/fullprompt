@@ -46798,6 +46798,87 @@
    "weight": "regression",
    "realistic": "A seller lists the lines, then the total underneath.",
    "severity": "common"
+  },
+  {
+   "id": "c3176",
+   "input": "Из Иу в Андижан 3 куба",
+   "expected": {
+    "volumeM3": 3
+   },
+   "said": "volumeM3 3 — «3 куба» is three cubic metres; the Russian genitive after a number is the unit's own ending.",
+   "why": "The lead's ruling 2026-11-21: «3 куба» read no volume, so the AI's checklist asked a volume the customer had given.",
+   "source": "the lead's ruling 2026-11-21 (agent checklist)",
+   "weight": "regression",
+   "realistic": "A Russian-writing customer names the route and the cubes in one line.",
+   "severity": "common"
+  },
+  {
+   "id": "c3177",
+   "input": "Здравствуйте, 5 кубов 800 кг одежда из Гуанчжоу",
+   "expected": {
+    "volumeM3": 5,
+    "weightKg": 800
+   },
+   "said": "volumeM3 5, weightKg 800 — «5 кубов» is five cubic metres.",
+   "why": "The lead's ruling 2026-11-21: the plural genitive «кубов» read no volume.",
+   "source": "the lead's ruling 2026-11-21 (agent checklist)",
+   "weight": "regression",
+   "realistic": "Five and more takes «кубов» in Russian.",
+   "severity": "common"
+  },
+  {
+   "id": "c3178",
+   "input": "Объем 2 кубометра, вес 400 кг",
+   "expected": {
+    "volumeM3": 2,
+    "weightKg": 400
+   },
+   "said": "volumeM3 2 — «2 кубометра» is two cubic metres.",
+   "why": "The lead's ruling 2026-11-21: «кубометр» in its forms read no volume.",
+   "source": "the lead's ruling 2026-11-21 (agent checklist)",
+   "weight": "regression",
+   "realistic": "A customer who writes the word whole.",
+   "severity": "rare"
+  },
+  {
+   "id": "c3179",
+   "input": "3 куб и ещё 3 куба",
+   "expected": {
+    "volumeM3": 3
+   },
+   "said": "volumeM3 3 — «3 куб» and «3 куба» are one statement of one figure, never two opinions.",
+   "why": "One spelling-set for the Russian cube words: the reader answers only when the whole text agrees on one number.",
+   "source": "the lead's ruling 2026-11-21 (agent checklist)",
+   "weight": "regression",
+   "realistic": "A customer repeating himself.",
+   "severity": "rare"
+  },
+  {
+   "id": "c3180",
+   "input": "Нужно 3 кубка на подарок, из Иу",
+   "expected": {
+    "volumeM3": null
+   },
+   "said": "volumeM3 null — «3 кубка» are three cups, not cubic metres.",
+   "why": "The widened cube word must not swallow a word that only begins like it.",
+   "source": "the lead's ruling 2026-11-21 (agent checklist)",
+   "weight": "regression",
+   "realistic": "A goods name that starts with «куб».",
+   "severity": "rare"
+  },
+  {
+   "id": "c3181",
+   "input": "Груз 300 кг, 12 кубатура?",
+   "expected": {
+    "volumeM3": null,
+    "weightKg": 300
+   },
+   "said": "volumeM3 null — «кубатура» after a number is a word that begins like the unit, not the unit.",
+   "why": "The widened cube word must not read a word that only begins like it.",
+   "source": "the lead's ruling 2026-11-21 (agent checklist)",
+   "weight": "regression",
+   "realistic": "A customer unsure of the volume.",
+   "severity": "rare"
   }
  ],
  "intakeClientLabelCases": [

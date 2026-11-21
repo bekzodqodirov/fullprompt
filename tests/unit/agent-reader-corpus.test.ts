@@ -35,7 +35,7 @@ describe('the corpus itself', () => {
   });
 
   it('every reader the round named has cases of both kinds', () => {
-    const readers: Reader[] = ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'bot_question', 'pashto', 'complaint', 'calc_claim', 'phone', 'loop', 'avia_days', 'full_truck', 'calc_destination', 'calc_destination_default', 'origin'];
+    const readers: Reader[] = ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'bot_question', 'pashto', 'complaint', 'calc_claim', 'phone', 'loop', 'avia_days', 'full_truck', 'calc_destination_check', 'origin'];
     for (const reader of readers) {
       const of = READER_CORPUS.filter((c) => c.reader === reader);
       expect(of.some((c) => c.kind === 'dangerous'), reader).toBe(true);
@@ -44,7 +44,7 @@ describe('the corpus itself', () => {
   });
 });
 
-for (const reader of ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'bot_question', 'pashto', 'complaint', 'calc_claim', 'phone', 'loop', 'avia_days', 'full_truck', 'calc_destination', 'calc_destination_default', 'origin'] as const) {
+for (const reader of ['avia', 'destination', 'language', 'language_money', 'owner_figure', 'money', 'han', 'han_g1', 'lesson', 'bot_question', 'pashto', 'complaint', 'calc_claim', 'phone', 'loop', 'avia_days', 'full_truck', 'calc_destination_check', 'origin'] as const) {
   describe(`reader: ${reader}`, () => {
     for (const c of READER_CORPUS.filter((x) => x.reader === reader)) {
       const known = KNOWN_HELD.get(c.id);
