@@ -37,6 +37,18 @@
  *                     signal. Here `dangerous` is the other way round from every reader above — a plain «fura kerak»
  *                     the reader MISSES is the case his answer exists for; a word that pings a colleague about a
  *                     washing machine is `ordinary` (one needless ping a chat a week).
+ *  - `calc_destination` — where a calculation's truck cargo GOES, as the customer said it (his «T a», 2026-11-21;
+ *                     calc-destination `newestDestination`) over the customer's lines: `goes` = the reader reads the
+ *                     place `context.place` names (or, with none named, any place at all), `held` = it reads none.
+ *                     Ordinary = a destination said («Toshkentga», «в Ташкент», «до Андижана») and missed — the job
+ *                     asks «qaysi shaharga» again; dangerous = a line that is NO destination read as one («Toshkentdan»,
+ *                     «Toshkentda», a sender's address, «Xitoyga») — a city nobody named on the VED's job.
+ *  - `calc_destination_default` — the Tashkent default itself (calc-destination `truckDestination`): `goes` = the job
+ *                     takes Tashkent «aytilmagan», `held` = it does not. Ordinary = nothing said, the job lands;
+ *                     dangerous = a place other than Tashkent named anywhere, defaulted to the Tashkent table anyway.
+ *  - `origin`       — the place the cargo STARTS (origin `namedOrigin`), for the «You» spelling of Yiwu (the
+ *                     2026-11-15 live chat): `goes` = it reads `context.place` (or any place), `held` = none.
+ *                     Dangerous = English «you» read as Yiwu — a price quoted from a warehouse nobody named.
  *
  * `kind`: `dangerous` — the WRONG answer lets something reach a customer that must not (a price nobody read, a
  * hand-over in an air chat, a Tashkent price for another destination, a reply in the wrong language, his figure
@@ -72,7 +84,10 @@ export type Reader =
   | 'phone'
   | 'loop'
   | 'avia_days'
-  | 'full_truck';
+  | 'full_truck'
+  | 'calc_destination'
+  | 'calc_destination_default'
+  | 'origin';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -88,7 +103,7 @@ export interface ReaderCase {
    * language of the earlier turn's reply HE approved by hand (his ✅ — decide `approvedLocale`), taught to the chat
    * where nothing was stored.
    */
-  context?: { stored?: string | null; reply?: string; before?: string; remember?: boolean; approved?: string };
+  context?: { stored?: string | null; reply?: string; before?: string; remember?: boolean; approved?: string; place?: string };
   expect: Observed;
   kind: Kind;
   source: string;
@@ -2202,6 +2217,93 @@ const FULL_TRUCK_ORDINARY: readonly Row[] = [
   ['ft125', 'Fura kerak emas, yoki sborniy, yoki avia', P_FT],
 ];
 
+// ── calc_destination: where the truck job goes, as said (his «T a», 2026-11-21) ──────────────────────────────────
+// Written by hand from his answer and the task that carried it, before the reader existed. One customer line per
+// line of the input; `place` is what the VED's job must read.
+const P_TA = 'his «T a» 2026-11-21';
+const TO = (place: string) => ({ place });
+const CALC_DESTINATION_ORDINARY: readonly Row[] = [
+  ['cd001', 'Toshkentga', P_TA, TO('Toshkent')],
+  ['cd002', 'Тошкентга', P_TA, TO('Toshkent')],
+  ['cd003', 'в Ташкент', P_TA, TO('Toshkent')],
+  ['cd004', 'до Андижана', P_TA, TO('Андижан')],
+  ['cd005', 'Ivudan Toshkentga', P_TA, TO('Toshkent')],
+  ['cd006', 'из Иу в Ташкент', P_TA, TO('Toshkent')],
+  ['cd007', 'Иудан Тошкентга', P_TA, TO('Toshkent')],
+  ['cd008', 'до Ташкента', P_TA, TO('Toshkent')],
+  ['cd009', 'Toshkent shahriga', P_TA, TO('Toshkent')],
+  ['cd010', 'Toshkentgacha qancha?', P_TA, TO('Toshkent')],
+  ['cd011', 'Yiwu → Toshkent', P_TA, TO('Toshkent')],
+  ['cd012', 'Иу — Ташкент', P_TA, TO('Toshkent')],
+  ['cd013', 'to Tashkent', P_TA, TO('Toshkent')],
+  ['cd014', '从义乌到塔什干', P_TA, TO('Toshkent')],
+  ['cd015', 'Andijonga', P_TA, TO('Andijon')],
+  ['cd016', 'Toshkentga emas, Andijonga', P_TA, TO('Andijon')],
+  ['cd017', 'не в Ташкент, а в Андижан', P_TA, TO('Андижан')],
+  ['cd018', 'Toshkent', P_TA, TO('Toshkent')],
+  ['cd019', 'Ivudan 3 kub 450 kg kiyim\nToshkentga', P_TA, TO('Toshkent')],
+  ['cd020', 'Andijonga\nYo‘q, Toshkentga', P_TA, TO('Toshkent')],
+  ['cd021', 'Olmaotaga', P_TA, TO('Olmaota')],
+  ['cd022', 'Toshkent ga', P_TA, TO('Toshkent')],
+];
+const CALC_DESTINATION_DANGEROUS: readonly Row[] = [
+  ['cd101', "Toshkentdan jo'natamiz", P_TA],
+  ['cd102', 'Toshkentda turaman', P_TA],
+  ['cd103', 'Отправитель: г. Ташкент, ул. Навои 5', P_TA],
+  ['cd104', 'Xitoyga', P_TA],
+  ['cd105', 'Ivudan 3 kub 450 kg kiyim, narxi qancha?', P_TA],
+  ['cd106', 'в Ташкенте живу', P_TA],
+  ['cd107', 'Yiwuga yuboraman', P_TA],
+  ['cd108', 'sotuvga', P_TA],
+  ['cd109', 'firmangizga yuboraman', P_TA],
+  ['cd110', 'yangi yilgacha kerak', P_TA],
+  ['cd111', 'на склад', P_TA],
+  ['cd112', 'Mirzo Ulug‘bek tumaniga', P_TA],
+  ['cd113', 'Адрес отправителя: Ташкент, Чиланзар 5', P_TA],
+  ['cd114', 'Guanchjouga yetkazib beradi', P_TA],
+  // «в … -е» is where somebody IS: the Tashkent cases above are refused by the stem alone, so these name another city.
+  ['cd115', 'в Андижане живу', P_TA],
+  ['cd116', 'Склад у меня в Самарканде', P_TA],
+];
+
+// ── calc_destination_default: the Tashkent default (his «T a» (2)) ──────────────────────────────────────────────
+const CALC_DEFAULT_ORDINARY: readonly Row[] = [
+  ['cdd001', 'Ivudan 3 kub 450 kg kiyim, narxi qancha?\nha\n200 dona', P_TA],
+  ['cdd002', 'Xitoydan 5 kub 800 kg yuk bor', P_TA],
+  ['cdd003', 'Toshkentda turaman, Yiwudan yuk bor', P_TA],
+  ['cdd004', 'Guanchjoudan 2 kub', P_TA],
+];
+const CALC_DEFAULT_DANGEROUS: readonly Row[] = [
+  ['cdd101', 'Olmaotaga 5 kub', P_TA],
+  ['cdd102', 'Samarqandda turaman, Yiwudan yuk bor', P_TA],
+  ['cdd103', 'Bishkekka yuk bor', P_TA],
+  ['cdd104', 'Доставка в Алматы, 3 куба', P_TA],
+  ['cdd105', 'Andijonda olaman', P_TA],
+  ['cdd106', 'Ivudan Oshga 2 kub', P_TA],
+];
+
+// ── origin: the «You» spelling of Yiwu (the 2026-11-15 live chat) ──────────────────────────────────────────────
+const P_YOU = 'live chat 2026-11-15 («"You" shahrini aniqlab bera olmadim»)';
+const YIWU = { place: 'Yiwu' };
+const ORIGIN_ORDINARY: readonly Row[] = [
+  ['or001', 'Youdan 2 kub', P_YOU, YIWU],
+  ['or002', 'You dan 3 kub 500 kg', P_YOU, YIWU],
+  ['or003', 'You shahri', P_YOU, YIWU],
+  ['or004', 'You shahridan yuk bor', P_YOU, YIWU],
+  ['or005', 'Ivudan 3 kub', P_YOU, YIWU],
+  ['or006', 'Иудан 3 куб', P_YOU, YIWU],
+];
+const ORIGIN_DANGEROUS: readonly Row[] = [
+  ['or101', 'Thank you', P_YOU],
+  ['or102', 'you can send it', P_YOU],
+  ['or103', 'See you', P_YOU],
+  ['or104', 'Thank you Dan', P_YOU],
+  ['or105', 'See you dan', P_YOU],
+  ['or106', 'Are you Shahrizoda?', P_YOU],
+  ['or107', 'Did you dance?', P_YOU],
+  ['or108', 'How much do you charge?', P_YOU],
+];
+
 export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('avia', 'dangerous', AVIA_DANGEROUS),
   ...rows('avia', 'ordinary', AVIA_ORDINARY),
@@ -2237,4 +2339,10 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('avia_days', 'ordinary', AVIA_DAYS_ORDINARY),
   ...rows('full_truck', 'dangerous', FULL_TRUCK_DANGEROUS),
   ...rows('full_truck', 'ordinary', FULL_TRUCK_ORDINARY),
+  ...rows('calc_destination', 'dangerous', CALC_DESTINATION_DANGEROUS),
+  ...rows('calc_destination', 'ordinary', CALC_DESTINATION_ORDINARY),
+  ...rows('calc_destination_default', 'dangerous', CALC_DEFAULT_DANGEROUS),
+  ...rows('calc_destination_default', 'ordinary', CALC_DEFAULT_ORDINARY),
+  ...rows('origin', 'dangerous', ORIGIN_DANGEROUS),
+  ...rows('origin', 'ordinary', ORIGIN_ORDINARY),
 ];

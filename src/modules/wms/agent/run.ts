@@ -1960,6 +1960,7 @@ export function validateActions(
         section: cl.section,
         facts: cl.facts,
         fromOurWarehouse: cl.fromOurWarehouse,
+        ...(cl.toCityAssumed ? { toCityAssumed: true } : {}),
         citedMessageIds: [...new Set(cited)],
       });
     } else if (a.type === 'set_followup') {

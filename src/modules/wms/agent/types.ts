@@ -18,6 +18,12 @@ export type ComposedAction =
        * action stored before it has none, which reads as false.
        */
       fromOurWarehouse: boolean;
+      /**
+       * The customer named no destination and the truck job took Tashkent (his «T a», 2026-11-21): the landing's note
+       * says «Manzil aytilmagan — Toshkent deb olindi» to the VED. Absent — an action stored before it, or a job whose
+       * destination was said — reads as said.
+       */
+      toCityAssumed?: boolean;
       /** tg_messages ids the model cited — the only messages that reach the lenta (leak-12). */
       citedMessageIds: string[];
     }

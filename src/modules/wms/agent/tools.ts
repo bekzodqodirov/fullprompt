@@ -18,6 +18,7 @@ import { AVIA_RATE_LABEL } from './config';
 import { aviaEstimate, TRUCK_ZONE, truckEstimate, YOLKIRA_GUARDS } from './estimate';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
+import { truckDestination } from './calc-destination';
 import { namedOrigin, namesKashgar, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
 import { OWNER_WORD } from './persona';
 import { KASHGAR_REFUSAL } from './prompt';
@@ -99,7 +100,20 @@ export interface ChecklistState {
   complete: boolean;
   /** A truck job from China or a place we have no warehouse in: priced from our warehouses, the factory leg extra (his third set «3»). */
   fromOurWarehouse: boolean;
+  /**
+   * A truck job whose customer named no destination: `facts.toCity` is Tashkent, TAKEN, not said (his «T a»,
+   * calc-destination `truckDestination`) — the landing tells the VED so in words. False off a truck section; absent
+   * (a state built by hand) reads as said.
+   */
+  toCityAssumed?: boolean;
 }
+
+/**
+ * What the model is told when the destination was taken, not said: the VED reads «Toshkent deb olindi»; the customer
+ * is neither told a city he did not name nor asked one the job no longer needs.
+ */
+export const ASSUMED_DESTINATION_TOOL_WORDS =
+  "Mijoz manzilni aytmagan — VEDga «Toshkent deb olindi» deb yoziladi. Mijozga shahar nomini o'zingdan aytma va manzilni so'rama.";
 
 export interface ToolOutcome {
   ok: boolean;
@@ -725,12 +739,26 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // The newest statement of each total wins: a customer who corrects «5 kub»
   // to «6 kub» means six.
   const facts: CalcFacts = { fromCity: null, toCity: null, weightKg: null, volumeM3: null, goods: [] };
+  const routeTo = new Map<string, string | null>();
   for (const m of inbound) {
     const f = parseManualFacts(m.body);
+    routeTo.set(m.body, f.toCity ?? null);
     if (f.fromCity) facts.fromCity = f.fromCity;
     if (f.toCity) facts.toCity = f.toCity;
     if (Number(f.weightKg) > 0) facts.weightKg = Number(f.weightKg);
     if (Number(f.volumeM3) > 0) facts.volumeM3 = Number(f.volumeM3);
+  }
+  // Where a truck job goes (his «T a», 2026-11-21): the destination the customer named — alone, in Cyrillic, in Russian
+  // — read beside the route reader, the newest winning; none named → Tashkent, said to the VED in words. A rastamojka
+  // job prices no road: its facts are today's.
+  let toCityAssumed = false;
+  if (TRUCK_SECTIONS.includes(section)) {
+    const dest = truckDestination(
+      inbound.map((m) => m.body),
+      (line) => routeTo.get(line) ?? null,
+    );
+    facts.toCity = dest.toCity;
+    toCityAssumed = dest.assumed;
   }
   const dims = ctx.measures.filter((m) => m.ref.startsWith('d'));
   if (!(Number(facts.volumeM3) > 0) && dims.length > 0) facts.volumeM3 = dims[dims.length - 1]!.value;
@@ -747,11 +775,11 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // The company does not carry it by truck — so it is not collected for the
   // VED either: «hisoblatishga yubordim» would be accepting the cargo.
   if (TRUCK_SECTIONS.includes(section) && belowTruckMinimumFacts(facts)) {
-    return { ...belowTruckMinimum(), checklist: { section, facts, complete: false, fromOurWarehouse } };
+    return { ...belowTruckMinimum(), checklist: { section, facts, complete: false, fromOurWarehouse, toCityAssumed } };
   }
   // …and neither does a truck job from Kashgar (J24), answered the way the minimum is: never complete, so no job lands.
   if (TRUCK_SECTIONS.includes(section) && (namesKashgar(inbound.map((m) => m.body).join('\n')) || namesKashgar(facts.fromCity))) {
-    return { ok: true, text: KASHGAR_REFUSAL, sources: [], checklist: { section, facts, complete: false, fromOurWarehouse } };
+    return { ok: true, text: KASHGAR_REFUSAL, sources: [], checklist: { section, facts, complete: false, fromOurWarehouse, toCityAssumed } };
   }
   const goodsIn = Array.isArray(input.goods) ? (input.goods as Record<string, unknown>[]) : [];
   const goods: CalcGoodsFact[] = [];
@@ -775,17 +803,23 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
     ? missingFields(section, laws.facts(facts), laws.map).flatMap((f) => (f === 'lineNeed' ? lineNeedWords(section, laws.facts(facts), laws.map) : [FIELD_LABEL[f]]))
     : missingFields(section, facts, new Map()).map((f) => FIELD_LABEL[f]);
   const complete = missing.length === 0;
+  // The place the customer did NOT say is the VED's to read, never the model's to say (his «T a»): the facts the model
+  // reads carry no destination, and the sentence tells it neither to name one nor to ask.
+  const shown = toCityAssumed ? { ...facts, toCity: null } : facts;
+  const assumedWords = toCityAssumed ? ` ${ASSUMED_DESTINATION_TOOL_WORDS}` : '';
   // The gaps as «•» lines, never «1) … 2) …» (incident 2026-10-29): the model copies the shape it is handed,
   // and a list's own numbers read as figures nobody vouched for.
   const text = complete
-    ? `To'liq. ${section}: ${JSON.stringify(facts)}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.` +
-      (fromOurWarehouse ? " Yuk omborimiz yo'q joydan: narx Xitoydagi omborimizdan hisoblanadi, zavoddan omborgacha olib kelish alohida — VEDga shunday yoziladi." : '')
-    : `Yetishmaydi (hammasini BITTA xabarda, "•" bilan ro'yxat qilib so'ra — raqamlama; savol belgisi faqat oxirida):\n${missing.map((m) => `• ${m}`).join('\n')}`;
+    ? `To'liq. ${section}: ${JSON.stringify(shown)}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.` +
+      (fromOurWarehouse ? " Yuk omborimiz yo'q joydan: narx Xitoydagi omborimizdan hisoblanadi, zavoddan omborgacha olib kelish alohida — VEDga shunday yoziladi." : '') +
+      assumedWords
+    : `Yetishmaydi (hammasini BITTA xabarda, "•" bilan ro'yxat qilib so'ra — raqamlama; savol belgisi faqat oxirida):\n${missing.map((m) => `• ${m}`).join('\n')}` +
+      (assumedWords ? `\n${assumedWords.trim()}` : '');
   return {
     ok: true,
     text,
     sources: [],
-    checklist: { section, facts, complete, fromOurWarehouse },
+    checklist: { section, facts, complete, fromOurWarehouse, toCityAssumed },
   };
 }
 

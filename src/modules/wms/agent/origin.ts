@@ -52,7 +52,10 @@ const PLACES: readonly Place[] = [
     place: 'Yiwu',
     zone: 'cn',
     // «ایوو» as well as «ییوو» (fix pass 6): the Persian customers write both, and the avia rule read only one.
-    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L}))|义乌|ییوو|ایوو/iu,
+    // «You» is how some customers spell Yiwu (the 2026-11-15 live chat: «"You" shahrini aniqlab bera olmadim») — and
+    // the commonest word of English, so ONLY in a place's own form: glued to its ending («Youdan», «Youdagi»), with
+    // «dan» written apart where no English phrase ends in «you» («Thank you Dan» is a person), or with «shahri».
+    re: /(?<!\p{L})(?:yiwu|ivu|иву|иу(?:дан|даги|да|га|нинг)?(?!\p{L})|you(?:dan|dagi)(?!\p{L})|(?<!(?:thank|thanks|see|love|miss|bless|with|for|to)\s+)you\s+(?:dan|sha[hx](?:ri|ar)(?:dan|dagi|da|ga|ning)?)(?!\p{L}))|义乌|ییوو|ایوو/iu,
   },
   cn('Guangzhou', 'guangzhou|guanchjou|guanjou|гуанчжоу|广州|گوانگژو'),
   cn('Foshan', 'foshan|фошань|佛山|فوشان'),

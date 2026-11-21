@@ -37,6 +37,7 @@ import {
 import { cardAsks, cardDigest, digestBody } from './card';
 import { LANDED_UNSENT, LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
 import { agentAutoReady, agentFullP1Ready, agentRunning, readAgentConfig } from './config';
+import { ASSUMED_DESTINATION_NOTE } from './calc-destination';
 import { bindMoved, chatCalcChains, chatIdentity } from './context';
 import { stopsMachine } from './auto-gate';
 import { approvedLocale } from './locale';
@@ -612,6 +613,8 @@ async function landCalc(
       // His third set «3»: cargo from China or a place we have no warehouse in is priced from ours —
       // the VED reads what the customer was told. `=== true`: an action stored before it carries none.
       ...(action.fromOurWarehouse === true ? ['Narx Xitoydagi omborimizdan; zavoddan omborgacha olib kelish alohida.'] : []),
+      // His «T a»: a truck job whose customer named no destination took Tashkent — the VED reads that it was taken.
+      ...(action.toCityAssumed === true ? [ASSUMED_DESTINATION_NOTE] : []),
     ],
     fileCount: 0,
     material,

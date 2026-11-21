@@ -13,6 +13,8 @@ import * as locale from '@/modules/wms/agent/locale';
 import * as loop from '@/modules/wms/agent/loop';
 import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import * as numbers from '@/modules/wms/agent/numbers';
+import * as calcDestination from '@/modules/wms/agent/calc-destination';
+import * as origin from '@/modules/wms/agent/origin';
 import * as ownerAnswer from '@/modules/wms/agent/owner-answer';
 import * as policy from '@/modules/wms/agent/policy';
 import type { PolicyInput } from '@/modules/wms/agent/policy';
@@ -422,6 +424,12 @@ function pashto(lines: readonly string[]): Observed {
   return !w.worthy && w.reason === 'pashto' ? 'held' : 'goes';
 }
 
+/** A place reader's answer: the place the case names was read (or, naming none, any place at all). */
+function readsPlace(read: string | null, expected: string | undefined): Observed {
+  if (expected !== undefined) return read === expected ? 'goes' : 'held';
+  return read !== null ? 'goes' : 'held';
+}
+
 /** What the reader under test makes of the case — throws when the reader does not exist at this commit. */
 export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observed {
   const reply = (c.context?.reply ?? 'uz') as AgentLocale;
@@ -467,6 +475,14 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
     case 'full_truck':
       // The customer's lines, one per line of the case — the burst `bigCargoOf` reads (stage 1a §4.5).
       return bigCargo.saysFullTruck(c.input.split('\n')) ? 'held' : 'goes';
+    case 'calc_destination':
+      // The customer's lines, oldest first — what the checklist reads (his «T a»).
+      return readsPlace(calcDestination.newestDestination(c.input.split('\n')), c.context?.place);
+    case 'calc_destination_default':
+      // A truck job's destination with no route reader beside it: `goes` = Tashkent taken, not said.
+      return calcDestination.truckDestination(c.input.split('\n'), () => null).assumed ? 'goes' : 'held';
+    case 'origin':
+      return readsPlace(origin.namedOrigin(c.input)?.place ?? null, c.context?.place);
   }
 }
 

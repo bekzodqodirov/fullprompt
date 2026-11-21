@@ -377,7 +377,9 @@ export function actionLines(actions: ComposedAction[]): string[] {
     if (a.type === 'calc_submit') {
       // His third set «3»: a job priced from our Chinese warehouses says so on the card he approves.
       const ours = a.fromOurWarehouse === true ? ' · narx Xitoydagi omborimizdan, zavoddan omborgacha alohida' : '';
-      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · kelib chiqish sertifikati: kompaniya o‘zi oladi${ours}`;
+      // His «T a»: the destination nobody said is taken as Tashkent — the card he approves says so, as the VED's note does.
+      const taken = a.toCityAssumed === true ? ' · manzil aytilmagan — Toshkent deb olindi' : '';
+      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · kelib chiqish sertifikati: kompaniya o‘zi oladi${ours}${taken}`;
     }
     if (a.type === 'set_followup') return `📅 Qayta aloqa: ${a.date}${a.note ? ` — ${a.note}` : ''}`;
     return '🔕 Bu chatda AI o‘chiriladi';
