@@ -171,6 +171,68 @@ const WARNING: readonly (readonly [string, string])[] = [
   ['zh, limited', '您的账户因违反服务条款已被限制。'],
 ];
 
+/**
+ * The safety review of the widened rule (U1). Logins first: every language's own «ignore this if you did not ask by
+ * TRYING to log in» sentence — the gerund the rule must never read as a warning, in zh, zh-Hant, ar and kk exactly as
+ * in en, ru and uz (main read all four as login; the first widening's whole-text list carried their «trying») — and
+ * a code written in the Persian digits a Persian line may use.
+ */
+const LOGIN_REVIEWED: readonly (readonly [string, string])[] = [
+  [
+    'zh, the whole code text',
+    '登录代码：52814。请勿将此代码告诉任何人，即使对方自称来自 Telegram！\n\n❗️此代码可用于登录您的 Telegram 账户。我们绝不会因其他用途向您索要此代码。\n\n' +
+      '如果您没有在其他设备上尝试登录并请求此代码，请忽略此消息。',
+  ],
+  ['zh, «by trying» in another order', '登录代码：52814。请勿将此代码告诉任何人！\n\n如果您并未通过尝试在其他设备上登录来请求此代码，请忽略此消息。'],
+  ['zh-Hant, the whole code text', '登入代碼：52814。請勿將此代碼告訴任何人！\n\n如果您沒有在其他裝置上嘗試登入並要求此代碼，請忽略此訊息。'],
+  [
+    'ar, the whole code text',
+    'رمز تسجيل الدخول: 52814. لا تعطِ هذا الرمز لأي شخص، حتى لو قالوا إنهم من تيليجرام!\n\nإذا لم تطلب هذا الرمز بمحاولة تسجيل الدخول على جهاز آخر، فتجاهل هذه الرسالة.',
+  ],
+  ['kk, the whole code text', 'Кіру коды: 52814. Бұл кодты ешкімге бермеңіз!\n\nЕгер бұл кодты басқа құрылғыда кіруге тырысу арқылы сұрамаған болсаңыз, бұл хабарды елемеңіз.'],
+  ['uk, the whole code text', 'Код для входу в Telegram: 52814. Нікому не повідомляйте цей код!\n\nЯкщо ви не запитували код, намагаючись увійти з іншого пристрою, просто проігноруйте це повідомлення.'],
+  ['tr, the whole code text', 'Giriş kodu: 52814. Bu kodu kimseyle paylaşmayın!\n\nBu kodu başka bir cihazda giriş yapmaya çalışarak istemediyseniz, bu mesajı yok sayın.'],
+  [
+    'fa, the whole code text',
+    'کد ورود: 52814. این کد را به هیچ‌کس ندهید، حتی اگر بگویند از طرف تلگرام هستند!\n\nاگر این کد را با تلاش برای ورود در دستگاه دیگری درخواست نکرده‌اید، این پیام را نادیده بگیرید.',
+  ],
+  ['fa, the code in Persian digits', 'کد ورود: ۵۲۸۱۴. این کد را به هیچ‌کس ندهید!'],
+  ['ar, the code in Arabic-Indic digits', 'رمز تسجيل الدخول: ٥٢٨١٤. لا تعطِ هذا الرمز لأي شخص!'],
+];
+
+/**
+ * …then warnings it read as login. An alert whose TITLE qualifies the login — an attempt, refused, blocked, not
+ * confirmed — carries the same «Device:» and «Location:» fields as his own sign-in's and is another message; and a
+ * code beside a deletion request, a compromised account or a refusal is not his sign-in either.
+ */
+const WARNING_REVIEWED: readonly (readonly [string, string])[] = [
+  ['ru, a new login not confirmed', 'Новый вход не подтверждён. Aziz, кто-то ввёл правильный код для входа в Ваш аккаунт, но не ввёл пароль двухэтапной проверки.\n\nУстройство: Telegram Web\nМестоположение: Лагос, Нигерия'],
+  ['ru, a new login denied', 'Новый вход запрещён. Мы не пустили в Ваш аккаунт новое устройство.\n\nУстройство: Telegram Web\nМестоположение: Лагос, Нигерия'],
+  ['uz, a new login attempt', 'Yangi kirish urinishi. Hurmatli Aziz, 19/11/2026 kuni kimdir hisobingizga yangi qurilmadan kirmoqchi bo‘ldi.\n\nQurilma: Telegram Web\nJoylashuv: Lagos, Nigeriya'],
+  ['uz, an attempt to log in', 'Yangi kirishga urinish. Hisobingizga yangi qurilmadan kirishga harakat qilindi.\n\nQurilma: Telegram Web\nJoylashuv: Lagos, Nigeriya'],
+  ['uz, a login not finished', 'Yangi kirish yakunlanmadi. Kimdir to‘g‘ri kodni kiritdi, lekin ikki bosqichli tasdiqlash parolini kiritmadi.\n\nQurilma: Telegram Web\nJoylashuv: Lagos, Nigeriya'],
+  ['uz, a login forbidden', 'Yangi kirish taqiqlandi.\n\nQurilma: Telegram Web\nJoylashuv: Lagos, Nigeriya'],
+  ['uz (Cyrillic), a new login attempt', 'Янги кириш уриниши. Ҳурматли Aziz, кимдир ҳисобингизга янги қурилмадан кирмоқчи бўлди.\n\nҚурилма: Telegram Web\nЖойлашув: Лагос, Нигерия'],
+  ['uz (Cyrillic), an attempt to log in', 'Янги киришга уриниш. Ҳисобингизга янги қурилмадан киришга ҳаракат қилинди.\n\nҚурилма: Telegram Web\nЖойлашув: Лагос, Нигерия'],
+  ['fa, a new login attempt', 'تلاش ورود جدید. کسی تلاش کرد از یک دستگاه جدید وارد حساب شما شود.\n\nدستگاه: Telegram Web\nمکان: لاگوس، نیجریه'],
+  ['fa, a new login failed', 'ورود جدید ناموفق. کسی کد درست را وارد کرد اما رمز تأیید دو مرحله‌ای را نداشت.\n\nدستگاه: Telegram Web\nمکان: لاگوس، نیجریه'],
+  ['zh, a new login attempt', '新登录尝试。有人试图从新设备登录您的账户。\n\n设备：Telegram Web\n位置：尼日利亚 拉各斯'],
+  ['zh, a new login blocked', '新登录已被阻止。有人输入了正确的登录代码，但没有输入两步验证密码。\n\n设备：Telegram Web\n位置：尼日利亚 拉各斯'],
+  ['tr, a new login attempt', 'Yeni giriş denemesi. Birisi hesabınıza yeni bir cihazdan giriş yapmaya çalıştı.\n\nCihaz: Telegram Web\nKonum: Lagos, Nijerya'],
+  ['kk, a new login attempt', 'Жаңа кіру әрекеті. Біреу аккаунтыңызға жаңа құрылғыдан кірмек болды.\n\nҚұрылғы: Telegram Web\nОрналасқан жері: Лагос, Нигерия'],
+  ['de, a new login blocked', 'Neue Anmeldung blockiert. Jemand hat versucht, sich mit einem neuen Gerät anzumelden.\n\nGerät: Telegram Web\nStandort: Lagos, Nigeria'],
+  ['en, a new login prevented', 'New login prevented.\n\nDevice: Telegram Web\nLocation: Lagos, Nigeria\n\nSomeone entered your login code but the session was not confirmed from your other devices.'],
+  ['en, a new login denied', 'New login denied.\n\nDevice: Telegram Web\nLocation: Lagos, Nigeria'],
+  ['en, a new login left unconfirmed', 'New login. Someone entered the correct login code on a new device, but the session is unconfirmed and cannot read your chats.\n\nDevice: Telegram Web\nLocation: Lagos, Nigeria'],
+  ['en, a code beside a compromised account', 'Warning! Your account may be compromised.\nLogin code: 52814. Change your two-step verification password now.'],
+  ['ru, a code beside a compromised account', 'Внимание! Ваш аккаунт мог быть скомпрометирован.\nКод для входа: 52814.'],
+  ['uz, a deletion request’s code', 'Hisobingizni o‘chirish so‘rovi.\nTasdiqlash kodi: 52814. Agar bu siz bo‘lmasangiz, bu kodni hech kimga bermang.'],
+  ['uz (Cyrillic), a deletion request’s code', 'Ҳисобингизни ўчириш сўрови.\nТасдиқлаш коди: 52814.'],
+  ['zh, a deletion request’s code', '注销账户请求。\n验证码：52814。'],
+  ['tr, a deletion request’s code', 'Hesap silme talebi.\nOnay kodu: 52814.'],
+  ['en, a code beside a refused login', 'Login code: 52814. ⚠️ This code was shared with another user, so the login was refused. Never send your login code to anyone.'],
+];
+
 describe('a line from 777000: his login, or a warning about the account', () => {
   it('holds at least the shapes it was asked to', () => {
     expect(LOGIN.length).toBeGreaterThanOrEqual(25);
@@ -182,6 +244,14 @@ describe('a line from 777000: his login, or a warning about the account', () => 
   });
 
   it.each(WARNING)('notice — %s', (_label, text) => {
+    expect(telegramNoticeKind(text)).toBe('notice');
+  });
+
+  it.each(LOGIN_REVIEWED)('login (review) — %s', (_label, text) => {
+    expect(telegramNoticeKind(text)).toBe('login');
+  });
+
+  it.each(WARNING_REVIEWED)('notice (review) — %s', (_label, text) => {
     expect(telegramNoticeKind(text)).toBe('notice');
   });
 

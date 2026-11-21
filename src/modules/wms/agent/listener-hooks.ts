@@ -101,14 +101,26 @@ const BEFORE_CODE = 48;
 const AFTER_CODE = 32;
 
 /**
- * The «new login» alert's opening, in the first two lines: «New login. Dear …, we detected a login into your
- * account from a new device …», «Новый вход в аккаунт. … мы обнаружили вход в Ваш аккаунт с нового устройства»,
- * «Yangi kirish», «Янги кириш», «Yeni giriş», «Жаңа кіру», «新登录» — and its older form without the header word
- * («…, we detected a login into your account from a new device»). «log in» with a space is the verb and never
- * opens an alert: «Someone tried to log in to your account from a new device» is not one of these.
+ * The «new login» alert's TITLE: the header words alone, opening one of the first two lines and ENDING there — a full
+ * stop, a comma, a colon or the line's end after them: «New login.», «Новый вход в аккаунт.», «Yangi kirish.», «Янги
+ * кириш.», «Yeni giriş.», «Жаңа кіру.», «新登录。». A title that QUALIFIES the login is another message whatever fields
+ * follow it, in every language at once and with no word list to keep: «New login attempt / denied / prevented»,
+ * «Новый вход не подтверждён / запрещён», «Yangi kirish urinishi / taqiqlandi», «Yangi kirishga urinish», «新登录尝试»,
+ * «新登录已被阻止», «Yeni giriş denemesi», «Жаңа кіру әрекеті», «Neue Anmeldung blockiert», «ورود جدید ناموفق» — and
+ * one whose qualifier comes FIRST («تلاش ورود جدید», the attempt of a new login) does not open the line with it.
  */
-const NEW_LOGIN_HEAD =
-  /new\s+login(?!\p{L})|detected\s+a\s+(?:new\s+)?login\s+(?:in)?to\s+your\s+account|login\s+(?:in)?to\s+your\s+account\s+from\s+a\s+new\s+device|нов(?:ый|ий)\s+вх(?:од|ід)|(?:обнаружили|зарегистрировали|зафиксировали|виявили)\s+вх(?:од|ід)|yangi\s+kirish|yangi\s+qurilma\p{L}*\s+(?:orqali\s+)?kiri|янги\s+кириш|янги\s+қурилма\p{L}*\s+(?:орқали\s+)?кири|yeni\s+giriş|жаңа\s+кіру|жаңа\s+құрылғы\p{L}*\s+кіру|新登录|新的登录|新登入|ورود\s+جدید|تسجيل\s+دخول\s+جديد|neue\s+anmeldung|nuevo\s+inicio\s+de\s+sesión|nouvelle\s+connexion|nuovo\s+accesso/u;
+const NEW_LOGIN_TITLE =
+  /^[^\p{L}\p{N}]*(?:new\s+login(?:\s+(?:in)?to\s+your\s+account)?|нов(?:ый|ий)\s+вх(?:од|ід)(?:\s+(?:в|до)\s+(?:ваш\s+)?(?:аккаунт|акаунт))?|yangi\s+kirish|янги\s+кириш|yeni\s+giriş|жаңа\s+кіру|新登录|新的登录|新登入|ورود\s+جدید|تسجيل\s+دخول\s+جديد|neue\s+anmeldung|nuevo\s+inicio\s+de\s+sesión|nouvelle\s+connexion|nuovo\s+accesso)\s*(?:[.!:;,。！：；，،]|$)/mu;
+
+/**
+ * …and its older form, a SENTENCE in the first two lines with no title («Aziz, we detected a login into your account
+ * from a new device …», «Aziz, мы зарегистрировали вход в Ваш аккаунт с нового устройства …»). Only the English and
+ * the Russian sentence: the Uzbek and Kazakh «yangi qurilmadan kiri…» also opened «yangi qurilmadan kirishga harakat
+ * qilindi» — an attempt — and every alert in those languages carries its title anyway. «log in» with a space is the
+ * verb and never opens an alert: «Someone tried to log in to your account from a new device» is not one of these.
+ */
+const NEW_LOGIN_SENTENCE =
+  /detected\s+a\s+(?:new\s+)?login\s+(?:in)?to\s+your\s+account|login\s+(?:in)?to\s+your\s+account\s+from\s+a\s+new\s+device|(?:обнаружили|зарегистрировали|зафиксировали|виявили)\s+вх(?:од|ід)/u;
 
 /**
  * A field of that alert: «Device: …», «Location: …» (on their own lines, or inline after a full stop), their
@@ -121,18 +133,26 @@ const LOGIN_FIELD =
 /**
  * Words that WARN about the account — a limitation, spam reports, the terms of service, a ban or a freeze, a
  * deletion, a restriction, an unofficial or third-party app, suspicious activity, an appeal, and «someone TRIED to
- * log in» (a security alert, not his sign-in). Any of them ANYWHERE makes the line a notice, whatever else it
- * carries: a code or a «Device:» field beside them is no excuse to keep talking. Only the past «tried», the noun
- * «attempt» and their translations — never the gerund («by trying to log in on another device», «kirishga urinib»,
- * «пытаясь войти»), which Telegram's own login line uses to say «ignore this if it was not you».
+ * log in» (a security alert, not his sign-in), a compromised account, a login refused or left unconfirmed. Any of
+ * them ANYWHERE makes the line a notice, whatever else it carries: a code or a «Device:» field beside them is no
+ * excuse to keep talking. Only the past «tried», the noun «attempt» and their translations — never the gerund («by
+ * trying to log in on another device», «kirishga urinib», «пытаясь войти», «尝试登录», «بمحاولة تسجيل الدخول», «кіруге
+ * тырысу»), which Telegram's own login line uses in every language to say «ignore this if it was not you». Where a
+ * language says the attempt with the gerund's own word (zh, ar), the alert is caught by its TITLE
+ * (`NEW_LOGIN_TITLE`), never by the word.
  */
 const ACCOUNT_WARNING =
-  /limit(?:ed|ation)|restrict|spam|report(?:s|ed)(?!\p{L})|(?<!\p{L})bann?(?:ed)?(?!\p{L})|blocked|suspend|frozen|freez|terms\s+of\s+(?:service|use)|violat|delet|(?:tried|attempted)\s+to\s+(?:log|sign)|attempt|unofficial|third[-\s]party|suspicious|unauthori[sz]ed|hack|appeal|fraud|scam|abuse|ограничен|спам|жалоб|заблокир|блокир|заморож|удал[её]н|удален|удалит|нарушен|нарушил|услови[яй]\s+(?:использования|обслуживания)|пыта(?:лся|лась|лись)\s+(?:войти|зайти)|кто-то\s+пыта|попытк[аиуеой]\s+вход|подозрит|неофициальн|сторонн\p{L}*\s+(?:приложени|клиент)|взлом|мошенн|апелляц|обмежен|скарг|заблоков|видален|порушен|намага(?:вся|лася|лися)|спроб[аиу]\s+вход|підозріл|cheklan|cheklov|shikoyat|bloklan|muzlat|o'chiril|qoida\p{L}*\s+buz|qoidabuzar|buzil|foydalanish\s+shart|urin(?:di|gan)|shubhali|norasmiy|buzib\s+kir|firibgar|apellyatsiya|чеклан|чеклов|шикоят|блоклан|музлат|ўчирил|қоида\p{L}*\s+буз|бузил|фойдаланиш\s+шарт|урин(?:ди|ган)|шубҳали|норасмий|шектел|шағым|бұғатта|жойыл|күдікті|тырыс|kısıtlan|şikayet|engellen|silin|ihlal|şüpheli|dondurul|限制|垃圾|举报|舉報|违反|違反|删除|刪除|封禁|冻结|凍結|尝试登录|嘗試登入|可疑|非官方|محدود|اسپم|گزارش|حذف|مسدود|مشکوک|نقض|مقيد|تقييد|سبام|بلاغ|حظر|محاولة|مشبوه|انتهاك|eingeschränkt|beschränkt|gesperrt|gelöscht|löschung|verstoß|verdächtig|limitad|restringid|bloquead|eliminad|eliminación|infracci|sospechos/u;
+  /limit(?:ed|ation)|restrict|spam|report(?:s|ed)(?!\p{L})|(?<!\p{L})bann?(?:ed)?(?!\p{L})|blocked|suspend|frozen|freez|terms\s+of\s+(?:service|use)|violat|delet|(?:tried|attempted)\s+to\s+(?:log|sign)|attempt|refused|unconfirm|not\s+confirmed|compromis|unofficial|third[-\s]party|suspicious|unauthori[sz]ed|hack|appeal|fraud|scam|abuse|ограничен|спам|жалоб|заблокир|блокир|заморож|удал[её]н|удален|удалит|нарушен|нарушил|услови[яй]\s+(?:использования|обслуживания)|пыта(?:лся|лась|лись)\s+(?:войти|зайти)|кто-то\s+пыта|попытк[аиуеой]\s+вход|подозрит|неофициальн|сторонн\p{L}*\s+(?:приложени|клиент)|взлом|скомпрометир|мошенн|апелляц|обмежен|скарг|заблоков|видален|порушен|намага(?:вся|лася|лися)|спроб[аиу]\s+вход|підозріл|cheklan|cheklov|shikoyat|bloklan|muzlat|o'chiril|o'chirish\s+so'rov|qoida\p{L}*\s+buz|qoidabuzar|buzil|foydalanish\s+shart|urin(?:di|gan)|shubhali|norasmiy|buzib\s+kir|firibgar|apellyatsiya|чеклан|чеклов|шикоят|блоклан|музлат|ўчирил|ўчириш\s+сўров|қоида\p{L}*\s+буз|бузил|фойдаланиш\s+шарт|урин(?:ди|ган)|шубҳали|норасмий|шектел|шағым|бұғатта|жойыл|жою|күдікті|тырысты|тырысқан|kısıtlan|şikayet|engellen|silin|silme|ihlal|şüpheli|dondurul|限制|垃圾|举报|舉報|违反|違反|删除|刪除|注销|註銷|封禁|冻结|凍結|可疑|非官方|محدود|اسپم|گزارش|حذف|مسدود|مشکوک|نقض|مقيد|تقييد|سبام|بلاغ|حظر|مشبوه|انتهاك|eingeschränkt|beschränkt|gesperrt|gelöscht|löschung|verstoß|verdächtig|limitad|restringid|bloquead|eliminad|eliminación|infracci|sospechos/u;
 
-/** Invisible marks (zero-width spaces, direction marks) taken out, apostrophes made one, letters made small. */
+/**
+ * Invisible marks (zero-width spaces, direction marks) taken out, apostrophes made one, letters made small, and the
+ * Arabic-Indic and Persian digits a Persian or Arabic line may write its code in («کد ورود: ۵۲۸۱۴») read as the digits
+ * `CODE` counts.
+ */
 function normalisedNotice(text: string): string {
   return text
     .replace(/\p{Cf}/gu, '')
+    .replace(/[\u0660-\u0669\u06f0-\u06f9]/gu, (d) => String(d.charCodeAt(0) & 0xf))
     .replace(/[ʻʼ‘’`´]/gu, "'")
     .toLowerCase();
 }
@@ -171,8 +191,9 @@ function codeBesideWord(head: string): boolean {
  *  2. a login CODE (`CODE`) next to a code word (`CODE_WORD`) in the first two
  *     lines (a greeting may come first, the code may sit on its own line) —
  *     login;
- *  3. the new-login HEADER (`NEW_LOGIN_HEAD`) in the first two lines together
- *     with a device or location field (`LOGIN_FIELD`) — login;
+ *  3. the new-login alert in the first two lines — its unqualified TITLE
+ *     (`NEW_LOGIN_TITLE`) or its older SENTENCE (`NEW_LOGIN_SENTENCE`) —
+ *     together with a device or location field (`LOGIN_FIELD`) — login;
  *  4. anything else, an empty line or a shape this does not know included — a
  *     notice: guessing wrong toward «notice» costs a morning's queue (and the
  *     reminders of `off-reminder.ts` say so every two hours until he switches it
@@ -192,7 +213,7 @@ export function telegramNoticeKind(text: string): TelegramNoticeKind {
     .slice(0, 2)
     .join('\n');
   if (codeBesideWord(head)) return 'login';
-  if (NEW_LOGIN_HEAD.test(head) && LOGIN_FIELD.test(all)) return 'login';
+  if ((NEW_LOGIN_TITLE.test(head) || NEW_LOGIN_SENTENCE.test(head)) && LOGIN_FIELD.test(all)) return 'login';
   return 'notice';
 }
 
