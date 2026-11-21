@@ -462,3 +462,22 @@ code-rendered «tayyor matn» part is not asked for script (R5); the pair at a d
 `designatedRows`, never through the fallback (R2, minted in 1a §3.2); e2e names follow the stage ladder (R4).
 The queue rule is in §4.0's `agent/queues.ts` row: events about a conversation are members of `agent.event`;
 `agent.read` (2), `agent.block_text` (3b) and `agent.channel_inbound` (7) are the listed exceptions.
+
+## His answers (2026-11-21, to `COVERAGE.md` §E «1b va 1c dan oldin», questions 11-17 — sent after 1a's deploy)
+
+Verbatim: «Savollarga javob: 14 c / Qolgani sening taklifing» — every ⭐ except 14, with the ⚠ of question 13 (more
+messages per reply = more account risk) and the plan's own question list in his hand. Mapping to this plan's §11:
+
+| COVERAGE §E | This plan's §11 | His answer | What is built |
+|---|---|---|---|
+| 11 | 1 | ⭐ a | the 15-minute climb and the colleagues' cards run Monday-Saturday 09:00-19:00 (Tashkent); Sunday cards wait for Monday. The AI still answers customers every day |
+| 12 | 2 | ⭐ a | the holding line as §6.3 writes it, no time promised |
+| 13 | 3 | ⭐ a | at most 3 messages per reply, counting every message of the turn (the model's, a tayyor matn, the holding line) |
+| 14 | 4 | **c** | **NO replay trial** — the dry replay of old chats (§4, the replay package) is NOT built; 1b is switched on without it. The first live days and the evening sample are the net |
+| 15 | 5 | ⭐ a | the code message carries the company bot's link when the client's card has a phone |
+| 16a | 6 | ⭐ 1 | a hidden-number customer's code opens too; the card shows «📵» (no bot link: a phoneless client cannot link the bot) |
+| 17 | 7 | ⭐ a | the deputy may approve a priced reply, seeing only the price his own rights show |
+
+Also answered in the same message, outside this plan: «T» (the destination reader of the calc checklist — `qurish/T-QAYERGA.md`)
+⭐ a: a lone «Toshkentga» / «Andijonga» and Cyrillic or Russian forms are read; with no destination said the truck jobs take
+Tashkent and the VED is told so in words.
