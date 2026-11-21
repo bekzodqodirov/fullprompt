@@ -176,7 +176,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, his six questions of 2026-11-10; **§18.3 = «o'zi yuborish», the auto-send layer AS BUILT** on his answer of 2026-11-11, migration 0145; **§18.8 = the FULL seller's part 1 AS BUILT** — the price act «Narx», «✍️ Savolga javob», «📝 Tuzatish» lessons, six languages, the account's limits, migration 0148, and **the reader corpus** every reader change runs first) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live; auto-send SHIPPED, armed only by him; full seller part 1 + 1b SHIPPED («Narx» may be ticked after 1b); **§18.9 = part 2 AS BUILT** (the calc sent by itself, the VED answer with his markup, the card and the funnel; migration 0149); part 3 next |
-| **To'liq AI sotuvchi** — the TARGET product (a fully autonomous sales agent): lifecycle, rights per action, the guard, channels, the road — and **the build handoff** | `docs/AI-SOTUVCHI-TOLIQ.md` — design v2 of 2026-11-19; **§11 = his answers of 2026-11-20, BINDING; NOTHING is built**. **A session that builds starts at `docs/AI-SOTUVCHI-TOLIQ-QURISH.md`** (the build contract: precedence, the rules no stage may undo, how a stage is run), then `docs/ai-toliq/qurish/STAGE-0-1A.md` (stage 0 and 1a come first) and `qurish/COVERAGE.md` (§A every answer → its stage, §C the shared names, §E the questions still to ask him, §F the first message to send); the critics, the code maps and the 303 safety cases in `docs/ai-toliq/`; `critic-feasibility.md` §A = the 35 earlier answers it touches |
+| **To'liq AI sotuvchi** — the TARGET product (a fully autonomous sales agent): lifecycle, rights per action, the guard, channels, the road — and **the build handoff** | `docs/AI-SOTUVCHI-TOLIQ.md` — design v2 of 2026-11-19; **§11 = his answers of 2026-11-20, BINDING**. **Stage 0 and stage 1a are BUILT** (stage 0 + K1 in PR #157; 1a «To'siqlar olib tashlanadi» + «Hajm» + P7 «Avia kunlari», migration 0151, DECISIONS #1816-#1847 — `qurish/STAGE-0-1A.md` with its «as built» blocks and «Judged before code» J1-J35, binding); 1b onward NOT built. **A session that builds starts at `docs/AI-SOTUVCHI-TOLIQ-QURISH.md`** (the build contract: precedence, the rules no stage may undo, how a stage is run), then the next stage's plan in `docs/ai-toliq/qurish/` (`STAGE-1B-1C.md` next) and `qurish/COVERAGE.md` (§A every answer → its stage, §C the shared names, §E the questions still to ask him); the critics, the code maps and the 303 safety cases in `docs/ai-toliq/`; `critic-feasibility.md` §A = the 35 earlier answers it touches |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
@@ -3947,7 +3947,62 @@ page's China column (stage 4's «Sana» package rehearses it before the date, wh
 received in Kashgar and at which address. Never build a ⭐ that reverses an earlier answer of his on a bare «sen
 aytgandek» without having shown him the ⚠.
 
-**Latest migration: 0150** (`batches_view`, `when` …129; ledger must reach **151**). Before
+**Round — To'liq AI sotuvchi, stage 1a (2026-11-20 → 11-21; DECISIONS #1816-#1847; migration 0151 `agent_toliq_1a`,
+`when` …130 — ledger must reach 152).** «To'siqlar olib tashlanadi» + package «Hajm» (his 6 c / 7 b) + P7 «Avia kunlari»,
+built from `docs/ai-toliq/qurish/STAGE-0-1A.md` under the contract; judged before code by four lenses (44 findings,
+41 upheld → J1-J35, BINDING over the plan's §1-§11). His answers: «3 HOZIRCHA qashqarda yuk qabul qilmaymiz / qolgani
+sen aytgandek» (every ⭐ of 1-10 and **82 a — talk goes at once, the evening sample is the net**, given with the 59-case
+list in his hand) and «savolga sen aytganing bolsin» (no flight clause, the deputy does not open the AI page, the
+speech trial on his and the seat's accounts). **What a reply DOES decides**: `autoClassOf` → `talk | price | calc_price
+| calc`, failing CLOSED (any money, an unread price or any act but `set_followup` is `price`; a VED price anywhere is
+`calc_price`, J5); talk's hold `agent_talk_hold_sec` 0, every other class `agent_auto_config.hold_sec` 120 with ⏸;
+night by class (`nightBars`: talk never, `calc` always, `calc_price` unless `all`, `price` only under `none`; setting
+`agent_night_prices` `table`) and the 08:00 re-judge of what the night alone held (`rejudgeNightHeld`, J31, a fresh
+ringing copy). Retired from the gate: `low_confidence`, `category` (→ `complaint`), `streak` (→ `loop`) — words kept in
+`RETIRED_REFUSAL_WORDS`, the functions DELETED (fence `agent-toliq-1a-wire`); eye-only `questions` / the late note
+through ONE `stopsMachine` asked by the gate AND `decide.ts`; a note carries its CODE (`NOTE_CODES`, `noteCodesOf`: a
+pre-1a draft with notes and no codes stops; fence `agent-note-codes`). `pressNow` at the ONE write site `writeReply`
+(J10), the run's tools handed and `settleToolCalls` written before the draft (J3); the card `silent` from the RECORDED
+verdict on EVERY card write (J4), and a silent card whose press fails rings once. J11: a queued CRM reply is
+`human_replied` (outbox-store). **One loop detector** `agent/loop.ts` (`same_inbound` answered repeats only, no file
+lines, typing-exempt; `fast_peer` J8 — three distinct sends, 10 s, the one typing stamp, 2 s slack; `own_repeat` by
+`loopFold`, never `textFingerprint`) and the 30-minute HOLD its notice promises (J33 — the `agent_signals` claim read
+back, `gateLoopFor` judged at `at`). **The tayyor matn** (`system-reply.ts`): voice / media (neutral, J29) / Pashto
+lines in six languages, the model's road with no model through the same policy and write site, `policy.system` →
+the card's line drawn not stored, once per silence per kind (`toldInSilence`); the per-chat run cap ignores null-model
+runs. «Botmisiz?» answered by code (`withBotAnswer` on both paths, `AI_HONEST_LINE` «Men GSRning AI yordamchisiman; …»,
+whole-word `BOT_QUESTION`, J6); fa / zh tayyor matn are CARDS in 1a (`ready_text_unapproved`, J27). Tripwires
+`complaintIn` and `claimsCalcSent` (`calc_claim_unbacked`, J9). Rule 8's `CUSTOMS_OFFER_SENTENCE` as the LAST sentence
+(«alohida» for G11) and `ourLineAsks` reading it (J1), «ha» → podklyuch; Kashgar refused by the truck tool and the
+checklist (J24); the persona `agent_persona_name` a REQUIRED input of `stableHead`, the owner's name out of 17 sites
+(`OWNER_WORD` «rahbar»), the persona's one word exempt from `staff_name`. **Who is told is a table** (0151
+`agent_designations`; `designated()` for telling — own → «Rahbar va o‘rinbosar» → `agentAlarmRecipients`, never
+«nobody», never in a transaction; `designatedRows(topic, handle)` for doors — own rows only, `[]` when empty, no door
+of 1a reads it yet); no role key, id or name in code (fenced). Signals: big cargo ≥ `agent_big_cargo_m3` (20) or
+`saysFullTruck`, once per chat per week, per-recipient text with no customer words; the 08:40 morning line in counts;
+the 20:10 sample (draw to draw, money first, daily then Fridays, 👍 in `agent_samples`, 👎 through `autoFeedback`); the
+liveness alarm (sweep step 3b, `raiseSignal` / `clearSignal` in `diagnostics/signals.ts`, key `agent:liveness`, the home's
+red row; `AGENT_LIVENESS=off` in vitest and the Playwright server). Four new cards, all UNMUTABLE. «Hajm»:
+`seatCandidate` (14 refusals in words, a SAVEPOINT, asked BEFORE the `lead_assign` lock — under it, two of three
+concurrent visitors were told «nobody»); `sellerlessChatSql` the ONE per-chat «no seller» (J13); `managersFor(…, chatId,
+now)` REQUIRED; `lead_assign_ai` and `client_ai_contact` ship OFF (flip after stage 2, J35). P7: `aviaDays()` the one
+reader (`agent_avia_days` '3-5'), threaded into the head, the tool and the company rule; `withAviaDaysNow` re-judges
+the day rows at every `policyFor`; seed `avia@2` states no days. J19's null → uz relaxation was MEASURED (11
+dangerous corpus rows would go) and not built for model replies; the lead ruled it for tayyor matns only (#1846). The
+corpus grew readers `language_money`, `loop`, `bot_question`, `pashto`, `complaint`, `calc_claim`, `full_truck`,
+`avia_days` — **any change to `loop.ts`, `worthy.ts`, `complaint.ts`, `calc-claim.ts`, `big-cargo.ts`, `avia-days.ts` runs
+the whole corpus and the 303 first** (#1783); K1's `walls.ts` did not move. **The merged tree was then checked five more times (#1846)**, and each fix's independent checker found a regression in the previous fix — a tayyor matn blind to our sends with no thread copy (`uncopiedSendsFor`; ONE `toldInSilenceOf` for the run's choice AND the gate), the arming words from ONE key (`AUTO_WAITS`, eight tick sets; fence `agent-auto-words-gate.test.ts` checks every bundle × tick × night setting against `autoVerdict`), the Chinese lines under the NFKC fold, a same-second tie on a lost send (`sendStandsBefore`), and the voice notice told by the first run that JUDGES the voice note (`linesFirstJudged` over `judgedThroughOf`, stand-downs excluded — «newest line» and «all told → voice» were each wrong once); stopped at RARE by #1619's rule after a 29,980-history matrix came back clean. **A link preview is not media** (#1847: `carriesMedia` in `crm/telegram-import.ts` is the one birth of `has_media`; every 1688 link question used to wait for his ✅). Ritual at 996d851a on a fresh database in
+CI's order: vitest 979 files / 20,943 tests, build (3 GB heap), Playwright 539 + 1 skipped. DEPLOY: ledger 152 (from
+his 151), tg-listen MUST be rebuilt (outbox-store, worthy, limits, config, settings, site-assign, cabinet, diagnostics
+are in its closure), then `scripts/agent-seed-kb.ts` through `migrate` (dry run lists «+ avia@2», then `--apply`) and
+the two avia chores; day one on staff phones with numbers no login holds (`staff_peer`); the first 08:40 line read
+with him. OPEN with him, stated: a dead staff bot keeps talk going (only the two red rows say so); G10's `fingerprint`
+turns the ~5th same tayyor matn a day into a card; an invoice alone gets the media line (stage 2); the seat's own
+clients see its user row, not its persona (1c); PR #156 holds the same migration number and `when` — whichever merges
+second renumbers.
+
+**Latest migration: 0151** (`agent_toliq_1a`, `when` …130; ledger must reach **152**). Before
+it: 0150 (`batches_view`, `when` …129). Before
 it: 0149 (`agent_full_p2`, `when` …128). Before
 it: 0148 (`agent_full_p1`, `when` …127). Before
 it: 0147 (`prixod_javoblar`, `when` …126). Before
@@ -4102,7 +4157,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **151** since 0150 (150 since 0149, 149 since 0148, 148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **152** since 0151 (151 since 0150, 150 since 0149, 149 since 0148, 148 since 0147, 147 since 0146, 146 since 0145, 145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -4127,6 +4182,8 @@ confirmed: alone it reads 146, and with the prixod-xabari round (0146) the count
 prixod-javoblari round (0147) **148**; with the full seller's part 1 (0148) **149**.
 **Then he CONFIRMED 149** (2026-11-14, his `select count(*)` after deploying PR #151), so everything through #1784 is
 LIVE; part 1b (no migration) is checked by `/api/version` alone.
+**Then he read 151** (2026-11-20, his paste at stage 1a's start gate: build 2026-11-18 14:36 UTC, after PR #155), so
+everything through #1806 is LIVE; stage 1a (0151) must read **152** — 153 if PR #156 rides in the same deploy.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

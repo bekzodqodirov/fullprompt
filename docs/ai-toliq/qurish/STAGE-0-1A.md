@@ -908,6 +908,34 @@ above).**
 - **Corpus and 303, before the first edit and after the last:** dangerous let through 0, the 303's walls snapshot
   unchanged (`tests/unit/agent-reader-corpus.test.ts`, `tests/unit/agent-customer-safety.test.ts`).
 
+**Checks 2-5 of the merged tree, as built (2026-11-21 — DECISIONS #1846-#1847; these override §4.3-§4.4 and the
+block above where they differ).** Each seam fix was reproduced by an independent checker who hunted for what the fix
+broke, four more times, until what was left was RARE (#1619's stopping rule). What a later builder must know:
+- **«Told in this silence» is ONE reading for the run's choice and the gate** (`context.ts` `silenceOf` /
+  `toldInSilenceOf`): the thread's copies PLUS our sends with no thread copy (`uncopiedSendsFor` — outbox `unknown`, or
+  `sent` with no Telegram id, or a copy that never landed), placed by their moment; an in-flight row does not count. A
+  lost send is compared at the thread's own granularity — floored to the whole second, and a line in that same second
+  stands AFTER it (`sendStandsBefore`, both readers).
+- **The tayyor matn's choice** reads the customer's lines AFTER our newest send, lost sends included
+  (`linesAfterOurSends`); the first kind not yet told wins (a photo with nothing told still wins, §4.4 item 1 — a voice
+  note beside it gets no line of its own, stated); when every kind is told, the voice notice goes iff a voice note is
+  among the lines THIS run is the first to judge (`linesFirstJudged` over `judgedThroughOf`: the newest anchor among the
+  chat's `agent_runs` rows at or below this one, stand-downs — `stood_down`, `error`, `refused`+`not_newest` — excluded).
+  «The newest line decides» and «all told → voice» were each built once and each wrong (a voice note told of by nobody;
+  a false voice notice on every photo). `ctx.burst` and everything a MODEL reply sees are unchanged.
+- **The stored tayyor matns are compared under the same NFKC fold as the line read** (`chatForm` turns «，» into «,»):
+  all 39 lines pinned raw and folded.
+- **The arming words come from ONE key** — `autoWaitsOf` → `AUTO_WAITS` (none · table · ved · prices · calc · table_calc ·
+  ved_calc · all): the page's ICU selects, the bot's `WAITS_WORDS` / `STAYS_WORDS` and `autoMediaWords(ticks)` (the calc
+  / VED exception named only when ticked); the AI-reply half says «rasm, ovoz yoki fayl»; a ticked calculation says its
+  night. Fence: `tests/unit/agent-auto-words-gate.test.ts` (every bundle × 8 tick sets × 3 night settings, by day and
+  night, expected values from `autoVerdict` / `autoClassOf` / `nightBars` / `holdSecFor` / `mediaOf` only).
+- **A link preview is not media** (`crm/telegram-import.ts` `carriesMedia`, the one birth of `has_media`; #1847).
+- **Stated, RARE, not built:** a restart between `run.ts`'s notice ledger row and its notification; our voice line in
+  flight when his next voice note's run is refused `human_active` and the send's answer is lost; two of our own sends
+  in one second; the copied machine send's thread copy in server milliseconds against the customer's whole seconds; an
+  empty-text web-page message (API only) is not kept.
+
 ### 6.3 Corpora and fences that stay green, and what is EXPECTED to change
 
 - `tests/unit/agent-reader-corpus.test.ts` (fixtures `agent-reader-corpus.ts` — 1,483 cases at this HEAD, readers
@@ -1059,13 +1087,18 @@ login's own number — `staff_peer`, §9) must get the system line within ~1-2 m
   this first day, 0 from the first morning line. If the offer sentence or the «ha» → job does not appear, say so —
   it is a prompt rule nothing here could run (§10).
 - First morning: at 08:40 the line of §4.5 — read it WITH him, number by number: «N javobdan M tasi o'zi ketdi»
-  (the stage's whole claim; compare M with stage 0's `verdicts` forecast), «K tasi sizni kutdi» and each reason's
+  (the stage's whole claim; compare M with stage 0's `verdicts` forecast), «K tasi tasdiq kutdi» (J17 — the code's word; «sizni» was the deputy's lie) and each reason's
   word (a reason he does not recognise is a wording bug — fix the word, not the rule), «Javobsiz» (anything above 0
   is opened chat by chat that morning), a cap named (tell him which box to raise, §4.6), «halqa» (open that chat
   with him). During the day silent cards for what went alone, ringing ones for what waits; at 20:10 «Bugungi
   tekshiruv». Tell him the day before what «⚠️ AI sotuvchi javob bermayapti» means (customers
   have waited more than 10 minutes in working hours — the number is his box), that it comes once per fault with a
-  «yana javob beryapti» after it, and that the same red line stands on the home screen if the staff bot itself is down. «Hajm» stays `off` until he flips it.
+  one SILENT clearing line after it — as built «✅ Javobsiz kutayotgan mijoz qolmadi — «AI sotuvchi javob bermayapti»
+  ogohlantirishi yopildi.» (the code's words; §4.5 item 3's «yana javob beryapti» was the design's) — and that the same red
+  line stands on the home screen if the staff bot itself is down. «Hajm» stays `off` until he flips it.
+- **7 b's switch-on moment (J35):** after stage 2 (as the website, «Hajm»), he ticks «AI raqamini ko‘rsatish» on the
+  «Kimning akkaunti» card, then sends the one message on «Mijozlar va savdo → Xabar yuborish» with «Sotuvchisi yo‘q
+  mijozlar» ticked. Told to him in the deploy message and in the CHANGELOG; nothing in 1a flips it.
 - Rollback: revert the code. The three tables and the settings rows are ignored by the old code; stored reasons
   `loop` / `complaint` print «sababi noma'lum» there; nothing is one-way. One thing to look at after a rollback:
   under 1a every save of the kinds box stores all four ordinary kinds (§4.2), so if he had unticked one before 1a
