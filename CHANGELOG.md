@@ -183,7 +183,7 @@ baza): 20 943 test va 539 brauzer testi yashil. Keyin birlashgan kod yana besh m
 tekshiruvchi bilan: har bir tuzatish oldingi tuzatishning yangi xatosini topdi, oxirgisida 29 980 xil suhbat holatida
 bitta ham xato chiqmadi. Qolgan ikki holat juda kam uchraydi (server aynan ikki yozuv orasida qayta ishga tushsa;
 xabar Telegramga ketgani noma'lum qolsa va siz o'sha paytda chatda yozayotgan bo'lsangiz) — yozib qo'yildi. Oxirgi
-to'liq sinov: ⟪RITUAL⟫.
+to'liq sinov (CI tartibida, toza baza, yakuniy kodda): 21 060 test, qurish va 539 brauzer testi yashil; GitHub CI ham yashil.
 
 ## 2026-11-18 — Sotuvchilar skladdagi yuklarni, furalarni va skladlarni ko'radi
 

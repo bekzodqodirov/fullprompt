@@ -10577,7 +10577,9 @@ the 3 GB heap → Playwright without re-seeding): vitest **979 files / 20,943 te
 its last (dangerous let through 0 every time, the ratchet only shrinking or gaining mirrors of rows already on it, the
 303 snapshot unchanged), its own throwaway database, `pnpm typecheck` (4 GB heap) and eslint on every changed file; red
 proofs by paired string edit, every file written back from the text read and checked byte-equal — never `git
-checkout` or a stash (#430). The seam passes' own gates are #1846's; the ritual re-run after them is below it.
+checkout` or a stash (#430). The seam passes' own gates are #1846's. **Re-run after them at 872337ad** (the code of cca29521 plus the docs), on a
+fresh database in CI's order: typecheck and lint 0, ledger 152 = 152 files, vitest **980 files / 21,060 tests**, build
+ok, Playwright **539 passed, 1 skipped** (19.2 min); GitHub's check on the same head green.
 
 **#1846 — The merged tree's seams, fixed, and the fixes checked four more times until the checks came back RARE.** A
 seam review of the merged tree (996d851a) found four defects and three nits no package could see, each a seam between
