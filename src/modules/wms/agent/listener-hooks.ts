@@ -79,33 +79,120 @@ export function isTelegramServiceNotice(
  */
 export type TelegramNoticeKind = 'login' | 'notice';
 
-/** «Login code: 12345.» / «Код для входа в Telegram: 12345.» — the code is the first line's own number. */
-const LOGIN_CODE = /[:：]\s*\d{5,6}(?!\d)/u;
-/** The «new login» alert names the session's address the same way in every language: «(IP = 1.2.3.4)». */
-const NEW_LOGIN = /\(\s*IP\s*=\s*[0-9A-Fa-f.:]+\s*\)/u;
+/**
+ * A login code as Telegram writes it: five or six digits, with at most one space or dash inside («52 814»,
+ * «528-140») — never glued to letters («GS52814», a client code), never a piece of a longer number (a phone
+ * «+998 90 123 45 67», a date, an appeal number of seven digits, a decimal).
+ */
+const CODE = /(?<![\p{L}\d])(?<!\d[ \u00a0\u2009\u202f\-‐‑–.,/])(?:\d{5,6}|\d{2,3}[ \u00a0\u2009\u202f\-‐‑–]\d{3})(?![\p{L}\d])(?![ \u00a0\u2009\u202f\-‐‑–.,/]\d)/gu;
+
+/**
+ * The word «code» in the languages Telegram writes its login lines in — a code word next to a code-shaped number
+ * is how every one of them reads: «Login code: …», «… is your login code», «Your code: …», «Код для входа в
+ * Telegram: …», «Kirish kodi …», «Кириш коди …», «Giriş kodu …», «登录代码：…», «کد ورود: …», «رمز الدخول …».
+ * Uzbek and Turkish suffix the word («kodingiz», «kodunuz»), so the stem takes a short tail.
+ */
+const CODE_WORD =
+  /(?<!\p{L})(?:codes?|kod\p{L}{0,7}|kód\p{L}{0,3}|koodi|código|codice|код\p{L}{0,7}|коди|коды|кодингиз|کد|كود|رمز)(?!\p{L})|码|碼|代码|代碼|コード|코드/u;
+
+/** How far a code word may stand from the code: «Your login code for Telegram Desktop: 52814» — 38 characters before. */
+const BEFORE_CODE = 48;
+/** …and after it: «52814 is your Telegram login code», «52814 — Telegramga kirish kodingiz». */
+const AFTER_CODE = 32;
+
+/**
+ * The «new login» alert's opening, in the first two lines: «New login. Dear …, we detected a login into your
+ * account from a new device …», «Новый вход в аккаунт. … мы обнаружили вход в Ваш аккаунт с нового устройства»,
+ * «Yangi kirish», «Янги кириш», «Yeni giriş», «Жаңа кіру», «新登录» — and its older form without the header word
+ * («…, we detected a login into your account from a new device»). «log in» with a space is the verb and never
+ * opens an alert: «Someone tried to log in to your account from a new device» is not one of these.
+ */
+const NEW_LOGIN_HEAD =
+  /new\s+login(?!\p{L})|detected\s+a\s+(?:new\s+)?login\s+(?:in)?to\s+your\s+account|login\s+(?:in)?to\s+your\s+account\s+from\s+a\s+new\s+device|нов(?:ый|ий)\s+вх(?:од|ід)|(?:обнаружили|зарегистрировали|зафиксировали|виявили)\s+вх(?:од|ід)|yangi\s+kirish|yangi\s+qurilma\p{L}*\s+(?:orqali\s+)?kiri|янги\s+кириш|янги\s+қурилма\p{L}*\s+(?:орқали\s+)?кири|yeni\s+giriş|жаңа\s+кіру|жаңа\s+құрылғы\p{L}*\s+кіру|新登录|新的登录|新登入|ورود\s+جدید|تسجيل\s+دخول\s+جديد|neue\s+anmeldung|nuevo\s+inicio\s+de\s+sesión|nouvelle\s+connexion|nuovo\s+accesso/u;
+
+/**
+ * A field of that alert: «Device: …», «Location: …» (on their own lines, or inline after a full stop), their
+ * translations, or Telegram's own «(IP = 1.2.3.4)» / «(IP=1.2.3.4)». The header alone, or a field alone, is no
+ * alert: both together are.
+ */
+const LOGIN_FIELD =
+  /(?:^|[\s.,;(])(?:device|location|устройство|местоположение|местонахождение|пристрій|місцезнаходження|розташування|qurilma|joylashuv|қурилма|жойлашув|құрылғы|орналасқан\s+жері|cihaz|konum|设备|設備|位置|地点|地點|دستگاه|مکان|موقعیت|الجهاز|الموقع|gerät|standort|dispositivo|ubicación|appareil|emplacement)\s*[:：]|\(\s*ip\s*=\s*[0-9a-f.:]+\s*\)/mu;
+
+/**
+ * Words that WARN about the account — a limitation, spam reports, the terms of service, a ban or a freeze, a
+ * deletion, a restriction, an unofficial or third-party app, suspicious activity, an appeal, and «someone TRIED to
+ * log in» (a security alert, not his sign-in). Any of them ANYWHERE makes the line a notice, whatever else it
+ * carries: a code or a «Device:» field beside them is no excuse to keep talking. Only the past «tried», the noun
+ * «attempt» and their translations — never the gerund («by trying to log in on another device», «kirishga urinib»,
+ * «пытаясь войти»), which Telegram's own login line uses to say «ignore this if it was not you».
+ */
+const ACCOUNT_WARNING =
+  /limit(?:ed|ation)|restrict|spam|report(?:s|ed)(?!\p{L})|(?<!\p{L})bann?(?:ed)?(?!\p{L})|blocked|suspend|frozen|freez|terms\s+of\s+(?:service|use)|violat|delet|(?:tried|attempted)\s+to\s+(?:log|sign)|attempt|unofficial|third[-\s]party|suspicious|unauthori[sz]ed|hack|appeal|fraud|scam|abuse|ограничен|спам|жалоб|заблокир|блокир|заморож|удал[её]н|удален|удалит|нарушен|нарушил|услови[яй]\s+(?:использования|обслуживания)|пыта(?:лся|лась|лись)\s+(?:войти|зайти)|кто-то\s+пыта|попытк[аиуеой]\s+вход|подозрит|неофициальн|сторонн\p{L}*\s+(?:приложени|клиент)|взлом|мошенн|апелляц|обмежен|скарг|заблоков|видален|порушен|намага(?:вся|лася|лися)|спроб[аиу]\s+вход|підозріл|cheklan|cheklov|shikoyat|bloklan|muzlat|o'chiril|qoida\p{L}*\s+buz|qoidabuzar|buzil|foydalanish\s+shart|urin(?:di|gan)|shubhali|norasmiy|buzib\s+kir|firibgar|apellyatsiya|чеклан|чеклов|шикоят|блоклан|музлат|ўчирил|қоида\p{L}*\s+буз|бузил|фойдаланиш\s+шарт|урин(?:ди|ган)|шубҳали|норасмий|шектел|шағым|бұғатта|жойыл|күдікті|тырыс|kısıtlan|şikayet|engellen|silin|ihlal|şüpheli|dondurul|限制|垃圾|举报|舉報|违反|違反|删除|刪除|封禁|冻结|凍結|尝试登录|嘗試登入|可疑|非官方|محدود|اسپم|گزارش|حذف|مسدود|مشکوک|نقض|مقيد|تقييد|سبام|بلاغ|حظر|محاولة|مشبوه|انتهاك|eingeschränkt|beschränkt|gesperrt|gelöscht|löschung|verstoß|verdächtig|limitad|restringid|bloquead|eliminad|eliminación|infracci|sospechos/u;
+
+/** Invisible marks (zero-width spaces, direction marks) taken out, apostrophes made one, letters made small. */
+function normalisedNotice(text: string): string {
+  return text
+    .replace(/\p{Cf}/gu, '')
+    .replace(/[ʻʼ‘’`´]/gu, "'")
+    .toLowerCase();
+}
+
+/** A code-shaped number in `head` with a code word beside it (`BEFORE_CODE` before, `AFTER_CODE` after). */
+function codeBesideWord(head: string): boolean {
+  for (const m of head.matchAll(CODE)) {
+    const at = m.index ?? 0;
+    const before = head.slice(Math.max(0, at - BEFORE_CODE), at);
+    const after = head.slice(at + m[0].length, at + m[0].length + AFTER_CODE);
+    if (CODE_WORD.test(before) || CODE_WORD.test(after)) return true;
+  }
+  return false;
+}
 
 /**
  * Pure: is this 777000 line his own login — the code Telegram sends when
  * somebody signs in (Telegram Desktop at the office, a new phone, his own
- * re-connect on /suhbatlar/ulash), or the «new login» alert that follows it
- * — or a notice about the account?
+ * re-connect on /suhbatlar/ulash, Telegram Web, a QR sign-in's alert), or the
+ * «new login» alert that follows it — or a notice about the account?
  *
  * The difference is what the agent's «off» costs: it cancels every approved
  * reply still waiting (the night-held ✅s included) and expires every live
  * draft, the one being edited too, and none of them comes back when he
- * switches it on again. His ⭐2 is about the warnings an account gets before
- * a ban — the API terms, a limitation — and those are never a login code.
- * So only the two shapes Telegram itself gives its login lines in every
- * language count as login, and ANYTHING else, an empty line or a shape this
- * does not know included, is a notice: guessing wrong toward «notice» costs a
- * routine morning's queue, guessing wrong toward «login» would keep the
- * machine talking through a warning. The text is only looked at here — never
- * kept, never logged, never copied into an alarm (it may be a login code).
+ * switches it on again. The first rule knew two shapes («…: 12345» on the
+ * first line, «(IP = …)» anywhere) and read everything else as a notice — and
+ * on 2026-11-19 two of his own sign-ins switched the AI off for two and a half
+ * days (current Telegram's alert names no IP; a code reads «12 345», sits on
+ * the second line, or comes before its word).
+ *
+ * The rule, in this order:
+ *  1. a WARNING word anywhere (`ACCOUNT_WARNING`) — a notice, whatever else the
+ *     line carries: his ⭐2 is about the warnings an account gets before a ban,
+ *     and a code beside one (a deletion request's, an appeal's) is no reason to
+ *     keep talking;
+ *  2. a login CODE (`CODE`) next to a code word (`CODE_WORD`) in the first two
+ *     lines (a greeting may come first, the code may sit on its own line) —
+ *     login;
+ *  3. the new-login HEADER (`NEW_LOGIN_HEAD`) in the first two lines together
+ *     with a device or location field (`LOGIN_FIELD`) — login;
+ *  4. anything else, an empty line or a shape this does not know included — a
+ *     notice: guessing wrong toward «notice» costs a morning's queue (and the
+ *     reminders of `off-reminder.ts` say so every two hours until he switches it
+ *     on), guessing wrong toward «login» would keep the machine talking through
+ *     a warning.
+ *
+ * The text is only looked at here — never kept, never logged, never copied into
+ * an alarm (it may be a login code).
  */
 export function telegramNoticeKind(text: string): TelegramNoticeKind {
-  const firstLine = text.split('\n', 1)[0] ?? '';
-  if (LOGIN_CODE.test(firstLine)) return 'login';
-  if (NEW_LOGIN.test(text)) return 'login';
+  const all = normalisedNotice(text);
+  if (ACCOUNT_WARNING.test(all)) return 'notice';
+  const head = all
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .slice(0, 2)
+    .join('\n');
+  if (codeBesideWord(head)) return 'login';
+  if (NEW_LOGIN_HEAD.test(head) && LOGIN_FIELD.test(all)) return 'login';
   return 'notice';
 }
 
