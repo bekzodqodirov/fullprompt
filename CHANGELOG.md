@@ -1,5 +1,63 @@
 # CHANGELOG
 
+## 2026-11-22 — AI sotuvchi: hisoblatish VEDga tushadi, kirish kodi AIni o'chirmaydi, o'chsa eslatadi
+
+Sizning javoblaringiz: «T a», «18 a», «a» (19-noyabrdagi Telegram xabari kirish kodi edi) va 1b uchun «14 c / qolgani
+sening taklifing».
+
+**Migratsiya yo'q.** Son **152** bo'lib qoladi. Bu safar `/api/version` bugungi vaqtni ko'rsatishi va **tg-listen qayta
+qurilishi** kerak. Qadamlar: `docs/UPDATE.md` → «AI sotuvchi: manzil, kirish kodi, eslatma (2026-11-22)».
+
+### Hisoblatish endi VEDga tushadi
+- **Sinovdagi xato meniki edi:** «3 kub 450 kg, narxi qancha?» da yuk qayerdan jo'natilishi yo'q edi. Shuning uchun AI
+  narx aytmadi va rastamojka taklifi ham chiqmadi. To'g'ri sinov: «Ivudan Toshkentga 3 kub 450 kg kiyim, narxi
+  qancha?» → «ha» → AI tovar soni yoki og'irligini so'raydi → javob beriladi → «hisoblatishga yubordim».
+- **Kodda ham kamchilik bor edi:** manzil faqat «Ivudan Toshkentga» kabi bitta lotincha xabarda yozilsagina o'qilardi.
+  Mijoz «Toshkentga», «Тошкентга», «в Ташкент» desa yoki manzilni umuman aytmasa, AI «qaysi shaharga?» deb qayta-qayta
+  so'rardi va ish VEDga hech qachon tushmasdi.
+- **Endi:** shaharni AI o'zi aniqlaydi va mijozning aynan shu so'zlarini ko'rsatadi. Tizim o'sha so'zlar mijozning
+  xabarida haqiqatan borligini tekshiradi.
+  - Topilsa: shahar yoziladi, VED esa «Manzil mijoz xabaridan: «…»» deb mijozning o'z gapini ko'radi.
+  - Topilmasa yoki shahar aytilmagan bo'lsa: yo'lkira va podklyuch ishi **Toshkent** deb VEDga tushadi, izohi bilan:
+    «Manzil o'qilmadi — Toshkent deb olindi, mijoz so'zlarini tekshiring».
+  - Xorijiy shahar (Osh, Olmaota, Bishkek…) bo'lsa: AI aniqlashtirib so'raydi.
+  - Ish endi manzil sababli hech qachon osilib qolmaydi. AI shahar o'ylab topa olmaydi, eski yukning shahri ham
+    olinmaydi.
+- VED javobidagi narx «Toshkent deb olingan» ishga tegishli bo'lsa, AI mijozga uni «Toshkentgacha» deb aytadi. Aytmasa,
+  javob sizni kutadi.
+- Ruscha «3 куба», «5 кубов», «2 кубометра» endi kub deb o'qiladi.
+
+### Kirish kodi endi AIni o'chirmaydi
+- 19-noyabr 12:16 va 13:10 da Telegram AI raqamiga kirish kodini yuborgan. Tizim uni ogohlantirish deb o'ylab AIni
+  o'chirgan va AI **21-noyabr 22:08 gacha o'chiq turgan**. 20-noyabrda kelgan 19 ta xabarga shuning uchun javob
+  bo'lmagan.
+- Endi kirish kodi va «yangi qurilmadan kirish» xabari to'g'ri taniladi. Haqiqiy ogohlantirish (cheklov, spam,
+  bloklash, «kimdir kirmoqchi bo'ldi») kelsa, AI oldingidek darhol o'chadi.
+- Telegram xabarlarining aniq matnini bilmaymiz, shuning uchun tizim endi har bir shunday xabarni logga yozadi. Logda
+  hamma raqam, kod, ism va shahar o'chirilgan, faqat xabarning qolipi qoladi. Shu bilan keyinroq tanishni aniqlashtiramiz.
+
+### AI o'zi o'chib qolsa — eslatma (sizning 18 a)
+- AIni tizim o'zi o'chirgan bo'lsa (Telegram ogohlantirishi, bloklashlar, FLOOD_WAIT) va uni hech kim qayta yoqmagan
+  bo'lsa, «Rahbar va o'rinbosar»ga eslatma keladi. Vaqtlari: **08:40, 10:40, 12:40, 14:40, 16:40, 18:40, 20:40**.
+  Matni: «⚠️ AI sotuvchi o'chiq turibdi — sabab: …, dd.mm HH:MM dan beri. Javobsiz mijozlar: N.»
+- AIni o'zingiz o'chirgan bo'lsangiz, eslatma kelmaydi. AI yoqilishi bilan eslatmalar to'xtaydi.
+
+### AI javobni yarmida to'xtatib qo'ymaydi
+- 18-noyabrda AI 10 marta ishga tushgan, shundan 4 tasi «max_tokens» xatosi bilan tugagan. AI javob yozishdan oldin
+  o'ylaydi va o'sha o'ylash ham 1 500 tokenlik chegaraga kirardi. Qiyin savolda joy tugab, mijoz hech narsa olmasdi.
+- Chegara 16 000 tokenga ko'tarildi. Pul faqat haqiqatda ishlatilgan token uchun to'lanadi.
+
+### Javoblaringiz yozib qo'yildi (1b uchun)
+- 11 a, 12 a, 13 a (bir javobda ko'pi bilan 3 ta xabar), **14 c** (eski suhbatlarda sinov yo'q), 15 a, 16 1), 17 a.
+  1b bosqichi shular bo'yicha quriladi.
+
+### Bilib qo'ying
+- Kam uchraydigan holatlar yozib qo'yildi:
+  - shaharlarning boshi bir xil bo'lsa, AI adashishi mumkin (Shahrixon / Shahrisabz). Bunda VED mijozning o'z gapini
+    yonida ko'radi;
+  - mijoz shahar nomini xato yozsa («Andjon»), shahar xuddi shunday yoziladi.
+- AIni o'zingiz yoqib qo'yganingizni tekshiring: «Suhbatlar → AI sotuvchi» da «ishlayapti».
+
 ## 2026-11-21 — To'liq AI sotuvchi, 1a: oddiy javob darhol ketadi, narx 2 daqiqa kutadi, rasm va ovozga tayyor matn, katta yuk signali, ertalabki hisobot va kunlik tekshiruv
 
 Sizning javoblaringiz: «3 HOZIRCHA qashqarda yuk qabul qilmaymiz / qolgani sen aytgandek» (1-10 va 82-savollar, 59 ta

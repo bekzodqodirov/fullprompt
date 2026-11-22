@@ -10665,3 +10665,90 @@ media plan (`tgMediaPlan` never fetched a preview), `applyEdit` (writes the body
 — no backfill; a chat's old link lines still read as media until they leave its window. Stated, RARE: a message with
 EMPTY text and a web-page preview (only an API client can send one) is no longer kept; `MessageMediaEmpty` stays media.
 tg-listen is rebuilt in this deploy anyway, and this is one more reason it must be.
+
+## After stage 1a's first live day — the destination the AI reads, the login code that switched it off, the reminder he asked for, room to think (2026-11-21 → 11-22; NO migration, ledger 152; numbered #1848-#1853)
+
+**#1848 — «ha» never reached the VED, and the cure was not a better word rule: the MODEL names the destination and the
+CODE verifies it is the customer's.** His test after the 1a deploy («3 kub 450 kg, narxi qancha?» then «ha») landed no
+job. Two causes, both read in the code. First, the test sentence itself (mine, from the plan's §9) named no origin, so the
+truck tool asked «qayerdan» and no price — and no customs offer — was ever made; the corrected test names the origin.
+Second, a real gap: the AI's `calc_checklist` filled `toCity` ONLY from the staff intake's `readRoute` («A → B» or «Adan
+Bga» in Latin in ONE message), and podklyuch / yolkira REQUIRE it — a customer answering «Toshkentga» alone, in Cyrillic,
+in Russian, or never naming the destination (every price already says «Toshkentgacha») was asked «qaysi shaharga» for
+ever. His answer «T a»: a destination said is read; none said → Tashkent, the VED told so in words. Three passes built a
+regex destination reader and each check found the previous pass's regressions — the last at 2c1757fc: 11 COMMON
+wrong-silent (the route reader's far end landing «kelishi», «jo'natish», replacing a said city) and 63 COMMON asks
+(«Andijonga 3 kub qachon keladi», «Andijon 3 kub», «manzil Andijon») — #1463's lesson a fourth time: a word rule cannot
+read Uzbek, Russian and mixed chat. THE RULING, built in f8bc65e7: the cost model decides — `to_city` never drives the
+price (prefill and the freight zone read `fromCity` only), so a WRONG destination costs a misleading route line, while a
+job that NEVER LANDS is the defect he reported. `calc_checklist` takes `to_city` and `to_city_words` from the model;
+`calc-destination.ts` `checkDestination` accepts the city only when the words are found (case, apostrophes, punctuation
+and whitespace folded, NFKC, no transliteration) in one of the customer's INBOUND lines since the chat's last landed job
+(`thisJobLines`; a handed-back chain is no cut) AND the city's stem (first 5 letters for 6+, else 4 or the whole word)
+starts a word of HIS line; `jobDestination` lands a verified city, a foreign one (`outsideUzbekistan` — China, or a place
+`namesForeignPlace` holds that the Uzbekistan list does not, read with the preposition, label and town word of HIS line
+at the match) is asked, and anything else on a truck job is Tashkent with «Manzil o‘qilmadi — Toshkent deb olindi, mijoz
+so‘zlarini tekshiring». The VED sees the evidence — his line around the city, ~80 chars (`evidenceOf`), «Manzil mijoz
+xabaridan: «…»» — on the job's note, his card line (`card-io`) and both /hisoblash screens (`destinationReadings`); a VED
+price on a TAKEN destination must say «Toshkentgacha» or waits (`destination_unsaid` on the calc quote, `calcPriceGateFacts
+.destinationTaken`, read from the chain's NEWEST landing and only while `to_city` still reads Toshkent). The route
+reader no longer feeds the agent's `toCity`; the staff bot's own intake is untouched (intake corpus green). The regex
+reader and its 203 corpus cases are DELETED; the corpus reader is now `calc_destination_check` (the verifier, both kinds).
+The final check (e808d097, then three regressions fixed in d0e9ad1a: a route's next place is no hyphen ending, a city
+in single quotes is read, Russian «Нарын» is the Kyrgyz town unless his line names Namangan): careful model answers on
+363 labelled cases 0 wrong-said, every adversarial answer (invented words, our own line, a past shipment behind a landed
+job) refused, a truck job asked only for a foreign city. Stated, RARE: stem twins sharing five letters
+(Shahrixon/Shahrisabz) need the model to err and show his real word beside it; a typo lands as typed («Andjon»);
+«Kazan» lands; the model's quote may be refused for a sloppy copy — then Tashkent with the note, never silence.
+
+**#1849 — «3 куба» is a volume.** `parseManualFacts` (calc/intake-manual.ts) read «3 куб» and not «3 куба / 5 кубов / 2
+кубометра», so a Russian customer's truck job asked for kub after he had given it. One pattern
+`куб(?:а|ов|ометр(?:а|ов|ы)?)?`, the intake corpus before and after (+6 cases: c3176-c3181, both kinds); «3 кубика»,
+«кубатура» stay unread; «3-4 куба» reads 4 as «3-4 kub» always did.
+
+**#1850 — His own login switched the AI off for two and a half days.** On his server the 18th's runs were fine and the
+20th had 19 customer lines and NO run at all: `audit_log` showed «mode: off, reason: telegram_notice» at 19.11 12:16 and
+13:10, and he confirmed both 777000 lines were his own login traffic (answer «a»). `telegramNoticeKind` knew two shapes
+(«…: 12345» on the first line, «(IP = …)» anywhere) and called everything else a notice — which forces the agent off,
+cancelling approved replies and expiring drafts (his ⭐2 «AI off at once on any official notice»). Now
+(listener-hooks.ts): a warning word anywhere (limits, spam, terms, ban, freeze, deletion, restriction, unofficial app,
+«someone tried», compromised, refused, unconfirmed — en/ru/uz/uz-Cyrl/kk/tr/zh/fa/ar/de/es) is a notice whatever else the
+line carries; a 5-6 digit code (one space or dash inside allowed) next to a code word in the first two lines is login; a
+new-login TITLE that opens a line and ends there, with a device or location field, is login; anything else is a notice —
+the safe direction. The texts are RECONSTRUCTED (translations.telegram.org is unreachable from here), so the listener now
+logs every 777000 line's REDACTED shape, `[agent] 777000 <kind>: <redactNotice(text)>` — digits → «#», any token holding a
+digit, «-»/«_» or a mixed-case run → «‹…›», a single-token line and the token after a code word → «‹…›», links cut to
+their host, the greeting's name and the location value hidden, ≤ 400 chars, never the raw text, never the database
+(200 000 simulated my.telegram.org codes: 0 survive whole, 0 fragments of 3+). One rule taken back: folding Persian and
+Arabic-Indic digits made a native-digit warning read login (R5) — the safe direction wins. His real lines, once logged,
+settle the reconstructed shapes; STATED: a zh/ar/kk attempt alert under a plain title, and «Request code: …», read login.
+
+**#1851 — His 18 a: a machine-off AI reminds the pair until somebody switches it on.** `agent/off-reminder.ts`: while the
+newest audit row that wrote the config's mode says «off» with a forced reason and NO actor (a person's own off ends it),
+a reminder goes at 08:40 and every two hours after it until the night clock (08:40, 10:40 … 20:40 Tashkent, the morning
+line's minute and `quietHour`, no new clock), only for a slot that began after the off, claimed once per slot in
+`agent_signals` (`agent:forced_off:<day>:<HHMM>`, the claim and the queued copies in one transaction, the drain kicked
+after it), to `designated('supervisor')` with its fallback; type `AgentForcedOff` (unmutable). Text: «⚠️ AI sotuvchi
+o‘chiq turibdi — sabab: <the alarm's own words>, dd.mm HH:MM dan beri. / Javobsiz mijozlar: N.», the page line only to a
+reader `mayRunAgent` admits. N = liveness's `unansweredLines` from a day before the off, a pre-off draft counted as no
+answer. Step 3c of the sweep's not-running branch in its own try/catch; `AGENT_OFF_REMINDER=off` in vitest and the
+Playwright server. Before this, an off nobody noticed was silent for days: the liveness alarm does not fire while the
+agent is off. Stated: his 1b answer 11 a (Mon-Sat 09:00-19:00) is a 1b setting not yet built, so the grid runs daily;
+N can overcount a draft he ❌'d before the off.
+
+**#1852 — Room to think: the model round's ceiling 1 500 → 16 000.** Four of ten runs on 18.11 ended `error:
+max_tokens` — the customer got nothing. The staff model runs adaptive thinking by default and thinking counts inside
+`max_tokens`; a 1 500 ceiling ran out before `compose_reply`. `AGENT_MAX_TOKENS = 16_000` (run.ts, the loop's one model
+call; billing is per token generated, the ceiling costs nothing unused; the SDK raises no non-streaming refusal at this
+size under the client's 60 s timeout), fenced by `agent-max-tokens.test.ts`. A per-round budget bounding each call by
+the run's wall was built and TAKEN BACK (35bf3d78): it made the 90 s wall a hard total (a second round that finished at
+95 s became a billed timeout, retried into the same failure) and `maxRetries: 0` failed a run on one transient 529 —
+worse than the pre-existing «a call that never answers runs past the wall», which stays as on main.
+
+**#1853 — His answers recorded, and how the round was run.** «Savollarga javob: 14 c / Qolgani sening taklifing» (the 1b
+questions 11-17: every ⭐ except NO replay trial — `STAGE-1B-1C.md` «His answers»), «T a» (#1848) and «18 a» (#1851).
+T and U were built in two worktrees (toliq-t, toliq-u) off main e9351d8e, each reviewed by two lenses with an
+independent checker after every fix pass, and merged without conflict (fd83fc70). The stopping rule (#1619) held both:
+T stopped when the check came back with no COMMON finding, U when the redaction simulation came back clean. Red proofs
+by paired string edit throughout, every file restored by hash; the corpus and the 303 before and after every pass
+(dangerous let through 0, `walls.ts` unchanged).

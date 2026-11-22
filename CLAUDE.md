@@ -4002,6 +4002,23 @@ turns the ~5th same tayyor matn a day into a card; an invoice alone gets the med
 clients see its user row, not its persona (1c); PR #156 holds the same migration number and `when` — whichever merges
 second renumbers.
 
+**Round — after 1a's first live day (2026-11-21 → 11-22; DECISIONS #1848-#1853; NO migration, ledger 152).** His
+test «ha» landed no VED job: the test sentence named no origin (mine), and the AI's `calc_checklist` filled `toCity` only
+from the staff intake's `readRoute`, so podklyuch/yolkira asked «qaysi shaharga» for ever. His «T a»: three regex
+destination readers each failed their check (#1463's lesson again), so **the MODEL names the destination
+(`to_city`, `to_city_words`) and `calc-destination.ts` `checkDestination` VERIFIES the words are in the customer's own
+inbound lines of THIS job and the city's stem starts a word of them**; unverified → a truck job lands Tashkent with
+«Manzil o‘qilmadi — Toshkent deb olindi, mijoz so‘zlarini tekshiring», a foreign city is asked, the VED sees his line
+as evidence (`destinationReadings`), a VED price on a taken destination says «Toshkentgacha» or waits. The cost model
+is the ruling: `to_city` drives no price, a job that never lands is the defect. «3 куба» reads as a volume. On his
+server the AI was **off from 19.11 13:10 to 21.11 22:08 because his own LOGIN CODE read as a Telegram notice** —
+`telegramNoticeKind` widened (warning words first, then code / new-login title + field, else notice), and every 777000
+line's REDACTED shape is logged (`redactNotice`: digits, codes, names, places out) so the real texts can settle it. His
+«18 a»: `agent/off-reminder.ts` reminds the pair at 08:40 and every 2 h to 20:40 while the MACHINE keeps the AI off
+(audit row: forced reason, no actor). `AGENT_MAX_TOKENS = 16_000` (4 of 10 runs on 18.11 died `max_tokens`: adaptive
+thinking counts inside it); a per-round wall budget was built and taken back (#1852). His 1b answers 11-17 recorded
+(14 c: no replay trial). DEPLOY: no migration — `/api/version` today and **tg-listen rebuilt**.
+
 **Latest migration: 0151** (`agent_toliq_1a`, `when` …130; ledger must reach **152**). Before
 it: 0150 (`batches_view`, `when` …129). Before
 it: 0149 (`agent_full_p2`, `when` …128). Before
