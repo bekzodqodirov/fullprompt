@@ -135,6 +135,7 @@ import {
   isNewestInbound,
   isTelegramServiceNotice,
   noteStranger,
+  redactNotice,
   stampPeerTyping,
   strangerUserOf,
   telegramNoticeKind,
@@ -459,6 +460,22 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   };
 
   /**
+   * A 777000 line's kind, and its SHAPE in the log: nobody here can see the
+   * texts Telegram really sends his account, and the rule
+   * (`telegramNoticeKind`) was written from reconstructions — a login read as
+   * a notice switched the AI off for two and a half days, a warning read as a
+   * login would keep it talking. `[agent] 777000 <kind>: <shape>` lets the real
+   * shapes be read off his server. Only `redactNotice`'s output reaches the
+   * log — never the text, never the database: every digit is «#», a code-like
+   * word and a link's path are gone, so no login code can be read back.
+   */
+  const noticeKindOf = (text: string): TelegramNoticeKind => {
+    const kind = telegramNoticeKind(text);
+    console.log(`[agent] 777000 ${kind}: ${redactNotice(text)}`);
+    return kind;
+  };
+
+  /**
    * Telegram itself wrote to this account (his ⭐2, final review K33): the
    * agent goes off at once when it speaks from here, and the alarm says so in
    * words (`agentTelegramNotice`) — unless the line is his own login traffic
@@ -466,9 +483,10 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    * the waiting work. Not the cached settings — a notice minutes after the
    * switch was flipped on must not slip through a stale cache — and nothing
    * of the message is stored, logged or forwarded by this: only its KIND
-   * arrives here, and the line goes on to `handleMessage` exactly as it
-   * always did. A database one migration behind has no agent to switch off.
-   * A failure is a logged line, never a downed bridge.
+   * arrives here (`noticeKindOf` logged the line's redacted shape), and the
+   * line goes on to `handleMessage` exactly as it always did. A database one
+   * migration behind has no agent to switch off. A failure is a logged line,
+   * never a downed bridge.
    */
   const telegramNoticeSeen = async (kind: TelegramNoticeKind) => {
     try {
@@ -603,7 +621,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // cache with nothing at all (2026-10-29, his new number).
       const decide = async (peer: ListenPeer) => {
         // Before anything else decides about the line: an official notice switches the agent off first.
-        if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));
+        if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(noticeKindOf(msg.message ?? ''));
         return handleMessage(peer, msg, 'live');
       };
       const bareUser = userIdOf(msg.peerId);
@@ -629,7 +647,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // that cannot be resolved must still switch the agent off.
           const bare = { id: bareUser, isPrivate: true, isSelf: false };
           if (isTelegramServiceNotice(bare, msg.out === true)) {
-            await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));
+            await telegramNoticeSeen(noticeKindOf(msg.message ?? ''));
           } else if (msg.out !== true && (await agentHere().catch(() => false))) {
             const line = passedLine({ reason: 'unresolved', phone: null });
             if (line) console.log(line);

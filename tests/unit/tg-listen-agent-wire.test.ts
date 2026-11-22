@@ -288,7 +288,7 @@ describe('Telegram’s own notice (his ⭐2, final review K33)', () => {
   it('the live handler asks it of every line, before the line is decided or stored', () => {
     const live = source.slice(source.indexOf('client.addEventHandler(async (event: { message?: unknown }) => {'), source.indexOf('new NewMessage({})'));
     const ask = live.indexOf(
-      "if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));",
+      "if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(noticeKindOf(msg.message ?? ''));",
     );
     expect(ask).toBeGreaterThan(0);
     expect(ask).toBeLessThan(live.indexOf("handleMessage(peer, msg, 'live')"));
@@ -305,6 +305,18 @@ describe('Telegram’s own notice (his ⭐2, final review K33)', () => {
     expect(seen).not.toContain('agentHere');
     // Nothing of the line: no text, no row, no tray candidate.
     expect(seen).not.toMatch(/msg\.|message:|body:|storeIncoming|recordCandidates/);
+  });
+
+  it('a 777000 line reaches the log only as its redacted shape, and only through the one classifier', () => {
+    // The real texts Telegram sends are read off his server from this line; a login code must not be (redactNotice).
+    const kindOf = body('const noticeKindOf = (text: string): TelegramNoticeKind => {', '\n  };\n');
+    expect(kindOf).toContain('const kind = telegramNoticeKind(text);');
+    expect(kindOf).toContain('console.log(`[agent] 777000 ${kind}: ${redactNotice(text)}`);');
+    // The text itself is interpolated nowhere and passed to nothing else.
+    expect(kindOf.match(/\btext\b/g), 'the parameter, the classifier and the redaction — nothing more').toHaveLength(3);
+    // Every 777000 line the listener classifies goes through it: no second, unlogged or unredacted call.
+    expect(source.match(/telegramNoticeKind\(/g)).toHaveLength(1);
+    expect(source.match(/telegramNoticeSeen\(noticeKindOf\(msg\.message \?\? ''\)\)/g)).toHaveLength(2);
   });
 
   it('K33’s follow-up: the notices that come as `updateServiceNotification` switch it off too — never as login traffic', () => {

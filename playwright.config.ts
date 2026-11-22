@@ -76,6 +76,10 @@ export default defineConfig({
       // by the hour of the run (liveness `livenessOn`, #183). The spec that
       // draws the row puts it in and takes it out itself.
       AGENT_LIVENESS: 'off',
+      // The forced-off reminder (his 18 a) claims a slot of the real clock's day and queues a copy to whoever the
+      // designations name whenever a sweep finds the agent stopped by the machine — a spec that leaves it so would
+      // leave both for every later spec (off-reminder `offReminderOn`, #183).
+      AGENT_OFF_REMINDER: 'off',
       // B9's error list is proven by a page that throws on purpose; it is a
       // 404 everywhere this switch is not set (app/(protected)/sinov-xato).
       ERROR_PROBE: 'on',

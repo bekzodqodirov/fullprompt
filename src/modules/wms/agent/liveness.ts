@@ -116,11 +116,14 @@ export interface WaitingLine {
  * reads the chat (`chatMessages`, leak-8): a line the customer deleted is not his newest — its run stands down
  * `not_newest` and writes no row, so counting it would raise an alarm nothing can answer, standing a day and
  * silencing the real ones meanwhile (the P4 review's 1). `workingHours`: only lines written outside the house's one
- * night clock (`quietHour`, 22:00-08:00 Tashkent — never a second clock). ONE statement on the pool.
+ * night clock (`quietHour`, 22:00-08:00 Tashkent — never a second clock). `retiredDraftsBefore`: the machine's off
+ * (`forceAgentOff`) expired every waiting draft and cancelled every approved reply not yet sent, so a draft written
+ * before it answered nothing — the line it was for is still the chat's newest — and counts as no answer. ONE
+ * statement on the pool.
  */
 export async function unansweredLines(
   holderId: string,
-  window: { from: Date; to: Date; workingHours: boolean },
+  window: { from: Date; to: Date; workingHours: boolean; retiredDraftsBefore?: Date },
   now: Date,
 ): Promise<WaitingLine[]> {
   // Timestamps as epoch milliseconds: a raw execute hands timestamps back as TEXT (history.ts's lesson).
@@ -158,7 +161,9 @@ export async function unansweredLines(
     const sentAt = new Date(Number(row.sent_ms));
     if (window.workingHours && quietHour(sentAt)) continue;
     const run = row.outcome === null ? null : { outcome: row.outcome, error: row.error, createdAt: new Date(Number(row.run_ms)) };
-    if (livenessOf(run, now) === 'unanswered') out.push({ peerId: row.peer_id, tgMessageId: row.tg_message_id, sentAt });
+    const retired =
+      window.retiredDraftsBefore !== undefined && run?.outcome === 'draft' && run.createdAt.getTime() < window.retiredDraftsBefore.getTime();
+    if (retired || livenessOf(run, now) === 'unanswered') out.push({ peerId: row.peer_id, tgMessageId: row.tg_message_id, sentAt });
   }
   return out;
 }

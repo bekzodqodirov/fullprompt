@@ -569,6 +569,15 @@ export async function agentSweep(
     } catch (err) {
       logger.error({ err }, '[agent] liveness stand-down failed');
     }
+    // 3c. His 18 a: the MACHINE switched it off and nobody has switched it on — the «rahbar va o‘rinbosar» pair is
+    //     reminded at 08:40 and every two hours of the office day, once per slot (off-reminder.ts). Never after a
+    //     person's own «off». Its own catch.
+    try {
+      const { agentForcedOff, sweepOffReminder } = await import('./off-reminder');
+      if (config?.mode === 'off') await sweepOffReminder(config, now, await agentForcedOff());
+    } catch (err) {
+      logger.error({ err }, '[agent] forced-off reminder failed');
+    }
   }
 
   // 5. Strangers on the agent owner's account (§17.11, his 3a): ONE card per
