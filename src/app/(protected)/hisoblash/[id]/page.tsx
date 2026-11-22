@@ -22,6 +22,7 @@ import type { CalcField, CalcSection } from '@/modules/wms/calc/intake';
 import { PageHeader, Section } from '@/components/ui/page';
 import { LightboxImg } from '@/components/lightbox-img';
 import { canSeal, loadWorkspace, offerPricesFor, type OfferPrice } from '@/modules/wms/calc/workspace';
+import { destinationReadings } from '@/modules/wms/agent/calc-price';
 import { sectionParts } from '@/modules/wms/calc/pricing';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { logger } from '@/modules/platform/logger';
@@ -74,6 +75,10 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
 
   const row = await calcRequestDetail(id);
   if (!row) notFound();
+  // How the AI read this job's destination (his «T a», review F4; the T check) — taken as Tashkent, or read and from
+  // which of the customer's words — marked beside the route, which stays printed after the materials fold with the
+  // note in it is shut.
+  const reading = (await destinationReadings([row.id])).get(row.id) ?? null;
 
   const t = await getTranslations('calc');
   const format = await getFormatter();
@@ -275,6 +280,16 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
           <dt className="text-ink-500">{t('route')}</dt>
           <dd>
             {row.fromCity ?? '—'} → {row.toCity ?? '—'}
+            {reading?.taken === true ? (
+              <span className="text-warn" data-testid="calc-destination-taken">
+                {` (${t('destinationTaken')})`}
+              </span>
+            ) : null}
+            {reading && !reading.taken ? (
+              <span className="text-ink-500" data-testid="calc-destination-said">
+                {` (${t('destinationSaid', { evidence: reading.evidence })})`}
+              </span>
+            ) : null}
           </dd>
           <dt className="text-ink-500">{t('fields.weightKg')}</dt>
           <dd className="num md:text-left">{row.weightKg ?? '—'}</dd>

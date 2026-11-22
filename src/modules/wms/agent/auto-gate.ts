@@ -303,7 +303,15 @@ export interface CalcSubmitFacts {
 }
 
 /** Every fact refusing — a VED-price draft whose facts were not read (fails closed; calc-price's own constant, restated pure). */
-const CALC_PRICE_FACTS_ALL: CalcPriceGateFacts = { unconfirmed: true, moved: true, ownerPriced: true, personOffer: true, foreign: true, media: true };
+const CALC_PRICE_FACTS_ALL: CalcPriceGateFacts = {
+  unconfirmed: true,
+  moved: true,
+  ownerPriced: true,
+  personOffer: true,
+  foreign: true,
+  media: true,
+  destinationTaken: true,
+};
 
 /** Every fact refusing — what a calc draft whose facts were not read is judged on (fails closed). */
 export const CALC_FACTS_UNREAD: CalcSubmitFacts = { unproven: true, foreign: true, refused: true, recent: true, fileMissing: true };
@@ -571,7 +579,7 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   // The table is China → Tashkent (§1.8): a reply with an estimate says so, in addition to the city check.
   if (quote && !saysTashkent(draft.body)) hit.add('destination_unsaid');
   // A VED answer's price the clause admitted (SPEC-P2-v2 §2.3): its own facts — never the truck's (a customs price is
-  // no table figure and names no destination). Facts not read refuse every one.
+  // no table figure) — save the destination a job took, not said (below). Facts not read refuse every one.
   const calcQuote = money.calcPriced && !money.refused;
   const cp = calcQuote ? (input.calcPrice ?? CALC_PRICE_FACTS_ALL) : null;
   if (cp?.unconfirmed) hit.add('markup_unconfirmed');
@@ -579,6 +587,9 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (cp?.ownerPriced) hit.add('calc_owner_priced');
   if (cp?.personOffer) hit.add('calc_person_offer');
   if (cp?.foreign) hit.add('calc_foreign');
+  // …save one: a job whose destination was TAKEN as Tashkent (his «T a») was priced to Tashkent, and the customer never
+  // said so — the reply says «Toshkentgacha», or the Tashkent figure goes to him as his own city's (review F2, §1.8).
+  if (cp?.destinationTaken === true && !saysTashkent(draft.body)) hit.add('destination_unsaid');
   // A figure from HIS answer always comes back to him (§2.2, law 4): the AI never relays his number by itself.
   // Asked of his ANSWER as well as of the ledger: a figure of his that the customer, a tool or a fact also carries
   // is vouched for by them, and a redraft may quote the tool's figure where he gave another.

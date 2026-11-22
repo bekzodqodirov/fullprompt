@@ -56,7 +56,13 @@ export function pausedAlarmText(input: {
 
 export type AgentOffReason = Extract<ForcedOffReason, 'flood_repeat' | 'blocks' | 'telegram_notice'>;
 
-const AGENT_OFF_WORDS: Record<AgentOffReason, string> = {
+/**
+ * Why the machine switched itself off, in his words — every forced reason (a Record over the closed list, so a new
+ * reason does not compile until somebody words it). The alarm says it once (`agentOffAlarmText`; a restriction has
+ * its own, `pausedAlarmText`), and the reminders while it stays off say it again (agent `off-reminder.ts`).
+ */
+const AGENT_OFF_WORDS: Record<ForcedOffReason, string> = {
+  account_paused: 'Telegram bu akkauntni chekladi (spam yoki boshqa cheklov)',
   flood_repeat: '24 soat ichida Telegram ikki marta yuborishni kutishga buyurdi (FLOOD_WAIT)',
   blocks: '7 kun ichida AI javob yubormoqchi bo‘lgan ikki mijoz akkauntni bloklagan bo‘lib chiqdi',
   // Never the notice's own words: 777000 also sends login codes, and a code copied into a bot message is a
@@ -64,6 +70,11 @@ const AGENT_OFF_WORDS: Record<AgentOffReason, string> = {
   telegram_notice:
     'Telegramning o‘z xizmat akkaunti (777000) bu akkauntga xabar yubordi — uni Telegram ilovasida o‘qing',
 };
+
+/** Pure: a forced reason in words — the one home for them (`AGENT_OFF_WORDS`). */
+export function agentOffWords(reason: ForcedOffReason): string {
+  return AGENT_OFF_WORDS[reason];
+}
 
 /** Pure: the machine switched itself off to keep the account — said once, with the reason. */
 export function agentOffAlarmText(input: { managerName: string; reason: AgentOffReason }): string {

@@ -7,6 +7,7 @@ import { keyboardOf, STAFF_TEXT_CAP } from '../../platform/notifications/staff-h
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
 import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
+import { destinationNote } from './calc-destination';
 import type { AutoCardState } from './auto-send';
 import { agentCardText, BLOCK_REMEDY, cardAsks, cardDrawsSend, cardExtra, cardTeaches, CardTooLong, digestBody, lessonRewritingNow, type CardInput } from './card';
 import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
@@ -377,7 +378,15 @@ export function actionLines(actions: ComposedAction[]): string[] {
     if (a.type === 'calc_submit') {
       // His third set «3»: a job priced from our Chinese warehouses says so on the card he approves.
       const ours = a.fromOurWarehouse === true ? ' · narx Xitoydagi omborimizdan, zavoddan omborgacha alohida' : '';
-      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · kelib chiqish sertifikati: kompaniya o‘zi oladi${ours}`;
+      // His «T a»: the destination the card he approves names — taken, or read and from which words — in the words the
+      // VED's screens print beside the route (calc-destination `destinationNote`).
+      const destination =
+        a.toCityAssumed === true
+          ? ` · ${destinationNote({ taken: true })}`
+          : typeof a.toCitySaid === 'string' && a.toCitySaid !== ''
+            ? ` · ${destinationNote({ taken: false, evidence: a.toCitySaid })}`
+            : '';
+      return `🧮 Hisoblatishga: ${SECTION_WORDS[a.section] ?? a.section} · lentaga ${a.citedMessageIds.length} ta xabar · kelib chiqish sertifikati: kompaniya o‘zi oladi${ours}${destination}`;
     }
     if (a.type === 'set_followup') return `📅 Qayta aloqa: ${a.date}${a.note ? ` — ${a.note}` : ''}`;
     return '🔕 Bu chatda AI o‘chiriladi';

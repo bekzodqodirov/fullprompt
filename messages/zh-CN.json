@@ -3732,6 +3732,8 @@
     "missingLabel": "缺少",
     "unassigned": "无人认领",
     "takenBy": "认领人",
+    "destinationTaken": "推测：未读出目的地——按塔什干计，请核对客户原话",
+    "destinationSaid": "目的地取自客户消息：«{evidence}»",
     "requester": "申请人",
     "goods": "货物",
     "route": "路线",

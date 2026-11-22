@@ -1,15 +1,16 @@
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { agentCalcLinks, agentDrafts } from '../../platform/db/schema';
+import { agentCalcLinks, agentDrafts, calcRequests } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { fixedDollars, getSetting, percentHundredths } from '../../platform/settings/service';
 import { upsaleEligible } from '../calc/upsale';
 import { answerFloorStandsSql } from '../calc/version-set';
+import { ASSUMED_DESTINATION } from './calc-destination';
 import { cardLineOf, centsOf, markupPrice, ruleString, ruleWords, workedExample, type MarkupRule } from './calc-markup';
 import { chatCalcChains, chatIdentity, type CalcChain } from './context';
 import { machineMayTouch } from './machine-owner';
 import { extractNumbers } from './numbers';
-import { calcFromOurWarehouse } from './types';
+import { calcDestinationSaid, calcDestinationTaken, calcFromOurWarehouse } from './types';
 
 /**
  * «VED javobi → ustama qo'shib narx aytadi» (SPEC-P2-v2 §2.2) — the ONE agent file that reads a calculation's
@@ -92,6 +93,8 @@ export type CalcPriceResult =
       cardLine: string;
       /** A priced job was submitted as priced from our China warehouses (his third set «3») — the reply says both sentences. */
       fromOurWarehouse: boolean;
+      /** A priced job's destination was taken, not said (his «T a»): the VED priced it to Tashkent — the reply says so. */
+      destinationTaken: boolean;
       /**
        * Each price's job named by its goods (the request's first lines, beside `prices`, '' when none were listed) — so
        * the model and his card can tell which cargo a figure is for when a chat holds two jobs. Never an amount.
@@ -413,6 +416,82 @@ async function chainFromOurWarehouse(chain: CalcChain): Promise<boolean> {
 }
 
 /**
+ * Is the destination of the job a VED price relays TAKEN, not said (his «T a», review F2)? The VED priced it to
+ * Tashkent, and the price must say «Toshkentgacha». The chain's NEWEST landing decides (the T check, regression 4) —
+ * a hand-back loop's resubmission with the city the VED asked for is the job now, and the first landing's «taken» is
+ * history — and only while the chain's newest request still carries the taken city: a VED who typed the real one on
+ * the workspace priced THAT, and «Toshkentgacha» would be false.
+ */
+async function chainDestinationTaken(chain: Pick<CalcChain, 'memberIds' | 'newestId'>): Promise<boolean> {
+  if (chain.memberIds.length === 0) return false;
+  const [link] = await db
+    .select({ actions: agentDrafts.actions })
+    .from(agentCalcLinks)
+    .innerJoin(agentDrafts, eq(agentDrafts.id, agentCalcLinks.draftId))
+    .where(inArray(agentCalcLinks.requestId, chain.memberIds))
+    .orderBy(desc(agentCalcLinks.createdAt), desc(agentCalcLinks.requestId))
+    .limit(1);
+  if (!link || !calcDestinationTaken(link.actions)) return false;
+  const [newest] = await db.select({ toCity: calcRequests.toCity }).from(calcRequests).where(eq(calcRequests.id, chain.newestId));
+  return newest?.toCity === ASSUMED_DESTINATION;
+}
+
+/** How a request's destination came to be on it, as the VED's two screens say beside the route (review F4). */
+export type DestinationReading = { taken: true } | { taken: false; evidence: string };
+
+/**
+ * How each of these requests' destination was read (his «T a»; the lead's ruling on the T check) — for the VED's queue
+ * and workspace, which print the route bare (review F4): «Yiwu → Toshkent» read the same whether the customer said it
+ * or nobody did, and the note that says so folds shut once the job is sealed. `taken` — the landing took Tashkent;
+ * `evidence` — the customer's words the city was read from. Each request's own landing (the link draft's action), and
+ * only while the request still carries the city that landing wrote: a city the VED typed is the VED's, and no mark
+ * speaks for it. A request with no landing (a recalc, a hand-made job) is absent. Never throws: a read that fails
+ * marks nothing — the note on the job still says it.
+ */
+export async function destinationReadings(requestIds: readonly string[]): Promise<Map<string, DestinationReading>> {
+  const ids = [...new Set(requestIds)];
+  const out = new Map<string, DestinationReading>();
+  if (ids.length === 0) return out;
+  try {
+    const rows = await db
+      .select({ requestId: agentCalcLinks.requestId, actions: agentDrafts.actions, toCity: calcRequests.toCity })
+      .from(agentCalcLinks)
+      .innerJoin(agentDrafts, eq(agentDrafts.id, agentCalcLinks.draftId))
+      .innerJoin(calcRequests, eq(calcRequests.id, agentCalcLinks.requestId))
+      .where(inArray(agentCalcLinks.requestId, ids));
+    for (const r of rows) {
+      if (calcDestinationTaken(r.actions)) {
+        if (r.toCity === ASSUMED_DESTINATION) out.set(r.requestId, { taken: true });
+        continue;
+      }
+      const evidence = calcDestinationSaid(r.actions);
+      if (evidence !== null && r.toCity !== null && r.toCity === submittedToCity(r.actions)) out.set(r.requestId, { taken: false, evidence });
+    }
+  } catch (err) {
+    logger.warn({ err }, '[agent] destination readings not read');
+  }
+  return out;
+}
+
+/** The requests whose destination was TAKEN (`destinationReadings`), for a reader that asks only that. */
+export async function takenDestinationRequests(requestIds: readonly string[]): Promise<Set<string>> {
+  const readings = await destinationReadings(requestIds);
+  return new Set([...readings].filter(([, r]) => r.taken).map(([id]) => id));
+}
+
+/** The city a landing's own action wrote onto the request — what its evidence was read for. */
+function submittedToCity(actions: unknown): string | null {
+  if (!Array.isArray(actions)) return null;
+  for (const a of actions as unknown[]) {
+    if (typeof a === 'object' && a !== null && (a as { type?: unknown }).type === 'calc_submit') {
+      const city = (a as { facts?: { toCity?: unknown } }).facts?.toCity;
+      return typeof city === 'string' ? city : null;
+    }
+  }
+  return null;
+}
+
+/**
  * The client price(s) for this chat's answered VED jobs (§2.2). `requestId`: the one chain holding that request (the
  * announcement, the re-price at every send step); absent: every answered chain of the chat (the `calc_price` tool).
  */
@@ -430,6 +509,7 @@ export async function calcPriceFor(input: { managerUserId: string; peerId: bigin
   const goods: string[] = [];
   let firstRefusal: CalcPriceRefusal | null = null;
   let ours = false;
+  let taken = false;
   for (const chain of asked) {
     const priced = await priceChain(input, chain, rule, identity, now, validDays);
     if (!priced.ok) {
@@ -440,9 +520,10 @@ export async function calcPriceFor(input: { managerUserId: string; peerId: bigin
     lines.push(cardLineOf(priced.baseCents, rule, SECTION_WORDS[priced.mark.section] ?? priced.mark.section));
     goods.push(await chainGoods(chain.memberIds));
     if (await chainFromOurWarehouse(chain)) ours = true;
+    if (await chainDestinationTaken(chain)) taken = true;
   }
   if (prices.length === 0) return { ok: false, reason: firstRefusal ?? 'not_standing' };
-  return { ok: true, prices, cardLine: lines.join('\n'), fromOurWarehouse: ours, goods };
+  return { ok: true, prices, cardLine: lines.join('\n'), fromOurWarehouse: ours, destinationTaken: taken, goods };
 }
 
 /**
@@ -531,6 +612,11 @@ export interface CalcPriceGateFacts {
   foreign: boolean;
   /** `media`: the customer sent a file after the job landed (the request burst's own files went to the VED). */
   media: boolean;
+  /**
+   * `destination_unsaid` unless the reply says «Toshkentgacha»: a quoted job's destination was taken, not said (his
+   * «T a», review F2) — the VED priced it to Tashkent. Optional: a set of facts built before it reads as said.
+   */
+  destinationTaken?: boolean;
 }
 
 /** Every fact refusing — what a calc-price draft whose facts could not be read is judged on (fails closed). */
@@ -541,6 +627,7 @@ export const CALC_PRICE_FACTS_UNREAD: CalcPriceGateFacts = {
   personOffer: true,
   foreign: true,
   media: true,
+  destinationTaken: true,
 };
 
 /** The six facts, read now — at the scheduling and again at the press. Never throws (a read that fails refuses all). */
@@ -577,7 +664,10 @@ export async function calcPriceGateFacts(raw: unknown, chat: { managerUserId: st
     const chains = (await chatCalcChains(chat.managerUserId, chat.peerId)).filter((c) => c.memberIds.some((id) => ids.includes(id)));
     const since = chains.length === 0 ? null : new Date(Math.min(...chains.map((c) => c.linkedAt.getTime())));
     const media = since === null ? true : await mediaSince(chat, since);
-    return { unconfirmed, moved, ownerPriced, personOffer, foreign, media };
+    // No chain read is a destination not known to be said (fails closed, as `media`).
+    let destinationTaken = chains.length === 0;
+    for (const c of chains) if (await chainDestinationTaken(c)) destinationTaken = true;
+    return { unconfirmed, moved, ownerPriced, personOffer, foreign, media, destinationTaken };
   } catch (err) {
     logger.warn({ err, peer: String(chat.peerId) }, '[agent] auto: the calc price’s facts not read');
     return CALC_PRICE_FACTS_UNREAD;

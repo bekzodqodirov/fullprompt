@@ -13,6 +13,8 @@ import * as locale from '@/modules/wms/agent/locale';
 import * as loop from '@/modules/wms/agent/loop';
 import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import * as numbers from '@/modules/wms/agent/numbers';
+import * as calcDestination from '@/modules/wms/agent/calc-destination';
+import * as origin from '@/modules/wms/agent/origin';
 import * as ownerAnswer from '@/modules/wms/agent/owner-answer';
 import * as policy from '@/modules/wms/agent/policy';
 import type { PolicyInput } from '@/modules/wms/agent/policy';
@@ -422,6 +424,12 @@ function pashto(lines: readonly string[]): Observed {
   return !w.worthy && w.reason === 'pashto' ? 'held' : 'goes';
 }
 
+/** A place reader's answer: the place the case names was read (or, naming none, any place at all). */
+function readsPlace(read: string | null, expected: string | undefined): Observed {
+  if (expected !== undefined) return read === expected ? 'goes' : 'held';
+  return read !== null ? 'goes' : 'held';
+}
+
 /** What the reader under test makes of the case — throws when the reader does not exist at this commit. */
 export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observed {
   const reply = (c.context?.reply ?? 'uz') as AgentLocale;
@@ -467,7 +475,44 @@ export function observe(c: ReaderCase, mode: 'armed' | 'off' = 'armed'): Observe
     case 'full_truck':
       // The customer's lines, one per line of the case — the burst `bigCargoOf` reads (stage 1a §4.5).
       return bigCargo.saysFullTruck(c.input.split('\n')) ? 'held' : 'goes';
+    case 'calc_destination_check':
+      return destinationChecked(c);
+    case 'origin':
+      return readsPlace(origin.namedOrigin(c.input)?.place ?? null, c.context?.place);
   }
+}
+
+/**
+ * The checklist's destination for a `calc_destination_check` case — through the lines the checklist itself reads
+ * (`thisJobLines`: his inbound ones since the chat's last landed job) and the check it lands by (`jobDestination`, a
+ * truck section). The case's lines are built as a chat: `earlier` before a landed job, then `input` with `ours` between.
+ */
+function destinationChecked(c: ReaderCase): Observed {
+  const at = (n: number) => new Date(Date.UTC(2026, 10, 21, 8, 0, n));
+  const earlier = (c.context?.earlier ?? '').split('\n').filter((l) => l !== '');
+  const said = c.input.split('\n');
+  const ours = (c.context?.ours ?? '').split('\n').filter((l) => l !== '');
+  const messages = [
+    ...earlier.map((body, i) => ({ direction: 'in', body, sentAt: at(i) })),
+    ...said.map((body, i) => ({ direction: 'in', body, sentAt: at(20 + i * 2) })),
+    ...ours.map((body, i) => ({ direction: 'out', body, sentAt: at(21 + i * 2) })),
+  ];
+  const openCalcs = earlier.length > 0 ? [{ status: 'answered', createdAt: at(10) }] : [];
+  const d = calcDestination.jobDestination(
+    { toCity: c.context?.toCity ?? '', words: c.context?.words ?? '' },
+    calcDestination.thisJobLines(messages, openCalcs),
+    true,
+  );
+  // The VED's evidence shows what the case names (the final check, F2): his line around the city, never the bare quote.
+  const shows = c.context?.shows;
+  const shown = shows !== undefined && (d.evidence ?? '').includes(shows);
+  if (c.context?.place !== undefined) return d.toCity === c.context.place && !d.assumed && (shows === undefined || shown) ? 'goes' : 'held';
+  if (c.context?.taken === true) return d.toCity === calcDestination.ASSUMED_DESTINATION && d.assumed ? 'goes' : 'held';
+  // Dangerous: the model's city never lands as the customer's — and a place outside Uzbekistan lands nothing at all —
+  // or a misread city lands only beside the customer's words that undo it.
+  if (c.context?.asks === true) return d.toCity === null ? 'held' : 'goes';
+  if (shows !== undefined) return d.toCity === null || d.assumed || shown ? 'held' : 'goes';
+  return d.toCity === null || d.assumed ? 'held' : 'goes';
 }
 
 /** Why a money or Chinese case is held — the gate's reasons, then the policy's blocks. For a person reading a failure. */

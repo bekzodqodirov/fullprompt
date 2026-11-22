@@ -1,0 +1,419 @@
+/**
+ * Where a calculation's cargo GOES — the model names it, the code verifies it is the CUSTOMER's (the lead's ruling,
+ * 2026-11-21, after three checks of a word-rule reader).
+ *
+ * His «T a»: a destination the customer said is read, alone, in Cyrillic or in Russian; a truck job where none is said
+ * takes Tashkent, and the VED is told so in words on the job. Three passes built a grammar reader for the first half —
+ * the Uzbek dative, «в/до» + a town, «A → B», stories, refusals, stoplists — and every pass fixed shapes and opened
+ * others: the last check still found the route reader's far end landing «kelishi», «jo'natish», «yuborish» over a city
+ * said beside it, and «Andijonga 3 kub qachon keladi», «Andijon 3 kub», «manzil Andijon», «Andijon viloyati» asked
+ * «qaysi shaharga» again. A word rule cannot read Uzbek, Russian and mixed chat; the model can. So the checklist tool
+ * takes two inputs from the model — `to_city` (the city) and `to_city_words` (the customer's words that say it, copied
+ * exactly) — and the code checks only what a model could get wrong in a way nobody would see:
+ *  - the words are the CUSTOMER's: found inside one of his inbound lines since the chat's last landed job (never our
+ *    own «Toshkentgacha», never a line of an earlier job, never invented) — normalised for case, the apostrophe as
+ *    people type it, whitespace, punctuation and NFKC, and nothing else: no transliteration, so «Андижан» is found in
+ *    «Андижан» and never in «Andijon». Punctuation is no word (the final check, F5): the tool's own example once stood
+ *    in guillemets and a model copies them, and a model drops a comma as easily — «"Andijonga 3 kub"» and «Andijonga 3
+ *    kub kiyim qachon keladi» are still his words;
+ *  - the city is IN those words, by its stem — the first five letters of a city of six or more (the final check, F4:
+ *    four letters made «Toshloq» the customer's «Toshkentga»), else the first four or the whole word when shorter — at
+ *    the start of a WORD of his line (never inside one: «osh» in «Toshkentga» is no Osh), so the Russian or Uzbek case
+ *    ending may differ («Andijon» in «Andijonga», «Андижан» in «Андижана»); a script with no spaces (Chinese) by its
+ *    first letters anywhere in the quote;
+ *  - the city is no place outside Uzbekistan: there the truck table is not the price, so the job does not land and the
+ *    checklist asks, as the gate's `foreign_destination` already holds a price there.
+ * Accepted, the city lands as the model wrote it (a preposition or «г.» before it, and quote marks, aside), with the
+ * customer's LINE around it as the VED's evidence («Manzil mijoz xabaridan: «…»») — never the model's quote alone: a
+ * bare «Toshkentga» copied out of «Toshkentga emas, Andijonga» hides the very word that undoes it (the final check, F2).
+ * Anything else — no city, words not found, a city not in them — lands Tashkent, TAKEN, with «Manzil o‘qilmadi — Toshkent
+ * deb olindi, mijoz so‘zlarini tekshiring»: a job that never lands is the defect he reported, and `to_city` drives no
+ * price (the prefill and the freight zone read the origin), so a wrong destination is a route line the VED reads
+ * beside the customer's own words.
+ *
+ * What the verifier cannot see is the model's to judge (a word that is no town, a past shipment's city) — the tool's
+ * words say what `to_city` is, and the VED reads the quote.
+ *
+ * Pure.
+ */
+
+import { namesForeignPlace } from './destination';
+import { chinaMentions } from './origin';
+
+/** The place a truck job takes when the customer's destination was not read (his «T a» (2)) — the table's own end. */
+export const ASSUMED_DESTINATION = 'Toshkent';
+/**
+ * What the VED reads on such a job. «o‘qilmadi», not «aytilmagan»: the same note stands where the customer said a town
+ * the check could not verify, so it says what the machine KNOWS — it read nothing — and sends the VED to the
+ * customer's words, which the job carries.
+ */
+export const ASSUMED_DESTINATION_NOTE = 'Manzil o‘qilmadi — Toshkent deb olindi, mijoz so‘zlarini tekshiring';
+/** The customer's words a destination was read from, as the VED sees them: about one line of a phone's width. */
+export const DESTINATION_EVIDENCE_CHARS = 80;
+/** What the VED reads when a destination WAS read: the customer's own words it was read from — a wrong reading shows. */
+export function saidDestinationNote(evidence: string): string {
+  return `Manzil mijoz xabaridan: «${evidence}»`;
+}
+/**
+ * The one sentence a job's destination is told by — his approval card and the VED's two screens beside the route
+ * print the same words. «taxmin» only on a TAKEN destination: a read one is the customer's, an estimate it is not.
+ */
+export function destinationNote(reading: { taken: true } | { taken: false; evidence: string }): string {
+  return reading.taken ? `taxmin: ${ASSUMED_DESTINATION_NOTE}` : saidDestinationNote(reading.evidence);
+}
+
+/**
+ * The customer's words cut to about `DESTINATION_EVIDENCE_CHARS` around the place at `at` (an offset into `line`) —
+ * whitespace folded, so a pasted paragraph is one line — at word boundaries, with «…» where it was cut. The place stays
+ * inside the cut: a long line's head is usually a greeting.
+ */
+export function evidenceOf(line: string, at: number): string {
+  const text = line.replace(/\s+/gu, ' ').trim();
+  if (text.length <= DESTINATION_EVIDENCE_CHARS) return text;
+  // The offset was taken on the raw line; folding only ever shortens what stands before it.
+  const placeAt = line.slice(0, Math.max(0, at)).replace(/\s+/gu, ' ').trimStart().length;
+  const room = DESTINATION_EVIDENCE_CHARS - 2;
+  const from = Math.max(0, Math.min(placeAt - 30, text.length - room));
+  const words = [...text.matchAll(/\S+/gu)].map((m) => ({ s: m.index, e: m.index + m[0].length }));
+  const kept = words.filter((w) => (w.s >= from && w.e <= from + room) || (w.s <= placeAt && placeAt < w.e));
+  const first = kept[0] ?? words[0]!;
+  const last = kept.at(-1) ?? first;
+  return `${first.s > 0 ? '…' : ''}${text.slice(first.s, last.e)}${last.e < text.length ? '…' : ''}`;
+}
+
+/** The apostrophe as people type it in Uzbek Latin — «Qo'qon», «Qo‘qon», «Qoʻqon» are one word. */
+const APOSTROPHE = /['‘’ʻʼ`´]/u;
+
+/**
+ * The text as the check compares it — NFKC, lower case, one apostrophe, every other punctuation mark read as a space
+ * (a comma the model dropped, a guillemet it added), whitespace runs folded to one space, trimmed, and a pair of
+ * apostrophes wrapping the whole of it dropped (the one quote mark the fold keeps, since it is a letter's part in
+ * Uzbek) — with, for each character of the result, where it came from in the NFKC'd source (`from`/`to`), so a quote
+ * found in the folded line is cut out of the customer's own text and never shown in the model's copy of it.
+ */
+function fold(text: string): { text: string; source: string; from: number[]; to: number[] } {
+  const source = text.normalize('NFKC');
+  let out = '';
+  const from: number[] = [];
+  const to: number[] = [];
+  let i = 0;
+  const openAt: number[] = [];
+  for (const ch of source) {
+    const at = i;
+    i += ch.length;
+    // An apostrophe with no letter before it OPENS a quote («Manzil 'Andijon'», «‘Andijonga’» — the final check's
+    // T-R2): no Uzbek word starts with one, so it is read as the space it stands for; one after a letter stays the
+    // letter's («Qo'qon», «Yakkabog'»).
+    const opensQuote = APOSTROPHE.test(ch) && (out.length === 0 || out.endsWith(' '));
+    if (opensQuote) openAt.push(out.length);
+    if (/\s/u.test(ch) || opensQuote || (!APOSTROPHE.test(ch) && /\p{P}/u.test(ch))) {
+      if (out.length > 0 && !out.endsWith(' ')) {
+        out += ' ';
+        from.push(at);
+        to.push(i);
+      }
+      continue;
+    }
+    const piece = APOSTROPHE.test(ch) ? "'" : ch.toLowerCase();
+    for (const c of piece) {
+      out += c;
+      from.push(at);
+      to.push(i);
+    }
+  }
+  if (out.endsWith(' ')) {
+    out = out.slice(0, -1);
+    from.pop();
+    to.pop();
+  }
+  // …and the apostrophe that CLOSES it — the first word-final one after the opening — goes with it («Manzil 'Andijon'
+  // 3 kub» reads «manzil andijon 3 kub»). With no quote opened, a word's last apostrophe is its own («Yakkabog'»).
+  for (let q = 0; q < openAt.length; q++) {
+    for (let k = Math.max(openAt[q]!, 1); k < out.length; k++) {
+      if (out[k] !== "'" || out[k - 1] === ' ' || (k < out.length - 1 && out[k + 1] !== ' ')) continue;
+      out = out.slice(0, k) + out.slice(k + 1);
+      from.splice(k, 1);
+      to.splice(k, 1);
+      for (let r = q + 1; r < openAt.length; r++) if (openAt[r]! > k) openAt[r]! -= 1;
+      break;
+    }
+  }
+  // «'Andijonga 3 kub'»: wrapping apostrophes are a quote, never a word's — a word of his line neither starts nor
+  // ends with one. The space they leave inside is trimmed with them.
+  while (out.length > 2 && out.startsWith("'") && out.endsWith("'")) {
+    let s = 1;
+    let e = out.length - 1;
+    while (s < e && out[s] === ' ') s++;
+    while (e > s && out[e - 1] === ' ') e--;
+    out = out.slice(s, e);
+    from.splice(0, s);
+    to.splice(0, s);
+    from.length = e - s;
+    to.length = e - s;
+  }
+  return { text: out, source, from, to };
+}
+
+/**
+ * The city as it lands — quote marks and punctuation around it, and a preposition or the town's abbreviation before
+ * it («в Андижан», «г. Андижан», «sh. Andijon»), aside: the model names the city, and a model copying the customer's
+ * grammar with it is still naming Andijan. Never «из»: a city written «from» is the origin, and stripping it would land
+ * the place the cargo leaves as the place it goes.
+ */
+function plainCity(raw: string): string {
+  let city = raw.replace(/\s+/gu, ' ').trim();
+  for (let before = ''; before !== city; ) {
+    before = city;
+    city = city
+      .replace(/^[\s«»"“”„‘’'`´()[\].…,;:!?]+|[\s«»"“”„‘’'`´()[\].…,;:!?]+$/gu, '')
+      .replace(/^(?:(?:г|ш|sh)\.\s*|(?:в|во|на|до|для|to|in|for|г|город|sh)\s+)/iu, '');
+  }
+  return city;
+}
+
+/** A word of folded text — letters and the apostrophe — and the letters alone, which is what a stem is made of. */
+const WORD = /[\p{L}']+/gu;
+const letters = (word: string) => word.replace(/'/gu, '');
+const HAN = /\p{Script=Han}/u;
+
+/**
+ * The city's stem: its first word's first five letters when the word has six or more — four let a town's neighbour
+ * through («Toshloq» for «Toshkentga», «Янгиер» for «Янгийўлга»: the final check, F4) — else its first four, or the
+ * whole word when shorter («Ош», «Pop»; «Nukus» by «nuku»), which leaves room for the case ending either way.
+ */
+function stemOf(city: string): string {
+  const first = letters(fold(city).text.match(WORD)?.[0] ?? '');
+  return first.slice(0, first.length >= 6 ? 5 : 4);
+}
+
+/** Where in the folded quote the city stands: a word that starts with its stem — in Chinese, the stem anywhere. */
+function cityAt(quote: string, stem: string): number {
+  if (HAN.test(stem)) return quote.indexOf(stem);
+  for (const m of quote.matchAll(WORD)) if (letters(m[0]).startsWith(stem)) return m.index;
+  return -1;
+}
+
+/** Does a word of the folded `line` start at `at` — nothing of a word before it? */
+const wordStartsAt = (line: string, at: number) => at === 0 || !/[\p{L}']/u.test(line[at - 1]!);
+
+/** «O'zbekiston», «Узбекистан» — the table's own country: no city of it, so the table's city is taken with its note. */
+const COUNTRY = /^(?:ozbe|uzbe|ўзбе|узбе)/u;
+
+/**
+ * Places in Uzbekistan the gate's list (destination.ts `namesForeignPlace`) names as «other than Tashkent» — that list
+ * answers the PRICE's question (the table is China → Tashkent, and Andijan is no more Tashkent than Almaty is), and
+ * holds the neighbours too. This check asks another one, «is the place outside Uzbekistan», so the places of
+ * Uzbekistan the list holds are told apart here, in the spellings it holds them in (Tashkent's region and its towns
+ * among them: they are Uzbekistan). A place of Uzbekistan missing here reads as outside and is ASKED — the safe side:
+ * a foreign place landed on the Tashkent table is the error this check exists for.
+ */
+const A = "'?";
+const UZBEKISTAN = new RegExp(
+  `(?<![\\p{L}])(?:${[
+    'andijo?n', 'андижо?н', 'андижан', 'andijan',
+    'namangan', 'наманган',
+    `farg${A}ona`, 'фарғона', 'фаргона', 'ферган', 'ferg(?:h)?ana', 'fergon',
+    'samarqand', 'самарқанд', 'самарканд', 'samarkand',
+    'buxoro', 'бухоро', 'бухар', 'bukhara', 'buhoro', 'bukhoro', 'buhara',
+    'termiz', 'термиз', 'термез', 'termez',
+    'jizzax', 'жиззах', 'джизак', 'jizzakh', 'djizak', 'jizax', 'жизах',
+    'guliston', 'гулисто?н', 'гулистан', 'gulistan',
+    'sirdaryo', 'сирдарё', 'сырдарь', 'syrdarya',
+    'xorazm', 'хоразм', 'хорезм', 'khorezm', 'khorazm', 'horazm',
+    'urganch', 'урганч', 'ургенч', 'urgench',
+    'nukus', 'нукус',
+    `qoraqalpog${A}iston`, 'қорақалпоғисто?н', 'каракалпак', 'karakalpak',
+    `qo${A}qon`, 'қўқон', 'коканд', 'kokand', 'quqon', 'ku[kq]on', 'кукон', 'кокон',
+    `marg${A}ilon`, 'марғилон', 'маргилон', 'маргилан', 'margilan',
+    'surxondaryo', 'сурхондарё', 'сурхандарь', 'surkhandarya',
+    'qashqadar', 'қашқадар', 'кашкадар', 'kashkadar',
+    'chirchiq', 'чирчиқ', 'чирчик', 'chirchik',
+    'angren', 'ангрен',
+    'olmaliq', 'олмалиқ', 'алмалык', 'almalyk', 'olmalik', 'олмалик',
+    'shahrisabz', 'шаҳрисабз', 'шахрисабз', 'shaxrisabz',
+    'гиждувон', `g${A}ijduvon`, 'ғиждувон', 'гиждуван',
+    'каттакургон', `kattaqo${A}rg${A}on`, 'каттақўрғон', 'каттакурган',
+    'xiva', 'хива', 'khiva', 'hiva',
+    'denov', 'денов', 'denau', 'денау',
+    'bekobod', 'бекобод', 'bekabad', 'бекабад',
+    `yangiyo${A}l`, 'янгийўл', 'янгиюл',
+    'ohangaron', 'оҳангарон', 'охангарон', 'ахангаран',
+    'nurafshon', 'нурафшон',
+    'asaka', 'асака',
+    'shahrixon', 'шаҳрихон', 'шахрихан',
+    'qorasuv', 'қорасув', 'корасув', 'xonobod', 'хонобод', 'ханабад', `oltinko${A}l`, 'олтинкўл', 'олтинкул', 'алтынкул',
+    `paytug${A}`, 'пайтуғ', 'пайтуг', 'izboskan', 'избоскан', `qo${A}rg${A}ontepa`, 'қўрғонтепа', 'кургантепа', 'кургонтепа',
+    'quvasoy', 'қувасой', 'кувасай', 'кувасой',
+    'rishton', 'риштон', 'риштан',
+    'kosonsoy', 'косонсой', 'касансай',
+    'urgut', 'ургут',
+    'kogon', 'когон', 'каган',
+    'zarafshon', 'зарафшон', 'зарафшан',
+    'uchquduq', 'учқудуқ', 'учкудук',
+    `g${A}uzor`, 'ғузор', 'гузар',
+    'sherobod', 'шеробод', 'шерабад',
+    'boysun', 'бойсун', 'байсун',
+    'yangiyer', 'янгиер',
+    'hazorasp', 'ҳазорасп', 'хазарасп',
+    `qo${A}ng${A}irot`, 'қўнғирот', 'кунград',
+    `to${A}rtko${A}l`, 'тўрткўл', 'турткуль',
+    `mo${A}ynoq`, 'мўйноқ', 'муйнак',
+    `xo${A}jayli`, 'хўжайли', 'ходжейли',
+    // The list's two-faced words, which it counts only in a place's own form — here the place is already said.
+    'qarshi', 'қарши', 'карши', 'karshi', 'chust', 'чуст', 'navoi', 'навои', 'marhamat', 'марҳамат', 'мархамат',
+    'baliqchi', 'балиқчи', 'балыкчи',
+  ].join('|')})|安集延|纳曼干|费尔干纳|撒马尔罕|布哈拉|纳沃伊|卡尔希|铁尔梅兹|吉扎克|乌尔根奇|努库斯|浩罕|花剌子模|希瓦|اندیجان|نمنگان|فرغانه|سمرقند|بخارا|ترمذ|خوقند|خوارزم|جیزخ|خیوه`,
+  'u',
+);
+
+/**
+ * Names Uzbekistan's that are a neighbour's too, Uzbekistan's here unless the customer's line speaks of Kyrgyzstan (the
+ * final check, F3): Norin is a district of Namangan («Norin tumani», «Нарынский район» — «Нарын» in Russian) as Naryn is
+ * a Kyrgyz town, and «Карасу» is Qorasuv of Andijan as Kara-Suu is Kyrgyz. The Kyrgyz town in its own spelling —
+ * «Naryn», «Кара-Суу», «Карасуу» — stays the gate list's foreign place.
+ */
+const UZBEK_TWO_FACED = /(?<![\p{L}])(?:norin|норин|карасу(?!у))/u;
+/**
+ * «Нарын» in Russian is the Kyrgyz town first («в Нарын 3 куба» — the final check's T-R4): it is Namangan's Norin only
+ * when his line says so («в Нарын (Наманганская обл.)», «Нарынский район»).
+ */
+const NARYN_RU = /(?<![\p{L}])нарын/u;
+const NAMANGAN_CONTEXT = /наманган|namangan|нарынск\p{L}*\s+район|norin|норин/u;
+const KYRGYZ = /qirg'?iz|қирғиз|кыргыз|киргиз|kyrgyz|kirgiz|bishkek|бишкек|облус|oblus|(?:нарынск\p{L}*|norin|норин|нарын)\s+(?:обл|oblast|region|viloyat|вилоят)/u;
+
+/**
+ * Is the place outside Uzbekistan — China, or a place the gate's list holds that is none of Uzbekistan's? The list
+ * counts a two-faced name only in its grammar — «Oshga», «Osh shahriga», «в Ош», «в г. Ош», «to Osh», «Manzil: Osh» —
+ * and the bare city («Osh», «Ош») is not, so the place is asked as it stands in the CUSTOMER's line (`phrase`: the
+ * preposition or label before it, his whole word, a «shahri»/«tumani»/«viloyati» after it — the final check, F1: the
+ * model's quote of the bare «Ош» out of «В Ош доставляете?» had landed Osh as said). Never the rest of the line:
+ * «Olmaotadan chinozga» names the place the cargo comes FROM, «Toshkentga, Andijonga emas» another place altogether.
+ */
+function outsideUzbekistan(city: string, word: string, phrase: string, line: string): boolean {
+  if (chinaMentions(city).length > 0 || chinaMentions(word).length > 0) return true;
+  if (!namesForeignPlace([city, word, phrase])) return false;
+  const c = fold(city).text;
+  const w = fold(word).text;
+  if (UZBEKISTAN.test(c) || UZBEKISTAN.test(w)) return false;
+  if ((NARYN_RU.test(c) || NARYN_RU.test(w)) && NAMANGAN_CONTEXT.test(line) && !KYRGYZ.test(line)) return false;
+  return !((UZBEK_TWO_FACED.test(c) || UZBEK_TWO_FACED.test(w)) && !KYRGYZ.test(line));
+}
+
+/**
+ * What may stand right before a city and belongs to it as the gate's list reads a place: a preposition, the town's
+ * abbreviation after one («в г.»), or an address label («Manzil:», «Адрес:») — folded, so with no period or colon.
+ */
+const PREP = /^(?:в|во|на|до|из|для|to|in|for|г|город\p{L}*|manzil\p{L}*|манзил\p{L}*|адрес\p{L}*|address|city|shahar|shahri|шаҳар|шахар)$/u;
+/** A town word after the city — «Osh shahriga», «Ош шаҳрига», «Norin tumaniga» — the place's own form in the list. */
+const TOWN_AFTER = /^(?:sha[hx](?:ri|ar)|tuman|viloyat|ша[ҳх](?:ри|ар)|туман|вилоят)\p{L}*$/u;
+
+/**
+ * The city as it stands in the folded line `f` at `at` (its word `length` long): the customer's own text from the
+ * preposition or label before it (at most two), through an ending he glued on with a hyphen («Osh-ga»), to the town
+ * word after it — cut out of his NFKC'd line (`source`, by `from`/`to`), so the list reads the period of «г.» and the
+ * colon of «Manzil:» as he wrote them.
+ */
+function placePhrase(f: ReturnType<typeof fold>, at: number, length: number): string {
+  const tokens = [...f.text.matchAll(/\S+/gu)].map((m) => ({ s: m.index, e: m.index + m[0].length, t: m[0] }));
+  const self = tokens.findIndex((t) => t.s <= at && at < t.e);
+  let first = at;
+  for (let k = self - 1, n = 0; k >= 0 && n < 2 && PREP.test(tokens[k]!.t); k--, n++) first = tokens[k]!.s;
+  let end = f.to[at + length - 1]!;
+  // Only a place's own ENDING glued on with a hyphen («Osh-ga», «Ош-га») — never the next place of a route
+  // («Toshkent-Samarqand», «Иу-Ташкент-Андижан»: the final check's T-R1 read Tashkent there as a foreign phrase).
+  end += /^[-‐‑–](?:gacha|ga|ka|qa|dan|da|ning|гача|га|ка|қа|дан|да|нинг)(?!\p{L})/u.exec(f.source.slice(end))?.[0].length ?? 0;
+  const next = tokens.find((t) => f.from[t.s]! >= end);
+  if (next && TOWN_AFTER.test(next.t) && /^\s+$/u.test(f.source.slice(end, f.from[next.s]))) end = f.to[next.e - 1]!;
+  return f.source.slice(f.from[first]!, end);
+}
+
+/**
+ * The customer's lines that are THIS job's — the only lines a quote is looked for in: his inbound ones (never ours —
+ * «Toshkentgacha» is our sentence), since the chat's last landed job (review R2 — the cut calc-files copies the job's
+ * files by: «Andijonga» for last month's job is no destination of today's). A chain the VED handed back is no cut: the
+ * hand-back loop's resubmission is that same job, its destination said before it landed.
+ */
+export function thisJobLines(
+  messages: readonly { direction: string; body: string; sentAt: Date }[],
+  openCalcs: readonly { status: string; createdAt: Date }[],
+): string[] {
+  const landed = openCalcs.filter((c) => c.status !== 'returned').map((c) => c.createdAt.getTime());
+  const cut = landed.length > 0 ? Math.max(...landed) : null;
+  return messages.filter((m) => m.direction === 'in' && m.body && (cut === null || m.sentAt.getTime() > cut)).map((m) => m.body);
+}
+
+/** What the model named, as the checklist tool took it. */
+export interface DestinationClaim {
+  /** The city, as the model wrote it (`to_city`). */
+  toCity: string;
+  /** The customer's words that say it, copied (`to_city_words`). */
+  words: string;
+}
+
+/**
+ * The check's answer: `said` — the city lands as written, with the customer's own words; `foreign` — a place outside
+ * Uzbekistan, which does not land; `unread` — nothing verified (the truck job takes Tashkent), and why, for the model.
+ */
+export type DestinationCheck =
+  | { kind: 'said'; toCity: string; evidence: string }
+  | { kind: 'foreign'; toCity: string }
+  | { kind: 'unread'; why: 'none' | 'not_in_lines' | 'not_in_words' | 'country' };
+
+/**
+ * The model's destination against the customer's lines (`lines` — his inbound lines that are THIS job's: since the
+ * chat's last landed job, never ours).
+ */
+export function checkDestination(claim: DestinationClaim, lines: readonly string[]): DestinationCheck {
+  const toCity = plainCity(claim.toCity);
+  const quote = fold(claim.words).text;
+  if (toCity === '' || quote === '') return { kind: 'unread', why: 'none' };
+  const stem = stemOf(toCity);
+  // A stem of one letter is no city — «A» would match half the words there are; two are a city's whole name in
+  // Cyrillic («Ош») and in Chinese («喀山»).
+  if (stem.length < 2) return { kind: 'unread', why: 'none' };
+  if (COUNTRY.test(stem)) return { kind: 'unread', why: 'country' };
+  const at = cityAt(quote, stem);
+  if (at < 0) return { kind: 'unread', why: 'not_in_words' };
+  const han = HAN.test(stem);
+  for (const line of lines) {
+    const f = fold(line);
+    for (let found = f.text.indexOf(quote); found >= 0; found = f.text.indexOf(quote, found + 1)) {
+      const p = found + at;
+      // The city starts a word of HIS line — the quote may begin inside one («osh» copied out of «Toshkentga»).
+      if (!han && !wordStartsAt(f.text, p)) continue;
+      // His whole word there, which the quote may stop inside («Osh» out of «Oshga»); Chinese has no words to cut.
+      const word = han ? (quote.slice(at).match(WORD)?.[0] ?? '') : (/^[\p{L}']+/u.exec(f.text.slice(p))?.[0] ?? '');
+      if (outsideUzbekistan(toCity, word, placePhrase(f, p, word.length), f.text)) return { kind: 'foreign', toCity };
+      // His LINE around the place, cut out of his own text: what the VED reads is never the model's copy.
+      return { kind: 'said', toCity, evidence: evidenceOf(f.source, f.from[p]!) };
+    }
+  }
+  return { kind: 'unread', why: 'not_in_lines' };
+}
+
+/** A job's destination as the checklist lands it. */
+export interface JobDestination {
+  toCity: string | null;
+  /** Tashkent TAKEN, not read: the VED's note says «Manzil o‘qilmadi …» (`ASSUMED_DESTINATION_NOTE`). */
+  assumed: boolean;
+  /** The customer's line the city was read from, cut around it (`evidenceOf`) — null when taken or none. */
+  evidence: string | null;
+  /** A place outside Uzbekistan the model named: not landed, the field stays missing (the checklist asks). */
+  foreign: string | null;
+  /** Why the model's city was not taken, when it named one — for the model's own retry, never the VED's. */
+  refused: 'not_in_lines' | 'not_in_words' | 'country' | null;
+}
+
+/**
+ * The checklist's destination: the verified city, for any section; a truck job with none verified takes Tashkent
+ * (`truck`) — a customs-only job prices no road and takes nothing. A foreign city lands neither.
+ */
+export function jobDestination(claim: DestinationClaim, lines: readonly string[], truck: boolean): JobDestination {
+  const check = checkDestination(claim, lines);
+  if (check.kind === 'said') return { toCity: check.toCity, assumed: false, evidence: check.evidence, foreign: null, refused: null };
+  if (check.kind === 'foreign') return { toCity: null, assumed: false, evidence: null, foreign: check.toCity, refused: null };
+  const refused = check.why === 'none' ? null : check.why;
+  return truck
+    ? { toCity: ASSUMED_DESTINATION, assumed: true, evidence: null, foreign: null, refused }
+    : { toCity: null, assumed: false, evidence: null, foreign: null, refused };
+}

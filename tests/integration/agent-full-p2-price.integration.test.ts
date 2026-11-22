@@ -511,6 +511,8 @@ describe('calcPriceFor — the VED figure plus his markup, for this chat’s lin
       prices: [{ requestId: c.requestId, section: 'rastamojka', anchor: 'answer', anchorId: c.requestId, rule: 'percent:10', total: 1359 }],
       cardLine: '🧮 rastamojka: VED 1 234,56 $ · ustama 10 % → mijozga 1 359 $',
       fromOurWarehouse: false,
+      // DELIBERATE EDIT (the review of his «T a», F2): the result says whether a priced job's destination was taken.
+      destinationTaken: false,
       // No goods were listed on the job: nothing names it beyond its section.
       goods: [''],
     });

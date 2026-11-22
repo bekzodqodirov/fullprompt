@@ -56,6 +56,10 @@ const STEMS: readonly string[] = [
   'angren', 'ангрен',
   'olmaliq', 'олмалиқ', 'алмалык', 'almalyk',
   'shahrisabz', 'шаҳрисабз', 'шахрисабз',
+  // …as they are typed with no «ғ/қ/ў/ҳ» on a Russian keyboard, and with «x» for «zz» and «h» in Latin (the review of
+  // his «T a», 2026-11-21, R3: «Фаргонага», «Маргилонга», «Хужандга», «Jizaxga», «Shaxrisabzga» read as no place).
+  // «кокон» is a cocoon and «olmalik» an orchard too: those two only with a place's ending (`ENDED`).
+  'фаргона', 'маргилон', 'кукон', 'хужанд', 'гиждувон', 'каттакургон', 'jizax', 'жизах', 'shaxrisabz',
   // …and the district towns a customer names as easily as a region (0148 fix: «Xivaga», «Denovga», «Bekobodga»
   // each read as no place at all). Left out, each a word or a Tashkent landmark too: Kitob («book»), Shirin
   // («sweet»), Muborak («blessed»), Pop, Chust, Quva, Beruniy and Parkent (a street and a bazaar of Tashkent).
@@ -71,7 +75,8 @@ const STEMS: readonly string[] = [
   // «Marhamat» is «please» and «Baliqchi» a fisherman: those two only in a place's own form (`ENDED`).
   'qorasuv', 'қорасув', 'корасув', 'xonobod', 'хонобод', 'ханабад', `oltinko${A}l`, 'олтинкўл', 'олтинкул', 'алтынкул',
   `paytug${A}`, 'пайтуғ', 'пайтуг', 'izboskan', 'избоскан', `qo${A}rg${A}ontepa`, 'қўрғонтепа', 'кургантепа', 'кургонтепа',
-  'quvasoy', 'қувасой', 'кувасай',
+  // «кувасой» as a Russian keyboard types the Uzbek (the T check: «в Кувасой» read as no place at all).
+  'quvasoy', 'қувасой', 'кувасай', 'кувасой',
   'rishton', 'риштон', 'риштан',
   'kosonsoy', 'косонсой', 'касансай',
   `kattaqo${A}rg${A}on`, 'каттақўрғон', 'каттакурган',
@@ -93,7 +98,8 @@ const STEMS: readonly string[] = [
   `qozog${A}iston`, 'қозоғисто?н', 'казахстан', 'kazakhstan', 'qazaqstan',
   // «Olmaota» is the Uzbek for Almaty — in Latin too (0148 fix: «Olmaotaga» read as no place), with or without its
   // hyphen, and «Алмата» as often as «Алматы»; «Алматига», «Олматига» with the Uzbek «-и» (fix pass 3).
-  'alma-?a?t[ayi]', 'алма-?а?т[аыуи]', 'олма-?ота', 'olma-?ota', 'олма-?а?т[аи]', 'olma-?a?t[ai]',
+  // «Алмате» — the locative a Russian writer gives it beside «Алматы» (R3).
+  'alma-?a?t[ayi]', 'алма-?а?т[аыуие]', 'олма-?ота', 'olma-?ota', 'олма-?а?т[аи]', 'olma-?a?t[ai]',
   'astana', 'астан',
   'shymkent', 'chimkent', 'шымкент', 'чимкент',
   'qarag(?:ʻ|\'|‘|’)?andi', 'караганд', 'karaganda',
@@ -200,6 +206,8 @@ const ENDED: readonly string[] = [
   // «Marhamat» is «please», «baliqchi» a fisherman — the Andijan towns only with a place's ending (fix pass 7).
   `marhamat(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `марҳамат(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, `мархамат(?:${SEP}(?:га|гача|дан|да)|${TOWN_CYRL})`,
   `baliqchi(?:${SEP}(?:ga|gacha|dan|da|ning)|${TOWN})`, `балиқчи(?:${SEP}(?:га|гача|дан|да|нинг)|${TOWN_CYRL})`, '(?:в|до|из)\\s+балыкчи',
+  // «кокон» is a cocoon, «olmalik» an apple orchard: Qo'qon and Olmaliq in those spellings only with a place's ending.
+  `кокон(?:${SEP}(?:га|гача|дан|да|нинг))`, `olmalik(?:${SEP}(?:ka|ga|kacha|gacha|dan|da|ning))`, `олмалик(?:${SEP}(?:ка|га|гача|дан|да|нинг))`,
   // «talash» is a quarrel: Talas only as itself or with its own ending.
   `talas(?:${SEP}(?:ga|gacha|dan|da|ning))?`, 'талас(?:а|е|у|ом|га|гача|дан|да)?',
   // «kabul qilasizmi», «кабул киласизми» is «qabul» typed without its «q» — «accept».

@@ -3732,6 +3732,8 @@
     "missingLabel": "Yetishmayapti",
     "unassigned": "Hech kim olmagan",
     "takenBy": "Oldi",
+    "destinationTaken": "taxmin: Manzil o‘qilmadi — Toshkent deb olindi, mijoz so‘zlarini tekshiring",
+    "destinationSaid": "Manzil mijoz xabaridan: «{evidence}»",
     "requester": "So‘radi",
     "goods": "Tovarlar",
     "route": "Yo‘nalish",

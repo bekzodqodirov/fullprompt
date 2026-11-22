@@ -37,6 +37,18 @@
  *                     signal. Here `dangerous` is the other way round from every reader above — a plain «fura kerak»
  *                     the reader MISSES is the case his answer exists for; a word that pings a colleague about a
  *                     washing machine is `ordinary` (one needless ping a chat a week).
+ *  - `calc_destination_check` — the destination the MODEL names in the checklist (`to_city` + `to_city_words`) and
+ *                     the code verifies (calc-destination `jobDestination` over `thisJobLines` — the lead's ruling,
+ *                     2026-11-21, which retired the word-rule readers `calc_destination` / `calc_destination_default`):
+ *                     ordinary = the model quoted the customer's own words and the city is in them, or named none —
+ *                     the job lands on that city (`context.place`), or on Tashkent TAKEN (`context.taken`);
+ *                     dangerous = the quote is only in OUR line, in no line, in a line of an earlier job, does not hold
+ *                     the city, or the city is no city — never landed as the customer's (Tashkent taken); or the
+ *                     city is outside Uzbekistan (`context.asks`) — not landed at all, the checklist asks; or a city
+ *                     misread lands only with the customer's words that undo it in its evidence (`context.shows`).
+ *  - `origin`       — the place the cargo STARTS (origin `namedOrigin`), for the «You» spelling of Yiwu (the
+ *                     2026-11-15 live chat): `goes` = it reads `context.place` (or any place), `held` = none.
+ *                     Dangerous = English «you» read as Yiwu — a price quoted from a warehouse nobody named.
  *
  * `kind`: `dangerous` — the WRONG answer lets something reach a customer that must not (a price nobody read, a
  * hand-over in an air chat, a Tashkent price for another destination, a reply in the wrong language, his figure
@@ -72,7 +84,9 @@ export type Reader =
   | 'phone'
   | 'loop'
   | 'avia_days'
-  | 'full_truck';
+  | 'full_truck'
+  | 'calc_destination_check'
+  | 'origin';
 export type Kind = 'dangerous' | 'ordinary';
 export type Observed = 'held' | 'goes';
 
@@ -88,7 +102,28 @@ export interface ReaderCase {
    * language of the earlier turn's reply HE approved by hand (his ✅ — decide `approvedLocale`), taught to the chat
    * where nothing was stored.
    */
-  context?: { stored?: string | null; reply?: string; before?: string; remember?: boolean; approved?: string };
+  context?: {
+    stored?: string | null;
+    reply?: string;
+    before?: string;
+    remember?: boolean;
+    approved?: string;
+    place?: string;
+    taken?: boolean;
+    /** `calc_destination_check`: the model's `to_city` / `to_city_words`, our lines, his lines before the last landed job. */
+    toCity?: string;
+    words?: string;
+    ours?: string;
+    earlier?: string;
+    /** `calc_destination_check`, dangerous: the city must not land at all — the checklist asks it. */
+    asks?: boolean;
+    /**
+     * `calc_destination_check`: what the VED's evidence must show (the final check, F2 — his line around the city,
+     * never the model's quote alone). Ordinary: the city lands AND its evidence shows this. Dangerous: a city misread
+     * lands only beside the words that undo it («emas», «не в») — or not at all.
+     */
+    shows?: string;
+  };
   expect: Observed;
   kind: Kind;
   source: string;
@@ -2202,6 +2237,173 @@ const FULL_TRUCK_ORDINARY: readonly Row[] = [
   ['ft125', 'Fura kerak emas, yoki sborniy, yoki avia', P_FT],
 ];
 
+// ── calc_destination_check: the model names the destination, the code verifies it is the customer's ──────────────
+// The lead's ruling (2026-11-21), after three checks of a word-rule reader that each fixed shapes and opened others.
+// `input` = the customer's lines of THIS chat, oldest first; `context.toCity` / `context.words` = what the model put in
+// `to_city` / `to_city_words`; `context.ours` = our own lines between them; `context.earlier` = his lines before the
+// chat's last landed job. Written by hand from the ruling and the last check's lists, before the verifier existed.
+const P_RULING = 'the lead’s ruling 2026-11-21 (the model names it, the code verifies)';
+const P_CHECK3 = 'the third T check 2026-11-21 (primary/supp classified)';
+const P_CHECK_F = 'the final check of the destination verifier 2026-11-21 (F1-F5)';
+const SAID = (toCity: string, words: string, place = toCity) => ({ toCity, words, place });
+const CALC_DESTINATION_CHECK_ORDINARY: readonly Row[] = [
+  // The ruling's own four, and the shapes the third check found asking «qaysi shaharga» again.
+  ['cv001', 'Andijonga 3 kub qachon keladi', P_RULING, SAID('Andijon', 'Andijonga')],
+  ['cv002', 'Ivudan 3 kub kiyim\nmanzil Andijon', P_RULING, SAID('Andijon', 'manzil Andijon')],
+  ['cv003', 'Андижан, 3 куба', P_RULING, SAID('Андижан', 'Андижан')],
+  ['cv004', 'Andijon viloyati', P_RULING, SAID('Andijon', 'Andijon viloyati')],
+  ['cv005', 'Andijon 3 kub', P_CHECK3, SAID('Andijon', 'Andijon 3 kub')],
+  ['cv006', 'Из Иу в Андижан 3 куба', P_RULING, SAID('Андижан', 'в Андижан')],
+  ['cv007', 'Доставка до Андижана, 3 куба, когда прибудет?', P_CHECK3, SAID('Андижан', 'до Андижана')],
+  ['cv008', 'Тошкентга', P_RULING, SAID('Тошкент', 'Тошкентга')],
+  ['cv009', 'Ivudan Toshkentga 3 kub, qachon keladi?', P_CHECK3, SAID('Toshkent', 'Toshkentga')],
+  ['cv010', 'Yiwudan Samarqandga 5 kub, qancha turadi va qachon yetib keladi?', P_CHECK3, SAID('Samarqand', 'Samarqandga')],
+  // The customer's words, as the model copies them: case, the apostrophe as typed, spaces.
+  ['cv011', 'Qo‘qonga 2 kub kiyim', P_RULING, SAID("Qo'qon", "Qo'qonga")],
+  ['cv012', 'ANDIJONGA 3 KUB', P_RULING, SAID('Andijon', 'Andijonga 3 kub')],
+  ['cv013', 'Andijonga   3   kub', P_RULING, SAID('Andijon', 'Andijonga 3 kub')],
+  ['cv014', 'Qoʻqonga 2 kub', P_RULING, SAID("Qo'qon", 'Qo’qonga')],
+  // The case ending differs from the city's own; Uzbek Cyrillic written as Russian.
+  ['cv015', 'Андижонга юк бор', P_RULING, SAID('Андижан', 'Андижонга')],
+  ['cv016', 'Наманганга юк бор 2 куб', P_RULING, SAID('Наманган', 'Наманганга')],
+  ['cv017', 'Nukusgacha qancha?', P_RULING, SAID('Nukus', 'Nukusgacha')],
+  // A Chinese line has no spaces: the city by its first letters anywhere in the quote.
+  ['cv018', '从义乌到安集延3方', P_RULING, SAID('安集延', '到安集延')],
+  // Uzbekistan's places the gate's list holds as «not Tashkent»: in Uzbekistan, so they land — Tashkent's region and its
+  // districts among them.
+  ['cv019', 'Chirchiqqa 3 kub', P_RULING, SAID('Chirchiq', 'Chirchiqqa')],
+  ['cv020', 'Qarshiga 3 kub kiyim', P_RULING, SAID('Qarshi', 'Qarshiga')],
+  ['cv021', 'Ivudan 3 kub\nChilonzorga', P_RULING, SAID('Chilonzor', 'Chilonzorga')],
+  ['cv022', 'Toshkent viloyati, Yangiyo‘l', P_RULING, SAID("Yangiyo'l", 'Yangiyo‘l')],
+  ['cv023', 'Xorazmga 4 kub', P_RULING, SAID('Xorazm', 'Xorazmga')],
+  // A town no list holds lands as said — the VED reads the words.
+  ['cv024', 'ivudan chinozga 3 kub', P_CHECK3, SAID('Chinoz', 'chinozga')],
+  ['cv025', 'Popga 2 kub', P_RULING, SAID('Pop', 'Popga')],
+  // A new job after a landed one: the new line counts, the old one does not.
+  ['cv026', 'Samarqandga 2 kub', P_RULING, { ...SAID('Samarqand', 'Samarqandga'), earlier: 'Andijonga 3 kub' }],
+  // Our own line between his: his words are still his.
+  ['cv027', 'Ivudan 3 kub kiyim\nAndijonga', P_RULING, { ...SAID('Andijon', 'Andijonga'), ours: "Toshkentgacha 300 $ bo'ladi" }],
+  // Nothing said — the model gives nothing: Tashkent TAKEN, never asked (the third check's wrong-silent lines among them).
+  ['cv028', 'Ivudan 3 kub kiyim, narxi qancha?', P_RULING, { taken: true }],
+  ['cv029', 'Xitoydan tashishga necha pul 1 kub', P_CHECK3, { taken: true }],
+  ['cv030', 'Ivudan 3 kub, Toshkentga kelishi qancha vaqt?', P_CHECK3, SAID('Toshkent', 'Toshkentga')],
+  ['cv031', 'Ivudan 3 kub kiyim\nQanchaga?', P_RULING, { taken: true }],
+  ['cv032', 'Из Иу 3 куба, когда будет?', P_RULING, { taken: true }],
+  // The final check (F5): quote marks, a period, a dropped comma are no word of his; a «в» or «г.» before the city
+  // does not land with it.
+  ['cv033', 'Ivudan Andijonga 3 kub kiyim, qachon keladi?', P_CHECK_F, SAID('Andijon', '«Andijonga 3 kub»')],
+  ['cv034', 'Ivudan Andijonga 3 kub kiyim, qachon keladi?', P_CHECK_F, SAID('Andijon', 'Andijonga 3 kub kiyim qachon keladi')],
+  ['cv035', 'Ivudan Andijonga 3 kub kiyim, qachon keladi?', P_CHECK_F, SAID('Andijon', "'Andijonga 3 kub.'")],
+  ['cv036', 'Из Иу в Андижан 3 куба', P_CHECK_F, SAID('в Андижан', '"в Андижан"', 'Андижан')],
+  ['cv037', 'Доставка в г. Андижан, 3 куба', P_CHECK_F, SAID('г. Андижан', 'в г. Андижан.', 'Андижан')],
+  // (F2) The VED reads his line around the city, never the model's quote alone.
+  ['cv038', 'Assalomu alaykum, Ivudan 3 kub kiyim bor, yuk Andijonga ketadi', P_CHECK_F, { ...SAID('Andijon', 'Andijonga'), shows: 'yuk Andijonga ketadi' }],
+  // (F4) A town of six letters or more by its first five: Toshloq is no Tashkent, and lands as itself.
+  ['cv039', 'Toshloqqa 2 kub', P_CHECK_F, SAID('Toshloq', 'Toshloqqa')],
+  ['cv040', 'Тошлоққа 2 куб', P_CHECK_F, SAID('Тошлоқ', 'Тошлоққа')],
+  // (F1) His grammar around an Uzbek place keeps it Uzbek; a word after the city counts only as a town word.
+  ['cv041', 'Qarshi shahriga 2 kub', P_CHECK_F, SAID('Qarshi', 'Qarshi')],
+  ['cv042', 'В Андижан доставляете? 3 куба', P_CHECK_F, SAID('Андижан', 'Андижан')],
+  ['cv043', 'Toshkentga Andijonga emas 3 kub', P_CHECK_F, SAID('Toshkent', 'Toshkentga')],
+  // (F3) Norin of Namangan and Karasu of Andijan are Uzbekistan's when his line speaks of no Kyrgyzstan.
+  ['cv044', 'Noringa 2 kub', P_CHECK_F, SAID('Norin', 'Noringa')],
+  ['cv045', 'Норин туманига 2 куб', P_CHECK_F, SAID('Норин', 'Норин туманига')],
+  ['cv046', 'в Нарын (Наманганская обл.) 2 куба', P_CHECK_F, SAID('Нарын', 'в Нарын')],
+  ['cv047', 'в Карасу 2 куба', P_CHECK_F, SAID('Карасу', 'в Карасу')],
+];
+const CALC_DESTINATION_CHECK_DANGEROUS: readonly Row[] = [
+  // The quote is only in OUR line — our own «Toshkentgacha» is never the customer's destination.
+  ['cvd01', 'Ivudan 3 kub kiyim\nha', P_RULING, { toCity: 'Toshkent', words: 'Toshkentgacha', ours: "3 kub uchun Toshkentgacha yo'lkira taxminan 300 $ bo'ladi" }],
+  // Invented: the words are in no line.
+  ['cvd02', 'Ivudan 3 kub kiyim', P_RULING, { toCity: 'Andijon', words: 'Andijonga' }],
+  ['cvd03', 'Andijonga', P_RULING, { toCity: 'Andijon', words: 'Andijonga 3 kub' }],
+  // The city is not in the quote.
+  ['cvd04', 'Ivudan 3 kub kiyim', P_RULING, { toCity: 'Andijon', words: 'Ivudan' }],
+  ['cvd05', 'Ivudan Samarqandga 3 kub', P_RULING, { toCity: 'Andijon', words: 'Ivudan Samarqandga' }],
+  // …the quote holds another city, or no place at all — never one a China word happens to keep out.
+  ['cvd22', 'Ivudan Samarqandga 3 kub', P_RULING, { toCity: 'Andijon', words: 'Samarqandga 3 kub' }],
+  ['cvd23', 'Ivudan 3 kub kiyim kerak', P_RULING, { toCity: 'Andijon', words: '3 kub kiyim kerak' }],
+  ['cvd24', 'Toshkentga kelishi qachon, 3 kub', P_CHECK3, { toCity: 'Andijon', words: 'Toshkentga kelishi' }],
+  // No transliteration: the customer wrote Cyrillic, the model quoted Latin.
+  ['cvd06', 'Андижонга юк бор', P_RULING, { toCity: 'Andijon', words: 'Andijonga' }],
+  // A line older than the last landed job: that job's, not this one's.
+  ['cvd07', 'Ivudan 2 kub kiyim', P_RULING, { toCity: 'Andijon', words: 'Andijonga 3 kub', earlier: 'Andijonga 3 kub' }],
+  // A place outside Uzbekistan: not landed — the checklist asks (`asks`).
+  ['cvd08', 'Almatiga 3 kub', P_RULING, { toCity: 'Almaty', words: 'Almatiga', asks: true }],
+  ['cvd09', 'Доставка в Алматы, 3 куба', P_RULING, { toCity: 'Алматы', words: 'в Алматы', asks: true }],
+  ['cvd10', 'Olmaotaga 5 kub', P_RULING, { toCity: 'Olmaota', words: 'Olmaotaga', asks: true }],
+  ['cvd11', 'Ivudan Oshga 2 kub', P_RULING, { toCity: 'Osh', words: 'Oshga', asks: true }],
+  ['cvd12', 'в Ош 2 куба', P_RULING, { toCity: 'Ош', words: 'в Ош', asks: true }],
+  ['cvd13', 'Bishkekka yuk bor', P_RULING, { toCity: 'Bishkek', words: 'Bishkekka', asks: true }],
+  ['cvd14', 'Хужандга 2 куб', P_RULING, { toCity: 'Хужанд', words: 'Хужандга', asks: true }],
+  ['cvd15', 'Dubayga 1 kub', P_RULING, { toCity: 'Dubay', words: 'Dubayga', asks: true }],
+  ['cvd16', '运到阿拉木图3方', P_RULING, { toCity: '阿拉木图', words: '运到阿拉木图', asks: true }],
+  ['cvd17', 'Шымкентга 3 куб', P_RULING, { toCity: 'Шымкент', words: 'Шымкентга', asks: true }],
+  // China is no destination of a truck from China.
+  ['cvd18', 'Toshkentdan Xitoyga 3 kub', P_RULING, { toCity: 'Xitoy', words: 'Xitoyga', asks: true }],
+  ['cvd19', 'Ivuga yuboraman', P_RULING, { toCity: 'Ivu', words: 'Ivuga', asks: true }],
+  // Not a city: the country itself, or a stem of one letter.
+  ['cvd20', "Xitoydan O'zbekistonga 3 kub", P_RULING, { toCity: "O'zbekiston", words: "O'zbekistonga" }],
+  ['cvd21', 'Andijonga 3 kub', P_RULING, { toCity: 'A', words: 'Andijonga' }],
+  // The final check (F5): quote marks make no invented words his, nor our line his; a stripped «в» keeps Osh foreign.
+  ['cvd25', 'Ivudan 3 kub kiyim', P_CHECK_F, { toCity: 'Andijon', words: '«Andijonga»' }],
+  ['cvd26', 'в Ош 2 куба', P_CHECK_F, { toCity: 'в Ош', words: '«в Ош»', asks: true }],
+  ['cvd27', 'Ivudan 3 kub kiyim\nha', P_CHECK_F, { toCity: 'Toshkent', words: '"Toshkentgacha."', ours: "3 kub uchun Toshkentgacha yo'lkira taxminan 300 $ bo'ladi" }],
+  // (F2) A bare quote hides the word that undoes it: the VED must read «emas» / «не в» beside the city.
+  ['cvd28', 'Toshkentga emas, Andijonga 3 kub', P_CHECK_F, { toCity: 'Toshkent', words: 'Toshkentga', shows: 'emas' }],
+  ['cvd29', 'В Андижан, не в Ташкент. 3 куба', P_CHECK_F, { toCity: 'Ташкент', words: 'Ташкент', shows: 'не в' }],
+  // (F4) Four letters made a neighbour the customer's town; a city inside his word is none of his.
+  ['cvd30', 'Toshkentga 3 kub', P_CHECK_F, { toCity: 'Toshloq', words: 'Toshkentga' }],
+  ['cvd31', 'Янгийўлга 2 куб', P_CHECK_F, { toCity: 'Янгиер', words: 'Янгийўлга' }],
+  ['cvd32', 'Ivudan Toshkentga 3 kub', P_CHECK_F, { toCity: 'Osh', words: 'osh' }],
+  ['cvd33', 'Тошкентга 3 куб', P_CHECK_F, { toCity: 'Ош', words: 'ош' }],
+  // (F1) The bare city quoted out of its grammar: read in HIS line, Osh is asked.
+  ['cvd34', 'Osh shahriga 3 kub', P_CHECK_F, { toCity: 'Osh', words: 'Osh', asks: true }],
+  ['cvd35', 'В Ош доставляете? 3 куба', P_CHECK_F, { toCity: 'Ош', words: 'Ош', asks: true }],
+  ['cvd36', 'Oshga 3 kub', P_CHECK_F, { toCity: 'Osh', words: 'Osh', asks: true }],
+  ['cvd37', 'Ош шаҳрига 3 куб', P_CHECK_F, { toCity: 'Ош', words: 'Ош', asks: true }],
+  ['cvd38', 'Manzil: Osh, 2 kub', P_CHECK_F, { toCity: 'Osh', words: 'Osh', asks: true }],
+  // (F3) Norin and Karasu in a line about Kyrgyzstan, and Kara-Suu spelt the Kyrgyz way, stay asked.
+  ['cvd39', "Qirg'izistonga, Noringa 2 kub", P_CHECK_F, { toCity: 'Norin', words: 'Noringa', asks: true }],
+  ['cvd40', 'Кыргызстан, в Нарын 2 куба', P_CHECK_F, { toCity: 'Нарын', words: 'в Нарын', asks: true }],
+  ['cvd41', 'в Кара-Суу 2 куба', P_CHECK_F, { toCity: 'Кара-Суу', words: 'в Кара-Суу', asks: true }],
+];
+
+// ── origin: the «You» spelling of Yiwu (the 2026-11-15 live chat) ──────────────────────────────────────────────
+const P_YOU = 'live chat 2026-11-15 («"You" shahrini aniqlab bera olmadim»)';
+const P_TCHECK = 'the T check, the lead’s ruling 2026-11-21';
+const YIWU = { place: 'Yiwu' };
+const ORIGIN_ORDINARY: readonly Row[] = [
+  ['or001', 'Youdan 2 kub', P_YOU, YIWU],
+  ['or002', 'You dan 3 kub 500 kg', P_YOU, YIWU],
+  ['or003', 'You shahri', P_YOU, YIWU],
+  ['or004', 'You shahridan yuk bor', P_YOU, YIWU],
+  ['or005', 'Ivudan 3 kub', P_YOU, YIWU],
+  ['or006', 'Иудан 3 куб', P_YOU, YIWU],
+  ['or007', 'Salom, You dan 2 kub', P_YOU, YIWU],
+  // The T check: «You dan» written small, in a line with no English in it, is Yiwu as written big.
+  ['or008', 'salom you dan 3 kub kiyim', P_TCHECK, YIWU],
+  ['or009', 'you dan 3 kub', P_TCHECK, YIWU],
+  ['or010', 'YOU DAN 3 KUB', P_TCHECK, YIWU],
+  ['or011', 'you shahridan yuk bor', P_TCHECK, YIWU],
+];
+const ORIGIN_DANGEROUS: readonly Row[] = [
+  ['or101', 'Thank you', P_YOU],
+  ['or102', 'you can send it', P_YOU],
+  ['or103', 'See you', P_YOU],
+  ['or104', 'Thank you Dan', P_YOU],
+  ['or105', 'See you dan', P_YOU],
+  ['or106', 'Are you Shahrizoda?', P_YOU],
+  ['or107', 'Did you dance?', P_YOU],
+  ['or108', 'How much do you charge?', P_YOU],
+  // The review of T (2026-11-21, N4): «you» written small is English whatever word comes before it.
+  ['or109', 'Are you Dan?', P_YOU],
+  ['or110', 'Hey you dan', P_YOU],
+  ['or111', 'Can you dan aka', P_YOU],
+  ['or112', 'and you dan', P_YOU],
+  ['or113', 'Did you shahar?', P_YOU],
+];
+
 export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('avia', 'dangerous', AVIA_DANGEROUS),
   ...rows('avia', 'ordinary', AVIA_ORDINARY),
@@ -2237,4 +2439,8 @@ export const READER_CORPUS: readonly ReaderCase[] = [
   ...rows('avia_days', 'ordinary', AVIA_DAYS_ORDINARY),
   ...rows('full_truck', 'dangerous', FULL_TRUCK_DANGEROUS),
   ...rows('full_truck', 'ordinary', FULL_TRUCK_ORDINARY),
+  ...rows('calc_destination_check', 'dangerous', CALC_DESTINATION_CHECK_DANGEROUS),
+  ...rows('calc_destination_check', 'ordinary', CALC_DESTINATION_CHECK_ORDINARY),
+  ...rows('origin', 'dangerous', ORIGIN_DANGEROUS),
+  ...rows('origin', 'ordinary', ORIGIN_ORDINARY),
 ];

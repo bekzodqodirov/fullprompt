@@ -369,6 +369,65 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## AI sotuvchi: manzil, kirish kodi, eslatma (2026-11-22) — tekshiruv tartibi
+
+Migratsiya **yo'q**, son **152** bo'lib qoladi. Shuning uchun kod yangilanganini `/api/version` dagi vaqt ko'rsatadi.
+**tg-listen qayta qurilishi SHART**: kirish kodini tanish va uning logi shu konteynerda.
+
+1. **Zaxira (§1)**, hajmi 0 bo'lmasin:
+
+   ```bash
+   cd ~/gsr && docker compose exec -T backup /backup.sh
+   cd ~/gsr && docker compose run --rm -T backup sh -c 'ls -lh /backups | tail -3'
+   ```
+
+2. **PR merge qilinganidan KEYIN**:
+
+   ```bash
+   cd ~/gsr && git pull
+   cd ~/gsr && ls src/modules/platform/db/migrations/*.sql | wc -l     # ==> 152
+   ```
+
+3. **Yangilash**:
+
+   ```bash
+   cd ~/gsr && docker compose build migrate
+   cd ~/gsr && docker compose --profile https up -d --build
+   ```
+
+4. **Tekshirish**:
+
+   ```bash
+   cd ~/gsr && docker compose exec -T postgres psql -U gsr -d gsr -tAc "select count(*) from drizzle.__drizzle_migrations"   # ==> 152
+   cd ~/gsr && docker compose ps -a                 # migrate = Exited (0)
+   curl -s https://gsrwms.uz/api/version; echo      # BUGUNGI vaqt bo'lishi shart (migratsiya yo'q — son o'zgarmaydi)
+   ```
+
+5. **tg-listen**:
+
+   ```bash
+   cd ~/gsr && docker compose --profile telegram up -d --build tg-listen
+   cd ~/gsr && docker compose --profile telegram logs -f tg-listen
+   ```
+
+   «tinglayapman: …» qatori chiqsin, keyin Ctrl+C. Telegram AI raqamiga biror xabar yuborganda logda
+   `[agent] 777000 login: …` yoki `[agent] 777000 notice: …` qatori chiqadi. Unda raqam va kodlar yo'q, faqat qolip bor.
+   Bu qatorni menga yuborsangiz, tanishni aniqlashtiraman:
+
+   ```bash
+   cd ~/gsr && docker compose --profile telegram logs tg-listen 2>&1 | grep "777000" | tail -5
+   ```
+
+6. **AI yoqilganini tekshiring**: «Suhbatlar → AI sotuvchi» da «ishlayapti» turibdimi?
+
+7. **Sinov** (login'ga yozilmagan raqamdan): «Ivudan Toshkentga 3 kub 450 kg kiyim, narxi qancha?» → narx va
+   rastamojka taklifi → «ha» → AI tovar soni yoki og'irligini so'raydi → «200 dona» → «hisoblatishga yubordim» →
+   karta. «Hisoblatish» belgilangan bo'lsa, 2 daqiqadan keyin ish «Hisoblash (VED) → Navbat» ga o'zi tushadi; belgilanmagan
+   bo'lsa, AI raqamining telefonidagi hodim botidan ✅ bosing. Ikkinchi sinov: manzilsiz, «Ivudan 3 kub 450 kg kiyim» →
+   ish «Toshkent deb olindi» izohi bilan tushadi.
+
+**Orqaga qaytarish** — kodni qaytaring va tg-listen'ni ham qayta quring. Bazada o'zgarish yo'q.
+
 ## To‘liq AI sotuvchi, 1a (2026-11-21, 0151) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0151** — deploydan keyin son **152** bo‘ladi (serveringizda hozir 151). Uchta yangi jadval:
