@@ -478,6 +478,6 @@ messages per reply = more account risk) and the plan's own question list in his 
 | 16a | 6 | ⭐ 1 | a hidden-number customer's code opens too; the card shows «📵» (no bot link: a phoneless client cannot link the bot) |
 | 17 | 7 | ⭐ a | the deputy may approve a priced reply, seeing only the price his own rights show |
 
-Also answered in the same message, outside this plan: «T» (the destination reader of the calc checklist — `qurish/T-QAYERGA.md`)
+Also answered in the same message, outside this plan: «T» (the destination of the AI's calc checklist — DECISIONS #1848)
 ⭐ a: a lone «Toshkentga» / «Andijonga» and Cyrillic or Russian forms are read; with no destination said the truck jobs take
 Tashkent and the VED is told so in words.

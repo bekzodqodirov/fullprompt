@@ -97,10 +97,16 @@ function fold(text: string): { text: string; source: string; from: number[]; to:
   const from: number[] = [];
   const to: number[] = [];
   let i = 0;
+  const openAt: number[] = [];
   for (const ch of source) {
     const at = i;
     i += ch.length;
-    if (/\s/u.test(ch) || (!APOSTROPHE.test(ch) && /\p{P}/u.test(ch))) {
+    // An apostrophe with no letter before it OPENS a quote («Manzil 'Andijon'», «‘Andijonga’» — the final check's
+    // T-R2): no Uzbek word starts with one, so it is read as the space it stands for; one after a letter stays the
+    // letter's («Qo'qon», «Yakkabog'»).
+    const opensQuote = APOSTROPHE.test(ch) && (out.length === 0 || out.endsWith(' '));
+    if (opensQuote) openAt.push(out.length);
+    if (/\s/u.test(ch) || opensQuote || (!APOSTROPHE.test(ch) && /\p{P}/u.test(ch))) {
       if (out.length > 0 && !out.endsWith(' ')) {
         out += ' ';
         from.push(at);
@@ -119,6 +125,18 @@ function fold(text: string): { text: string; source: string; from: number[]; to:
     out = out.slice(0, -1);
     from.pop();
     to.pop();
+  }
+  // …and the apostrophe that CLOSES it — the first word-final one after the opening — goes with it («Manzil 'Andijon'
+  // 3 kub» reads «manzil andijon 3 kub»). With no quote opened, a word's last apostrophe is its own («Yakkabog'»).
+  for (let q = 0; q < openAt.length; q++) {
+    for (let k = Math.max(openAt[q]!, 1); k < out.length; k++) {
+      if (out[k] !== "'" || out[k - 1] === ' ' || (k < out.length - 1 && out[k + 1] !== ' ')) continue;
+      out = out.slice(0, k) + out.slice(k + 1);
+      from.splice(k, 1);
+      to.splice(k, 1);
+      for (let r = q + 1; r < openAt.length; r++) if (openAt[r]! > k) openAt[r]! -= 1;
+      break;
+    }
   }
   // «'Andijonga 3 kub'»: wrapping apostrophes are a quote, never a word's — a word of his line neither starts nor
   // ends with one. The space they leave inside is trimmed with them.
@@ -254,7 +272,13 @@ const UZBEKISTAN = new RegExp(
  * a Kyrgyz town, and «Карасу» is Qorasuv of Andijan as Kara-Suu is Kyrgyz. The Kyrgyz town in its own spelling —
  * «Naryn», «Кара-Суу», «Карасуу» — stays the gate list's foreign place.
  */
-const UZBEK_TWO_FACED = /(?<![\p{L}])(?:norin|норин|нарын|карасу(?!у))/u;
+const UZBEK_TWO_FACED = /(?<![\p{L}])(?:norin|норин|карасу(?!у))/u;
+/**
+ * «Нарын» in Russian is the Kyrgyz town first («в Нарын 3 куба» — the final check's T-R4): it is Namangan's Norin only
+ * when his line says so («в Нарын (Наманганская обл.)», «Нарынский район»).
+ */
+const NARYN_RU = /(?<![\p{L}])нарын/u;
+const NAMANGAN_CONTEXT = /наманган|namangan|нарынск\p{L}*\s+район|norin|норин/u;
 const KYRGYZ = /qirg'?iz|қирғиз|кыргыз|киргиз|kyrgyz|kirgiz|bishkek|бишкек|облус|oblus|(?:нарынск\p{L}*|norin|норин|нарын)\s+(?:обл|oblast|region|viloyat|вилоят)/u;
 
 /**
@@ -271,6 +295,7 @@ function outsideUzbekistan(city: string, word: string, phrase: string, line: str
   const c = fold(city).text;
   const w = fold(word).text;
   if (UZBEKISTAN.test(c) || UZBEKISTAN.test(w)) return false;
+  if ((NARYN_RU.test(c) || NARYN_RU.test(w)) && NAMANGAN_CONTEXT.test(line) && !KYRGYZ.test(line)) return false;
   return !((UZBEK_TWO_FACED.test(c) || UZBEK_TWO_FACED.test(w)) && !KYRGYZ.test(line));
 }
 
@@ -294,7 +319,9 @@ function placePhrase(f: ReturnType<typeof fold>, at: number, length: number): st
   let first = at;
   for (let k = self - 1, n = 0; k >= 0 && n < 2 && PREP.test(tokens[k]!.t); k--, n++) first = tokens[k]!.s;
   let end = f.to[at + length - 1]!;
-  end += /^[-‐‑–]\p{L}+/u.exec(f.source.slice(end))?.[0].length ?? 0;
+  // Only a place's own ENDING glued on with a hyphen («Osh-ga», «Ош-га») — never the next place of a route
+  // («Toshkent-Samarqand», «Иу-Ташкент-Андижан»: the final check's T-R1 read Tashkent there as a foreign phrase).
+  end += /^[-‐‑–](?:gacha|ga|ka|qa|dan|da|ning|гача|га|ка|қа|дан|да|нинг)(?!\p{L})/u.exec(f.source.slice(end))?.[0].length ?? 0;
   const next = tokens.find((t) => f.from[t.s]! >= end);
   if (next && TOWN_AFTER.test(next.t) && /^\s+$/u.test(f.source.slice(end, f.from[next.s]))) end = f.to[next.e - 1]!;
   return f.source.slice(f.from[first]!, end);

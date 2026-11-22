@@ -73,6 +73,17 @@ describe('checkDestination: the words are the customer’s, the city is in them'
     expect(checkDestination({ toCity: '«Andijon»', words: 'Andijonga' }, [line])).toMatchObject({ kind: 'said', toCity: 'Andijon' });
     expect(checkDestination({ toCity: 'в Андижан', words: 'в Андижан' }, ['Из Иу в Андижан 3 куба'])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
     expect(checkDestination({ toCity: 'г. Андижан', words: 'в г. Андижан' }, ['Доставка в г. Андижан, 3 куба'])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
+    // A city HE put in single quotes or backticks is read (the final check's T-R2); a word's own last apostrophe stays.
+    for (const [words, line] of [
+      ['Andijon', "Manzil 'Andijon' 3 kub"],
+      ['Andijonga', '‘Andijonga’ 3 kub'],
+      ['Andijon', 'Manzil `Andijon`'],
+      ["'Andijon'", "Manzil 'Andijon', Qo'qonga emas"],
+    ] as const) {
+      expect(checkDestination({ toCity: 'Andijon', words }, [line]), line).toEqual({ kind: 'said', toCity: 'Andijon', evidence: line });
+    }
+    expect(checkDestination({ toCity: 'Андижан', words: 'Андижан' }, ["Адрес 'Андижан', 3 куба"])).toMatchObject({ kind: 'said', toCity: 'Андижан' });
+    expect(checkDestination({ toCity: "Qo'qon", words: "Qo'qonga" }, ["Qo'qonga 2 kub"])).toMatchObject({ kind: 'said' });
     // …and the city stripped of its «в» is still read with it in HIS line: Osh is still asked.
     expect(checkDestination({ toCity: 'в Ош', words: '«в Ош»' }, ['в Ош 2 куба'])).toEqual({ kind: 'foreign', toCity: 'Ош' });
   });
@@ -103,6 +114,11 @@ describe('checkDestination: the words are the customer’s, the city is in them'
       // Norin and Karasu are Uzbekistan's — unless his line speaks of Kyrgyzstan (F3); Kara-Suu spelt so is Kyrgyz.
       ['Norin', 'Noringa', "Qirg'izistonga, Noringa 2 kub"],
       ['Нарын', 'в Нарын', 'Кыргызстан, в Нарын 2 куба'],
+      // «Нарын» in Russian with no Namangan in his line is the Kyrgyz town (the final check's T-R4).
+      ['Нарын', 'в Нарын', 'в Нарын 3 куба'],
+      ['Нарын', 'Нарынга', 'Нарынга 3 куб'],
+      // A place's own ending after a hyphen is still read with it.
+      ['Osh', 'Osh', 'Osh-ga 3 kub'],
       ['Кара-Суу', 'Кара-Суу', 'в Кара-Суу 2 куба'],
     ] as const) {
       expect(checkDestination({ toCity: city, words }, [line]), city).toEqual({ kind: 'foreign', toCity: city });
@@ -122,6 +138,10 @@ describe('checkDestination: the words are the customer’s, the city is in them'
       ['Норин', 'Норин туманига', 'Норин туманига 2 куб'],
       ['Нарын', 'в Нарын', 'в Нарын (Наманганская обл.) 2 куба'],
       ['Карасу', 'в Карасу', 'в Карасу 2 куба'],
+      // The next place of a hyphenated route is no ending of this one (the final check's T-R1).
+      ['Toshkent', 'Toshkent', 'Toshkent-Samarqand 3 kub'],
+      ['Ташкент', 'Ташкент', 'Иу-Ташкент-Андижан 3 куба'],
+      ['Sergeli', 'Sergeli', 'Sergeli-Andijon 2 kub'],
     ] as const) {
       expect(checkDestination({ toCity: city, words }, [line]), city).toMatchObject({ kind: 'said', toCity: city });
     }
